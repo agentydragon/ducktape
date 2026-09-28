@@ -95,8 +95,7 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId, PropertyId
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedIndexedAmount
+from finance.augur.sim.market_path import IndexedAmount, MarketPath
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.tlh import TlhAssumptions
@@ -1513,7 +1512,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
         if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
     )
     assert rent_transfer.property_id == "location_a_property"
-    assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
+    assert isinstance(rent_transfer.amount, IndexedAmount)
     assert rent_transfer.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5 * 0.90))
     assert rent_transfer.amount.series_id == RentKey(location_id=LOCATION_A).wire_id
 
@@ -1523,7 +1522,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
         if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "management_fee:location_a_property"
     )
     assert management_fee.property_id == "location_a_property"
-    assert isinstance(management_fee.amount, PreparedIndexedAmount)
+    assert isinstance(management_fee.amount, IndexedAmount)
     assert management_fee.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5 * 0.90 * 0.08))
 
     leasing_fee = one(
@@ -1532,7 +1531,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
         if isinstance(transfer.schedule, Once) and transfer.cause_id == "leasing_fee:location_a_property:m0"
     )
     assert leasing_fee.property_id == "location_a_property"
-    assert isinstance(leasing_fee.amount, PreparedIndexedAmount)
+    assert isinstance(leasing_fee.amount, IndexedAmount)
     assert leasing_fee.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5))
 
 
@@ -1584,7 +1583,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
     ]
     rent_amounts = []
     for rent_transfer in rent_transfers:
-        assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
+        assert isinstance(rent_transfer.amount, IndexedAmount)
         rent_amounts.append(rent_transfer.amount.base_amount)
         assert rent_transfer.amount.series_id == RentKey(location_id=LOCATION_A).wire_id
     assert rent_amounts == [
@@ -1603,7 +1602,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
     ]
     fee_amounts = []
     for management_fee in management_fees:
-        assert isinstance(management_fee.amount, PreparedIndexedAmount)
+        assert isinstance(management_fee.amount, IndexedAmount)
         fee_amounts.append(management_fee.amount.base_amount)
     assert fee_amounts == [
         _quanta_int(_usd_quanta(amount))
@@ -1626,7 +1625,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
     assert [transfer.schedule for transfer in leasing_fees] == [Once(month=month) for month in (0, 3, 8)]
     leasing_amounts = []
     for leasing_fee in leasing_fees:
-        assert isinstance(leasing_fee.amount, PreparedIndexedAmount)
+        assert isinstance(leasing_fee.amount, IndexedAmount)
         leasing_amounts.append(leasing_fee.amount.base_amount)
     assert leasing_amounts == [
         _quanta_int(_usd_quanta(amount)) for amount in (6_000.0 * 0.25, 6_000.0 * 0.75, 6_000.0 * 0.5)
@@ -1669,7 +1668,7 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
     )
     assert rent_transfer.property_id == "location_a_property"
     assert rent_transfer.schedule == Recurring(start_month=3, end_month=5)
-    assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
+    assert isinstance(rent_transfer.amount, IndexedAmount)
     assert rent_transfer.amount.base_amount == _quanta_int(_usd_quanta(4_200.0 * 0.5 * 0.95))
     assert rent_transfer.amount.series_id == RentKey(location_id=LOCATION_A).wire_id
 
@@ -1882,7 +1881,7 @@ def test_build_situation_wires_property_expenses_to_payees(augur_config: Config,
     assert [obligation.deductible_fraction_ppb for obligation in expense_obligations] == [250_000_000] * 3
     expense_amounts: list[int] = []
     for obligation in expense_obligations:
-        assert isinstance(obligation.amount_due, PreparedIndexedAmount)
+        assert isinstance(obligation.amount_due, IndexedAmount)
         expense_amounts.append(obligation.amount_due.base_amount)
     assert expense_amounts == [_quanta_int(_usd_quanta(amount)) for amount in (150, 182, 487.50)]
     assert {account.agent_id for account, _ in situation.accounts} >= {"hoa", "insurer", "maintenance_vendor"}

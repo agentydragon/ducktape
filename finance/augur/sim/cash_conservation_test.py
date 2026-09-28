@@ -52,11 +52,10 @@ from finance.augur.sim.fixed_point import (
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedLocation,
-    PreparedSeries,
     _CapitalImprovement,
     _MortgageFinancing,
     _PropertyPurchase,
@@ -120,7 +119,7 @@ def ref(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
-def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int) -> tuple[PreparedSeries, ...]:
+def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int) -> tuple[Series, ...]:
     """One exogenous level series on the single rollout every case here runs."""
 
     return compile_series(

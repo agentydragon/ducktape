@@ -23,9 +23,8 @@ from finance.augur.sim.jurisdictions import (
     StatutoryIndexation,
     TaxBracket,
 )
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -77,7 +76,7 @@ def sample(*, horizon_months: int) -> ExternalSeriesContext:
 class Situation:
     """What every path of a cell shares; `compose` declares it onto one World per path."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
     taxable: bool

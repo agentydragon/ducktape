@@ -28,9 +28,8 @@ from finance.augur.sim.jurisdictions import (
     StatutoryIndexation,
     TaxBracket,
 )
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -68,7 +67,7 @@ _FLAT_TAX = Jurisdiction(
 class Situation:
     """What every path shares; `compose` declares it onto one World per path."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
     cash_only_start: bool

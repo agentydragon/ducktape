@@ -1,8 +1,7 @@
-"""Owned, resolved simulation facts: exact money/quantity counts and supplied paths.
+"""Owned, resolved simulation facts: exact money/quantity counts.
 
-Values a declaration's arguments take (amounts, coupons, a location), supplied series, and the
-underscored configured records the housing, tender and deduction declarations take until their
-policies move to the common action session.
+The location a housing declaration takes, and the underscored configured records the housing,
+tender and deduction declarations take until their policies move to the common action session.
 """
 
 from dataclasses import dataclass
@@ -10,30 +9,7 @@ from typing import Literal
 
 from finance.augur.model.series import LocationId
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedFixedAmount:
-    amount: int
-    kind: Literal["fixed"] = "fixed"
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedIndexedAmount:
-    base_amount: int
-    series_id: str
-    base_month_index: int
-    adjustment_period_months: int
-    kind: Literal["series_indexed"] = "series_indexed"
-
-
-type PreparedAmount = int | PreparedFixedAmount | PreparedIndexedAmount
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedIndexedCoupon:
-    annual_rate_ppb: int
-    kind: Literal["indexed"] = "indexed"
+from finance.augur.sim.market_path import Amount
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -49,7 +25,7 @@ class PreparedLocation:
 class _TenderPolicy:
     owner_agent_id: AgentId
     proceeds_account_id: AccountId
-    liquid_net_worth_floor: PreparedAmount
+    liquid_net_worth_floor: Amount
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -156,12 +132,3 @@ class _SaltDeduction:
     profile_id: AgentId
     federal_jurisdiction_id: JurisdictionId
     cap_schedule: tuple[_SaltCap, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreparedSeries:
-    """One supplied integer path population in original rollout order."""
-
-    series_id: str
-    snapshots: int
-    values: tuple[int, ...]

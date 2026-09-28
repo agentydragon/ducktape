@@ -58,14 +58,10 @@ from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount, ro
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.locations import Location
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import (
-    PreparedAmount,
-    PreparedFixedAmount,
-    PreparedIndexedAmount,
     PreparedLocation,
-    PreparedSeries,
     _CapitalImprovement,
     _MortgageFinancing,
     _MortgageInterestDeduction,
@@ -167,7 +163,7 @@ class PropertyCashflow:
     cause_id: str
     from_account: AccountRef
     to_account: AccountRef
-    amount: PreparedAmount
+    amount: Amount
     income_category: TransferIncomeCategory | None
     deduction_category: TransferDeductionCategory | None
     property_id: PropertyId
@@ -182,7 +178,7 @@ class Obligation:
     obligation_type: ObligationType
     from_account: AccountRef
     to_account: AccountRef
-    amount_due: PreparedAmount
+    amount_due: Amount
     property_id: PropertyId | None
     deduction_category: TransferDeductionCategory | None
     deductible_fraction_ppb: int
@@ -408,7 +404,7 @@ def build_situation(
     )
 
 
-def paths(situation: Situation, sampled: ExternalSeriesContext, *, rollout_count: int) -> tuple[PreparedSeries, ...]:
+def paths(situation: Situation, sampled: ExternalSeriesContext, *, rollout_count: int) -> tuple[Series, ...]:
     """The sampled paths as the integer series a world reads: levels, then each held issuer's protocol."""
     return (
         *compile_series(
@@ -1017,7 +1013,7 @@ def _initial_rented_fraction(purchase: PropertyPurchase) -> Decimal:
     return Decimal(str(purchase.initial_rental.fraction_rented)) if purchase.initial_rental is not None else Decimal(0)
 
 
-def _monthly_spend_amount(scenario_key: ScenarioKey, *, currency: Currency) -> PreparedAmount:
+def _monthly_spend_amount(scenario_key: ScenarioKey, *, currency: Currency) -> Amount:
     if scenario_key.spend_index == SpendIndex.INFLATION:
         return _indexed(currency.quanta(scenario_key.monthly_spend), InflationKey(), adjustment_period_months=1)
     if scenario_key.spend_index == SpendIndex.NONE:
@@ -1031,12 +1027,10 @@ def _empty_account(agent_id: AgentId, account_id: AccountId) -> tuple[AccountRef
     return AccountRef(agent_id=agent_id, account_id=account_id), 0
 
 
-def _indexed(
-    base_amount: int, series: InflationKey | RentKey, *, adjustment_period_months: int
-) -> PreparedIndexedAmount:
+def _indexed(base_amount: int, series: InflationKey | RentKey, *, adjustment_period_months: int) -> IndexedAmount:
     """`base_amount` at month 0, reset to the series' level every `adjustment_period_months`."""
 
-    return PreparedIndexedAmount(
+    return IndexedAmount(
         base_amount=base_amount,
         series_id=series.wire_id,
         base_month_index=0,
@@ -1046,7 +1040,7 @@ def _indexed(
 
 def _funding_household(
     funding_policy: FundingPolicy, *, primary_agent_id: AgentId, holdings: Holdings, currency: Currency
-) -> tuple[Callable[[], CashBandHousehold | ClaimPayer], tuple[int | PreparedIndexedAmount, ...]]:
+) -> tuple[Callable[[], CashBandHousehold | ClaimPayer], tuple[int | IndexedAmount, ...]]:
     """The household the wire's cash band + weights describe, and the band bounds it reads.
 
     Zero-weight entries are the product UI's explicit "never sell" exclusion, not the
@@ -1103,7 +1097,7 @@ def _funding_household(
     return household, band
 
 
-def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool, currency: Currency) -> int | PreparedIndexedAmount:
+def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool, currency: Currency) -> int | IndexedAmount:
     """Translate an exact configured amount + index flag into a prepared amount.
 
     An indexed bound tracks CPI monthly (period=1) so the real-terms band stays constant; a
@@ -1115,7 +1109,7 @@ def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool, currency: C
     return _indexed(currency.quanta(amount), InflationKey(), adjustment_period_months=1)
 
 
-def _household_bound(amount: int | PreparedIndexedAmount) -> BandBound:
+def _household_bound(amount: int | IndexedAmount) -> BandBound:
     if isinstance(amount, int):
         return amount
     return CpiIndexed(base_amount=amount.base_amount, adjustment_period_months=amount.adjustment_period_months)
@@ -1139,6 +1133,6 @@ def _tender_policy(
         liquid_net_worth_floor=(
             _indexed(currency.quanta(floor), InflationKey(), adjustment_period_months=1)
             if floor > 0 and scenario_key.pe_tender_policy.index_floor_to_inflation
-            else PreparedFixedAmount(amount=currency.quanta(floor))
+            else currency.quanta(floor)
         ),
     )

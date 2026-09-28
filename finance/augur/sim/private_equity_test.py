@@ -32,9 +32,9 @@ from finance.augur.sim.fixed_point import (
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedSeries, _TenderPolicy
+from finance.augur.sim.prepared import _TenderPolicy
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
@@ -80,7 +80,7 @@ def protocol(
     forced_sale: Rate = 0,
     liquidity_blocked: Code = 0,
     forced_recovery_usd: Money = Decimal(0),
-) -> tuple[PreparedSeries, ...]:
+) -> tuple[Series, ...]:
     """A flat mark that steps at `tender_month`, and a tender window open only in that month."""
 
     snapshots = horizon_months + 1
@@ -150,7 +150,7 @@ def holder(
     )
 
 
-def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
+def compose(case: Holder, channels: Sequence[Series]) -> World:
     jurisdictions = {FEDERAL: load_jurisdiction(FEDERAL)} if case.taxed else {}
     world = World(
         MarketPath(channels, 0, rollout_count=1), horizon_months=case.horizon_months, income_sources=(ORDINARY_INCOME,)
@@ -199,7 +199,7 @@ def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
     return world
 
 
-def run(case: Holder, channels: Sequence[PreparedSeries]) -> Rollout:
+def run(case: Holder, channels: Sequence[Series]) -> Rollout:
     """Alice pays her monthly spend and nothing else; the issuer protocol runs as the month closes."""
 
     session = ActionSession({0: compose(case, channels)}, ALICE)

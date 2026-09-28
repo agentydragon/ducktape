@@ -7,8 +7,7 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
 from finance.augur.sim.jurisdictions import InterestExemptions
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedSeries
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -73,7 +72,7 @@ def accounting(
 
 
 def world_on(
-    series: Sequence[PreparedSeries],
+    series: Sequence[Series],
     *,
     horizon_months: int,
     rollout_id: int = 0,

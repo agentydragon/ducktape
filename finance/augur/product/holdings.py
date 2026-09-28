@@ -28,7 +28,7 @@ from finance.augur.sim.fixed_point import quantity_scale_for_asset, round_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, BondId, LotId, PortfolioId
 from finance.augur.sim.income import InterestCharacter, InterestIncome, TransferIncomeCategory
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon
+from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 
 
@@ -60,7 +60,7 @@ class Bond:
     character: InterestCharacter
     face_value: int
     purchase_price: int
-    coupon: PreparedFixedAmount | PreparedIndexedCoupon
+    coupon: FixedCoupon | IndexedCoupon
     coupon_period_months: int
     purchase_month_index: int
     maturity_month_index: int
@@ -263,9 +263,9 @@ def _prepared_bond(
         face_value=face,
         purchase_price=currency.quanta(bond.purchase_price),
         coupon=(
-            PreparedIndexedCoupon(annual_rate_ppb=rate_ppb)
+            IndexedCoupon(annual_rate_ppb=rate_ppb)
             if bond.inflation_indexed
-            else PreparedFixedAmount(
+            else FixedCoupon(
                 amount=coupon_amount_quanta(
                     face_quanta=face, annual_coupon_rate_ppb=rate_ppb, coupon_period_months=bond.coupon_period_months
                 )

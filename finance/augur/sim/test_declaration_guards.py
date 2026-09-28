@@ -37,14 +37,10 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
     Treasury,
 )
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
+from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
 from finance.augur.sim.prepared import (
-    PreparedAmount,
-    PreparedFixedAmount,
-    PreparedIndexedAmount,
-    PreparedIndexedCoupon,
     PreparedLocation,
-    PreparedSeries,
     _MortgageFinancing,
     _MortgageInterestDeduction,
     _PrimaryResidence,
@@ -86,15 +82,15 @@ def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
-def prices(*values: int) -> PreparedSeries:
-    return PreparedSeries(series_id=f"security:{STOCK}", snapshots=len(values), values=values)
+def prices(*values: int) -> Series:
+    return Series(series_id=f"security:{STOCK}", snapshots=len(values), values=values)
 
 
-def payouts(*values: int) -> PreparedSeries:
-    return PreparedSeries(series_id=f"security_distribution:{STOCK}", snapshots=len(values), values=values)
+def payouts(*values: int) -> Series:
+    return Series(series_id=f"security_distribution:{STOCK}", snapshots=len(values), values=values)
 
 
-def composed(*series: PreparedSeries, horizon_months: int = HORIZON) -> World:
+def composed(*series: Series, horizon_months: int = HORIZON) -> World:
     """The holder's cash and brokerage accounts and one counterparty, on a path carrying `series`."""
     world = World(
         MarketPath(series, 0, rollout_count=1),
@@ -153,7 +149,7 @@ def test_a_public_pool_needs_its_price_series_on_the_path() -> None:
 def test_a_path_admits_only_dense_series_named_once() -> None:
     with pytest.raises(ValueError, match="duplicate series"):
         MarketPath((prices(100, 100, 100), prices(1, 1, 1)), 0, rollout_count=1)
-    short = PreparedSeries(series_id=f"security:{STOCK}", snapshots=3, values=(100, 100, 100, 100, 100))
+    short = Series(series_id=f"security:{STOCK}", snapshots=3, values=(100, 100, 100, 100, 100))
     with pytest.raises(ValueError, match="invalid shape"):
         MarketPath((short,), 0, rollout_count=2)
     with pytest.raises(ValueError, match="invalid rollout selection"):
@@ -193,7 +189,7 @@ def test_a_pool_holds_one_opening_lot_per_purchase_month() -> None:
 
 
 # A par bond paying a fixed semiannual coupon over two whole periods.
-COUPON = PreparedFixedAmount(amount=3)
+COUPON = FixedCoupon(amount=3)
 
 
 def bond(
@@ -202,7 +198,7 @@ def bond(
     account_id: AccountId = CHECKING,
     character: InterestCharacter = TAXABLE,
     purchase_price: int = 100,
-    coupon: PreparedFixedAmount | PreparedIndexedCoupon = COUPON,
+    coupon: FixedCoupon | IndexedCoupon = COUPON,
     coupon_period_months: int = 6,
     maturity_month_index: int = 6,
 ) -> None:
@@ -224,10 +220,10 @@ def bond(
     ("invalid", "match"),
     [
         (partial(bond, purchase_price=99), "invalid bond terms"),
-        (partial(bond, coupon=PreparedFixedAmount(amount=-1)), "invalid bond terms"),
+        (partial(bond, coupon=FixedCoupon(amount=-1)), "invalid bond terms"),
         (partial(bond, coupon_period_months=5), "invalid bond terms"),
         (partial(bond, maturity_month_index=-6), "invalid bond terms"),
-        (partial(bond, coupon=PreparedIndexedCoupon(annual_rate_ppb=50_000_000)), "inflation"),
+        (partial(bond, coupon=IndexedCoupon(annual_rate_ppb=50_000_000)), "inflation"),
         (partial(bond, character=Municipal(state=JurisdictionId("test-state"))), "undeclared income source"),
         (partial(bond, account_id=AccountId("test-undeclared")), "unknown account"),
     ],
@@ -307,7 +303,7 @@ def distribution(
     )
 
 
-def holding_stock(*, payout: PreparedSeries) -> World:
+def holding_stock(*, payout: Series) -> World:
     world = composed(prices(100, 100, 100), payout)
     pool(world)
     lot(world)
@@ -355,12 +351,12 @@ def test_a_zero_mark_is_valid_only_where_the_asset_is_held_exclusively_through_a
         pool(composed(prices(0, 0, 0)))
 
 
-def cpi(*levels: int) -> PreparedSeries:
-    return PreparedSeries(series_id="inflation", snapshots=len(levels), values=levels)
+def cpi(*levels: int) -> Series:
+    return Series(series_id="inflation", snapshots=len(levels), values=levels)
 
 
-def indexed(*, series_id: str = "inflation", base_month_index: int = 0) -> PreparedIndexedAmount:
-    return PreparedIndexedAmount(
+def indexed(*, series_id: str = "inflation", base_month_index: int = 0) -> IndexedAmount:
+    return IndexedAmount(
         base_amount=1, series_id=series_id, base_month_index=base_month_index, adjustment_period_months=1
     )
 
@@ -373,7 +369,7 @@ def flow(
     world: World,
     *,
     from_account: AccountRef = PAYER,
-    amount: PreparedAmount = 1,
+    amount: Amount = 1,
     income_category: TransferIncomeCategory | None = None,
     schedule: Schedule = MONTH_ZERO,
     property_id: PropertyId | None = None,
@@ -565,7 +561,7 @@ def test_a_deduction_is_claimed_by_an_enrolled_taxpayer() -> None:
         )
 
 
-def bill(*, amount_due: PreparedAmount = 1, schedule: Schedule = MONTH_ZERO) -> Biller:
+def bill(*, amount_due: Amount = 1, schedule: Schedule = MONTH_ZERO) -> Biller:
     return Biller(
         obligation_id="test-bill",
         obligation_type="cash_spend",
@@ -673,9 +669,9 @@ QUIET = {
 }
 
 
-def issuer_paths(**overrides: tuple[int, ...]) -> tuple[PreparedSeries, ...]:
+def issuer_paths(**overrides: tuple[int, ...]) -> tuple[Series, ...]:
     return tuple(
-        PreparedSeries(
+        Series(
             series_id=f"private_equity_{channel}:{ISSUER}",
             snapshots=HORIZON + 1,
             values=overrides.get(channel, (level,) * (HORIZON + 1)),
@@ -684,7 +680,7 @@ def issuer_paths(**overrides: tuple[int, ...]) -> tuple[PreparedSeries, ...]:
     )
 
 
-def holding_private(*series: PreparedSeries) -> None:
+def holding_private(*series: Series) -> None:
     world = composed(*series)
     asset_id = AssetId(f"private_equity:{ISSUER}")
     pool(world, asset_id=asset_id, quantity_scale=1)

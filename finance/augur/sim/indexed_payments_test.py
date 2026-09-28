@@ -16,9 +16,8 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedIndexedAmount, PreparedSeries
 from finance.augur.sim.results import Finished, Paid, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
@@ -29,7 +28,7 @@ QUANTUM = Decimal("0.01")
 CHECKING = AccountId("checking")
 
 
-def _series(levels: list[list[float]], *, horizon_months: int) -> tuple[PreparedSeries, ...]:
+def _series(levels: list[list[float]], *, horizon_months: int) -> tuple[Series, ...]:
     """The authored rent path as integer index levels, one path per rollout."""
 
     paths = ExternalSeriesContext.from_level_blocks(
@@ -38,8 +37,8 @@ def _series(levels: list[list[float]], *, horizon_months: int) -> tuple[Prepared
     return compile_series(paths, rollout_count=len(levels), horizon_months=horizon_months, currency=USD)
 
 
-def _indexed(base_amount: Decimal, *, base_month_index: int, adjustment_period_months: int) -> PreparedIndexedAmount:
-    return PreparedIndexedAmount(
+def _indexed(base_amount: Decimal, *, base_month_index: int, adjustment_period_months: int) -> IndexedAmount:
+    return IndexedAmount(
         base_amount=int(currency_amount_to_quanta(base_amount, quantum=QUANTUM)),
         series_id=RENT.wire_id,
         base_month_index=base_month_index,
@@ -53,14 +52,14 @@ def _account(agent_id: AgentId, balance: Decimal) -> tuple[AccountRef, int]:
 
 
 def _compose(
-    series: tuple[PreparedSeries, ...],
+    series: tuple[Series, ...],
     rollout_id: int,
     *,
     rollout_count: int,
     horizon_months: int,
     accounts: Sequence[tuple[AccountRef, int]],
-    owed_rent: PreparedIndexedAmount | None = None,
-    tenant_rent: PreparedIndexedAmount | None = None,
+    owed_rent: IndexedAmount | None = None,
+    tenant_rent: IndexedAmount | None = None,
 ) -> World:
     """`owed_rent` is what Alice owes the landlord every month; `tenant_rent` is the tenant's monthly payment to her."""
     world = World(
@@ -99,7 +98,7 @@ def _compose(
     return world
 
 
-def _rent_worlds(amount: PreparedIndexedAmount, levels: list[list[float]], *, horizon_months: int) -> dict[int, World]:
+def _rent_worlds(amount: IndexedAmount, levels: list[list[float]], *, horizon_months: int) -> dict[int, World]:
     series = _series(levels, horizon_months=horizon_months)
     accounts = (_account(AgentId("alice"), Decimal(20_000)), _account(AgentId("landlord"), Decimal(0)))
     return {

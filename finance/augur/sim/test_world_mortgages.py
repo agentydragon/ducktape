@@ -12,10 +12,10 @@ from finance.augur.sim.agent import assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.capture import FinancialCapture
 from finance.augur.sim.ids import AccountId, LiabilityId, PropertyId
+from finance.augur.sim.market_path import Series
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
 from finance.augur.sim.prepared import (
     PreparedLocation,
-    PreparedSeries,
     _MortgageFinancing,
     _PropertyPurchase,
     _PropertySale,
@@ -42,7 +42,7 @@ class Situation:
 
     purchase: _PropertyPurchase
     sale: _PropertySale
-    home_values: PreparedSeries
+    home_values: Series
     rollout_count: int = 1
 
 
@@ -73,9 +73,7 @@ def case() -> Situation:
             ),
         ),
         sale=_PropertySale(month=5, property_id=PropertyId("test-home"), closing_cost_ppb=0),
-        home_values=PreparedSeries(
-            series_id="home_value:test-market", snapshots=7, values=(50, 100, 200, 240, 300, 360, 800)
-        ),
+        home_values=Series(series_id="home_value:test-market", snapshots=7, values=(50, 100, 200, 240, 300, 360, 800)),
     )
 
 
@@ -292,7 +290,7 @@ def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
 def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
     """Authored money is exact; the land share multiplies it here, rounding to the quantum once."""
     world = world_on(
-        (PreparedSeries(series_id="home_value:test-market", snapshots=2, values=(10_001, 10_001)),),
+        (Series(series_id="home_value:test-market", snapshots=2, values=(10_001, 10_001)),),
         horizon_months=1,
         accounts=opening({CASH: 200_00}),
         taxpayers=(),

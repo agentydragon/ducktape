@@ -26,15 +26,9 @@ from finance.augur.sim.fixed_point import (
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import (
-    PreparedLocation,
-    PreparedSeries,
-    _MortgageFinancing,
-    _PropertyPurchase,
-    _PropertyTax,
-)
+from finance.augur.sim.prepared import PreparedLocation, _MortgageFinancing, _PropertyPurchase, _PropertyTax
 from finance.augur.sim.property import Housing
 from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -73,7 +67,7 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, 
     return ref(agent_id), money(balance)
 
 
-def world_for(*accounts: tuple[AccountRef, int], horizon_months: int, series: tuple[PreparedSeries, ...] = ()) -> World:
+def world_for(*accounts: tuple[AccountRef, int], horizon_months: int, series: tuple[Series, ...] = ()) -> World:
     """An empty world holding the declared cash accounts."""
     world = World(
         MarketPath(series, 0, rollout_count=1), horizon_months=horizon_months, income_sources=(ORDINARY_INCOME,)

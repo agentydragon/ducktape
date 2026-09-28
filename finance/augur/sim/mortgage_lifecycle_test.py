@@ -21,11 +21,10 @@ from finance.augur.sim.books import AccountRef, Book, JournalEntry
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedLocation,
-    PreparedSeries,
     _MortgageFinancing,
     _PropertyPurchase,
     _PropertySale,
@@ -63,7 +62,7 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, 
     return ref(agent_id), money(balance)
 
 
-def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[PreparedSeries, ...]:
+def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[Series, ...]:
     return compile_series(
         ExternalSeriesContext.from_level_blocks(
             [(SF_HOME, np.asarray([[float(level) for level in path] for path in paths], dtype=np.float64))],
@@ -121,7 +120,7 @@ def compose(
     horizon_months: int,
     housing: Housing,
     tax_policies: tuple[_PropertyTax, ...] = (),
-    series: tuple[PreparedSeries, ...] = (),
+    series: tuple[Series, ...] = (),
     rollout_id: int = 0,
     rollout_count: int = 1,
 ) -> World:

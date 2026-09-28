@@ -21,9 +21,8 @@ from finance.augur.sim.external_series import ExternalSeriesContext, compile_ser
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedIndexedAmount, PreparedSeries
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -42,7 +41,7 @@ HORIZON_MONTHS = 60
 class Situation:
     """What every path shares: the three stipulated paths and the horizon; the books are declared per path."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
 
 
@@ -96,7 +95,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                 obligation_type="cash_spend",
                 from_account=AccountRef(agent_id=RETIREE, account_id=AccountId("checking")),
                 to_account=AccountRef(agent_id=COUNTERPARTY, account_id=AccountId("checking")),
-                amount_due=PreparedIndexedAmount(
+                amount_due=IndexedAmount(
                     base_amount=int(currency_amount_to_quanta(Decimal(6_000), quantum=QUANTUM)),
                     series_id=InflationKey().wire_id,
                     base_month_index=0,

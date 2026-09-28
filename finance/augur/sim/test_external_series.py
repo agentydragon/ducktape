@@ -11,19 +11,19 @@ from finance.augur.model.exogenous import LevelFrames
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series, level_series_demand
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedFixedAmount, PreparedIndexedCoupon
+from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
 from finance.augur.sim.testing.security_distributions import FUND, HORIZON, PER_UNIT, PRICE, SYMBOL
 
 
-def demand(*, bond_coupons: tuple[PreparedFixedAmount | PreparedIndexedCoupon, ...]) -> tuple[LevelSeriesKey, ...]:
+def demand(*, bond_coupons: tuple[FixedCoupon | IndexedCoupon, ...]) -> tuple[LevelSeriesKey, ...]:
     return level_series_demand(
         held_assets=(), bond_coupons=bond_coupons, distributing_assets=(), amounts=(), tender_policies=(), purchases=()
     )
 
 
 # One dated 4% semiannual coupon on a $100 bond, with nothing priced beside it.
-INDEXED = PreparedIndexedCoupon(annual_rate_ppb=40_000_000)
-NOMINAL = PreparedFixedAmount(amount=200)
+INDEXED = IndexedCoupon(annual_rate_ppb=40_000_000)
+NOMINAL = FixedCoupon(amount=200)
 
 
 def test_an_indexed_bond_demands_an_inflation_path() -> None:

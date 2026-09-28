@@ -23,9 +23,8 @@ from finance.augur.sim.fixed_point import (
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, TransferIncomeCategory, income_source_sort_key
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.results import Finished, Paid, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
@@ -73,7 +72,7 @@ def payout_levels(per_unit: Decimal) -> np.ndarray:
 PAYOUT = payout_levels(PER_UNIT)
 
 
-def _paths(payout: np.ndarray | None) -> tuple[PreparedSeries, ...]:
+def _paths(payout: np.ndarray | None) -> tuple[Series, ...]:
     """The fund's price and, unless it declares none, its per-unit payout.
 
     The two series have the same shape and units, which is the point of the payout being a

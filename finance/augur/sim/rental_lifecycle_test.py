@@ -41,14 +41,11 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
 )
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
-    PreparedAmount,
-    PreparedIndexedAmount,
     PreparedLocation,
-    PreparedSeries,
     _CapitalImprovement,
     _MortgageFinancing,
     _MortgageInterestDeduction,
@@ -114,17 +111,17 @@ def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, 
     return ref(agent_id), money(balance)
 
 
-def indexed(base_amount: Decimal | int) -> PreparedIndexedAmount:
+def indexed(base_amount: Decimal | int) -> IndexedAmount:
     """A rent-indexed amount resetting annually, which is what the product layer lowers rent to."""
 
-    return PreparedIndexedAmount(
+    return IndexedAmount(
         base_amount=money(base_amount), series_id=RENT.wire_id, base_month_index=0, adjustment_period_months=12
     )
 
 
 def series(
     levels: Mapping[LevelSeriesKey, Sequence[Sequence[float]]], *, horizon_months: int, rollout_count: int
-) -> tuple[PreparedSeries, ...]:
+) -> tuple[Series, ...]:
     """The authored level paths as integer series, one path per rollout and dense to the horizon."""
 
     paths = ExternalSeriesContext.from_level_blocks(
@@ -143,7 +140,7 @@ class Cashflow:
     schedule: Schedule
     payer: AgentId
     payee: AgentId
-    amount: PreparedAmount
+    amount: Amount
     income: TransferIncomeCategory | None = None
     deduction: TransferDeductionCategory | None = None
     property_id: PropertyId | None = None
@@ -156,7 +153,7 @@ def recurring_transfer(
     end_month: int | None,
     payer: AgentId,
     payee: AgentId,
-    amount: PreparedAmount,
+    amount: Amount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
 ) -> Cashflow:
@@ -177,7 +174,7 @@ def scheduled_transfer(
     month: int,
     payer: AgentId,
     payee: AgentId,
-    amount: PreparedAmount,
+    amount: Amount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
 ) -> Cashflow:
@@ -200,7 +197,7 @@ def recurring_property_cashflow(
     end_month: int | None,
     payer: AgentId,
     payee: AgentId,
-    amount: PreparedAmount,
+    amount: Amount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
 ) -> Cashflow:
@@ -223,7 +220,7 @@ def scheduled_property_cashflow(
     month: int,
     payer: AgentId,
     payee: AgentId,
-    amount: PreparedAmount,
+    amount: Amount,
     income: TransferIncomeCategory | None = None,
     deduction: TransferDeductionCategory | None = None,
 ) -> Cashflow:
@@ -247,7 +244,7 @@ class Dues:
     obligation_type: ObligationType
     payer: AgentId
     payee: AgentId
-    amount: PreparedAmount
+    amount: Amount
     end_month: int | None = None
     property_id: PropertyId | None = None
     deductible_fraction: Decimal | int = 1
@@ -353,7 +350,7 @@ class Situation:
 
     horizon_months: int
     rollout_count: int
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     accounts: tuple[tuple[AccountRef, int], ...]
     income_sources: tuple[TransferIncomeCategory, ...] = (ORDINARY_INCOME,)
     tax_profiles: tuple[TaxProfile, ...] = ()

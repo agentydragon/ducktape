@@ -12,14 +12,14 @@ from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.ids import AccountId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.income import InterestIncome, Municipal, Taxable
 from finance.augur.sim.managed import ComponentEffects, IncomeCredit, ManagedPortfolios, Portfolio, basis_account
+from finance.augur.sim.market_path import Series
 from finance.augur.sim.money import MIN_COUNT
 from finance.augur.sim.observations import TlhPortfolioObservation
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, INCOME_SOURCES, accounting, world_on
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
-PRICES = PreparedSeries(series_id="security:test_fund", snapshots=3, values=(100, 110, 120) * 2)
+PRICES = Series(series_id="security:test_fund", snapshots=3, values=(100, 110, 120) * 2)
 
 
 # No modeled harvest: the portfolio's value moves only with the index and its own actions.

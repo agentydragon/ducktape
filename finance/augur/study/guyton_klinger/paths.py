@@ -35,9 +35,8 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
     Treasury,
 )
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
-from finance.augur.sim.prepared import PreparedSeries
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.tax import PreparedTaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -99,7 +98,7 @@ class AnnualWindows:
     start_years: tuple[int, ...]
     years: int
     taxes: FederalCaTaxes | None
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
 
     @property
     def horizon_months(self) -> int:
