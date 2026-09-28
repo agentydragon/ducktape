@@ -54,6 +54,81 @@ spec:
           - haku-ci
 ---
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forgejo-secret-reader
+  namespace: haku-ci
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: haku-ci-haku-ci-runner-token-reader
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-ci-runner-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-ci-haku-ci-runner-token-reader
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: haku-ci-haku-ci-runner-token-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: forgejo-secret-reader
+    namespace: haku-ci
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-haku-ci-haku-ci-runner-token-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - haku-ci
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: forgejo-secret-reader
+      remoteNamespace: forgejo
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-ci-runner-token
+  namespace: haku-ci
+spec:
+  dataFrom:
+    - extract:
+        key: haku-ci-runner-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-haku-ci-haku-ci-runner-token-secret-store
+  target:
+    creationPolicy: Owner
+    name: haku-ci-runner-token
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: haku-runner-config
@@ -238,9 +313,10 @@ spec:
               runAsUser: 1000
             startupProbe:
               failureThreshold: 90
-              periodSeconds: 2
-              tcpSocket:
+              httpGet:
+                path: /_ping
                 port: 2375
+              periodSeconds: 2
             volumeMounts:
               - mountPath: /var/lib/docker
                 name: docker-data

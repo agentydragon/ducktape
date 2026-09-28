@@ -2,7 +2,14 @@
 
 Some tests (e.g. `revoke_grants` under both Agent roots) exist specifically to verify a policy
 composes correctly through `any_of` from more than one access profile, which a per-evaluator unit
-test wouldn't cover."""
+test wouldn't cover.
+
+gmail/google_calendar are no longer in-process haku-console servers (see
+`x/google_mcp_server`), but their real MCP tool schemas are still reachable there and make a
+realistic example of a server with several tools and non-trivial argument schemas — reused here
+purely to exercise the generic exact-tools/schema-validation machinery, not any gmail-specific
+policy (the gmail label-namespace auto-approval policy this file used to also cover was removed
+along with the in-process server)."""
 
 from typing import Any
 from unittest.mock import Mock
@@ -12,7 +19,6 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from gmail_api.labels import GmailLabel, LabelType
 from haku.console.auto_approval.registry import (
     AGENT_AUTO_APPROVAL_ID,
     AutoApprovalPolicyRegistry,
@@ -22,8 +28,8 @@ from haku.console.auto_approval.registry import (
 )
 from haku.console.mcp_config import AccessProfile, ConsoleConfigFile
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
-from haku.console.tools.gmail import build_mcp
-from haku.console.tools.google_calendar import build_mcp as build_calendar_mcp
+from x.google_mcp_server.gmail import build_mcp
+from x.google_mcp_server.google_calendar import build_mcp as build_calendar_mcp
 
 TEST_OPERATOR_ID = UUID("00000000-0000-0000-0000-000000000001")
 AGENT_ACTOR = AgentActor(
@@ -69,8 +75,7 @@ _CONFIG = ConsoleConfigFile.model_validate(
         "mcp": {"servers": _SERVER_CONFIGS},
         "auto_approval_policies": [
             {"id": "safe_tools", "type": "exact_tools", "tools": _EXACT_TOOLS},
-            {"id": "managed_gmail_labels", "type": "gmail_label_namespace", "server": "gmail", "label_prefix": "haku/"},
-            {"id": "haku_v1", "type": "any_of", "policies": ["safe_tools", "managed_gmail_labels"]},
+            {"id": "haku_v1", "type": "any_of", "policies": ["safe_tools"]},
             {"id": "none", "type": "never"},
         ],
         "access_profiles": [
@@ -92,16 +97,14 @@ _CONFIG = ConsoleConfigFile.model_validate(
 _POLICIES = AutoApprovalPolicyRegistry(_CONFIG)
 
 
-async def _decision(tool_name: str, arguments: dict, *, gmail=None, actor: RuntimeActor = AGENT_ACTOR):
-    gmail = gmail or Mock()
+async def _decision(tool_name: str, arguments: dict, *, actor: RuntimeActor = AGENT_ACTOR):
     return await auto_approve_tool_call(
         policies=_POLICIES,
         actor=actor,
         server_id="gmail",
         tool_name=tool_name,
         arguments=arguments,
-        gmail=gmail,
-        mcp=build_mcp(gmail),
+        mcp=build_mcp(Mock()),
     )
 
 
@@ -124,7 +127,6 @@ async def _calendar_decision(tool_name: str, arguments: dict) -> tuple[str | Non
         server_id="google_calendar",
         tool_name=tool_name,
         arguments=arguments,
-        gmail=None,
         mcp=build_calendar_mcp(calendar),
     )
 
@@ -202,57 +204,12 @@ async def test_read_with_unknown_argument_is_auto_denied() -> None:
     assert "unexpected" in denial.reason
 
 
-@pytest.mark.parametrize("field", ["add", "remove"])
-async def test_modifies_only_namespaced_labels(field: str) -> None:
-    assert await _policy_id("threads_modify_labels", {"thread_ids": ["t1"], field: ["haku/triaged"]})
-    assert await _policy_id("threads_modify_labels", {"thread_ids": ["t1"], field: ["INBOX"]}) is None
-
-
-async def test_modify_rejects_unknown_arguments() -> None:
-    denial = await _decision(
-        "threads_modify_labels", {"thread_ids": ["t1"], "add": ["haku/triaged"], "unexpected": True}
-    )
-    assert isinstance(denial, PolicyDenial)
-    assert "unexpected" in denial.reason
-
-
-async def test_patch_requires_old_and_new_names_in_namespace() -> None:
-    gmail = Mock()
-    gmail.labels_get.return_value = GmailLabel(id="Label_1", name="haku/old", type=LabelType.USER)
-    assert await _policy_id("labels_patch", {"label_id": "Label_1", "name": "haku/new"}, gmail=gmail)
-    assert await _policy_id("labels_patch", {"label_id": "Label_1", "name": "other"}, gmail=gmail) is None
-
-    gmail.labels_get.return_value = GmailLabel(id="Label_2", name="other", type=LabelType.USER)
-    assert await _policy_id("labels_patch", {"label_id": "Label_2", "name": "haku/new"}, gmail=gmail) is None
-
-
-async def test_patch_visibility_change_stays_manual() -> None:
-    gmail = Mock()
-    gmail.labels_get.return_value = GmailLabel(id="Label_1", name="haku/x", type=LabelType.USER)
-    assert (
-        await _policy_id("labels_patch", {"label_id": "Label_1", "label_list_visibility": "labelHide"}, gmail=gmail)
-        is None
-    )
-    gmail.labels_get.assert_not_called()
-
-
-async def test_delete_resolves_existing_label_name() -> None:
-    gmail = Mock()
-    gmail.labels_get.return_value = GmailLabel(id="Label_1", name="haku/x", type=LabelType.USER)
-    assert await _policy_id("labels_delete", {"label_id": "Label_1"}, gmail=gmail)
-    gmail.labels_get.return_value = GmailLabel(id="INBOX", name="INBOX", type=LabelType.SYSTEM)
-    assert await _policy_id("labels_delete", {"label_id": "INBOX"}, gmail=gmail) is None
-
-
 async def test_operator_actor_is_not_auto_approved() -> None:
     assert await _decision("labels_list", {}, actor=OPERATOR_ACTOR) == (None, None)
 
 
 def test_policy_graph_reports_clear_tool_modes() -> None:
     assert _POLICIES.tool_mode(AGENT_ACTOR, "gmail", "labels_list") is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
-    assert (
-        _POLICIES.tool_mode(AGENT_ACTOR, "gmail", "labels_delete") is ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
-    )
     assert _POLICIES.tool_mode(AGENT_ACTOR, "gmail", "drafts_create") is ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
 
 
@@ -420,13 +377,7 @@ async def _schemaless_decision(
     # No registered server builder, so no schema to validate against: `mcp` is None.
     return _approval(
         await auto_approve_tool_call(
-            policies=_POLICIES,
-            actor=actor,
-            server_id=server_id,
-            tool_name=tool_name,
-            arguments=arguments,
-            gmail=None,
-            mcp=None,
+            policies=_POLICIES, actor=actor, server_id=server_id, tool_name=tool_name, arguments=arguments, mcp=None
         )
     )
 
@@ -443,18 +394,6 @@ async def test_grocy_writes_stay_manual() -> None:
         None,
         "manual: Agent policy 'haku_v1' did not auto-approve grocy-sf/products_create",
     )
-
-
-async def test_lookup_errors_are_logged_and_fail_closed(caplog: pytest.LogCaptureFixture) -> None:
-    gmail = Mock()
-    gmail.labels_get.side_effect = RuntimeError("gmail unavailable")
-    with caplog.at_level("ERROR"):
-        policy_id, evaluation = await _decision("labels_delete", {"label_id": "Label_1"}, gmail=gmail)
-        assert policy_id is None
-        assert evaluation is not None
-        assert "Gmail auto-approval evaluation failed" in evaluation
-    assert "auto-approval evaluation failed" in caplog.text
-    assert "gmail unavailable" in caplog.text
 
 
 # A registry whose only policy is the argument-conditional own-grant list read (#4918).
@@ -499,7 +438,7 @@ def test_grant_self_list_is_conditional_only_for_list_grants() -> None:
 
 async def test_list_grants_auto_approves_only_the_explicit_self_scope() -> None:
     approved = await _GRANT_READS_REGISTRY.evaluate(
-        actor=AGENT_ACTOR, server_id="grants", tool_name="list_grants", arguments={"principal": "self"}, gmail=None
+        actor=AGENT_ACTOR, server_id="grants", tool_name="list_grants", arguments={"principal": "self"}
     )
     assert not isinstance(approved, PolicyDenial)
     assert approved[0] == AGENT_AUTO_APPROVAL_ID
@@ -508,14 +447,13 @@ async def test_list_grants_auto_approves_only_the_explicit_self_scope() -> None:
         server_id="grants",
         tool_name="list_grants",
         arguments={"principal": "self", "include_inactive": True},
-        gmail=None,
     )
     assert not isinstance(approved_with_history, PolicyDenial)
     assert approved_with_history[0] == AGENT_AUTO_APPROVAL_ID
     # Omission and a named principal stay manual.
     for arguments in ({}, {"principal": None}, {"principal": {"kind": "agent", "agent_id": str(AGENT_ACTOR.agent_id)}}):
         manual = await _GRANT_READS_REGISTRY.evaluate(
-            actor=AGENT_ACTOR, server_id="grants", tool_name="list_grants", arguments=arguments, gmail=None
+            actor=AGENT_ACTOR, server_id="grants", tool_name="list_grants", arguments=arguments
         )
         assert not isinstance(manual, PolicyDenial)
         assert manual[0] is None

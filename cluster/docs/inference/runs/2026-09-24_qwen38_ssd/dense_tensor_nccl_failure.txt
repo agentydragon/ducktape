@@ -1,0 +1,122 @@
+0.00.000.222 I srv  llama_server: initializing ...
+warn: LLAMA_ARG_HOST environment variable is set, but will be overwritten by command line argument --host
+0.00.168.821 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.169.187 W srv  llama_server: security: no API key is set and CORS allows all origins (see https://github.com/ggml-org/llama.cpp/pull/25655)
+0.00.171.798 I srv    load_model: loading model '/models/Qwen3.8-27B-GGUF/Qwen3.8-27B-Q8_0.gguf'
+0.00.171.913 W common_fit_params: failed to fit params to free device memory: llama_params_fit is not implemented for SPLIT_MODE_TENSOR, abort
+0.00.692.680 W model has unused tensor blk.64.attn_norm.weight (size = 20480 bytes) -- ignoring
+0.00.692.690 W model has unused tensor blk.64.post_attention_norm.weight (size = 20480 bytes) -- ignoring
+0.00.692.695 W model has unused tensor blk.64.attn_q.weight (size = 66846720 bytes) -- ignoring
+0.00.692.696 W model has unused tensor blk.64.attn_k.weight (size = 5570560 bytes) -- ignoring
+0.00.692.698 W model has unused tensor blk.64.attn_v.weight (size = 5570560 bytes) -- ignoring
+0.00.692.703 W model has unused tensor blk.64.attn_output.weight (size = 33423360 bytes) -- ignoring
+0.00.692.704 W model has unused tensor blk.64.attn_q_norm.weight (size = 1024 bytes) -- ignoring
+0.00.692.706 W model has unused tensor blk.64.attn_k_norm.weight (size = 1024 bytes) -- ignoring
+0.00.692.707 W model has unused tensor blk.64.ffn_gate.weight (size = 94699520 bytes) -- ignoring
+0.00.692.708 W model has unused tensor blk.64.ffn_down.weight (size = 94699520 bytes) -- ignoring
+0.00.692.710 W model has unused tensor blk.64.ffn_up.weight (size = 94699520 bytes) -- ignoring
+0.00.692.713 W model has unused tensor blk.64.nextn.eh_proj.weight (size = 55705600 bytes) -- ignoring
+0.00.692.715 W model has unused tensor blk.64.nextn.enorm.weight (size = 20480 bytes) -- ignoring
+0.00.692.717 W model has unused tensor blk.64.nextn.hnorm.weight (size = 20480 bytes) -- ignoring
+0.00.692.722 W model has unused tensor blk.64.nextn.shared_head_norm.weight (size = 20480 bytes) -- ignoring
+ada5d414d270:1:1 [1] NCCL INFO cudaDriverVersion 13020
+ada5d414d270:1:1 [1] NCCL INFO Bootstrap: Using eth0:172.17.0.2<0>
+ada5d414d270:1:1 [0] NCCL INFO NCCL version 2.25.1+cuda12.8
+ada5d414d270:1:76 [0] NCCL INFO ncclMaxSharedMem 82240 exceeds device/fn maxSharedMem 79856
+ada5d414d270:1:76 [0] NCCL INFO NET/Plugin: Could not find: libnccl-net.so. Using internal network plugin.
+ada5d414d270:1:76 [0] NCCL INFO Failed to open libibverbs.so[.1]
+ada5d414d270:1:76 [0] NCCL INFO NET/Socket : Using [0]eth0:172.17.0.2<0>
+ada5d414d270:1:76 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so.
+ada5d414d270:1:76 [0] NCCL INFO Using network Socket
+ada5d414d270:1:77 [1] NCCL INFO ncclMaxSharedMem 82240 exceeds device/fn maxSharedMem 79856
+ada5d414d270:1:77 [1] NCCL INFO Using network Socket
+ada5d414d270:1:77 [1] NCCL INFO ncclCommInitAll comm 0x64c3bd2bd250 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 2000 commId 0x3e2ba2bc4acab5c1 - Init START
+ada5d414d270:1:76 [0] NCCL INFO ncclCommInitAll comm 0x64c3bd242cf0 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 1000 commId 0x3e2ba2bc4acab5c1 - Init START
+ada5d414d270:1:77 [1] NCCL INFO RAS client listening socket at ::1<28028>
+ada5d414d270:1:77 [1] NCCL INFO Bootstrap timings total 0.000726 (create 0.000064, send 0.000102, recv 0.000185, ring 0.000022, delay 0.000000)
+ada5d414d270:1:76 [0] NCCL INFO Bootstrap timings total 0.000718 (create 0.000036, send 0.000112, recv 0.000128, ring 0.000015, delay 0.000001)
+ada5d414d270:1:77 [1] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:77 [1] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:77 [1] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:77 [1] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:77 [1] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:77 [1] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:77 [1] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:77 [1] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:76 [0] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:76 [0] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:76 [0] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:76 [0] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:76 [0] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:76 [0] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:76 [0] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:76 [0] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:76 [0] NCCL INFO comm 0x64c3bd242cf0 rank 0 nRanks 2 nNodes 1 localRanks 2 localRank 0 MNNVL 0
+ada5d414d270:1:77 [1] NCCL INFO comm 0x64c3bd2bd250 rank 1 nRanks 2 nNodes 1 localRanks 2 localRank 1 MNNVL 0
+ada5d414d270:1:76 [0] NCCL INFO Channel 00/02 : 0 1
+ada5d414d270:1:76 [0] NCCL INFO Channel 01/02 : 0 1
+0.04.759.315 I cmn          init: llama threadpool init, n_threads = 8
+ada5d414d270:1:77 [1] NCCL INFO Trees [0] -1/-1/-1->1->0 [1] -1/-1/-1->1->0
+0.04.818.367 E CUDA error: unhandled cuda error (run with NCCL_DEBUG=INFO for details)
+0.04.818.373 E   current device: 1, in function ggml_backend_cuda_comm_allreduce_nccl at /app/ggml/src/ggml-cuda/ggml-cuda.cu:1032
+0.04.818.374 E   ncclGroupEnd()
+/app/ggml/src/ggml-cuda/ggml-cuda.cu:108: CUDA error
+ada5d414d270:1:77 [1] NCCL INFO P2P Chunksize set to 131072
+ada5d414d270:1:77 [1] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:76 [0] NCCL INFO Trees [0] 1/-1/-1->0->-1 [1] 1/-1/-1->0->-1
+ada5d414d270:1:76 [0] NCCL INFO P2P Chunksize set to 131072
+ada5d414d270:1:76 [0] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:76 [0] NCCL INFO Check P2P Type intraNodeP2pSupport 0 directMode 1
+ada5d414d270:1:81 [1] NCCL INFO [Proxy Service UDS] Device 1 CPU core 6
+ada5d414d270:1:80 [0] NCCL INFO [Proxy Service] Device 0 CPU core 3
+ada5d414d270:1:82 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 13
+ada5d414d270:1:79 [1] NCCL INFO [Proxy Service] Device 1 CPU core 3
+ada5d414d270:1:76 [0] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+ada5d414d270:1:76 [0] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+ada5d414d270:1:77 [1] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+ada5d414d270:1:77 [1] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+ada5d414d270:1:76 [0] NCCL INFO CC Off, workFifoBytes 1048576
+ada5d414d270:1:77 [1] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so libnccl-net.so. Using internal tuner plugin.
+ada5d414d270:1:77 [1] NCCL INFO ncclCommInitAll comm 0x64c3bd2bd250 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 2000 commId 0x3e2ba2bc4acab5c1 - Init COMPLETE
+ada5d414d270:1:77 [1] NCCL INFO Init timings - ncclCommInitAll: rank 1 nranks 2 total 0.18 (kernels 0.14, alloc 0.03, bootstrap 0.00, allgathers 0.00, topo 0.00, graphs 0.00, connections 0.00, rest 0.00)
+ada5d414d270:1:76 [0] NCCL INFO ncclCommInitAll comm 0x64c3bd242cf0 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 1000 commId 0x3e2ba2bc4acab5c1 - Init COMPLETE
+ada5d414d270:1:76 [0] NCCL INFO Init timings - ncclCommInitAll: rank 0 nranks 2 total 0.18 (kernels 0.14, alloc 0.03, bootstrap 0.00, allgathers 0.00, topo 0.00, graphs 0.00, connections 0.00, rest 0.00)
+ada5d414d270:1:84 [0] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:83 [1] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:84 [0] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:83 [1] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:84 [0] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:83 [1] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:84 [0] NCCL INFO Channel 00 : 0[0] -> 1[1] via SHM/direct/direct
+ada5d414d270:1:84 [0] NCCL INFO P2P is disabled between connected GPUs 0 and 1. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:83 [1] NCCL INFO Channel 00 : 1[1] -> 0[0] via SHM/direct/direct
+ada5d414d270:1:83 [1] NCCL INFO P2P is disabled between connected GPUs 1 and 0. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.
+ada5d414d270:1:84 [0] NCCL INFO Channel 01 : 0[0] -> 1[1] via SHM/direct/direct
+ada5d414d270:1:83 [1] NCCL INFO Channel 01 : 1[1] -> 0[0] via SHM/direct/direct
+ada5d414d270:1:83 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+ada5d414d270:1:84 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+
+ada5d414d270:1:1 [1] enqueue.cc:1500 NCCL WARN Cuda failure 1 'invalid argument'
+ada5d414d270:1:1 [1] NCCL INFO group.cc:242 -> 1
+ada5d414d270:1:1 [1] NCCL INFO group.cc:470 -> 1
+ada5d414d270:1:1 [1] NCCL INFO group.cc:573 -> 1
+ada5d414d270:1:1 [1] NCCL INFO group.cc:106 -> 1
+libggml-base.so.0(+0x1c3b6)[0x71af447603b6]
+libggml-base.so.0(ggml_print_backtrace+0x21a)[0x71af4476083a]
+libggml-base.so.0(ggml_abort+0x15b)[0x71af44760a1b]
+/app/libggml-cuda.so(_Z15ggml_cuda_errorPKcS0_S0_iS0_+0xb5)[0x71af31f5e1e5]
+/app/libggml-cuda.so(+0x282be2)[0x71af31f67be2]
+/app/libggml-cuda.so(+0x282bfd)[0x71af31f67bfd]
+libggml-base.so.0(+0x5341d)[0x71af4479741d]
+libggml-base.so.0(ggml_backend_sched_graph_compute_async+0x8a7)[0x71af447804a7]
+libllama.so.0(_ZN13llama_context13graph_computeEP11ggml_cgraphb+0xa1)[0x71af44a1cc71]
+libllama.so.0(_ZN13llama_context14process_ubatchERK12llama_ubatch14llm_graph_typeP22llama_memory_context_iR11ggml_status+0x134)[0x71af44a208f4]
+libllama.so.0(_ZN13llama_context6decodeERK11llama_batch+0x548)[0x71af44a29298]
+libllama.so.0(llama_decode+0xf)[0x71af44a2a92f]
+libllama-common.so.0(_Z23common_init_from_paramsR13common_paramsb+0x436)[0x71af45010a46]
+libllama-server-impl.so(_ZN19server_context_impl10load_modelER13common_params+0x5a8)[0x71af45904fa8]
+libllama-server-impl.so(_Z12llama_serverR13common_paramsiPPc+0x3d33)[0x71af45852013]
+libllama-server-impl.so(_Z12llama_serveriPPc+0x1157)[0x71af458544f7]
+/lib/x86_64-linux-gnu/libc.so.6(+0x2a1ca)[0x71af452dd1ca]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x8b)[0x71af452dd28b]
+/app/llama-server(+0x1315)[0x64c3b597d315]

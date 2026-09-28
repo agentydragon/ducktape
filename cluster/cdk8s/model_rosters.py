@@ -73,6 +73,7 @@ class Provider(StrEnum):
     CHATGPT = "chatgpt"
     ANTHROPIC_API = "anthropic-api"
     ANTHROPIC_MAX20 = "anthropic-max20"
+    ANTIGRAVITY = "antigravity"
     TANA = "tana"
     GOOGLE = "google"
     MISTRAL = "mistral"
@@ -135,6 +136,9 @@ _UPSTREAM_DEFINER: dict[str, str] = {
     "groq": "oai",  # OpenAI-compatible chat at api.groq.com/openai/v1
     "gemini": "goog",
     "ollama": "olm",
+    # LiteLLM's native Ollama chat adapter has its own provider prefix. It speaks
+    # the same Ollama wire shape, so public `olm-chat` route names remain unchanged.
+    "ollama_chat": "olm",
     # The in-process Tana adapter speaks Anthropic Messages on the wire while using its
     # own LiteLLM provider prefix for dispatch.
     "tana": "ant",
@@ -225,8 +229,8 @@ class CodexModel:
 # The Codex models with known serving-path limits: Astra from Codex's bundled metadata,
 # the 5.6 models measured (CODEX_CONTEXT_WINDOW above), and GPT-6 Sol/Luna using the
 # same conservative bound until their subscription path is probed. The LiteLLM manifest
-# advertises these limits in model_info, and OpenClaw's model picker exposes exactly this
-# subset, declaring the limits itself because its bundled LiteLLM provider does not query
+# advertises these limits in model_info; consumer pickers can expose narrower subsets.
+# OpenClaw declares the limits itself because its bundled LiteLLM provider does not query
 # the proxy's authenticated /v1/models endpoint. gpt-5.4/5.5/5.3-codex-spark were never
 # probed and stay out.
 OPENCLAW_CODEX_MODELS: tuple[CodexModel, ...] = (
@@ -253,6 +257,12 @@ OPENCLAW_CODEX_MODELS: tuple[CodexModel, ...] = (
     ),
 )
 
+# GPT-6 subset for cluster consumers whose picker and LiteLLM key are restricted to the
+# current generation. Keep the full roster above for serving-limit metadata on old routes.
+GPT6_CODEX_MODELS: tuple[CodexModel, ...] = tuple(
+    model for model in OPENCLAW_CODEX_MODELS if model.id.startswith("gpt-6-")
+)
+
 # Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana
 # encodes reasoning effort in the
 # model name (`/medium`, `/high`), not a `reasoning_effort` param, so there is no clean
@@ -272,6 +282,148 @@ TANA_MODELS: list[tuple[str, str]] = [
 # subscription and the direct API serve the same current models, and sharing one list
 # keeps them in sync ("newest group only", as with the Gemini roster).
 ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
+
+
+# Google's Antigravity OAuth session in CLIProxyAPI (agentydragon@gmail.com, added
+# 2026-09-25) -- a personal-account "Google AI Plus" subscription, structurally
+# unrelated to the AI-Studio GEMINI_API_KEY below: CLIProxyAPI's own AI Providers page
+# carries zero configured API-key providers, so this OAuth session is its only
+# Google-model credential. Verified against the vendored source
+# (third_party/cli_proxy_api, github.com/router-for-me/CLIProxyAPI):
+# `internal/runtime/executor/antigravity_executor.go` calls Google's internal Cloud Code
+# API (cloudcode-pa.googleapis.com), not the public Gemini Developer API, and
+# `internal/translator/antigravity/claude/` is a dedicated Anthropic-Messages
+# translator for it -- the same wire mechanism already used for the chatgpt/
+# anthropic-max20 routes below. The account bundles three unrelated model families
+# under one weekly-refreshing quota (two buckets: "Gemini models" and "Claude and GPT
+# models"; confirmed live via the management UI's quota refresh, 2026-09-25):
+# non-current-generation Claude, Google's own Gemini lineup under Antigravity-specific
+# slugs that don't match the public API names (reasoning-tier suffixes baked into the
+# slug: -high/-low/-lite/-agent), and the open-weight (Apache-2.0) gpt-oss-120b, which
+# Google can self-host like anyone else. Full catalog exposed as discovered; unlike
+# ANTHROPIC_MODELS/GEMINI_MODELS above, there is no "current generation only" curation
+# here yet.
+#
+# `reasoning` mirrors the slug's own baked-in effort tier (-high/-agent/-medium as
+# True, -low/-lite/plain/-image as False) -- used by public-coder-agent's OpenClaw
+# catalog, the one consumer needing per-model metadata rather than a bare id.
+#
+# `context_window`/`max_tokens`: Google's own declared capability for each model as
+# served through Antigravity, not a public-API figure borrowed from Anthropic/OpenAI/a
+# third-party host -- and deliberately not the result of a live binary-search probe
+# (openai_utils/probe_context_window.py) run against claude-opus-4-6-thinking on
+# 2026-09-26, which found requests up to ~575k tokens "accepted" with a
+# correctly-echoed input_tokens count. That accept is real but its meaning is NOT
+# settled: it shows the server didn't reject the oversized request, not that the model
+# actually attended to all of it. Silent server-side truncation beyond the declared
+# capacity (still reporting the full sent count for billing) is a plausible
+# explanation and reads identically to a genuine accept, but it is unconfirmed --
+# no experiment here distinguishes "really uses 575k" from "silently drops everything
+# past ~200k." The declared figures below come from `third_party/cli_proxy_api`'s vendored CLIProxyAPI
+# source (github.com/router-for-me/CLIProxyAPI, pinned commit 7fac6b15bcfe), which
+# ships `cmd/fetch_antigravity_models` -- a tool that calls Google's own
+# `/v1internal:fetchAvailableModels` endpoint (the same private Cloud Code API the live
+# executor uses) with a real Antigravity OAuth token and records its `maxTokens`/
+# `maxOutputTokens` fields verbatim into `internal/registry/models/models.json`'s
+# `antigravity` section (checked 2026-09-26). `None` marks a model missing from that
+# file entirely (gemini-3.5-flash-lite) or present with both fields null
+# (gemini-3.1-flash-image, an image-output model) -- left for a follow-up.
+@dataclass(frozen=True)
+class AntigravityModel:
+    id: str
+    display_name: str
+    reasoning: bool
+    context_window: int | None
+    max_tokens: int | None
+
+
+ANTIGRAVITY_MODELS: tuple[AntigravityModel, ...] = (
+    AntigravityModel(
+        id="claude-opus-4-6-thinking",
+        display_name="Claude Opus 4.6 (Thinking)",
+        reasoning=True,
+        context_window=200_000,
+        max_tokens=64_000,
+    ),
+    AntigravityModel(
+        id="claude-sonnet-4-6",
+        display_name="Claude Sonnet 4.6 (Thinking)",
+        reasoning=True,
+        context_window=200_000,
+        max_tokens=64_000,
+    ),
+    AntigravityModel(
+        id="gemini-3.6-flash-high",
+        display_name="Gemini 3.6 Flash",
+        reasoning=True,
+        context_window=1_048_576,
+        max_tokens=65_536,
+    ),
+    AntigravityModel(
+        id="gemini-3.7-flash-high",
+        display_name="Gemini 3.7 Flash",
+        reasoning=True,
+        context_window=1_048_576,
+        max_tokens=65_536,
+    ),
+    AntigravityModel(
+        id="gemini-3.8-flash-high",
+        display_name="Gemini 3.8 Flash",
+        reasoning=True,
+        context_window=1_048_576,
+        max_tokens=65_536,
+    ),
+    AntigravityModel(
+        id="gemini-3-flash", display_name="Gemini 3 Flash", reasoning=False, context_window=1_048_576, max_tokens=65_536
+    ),
+    # Not in the fetched registry at all (both fields null) -- an image-output model,
+    # not a chat-completion one; look into it later.
+    AntigravityModel(
+        id="gemini-3.1-flash-image",
+        display_name="Gemini 3.1 Flash Image",
+        reasoning=False,
+        context_window=None,
+        max_tokens=None,
+    ),
+    AntigravityModel(
+        id="gemini-pro-agent",
+        display_name="Gemini 3.1 Pro (High)",
+        reasoning=True,
+        context_window=1_048_576,
+        max_tokens=65_535,
+    ),
+    AntigravityModel(
+        id="gemini-3.1-pro-low",
+        display_name="Gemini 3.1 Pro (Low)",
+        reasoning=False,
+        context_window=1_048_576,
+        max_tokens=65_535,
+    ),
+    AntigravityModel(
+        id="gpt-oss-120b-medium",
+        display_name="GPT-OSS 120B (Medium)",
+        reasoning=True,
+        context_window=114_000,
+        max_tokens=32_768,
+    ),
+    AntigravityModel(
+        id="gemini-3.1-flash-lite",
+        display_name="Gemini 3.1 Flash Lite",
+        reasoning=False,
+        context_window=1_048_576,
+        max_tokens=65_535,
+    ),
+    # Same slug as a GEMINI_MODELS entry but a different backend entirely; no collision
+    # since the two live under different exposed-name providers (antigravity/* vs
+    # google/*). Missing from the fetched registry entirely; look into it later.
+    AntigravityModel(
+        id="gemini-3.5-flash-lite",
+        display_name="Gemini 3.5 Flash Lite",
+        reasoning=False,
+        context_window=None,
+        max_tokens=None,
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -374,14 +526,25 @@ GEMINI_MAX_OUTPUT_TOKENS = 65_536
 # entries stay distinct.
 #
 # qwen3.8-flash-next-q4: 125B-total/6B-active MoE, Unsloth Dynamic UD-Q4_K_XL quant
-# (metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL, 112GB), native 256K context. Only the
-# 128K variant is listed until ollama's own GPU-offload heuristics are verified against
-# it on wyrm2's 2 GPUs (setup-gpt-oss-v2.sh TODO) -- add larger variants once confirmed.
+# (metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL, 112GB), native 256K context. Disabled
+# (2026-09-26): does not fit in wyrm2's combined GPU VRAM (87GB resident vs. ~61GB usable
+# across 2x RTX 5090), forcing most MoE-expert weight paging onto the HDD-backed
+# `llm-models` PVC; measured 0.056-1.44 tokens/sec generation depending on warm-up state
+# (~20-1000x too slow to be usable), on both Ollama 0.34.0 and 0.34.4. Tool-call parsing
+# itself works correctly, and the same GGUF served directly via a current llama-server
+# build off SSD-backed storage on this same hardware reached ~30 tokens/sec -- so the
+# model and hardware are capable, this specific Ollama-on-HDD path is not. Re-enable only
+# once served from SSD-backed storage or with the full CPU-resident working set reliably
+# page-cache-hot; see agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md for the
+# full investigation.
 OLLAMA_CHAT_MODELS: list[tuple[str, str, tuple[int, ...]]] = [
+    ("qwen3.8-flash-next-iq4xs", "qwen3.8-flash-next-iq4xs:latest", (128 * 1024,)),
+    # Ollama /v1 ignores native options.num_ctx; bake this size into an alias.
+    ("qwen3.8-flash-next-iq4xs", "qwen3.8-flash-next-iq4xs-256k:latest", (256 * 1024,)),
     ("gpt-oss-20b", "gpt-oss:20b", (128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024)),
     ("gpt-oss-120b", "gpt-oss:120b", (128 * 1024,)),
     ("gemma4-31b-it-q8_0", "gemma4:31b-it-q8_0", (128 * 1024,)),
-    ("qwen3.8-flash-next-q4", "metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL", (128 * 1024,)),
+    # ("qwen3.8-flash-next-q4", "metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL", (128 * 1024,)),
 ]
 
 

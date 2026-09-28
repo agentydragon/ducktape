@@ -19,6 +19,62 @@ until curl -sSf -m 5 "$OLLAMA_HOST/" >/dev/null 2>&1; do
 done
 echo "=== ollama is up ==="
 
+echo "=== registering SSD Qwen3.8 IQ4_XS ==="
+# The init container links the verified SSD shards into the existing blob namespace.
+# Creating the manifest does not load the model or copy weights onto HDD.
+# The derived first shard changes only the GGUF chat-template metadata. Keep the
+# original split filenames as /api/create keys, so Ollama groups all three shards.
+derived_digest=$(awk 'NR == 1 { print $1 } END { if (NR != 1) exit 1 }' /scripts/qwen38-ssd-derived-shards.tsv)
+create_request=$(awk -v derived_digest="$derived_digest" '
+  BEGIN {
+    printf "{\"model\":\"qwen3.8-flash-next-iq4xs\",\"files\":{"
+  }
+  {
+    digest = $1
+    if ($1 == "5ce89370720f8bf90890f439361282104c1aa1482d4013bb9a50923e758e71a4") {
+      digest = derived_digest
+      replaced++
+    }
+    printf "%s\"%s\":\"sha256:%s\"", (NR == 1 ? "" : ","), $3, digest
+  }
+  END {
+    if (replaced != 1) exit 1
+    print "},\"parameters\":{\"num_ctx\":131072,\"num_thread\":6,\"temperature\":0.6,\"min_p\":0.05},\"stream\":false}"
+  }
+' /scripts/qwen38-ssd-shards.tsv)
+if ! create_response=$(curl -sS --fail-with-body --max-time 120 \
+  -H 'Content-Type: application/json' \
+  --data-binary "$create_request" "$OLLAMA_HOST/api/create"); then
+  printf '%s\n' "$create_response" >&2
+  exit 1
+fi
+printf '%s\n' "$create_response"
+case "$create_response" in
+  *'"status":"success"'*) ;;
+  *)
+    echo "SSD model registration failed" >&2
+    exit 1
+    ;;
+esac
+
+# A separate alias makes 256K effective through Ollama's OpenAI-compatible API,
+# which does not consume native options.num_ctx. This reuses the same SSD blobs.
+if ! create_response=$(curl -sS --fail-with-body --max-time 120 \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"model":"qwen3.8-flash-next-iq4xs-256k","from":"qwen3.8-flash-next-iq4xs","parameters":{"num_ctx":262144},"stream":false}' \
+  "$OLLAMA_HOST/api/create"); then
+  printf '%s\n' "$create_response" >&2
+  exit 1
+fi
+printf '%s\n' "$create_response"
+case "$create_response" in
+  *'"status":"success"'*) ;;
+  *)
+    echo "256K model registration failed" >&2
+    exit 1
+    ;;
+esac
+
 pull() {
   model=$1
   echo "=== pulling $model ==="
@@ -52,8 +108,8 @@ pull gpt-oss:20b        # 13.8 GB
 pull gpt-oss:120b       # 65.4 GB
 pull gemma4:31b-it-q8_0 # 33.8 GB
 pull qwen3-embedding:4b # 2.5 GB
-# TODO: verify once up — tested standalone via a hand-tuned llama.cpp docker container
-# (same Unsloth UD-Q4_K_XL GGUF, --fit-target/--cache-type-*/--split-mode flags) but not
-# yet confirmed to load/serve correctly through ollama's automatic GPU-offload heuristics
-# for this MoE architecture (125B total / 6B active params).
-pull metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL # 112 GB
+# Disabled (2026-09-26): does not fit in wyrm2's combined GPU VRAM (87GB resident vs.
+# ~61GB usable across 2x RTX 5090s); measured 0.056-1.44 tokens/sec, ~20-1000x too slow
+# to be usable, on both Ollama 0.34.0 and 0.34.4. See
+# agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md.
+# pull metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL # 112 GB

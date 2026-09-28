@@ -8,11 +8,7 @@ image's `unset` tag.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplate,
-    SandboxTemplateSpec,
     SandboxTemplateSpecNetworkPolicyManagement,
     SandboxTemplateSpecPodTemplate,
     SandboxTemplateSpecPodTemplateMetadata,
@@ -37,37 +33,14 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecVolumeClaimTemplatesSpecResources,
     SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests,
 )
-from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
-    SandboxWarmPool,
-    SandboxWarmPoolSpec,
-    SandboxWarmPoolSpecSandboxTemplateRef,
-    SandboxWarmPoolSpecUpdateStrategy,
-    SandboxWarmPoolSpecUpdateStrategyType,
-)
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from kyverno_cleanuppolicy_crds.io.kyverno import (
-    CleanupPolicy,
-    CleanupPolicySpec,
-    CleanupPolicySpecConditions,
-    CleanupPolicySpecConditionsAll,
-    CleanupPolicySpecConditionsAllOperator,
-    CleanupPolicySpecMatch,
-    CleanupPolicySpecMatchAny,
-    CleanupPolicySpecMatchAnyResources,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import forgejo_images
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s import agent_sandbox, forgejo_images
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 
 NAME = "agent-workspaces"
 NAMESPACE = "agent-workspaces"
@@ -86,100 +59,96 @@ def _codex_template(chart: Chart) -> SandboxTemplate:
     return SandboxTemplate(
         chart,
         "codex",
-        metadata=metadata("codex", NAMESPACE),
-        spec=SandboxTemplateSpec(
-            network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
-            pod_template=SandboxTemplateSpecPodTemplate(
-                metadata=SandboxTemplateSpecPodTemplateMetadata(labels={"app.kubernetes.io/name": "agent-workspace"}),
-                spec=SandboxTemplateSpecPodTemplateSpec(
-                    dns_policy="ClusterFirst",
-                    image_pull_secrets=[
-                        SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=forgejo_images.SECRET_NAME)
-                    ],
-                    # No explicit region nodeSelector: the workspace volumeClaimTemplate's
-                    # seaweedfs-ovh StorageClass already pins scheduling to
-                    # topology.kubernetes.io/zone=hil-ovh via WaitForFirstConsumer +
-                    # allowedTopologies (seaweedfs_csi/driver.py).
-                    automount_service_account_token=False,
-                    security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
-                        run_as_non_root=True,
-                        run_as_user=1000,
-                        run_as_group=1000,
-                        fs_group=1000,
-                        seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(
-                            type="RuntimeDefault"
-                        ),
+        metadata=ApiObjectMetadata(name="codex", namespace=NAMESPACE),
+        network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
+        pod_template=SandboxTemplateSpecPodTemplate(
+            metadata=SandboxTemplateSpecPodTemplateMetadata(labels={"app.kubernetes.io/name": "agent-workspace"}),
+            spec=SandboxTemplateSpecPodTemplateSpec(
+                dns_policy="ClusterFirst",
+                image_pull_secrets=[
+                    SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=forgejo_images.SECRET_NAME)
+                ],
+                # No explicit region nodeSelector: the workspace volumeClaimTemplate's
+                # seaweedfs-ovh StorageClass already pins scheduling to
+                # topology.kubernetes.io/zone=hil-ovh via WaitForFirstConsumer +
+                # allowedTopologies (seaweedfs_csi/driver.py).
+                automount_service_account_token=False,
+                security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
+                    run_as_non_root=True,
+                    run_as_user=1000,
+                    run_as_group=1000,
+                    fs_group=1000,
+                    seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(
+                        type="RuntimeDefault"
                     ),
-                    containers=[
-                        SandboxTemplateSpecPodTemplateSpecContainers(
-                            name="workspace",
-                            # image-pins/ sets the tag.
-                            image="git.allegedly.works/ducktape-ci/agent-workspace:unset",
-                            command=["sleep", "infinity"],
-                            working_dir="/workspace",
-                            security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
-                                allow_privilege_escalation=False,
-                                capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(
-                                    drop=["ALL"]
-                                ),
-                            ),
-                            env=[
-                                # LiteLLM virtual key (alias agent-workspaces-codex,
-                                # `chatgpt/oai-responses/*` models, no budget cap) minted by
-                                # tf/gitops/litellm-keys and reflected into this namespace; deleting
-                                # that TF resource is the lane's kill switch.
-                                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                                    name="LITELLM_API_KEY",
-                                    value_from=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFrom(
-                                        secret_key_ref=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFromSecretKeyRef(
-                                            name="litellm-key-agent-workspaces-codex", key="api-key"
-                                        )
-                                    ),
-                                )
-                            ],
-                            resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
-                                requests={
-                                    "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
-                                        "500m"
-                                    ),
-                                    "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
-                                        "1Gi"
-                                    ),
-                                },
-                                limits={
-                                    "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2"),
-                                    "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string(
-                                        "4Gi"
-                                    ),
-                                },
-                            ),
-                            volume_mounts=[
-                                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-                                    name="workspace", mount_path="/workspace"
-                                )
-                            ],
-                        )
-                    ],
                 ),
-            ),
-            volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,
-            volume_claim_templates=[
-                SandboxTemplateSpecVolumeClaimTemplates(
-                    metadata=SandboxTemplateSpecVolumeClaimTemplatesMetadata(name="workspace"),
-                    spec=SandboxTemplateSpecVolumeClaimTemplatesSpec(
-                        storage_class_name="seaweedfs-ovh",
-                        access_modes=["ReadWriteOnce"],
-                        resources=SandboxTemplateSpecVolumeClaimTemplatesSpecResources(
-                            requests={
-                                "storage": SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests.from_string(
-                                    "10Gi"
-                                )
-                            }
+                containers=[
+                    SandboxTemplateSpecPodTemplateSpecContainers(
+                        name="workspace",
+                        # image-pins/ sets the tag.
+                        image="git.allegedly.works/ducktape-ci/agent-workspace:unset",
+                        command=["sleep", "infinity"],
+                        working_dir="/workspace",
+                        security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
+                            allow_privilege_escalation=False,
+                            capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(
+                                drop=["ALL"]
+                            ),
                         ),
-                    ),
-                )
-            ],
+                        env=[
+                            # LiteLLM virtual key (alias agent-workspaces-codex,
+                            # `chatgpt/oai-responses/*` models, no budget cap) minted by
+                            # tf/gitops/litellm-keys and reflected into this namespace; deleting
+                            # that TF resource is the lane's kill switch.
+                            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                                name="LITELLM_API_KEY",
+                                value_from=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFrom(
+                                    secret_key_ref=SandboxTemplateSpecPodTemplateSpecContainersEnvValueFromSecretKeyRef(
+                                        name="litellm-key-agent-workspaces-codex", key="api-key"
+                                    )
+                                ),
+                            )
+                        ],
+                        resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
+                            requests={
+                                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
+                                    "500m"
+                                ),
+                                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string(
+                                    "1Gi"
+                                ),
+                            },
+                            limits={
+                                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2"),
+                                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string(
+                                    "4Gi"
+                                ),
+                            },
+                        ),
+                        volume_mounts=[
+                            SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+                                name="workspace", mount_path="/workspace"
+                            )
+                        ],
+                    )
+                ],
+            ),
         ),
+        volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,
+        volume_claim_templates=[
+            SandboxTemplateSpecVolumeClaimTemplates(
+                metadata=SandboxTemplateSpecVolumeClaimTemplatesMetadata(name="workspace"),
+                spec=SandboxTemplateSpecVolumeClaimTemplatesSpec(
+                    storage_class_name="seaweedfs-ovh",
+                    access_modes=["ReadWriteOnce"],
+                    resources=SandboxTemplateSpecVolumeClaimTemplatesSpecResources(
+                        requests={
+                            "storage": SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests.from_string("10Gi")
+                        }
+                    ),
+                ),
+            )
+        ],
     )
 
 
@@ -226,65 +195,16 @@ def chart(app: App) -> Chart:
         ),
     )
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
-    codex_template = _codex_template(chart)
     # One pre-warmed codex-lane workspace.
-    SandboxWarmPool(
-        chart,
-        "codex-warm-pool",
-        metadata=metadata("codex", NAMESPACE),
-        spec=SandboxWarmPoolSpec(
-            replicas=1,
-            update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
-            sandbox_template_ref=SandboxWarmPoolSpecSandboxTemplateRef(name=codex_template.name),
-        ),
-    )
-    # Workspaces are ephemeral by contract (same 7-day rule as claude-sandbox's sandbox-janitor):
-    # a Sandbox whose owner forgot shutdownTime (default shutdownPolicy is Retain) would otherwise
-    # pin quota forever. Reaping happens at the CR level, not the pod level -- the controller
-    # recreates a Sandbox's pod, so a pod-level janitor would just cause churn, not cleanup.
-    # Warm-pool sandboxes reaped at 7d are recreated by their pool; that periodic refresh is
-    # harmless. Delete RBAC: kyverno/policies/clusterrole-cleanup-controller-sandboxes.yaml.
-    CleanupPolicy(
-        chart,
-        "janitor",
-        metadata=metadata("workspace-janitor", NAMESPACE),
-        spec=CleanupPolicySpec(
-            schedule="40 * * * *",
-            match=CleanupPolicySpecMatch(
-                any=[
-                    CleanupPolicySpecMatchAny(
-                        resources=CleanupPolicySpecMatchAnyResources(
-                            kinds=["agents.x-k8s.io/v1beta1/Sandbox", "extensions.agents.x-k8s.io/v1beta1/SandboxClaim"]
-                        )
-                    )
-                ]
-            ),
-            conditions=CleanupPolicySpecConditions(
-                all=[
-                    CleanupPolicySpecConditionsAll(
-                        key="{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}",
-                        operator=CleanupPolicySpecConditionsAllOperator.GREATER_THAN,
-                        value="168h",
-                    )
-                ]
-            ),
-        ),
-    )
+    agent_sandbox.warm_pool(chart, "codex-warm-pool", template=_codex_template(chart))
+    janitor(chart, "janitor", name="workspace-janitor", namespace=NAMESPACE, schedule="40 * * * *", kinds=SANDBOX_KINDS)
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"], components=["./image-pins"]),
-    )
 
 
 def agent_workspaces_app(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
     agent_sandbox_controller: Kustomization,
     kyverno_policies: Kustomization,
 ) -> Kustomization:
@@ -292,10 +212,10 @@ def agent_workspaces_app(
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             # CRDs + controller
             agent_sandbox_controller,
             # CleanupPolicy CRD and cleanup-controller permissions

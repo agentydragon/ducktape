@@ -6,13 +6,12 @@ export const CONSOLE_ROOT_PATH = "/_console";
 export const SETTINGS_PATH: string = `${CONSOLE_ROOT_PATH}/settings`;
 export const APPROVALS_EMBED_PATH: string = `${CONSOLE_ROOT_PATH}/approvals-embed`;
 export const TOOL_CALLS_PATH: string = `${CONSOLE_ROOT_PATH}/tool-calls`;
-export const OAUTH_RESULT_PATH_PREFIX: string = `${CONSOLE_ROOT_PATH}/oauth-result`;
 export const AGENT_ENROLLMENT_PATH_PREFIX: string = `${SETTINGS_PATH}/agents/enroll`;
 export const HOME_PATH = "/";
 const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 
 export type ConsoleNavigationView = "embed" | "settings" | "toolCalls";
-export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "approvalsEmbed" | "oauthResult" | "notFound";
+export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "approvalsEmbed" | "notFound";
 
 // Every id-bearing console route carries a canonical UUIDv4.
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
@@ -24,7 +23,6 @@ const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12
 // other id-bearing routes here.
 const TOOL_CALL_PATH = new RegExp(`^${TOOL_CALLS_PATH}/(tc_[0-9a-f]{24})$`, "i");
 
-const OAUTH_RESULT_PATH = new RegExp(`^${OAUTH_RESULT_PATH_PREFIX}/(${UUID})$`, "i");
 const AGENT_ENROLLMENT_PATH = new RegExp(`^${AGENT_ENROLLMENT_PATH_PREFIX}/(${UUID})$`, "i");
 
 export function toolCallPath(toolCallId: string): string {
@@ -42,10 +40,6 @@ export function toolCallIdForPathname(pathname: string): string | null {
   return TOOL_CALL_PATH.exec(pathname)?.[1] ?? null;
 }
 
-export function oauthResultIdForPathname(pathname: string): string | null {
-  return OAUTH_RESULT_PATH.exec(pathname)?.[1] ?? null;
-}
-
 export function agentEnrollmentIdForPathname(pathname: string): string | null {
   return AGENT_ENROLLMENT_PATH.exec(pathname)?.[1] ?? null;
 }
@@ -57,7 +51,6 @@ export function viewForPathname(pathname: string): ConsoleView {
   if (agentEnrollmentIdForPathname(pathname) !== null) return "agentEnrollment";
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";
   if (toolCallIdForPathname(pathname) !== null) return "embed";
-  if (oauthResultIdForPathname(pathname) !== null) return "oauthResult";
   if (pathname.startsWith(`${CONSOLE_ROOT_PATH}/`)) return "notFound";
   return "embed";
 }
@@ -98,7 +91,6 @@ function pathForView(view: ConsoleNavigationView): string {
 export function useConsoleView(): {
   view: ConsoleView;
   agentEnrollmentId: string | null;
-  oauthResultId: string | null;
   toolCallId: string | null;
   navigate: (view: ConsoleNavigationView) => void;
 } {
@@ -131,7 +123,6 @@ export function useConsoleView(): {
   return {
     view: viewForPathname(pathname),
     agentEnrollmentId: agentEnrollmentIdForPathname(pathname),
-    oauthResultId: oauthResultIdForPathname(pathname),
     toolCallId: toolCallIdForPathname(pathname),
     navigate,
   };

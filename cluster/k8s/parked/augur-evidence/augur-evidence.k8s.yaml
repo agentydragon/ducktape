@@ -1,0 +1,156 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: augur-evidence-secret-reader
+  namespace: budget
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: budget-augur-evidence-git-write-reader
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - augur-evidence-git-write
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: budget-augur-evidence-git-write-reader
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: budget-augur-evidence-git-write-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: augur-evidence-secret-reader
+    namespace: budget
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-budget-augur-evidence-git-write-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - budget
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: augur-evidence-secret-reader
+      remoteNamespace: forgejo
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: augur-evidence-git-write
+  namespace: budget
+spec:
+  dataFrom:
+    - extract:
+        key: augur-evidence-git-write
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-budget-augur-evidence-git-write-secret-store
+  target:
+    creationPolicy: Owner
+    name: augur-evidence-git-write
+    template:
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: augur
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: augur
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: budget-augur-evidence-git-read-reader
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - augur-evidence-git-read
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: budget-augur-evidence-git-read-reader
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: budget-augur-evidence-git-read-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: augur-evidence-secret-reader
+    namespace: budget
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-budget-augur-evidence-git-read-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - budget
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: augur-evidence-secret-reader
+      remoteNamespace: forgejo
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: augur-evidence-git-read
+  namespace: budget
+spec:
+  dataFrom:
+    - extract:
+        key: augur-evidence-git-read
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-budget-augur-evidence-git-read-secret-store
+  target:
+    creationPolicy: Owner
+    name: augur-evidence-git-read
+    template:
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: augur
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: augur

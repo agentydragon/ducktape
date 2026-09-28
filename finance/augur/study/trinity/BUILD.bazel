@@ -1,6 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-package(default_visibility = ["//visibility:public"])
+# Only study/ and x/ may depend on this package: finance/augur/README.md § Stability tiers.
+package(default_visibility = [
+    "//finance/augur/study:__subpackages__",
+    "//finance/augur/x:__subpackages__",
+])
 
 py_library(
     name = "evidence_snapshot",
@@ -22,12 +26,19 @@ py_library(
         "//finance/augur/model:historical_windows",
         "//finance/augur/model:series",
         "//finance/augur/policy:funding",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:claims",
         "//finance/augur/sim:external_series",
-        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:income",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:money",
         "//finance/augur/sim:results",
-        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:schedule",
         "//finance/augur/sim:session",
-        "//finance/augur/sim/compiler:execution",
+        "//finance/augur/sim:world",
         "@pypi//numpy",
     ],
 )
@@ -42,7 +53,7 @@ py_test(
     name = "replay_test",
     # Fetches the record from the public upstreams and runs ~55 474-rollout simulations, so it
     # is excluded from CI's default filter: an upstream outage must not redden an unrelated PR.
-    # See the package README; throughput of the Python migration has not been measured here.
+    # See the package README.
     size = "large",
     srcs = ["replay_test.py"],
     tags = ["manual"],
@@ -66,9 +77,8 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:results",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim/compiler:execution",
         "//util/bazel:runfiles",
         "@pypi//numpy",
         "@pypi//pytest",
@@ -87,8 +97,6 @@ py_test(
         "//finance/augur/model:historical_windows",
         "//finance/augur/sim:events",
         "//finance/augur/sim:external_series",
-        "//finance/augur/sim:prepared",
-        "//finance/augur/sim/compiler:execution",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -5,24 +5,15 @@ impersonates, and that identity's Role; and the Flux Kustomization for this dire
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
-    GitRepository,
-    GitRepositorySpec,
-    GitRepositorySpecRef,
-    GitRepositorySpecSecretRef,
-)
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef, GitRepositorySpecSecretRef
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 NAME = "haku-workloads"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/workloads"
@@ -38,9 +29,9 @@ def chart(app: App) -> Chart:
     source = GitRepository(
         chart,
         "source",
-        metadata=metadata(
-            "haku-state",
-            _FLUX_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="haku-state",
+            namespace=_FLUX_NAMESPACE,
             annotations={
                 "description": "Haku's own state repo (internal Forgejo, plaintext HTTP). Source for the "
                 "haku-state-workloads Kustomization, which reconciles Haku-authored manifests under k8s/ into "
@@ -48,12 +39,10 @@ def chart(app: App) -> Chart:
                 "available — Flux never pushes)."
             },
         ),
-        spec=GitRepositorySpec(
-            interval="5m",
-            url="http://forgejo-http.forgejo:3000/haku/haku-state.git",
-            ref=GitRepositorySpecRef(branch="main"),
-            secret_ref=GitRepositorySpecSecretRef(name="haku-forgejo-git"),
-        ),
+        interval="5m",
+        url="http://forgejo-http.forgejo:3000/haku/haku-state.git",
+        ref=GitRepositorySpecRef(branch="main"),
+        secret_ref=GitRepositorySpecSecretRef(name="haku-forgejo-git"),
     )
     k8s.KubeServiceAccount(
         chart,
@@ -147,23 +136,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def haku_workloads(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, haku_state: Kustomization) -> Kustomization:
+def haku_workloads(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="5m",
         # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
         # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
         wait=False,
-        depends_on=[
-            # The forgejo/haku-state Terraform apply provisions the haku-state repo and the
-            # haku-forgejo-git Secret (now also reflected into flux-system for the
-            # GitRepository's basic auth).
-            flux_kustomization_depends_on(haku_state)
-        ],
     )

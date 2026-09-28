@@ -85,7 +85,7 @@ spec:
             - name: CODEX_LITELLM_KEY
               valueFrom:
                 secretKeyRef:
-                  name: litellm-codex-clients-key
+                  name: litellm-codex-pod-messages-key
                   key: CODEX_LITELLM_KEY
                   optional: true
           securityContext:

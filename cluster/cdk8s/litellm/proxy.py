@@ -47,32 +47,27 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpecDeletionPolicy
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecEndpointsBearerTokenSecret,
-    ServiceMonitorSpecSelector,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
+    Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
 )
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
@@ -185,10 +180,10 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_pull_secret_name="forgejo-images-creds",
             service_account_name="litellm",
             termination_grace_period_seconds=90,
-            node_affinity=Node.labeled(NodeLabelQuery.is_("topology.kubernetes.io/zone", "hil-ovh")),
+            node_affinity=Node.labeled(NodeLabelQuery.is_(node_scheduling.ZONE_LABEL, node_scheduling.HIL_OVH_ZONE)),
             tolerations=(
                 Node.tainted(
-                    NodeTaintQuery.exists("node-role.kubernetes.io/control-plane", effect=TaintEffect.NO_SCHEDULE)
+                    NodeTaintQuery.exists(node_scheduling.CONTROL_PLANE_TAINT_KEY, effect=TaintEffect.NO_SCHEDULE)
                 ),
             ),
             topology_spread_constraints=(
@@ -250,9 +245,9 @@ class LiteLLMProxy(Construct):
         return ConfigMap(
             self,
             "config",
-            metadata=metadata(
-                self.spec.config.config_map_name,
-                self.spec.namespace,
+            metadata=ApiObjectMetadata(
+                name=self.spec.config.config_map_name,
+                namespace=self.spec.namespace,
                 labels={"app.kubernetes.io/managed-by": "cdk8s", "app.kubernetes.io/part-of": "litellm"},
                 annotations={
                     "ducktape.dev/generated": "by cdk8s under Bazel",
@@ -288,9 +283,7 @@ class LiteLLMProxy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                self.spec.name, self.spec.namespace, labels=labels, annotations={"reloader.stakater.com/auto": "true"}
-            ),
+            metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace, labels=labels),
             pod_metadata=ApiObjectMetadata(labels=labels),
             replicas=self.spec.replicas,
             strategy=self.spec.strategy,
@@ -326,7 +319,7 @@ class LiteLLMProxy(Construct):
             # Same rationale as the pod-level override above.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False, ensure_non_root=False),
         )
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        pod_policy.harden(deployment)
         volume = Volume.from_config_map(
             self, "config-volume", config_map, items={"config.yaml": PathMapping(path="config.yaml")}
         )
@@ -351,7 +344,9 @@ class LiteLLMProxy(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(self.spec.name, self.spec.namespace, labels=self.spec.service.labels),
+            metadata=ApiObjectMetadata(
+                name=self.spec.name, namespace=self.spec.namespace, labels=self.spec.service.labels
+            ),
             selector=deployment,
             ports=[
                 ServicePort(
@@ -366,7 +361,7 @@ class LiteLLMProxy(Construct):
         return ServiceAccount(
             self,
             "serviceaccount",
-            metadata=metadata(self.spec.service_account_name, self.spec.namespace),
+            metadata=ApiObjectMetadata(name=self.spec.service_account_name, namespace=self.spec.namespace),
             automount_token=False,
         )
 
@@ -374,8 +369,8 @@ class LiteLLMProxy(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(self.spec.name, self.spec.namespace),
-            hostname=hostname,
+            metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace),
+            hostnames=[hostname],
             backend=self.spec.name,
             port=4000,
             timeout="600s",
@@ -395,43 +390,42 @@ class LiteLLMServiceMonitor(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata("litellm", "litellm"),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
-                endpoints=[
-                    ServiceMonitorSpecEndpoints(
-                        port="http",
-                        path="/metrics",
-                        scrape_timeout="10s",
-                        bearer_token_secret=ServiceMonitorSpecEndpointsBearerTokenSecret(
-                            name="litellm-master-key", key="api-key"
-                        ),
-                    )
-                ],
-            ),
+            metadata=ApiObjectMetadata(name="litellm", namespace="litellm"),
+            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
+            endpoints=[
+                Endpoint.bearer_token_secret(
+                    port="http", secret_name="litellm-master-key", key="api-key", scrape_timeout="10s"
+                )
+            ],
         )
+
+
+def _chart(app: App) -> Chart:
+    (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
+    chart = Chart(app, spec.name, disable_resource_name_hashes=True)
+    LiteLLMProxy(chart, "proxy", spec)
+    LiteLLMServiceMonitor(chart, "monitoring")
+    add_fleet_rules(chart)
+    return chart
+
+
+def write_manifests(root: Path) -> None:
+    (spec,) = proxy_specs()
+    write_charts(root, APP_DIR, _chart)
+    write_yaml(
+        root / APP_DIR / "kustomization.yaml",
+        kustomize_kustomization(namespace="litellm", resources=[f"{spec.name}.k8s.yaml"], components=["./image-pins"]),
+    )
 
 
 def litellm(
     flux_chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    root: Path,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
-    (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
-
-    app_dir = root / APP_DIR
-    app_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(app_dir))
-    chart = Chart(app, spec.name, disable_resource_name_hashes=True)
-    LiteLLMProxy(chart, "proxy", spec)
-    LiteLLMServiceMonitor(chart, "monitoring")
-    add_fleet_rules(chart)
-    app.synth()
-
-    kustomization = flux_kustomization(
+    return flux_kustomization(
         flux_chart,
         "litellm",
         artifact,
@@ -440,8 +434,3 @@ def litellm(
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds),
     )
-    write_yaml(
-        app_dir / "kustomization.yaml",
-        kustomize_kustomization(namespace="litellm", resources=[f"{spec.name}.k8s.yaml"], components=["./image-pins"]),
-    )
-    return kustomization

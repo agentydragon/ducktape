@@ -34,16 +34,17 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources,
     SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken,
 )
+from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap
 from constructs import Construct
 
 from agentplane.egress import sidecar
 from agentplane.egress.resources import placeholder_of
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane import egress, llm_ingress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import SECRET_NAME
-from cluster.cdk8s.metadata import metadata
 from util.settings_contract import env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
@@ -144,7 +145,7 @@ def add_tool_config(scope: Construct, env: Environment) -> None:
     ConfigMap(
         scope,
         "sandbox-tool-config",
-        metadata=metadata(_TOOL_CONFIG_MAP_NAME, env.namespace),
+        metadata=ApiObjectMetadata(name=_TOOL_CONFIG_MAP_NAME, namespace=env.namespace),
         data={
             _BAZELRC_KEY: (
                 f"startup --host_jvm_args=-Djavax.net.ssl.trustStore={_JAVA_TRUST_STORE_PATH}\ncommon {passthrough}\n"
@@ -298,9 +299,7 @@ def pod_spec(
         image_pull_secrets=[SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=SECRET_NAME)],
         # With the rest of the namespace and with LiteLLM: a box's traffic through the egress proxy
         # and a runner's model calls both stay inside the zone.
-        node_selector=(
-            {"topology.kubernetes.io/zone": env.app.runner_zone} if env.app.runner_zone is not None else None
-        ),
+        node_selector=({node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else None),
         service_account_name=service_account_name,
         termination_grace_period_seconds=60,
         security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(

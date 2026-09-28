@@ -8,31 +8,22 @@ from the mesh roster instead.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Protocol, Service, ServicePort, k8s
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization
 from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
     ServiceMonitorSpecNamespaceSelector,
     ServiceMonitorSpecSelector,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.scripts import nebula_mesh
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.scripts.nebula_mesh import Mesh
 
+NAME = "etcd-monitoring"
 NAMESPACE = "monitoring"
-OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/etcd"
 _NAME = "talos-etcd-metrics"
 _LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/part-of": NAMESPACE}
 _PORT_NAME = "metrics"
@@ -45,7 +36,7 @@ class TalosEtcdMetrics(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, NAMESPACE, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
             cluster_ip="None",
             ports=[ServicePort(name=_PORT_NAME, port=_PORT, target_port=_PORT, protocol=Protocol.TCP)],
         )
@@ -77,47 +68,26 @@ class TalosEtcdMetrics(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata("talos-etcd", NAMESPACE, labels=_LABELS),
-            spec=ServiceMonitorSpec(
-                namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE]),
-                selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": _NAME}),
-                endpoints=[
-                    ServiceMonitorSpecEndpoints(
-                        port=_PORT_NAME,
-                        path="/metrics",
-                        scrape_timeout="10s",
-                        relabelings=[
-                            ServiceMonitorSpecEndpointsRelabelings(
-                                source_labels=["__meta_kubernetes_endpointslice_endpoint_hostname"], target_label="node"
-                            )
-                        ],
-                    )
-                ],
-            ),
+            metadata=ApiObjectMetadata(name="talos-etcd", namespace=NAMESPACE, labels=_LABELS),
+            namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE]),
+            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": _NAME}),
+            endpoints=[
+                ServiceMonitorSpecEndpoints(
+                    port=_PORT_NAME,
+                    path="/metrics",
+                    scrape_timeout="10s",
+                    relabelings=[
+                        ServiceMonitorSpecEndpointsRelabelings(
+                            source_labels=["__meta_kubernetes_endpointslice_endpoint_hostname"], target_label="node"
+                        )
+                    ],
+                )
+            ],
         )
 
 
-def etcd_monitoring(
-    flux_chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    root: Path,
-    mesh: nebula_mesh.Mesh,
-    monitoring_crds: Kustomization,
-) -> Kustomization:
-    name = "etcd-monitoring"
-    out_dir = root / OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    chart = Chart(app, name, disable_resource_name_hashes=True)
+def chart(app: App, mesh: Mesh) -> Chart:
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
     TalosEtcdMetrics(chart, "etcd", mesh)
     add_fleet_rules(chart)
-    app.synth()
-
-    return flux_kustomization(
-        flux_chart,
-        name,
-        artifact,
-        timeout="2m",
-        # the ServiceMonitor CRD
-        depends_on=[flux_kustomization_depends_on(monitoring_crds)],
-    )
+    return chart

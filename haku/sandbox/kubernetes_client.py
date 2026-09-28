@@ -652,7 +652,7 @@ def _info(
         bootstrap_state=bootstrap_state,
         reason=reason,
         message=message,
-        warnings=warnings,
+        warnings=list(warnings),
     )
 
 

@@ -9,10 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress, CiliumNetworkPolicySpecEgressToEntities
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -22,44 +21,28 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategy,
     HelmReleaseSpecUpgradeStrategyName,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cilium, cnpg
+from cluster.cdk8s import cilium, cnpg, namespaces, node_scheduling
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gatus"
 _NAME = "gatus"
 _NAMESPACE = "gatus"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _DB_NAME = "gatus-db"
-_ZONE = "hil-ovh"
 _HELM_REPOSITORY = "twin"
 _PORT = 8080
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
-        scope,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
 
 
 def _database(scope: Construct) -> None:
@@ -68,21 +51,16 @@ def _database(scope: Construct) -> None:
         "database",
         name=_DB_NAME,
         namespace=_NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh",
         size="1Gi",
         # CNPG auto-generates credentials in secret gatus-db-app
-        initdb=ClusterSpecBootstrapInitdb(database="gatus", owner="gatus"),
+        initdb=cnpg.same_owner_initdb("gatus"),
     )
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = HelmRepository(
-        scope,
-        "helm-repository",
-        metadata=metadata(_HELM_REPOSITORY, _NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://twin.github.io/helm-charts"),
-    )
+    repository = https_helm_repository(scope, _HELM_REPOSITORY, _NAMESPACE, url="https://twin.github.io/helm-charts")
     # Empty ConfigMap required by the gatus Helm chart. The chart hardcodes
     # envFrom.configMapRef with the release name but skips creating it when
     # externalConfigMap is set (chart bug).
@@ -108,7 +86,6 @@ def _helm_release(scope: Construct) -> None:
                 "LITELLM_API_KEY": {"valueFrom": {"secretKeyRef": {"name": "litellm-master-key", "key": "api-key"}}},
             },
             "envFrom": [{"secretRef": {"name": "gatus-oidc-secret"}}],
-            "podAnnotations": {"reloader.stakater.com/auto": "true"},
             "ingress": {"enabled": False},
             # Storage moved off the local SQLite PVC onto the gatus-db CNPG
             # cluster on OVH-HA (the Cluster above).
@@ -116,28 +93,12 @@ def _helm_release(scope: Construct) -> None:
             # The ServiceMonitor is its own object below, to avoid blocking
             # Gatus deploys on monitoring-stack readiness.
             "serviceMonitor": {"enabled": False},
-            "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # Gatus is stateless at the pod level (state moved to gatus-db above). Allow
             # control-plane nodes as overflow capacity, while the affinity below keeps
             # ordinary placement on workers.
-            "tolerations": [
-                {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-            ],
-            # Prefer ordinary workers when this workload tolerates control planes.
-            "affinity": {
-                "nodeAffinity": {
-                    "preferredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "weight": 100,
-                            "preference": {
-                                "matchExpressions": [
-                                    {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                                ]
-                            },
-                        }
-                    ]
-                }
-            },
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+            "affinity": node_scheduling.PREFER_WORKERS,
             "resources": {"requests": {"cpu": "20m", "memory": "64Mi"}, "limits": {"cpu": "200m", "memory": "128Mi"}},
         },
     )
@@ -149,16 +110,16 @@ def _network_policies(scope: Construct) -> None:
     #
     # Uses CiliumNetworkPolicy because standard K8s NetworkPolicy cannot match Cilium
     # Gateway API traffic (reserved:ingress identity via hostNetwork Envoy).
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "ingress",
-        metadata=metadata("gatus-ingress", _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name="gatus-ingress", namespace=_NAMESPACE),
+        endpoint_selector=_LABELS,
         ingress=[
             # Cilium Gateway API (reserved:ingress identity) → Gatus
-            cilium.ingress_from_gateway(_PORT),
+            IngressRule.from_gateway(_PORT),
             # Prometheus → Gatus (ServiceMonitor scraping)
-            cilium.ingress_from({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_PORT]),
+            IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_PORT]),
         ],
     )
     # Route Gatus's DNS through Cilium's DNS proxy, so its queries are observable
@@ -170,11 +131,11 @@ def _network_policies(scope: Construct) -> None:
     # policy, and a policy enforces. This one is written to enforce nothing — an
     # egress rule flips the endpoint to default-deny, so the second rule has to
     # re-admit everything Gatus reaches.
-    cilium.network_policy(
+    NetworkPolicy(
         scope,
         "dns-visibility",
-        metadata=metadata("gatus-dns-visibility", _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name="gatus-dns-visibility", namespace=_NAMESPACE),
+        endpoint_selector=_LABELS,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # Everything else, deliberately unrestricted.
@@ -204,8 +165,8 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        hostname="status.allegedly.works",
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=["status.allegedly.works"],
         backend=_NAME,
         port=80,
         hsts=False,
@@ -214,11 +175,9 @@ def chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "service-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-            endpoints=[ServiceMonitorSpecEndpoints(port="http", path="/metrics")],
-        ),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
+        endpoints=[Endpoint.plain(port="http")],
     )
     return chart
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
+from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecAffinity,
     ClusterSpecAffinityTolerations,
+    ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecMonitoring,
@@ -16,20 +18,22 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecProbesLiveness,
     ClusterSpecProbesLivenessIsolationCheck,
     ClusterSpecResources,
+    ClusterSpecStorage,
 )
 from constructs import Construct
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.local_path_provisioner import SSD_STORAGE_CLASSES
 from cluster.cdk8s.providers.cnpg.cluster import Cluster
 
 POSTGRES_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
 
 _CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
-    key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
+    key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
 )
 
 
-def _affinity(*, node_selector: dict[str, str], storage_class: str) -> ClusterSpecAffinity:
+def _affinity(*, node_selector: Mapping[str, str], storage_class: str) -> ClusterSpecAffinity:
     """One instance per node within `node_selector`, required: instances sharing a node
     share its failure, and preferred anti-affinity lets the scheduler co-locate them. A
     Cluster tolerates control-plane nodes exactly when its storage is SSD, since OVH's
@@ -42,6 +46,16 @@ def _affinity(*, node_selector: dict[str, str], storage_class: str) -> ClusterSp
     )
 
 
+def same_owner_initdb(
+    name: str, *, locale_c_type: str | None = None, locale_collate: str | None = None
+) -> ClusterSpecBootstrapInitdb:
+    """`ClusterSpecBootstrapInitdb` for the common case where the app's database and its
+    owning role both take the app's own name."""
+    return ClusterSpecBootstrapInitdb(
+        database=name, owner=name, locale_c_type=locale_c_type, locale_collate=locale_collate
+    )
+
+
 def cluster(
     scope: Construct,
     id: str,
@@ -50,7 +64,7 @@ def cluster(
     namespace: str,
     storage_class: str,
     size: str,
-    node_selector: dict[str, str],
+    node_selector: Mapping[str, str],
     initdb: ClusterSpecBootstrapInitdb | None = None,
     instances: int = 2,
     image_name: str | None = POSTGRES_IMAGE,
@@ -71,13 +85,11 @@ def cluster(
     return Cluster(
         scope,
         id,
-        name=name,
-        namespace=namespace,
-        storage_class=storage_class,
-        size=size,
+        metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
+        storage=ClusterSpecStorage(storage_class=storage_class, size=size),
         instances=instances,
         image_name=image_name,
-        initdb=initdb,
+        bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
         affinity=_affinity(node_selector=node_selector, storage_class=storage_class),
         managed=managed,
         postgresql=postgresql,
@@ -88,5 +100,4 @@ def cluster(
         ),
         # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
         monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-        annotations=annotations,
     )

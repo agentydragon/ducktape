@@ -267,6 +267,34 @@ async def test_http_session_discovery_call_and_shutdown(
         assert request.headers["mcp-protocol-version"]
 
 
+async def test_http_configured_headers_are_sent_on_every_request(fake_server: FakeMcpServer) -> None:
+    """A configured extra header (e.g. GitHub MCP's `X-MCP-Toolsets`) reaches the backend."""
+    app = Starlette(routes=[Route("/test-mcp", fake_server.handle, methods=["POST", "GET", "DELETE"])])
+    with serve_app_sync(app) as url:
+        group = ActionGroup(
+            title="HTTP test group with extra headers",
+            description="Credentialless test peer with a configured toolset header",
+            executor=McpExecutorBinding(
+                kind="mcp",
+                description="HTTP test peer",
+                config={
+                    "transport": "streamable-http",
+                    "url": f"{url}/test-mcp",
+                    "auth": "none",
+                    "headers": {"X-MCP-Toolsets": "default,actions"},
+                },
+            ),
+        )
+        executor = McpActionGroupExecutor.from_group("remote", group)
+        try:
+            await executor.start()
+            await wait_available(group)
+        finally:
+            await executor.close()
+    assert fake_server.requests
+    assert all(request.headers["x-mcp-toolsets"] == "default,actions" for request in fake_server.requests)
+
+
 async def test_http_revalidates_live_schema_before_dispatch(
     execution_lease: ExecutionLease,
     executor: McpActionGroupExecutor,
@@ -416,7 +444,9 @@ async def test_oauth_auth_resolves_the_current_token_for_each_request() -> None:
         {"transport": "streamable-http", "url": "http://test-user@test.invalid/mcp"},
         {"transport": "streamable-http", "url": "https://test.invalid/mcp#fragment"},
         {"transport": "streamable-http", "url": "https://test.invalid/mcp", "command": "test-server"},
-        {"transport": "streamable-http", "url": "https://test.invalid/mcp", "headers": {}},
+        {"transport": "streamable-http", "url": "https://test.invalid/mcp", "extra_unknown_field": {}},
+        {"transport": "streamable-http", "url": "https://test.invalid/mcp", "headers": {"Authorization": "Bearer x"}},
+        {"transport": "streamable-http", "url": "https://test.invalid/mcp", "headers": {"authorization": "Bearer x"}},
         {"transport": "streamable-http", "url": "https://test.invalid/mcp", "auth": "oauth"},
         {"transport": "sse", "url": "https://test.invalid/mcp"},
     ],

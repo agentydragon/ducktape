@@ -4,7 +4,8 @@ import pytest
 import pytest_bazel
 
 from gmail_api.labels import SystemLabel
-from gmail_archiver.filter_sync import NormalizedFilter, normalize_yaml_rule
+from gmail_archiver.filter_sync import NormalizedFilter, normalize_yaml_rule, normalized_to_create_request
+from gmail_archiver.gmail_api_models import CreateFilterRequest, FilterAction, FilterCriteria
 from gmail_archiver.gmail_yaml_filters_models import CompoundCondition, FilterRule
 
 
@@ -47,7 +48,7 @@ UNREPRESENTABLE_FIELDS = [
 
 @pytest.mark.parametrize(("attr", "error_name"), UNREPRESENTABLE_FIELDS)
 def test_unrepresentable_field_raises(attr: str, error_name: str):
-    rule = FilterRule(**{attr: "x"}, trash=True)
+    rule = FilterRule.model_validate({attr: "x", "trash": True})
 
     with pytest.raises(ValueError, match=error_name):
         normalize_yaml_rule(rule)
@@ -66,10 +67,24 @@ COMPOUND_FIELDS = [
 
 @pytest.mark.parametrize(("attr", "error_name"), COMPOUND_FIELDS)
 def test_compound_condition_raises(attr: str, error_name: str):
-    rule = FilterRule(**{attr: CompoundCondition(any=["a@example.com", "b@example.com"])})
+    rule = FilterRule.model_validate({attr: CompoundCondition(any=["a@example.com", "b@example.com"])})
 
     with pytest.raises(ValueError, match=f"'{error_name}'"):
         normalize_yaml_rule(rule)
+
+
+def test_archive_only_filter_to_create_request():
+    """A filter with no labels to add, and a removal of an unknown user label, builds a request."""
+    normalized = NormalizedFilter(
+        from_="newsletter@example.com", remove_labels=frozenset({SystemLabel.INBOX, "no-such-test-label"})
+    )
+
+    request = normalized_to_create_request(normalized, label_name_to_id={})
+
+    assert request == CreateFilterRequest(
+        criteria=FilterCriteria(from_="newsletter@example.com"),
+        action=FilterAction(remove_label_ids=[SystemLabel.INBOX]),
+    )
 
 
 if __name__ == "__main__":

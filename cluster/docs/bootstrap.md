@@ -79,18 +79,12 @@ services → NixOS workers) plus per-layer recovery procedures.
 
 ## Let's Encrypt Issuer Toggle
 
-Two always-present ClusterIssuers (`letsencrypt-prod`, `letsencrypt-staging`).
-A single ConfigMap, rendered by `cdk8s/cert_manager/issuer_config.py`, controls which is
-active:
-
-```yaml
-data:
-  LETSENCRYPT_ISSUER: letsencrypt-prod # or letsencrypt-staging
-```
-
-Every Ingress has `cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"` annotation
-substituted by Flux. Flipping the toggle re-issues all certificates. Trust bundle follows
-via `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
+Two always-present ClusterIssuers (`letsencrypt-prod`, `letsencrypt-staging`). The
+`LETSENCRYPT_ISSUER` constant in `cdk8s/cert_manager/config.py` selects the active one, and
+the generator renders it into cert-manager's default issuer, the shared Gateway's
+`cert-manager.io/cluster-issuer` annotation and the Certificates that name their issuer.
+Flipping the toggle re-issues all certificates. The trust bundle follows via the
+`<issuer>-root-ca` Secret naming convention.
 
 ## External Connectivity
 

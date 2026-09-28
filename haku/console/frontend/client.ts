@@ -26,10 +26,6 @@ export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
 export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionResponse"];
 type ApprovalDecisionRequest = components["schemas"]["ApprovalDecisionRequest"];
 export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
-export type ProviderConnectionConnectResponse = components["schemas"]["ProviderConnectionConnectResponse"];
-export type OperatorConnectionName = ProviderConnectionConnectResponse["connection"];
-export type OAuthConnectionResult =
-  components["schemas"]["ConnectionSucceeded"] | components["schemas"]["ConnectionFailed"];
 export type AgentView = components["schemas"]["AgentView"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
 export type Grant = components["schemas"]["Grant"];
@@ -86,14 +82,6 @@ export async function fetchOperator(): Promise<OperatorResponse> {
 export async function fetchDeploymentInfo(): Promise<DeploymentInfo> {
   const { data, error } = await api.GET("/api/deployment");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load deployment information"));
-  return data;
-}
-
-export async function consumeOAuthConnectionResult(resultId: string): Promise<OAuthConnectionResult> {
-  const { data, error } = await api.POST("/api/oauth-results/{result_id}", {
-    params: { path: { result_id: resultId } },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load the connection result"));
   return data;
 }
 
@@ -199,29 +187,6 @@ export async function fetchToolCalls(
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load tool calls"));
   return { records: data.tool_calls ?? [], nextCursor: data.next_cursor ?? null };
-}
-
-// Per-Operator external account connections (Google today). Connect opens the provider's consent in
-// a new tab; the backend callback stores the refresh token and broadcasts an
-// `operator_connection_changed` event.
-export async function connectOperatorConnection(
-  connection: OperatorConnectionName
-): Promise<ProviderConnectionConnectResponse> {
-  const { data, error } = await api.POST("/api/operator-connections/{connection}/connect", {
-    params: { path: { connection } },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to start account connection"));
-  return data;
-}
-
-export async function disconnectOperatorConnection(
-  connection: OperatorConnectionName
-): Promise<components["schemas"]["ProviderUnconnected"]> {
-  const { data, error } = await api.DELETE("/api/operator-connections/{connection}", {
-    params: { path: { connection } },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to disconnect account"));
-  return data;
 }
 
 async function decideToolCall(

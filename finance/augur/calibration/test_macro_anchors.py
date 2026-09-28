@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest_bazel
 
 from finance.augur.calibration.catalog import (
+    CatalogMetadata,
     ExactMarket,
     InflationYoyMapping,
     LevelAtDateMapping,
@@ -24,13 +25,12 @@ ANCHOR_DATE = date(2026, 5, 27)
 
 def _catalog(*, anchors: dict[str, float] | None = None, inflation_history: list[float] | None = None) -> MarketCatalog:
     """A catalog referencing the sp500 and inflation level series via two exact markets."""
-    metadata: dict[str, object] = {"as_of": ANCHOR_DATE.isoformat()}
-    if anchors is not None:
-        metadata["anchors"] = anchors
-    if inflation_history is not None:
-        metadata["inflation_history"] = inflation_history
     return MarketCatalog(
-        metadata=metadata,
+        metadata=CatalogMetadata(
+            as_of=ANCHOR_DATE,
+            anchors=anchors if anchors is not None else {},
+            inflation_history=inflation_history if inflation_history is not None else [],
+        ),
         markets=[
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="SPX"),

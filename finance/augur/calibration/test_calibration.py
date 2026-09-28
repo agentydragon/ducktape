@@ -27,6 +27,7 @@ from finance.augur.calibration.calibration import (
 from finance.augur.calibration.catalog import (
     BucketFamily,
     BucketMember,
+    CatalogMetadata,
     CorrelateMarket,
     DateLadderFamily,
     DateLadderMember,
@@ -52,7 +53,7 @@ from finance.augur.model.series import SP500_SYMBOL, InflationKey, IssuerId, Pri
 from finance.augur.model.testing import ConstantFrameModel, PrivateEquityChannels
 from finance.evidence.markets import Platform
 
-_ISSUER = "issuer_x"
+_ISSUER = IssuerId("issuer_x")
 _HORIZON = 120
 
 
@@ -79,7 +80,7 @@ def model() -> ConstantFrameModel:
 def catalog() -> MarketCatalog:
     """One exact ipo_by_date, one exact pre_ipo_failure, one correlate (ipo_by_date) market."""
     return MarketCatalog(
-        metadata={"as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"},
+        metadata=CatalogMetadata(as_of=date(2026, 5, 29), augur_model_as_of=date(2026, 5, 27)),
         markets=[
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="AAA"),
@@ -221,7 +222,7 @@ async def test_macro_level_market_scored_over_full_rollouts(macro_model: Constan
     """A point-in-time S&P threshold market scores against the anchored sp500 channel, and a
     market on an unmodeled series (inflation) surfaces as `unmodeled` rather than failing."""
     catalog = MarketCatalog(
-        metadata={"as_of": "2026-05-27", "anchors": {"security:SPY": _SP500_ANCHOR}},
+        metadata=CatalogMetadata(as_of=date(2026, 5, 27), anchors={"security:SPY": _SP500_ANCHOR}),
         markets=[
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="SPX"),
@@ -289,7 +290,7 @@ async def test_macro_level_market_scored_over_full_rollouts(macro_model: Constan
 
 async def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameModel) -> None:
     catalog = MarketCatalog(
-        metadata={"as_of": "2026-05-27", "anchors": {"security:SPY": _SP500_ANCHOR}},
+        metadata=CatalogMetadata(as_of=date(2026, 5, 27), anchors={"security:SPY": _SP500_ANCHOR}),
         markets=[],
         bucket_families=[
             BucketFamily(
@@ -359,7 +360,7 @@ async def test_threshold_ladder_family_derives_categorical_distribution() -> Non
         },
     )
     catalog = MarketCatalog(
-        metadata={"as_of": "2026-05-27", "anchors": {"inflation": 100.0}},
+        metadata=CatalogMetadata(as_of=date(2026, 5, 27), anchors={"inflation": 100.0}),
         markets=[],
         threshold_ladder_families=[
             ThresholdLadderFamily(
@@ -450,7 +451,7 @@ async def test_threshold_ladder_uses_quote_mids_and_interpolates_unpriced() -> N
         },
     )
     catalog = MarketCatalog(
-        metadata={"as_of": "2026-05-27", "anchors": {"inflation": 100.0}},
+        metadata=CatalogMetadata(as_of=date(2026, 5, 27), anchors={"inflation": 100.0}),
         markets=[],
         threshold_ladder_families=[
             ThresholdLadderFamily(
@@ -519,7 +520,7 @@ async def test_threshold_ladder_uses_quote_mids_and_interpolates_unpriced() -> N
 
 async def test_date_ladder_family_derives_event_timing_distribution(model: ConstantFrameModel) -> None:
     catalog = MarketCatalog(
-        metadata={"as_of": "2026-05-27"},
+        metadata=CatalogMetadata(as_of=date(2026, 5, 27)),
         markets=[],
         date_ladder_families=[
             DateLadderFamily(
@@ -579,7 +580,7 @@ async def test_none_probability_and_degenerate_family_are_dropped(macro_model: C
     """A market whose quote carries no probability, and a categorical family whose bucket prices
     sum to zero, are both dropped (logged) rather than 500-ing via require_implied_probability()."""
     catalog = MarketCatalog(
-        metadata={"as_of": "2026-05-27", "anchors": {"security:SPY": _SP500_ANCHOR}},
+        metadata=CatalogMetadata(as_of=date(2026, 5, 27), anchors={"security:SPY": _SP500_ANCHOR}),
         markets=[
             ExactMarket(
                 platform_ref=PolymarketRef(polymarket_id="NOPRICE"),
@@ -645,7 +646,7 @@ def test_wilson_interval_edges() -> None:
 async def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameModel) -> None:
     """Kalshi + Manifold markets each hit their own client and carry the right platform tag."""
     catalog = MarketCatalog(
-        metadata={"as_of": "2026-05-29"},
+        metadata=CatalogMetadata(as_of=date(2026, 5, 29)),
         markets=[
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="M1"),

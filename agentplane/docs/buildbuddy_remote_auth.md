@@ -3,7 +3,7 @@
 Why the egress proxy's BuildBuddy support is local-client only, what a hosted `bb remote` run
 would need, and what the smallest feasible workaround does and does not protect. The implemented
 transport contract is [the egress specification](../egress/SPEC.md); whether to accept the
-workaround is an open decision in the [task DAG](../plans/task_dag.md).
+workaround is still open.
 
 ## Two products called "remote"
 

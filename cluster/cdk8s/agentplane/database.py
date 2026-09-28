@@ -8,27 +8,19 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
     ClusterSpecPostgresql,
 )
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-)
+from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecCluster, DatabaseSpecDatabaseReclaimPolicy
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetTemplate
 
-from cluster.cdk8s import cnpg
-from cluster.cdk8s.agentplane import node_scheduling
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
+from cluster.cdk8s.providers.cnpg.database import Database
 
 _CLUSTER_NAME = "postgres"
 _STORAGE_CLASS = "local-path-ovh-ssd"
@@ -50,33 +42,16 @@ def _role_credentials(
     login credentials, in the shape the Cluster's `managed.roles[].passwordSecret` and
     the role's own consumers (litellm, the actions/egress services) expect.
     """
-    secret_name = f"postgres-{role}"
-    host = f"{_CLUSTER_NAME}-rw.{namespace}.svc"
-    database = database_name or role
-    Password(
-        scope,
-        f"{id}-generator",
-        metadata=ApiObjectMetadata(name=f"{secret_name}-generator", namespace=namespace),
-        spec=PasswordSpec(length=40, digits=8, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_db_role_secret(
         scope,
         id,
-        name=secret_name,
+        name=f"postgres-{role}",
         namespace=namespace,
-        refresh="8760h",
-        data_from=[DataFrom.from_password_generator(f"{secret_name}-generator")],
-        template=ExternalSecretSpecTargetTemplate(
-            type="kubernetes.io/basic-auth",
-            data={
-                "username": role,
-                "password": "{{ .password }}",
-                "host": host,
-                "port": str(POSTGRES_PORT),
-                "dbname": database,
-                "uri": f"postgresql://{role}:{{{{ .password }}}}@{host}:{POSTGRES_PORT}/{database}",
-            },
-        ),
+        role=role,
+        host=f"{_CLUSTER_NAME}-rw.{namespace}.svc",
+        port=POSTGRES_PORT,
+        database=database_name or role,
+        url_key="uri",
     )
 
 
@@ -100,14 +75,14 @@ class Db(Construct):
             name=_CLUSTER_NAME,
             namespace=env.namespace,
             instances=env.db.instances,
-            node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
+            node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
             storage_class=_STORAGE_CLASS,
             size=_STORAGE_SIZE,
             # Electric's WAL-loss recovery purges every shape, then stays unready while
             # rebuilding its replication pipeline. Keep a bounded outage budget below the
             # 5Gi volume instead of silently recycling the logical slot's WAL.
             postgresql=ClusterSpecPostgresql(parameters={"max_slot_wal_keep_size": "512MB"}),
-            initdb=ClusterSpecBootstrapInitdb(database="app", owner="app"),
+            initdb=cnpg.same_owner_initdb("app"),
             managed=ClusterSpecManaged(
                 roles=[
                     ClusterSpecManagedRoles(
@@ -135,10 +110,8 @@ class Db(Construct):
                 self,
                 f"database-{role}",
                 metadata=ApiObjectMetadata(name=role, namespace=env.namespace),
-                spec=DatabaseSpec(
-                    cluster=DatabaseSpecCluster(name=_CLUSTER_NAME),
-                    name=role,
-                    owner=role,
-                    database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.DELETE,
-                ),
+                cluster=DatabaseSpecCluster(name=_CLUSTER_NAME),
+                name=role,
+                owner=role,
+                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.DELETE,
             )

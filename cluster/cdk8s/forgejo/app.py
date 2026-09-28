@@ -1,5 +1,5 @@
-"""Forgejo: the Helm release, its git volume, S3 bucket and credentials, metrics token, route,
-public SSH listener, disruption budget and ServiceMonitor.
+"""Forgejo: the Helm release, its git volume, S3 bucket, identity and credentials, metrics
+token, route, public SSH listener, disruption budget and ServiceMonitor.
 
 Hand-written beside the generated output: `forgejo-admin-password.sops.yaml`.
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_envoyconfig_crds.io.cilium import (
     CiliumEnvoyConfig,
@@ -17,12 +17,9 @@ from cilium_envoyconfig_crds.io.cilium import (
     CiliumEnvoyConfigSpecNodeSelector,
 )
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -32,22 +29,16 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFrom,
     HelmReleaseSpecValuesFromKind,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecEndpointsBearerTokenSecret,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.seaweedfs import s3
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
@@ -99,8 +90,7 @@ def _object_storage(scope: Construct) -> None:
         adopt_existing=True,
         description="Forgejo packages, LFS, attachments, and artifacts.",
     )
-    # Declared by the seaweedfs-forgejo-bucket Kustomization.
-    identity = s3.IdentityRef(scope, "identity", name=_NAME)
+    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(
         namespace=_NAMESPACE,
@@ -113,22 +103,14 @@ def _object_storage(scope: Construct) -> None:
 def _metrics_token(scope: Construct) -> None:
     """ESO owns a stable Forgejo metrics bearer token. CreatedOnce avoids rotating the token
     without coordinating a Forgejo restart and Prometheus scrape cutover."""
-    generator = Password(
-        scope,
-        "metrics-token-generator",
-        metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "metrics-token",
         name=_METRICS_TOKEN,
         namespace=_NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(generator.name)],
+        key="token",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={"token": "{{ .password }}"}),
     )
 
 
@@ -154,21 +136,9 @@ def _values() -> dict[str, object]:
         },
         # Pin to OVH kimsufi nodes: required by the seaweedfs-ovh CSI (OVH-only) and
         # co-located with the OVH-HA forgejo-db (cnpg_conventions R5).
-        "nodeSelector": {"topology.kubernetes.io/zone": "hil-ovh"},
+        "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
         "affinity": {
-            # Prefer ordinary workers when this workload tolerates control planes.
-            "nodeAffinity": {
-                "preferredDuringSchedulingIgnoredDuringExecution": [
-                    {
-                        "weight": 100,
-                        "preference": {
-                            "matchExpressions": [
-                                {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                            ]
-                        },
-                    }
-                ]
-            },
+            "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
             # Keep the two replicas on different hosts so a single node loss can't take
             # both down. Required (not preferred): with two off-CP workers they land one
             # each; if a worker is gone the second can still schedule elsewhere (the off-CP
@@ -283,11 +253,7 @@ def _values() -> dict[str, object]:
             ],
         },
         # Trust cluster CA bundle (includes Let's Encrypt staging CA)
-        "deployment": {
-            # Reloader: auto-restart pods when secrets change
-            "annotations": {"reloader.stakater.com/auto": "true"},
-            "env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}],
-        },
+        "deployment": {"env": [{"name": "SSL_CERT_FILE", "value": "/etc/ssl/certs/cluster-ca/ca-certificates.crt"}]},
         # Mount CA bundle (includes Let's Encrypt staging CA when in staging mode)
         "extraVolumes": [{"name": "cluster-ca", "configMap": {"name": "cluster-internal-ca-bundle"}}],
         "extraContainerVolumeMounts": [_CLUSTER_CA_MOUNT],
@@ -345,19 +311,11 @@ def _values() -> dict[str, object]:
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = HelmRepository(
-        scope,
-        "helm-repository",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmRepositorySpec(
-            type=HelmRepositorySpecType.OCI, interval="24h", url="oci://code.forgejo.org/forgejo-helm"
-        ),
-    )
     helm_release(
         scope,
         _NAME,
         _NAMESPACE,
-        repository=repository,
+        repository=oci_helm_repository(scope, _NAME, _NAMESPACE, url="oci://code.forgejo.org/forgejo-helm"),
         chart=_NAME,
         version="17.1.6",
         interval="15m",
@@ -396,7 +354,9 @@ def _ssh_listener(scope: Construct) -> None:
     CiliumEnvoyConfig(
         scope,
         "ssh-listener",
-        metadata=metadata(service, _NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}),
+        metadata=ApiObjectMetadata(
+            name=service, namespace=_NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}
+        ),
         spec=CiliumEnvoyConfigSpec(
             node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
             backend_services=[
@@ -441,8 +401,8 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        hostname="git.allegedly.works",
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=["git.allegedly.works"],
         backend="forgejo-http",
         port=3000,
         hsts=False,
@@ -466,18 +426,10 @@ def chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "service-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=ServiceMonitorSpec(
-            # Helm release name; robust regardless of the chart's app name label.
-            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/instance": _NAME}),
-            endpoints=[
-                ServiceMonitorSpecEndpoints(
-                    port="http",
-                    path="/metrics",
-                    bearer_token_secret=ServiceMonitorSpecEndpointsBearerTokenSecret(name=_METRICS_TOKEN, key="token"),
-                )
-            ],
-        ),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        # Helm release name; robust regardless of the chart's app name label.
+        selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/instance": _NAME}),
+        endpoints=[Endpoint.bearer_token_secret(port="http", secret_name=_METRICS_TOKEN, key="token")],
     )
     _metrics_token(chart)
     _ssh_listener(chart)

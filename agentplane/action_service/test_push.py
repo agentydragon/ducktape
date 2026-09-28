@@ -8,6 +8,7 @@ import pytest
 import pytest_bazel
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionIdentity
@@ -149,7 +150,7 @@ def test_push_identity_signs_only_for_reviewed_push_hosts() -> None:
         .decode()
     )
     settings = WebPushSettings(
-        private_key_pem=private_key,
+        private_key_pem=SecretStr(private_key),
         subject="mailto:push@agentplane.test",
         public_base_url="https://app.example",
         allowed_push_hosts=frozenset({"push.example"}),

@@ -9,14 +9,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 
 
 def grocy_sf(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    cert_manager_issuer_config: Kustomization,
-    cert_manager_environment: Kustomization,
-    authentik: Kustomization,
-    volsync: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, volsync: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "grocy-sf"
     return flux_kustomization(
@@ -25,7 +18,9 @@ def grocy_sf(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            forgejo_images, gateway, cert_manager_issuer_config, cert_manager_environment, authentik, volsync
+            volsync,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment, Job and Namespace.
+            kyverno,
         ),
     )
 
@@ -33,14 +28,10 @@ def grocy_sf(
 def grocy_mcp_sf(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    grocy_sf: Kustomization,
+    external_secrets_operator: Kustomization,
     valkey: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
     monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "grocy-mcp-sf"
     return flux_kustomization(
@@ -49,21 +40,18 @@ def grocy_mcp_sf(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
-            forgejo_images,
-            gateway,
-            grocy_sf,
+            external_secrets_operator,
             valkey,
-            agent_machine_access_tf,
-            reflector,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
         ),
     )
 
 
 def grocy_sf_user_perms(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, forgejo_images: Kustomization, grocy_sf: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, grocy_sf: Kustomization
 ) -> Kustomization:
     name = "grocy-sf-user-perms"
     return flux_kustomization(
@@ -71,23 +59,13 @@ def grocy_sf_user_perms(
         name,
         artifact,
         timeout="5m",
-        # Run only after grocy-sf is up (and self-migrated via its postStart hook); the
-        # wait on the Job's completion makes this kustomization Ready only once the policy
-        # in policy.yaml has actually been applied — so a fresh cluster converges to the
-        # committed user→permission policy.
-        depends_on=flux_kustomization_depends_on_many(forgejo_images, grocy_sf),
+        # bootstrap-never-converges: the Job's retries (no TTL) run from apply and Flux never recreates it.
+        depends_on=flux_kustomization_depends_on_many(grocy_sf),
     )
 
 
 def grocy_vallejo(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    cert_manager_issuer_config: Kustomization,
-    cert_manager_environment: Kustomization,
-    authentik: Kustomization,
-    volsync: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, volsync: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "grocy-vallejo"
     return flux_kustomization(
@@ -96,7 +74,9 @@ def grocy_vallejo(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            forgejo_images, gateway, cert_manager_issuer_config, cert_manager_environment, authentik, volsync
+            volsync,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment, Job and Namespace.
+            kyverno,
         ),
     )
 
@@ -104,14 +84,10 @@ def grocy_vallejo(
 def grocy_mcp_vallejo(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    grocy_vallejo: Kustomization,
+    external_secrets_operator: Kustomization,
     valkey: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
     monitoring_crds: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     name = "grocy-mcp-vallejo"
     return flux_kustomization(
@@ -120,21 +96,18 @@ def grocy_mcp_vallejo(
         artifact,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
-            forgejo_images,
-            gateway,
-            grocy_vallejo,
+            external_secrets_operator,
             valkey,
-            agent_machine_access_tf,
-            reflector,
             # the ServiceMonitor/PodMonitor CRD
             monitoring_crds,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
         ),
     )
 
 
 def grocy_vallejo_user_perms(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, forgejo_images: Kustomization, grocy_vallejo: Kustomization
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, grocy_vallejo: Kustomization
 ) -> Kustomization:
     name = "grocy-vallejo-user-perms"
     return flux_kustomization(
@@ -142,9 +115,6 @@ def grocy_vallejo_user_perms(
         name,
         artifact,
         timeout="5m",
-        # Run only after grocy-vallejo is up (and self-migrated via its postStart hook);
-        # the wait on the Job's completion makes this kustomization Ready only once the
-        # policy in policy.yaml has actually been applied — so a fresh cluster converges
-        # to the committed user→permission policy.
-        depends_on=flux_kustomization_depends_on_many(forgejo_images, grocy_vallejo),
+        # bootstrap-never-converges: the Job's retries (no TTL) run from apply and Flux never recreates it.
+        depends_on=flux_kustomization_depends_on_many(grocy_vallejo),
     )

@@ -22,16 +22,17 @@ from pathlib import Path
 import yaml
 from pydantic import Field, HttpUrl, NonNegativeInt, PositiveInt, model_validator
 
-from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.portfolio_source_config import PortfolioSourcesConfig
 from finance.augur.api.schemas import ApiModel
 from finance.augur.api.wire import ActorRole, ProductInputDefaults
-from finance.augur.budget.schema import BudgetConfig
-from finance.augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
-from finance.augur.model.series import SecuritySymbol
-from finance.augur.model.state_space import StateSpaceProviderConfig
-from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
+from finance.augur.model.series import LocationId, SecuritySymbol
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
+from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
+from finance.augur.sim.income import InterestCharacter
+from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
+from finance.augur.x.models.state_space import StateSpaceProviderConfig
+from finance.augur.x.models.trained_private_equity import TrainedPrivateEquityProviderConfig
+from finance.budget.schema import BudgetConfig
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
@@ -48,7 +49,7 @@ class AgentDefinition(ApiModel):
     Actor IDs are user-provided identity strings (e.g. "primary", "buyer").
     The role is a typed concept the policy / scenario engine consumes."""
 
-    actor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    actor_id: AgentId = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
     role: ActorRole
 
@@ -56,7 +57,7 @@ class AgentDefinition(ApiModel):
 class PropertyAssetConfig(ApiModel):
     """Deployment-owned public image URL for one property."""
 
-    property_id: str = Field(min_length=1)
+    property_id: PropertyId = Field(min_length=1)
     image_url: HttpUrl
 
 
@@ -111,15 +112,10 @@ class DistributionTaxShareConfig(ApiModel):
     exempt at the state level. The fractions come from the fund's own annual disclosure.
     """
 
+    # TODO: let a share declare qualified-dividend or ordinary character. The sim's distribution
+    # tax character takes any income category; this config reaches it only as interest.
     fraction: float = Field(gt=0.0, le=1.0)
-    issuer_jurisdiction_id: str | None = Field(
-        default=None,
-        description=(
-            "The taxing authority that issued the underlying debt — `federal_us` for the "
-            "Treasury slice, `california` for CA munis. `None` means a non-governmental issuer, "
-            "which no jurisdiction exempts."
-        ),
-    )
+    character: InterestCharacter
 
 
 class SecurityDistributionConfig(ApiModel):
@@ -142,18 +138,23 @@ class SecurityDistributionConfig(ApiModel):
 
 
 class LocationConfig(ApiModel):
-    """A deployment-owned location identity and its local modeling inputs.
+    """A deployment-owned location identity and where its properties are taxed.
 
     Built-in locations are available from the public catalog, but fixtures and
     private deployments should define their own IDs here instead of extending
     core enums.
     """
 
-    location_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    location_id: LocationId = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
     city: str
     state: str
-    local_regulation: LocalRegulation
+    situs: JurisdictionId = Field(
+        description=(
+            "The tax rate area (a file under `sim/data/jurisdictions/`) whose property-tax law "
+            "applies to a property here."
+        )
+    )
     notes: tuple[str, ...] = ()
 
 
@@ -170,7 +171,7 @@ class Config(ApiModel):
     property_source: PropertySourceConfig
     portfolio_sources: PortfolioSourcesConfig
     locations: tuple[LocationConfig, ...] = ()
-    location_selection: tuple[str, ...] | None = None
+    location_selection: tuple[LocationId, ...] | None = None
     security_distributions: tuple[SecurityDistributionConfig, ...] = Field(
         default=(),
         description=(

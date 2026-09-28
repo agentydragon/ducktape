@@ -6,6 +6,7 @@ from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -23,12 +24,11 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import container_security, database, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
 NAME = "agentplane-electric"
 PORT = 3000
@@ -45,7 +45,7 @@ class Electric(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(NAME, env.namespace, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
@@ -86,32 +86,33 @@ class Electric(Construct):
                 cpu=CpuResources(request=Cpu.millis(100)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         # Shape logs are a cache of Postgres: a restart starts them empty, and each reader refetches
         # on its shape's 409.
         container.mount(
             _STORAGE_DIR, Volume.from_empty_dir(self, "storage-volume", "storage", size_limit=Size.gibibytes(5))
         )
-        node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment)
+        pod_policy.place(deployment, node_scheduling.HIL_OVH)
+        pod_policy.harden(deployment)
 
         Service(
             self,
             "service",
-            metadata=metadata(NAME, env.namespace, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
             selector=deployment,
             ports=[ServicePort(name="http", port=PORT, target_port=PORT, protocol=Protocol.TCP)],
         )
-        cilium.network_policy(
+        NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(NAME, env.namespace),
-            selector=_LABELS,
-            ingress=[cilium.ingress_from(cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[PORT])],
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            endpoint_selector=_LABELS,
+            ingress=[IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[PORT])],
             egress=[
                 cilium.dns_egress(),
-                cilium.egress_to(
+                EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,
                 ),

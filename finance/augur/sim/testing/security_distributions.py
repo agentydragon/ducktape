@@ -1,18 +1,26 @@
-"""Shared authored fund-payout cases for compiler and action-session controls."""
+"""Shared fund-payout terms for the distribution tests."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
 
-from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
-from finance.augur.sim.scenario import DistributionTaxSlice, InitialLot, SecurityDistribution
-from finance.augur.sim.testing.case import Case, flat, scenario
-from finance.augur.sim.testing.fixtures import checking, taxed
+from finance.augur.model.series import SecurityKey, SecuritySymbol
+from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.ids import JurisdictionId
+from finance.augur.sim.income import (
+    InterestIncome,
+    Municipal,
+    QualifiedDividendIncome,
+    Taxable,
+    TransferIncomeCategory,
+    Treasury,
+)
 
 HORIZON = 13
 SYMBOL = SecuritySymbol("bnd")
 FUND = SecurityKey(symbol=SYMBOL)
-UNITS = 10_000.0
+UNITS = 10_000
 PRICE = Decimal(73)
 # A round monthly payout per unit, so `units x per unit` is exact at every split.
 PER_UNIT = Decimal("0.20")
@@ -25,76 +33,23 @@ LOSSY_PER_UNIT = Decimal("0.0123")
 
 
 def payout_quanta(per_unit: Decimal) -> int:
-    return int(Decimal(str(UNITS)) * per_unit * 100)
+    return int(UNITS * per_unit * 100)
 
 
 MONTHLY_PAYOUT_QUANTA = payout_quanta(PER_UNIT)
 
-TREASURY = (DistributionTaxSlice(fraction=1.0, issuer_jurisdiction_id="federal_us"),)
-CALIFORNIA_MUNI = (DistributionTaxSlice(fraction=1.0, issuer_jurisdiction_id="california"),)
-CORPORATE = (DistributionTaxSlice(fraction=1.0),)
+# Each fund's split of a payout by income category, in parts per billion.
+TREASURY: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=Treasury()): MONEY_FACTOR_SCALE}
+CALIFORNIA_MUNI: Mapping[TransferIncomeCategory, int] = {
+    InterestIncome(character=Municipal(state=JurisdictionId("california"))): MONEY_FACTOR_SCALE
+}
+TAXABLE: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=Taxable()): MONEY_FACTOR_SCALE}
 # An aggregate fund: part Treasury, part corporate. The case a single tag cannot express.
-AGGREGATE = (
-    DistributionTaxSlice(fraction=0.4, issuer_jurisdiction_id="federal_us"),
-    DistributionTaxSlice(fraction=0.6),
-)
+AGGREGATE: Mapping[TransferIncomeCategory, int] = {
+    InterestIncome(character=Treasury()): 400_000_000,
+    InterestIncome(character=Taxable()): 600_000_000,
+}
 TREASURY_SHARE, CORPORATE_SHARE = Decimal("0.4"), Decimal("0.6")
+QUALIFIED_DIVIDENDS: Mapping[TransferIncomeCategory, int] = {QualifiedDividendIncome(): MONEY_FACTOR_SCALE}
 # Snapshot `m` opens month `m`, so month 11 has months 0..10 behind it: eleven payouts.
 YEAR_END, PAYOUTS_BY_YEAR_END = 11, 11
-
-
-def distribution_case(
-    *,
-    tax_character: tuple[DistributionTaxSlice, ...] = TREASURY,
-    is_taxed: bool = True,
-    distributes: bool = True,
-    holding_account_id: str = "brokerage",
-    pays_a_series: bool = True,
-    per_unit: Decimal = PER_UNIT,
-) -> Case:
-    """Alice holds one fund in a brokerage account and its payout lands in checking.
-
-    `is_taxed=False` leaves the payout standing alone in the cash channel, which the
-    cashflow cases want: with a tax profile the year-end settlement lands in the same months.
-    """
-
-    return Case(
-        scenario=scenario(
-            checking(("alice", Decimal(50_000)), ("irs", Decimal(0))),
-            initial_lots=[
-                InitialLot(
-                    lot_id="bnd-lot",
-                    agent_id="alice",
-                    account_id="brokerage",
-                    asset=FUND,
-                    purchase_month_index=-24,
-                    quantity=UNITS,
-                    cost_basis=Decimal(str(UNITS)) * PRICE,
-                )
-            ],
-            security_distributions=[
-                SecurityDistribution(
-                    asset=FUND,
-                    agent_id="alice",
-                    holding_account_id=holding_account_id,
-                    to_account_id="checking",
-                    tax_character=tax_character,
-                )
-            ]
-            if distributes
-            else [],
-            tax_profiles=[taxed("alice", "federal_us", "california")] if is_taxed else [],
-            horizon_months=HORIZON,
-        ),
-        rollout_count=1,
-        series={
-            FUND: flat(PRICE, rollout_count=1, horizon_months=HORIZON),
-            # The two series have the same shape and units, which is the point of the payout
-            # being a primitive rather than a rate.
-            **(
-                {SecurityDistributionKey(symbol=SYMBOL): flat(per_unit, rollout_count=1, horizon_months=HORIZON)}
-                if pays_a_series
-                else {}
-            ),
-        },
-    )

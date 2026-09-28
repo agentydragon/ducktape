@@ -4,11 +4,12 @@ import pytest_bazel
 
 from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.observations import Claim, Observation
 
 
 def test_observed_claim_request_roundtrip_loses_opaque_owner() -> None:
-    account = AccountRef(agent_id="test-payer", account_id="checking")
+    account = AccountRef(agent_id=AgentId("test-payer"), account_id=AccountId("checking"))
     facts = Observation(
         agent_id=account.agent_id,
         month=3,
@@ -27,10 +28,11 @@ def test_observed_claim_request_roundtrip_loses_opaque_owner() -> None:
                 cause_id="test-bill",
                 obligation_type="rent",
                 from_account=account,
-                to_account=AccountRef(agent_id="test-recipient", account_id="checking"),
+                to_account=AccountRef(agent_id=AgentId("test-recipient"), account_id=AccountId("checking")),
                 amount_due=10,
             ),
         ),
+        tax_records=None,
     )
     owner = object()
     [claim] = facts.claims

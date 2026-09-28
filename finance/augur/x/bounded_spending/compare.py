@@ -8,25 +8,32 @@ post-cashflow decision boundary.
 
 import argparse
 import json
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from finance.augur.sim.artifacts import write_prepared_input
-from finance.augur.sim.compiler.execution import compile_run
-from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.results import Finished
-from finance.augur.study.trinity.replay import HORIZON_MONTHS, build_scenario, sample_replay, sleeve_targets
+from finance.augur.study.trinity.replay import (
+    HORIZON_MONTHS,
+    QUANTUM,
+    Situation,
+    sample_replay,
+    situation,
+    sleeve_targets,
+)
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, SpendingPolicy, consumption, run
+from finance.augur.x.bounded_spending.situation import compose
 from finance.augur.x.bounded_spending.stress_paths import sample
+
+CURRENCY_CODE = "USD"
 
 
 def compare(
     *,
-    external_series: ExternalSeriesContext,
-    rollout_count: int,
+    case: Situation,
     equity_share: float,
     rate_bps: int,
     max_cut_bps: int,
@@ -34,19 +41,15 @@ def compare(
     output_dir: Path,
     trace_rollouts: tuple[int, ...] = (),
 ) -> None:
-    """Compile shared paths; retain compact consumption and opt-in original-path traces."""
+    """Compose the shared paths per cell; retain compact consumption and opt-in original-path traces."""
     if not 0 <= equity_share <= 1:
         raise ValueError("equity_share must be finite and in [0, 1]")
     if not 0 < rate_bps <= 10_000 or not 0 <= max_cut_bps <= 10_000 or not 0 <= max_raise_bps <= 10_000:
         raise ValueError("rate must be in (0, 10000] bps; cut and raise in [0, 10000] bps")
-    if any(rollout < 0 or rollout >= rollout_count for rollout in trace_rollouts):
+    if any(rollout < 0 or rollout >= case.rollout_count for rollout in trace_rollouts):
         raise ValueError("trace rollout must identify an original path in the population")
-    scenario = build_scenario(equity_share=equity_share, withdrawal_rate=rate_bps / 10_000)
     targets = sleeve_targets(equity_share)
-    scenario = scenario.model_copy(update={"scheduled_obligations": []})
-    prepared = compile_run(
-        scenario, rollout_count=rollout_count, external_series=external_series, jurisdictions={}, locations={}
-    )
+    compose_path = partial(compose, case, equity_share=equity_share)
     output_dir.mkdir(parents=True, exist_ok=False)
     (output_dir / "policies.json").write_text(
         json.dumps(
@@ -67,19 +70,19 @@ def compare(
             indent=2,
         )
     )
-    input_path = output_dir / "execution-input.json"
-    write_prepared_input(prepared, input_path)
     for name, cut, raise_ in (("fixed_real", 0, 0), ("bounded", max_cut_bps, max_raise_bps)):
         summary_path = output_dir / f"{name}.json"
         parameters = Parameters(rate_bps, cut, raise_)
         summary = run(
-            prepared, SpendingPolicy(BatchPolicy(parameters, rollout_count), targets), list(range(rollout_count))
+            compose_path,
+            SpendingPolicy(BatchPolicy(parameters, case.rollout_count), targets),
+            list(range(case.rollout_count)),
         )
         summary_path.write_text(summary.model_dump_json())
         for rollout_id in trace_rollouts:
             replay = run(
-                prepared,
-                SpendingPolicy(BatchPolicy(parameters, rollout_count), targets),
+                compose_path,
+                SpendingPolicy(BatchPolicy(parameters, case.rollout_count), targets),
                 [rollout_id],
                 capture="forensic",
             )
@@ -87,9 +90,9 @@ def compare(
         _write_consumption_distribution(
             summary,
             output_dir / f"{name}.consumption.json",
-            horizon_months=scenario.horizon_months,
-            currency_code=scenario.currency.code,
-            currency_quantum=str(scenario.currency.quantum),
+            horizon_months=case.horizon_months,
+            currency_code=CURRENCY_CODE,
+            currency_quantum=str(QUANTUM),
         )
 
 
@@ -156,12 +159,11 @@ def main() -> None:
     if args.synthetic:
         if args.equity_share != 1:
             raise ValueError("synthetic paths declare equity only; use equity-share 1")
-        paths = sample(rollout_count=3, horizon_months=HORIZON_MONTHS)
-        count = 3
+        case = situation(sample(rollout_count=3, horizon_months=HORIZON_MONTHS), rollout_count=3)
         provenance: dict[str, Any] = {"sampler": "three stipulated equity/CPI stress cases; not probability samples"}
     else:
         replay = sample_replay(args.evidence_dir)
-        paths, count = replay.external_series, replay.window_count
+        case = replay.situation
         provenance = {
             "sampler": "Trinity historical overlapping monthly windows",
             "record_start": replay.record_start.isoformat(),
@@ -169,8 +171,7 @@ def main() -> None:
             "window_starts": [month.isoformat() for month in replay.window_starts],
         }
     compare(
-        external_series=paths,
-        rollout_count=count,
+        case=case,
         equity_share=args.equity_share,
         rate_bps=args.rate_bps,
         max_cut_bps=args.max_cut_bps,
@@ -179,7 +180,10 @@ def main() -> None:
         trace_rollouts=tuple(args.trace_rollout),
     )
     (args.output_dir / "paths.json").write_text(json.dumps(provenance, indent=2))
-    print(f"Saved {count} paired compact outcomes to {args.output_dir}; paths are not independent probability draws.")
+    print(
+        f"Saved {case.rollout_count} paired compact outcomes to {args.output_dir}; "
+        "paths are not independent probability draws."
+    )
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ exports_files(
     visibility = ["//haku/x/dispatch/deploy/litellm:__pkg__"],
 )
 
+exports_files(["variables.tf"])
+
 tf_providers_versions(
     name = "providers",
     providers = {

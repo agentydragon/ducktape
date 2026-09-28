@@ -1,6 +1,32 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "patch_qwen38_template",
+    srcs = ["patch_qwen38_template.py"],
+)
+
+py_binary(
+    name = "derive_qwen38_template",
+    srcs = ["derive_qwen38_template_cli.py"],
+    main = "derive_qwen38_template_cli.py",
+    deps = [":patch_qwen38_template"],
+)
+
+py_test(
+    name = "test_patch_qwen38_template",
+    srcs = ["test_patch_qwen38_template.py"],
+    data = ["//cluster/k8s:qwen38_chat_template"],
+    deps = [
+        ":patch_qwen38_template",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//jinja2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
 
 py_library(
     name = "flux_kustomizations",
@@ -9,8 +35,8 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/crd_bindings/flux:kustomization",
-        "//cluster/cdk8s/crd_bindings/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -23,10 +49,9 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/external_secrets:passwordgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

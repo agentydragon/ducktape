@@ -26,7 +26,7 @@ from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import create_app
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import Replica, stored_login
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -77,7 +77,13 @@ from util.net import pick_free_port
 # gazelle:include_dep @pypi//httpx
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
-MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
+MODELS = ModelCatalog(
+    models=[
+        ModelOption(model="test-claude-model", display_name="Test Claude Model"),
+        ModelOption(model="test-codex-model", display_name="Test Codex Model"),
+    ],
+    harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
+)
 
 
 @pytest.fixture
@@ -133,7 +139,7 @@ async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex,
     assert [binding.name for binding in seeded.bindings_for(runner)] == ["runner-1-picked"]
 
 
-EMPTY_POLICY = ActionPolicyView(synced=True, bindings=[], auto_approve_if=[], auto_deny_if=[], auto_deny_unless=[])
+EMPTY_POLICY = ActionPolicyView(synced=True, bindings=[], auto_approve_if=[])
 
 
 async def test_the_sandbox_stream_asks_the_service_again_only_when_a_policy_object_changed(seeded: LiveIndex) -> None:

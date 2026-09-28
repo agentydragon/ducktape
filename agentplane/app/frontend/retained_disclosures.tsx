@@ -30,11 +30,13 @@ export function RetainedDisclosureProvider({ children }: { children: ReactNode }
   return <DisclosureContext.Provider value={value}>{children}</DisclosureContext.Provider>;
 }
 
-/** The retained open state behind `id`, for a disclosure toggled by something other than a summary. */
-export function useRetainedDisclosure(id: string): [boolean, (open: boolean) => void] {
+/** The retained open state behind `id`, for a disclosure toggled by something other than a summary.
+ * `id: null` means there is no disclosure to track (e.g. a reasoning step with nothing to expand
+ * into) -- always closed, and toggling it is a no-op. */
+export function useRetainedDisclosure(id: string | null): [boolean, (open: boolean) => void] {
   const state = useContext(DisclosureContext);
   if (!state) throw new Error("Retained disclosures require RetainedDisclosureProvider");
-  return [state.open.has(id), (open) => state.setOpen(id, open)];
+  return [id !== null && state.open.has(id), (open) => id !== null && state.setOpen(id, open)];
 }
 
 export function RetainedDisclosure({

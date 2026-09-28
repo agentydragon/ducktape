@@ -58,40 +58,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: cert-manager-issuer-config
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/generated/cert-manager/issuer-config
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: cert-manager-issuer-config
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: coredns-custom
-  namespace: ducktape-flux
-spec:
-  interval: 10m0s
-  path: ./cluster/k8s/coredns-custom
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: coredns-custom
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: external-secrets-crds
   namespace: ducktape-flux
 spec:
@@ -119,21 +85,6 @@ spec:
     kind: ExternalArtifact
     name: flux-image-automation-ghcr
     namespace: ducktape-flux
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: budget-namespace
-  namespace: ducktape-flux
-spec:
-  interval: 1h
-  path: ./cluster/generated/forgejo/budget-namespace
-  prune: false
-  sourceRef:
-    kind: ExternalArtifact
-    name: budget-namespace
-    namespace: ducktape-flux
-  timeout: 1m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -346,23 +297,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: openebs-lvm
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/generated/openebs-lvm
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: openebs-lvm
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   annotations:
     ducktape.org/parked: "true"
   name: buildbuddy-executor
@@ -456,6 +390,26 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: openebs-lvm
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: snapshot-controller-crds
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/openebs-lvm
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: openebs-lvm
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   annotations:
     description: The sshpiper Pipe CRD, sourced from the tag used by the deployed image.
   name: sshpiper-crds
@@ -535,10 +489,6 @@ metadata:
   name: gaffer-private-source
   namespace: flux-system
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: flux-image-automation-ghcr
       namespace: ducktape-flux
@@ -702,8 +652,6 @@ spec:
   dependsOn:
     - name: cdi-operator
       namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: cdi.kubevirt.io/v1beta1
       current: has(status.phase) && status.phase == 'Deployed' && has(status.conditions) && status.conditions.exists(c, c.type == 'Available' && c.status == 'True')
@@ -748,61 +696,20 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: flux-monitoring
+  name: platform-monitoring
   namespace: ducktape-flux
 spec:
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/generated/flux-monitoring
+  path: ./cluster/generated/platform-monitoring
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: flux-monitoring
+    name: platform-monitoring
     namespace: ducktape-flux
-  timeout: 2m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: cilium-monitoring
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: monitoring-crds
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/monitoring/cilium
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-cilium
-    namespace: ducktape-flux
-  timeout: 2m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: etcd-monitoring
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: monitoring-crds
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/monitoring/etcd
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-etcd
-    namespace: ducktape-flux
-  timeout: 2m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -824,23 +731,6 @@ spec:
     namespace: ducktape-flux
   timeout: 5m
   wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: monitoring-rules
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: monitoring-crds
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/monitoring/rules
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-rules
-    namespace: ducktape-flux
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -872,11 +762,6 @@ metadata:
   name: nvidia-device-plugin
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: nvidia-runtimeclass
-      namespace: ducktape-flux
-    - name: node-feature-discovery
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/nvidia-device-plugin
   prune: true
@@ -895,18 +780,10 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: cert-manager-issuer-config
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/cert-manager/app
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -943,9 +820,6 @@ metadata:
   name: snapshot-controller
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: snapshot-controller-crds
-      namespace: ducktape-flux
   images:
     - name: registry.k8s.io/sig-storage/snapshot-controller
       newTag: v8.6.0
@@ -978,8 +852,6 @@ metadata:
 spec:
   dependsOn:
     - name: valkey
-      namespace: ducktape-flux
-    - name: local-path-provisioner
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/cache
@@ -1051,8 +923,6 @@ spec:
   dependsOn:
     - name: kyverno
       namespace: ducktape-flux
-    - name: metrics-server
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/vpa
   prune: true
@@ -1106,8 +976,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: nvidia-device-plugin
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
@@ -1188,6 +1056,24 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: budget-namespace
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+  interval: 1h
+  path: ./cluster/generated/forgejo/budget-namespace
+  prune: false
+  sourceRef:
+    kind: ExternalArtifact
+    name: budget-namespace
+    namespace: ducktape-flux
+  timeout: 1m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: external-secrets-config
   namespace: ducktape-flux
 spec:
@@ -1212,18 +1098,10 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: cert-manager
-      namespace: ducktape-flux
     - name: kyverno
-      namespace: ducktape-flux
-    - name: cert-manager-issuer-config
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/gateway
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1240,8 +1118,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: cert-manager
-      namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m0s
@@ -1262,7 +1138,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: snapshot-controller
+    - name: monitoring-crds
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: v1
@@ -1289,8 +1165,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: kyverno-policies
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/shared-rbac
@@ -1333,9 +1207,6 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  dependsOn:
-    - name: claude-rbac
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/external-creds
   prune: true
@@ -1352,7 +1223,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: vpa
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/goldilocks
@@ -1396,18 +1267,10 @@ spec:
       namespace: ducktape-flux
     - name: cert-manager-trust
       namespace: ducktape-flux
-    - name: cert-manager-issuer-config
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/cert-manager/environment
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1503,7 +1366,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: gateway
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/website
@@ -1523,7 +1386,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: gateway
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/proxmox-proxy
@@ -1544,7 +1407,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: goldilocks
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/kube-system
@@ -1583,9 +1446,11 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: cert-manager-environment
-      namespace: ducktape-flux
     - name: claude-rbac
+      namespace: ducktape-flux
+    - name: cert-manager
+      namespace: ducktape-flux
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/parked/docker-ci
@@ -1607,16 +1472,10 @@ metadata:
 spec:
   deletionPolicy: Orphan
   dependsOn:
-    - name: cert-manager-issuer-config
-      namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/atuin
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1662,13 +1521,9 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
-    - name: gaffer-private-source
-      namespace: flux-system
-    - name: authentik
+    - name: kyverno
       namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: cert-manager-issuer-config
+    - name: tofu-controller
       namespace: ducktape-flux
   interval: 10m
   path: ./k8s
@@ -1688,11 +1543,7 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -1717,8 +1568,6 @@ spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/agentydragon
   prune: true
@@ -1736,14 +1585,8 @@ metadata:
   name: infra-drift
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -1771,11 +1614,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: claude-rbac
-      namespace: ducktape-flux
-    - name: haku-rbac
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/alloy-otlp-bearer
@@ -1797,9 +1636,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
@@ -1835,11 +1672,11 @@ spec:
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: gateway
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/ntfy
@@ -1858,18 +1695,11 @@ metadata:
   name: ollama
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
-    - name: gateway
+    - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: cert-manager-environment
-      namespace: ducktape-flux
-    - name: nvidia-runtimeclass
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
-    - name: claude-rbac
+    - name: kyverno
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
@@ -1894,12 +1724,6 @@ metadata:
 spec:
   dependsOn:
     - name: seaweedfs-operator
-      namespace: ducktape-flux
-    - name: seaweedfs-secrets
-      namespace: ducktape-flux
-    - name: seaweedfs-filer-db
-      namespace: ducktape-flux
-    - name: local-path-provisioner
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/seaweedfs/cluster
@@ -1934,131 +1758,55 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: agent-machine-access-tf
+  name: authentik-tf
   namespace: ducktape-flux
 spec:
   dependsOn:
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: authentik
-      namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: agent-machine-access
-      namespace: flux-system
-  interval: 10m
-  path: ./cluster/generated/agents/machine-access-tf
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: agent-machine-access-tf
-    namespace: ducktape-flux
-  timeout: 10m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: sso-providers-tf
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: authentik
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
       name: sso-providers
       namespace: flux-system
-  interval: 10m
-  path: ./cluster/generated/authentik/sso-providers-tf
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: sso-providers-tf
-    namespace: ducktape-flux
-  timeout: 10m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: gatus-sso-tf
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: authentik
-      namespace: ducktape-flux
-  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: agent-machine-access
+      namespace: flux-system
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
       name: gatus-sso
       namespace: flux-system
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: alloy-otlp-bearer-token
+      namespace: flux-system
   interval: 10m
-  path: ./cluster/generated/gatus/sso-tf
+  path: ./cluster/generated/authentik/tf
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: gatus-sso-tf
+    name: authentik-tf
     namespace: ducktape-flux
   timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: flux-webhook-token
+  name: github-tf
   namespace: ducktape-flux
 spec:
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: github-secrets-sync-secrets
-      namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/generated/flux-webhook-token
+  path: ./cluster/generated/github-tf
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: flux-webhook-token
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: github-branch-protection
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: github-secrets-sync-secrets
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/github-branch-protection
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: github-branch-protection
+    name: github-tf
     namespace: ducktape-flux
   timeout: 10m
   wait: true
@@ -2078,9 +1826,7 @@ spec:
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
-    - name: ntfy
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: kyverno
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: v1
@@ -2135,7 +1881,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Restic/VolSync backup of the Haku OpenClaw spike state to its dedicated private SeaweedFS S3 bucket, plus the one-shot restore into the optiplex worker PVC that migrates the state off the control plane.
+    description: Restic/VolSync backup of the Haku OpenClaw spike state to its dedicated private SeaweedFS S3 bucket.
   name: haku-openclaw-spike-backup
   namespace: ducktape-flux
 spec:
@@ -2170,7 +1916,7 @@ spec:
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/authentik/db-backups
@@ -2189,14 +1935,10 @@ metadata:
   name: loki
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
-    - name: grafana-helmrepository
+    - name: seaweedfs-operator
       namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: monitoring-crds
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -2227,16 +1969,10 @@ metadata:
   name: mimir
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
-    - name: grafana-helmrepository
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
@@ -2272,16 +2008,10 @@ metadata:
   name: tempo
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: monitoring-crds
       namespace: ducktape-flux
-    - name: grafana-helmrepository
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
@@ -2314,7 +2044,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/drivefs-artifacts-bucket
@@ -2340,9 +2070,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: seaweedfs-secrets
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/seaweedfs/external-credentials
@@ -2358,31 +2086,11 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: seaweedfs-forgejo-bucket
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/seaweedfs/forgejo-bucket
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-forgejo-bucket
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: seaweedfs-loom-gym-bucket
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/loom-gym-bucket
@@ -2398,31 +2106,11 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: seaweedfs-monitoring
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
-    - name: monitoring-crds
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/seaweedfs/monitoring
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-monitoring
-    namespace: ducktape-flux
-  suspend: false
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: seaweedfs-pr-visuals-bucket
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 1h
   path: ./cluster/generated/seaweedfs/pr-visuals-bucket
@@ -2438,31 +2126,11 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: seaweedfs-public-coder-agent-backups-bucket
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/seaweedfs/public-coder-agent-backups-bucket
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-public-coder-agent-backups-bucket
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: seaweedfs-registry-cache-bucket
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/registry-cache-bucket
@@ -2481,9 +2149,6 @@ metadata:
   name: seaweedfs-csi
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs-csi
   prune: true
@@ -2506,7 +2171,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/vm-images-publisher
@@ -2599,11 +2264,6 @@ metadata:
   name: headlamp
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: gateway
-      namespace: ducktape-flux
-    - name: sso-providers-tf
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/headlamp
   prune: true
@@ -2675,18 +2335,10 @@ metadata:
   name: flux-webhook
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
-    - name: flux-webhook-token
+    - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: ntfy
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: gateway
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/flux-webhook
@@ -2733,9 +2385,6 @@ metadata:
   name: vector-talos-logs
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: loki
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/vector-talos-logs
   prune: true
@@ -2754,9 +2403,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: mimir
-      namespace: ducktape-flux
-    - name: grafana-helmrepository
+    - name: monitoring-crds
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -2786,9 +2433,9 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: seaweedfs-public-coder-agent-backups-bucket
+    - name: seaweedfs-operator
       namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: volsync
       namespace: ducktape-flux
@@ -2819,8 +2466,6 @@ spec:
   dependsOn:
     - name: valkey
       namespace: ducktape-flux
-    - name: seaweedfs-registry-cache-bucket
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
@@ -2840,22 +2485,10 @@ metadata:
   name: seaweedfs-public-s3
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
-    - name: seaweedfs-external-credentials
+    - name: seaweedfs-operator
       namespace: ducktape-flux
-    - name: seaweedfs-drivefs-artifacts-bucket
-      namespace: ducktape-flux
-    - name: vm-images-publisher
-      namespace: ducktape-flux
-    - name: seaweedfs-secrets
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
-    - name: gateway
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/public-s3
@@ -2881,13 +2514,9 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/parked/cloud-agent-tf
@@ -2908,11 +2537,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo
-      namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/agentydragon-repos
@@ -2932,13 +2557,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo
-      namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: budget-namespace
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/budget-ledger
@@ -2958,13 +2577,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo
-      namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: claude-rbac
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/claude
@@ -2990,13 +2603,9 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/forgejo-images
@@ -3018,6 +2627,8 @@ spec:
   dependsOn:
     - name: keda
       namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/haku-ci
   prune: true
@@ -3036,8 +2647,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: grafana-instance
-      namespace: ducktape-flux
     - name: grafana-operator
       namespace: ducktape-flux
   healthChecks:
@@ -3062,9 +2671,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: clickhouse
-      namespace: ducktape-flux
-    - name: grafana-instance
+    - name: grafana-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/grafana
@@ -3092,13 +2699,9 @@ spec:
   dependsOn:
     - name: kubevirt
       namespace: ducktape-flux
-    - name: cdi
-      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: seaweedfs-public-s3
-      namespace: ducktape-flux
-    - name: local-path-provisioner
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/parked/agent-box
@@ -3129,13 +2732,7 @@ spec:
       namespace: ducktape-flux
     - name: kubevirt
       namespace: ducktape-flux
-    - name: cdi
-      namespace: ducktape-flux
     - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: seaweedfs-public-s3
-      namespace: ducktape-flux
-    - name: local-path-provisioner
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/parked/gecko/app
@@ -3160,11 +2757,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: local-path-provisioner
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/activitywatch
@@ -3188,13 +2781,9 @@ spec:
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-    - name: ollama
+    - name: kyverno
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
@@ -3305,21 +2894,11 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: valkey
-      namespace: ducktape-flux
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
-    - name: reflector
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -3345,9 +2924,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: valkey
       namespace: ducktape-flux
@@ -3375,15 +2952,9 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: cert-manager-environment
-      namespace: ducktape-flux
-    - name: sso-providers-tf
-      namespace: ducktape-flux
-    - name: forgejo-images
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/cli-proxy-api
@@ -3406,11 +2977,9 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: kubevirt
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/cpap-sync
@@ -3432,8 +3001,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: flux-image-automation-ghcr
       namespace: ducktape-flux
   interval: 10m
@@ -3460,16 +3027,10 @@ spec:
       namespace: ducktape-flux
     - name: cert-manager
       namespace: ducktape-flux
-    - name: cert-manager-issuer-config
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/github-api-proxy
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3488,17 +3049,13 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: monitoring-namespace
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
-    - name: grafana-instance
+    - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: external-creds
+    - name: grafana-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/github-exporter
@@ -3514,49 +3071,13 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: github-secrets-sync
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: github-secrets-sync-secrets
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: seaweedfs-pr-visuals-bucket
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/github-secrets-sync
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: github-secrets-sync
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: grocy-sf
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: cert-manager-issuer-config
-      namespace: ducktape-flux
-    - name: cert-manager-environment
-      namespace: ducktape-flux
-    - name: authentik
-      namespace: ducktape-flux
     - name: volsync
+      namespace: ducktape-flux
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/grocy/sf/app
@@ -3576,17 +3097,9 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: cert-manager-issuer-config
-      namespace: ducktape-flux
-    - name: cert-manager-environment
-      namespace: ducktape-flux
-    - name: authentik
-      namespace: ducktape-flux
     - name: volsync
+      namespace: ducktape-flux
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/grocy/vallejo/app
@@ -3617,14 +3130,8 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: cert-manager-issuer-config
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/mailbox
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3647,21 +3154,13 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
-      namespace: ducktape-flux
     - name: volsync
       namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: forgejo-images
+    - name: seaweedfs-operator
       namespace: ducktape-flux
     - name: monitoring-crds
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: sso-providers-tf
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/home-assistant
@@ -3681,9 +3180,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: matrix
       namespace: ducktape-flux
@@ -3715,17 +3212,9 @@ spec:
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
-    - name: external-creds
+    - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: cert-manager
-      namespace: ducktape-flux
-    - name: seaweedfs-cluster
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/nix-cache
@@ -3747,13 +3236,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: authentik
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/parked/sdr
@@ -3805,8 +3288,6 @@ spec:
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/google-mcp
   prune: true
@@ -3853,15 +3334,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo
-      namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: agentplane-index
-      namespace: ducktape-flux
-    - name: haku-namespace
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/haku-state
@@ -3873,34 +3346,6 @@ spec:
     namespace: ducktape-flux
   timeout: 10m
   wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: alloy-otlp-bearer-token-tf
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: authentik-jwt-rotation
-      namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: alloy-otlp-bearer-token
-      namespace: flux-system
-  interval: 10m
-  path: ./cluster/generated/monitoring/alloy-otlp-bearer-token-tf
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: monitoring-alloy-otlp-bearer-token-tf
-    namespace: ducktape-flux
-  timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -3944,19 +3389,9 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: cli-proxy-api
-      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: clickhouse-schema
-      namespace: ducktape-flux
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
-    - name: reflector
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/aiquota
@@ -3976,13 +3411,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo
-      namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: cpap-sync
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/forgejo/cpap-data
@@ -4002,21 +3431,13 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: grocy-sf
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: valkey
       namespace: ducktape-flux
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/grocy/sf/mcp
@@ -4036,8 +3457,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: grocy-sf
       namespace: ducktape-flux
   interval: 10m
@@ -4058,21 +3477,13 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: grocy-vallejo
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: valkey
       namespace: ducktape-flux
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: kyverno
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/grocy/vallejo/mcp
@@ -4092,8 +3503,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
     - name: grocy-vallejo
       namespace: ducktape-flux
   interval: 10m
@@ -4114,11 +3523,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: home-assistant
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -4140,15 +3545,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: authentik-jwt-rotation
-      namespace: ducktape-flux
-    - name: forgejo-claude
-      namespace: ducktape-flux
-    - name: haku-state
-      namespace: ducktape-flux
-    - name: forgejo-agentydragon-repos
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/forgejo-token-rotation
@@ -4193,7 +3590,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: haku-state
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/haku/ui-image-webhook
@@ -4209,9 +3606,6 @@ metadata:
   name: haku-workloads
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: haku-state
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/haku/workloads
   prune: true
@@ -4234,11 +3628,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: litellm
-      namespace: ducktape-flux
     - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/litellm/keys-tf
@@ -4293,7 +3683,7 @@ spec:
       namespace: ducktape-flux
     - name: kyverno-policies
       namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/workspaces/app
@@ -4319,17 +3709,11 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: haku-namespace
       namespace: ducktape-flux
     - name: haku-rbac
-      namespace: ducktape-flux
-    - name: haku-state
       namespace: ducktape-flux
     - name: haku-egress-proxy
       namespace: ducktape-flux
@@ -4359,15 +3743,11 @@ spec:
       namespace: ducktape-flux
     - name: agent-sandbox-controller
       namespace: ducktape-flux
-    - name: cert-manager-environment
-      namespace: ducktape-flux
     - name: cert-manager-trust
-      namespace: ducktape-flux
-    - name: claude-rbac
       namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
@@ -4461,7 +3841,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: agent-sandbox-controller
       namespace: ducktape-flux
@@ -4490,15 +3870,7 @@ spec:
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
     - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: litellm
-      namespace: ducktape-flux
-    - name: litellm-keys-tf
       namespace: ducktape-flux
   interval: 10m
   path: ./haku/x/dispatch/deploy
@@ -4526,19 +3898,7 @@ spec:
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: agent-machine-access-tf
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -4625,15 +3985,7 @@ spec:
   dependsOn:
     - name: kubevirt
       namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: agent-shared-secrets
-      namespace: ducktape-flux
-    - name: public-coder-agent-app
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/public-coder-agent/devbox
@@ -4664,17 +4016,11 @@ spec:
       namespace: ducktape-flux
     - name: agent-sandbox-controller
       namespace: ducktape-flux
-    - name: cert-manager-environment
-      namespace: ducktape-flux
     - name: cert-manager-trust
-      namespace: ducktape-flux
-    - name: claude-rbac
       namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
+    - name: external-secrets-operator
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1

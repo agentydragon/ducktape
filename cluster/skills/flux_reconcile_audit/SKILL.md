@@ -21,7 +21,7 @@ python3 skills/flux_reconcile_audit/audit.py
 python3 skills/flux_reconcile_audit/audit.py --window 30m --no-loki
 
 # Drill into one resource
-python3 skills/flux_reconcile_audit/audit.py --window 1h --name augur
+python3 skills/flux_reconcile_audit/audit.py --window 1h --name forgejo
 ```
 
 ## Buckets

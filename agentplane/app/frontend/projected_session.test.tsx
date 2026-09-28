@@ -23,6 +23,7 @@ import {
   type ThreadState,
   type ThreadSync,
 } from "./thread_sync";
+import { TopbarContext } from "./topbar";
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./client")>()),
@@ -62,7 +63,10 @@ beforeEach(() => {
   inventoryFresh = true;
   inventoryDrops = false;
   vi.mocked(getThread).mockResolvedValue(THREAD);
-  vi.mocked(models).mockResolvedValue({ HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] });
+  vi.mocked(models).mockResolvedValue({
+    models: [{ model: "test-model", display_name: "Test Model" }],
+    harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
+  });
   vi.mocked(command).mockReturnValue(new Promise(() => {}));
   vi.stubGlobal(
     "EventSource",
@@ -174,17 +178,25 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
   };
   const container = document.createElement("div");
   document.body.append(container);
+  // The real shell topbar (app.tsx) isn't mounted here, so ProjectedSession's title/menu need
+  // somewhere to portal into. Left unattached until after the initial render: createRoot's first
+  // commit clears container's pre-existing children, which would tear these back out.
+  const topbarTitle = document.createElement("div");
+  const topbarActions = document.createElement("div");
   const root = createRoot(container);
   mounted.push({ root, container });
   await act(async () => {
     root.render(
       <MantineProvider env="test">
         <ThreadSyncContext.Provider value={sync}>
-          <ProjectedSession threadId={THREAD.id} onBack={() => {}} />
+          <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
+            <ProjectedSession threadId={THREAD.id} />
+          </TopbarContext.Provider>
         </ThreadSyncContext.Provider>
       </MantineProvider>
     );
   });
+  container.append(topbarTitle, topbarActions);
   return container;
 }
 
@@ -236,7 +248,7 @@ it("drops request errors after their local commands are dismissed", () => {
   expect(pruneCommandErrors(errors, new Set(errors.keys()))).toBe(errors);
 });
 
-it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }])(
+it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }])(
   "inserts a newline at the caret on Enter with %o, without sending",
   async (modifier) => {
     const field = composer(await render());
@@ -282,6 +294,13 @@ it("sends the draft from the Send button, which an empty draft disables", async 
   await type(composer(container), "hello");
   await act(async () => button(container, "Send").click());
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
+});
+
+it("shows the thread id in the More menu, not inline once a name is set", async () => {
+  const container = await render();
+  expect(document.body.textContent).not.toContain(THREAD.id);
+  await act(async () => button(container, "More").click());
+  expect(document.body.textContent).toContain(THREAD.id);
 });
 
 it("shuts the harness down from the More menu, not a control on the row", async () => {

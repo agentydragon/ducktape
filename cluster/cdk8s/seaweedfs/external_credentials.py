@@ -8,20 +8,10 @@ The Secrets live outside the operator's namespace so the operator consumes them 
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import s3
 
@@ -30,7 +20,6 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/external-credentials"
 CLAUDE_READER_SECRET = "claude-reader-s3-credentials"
 DRIVEFS_ARTIFACTS_SECRET = "drivefs-artifacts-s3-credentials"
 _CHART = "external-credentials"
-_SECRET_FILES = ("claude-reader-credentials.sops.yaml", "drivefs-artifacts-credentials.sops.yaml")
 
 
 def chart(app: App) -> Chart:
@@ -49,27 +38,15 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_CHART}.k8s.yaml", *_SECRET_FILES]),
-    )
-
-
 def seaweedfs_external_credentials(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_secrets: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-external-credentials"
     return flux_kustomization(
         chart,
         name,
-        artifact,
-        decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(seaweedfs_secrets, seaweedfs_cluster),
+        directory,
+        depends_on=flux_kustomization_depends_on_many(seaweedfs_operator),
         timeout="5m",
         description="Externally managed SeaweedFS S3 credential source Secrets and grants.",
     )

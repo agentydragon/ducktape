@@ -4,7 +4,13 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-from openai.types.responses import Response, ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
+from openai.types.responses import (
+    Response,
+    ResponseFunctionToolCall,
+    ResponseOutputMessage,
+    ResponseOutputText,
+    response_usage,
+)
 from openai.types.responses.response_reasoning_item import Content, ResponseReasoningItem
 from pydantic import ValidationError
 
@@ -40,7 +46,7 @@ def test_response_usage_serializes_required_cache_write_tokens() -> None:
         parallel_tool_calls=True,
         tool_choice="auto",
         tools=[],
-        usage=usage.model_dump(),
+        usage=response_usage.ResponseUsage.model_validate(usage.model_dump()),
     )
 
     assert response.usage is not None

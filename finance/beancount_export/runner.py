@@ -1,9 +1,10 @@
 """Budget Beancount exporter runner.
 
-Reads the Plaid mirror, classifies every live transaction with augur's budget
-read model (the same classification the in-app budget uses), renders a Beancount
-ledger (:mod:`finance.beancount_export.export`), and either writes it to a file
-(``render``) or commits it to a git repo (``sync``, used by the CronJob).
+Reads the Plaid mirror, classifies every live transaction with the budget read
+model (:mod:`finance.budget.sql_read_model`, the same classification augur's Budget
+tab uses), renders a Beancount ledger (:mod:`finance.beancount_export.export`),
+and either writes it to a file (``render``) or commits it to a git repo
+(``sync``, used by the CronJob).
 
 The exporter is a pure, deterministic function of (mirror + config): re-running
 it produces byte-identical output, so ``sync`` only commits when the ledger
@@ -25,9 +26,9 @@ import yaml
 from beancount import loader
 from beancount.parser import printer
 
-from finance.augur.budget.schema import BudgetConfig
-from finance.augur.budget.sql_read_model import ClassifiedRow, read_all_classified
 from finance.beancount_export.export import ClassifiedTxn, render_ledger
+from finance.budget.schema import BudgetConfig
+from finance.budget.sql_read_model import ClassifiedRow, read_all_classified
 from finance.plaid.db.schema import async_session_factory
 
 log = structlog.get_logger()

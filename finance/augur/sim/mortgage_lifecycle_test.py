@@ -1,0 +1,379 @@
+"""A tracked home loan from origination to payoff: the installment, the carry, and the sale that closes it.
+
+Every fact is read from the world the test composed — the books it keeps between months, the
+property component's own purchase and sale outcomes, and its mark of the held home each month.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from decimal import Decimal
+
+import pytest
+import pytest_bazel
+
+from finance.augur.model.series import HomeValueKey, LocationId
+from finance.augur.policy.funding import ClaimPayer
+from finance.augur.sim.actions import ClaimId, PayClaim
+from finance.augur.sim.bills import Biller
+from finance.augur.sim.books import AccountRef, Book, JournalEntry
+from finance.augur.sim.fixed_point import rate_to_ppb
+from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
+from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.money import USD
+from finance.augur.sim.property import Housing, MortgageFinancing, Purchase, Sale, ScheduledPurchase, ScheduledSale
+from finance.augur.sim.property_tax import PropertyTaxPolicy
+from finance.augur.sim.results import Rejected
+from finance.augur.sim.schedule import Once
+from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
+from finance.augur.sim.world import World
+
+ALICE = AgentId("alice")
+BOB = AgentId("bob")
+CHECKING = AccountId("checking")
+# Each home's parcel, taxed a flat 1.2% of its price.
+HOME_PARCEL = flat_parcel(Decimal("0.012"))
+SF_HOME = HomeValueKey(location_id=LocationId("sf"))
+
+
+def ref(agent_id: AgentId) -> AccountRef:
+    return AccountRef(agent_id=agent_id, account_id=CHECKING)
+
+
+def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return ref(agent_id), USD.quanta(balance)
+
+
+def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[Series, ...]:
+    return level_series(
+        {SF_HOME: [[float(level) for level in path] for path in paths]},
+        rollout_count=len(paths),
+        horizon_months=horizon_months,
+    )
+
+
+def financing(
+    *, borrower: str, principal: Decimal | int, annual_rate: Decimal | int, term_months: int
+) -> MortgageFinancing:
+    return MortgageFinancing(
+        liability_id=LiabilityId(f"{borrower}-loan"),
+        lender_agent_id=AgentId("bank"),
+        lender_account_id=CHECKING,
+        principal=USD.quanta(principal),
+        annual_interest_rate_ppb=rate_to_ppb(annual_rate),
+        term_months=term_months,
+    )
+
+
+def home(
+    *,
+    buyer: AgentId,
+    month: int,
+    purchase_price: Decimal | int,
+    down_payment: Decimal | int,
+    buyer_closing_cost: Decimal | int = 0,
+    mortgage: MortgageFinancing | None,
+) -> ScheduledPurchase:
+    return ScheduledPurchase(
+        month=month,
+        cause_id=f"{buyer}-buys-home",
+        property_id=PropertyId(f"{buyer}-home"),
+        parcel=HOME_PARCEL,
+        market=LocationId("sf"),
+        buyer_agent_id=buyer,
+        buyer_account_id=CHECKING,
+        seller_agent_id=AgentId("seller"),
+        seller_account_id=CHECKING,
+        purchase_price=USD.quanta(purchase_price),
+        down_payment=USD.quanta(down_payment),
+        buyer_closing_cost=USD.quanta(buyer_closing_cost),
+        rented_fraction_ppb=0,
+        land_value_fraction_ppb=rate_to_ppb(Decimal("0.2")),
+        mortgage=mortgage,
+    )
+
+
+def compose(
+    *accounts: tuple[AccountRef, int],
+    horizon_months: int,
+    housing: Housing,
+    tax_policies: tuple[PropertyTaxPolicy, ...] = (),
+    series: tuple[Series, ...] = (),
+    rollout_id: int = 0,
+    rollout_count: int = 1,
+) -> World:
+    world = World(MarketPath(series, rollout_id, rollout_count=rollout_count), horizon_months=horizon_months)
+    for opened, balance in accounts:
+        world.declare_account(account=opened, opening_balance=balance)
+    world.declare_housing(housing, tax_policies)
+    return world
+
+
+def home_value_of(world: World) -> int:
+    """Alice's held homes at the closed month's mark, as the property component values them.
+
+    A home not yet bought or already sold counts nothing, and so does one on a path the test
+    gave no home-value series.
+    """
+    properties = world.properties
+    assert properties is not None
+    return sum(
+        properties.market_value(purchase, world.market, world.mark_month)
+        for purchase in properties.housing.purchases
+        if purchase.buyer_agent_id == ALICE
+        and purchase.property_id in properties.properties
+        and properties.properties[purchase.property_id].state.active
+        and f"home_value:{purchase.market}" in world.market.series
+    )
+
+
+@dataclass
+class Recorded:
+    """What the caller keeps between months; the world holds only the current one."""
+
+    books: list[Book]
+    home_values: list[int]
+    journal: list[JournalEntry] = field(default_factory=list)
+    purchases: list[Purchase] = field(default_factory=list)
+    sales: list[Sale] = field(default_factory=list)
+
+    @classmethod
+    def opening(cls, world: World) -> Recorded:
+        return cls(books=[world.book()], home_values=[home_value_of(world)])
+
+    def month(self, world: World) -> None:
+        """Read the closed month's outcomes, before the next one clears them."""
+        self.journal.extend(world.accounting.journal)
+        if world.properties is not None:
+            self.purchases.extend(world.properties.purchases)
+            self.sales.extend(world.properties.sales)
+        self.books.append(world.book())
+        self.home_values.append(home_value_of(world))
+
+
+def drive(world: World, *payers: AgentId) -> Recorded:
+    """Each named payer settles its own claims in registration order; a rejection stops the path.
+
+    Payer order is the test's: a rejected payment stops the whole rollout, so whoever pays after
+    the payer that cannot fund its month never acts.
+    """
+    recorded = Recorded.opening(world)
+    world.start()
+    while not world.finished:
+        world.begin_actions([])
+        for payer in payers:
+            for index, unpaid in enumerate(world.unpaid_claims(payer)):
+                receipt = world.execute(
+                    payer,
+                    PayClaim(
+                        request_id=index + 1,
+                        cause_id=unpaid.cause_id,
+                        claim=ClaimId(month=unpaid.id.month, index=unpaid.id.index),
+                        from_account=unpaid.from_account,
+                        amount=unpaid.amount_due,
+                    ),
+                )
+                if isinstance(receipt.outcome, Rejected):
+                    break
+            if world.failed:
+                break
+        world.close_month()
+        recorded.month(world)
+        if not world.finished:
+            world.open_month()
+    return recorded
+
+
+def run(world: World) -> Recorded:
+    """One tracked household paying every due claim in full, in order, month by month."""
+    world.track(ClaimPayer(AgentId(ALICE)))
+    recorded = Recorded.opening(world)
+    world.start()
+    while not world.finished:
+        world.step()
+        recorded.month(world)
+    return recorded
+
+
+def cash(book: Book) -> dict[str, int]:
+    return {row.account.agent_id: row.balance for row in book.balances if row.account.account_id == CHECKING}
+
+
+def balanced(journal: list[JournalEntry]) -> bool:
+    return all(sum(posting.amount for posting in entry.postings) == 0 for entry in journal)
+
+
+def test_financed_purchase_and_first_installment_match_contract() -> None:
+    world = compose(
+        account(ALICE, 120_000),
+        account(AgentId("seller")),
+        account(AgentId("bank")),
+        account(AgentId("county")),
+        horizon_months=2,
+        housing=Housing(
+            purchases=(
+                home(
+                    buyer=ALICE,
+                    month=0,
+                    purchase_price=500_000,
+                    down_payment=100_000,
+                    buyer_closing_cost=10_000,
+                    mortgage=financing(borrower=ALICE, principal=400_000, annual_rate=Decimal("0.06"), term_months=360),
+                ),
+            )
+        ),
+        tax_policies=(
+            PropertyTaxPolicy(
+                property_id=PropertyId(f"{ALICE}-home"),
+                owner_agent_id=ALICE,
+                from_account_id=CHECKING,
+                tax_authority_agent_id=AgentId("county"),
+                tax_authority_account_id=CHECKING,
+                start_year=START_YEAR,
+                start_month=0,
+                end_month=None,
+            ),
+        ),
+    )
+    recorded = run(world)
+
+    assert not recorded.books[0].mortgages
+    opening, ending = recorded.books[1], recorded.books[2]
+    assert opening.properties is not None
+    assert opening.properties[0].adjusted_basis == 51_000_000
+    assert opening.mortgages[0].monthly_payment == 239_820
+    assert opening.mortgages[0].principal == 40_000_000
+    assert ending.mortgages[0].principal == 39_960_180
+    assert ending.mortgages[0].interest_paid_ytd == 200_000
+    assert cash(ending) == {"alice": 710_180, "seller": 11_000_000, "bank": 239_820, "county": 50_000}
+    assert balanced(recorded.journal)
+
+
+@pytest.mark.parametrize("closing_cost_pct", [0, 10])
+@pytest.mark.parametrize("financed", [False, True])
+def test_sale_pays_off_ledger_principal_before_the_sale_months_installment(
+    closing_cost_pct: int, financed: bool
+) -> None:
+    # Two price paths that meet at the purchase month: the sale is struck against the same
+    # purchase anchor on both, so every outcome below is path-independent.
+    horizon = 6
+    series = home_value([50, 100, 200, 240, 300, 360, 800], [500, 7, 200, 240, 300, 360, 800], horizon_months=horizon)
+    housing = Housing(
+        purchases=(
+            home(
+                buyer=ALICE,
+                month=2,
+                purchase_price=1000,
+                down_payment=400 if financed else 1000,
+                mortgage=financing(borrower=ALICE, principal=600, annual_rate=0, term_months=60) if financed else None,
+            ),
+        ),
+        sales=(
+            ScheduledSale(
+                month=5,
+                property_id=PropertyId(f"{ALICE}-home"),
+                commission_ppb=rate_to_ppb(Decimal(closing_cost_pct) / 100),
+                escrow_title_ppb=0,
+            ),
+        ),
+    )
+    seller_cost = 18_000 if closing_cost_pct else 0
+    payoff = 58_000 if financed else 0
+    for rollout_id in range(2):
+        world = compose(
+            account(ALICE, 2000),
+            account(AgentId("seller")),
+            account(AgentId("bank")),
+            horizon_months=horizon,
+            housing=housing,
+            series=series,
+            rollout_id=rollout_id,
+            rollout_count=2,
+        )
+        recorded = run(world)
+        books = recorded.books
+        assert world.failed_month is None
+        [purchase_outcome] = recorded.purchases
+        assert purchase_outcome.purchase_price == 100_000
+        assert books[3].properties is not None
+        assert books[3].properties[0].adjusted_basis == 100_000
+        assert recorded.home_values == [0, 0, 0, 120_000, 150_000, 180_000, 0]
+        [sale] = recorded.sales
+        assert sale.gross_proceeds == 180_000 - seller_cost
+        assert sale.mortgage_payoff == payoff
+        assert sale.net_cash_to_owner == 180_000 - seller_cost - payoff
+        assert sale.realized_gain == 80_000 - seller_cost
+        assert sale.depreciation_recapture == sale.section_121_exclusion == 0
+        assert sale.gross_proceeds + seller_cost == recorded.home_values[5]
+        assert balanced(recorded.journal)
+        assert not books[2].mortgages
+        if financed:
+            assert [book.mortgages[0].principal for book in books[3:]] == [60_000, 59_000, 58_000, 0]
+            assert not books[-1].mortgages[0].active
+        else:
+            assert not any(book.mortgages for book in books[3:])
+        assert cash(books[-1])["alice"] == 158_000 + (122_000 if closing_cost_pct == 0 else 104_000)
+        # A configured payoff closes the lender's funding control, not its cash account.
+        assert cash(books[-1])["bank"] == (2000 if financed else 0)
+
+
+@pytest.mark.parametrize("fail_year_end", [False, True])
+def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_interest(fail_year_end: bool) -> None:
+    accounts = [account(ALICE, 300_000), account(BOB, 300_000), account(AgentId("seller")), account(AgentId("bank"))]
+    world = compose(
+        *accounts,
+        horizon_months=12,
+        housing=Housing(
+            purchases=tuple(
+                home(
+                    buyer=buyer,
+                    month=0,
+                    purchase_price=500_000,
+                    down_payment=100_000,
+                    buyer_closing_cost=10_000,
+                    mortgage=financing(borrower=buyer, principal=400_000, annual_rate=Decimal("0.06"), term_months=360),
+                )
+                for buyer in (ALICE, BOB)
+            )
+        ),
+    )
+    if fail_year_end:
+        world.track(
+            Biller(
+                schedule=Once(month=11),
+                obligation_id="unfundable",
+                obligation_type="cash_spend",
+                from_account=ref(ALICE),
+                to_account=ref(AgentId("seller")),
+                amount_due=USD.quanta(1_000_000),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
+            )
+        )
+    books = drive(world, BOB, ALICE).books
+
+    previous, ending = books[-2:]
+    before = {loan.liability_id: loan for loan in previous.mortgages}
+    after = {loan.liability_id: loan for loan in ending.mortgages}
+    assert (world.failed_month is not None) == fail_year_end
+    assert after[LiabilityId("bob-loan")].principal < before[LiabilityId("bob-loan")].principal
+    if fail_year_end:
+        assert after[LiabilityId("alice-loan")].principal == before[LiabilityId("alice-loan")].principal
+        assert (
+            after[LiabilityId("alice-loan")].interest_paid_ytd
+            == before[LiabilityId("alice-loan")].interest_paid_ytd
+            > 0
+        )
+        assert after[LiabilityId("bob-loan")].interest_paid_ytd > before[LiabilityId("bob-loan")].interest_paid_ytd
+    else:
+        assert all(loan.interest_paid_ytd == 0 for loan in after.values())
+    for id_, loan in after.items():
+        [liability] = [row.balance for row in ending.balances if row.account.account_id == f"liability:mortgage:{id_}"]
+        assert liability == -loan.principal
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

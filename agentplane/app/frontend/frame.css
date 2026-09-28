@@ -1,5 +1,5 @@
 /* Administrative evidence stays visually distinct from conversation cards. Shared JSON
-   token/wrapping styles live in json_view.css. */
+   token/wrapping styles live in syntax_highlight.css. */
 
 .agentplane-frame {
   border-inline-start: 2px solid var(--mantine-color-default-border);

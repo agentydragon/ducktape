@@ -25,18 +25,21 @@ import {
   displayableError,
   findThread,
   listSessions,
+  modelsForHarness,
   openSession,
   RunnerUnavailableError,
   type Condition,
   type Harness,
+  type ModelOption,
   type SandboxView,
   type ThreadView,
 } from "./client";
-import { ActionPolicySection } from "./action_policy";
+import { ActionPolicySection } from "./actions/policy";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
+import { RawSwitch } from "./raw_switch";
 import { StaleNotice } from "./stream_status";
 import { HarnessState, SessionSpecSchema, type SessionSummary } from "../../runner/protocol_pb";
 
@@ -88,7 +91,7 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
     <Stack gap="xs">
       <Group>
         <Title order={4}>Status</Title>
-        <Switch label="Raw" checked={raw} onChange={(e) => setRaw(e.currentTarget.checked)} />
+        <RawSwitch raw={raw} onChange={setRaw} />
       </Group>
       {raw ? (
         <JsonView value={sandbox} />
@@ -162,7 +165,7 @@ export function SandboxPage({
   const [defaultsLabel, setDefaultsLabel] = useState<string | null>(null);
   // The app's catalog of what this sandbox's Harness may run; the thread carries the choice.
   const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
-  const [models, setModels] = useState<string[]>([]);
+  const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -228,9 +231,11 @@ export function SandboxPage({
         setError(displayableError(failure));
         return;
       }
-      const offered = data?.[harness] ?? [];
+      const offered = data ? modelsForHarness(data, harness) : [];
       setModels(offered);
-      setModel((current) => (current && offered.includes(current) ? current : (offered[0] ?? null)));
+      setModel((current) =>
+        current && offered.some((option) => option.model === current) ? current : (offered[0]?.model ?? null)
+      );
     })();
   }, [harness]);
 
@@ -380,7 +385,12 @@ export function SandboxPage({
                 value={harness}
                 onChange={(value) => value && setHarness(value as Harness)}
               />
-              <Select label="Model" data={models} value={model} onChange={setModel} />
+              <Select
+                label="Model"
+                data={models.map((option) => ({ value: option.model, label: option.display_name }))}
+                value={model}
+                onChange={setModel}
+              />
               <Select
                 label="Reasoning effort"
                 data={["low", "medium", "high"]}
@@ -440,7 +450,14 @@ export function SandboxPage({
                               {thread.archived ? (
                                 <Menu.Item onClick={() => void threadAct(thread.id, "unarchive")}>Unarchive</Menu.Item>
                               ) : (
-                                <Menu.Item onClick={() => void threadAct(thread.id, "archive")}>Archive</Menu.Item>
+                                <Menu.Item
+                                  disabled={session.harnessState === HarnessState.RUNNING}
+                                  onClick={() => void threadAct(thread.id, "archive")}
+                                >
+                                  {session.harnessState === HarnessState.RUNNING
+                                    ? "Stop harness before archiving"
+                                    : "Archive"}
+                                </Menu.Item>
                               )}
                             </Menu.Dropdown>
                           </Menu>

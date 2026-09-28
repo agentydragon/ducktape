@@ -22,13 +22,11 @@ export interface Scenario extends ScenarioOptions {
   preselectReconnect?: boolean;
   /** Click the nav's Settings button once it mounts: the modal has no route of its own. */
   openSettings?: boolean;
-  /** Click the sandbox Status tab's Raw switch once it mounts: no URL param toggles it, unlike the
-   * tab itself. */
-  openRawStatus?: boolean;
+  /** Flip every Raw switch as it mounts: no URL param toggles one. */
+  openRaw?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
   openActionPolicySets?: boolean;
-  /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own
-   * (UISHELL_MOBILE). */
+  /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own. */
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
   /** `disconnected` drops the sidebar's own stream after its first snapshot; `database-disconnected`
@@ -49,8 +47,14 @@ export interface Scenario extends ScenarioOptions {
   sessionReplay?: "catching-up" | "unavailable" | "reconnecting";
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;
+  /** Mundane lifecycle observations collapse into one comma-joined row; a prominent one (harness
+   * lost) still stands alone and breaks the group around it. */
+  lifecycleGroup?: boolean;
   /** Open the chronological archive drawer, the native-frame inspection surface. */
   openDebug?: "latest" | "stderr";
+  /** Open the composer's overflow "More" menu and leave it open, showing the thread id label
+   * alongside "Debug history" / "Shut down harness". */
+  openMoreMenu?: boolean;
   /** Open the tool-call run once it mounts, then the reasoning step folded inside it. */
   openReasoning?: boolean;
   /** Open the tool-call run once it mounts, then the tool call's Arguments and Output inside it. */
@@ -58,10 +62,19 @@ export interface Scenario extends ScenarioOptions {
   /** Click the Evidence icon of the row at this thread anchor once it mounts: which rows show
    * their evidence is not in the URL. */
   openEvidence?: string;
+  /** One assistant message containing a fenced code block, to exercise Markdown's syntax
+   * highlighting of a registered language (`markdown.tsx`'s `Renderer.code` override). */
+  markdownCodeFence?: boolean;
+  /** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
+   * `EntityCard` renders it directly -- the standalone case, distinct from `openReasoning`'s
+   * reasoning-nested-inside-a-run-card one. */
+  standaloneReasoning?: boolean;
   pendingCommands?: "mixed" | "controls" | "outcomes";
   /** Answer a command POST as the app does when a runner misses its admission deadline. Without
    * this it stays unanswered, like one queued behind the browser's connection limit. */
   commandAdmissionTimedOut?: boolean;
+  /** Fail the Action group listing, which says whether a stored result is an MCP `CallToolResult`. */
+  actionGroupsUnavailable?: boolean;
   failedTurn?: "before-content" | "after-content";
 }
 
@@ -140,6 +153,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[aria-label="Chronological observations"]'],
     captureViewport: true,
   },
+  session_lifecycle_group: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    lifecycleGroup: true,
+    readySelectors: ['[data-thread-anchor="50"]'],
+    captureViewport: true,
+  },
   session_interleaved_native_details: {
     element: "#app",
     route: SESSION_ROUTE,
@@ -149,7 +170,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[aria-label="Chronological observations"]'],
     captureViewport: true,
   },
-  // The sidebar's landing state (UISHELL_SIDEBAR): every group state icon (running, pending,
+  // The sidebar's landing state: every group state icon (running, pending,
   // suspended, deleted) and the struck-through read-only group, with no thread open yet.
   threads: {
     element: "#app",
@@ -158,14 +179,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ["a.agentplane-sidebar-group-name"],
   },
   threads_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "threads-phone" },
-  // The phone-width sidebar drawer opened over the landing view (UISHELL_MOBILE): the hamburger,
-  // the backdrop, and the same group/thread list the desktop sidebar shows.
+  // The phone-width sidebar drawer opened full-screen over the landing view: the same
+  // group/thread list the desktop sidebar shows.
   threads_phone_drawer: {
     element: "#app",
     route: "/",
     viewport: PHONE,
     outputName: "threads-phone-drawer",
-    readySelectors: [".agentplane-sidebar-backdrop", "a.agentplane-sidebar-group-name"],
+    readySelectors: [".agentplane-sidebar-open", "a.agentplane-sidebar-group-name"],
     openMobileSidebar: true,
   },
   threads_provisioning: {
@@ -181,7 +202,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     threadlessSandbox: true,
     openMobileSidebar: true,
-    readySelectors: ['a[href="#/sandboxes/test-provisioning"]', ".agentplane-sidebar-backdrop"],
+    readySelectors: ['a[href="#/sandboxes/test-provisioning"]', ".agentplane-sidebar-open"],
   },
   threads_updates_disconnected: {
     element: "#app",
@@ -208,7 +229,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     sidebarSource: "disconnected",
     outageAge: 10_000,
     openMobileSidebar: true,
-    readySelectors: [".agentplane-sidebar-backdrop", '[data-connection="degraded"]'],
+    readySelectors: [".agentplane-sidebar-open", '[data-connection="degraded"]'],
   },
   threads_watch_stale: {
     element: "#app",
@@ -228,7 +249,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   // The launch form with a preset picked through the URL and the sets dropdown opened by the
   // harness, so the shot carries the namespace's options beside the pre-filled pick. `/sandboxes`,
-  // not `/`: UISHELL_SIDEBAR moved the Sandbox list off the landing route.
+  // not `/`: the landing route is the threads view.
   new_sandbox: {
     element: "#app",
     route: "/sandboxes?preset=public-coder",
@@ -253,17 +274,44 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 390, height: 1100 },
     readySelectors: ["details"],
   },
+  // Each pending card that draws anything other than its JSON switched to Raw.
+  actions_raw: {
+    element: "#app",
+    route: "/actions",
+    viewport: { width: 1200, height: 1100 },
+    readySelectors: ["details", 'input[type="checkbox"]:checked'],
+    openRaw: true,
+  },
+  // The image is an MCP result drawn as the tool answered, which also waits on the Action groups.
+  // Each history viewport is tall enough to keep the last card in frame.
   actions_history: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 1200, height: 1400 },
-    readySelectors: ["details"],
+    viewport: { width: 1200, height: 2560 },
+    readySelectors: ["details", 'img[src^="data:image/"]'],
   },
   actions_history_phone: {
     element: "#app",
     route: "/actions/history",
-    viewport: { width: 390, height: 1400 },
-    readySelectors: ["details"],
+    viewport: { width: 390, height: 3200 },
+    readySelectors: ["details", 'img[src^="data:image/"]'],
+  },
+  // Each card that draws anything other than its JSON switched to Raw: the stored arguments and
+  // CallToolResult, image data and all.
+  actions_history_raw: {
+    element: "#app",
+    route: "/actions/history",
+    viewport: { width: 1200, height: 3720 },
+    readySelectors: ["details", 'input[type="checkbox"]:checked'],
+    openRaw: true,
+  },
+  // Without the groups nothing says which results are MCP ones: each shows as its stored JSON.
+  actions_history_groups_unavailable: {
+    element: "#app",
+    route: "/actions/history",
+    viewport: { width: 1200, height: 3760 },
+    actionGroupsUnavailable: true,
+    readySelectors: ["details", '[role="alert"]'],
   },
 
   connections: {
@@ -284,13 +332,13 @@ export const SCENARIOS: Record<string, Scenario> = {
   mcp_servers: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 1200, height: 1400 },
+    viewport: { width: 1200, height: 1480 },
     readySelectors: ["[data-mcp-server]"],
   },
   mcp_servers_phone: {
     element: "#app",
     route: "/mcp-servers",
-    viewport: { width: 390, height: 1950 },
+    viewport: { width: 390, height: 2040 },
     readySelectors: ["[data-mcp-server]"],
   },
 
@@ -336,7 +384,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     outputName: "sandbox-status-raw",
     readySelectors: [".agentplane-hljs"],
-    openRawStatus: true,
+    openRaw: true,
   },
   sandbox_status_raw_phone: {
     element: "#app",
@@ -344,9 +392,9 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     outputName: "sandbox-status-raw-phone",
     readySelectors: [".agentplane-hljs"],
-    openRawStatus: true,
+    openRaw: true,
   },
-  // The read-only action policy: both bindings, every set state, and the three lists.
+  // The read-only action policy: both bindings, every set state, and the auto-approval list.
   sandbox_policy: {
     element: "#app",
     route: `${SANDBOX_ROUTE}?tab=policy`,
@@ -442,6 +490,24 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[data-thread-anchor="34"]'],
     captureViewport: true,
   },
+  // The composer's overflow "More" menu open over a named thread: the thread id now shows as a
+  // menu label above "Debug history" / "Shut down harness", not beside the title.
+  session_more_menu: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    openMoreMenu: true,
+    readySelectors: ['[role="menu"]', '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_more_menu_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    openMoreMenu: true,
+    readySelectors: ['[role="menu"]', '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
   // An unnamed thread: the title field shows the thread id as its placeholder and nothing beside it.
   session_unnamed: {
     element: "#app",
@@ -472,6 +538,39 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-reasoning-phone",
     openReasoning: true,
     readySelectors: ["details[open] details[open] .agentplane-markdown"],
+  },
+  // A fenced code block in a registered language, syntax-highlighted in prose the way tool-call
+  // Arguments/Output already are -- distinct from session_tool_payloads below, which is the
+  // structured JSON/output view, not free-form Markdown.
+  session_markdown_code_fence: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 700 },
+    outputName: "session-markdown-code-fence",
+    markdownCodeFence: true,
+    readySelectors: [".agentplane-hljs"],
+  },
+  // A standalone reasoning step (no neighboring tool call, so it's never folded into a run) at
+  // rest: collapsed, it should read as one plain dimmed line, no card chrome around it -- like a
+  // collapsed run, unlike the always-boxed tool call beside it in session_reasoning above.
+  session_standalone_reasoning: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 700 },
+    outputName: "session-standalone-reasoning",
+    standaloneReasoning: true,
+    readySelectors: ['[data-thread-anchor="20"]'],
+  },
+  // The same standalone reasoning step, opened: now it gets the card chrome (padding, border) the
+  // collapsed row above deliberately lacks.
+  session_standalone_reasoning_open: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 700 },
+    outputName: "session-standalone-reasoning-open",
+    standaloneReasoning: true,
+    openReasoning: true,
+    readySelectors: ['[data-thread-anchor="20"] details[open] .agentplane-markdown'],
   },
   // JSON arguments highlighted, and a non-JSON output in the same code block, uninterpreted. The
   // history follows its bottom, so the viewports are tall enough to keep the tool call, and the

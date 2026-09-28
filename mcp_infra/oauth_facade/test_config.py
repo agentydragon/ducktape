@@ -94,7 +94,7 @@ def test_yaml_config_file_provides_structured_fields(tmp_path, monkeypatch) -> N
     settings = FacadeSettings()
     # Structured config from YAML; secrets + upstream from env; merged into one model.
     assert settings.facade_name == "Tana MCP (read-only)"
-    assert settings.tools == ToolFilter(allow=["search_nodes", "read_node"])
+    assert settings.tools == ToolFilter(allow={"search_nodes", "read_node"})
     assert isinstance(settings.upstream, HttpUpstream)
     assert settings.upstream.bearer_token == "pat"
     assert settings.client_auth == StaticBearerClientAuth(static_bearer="ro-token")

@@ -38,6 +38,7 @@ class DbProps:
 @dataclass(frozen=True)
 class LlmIngressProps:
     litellm_key_secret_name: str
+    log_llm_requests: bool = False
 
 
 @dataclass(frozen=True)

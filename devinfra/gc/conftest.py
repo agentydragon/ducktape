@@ -25,7 +25,7 @@ class GitRepo:
 
     path: Path
 
-    def _pygit2(self) -> pygit2.Repository:
+    def pg(self) -> pygit2.Repository:
         return pygit2.Repository(str(self.path))
 
     def run(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -33,7 +33,7 @@ class GitRepo:
 
     def commit(self, name: str, content: str, message: str) -> None:
         (self.path / name).write_text(content)
-        pg = self._pygit2()
+        pg = self.pg()
         index = pg.index
         index.add(name)
         index.write()
@@ -42,22 +42,42 @@ class GitRepo:
         pg.create_commit("HEAD", _SIGNATURE, _SIGNATURE, message, tree, parents)
 
     def rev(self, ref: str) -> str:
-        return str(self._pygit2().revparse_single(ref).id)
+        return str(self.pg().revparse_single(ref).id)
 
     def branch(self, name: str, start: str = "main") -> None:
-        pg = self._pygit2()
+        pg = self.pg()
         pg.branches.local.create(name, pg.revparse_single(start).peel(pygit2.Commit))
 
     def has_branch(self, name: str) -> bool:
-        return self._pygit2().branches.local.get(name) is not None
+        return self.pg().branches.local.get(name) is not None
 
     def worktree(self, name: str, branch: str, start: str = "main") -> GitRepo:
-        pg = self._pygit2()
+        pg = self.pg()
         target = pg.revparse_single(start).peel(pygit2.Commit)
         branch_ref = pg.branches.local.create(branch, target)
         path = self.path.parent / name
         pg.add_worktree(name, str(path), branch_ref)
         return GitRepo(path)
+
+    def clone(self, name: str) -> GitRepo:
+        """A real `git clone` of this repo: unlike `.worktree()`, an independent `.git` with
+        its own `origin` remote-tracking state (`refs/remotes/origin/HEAD` included) — the
+        shape a genuine foreign clone has in production. pygit2's `clone_repository` does not
+        set up that remote-tracking state the way the `git` CLI does, so this is the `run`
+        escape hatch, not a pygit2 call."""
+        path = self.path.parent / name
+        self.run("clone", "--quiet", str(self.path), str(path))
+        return GitRepo(path)
+
+    def set_origin(self, url: str) -> None:
+        """Point `origin` at `url` — adds it if absent, otherwise repoints it."""
+        pg = self.pg()
+        try:
+            pg.remotes["origin"]
+        except KeyError:
+            pg.remotes.create("origin", url)
+        else:
+            pg.remotes.set_url("origin", url)
 
 
 @pytest.fixture

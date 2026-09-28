@@ -2,7 +2,6 @@
 
 import json
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,7 +10,7 @@ import pytest_bazel
 from finance.augur.sim.results import Paid
 from finance.augur.x.bounded_spending.python_policy import Parameters
 from finance.augur.x.joint_spending_allocation.compare import Measurements, Traces, replay_cell, run_cell
-from finance.augur.x.joint_spending_allocation.scenario import prepare, sample
+from finance.augur.x.joint_spending_allocation.situation import sample, situation
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
@@ -83,8 +82,8 @@ def test_tax_free_control_keeps_tax_payments_separate_from_consumption() -> None
     paths = sample(horizon_months=25)
     reports = []
     for taxable in (False, True):
-        prepared = prepare(paths, rollout_count=3, horizon_months=25, taxable=taxable)
-        reports.append(run_cell(prepared, [2], parameters=Parameters(800, 0, 0), annual_step=5).paths[0])
+        case = situation(paths, rollout_count=3, horizon_months=25, taxable=taxable)
+        reports.append(run_cell(case, [2], parameters=Parameters(800, 0, 0), annual_step=5).paths[0])
     untaxed, taxed = reports
     assert untaxed.stop is taxed.stop is None
     assert untaxed.tax_paid == untaxed.tax_assessed == 0
@@ -97,13 +96,8 @@ def test_tax_free_control_keeps_tax_payments_separate_from_consumption() -> None
 
 @pytest.mark.parametrize("bill", [100_000, 12_000_000])
 def test_exhaustion_distinguishes_rejected_consumption_from_unattempted_intention(bill: int) -> None:
-    prepared = prepare(sample(horizon_months=13), rollout_count=3, horizon_months=13, taxable=True)
-    obligations = prepared.scenario.obligations
-    prepared = replace(
-        prepared,
-        scenario=replace(prepared.scenario, obligations=(replace(obligations[0], amount_due=bill), *obligations[1:])),
-    )
-    [replay] = replay_cell(prepared, [1], parameters=Parameters(10_000, 0, 0), annual_step=0).replays
+    case = situation(sample(horizon_months=13), rollout_count=3, horizon_months=13, taxable=True, annual_bill=bill)
+    [replay] = replay_cell(case, [1], parameters=Parameters(10_000, 0, 0), annual_step=0).replays
     report = replay.measurements
     assert report.terminal_assets is None
     assert report.ending_mark_month == 0

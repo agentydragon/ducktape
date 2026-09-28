@@ -1,4 +1,4 @@
-"""Langfuse: its namespace, Postgres, S3 bucket and credentials, route, log-reader RBAC,
+"""Langfuse: its namespace, Postgres, S3 bucket, identity and credentials, route, log-reader RBAC,
 queue/cache Valkey and Helm release, and the `langfuse` Flux Kustomization owning them.
 
 Hand-written beside the generated output: `langfuse-secrets.sops.yaml`.
@@ -6,11 +6,8 @@ Hand-written beside the generated output: `langfuse-secrets.sops.yaml`.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
+from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -21,42 +18,25 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategyName,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/langfuse"
 _NAME = "langfuse"
 _NAMESPACE = "langfuse"
-_ZONE = "hil-ovh"
 _S3_CREDENTIALS_SECRET = "langfuse-seaweedfs-credentials"
 _VALKEY = "langfuse-valkey-ovh"
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
-        scope,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={"goldilocks.fairwinds.com/enabled": "true", "goldilocks.fairwinds.com/vpa-update-mode": "auto"},
-        ),
-    )
+    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=None)
 
 
 def _database(scope: Construct) -> None:
@@ -65,11 +45,11 @@ def _database(scope: Construct) -> None:
         "database",
         name="langfuse-db",
         namespace=_NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         storage_class="local-path-ovh-ssd",
         size="10Gi",
         # CNPG auto-generates credentials in secret langfuse-db-app
-        initdb=ClusterSpecBootstrapInitdb(database="langfuse", owner="langfuse"),
+        initdb=cnpg.same_owner_initdb("langfuse"),
     )
 
 
@@ -95,7 +75,7 @@ def _storage(scope: Construct) -> None:
         adopt_existing=True,
         description="Langfuse event, export, and media objects.",
     )
-    identity = s3.Identity(scope, "identity", name=_NAME)
+    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(
         namespace=_NAMESPACE,
@@ -139,7 +119,6 @@ def _secret_key_ref(name: str, key: str) -> dict[str, object]:
 
 
 def _values() -> dict[str, object]:
-    control_plane = "node-role.kubernetes.io/control-plane"
     resources = {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "1", "memory": "2Gi"}}
     return {
         "langfuse": {
@@ -154,22 +133,12 @@ def _values() -> dict[str, object]:
                 # binding in Authentik (tf/gitops/sso-providers/provider_langfuse.tf).
                 "signUpDisabled": False
             },
-            "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # Langfuse is stateless at the pod level and uses external storage. Allow
             # control-plane nodes as overflow capacity, while the affinity below keeps
             # ordinary placement on workers.
-            "tolerations": [{"key": control_plane, "operator": "Exists", "effect": "NoSchedule"}],
-            # Prefer ordinary workers when this workload tolerates control planes.
-            "affinity": {
-                "nodeAffinity": {
-                    "preferredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "weight": 100,
-                            "preference": {"matchExpressions": [{"key": control_plane, "operator": "DoesNotExist"}]},
-                        }
-                    ]
-                }
-            },
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+            "affinity": node_scheduling.PREFER_WORKERS,
             "nextauth": {
                 "url": "https://langfuse.allegedly.works",
                 "secret": _secret_key_ref("langfuse-secrets", "nextauth-secret"),
@@ -307,17 +276,11 @@ def _values() -> dict[str, object]:
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = HelmRepository(
-        scope,
-        "helm-repository",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://langfuse.github.io/langfuse-k8s"),
-    )
     helm_release(
         scope,
         _NAME,
         _NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(scope, _NAME, _NAMESPACE, url="https://langfuse.github.io/langfuse-k8s"),
         chart=_NAME,
         version="2.1.0",
         interval="15m",
@@ -340,8 +303,8 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        hostname="langfuse.allegedly.works",
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=["langfuse.allegedly.works"],
         backend="langfuse-web",
         port=3000,
         hsts=False,
@@ -353,28 +316,20 @@ def chart(app: App) -> Chart:
         name=_VALKEY,
         namespace=_NAMESPACE,
         description="OVH Valkey for Langfuse queue/cache state",
-        memory_request="128Mi",
-        cpu_limit="500m",
-        memory_limit="512Mi",
+        memory_request=Size.mebibytes(128),
+        cpu_limit=Cpu.millis(500),
+        memory_limit=Size.mebibytes(512),
         max_memory_percent_of_limit=80,
         storage_class="local-path-ovh",
-        storage_size="2Gi",
+        storage_size=Size.gibibytes(2),
     )
     _helm_release(chart)
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", "langfuse-secrets.sops.yaml"]),
-    )
-
-
 def langfuse(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     cnpg: Kustomization,
     valkey: Kustomization,
     seaweedfs_operator: Kustomization,
@@ -382,10 +337,9 @@ def langfuse(
     return flux_kustomization(
         chart,
         _NAME,
-        artifact,
+        directory,
         suspend=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        decryption=SOPS_DECRYPTION,
         timeout="20m",
         depends_on=flux_kustomization_depends_on_many(cnpg, valkey, seaweedfs_operator),
     )

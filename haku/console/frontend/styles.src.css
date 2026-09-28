@@ -58,37 +58,6 @@
   }
 }
 
-.haku-oauth-result-page {
-  min-height: 100dvh;
-  padding: 1.5rem;
-  background: var(--haku-page-bg);
-}
-
-.haku-oauth-result-card {
-  width: min(100%, 32rem);
-  border-color: var(--haku-border);
-  background: var(--haku-panel-bg);
-}
-
-/* Same small-caps label idiom as .haku-shell-field-label, so this reads as a Haku Console
-   surface rather than a bespoke landing page. */
-.haku-oauth-result-eyebrow {
-  color: var(--mantine-color-dimmed);
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.haku-oauth-result-icon {
-  font-size: 1.75rem;
-  font-weight: 700;
-}
-
-.haku-oauth-result-message {
-  max-width: 26rem;
-  overflow-wrap: anywhere;
-}
-
 .haku-approval-embed {
   min-height: 100dvh;
   display: flex;

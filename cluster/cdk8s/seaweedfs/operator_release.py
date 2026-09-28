@@ -6,8 +6,6 @@ The chart version is also the version of the CRDs the typed bindings are generat
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -16,14 +14,10 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeCrds,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import namespace
 
 NAME = "seaweedfs-operator"
@@ -33,17 +27,13 @@ _REPOSITORY_NAMESPACE = "flux-system"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=metadata(NAME, _REPOSITORY_NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://seaweedfs.github.io/seaweedfs-operator/"),
-    )
     helm_release(
         chart,
         NAME,
         namespace.NAME,
-        repository=repository,
+        repository=https_helm_repository(
+            chart, NAME, _REPOSITORY_NAMESPACE, url="https://seaweedfs.github.io/seaweedfs-operator/"
+        ),
         chart=NAME,
         version="0.1.42",  # operator v1.0.39 (latest stable as of 2026-09-14)
         interval="30m",
@@ -68,18 +58,12 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def seaweedfs_operator(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_namespace: Kustomization
-) -> Kustomization:
+def seaweedfs_operator(chart: Chart, directory: RenderedDirectory, seaweedfs_namespace: Kustomization) -> Kustomization:
     name = "seaweedfs-operator"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         suspend=False,
         depends_on=[flux_kustomization_depends_on(seaweedfs_namespace)],
         timeout="5m",

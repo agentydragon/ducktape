@@ -6,3 +6,14 @@ if (typeof document !== "undefined" && !document.fonts) {
     value: new EventTarget(),
   });
 }
+
+// MantineProvider reads window.matchMedia to detect the OS color scheme. happy-dom provides a
+// stub; jsdom (used by markdown.test.tsx for its own reasons -- see the note there) does not.
+if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  })) as unknown as typeof window.matchMedia;
+}

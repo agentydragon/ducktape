@@ -304,7 +304,7 @@ async def test_direct_call_still_running_after_its_wait_answers_with_its_request
         scripted.release.set()
         assert pending.structured_content is not None
         finished = await client.call_tool(
-            "get_action_result", {"request_id": pending.structured_content["request_id"], "wait_seconds": 10}
+            "get_action_result", {"request_id": pending.structured_content["request_id"], "wait": {"wait_seconds": 10}}
         )
     # The call answered while its Action was approved and still running, and the Action went on to finish.
     assert not pending.is_error

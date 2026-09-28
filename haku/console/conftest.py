@@ -370,7 +370,6 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
     @contextmanager
     def _make(
         *,
-        gmail_client: Any | None = None,
         in_process_servers: Any | None = None,
         config_file: Path | None = None,
         operator: bool = False,
@@ -389,7 +388,7 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             config_file=config_file if config_file is not None else default_config,
             **settings_overrides,
         )
-        app = create_app(settings, gmail_client=gmail_client, in_process_servers=in_process_servers)
+        app = create_app(settings, in_process_servers=in_process_servers)
         # When the session cookie is Secure (https public_base_url → https_only), drive the client
         # over https so the middleware's re-signed cookie is retained and resent across requests.
         https = settings.public_base_url.startswith("https://")
