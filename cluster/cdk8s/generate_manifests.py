@@ -213,7 +213,10 @@ from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomization
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
 from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollama_flux_kustomizations
 from cluster.cdk8s.openebs_lvm import storage as openebs_lvm_storage
-from cluster.cdk8s.parked import flux_kustomizations as parked_flux_kustomizations
+from cluster.cdk8s.parked import (
+    augur_evidence as parked_augur_evidence,
+    flux_kustomizations as parked_flux_kustomizations,
+)
 from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
@@ -318,6 +321,7 @@ def generate_manifests(root: Path) -> None:
     airlock.write_manifests(root)
     authentik_jwt_rotation.write_manifests(root)
     forgejo_token_rotation.write_manifests(root)
+    parked_augur_evidence.write_manifests(root)
     ollama_app.write_manifests(root)
     gatus_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
