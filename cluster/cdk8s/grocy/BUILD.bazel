@@ -24,6 +24,8 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/authentik:app",
         "//cluster/cdk8s/providers/volsync:replication_destination",
         "//cluster/cdk8s/providers/volsync:replication_source",
         "//cluster/cdk8s/providers/volsync:replicationdestination",
@@ -38,6 +40,7 @@ py_library(
     srcs = ["mcp.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":app",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",

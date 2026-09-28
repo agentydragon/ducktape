@@ -69,6 +69,7 @@ from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_bu
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
+from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
@@ -103,10 +104,8 @@ KUBERNETES_CREDENTIAL = "kubernetes-workload"
 # request without bumping TLS.
 FORGEJO_HOST = "forgejo-http.forgejo.svc.cluster.local"
 FORGEJO_PORT = 3000
-# Home Assistant's in-cluster Service, plain HTTP. Its pod runs on its node's host network, so
-# Cilium sees a node there, not an endpoint: the proxy's rule for it is an entity rule on its port.
-HOME_ASSISTANT_HOST = "home-assistant.home-assistant.svc.cluster.local"
-HOME_ASSISTANT_PORT = 8123
+# Home Assistant's in-cluster Service, plain HTTP. The proxy matches requests on this exact string.
+HOME_ASSISTANT_HOST = home_assistant.SERVICE.fqdn
 # The trust bundles' ConfigMap key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
 # The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
@@ -607,7 +606,8 @@ class Egress(Construct):
                     {"k8s:io.kubernetes.pod.namespace": "forgejo", "k8s:app.kubernetes.io/name": "forgejo"},
                     FORGEJO_PORT,
                 ),
-                EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[HOME_ASSISTANT_PORT]),
+                # hostNetwork: Cilium sees the node, not an endpoint.
+                EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[home_assistant.SERVICE.port.number]),
                 EgressRule.to_entities(Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST, ports=[443, 80]),
             ],
         )

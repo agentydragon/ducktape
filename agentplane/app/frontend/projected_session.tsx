@@ -772,6 +772,14 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
 // How close the top of the loaded rows comes to the viewport's before the page before them loads:
 // a full screen, so the load lands before the reader can actually see the top -- reading up
 // through a long thread feels like an ordinary lazy-loaded scroll, not a stop-and-wait at the edge.
+//
+// This makes eager pagination genuinely viewport-height-relative: shrinking chrome elsewhere on the
+// page (the topbar, the composer) makes this taller, so the same thread settles one page further
+// into its backlog. PR #8308's topbar change tripped this on two E2E tests that assumed a fixed
+// fetch count -- not a flake, just this threshold moving. A test asserting an exact older-page fetch
+// count, or relying on a fixed-size synthetic backlog outlasting a fixed number of scroll-to-top
+// cycles, is coupled to this and needs headroom (see test_thread_window_browser.py's two tests fixed
+// there) rather than an assumption pinned to today's chrome height.
 const loadOlderWithin = (element: HTMLDivElement): number => element.clientHeight;
 
 // Traces VirtualizedHistory's scroll-anchor bookkeeping to the console: off by default (this ran

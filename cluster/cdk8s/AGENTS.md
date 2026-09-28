@@ -13,8 +13,8 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   only work with such a marker. An identity-only reference is allowed: a frozen dataclass
   of names, keys, ports and labels plus the addresses derived from them, declared once by
   the producing module and projected into each dialect by methods. A record describing
-  what to build is not. A map that checks hand-written wiring (`OPERATOR_CRDS`,
-  `flux.ORDERING_EXCEPTIONS`) is allowed; a map that chooses wiring is a registry.
+  what to build is not. A map that checks hand-written wiring (`crd_layering.OPERATOR_CRDS`)
+  is allowed; a map that chooses wiring is a registry.
 - **Construction runs forward** (§ The Flux graph): inputs are values or constructs
   built earlier, and every fact a node depends on is in its signature.
 - **Stateful data is never destroyed by a change here.** Databases, PersistentVolumes
