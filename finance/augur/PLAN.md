@@ -85,9 +85,6 @@ seller's prior assessed value.
 **First milestone: San Francisco and mainland Vallejo, county and city level.** Accepted when
 each of these holds against an independent calculation or published source:
 
-- **E. Income tax:** the owner's share of ad-valorem tax paid in a calendar year goes to SALT
-  under the cap, a rented share is a rental expense, transfer tax is never itemized; federal
-  and California.
 - **F. Lifecycle:** per location, ten years: buy with a mortgage, live there three, rent the
   whole of it four, sell. Every year's bills, SALT, rental expense, depreciation, and the
   sale's transfer tax, gain, §121 exclusion and recapture match a hand calculation checked in
@@ -102,15 +99,13 @@ without them.
 - **DISTRICTS**: district files with a per-category maximum, escalation and
   end date from each district's rate-and-method document: Mare Island's CFDs 2002-1, 2005-1A
   and 2005-1B (research so far: <docs/mare_island_special_taxes.md>), and San Francisco's parcel
-  taxes.
+  taxes. A district's charge is never an itemizable real-property tax: on a rented share a
+  service charge is an expense and a local-benefit assessment is added to basis, federal and
+  California.
 - **DECLINE**: a Proposition 8 reduction while the home-value path is below the
   factored base, recovering toward it.
 - **INSTALLMENTS** (after MIDYEAR): the July–June secured bill is paid in its two
   installments on their due dates.
-- **DEDUCT** (after DISTRICTS): only ad-valorem tax is an itemizable real-property tax; today
-  `TaxBook.property_tax` puts the whole bill, special assessment included, into SALT. On a
-  rented share, service charges are expenses and local-benefit assessments are added to basis,
-  federal and California.
 - **LIFECYCLE** (after the above): the hand-calculated lifecycle for each location.
 - Pin cases to the San Francisco Assessor-Recorder and Treasurer-Tax Collector (secured rate,
   transfer-tax table), the Solano County Auditor-Controller's rate book, the City of Vallejo's

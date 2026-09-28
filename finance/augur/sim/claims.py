@@ -47,7 +47,9 @@ class TaxTrueUp:
 
 
 @dataclass(frozen=True)
-class PropertyTax:
+class AdValoremTax:
+    """Real property tax on assessed value: the owner's itemizable, the rented share an expense."""
+
     owner: AgentId
     rented_fraction: int
 
@@ -59,7 +61,7 @@ class TransferTax:
     owner: AgentId
 
 
-type Effect = OrdinaryDeduction | TaxPayment | TaxTrueUp | MortgagePayment | PropertyTax | TransferTax | None
+type Effect = OrdinaryDeduction | TaxPayment | TaxTrueUp | MortgagePayment | AdValoremTax | TransferTax | None
 
 
 class Demand(Record):
@@ -119,7 +121,7 @@ class Claims:
                     kind = InstallmentDue
                 case TaxPayment() | TaxTrueUp():
                     kind = AssessmentDue
-                case PropertyTax() | TransferTax():
+                case AdValoremTax() | TransferTax():
                     kind = PropertyTaxDue
                 case OrdinaryDeduction() | None:
                     kind = BillDue

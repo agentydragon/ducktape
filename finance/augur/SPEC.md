@@ -203,8 +203,10 @@ validated fidelity. Adding a jurisdiction can require mechanics, not merely data
 The supported tax scope is US federal plus California for a single filer resident
 in the US, holding equity funds, US Treasury and municipal bond funds, municipal
 and direct bonds and managed tax-loss-harvesting portfolios in taxable accounts. Qualified-dividend character, the net
-investment income tax and the mortgage-interest deduction (itemized against the
-standard deduction, with the SALT cap) belong to it; charitable deductions do not.
+investment income tax, the mortgage-interest deduction and the owner's ad-valorem property tax
+(itemized against the standard deduction: federally within the SALT cap, in California
+uncapped; a rented share is a rental expense, and transfer tax is never itemized) belong to it;
+charitable deductions do not.
 Future years hold current law flat, either in nominal dollars or with the amounts
 statute indexes following the modeled CPI, as the composition declares, and estimated
 tax and the true-up are paid on schedule without penalties: explicit assumptions, not

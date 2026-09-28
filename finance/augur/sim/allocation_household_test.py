@@ -52,6 +52,7 @@ TAX = Jurisdiction(
     jurisdiction_id=SYNTHETIC,
     income_tax=IncomeTax(
         exempt_interest=InterestExemptions(treasury=False, municipal=set()),
+        itemizes_real_property_tax=False,
         ordinary_income_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.2"))]},
         ltcg_brackets={"single": [TaxBracket(upper="Infinity", rate=Decimal("0.1"))]},
         standard_deduction={"single": Decimal(0)},

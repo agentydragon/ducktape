@@ -98,7 +98,7 @@ Schedule E and owner-use splits read the runtime rented fraction:
   mortgage-interest rented share, and depreciation can deduct against ordinary income;
 - Python records the owner/rental split of each settled mortgage installment;
   owner-share interest flows through MID;
-- owner-share property tax flows through federal SALT.
+- owner-share ad-valorem property tax flows through federal SALT and California itemized deductions.
 
 Section 121 qualifying-use months accrue only when all are true:
 

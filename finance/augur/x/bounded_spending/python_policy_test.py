@@ -245,6 +245,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
         jurisdiction_id=JurisdictionId("synthetic-flat-tax"),
         income_tax=IncomeTax(
             exempt_interest=InterestExemptions(treasury=False, municipal=set()),
+            itemizes_real_property_tax=False,
             ordinary_income_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.20"))]},
             ltcg_brackets={FilingStatus.SINGLE: [TaxBracket(upper="Infinity", rate=Decimal("0.10"))]},
             standard_deduction={FilingStatus.SINGLE: Decimal(0)},

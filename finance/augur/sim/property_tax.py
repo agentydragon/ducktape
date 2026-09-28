@@ -5,7 +5,7 @@ from fractions import Fraction
 
 from finance.augur.sim.actor import Actor, MonthOpened
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.claims import Demand, ObligationType, PropertyTax, TransferTax
+from finance.augur.sim.claims import AdValoremTax, Demand, ObligationType, TransferTax
 from finance.augur.sim.ids import AccountId, AgentId, PropertyId
 from finance.augur.sim.market_path import MarketStatement
 from finance.augur.sim.money import round_ratio, scaled
@@ -49,7 +49,7 @@ class _Roll:
 
 class PropertyTaxBill(Demand):
     amount: int
-    effect: PropertyTax | TransferTax
+    effect: AdValoremTax | TransferTax
 
 
 class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStatement, PropertyTaxBill]):
@@ -145,7 +145,7 @@ class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStateme
         taxable = max(0, roll.value - self.law.homeowners_exemption) if roll.exempt else roll.value
         bill = self.law.secured_bill(taxable, fiscal)
         elapsed = (month % 12 - 6) % 12
-        ad_valorem = PropertyTax(policy.owner_agent_id, property_.rented_fraction_ppb)
+        ad_valorem = AdValoremTax(policy.owner_agent_id, property_.rented_fraction_ppb)
         bills = [
             *transfer,
             self.bill(
@@ -171,7 +171,7 @@ class PropertyTaxAuthority(Actor[MonthOpened | PropertyStatement | MarketStateme
         return bills
 
     def bill(
-        self, cause_id: str, obligation_type: ObligationType, amount: int, effect: PropertyTax | TransferTax
+        self, cause_id: str, obligation_type: ObligationType, amount: int, effect: AdValoremTax | TransferTax
     ) -> PropertyTaxBill:
         policy = self.policy
         return PropertyTaxBill(

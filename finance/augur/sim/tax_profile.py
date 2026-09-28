@@ -160,6 +160,7 @@ def compile_profile(
                     law.taxable_income_surtax, profile.filing_status, currency=currency
                 ),
                 law_year=law.law_year,
+                itemizes_real_property_tax=law.itemizes_real_property_tax,
                 indexed=frozenset(
                     amount for amount, indexation in law.indexation.items() if indexation is StatutoryIndexation.CPI
                 ),

@@ -59,6 +59,11 @@ income_tax:
     treasury: false
     municipal: all
 
+  # IRS Publication 530 (2025): real estate taxes are deductible if you itemize, within "the overall
+  # limit on the deduction for state and local income, sales, and property tax", which a
+  # `SaltDeduction` carries. https://www.irs.gov/publications/p530
+  itemizes_real_property_tax: false
+
   # IRC 1411 net investment income tax. IRS Form 8960 (2025) instructions, Part III: 3.8% of
   # the smaller of net investment income and MAGI over $200,000 for a single filer.
   # https://www.irs.gov/instructions/i8960
