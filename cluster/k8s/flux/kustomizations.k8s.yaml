@@ -833,27 +833,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: forgejo-cache
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: valkey
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/cache
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-cache
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   annotations:
     description: Forgejo API token Reflector mirrors into haku-ci's KEDA scaler. Split out of haku/managed-agent so haku-ci doesn't depend on the (parked) worker.
   name: haku-forgejo-tea
@@ -2210,6 +2189,8 @@ spec:
     - name: seaweedfs-operator
       namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: valkey
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/forgejo

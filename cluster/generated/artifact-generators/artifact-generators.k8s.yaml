@@ -470,11 +470,6 @@ spec:
       name: budget-namespace
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/forgejo/cache/**"
-          to: "@artifact/cluster/generated/forgejo/cache/"
-      name: forgejo-cache
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/gatus/**"
           to: "@artifact/cluster/k8s/gatus/"
       name: gatus
