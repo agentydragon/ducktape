@@ -121,8 +121,7 @@ class RunnerBridge:
         summary = next((row for row in sessions if row.session_id == runner_session.session_id), None)
         if summary is None:
             raise RunnerError(
-                f"runner has no retained session {runner_session.session_id!r}; "
-                "this Thread cannot be resumed"
+                f"runner has no retained session {runner_session.session_id!r}; this Thread cannot be resumed"
             )
         if (
             summary.spec.harness not in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX)

@@ -38,10 +38,7 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
 ) -> None:
     view = await sandbox("accept-suspend-resume")
     catalog = await client.models()
-    markers = {
-        protocol_pb2.HARNESS_CLAUDE: f"CLAUDE-{uuid4().hex}",
-        protocol_pb2.HARNESS_CODEX: f"CODEX-{uuid4().hex}",
-    }
+    markers = {protocol_pb2.HARNESS_CLAUDE: f"CLAUDE-{uuid4().hex}", protocol_pb2.HARNESS_CODEX: f"CODEX-{uuid4().hex}"}
     agents: dict[protocol_pb2.Harness, Agent] = {}
 
     for harness in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX):
@@ -50,8 +47,7 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
         assert offered, f"the deployment offers no model for {harness_name}"
         agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered[0])
         seed = await agent.run(
-            f"Remember this exact token for my next message: {markers[harness]}. "
-            "Do not use tools. Reply with only ACK."
+            f"Remember this exact token for my next message: {markers[harness]}. Do not use tools. Reply with only ACK."
         )
         assert seed.status == event_pb2.TURN_STATUS_COMPLETED
         assert seed.input_confirmed, f"{harness_name} did not confirm the seed input"
@@ -63,9 +59,7 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
     await _wait_until_suspended_without_pod(client, view.name)
     await client.resume_sandbox(view.name)
 
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(POD_TRANSITION_SECONDS), wait=wait_fixed(2), reraise=True
-    ):
+    async for attempt in AsyncRetrying(stop=stop_after_delay(POD_TRANSITION_SECONDS), wait=wait_fixed(2), reraise=True):
         with attempt:
             resumed = await client.sandbox(view.name)
             if not is_running(resumed):
@@ -76,9 +70,7 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
         turn = await agent.run("Do not use tools. What exact token did I ask you to remember? Reply with only it.")
         expected = markers[harness]
         other_harness = (
-            protocol_pb2.HARNESS_CODEX
-            if harness == protocol_pb2.HARNESS_CLAUDE
-            else protocol_pb2.HARNESS_CLAUDE
+            protocol_pb2.HARNESS_CODEX if harness == protocol_pb2.HARNESS_CLAUDE else protocol_pb2.HARNESS_CLAUDE
         )
         other = markers[other_harness]
         assert turn.resumed, f"{protocol_pb2.Harness.Name(harness)} did not report native session resume"

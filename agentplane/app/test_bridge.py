@@ -324,9 +324,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         # turns in context.
         previous_cursor = int(stored[-1]["cursor"])
         async with http.stream(
-            "GET",
-            f"/threads/{thread_id}/events/stream",
-            headers={"Last-Event-ID": str(previous_cursor)},
+            "GET", f"/threads/{thread_id}/events/stream", headers={"Last-Event-ID": str(previous_cursor)}
         ) as resumed_stream:
             resumed_lines = resumed_stream.aiter_lines()
             await next_message(resumed_lines)
@@ -334,10 +332,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             assert started[-1].data["event"]["harnessStarted"]["resumed"] is True
             accepted = await http.post(
                 _commands(thread_id),
-                json={
-                    "commandId": "input-after-resume",
-                    "submitInput": {"text": "Reply with exactly: BRIDGE_RESUMED"},
-                },
+                json={"commandId": "input-after-resume", "submitInput": {"text": "Reply with exactly: BRIDGE_RESUMED"}},
             )
             assert accepted.status_code == 200, accepted.text
             request = await model.request()

@@ -1481,12 +1481,7 @@ function ProjectedSessionBody({
               })}
             />
             {canResume && (
-              <Button
-                size="xs"
-                aria-label="Resume harness"
-                loading={resuming}
-                onClick={() => void resume()}
-              >
+              <Button size="xs" aria-label="Resume harness" loading={resuming} onClick={() => void resume()}>
                 Resume harness
               </Button>
             )}
