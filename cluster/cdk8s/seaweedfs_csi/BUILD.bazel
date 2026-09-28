@@ -10,6 +10,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",

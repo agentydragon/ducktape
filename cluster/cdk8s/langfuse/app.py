@@ -26,11 +26,21 @@ from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/langfuse"
 _NAME = "langfuse"
 _NAMESPACE = "langfuse"
+# The chart's web Service (`langfuse.selectorLabels` plus `app: web`), for release `_NAME`.
+_WEB = ServiceRef(
+    name="langfuse-web",
+    port=Port(name="http", number=3000),
+    pods=Pods(
+        namespace=_NAMESPACE,
+        labels=(("app.kubernetes.io/name", _NAME), ("app.kubernetes.io/instance", _NAME), ("app", "web")),
+    ),
+)
 _S3_CREDENTIALS_SECRET = "langfuse-seaweedfs-credentials"
 _VALKEY = "langfuse-valkey-ovh"
 
@@ -305,8 +315,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["langfuse.allegedly.works"],
-        backend="langfuse-web",
-        port=3000,
+        backend=_WEB,
         hsts=False,
         listener=None,
     )

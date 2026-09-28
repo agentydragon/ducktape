@@ -32,12 +32,13 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.plaid_mcp.app import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
+from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/db"
 _CLUSTER = "plaid-mcp-db"
 _DATABASE = "plaidmcp"
 _READONLY_ROLE = "plaid_ro"
-_READONLY_SECRET = "plaid-mcp-db-readonly"
+READONLY = SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-readonly")
 # The namespace holding a copy of the read-only credentials, for Haku's ad-hoc queries, and the
 # identity that copy is read with.
 _READONLY_CONSUMER = "haku-sandbox"
@@ -70,7 +71,7 @@ def _cluster(chart: Chart) -> None:
                     name=_READONLY_ROLE,
                     ensure=ClusterSpecManagedRolesEnsure.PRESENT,
                     login=True,
-                    password_secret=ClusterSpecManagedRolesPasswordSecret(name=_READONLY_SECRET),
+                    password_secret=ClusterSpecManagedRolesPasswordSecret(name=READONLY.name),
                     comment=(
                         "Read-only SQL access for the Plaid Postgres MCP facade; ESO copies the secret into the"
                         " haku-sandbox namespace."
@@ -89,7 +90,7 @@ def _readonly_credentials(chart: Chart) -> None:
     mint_db_role_secret(
         chart,
         "readonly-external-secret",
-        name=_READONLY_SECRET,
+        name=READONLY.name,
         namespace=NAMESPACE,
         role=_READONLY_ROLE,
         host=_PRIMARY_HOST,
@@ -111,19 +112,19 @@ def _readonly_copy(chart: Chart) -> None:
     )
     store = single_secret_store(
         chart,
-        f"{_READONLY_CONSUMER}-{_READONLY_SECRET}",
+        f"{_READONLY_CONSUMER}-{READONLY.name}",
         reader=reader,
         source_namespace=NAMESPACE,
-        source_secret=_READONLY_SECRET,
+        source_secret=READONLY.name,
         consumer_namespace=_READONLY_CONSUMER,
     )
     ExternalSecret(
         chart,
         "consumer-copy",
-        metadata=ApiObjectMetadata(name=_READONLY_SECRET, namespace=_READONLY_CONSUMER),
+        metadata=ApiObjectMetadata(name=READONLY.name, namespace=_READONLY_CONSUMER),
         refresh_interval="10m",
         secret_store_ref=SecretStoreRef.cluster(store),
-        data_from=[DataFrom.from_extract(_READONLY_SECRET)],
+        data_from=[DataFrom.from_extract(READONLY.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )

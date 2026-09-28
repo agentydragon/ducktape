@@ -598,11 +598,6 @@ spec:
       name: headlamp-app
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/hubble-ui/**"
-          to: "@artifact/cluster/generated/hubble-ui/"
-      name: hubble-ui
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/infra-drift/**"
           to: "@artifact/cluster/generated/infra-drift/"
       name: infra-drift

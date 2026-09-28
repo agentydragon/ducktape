@@ -1,4 +1,5 @@
-"""The kube-system Namespace's labels: Goldilocks recommendations, applied on pod creation."""
+"""The kube-system unit: the Namespace's labels (Goldilocks recommendations, applied on pod creation),
+and the Hubble UI's ingress NetworkPolicy (`hubble_ui.py`)."""
 
 from __future__ import annotations
 

@@ -33,6 +33,7 @@ from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteMatch
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix"
 NAMESPACE = "matrix"
@@ -40,9 +41,26 @@ SYNAPSE = "matrix-synapse"
 _NAME = "matrix"
 _DB_NAME = "matrix-db"
 _HELM_REPOSITORY = "ananace-charts"
-_SYNAPSE_PORT = 8008
+# The chart's main Service: its selector is the chart name, the release and the component.
+_SYNAPSE_HTTP = ServiceRef(
+    name=SYNAPSE,
+    port=Port(name="http", number=8008),
+    pods=Pods(
+        namespace=NAMESPACE,
+        labels=(
+            ("app.kubernetes.io/name", "matrix-synapse"),
+            ("app.kubernetes.io/instance", SYNAPSE),
+            ("app.kubernetes.io/component", "synapse"),
+        ),
+    ),
+)
 _ELEMENT = "element-web"
 _ELEMENT_LABELS = {"app.kubernetes.io/name": _ELEMENT}
+_ELEMENT_HTTP = ServiceRef(
+    name=_ELEMENT,
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=NAMESPACE, labels=tuple(_ELEMENT_LABELS.items())),
+)
 _ELEMENT_CONFIG_MAP = "element-web-config"
 SOPS_FILES = (
     "synapse-signing-key.sops.yaml",
@@ -174,7 +192,11 @@ def _synapse(scope: Construct) -> None:
                 "existingSecret": "synapse-signing-key",
                 "existingSecretKey": "signing.key",
             },
-            "service": {"type": "ClusterIP", "port": _SYNAPSE_PORT, "federation": {"enabled": True, "port": 8448}},
+            "service": {
+                "type": "ClusterIP",
+                "port": _SYNAPSE_HTTP.port.number,
+                "federation": {"enabled": True, "port": 8448},
+            },
             # PostgreSQL via external CNPG cluster (matrix-db)
             "postgresql": {"enabled": False},
             "externalPostgresql": {
@@ -218,8 +240,7 @@ def _synapse_routes(scope: Construct) -> None:
         "synapse-route",
         metadata=ApiObjectMetadata(name=SYNAPSE, namespace=NAMESPACE),
         hostnames=["matrix.allegedly.works"],
-        backend=SYNAPSE,
-        port=_SYNAPSE_PORT,
+        backend=_SYNAPSE_HTTP,
         hsts=False,
         listener=None,
     )
@@ -236,7 +257,7 @@ def _synapse_routes(scope: Construct) -> None:
         rules=[
             HttpRouteSpecRules(
                 matches=[RouteMatch.path_prefix(prefix)],
-                backend_refs=[HttpRouteSpecRulesBackendRefs(name=SYNAPSE, port=_SYNAPSE_PORT)],
+                backend_refs=[HttpRouteSpecRulesBackendRefs(name=_SYNAPSE_HTTP.name, port=_SYNAPSE_HTTP.port.number)],
             )
             for prefix in ("/_matrix", "/.well-known/matrix")
         ],
@@ -312,8 +333,7 @@ def _element(scope: Construct) -> None:
         "element-route",
         metadata=ApiObjectMetadata(name=_ELEMENT, namespace=NAMESPACE),
         hostnames=["chat.allegedly.works"],
-        backend=_ELEMENT,
-        port=80,
+        backend=_ELEMENT_HTTP,
         hsts=False,
         listener=None,
     )

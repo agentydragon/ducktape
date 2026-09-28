@@ -33,7 +33,6 @@ from cdk8s_plus_34 import (
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
-    Namespace,
     Protocol,
     Secret,
     SecretValue,
@@ -46,7 +45,7 @@ from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints, ServiceMonitorSpecSelector
 
-from cluster.cdk8s import pod_policy
+from cluster.cdk8s import cilium, namespaces, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -54,6 +53,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.home_assistant.app import HA_MCP_TOKEN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -293,9 +293,7 @@ class HaMcpApp(Construct):
                 IngressRule.from_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"}, ports=[_APP_FACADE_PORT]
                 ),
-                IngressRule.from_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_APP_METRICS_PORT]
-                ),
+                cilium.SCRAPERS.admit(_APP_METRICS_PORT),
             ],
         )
 
@@ -314,13 +312,13 @@ class HaMcp(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        Namespace(
+        namespaces.namespace(
             self,
             "namespace",
-            metadata=ApiObjectMetadata(
-                name=_NAMESPACE,
-                labels={"app.kubernetes.io/name": _NAMESPACE, "goldilocks.fairwinds.com/enabled": "false"},
-            ),
+            name=_NAMESPACE,
+            vpa=Vpa.DISABLED,
+            agent_readable=None,
+            labels={"app.kubernetes.io/name": _NAMESPACE},
         )
         _home_assistant_token(self)
         HaMcpApp(self, "app")

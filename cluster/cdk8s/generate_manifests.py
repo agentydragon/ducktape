@@ -354,8 +354,6 @@ def generate_manifests(root: Path) -> None:
     )
     haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
     haku_namespace.haku_namespace(flux_chart, write_directory(root, haku_namespace_artifact, haku_namespace.chart))
-    hubble_ui_artifact = artifact("hubble-ui", hubble_ui.OUTPUT_DIR)
-    hubble_ui.hubble_ui(flux_chart, write_directory(root, hubble_ui_artifact, hubble_ui.chart))
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
     kube_api_proxy.kube_api_proxy(flux_chart, write_directory(root, kube_api_proxy_artifact, kube_api_proxy.chart))
     kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", f"{HAND_WRITTEN_ROOT}/kubevirt/cdi-operator")
@@ -669,7 +667,9 @@ def generate_manifests(root: Path) -> None:
     )
     kube_system_artifact = artifact("kube-system", kube_system.OUTPUT_DIR)
     kube_system.kube_system(
-        flux_chart, write_directory(root, kube_system_artifact, kube_system.chart), kyverno_kustomization
+        flux_chart,
+        write_directory(root, kube_system_artifact, kube_system.chart, hubble_ui.chart),
+        kyverno_kustomization,
     )
     agents_mitmproxy_artifact = artifact("agents-mitmproxy", mitmproxy.OUTPUT_DIR)
     mitmproxy.agents_mitmproxy(
@@ -1493,7 +1493,6 @@ def generate_manifests(root: Path) -> None:
             haku_workspaces_app_artifact,
             haku_ci_artifact,
             headlamp_app_artifact,
-            hubble_ui_artifact,
             infra_drift_artifact,
             keda_artifact,
             kube_api_proxy_artifact,
