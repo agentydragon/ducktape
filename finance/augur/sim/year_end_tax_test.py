@@ -6,7 +6,6 @@ from decimal import Decimal
 from fractions import Fraction
 from typing import Any
 
-import numpy as np
 import polars as pl
 import pytest
 import pytest_bazel
@@ -17,7 +16,6 @@ from finance.augur.policy.cash_band_household import CashBandHousehold, Security
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.books import AccountRef, Book, TaxLiabilityState
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import (
@@ -38,6 +36,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
@@ -156,15 +155,8 @@ def indexation(request: pytest.FixtureRequest) -> TaxIndexation:
 
 def compose(case: Situation, indexation: TaxIndexation) -> World:
     horizon = case.horizon_months
-    series = compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [(asset, np.asarray([levels], dtype=np.float64)) for asset, levels in case.prices.items()],
-            rollout_count=1,
-            horizon_months=horizon,
-        ),
-        rollout_count=1,
-        horizon_months=horizon,
-        currency=USD,
+    series = level_series(
+        {asset: [levels] for asset, levels in case.prices.items()}, rollout_count=1, horizon_months=horizon
     )
     if isinstance(indexation, CpiIndexedLaw):
         cpi = (100,) * (horizon + 1) if case.cpi is None else case.cpi

@@ -16,7 +16,6 @@ from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -30,6 +29,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
 from finance.augur.sim.world import World
 
@@ -196,14 +196,7 @@ def test_security_sale_books_proceeds_and_a_long_term_gain() -> None:
     horizon = 6
     scale = quantity_scale_for_asset(SP500)
     units = quantity_to_quanta(100, scale=scale)
-    series = compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [(SP500, np.full((1, horizon + 1), 120.0, dtype=np.float64))], rollout_count=1, horizon_months=horizon
-        ),
-        rollout_count=1,
-        horizon_months=horizon,
-        currency=USD,
-    )
+    series = level_series({SP500: np.full((1, horizon + 1), 120.0)}, rollout_count=1, horizon_months=horizon)
     world = world_for(account(ALICE), account(IRS), horizon_months=horizon, series=series)
     taxed_by(world, FEDERAL)
     world.declare_pool(

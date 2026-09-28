@@ -9,15 +9,15 @@ from finance.augur.model.series import InflationKey
 from finance.augur.sim.actions import Action, Consume, DecisionActions
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import USD, mul_div
+from finance.augur.sim.money import mul_div
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.results import Finished
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import finish
 from finance.augur.sim.world import Capture, World
 
@@ -68,12 +68,7 @@ def _run(compose: Callable[[int], World], rollout_ids: list[int], capture: Captu
 def test_each_path_keeps_its_own_cpi_and_selected_replay_matches_the_population() -> None:
     cpi = np.ones((3, HORIZON + 1))
     cpi[:, 12:] = np.asarray([2.0, 1.0, 3.0])[:, None]
-    series = compile_series(
-        ExternalSeriesContext.from_level_blocks([(InflationKey(), cpi)], rollout_count=3, horizon_months=HORIZON),
-        rollout_count=3,
-        horizon_months=HORIZON,
-        currency=USD,
-    )
+    series = level_series({InflationKey(): cpi}, rollout_count=3, horizon_months=HORIZON)
 
     def compose(rollout_id: int) -> World:
         return _retiree(MarketPath(series, rollout_id, rollout_count=3))

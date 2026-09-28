@@ -24,7 +24,6 @@ from finance.augur.product.simulation import (
 from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.events import EVENT_FRAME_SPECS
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -36,6 +35,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.situs import UNTAXED
 from finance.augur.sim.world import Capture, World
 
@@ -90,15 +90,10 @@ def sale_and_tax_year(*, rollout_count: int = 1) -> Worlds:
     )
     profile = TaxProfile(agent_id=AGENT, jurisdiction_ids=[JurisdictionId("federal_us")], tax_authority_agent_id=IRS)
     jurisdictions = load_jurisdictions_for([profile])
-    series = compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [(VTI, np.full((rollout_count, HORIZON_MONTHS + 1), float(SALE_PRICE)))],
-            rollout_count=rollout_count,
-            horizon_months=HORIZON_MONTHS,
-        ),
+    series = level_series(
+        {VTI: np.full((rollout_count, HORIZON_MONTHS + 1), float(SALE_PRICE))},
         rollout_count=rollout_count,
         horizon_months=HORIZON_MONTHS,
-        currency=USD,
     )
 
     def compose(rollout_id: int) -> World:
@@ -157,12 +152,7 @@ def a_property_bought_and_sold(closing_cost_pct: Decimal = Decimal(0)) -> Worlds
     )
     levels = np.full((1, HORIZON_MONTHS + 1), HOME_VALUE_AT_PURCHASE)
     levels[:, PROPERTY_SALE_MONTH] = HOME_VALUE_AT_SALE
-    series = compile_series(
-        ExternalSeriesContext.from_level_blocks([(HOME_VALUE, levels)], rollout_count=1, horizon_months=HORIZON_MONTHS),
-        rollout_count=1,
-        horizon_months=HORIZON_MONTHS,
-        currency=USD,
-    )
+    series = level_series({HOME_VALUE: levels}, rollout_count=1, horizon_months=HORIZON_MONTHS)
 
     def compose() -> World:
         # Untaxed on purpose: what the gain is assessed at is the statute suites' business, and
