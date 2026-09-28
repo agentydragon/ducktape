@@ -56,7 +56,7 @@ _BACKUP = "grocy-config-ovh-backup"
 _HTTP = Port(name="http", number=80)
 # The households; grocy/mcp.py renders one MCP server per entry too.
 HOUSEHOLDS = (("sf", "SF"), ("vallejo", "Vallejo"))
-_BACKUP_SCHEDULES = {"sf": "23 */6 * * *", "vallejo": "29 */6 * * *"}
+_BACKUP_SCHEDULE = "23 */6 * * *"
 
 
 def service(household: str) -> ServiceRef:
@@ -348,7 +348,7 @@ def household_chart(app: App, *, household: str) -> Chart:
         "backup-source",
         metadata=ApiObjectMetadata(name=_BACKUP, namespace=namespace),
         source_pvc=_CONFIG_CLAIM,
-        trigger=ReplicationSourceSpecTrigger(schedule=_BACKUP_SCHEDULES[household]),
+        trigger=ReplicationSourceSpecTrigger(schedule=_BACKUP_SCHEDULE),
         mover=ReplicationSourceSpecRsyncTls(
             copy_method=ReplicationSourceSpecRsyncTlsCopyMethod.DIRECT,
             key_secret=f"volsync-rsync-tls-{_BACKUP}",
