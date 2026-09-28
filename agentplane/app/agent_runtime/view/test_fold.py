@@ -380,5 +380,95 @@ def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_fail
     assert store.state == before[1]
 
 
+@pytest.mark.parametrize(
+    "disposition",
+    [
+        event_pb2.RECOVERY_DISPOSITION_RETAINED,
+        event_pb2.RECOVERY_DISPOSITION_ABSENT,
+        event_pb2.RECOVERY_DISPOSITION_UNKNOWN,
+    ],
+)
+def test_reconciliation_preserves_observed_tool_success_and_payload(disposition: event_pb2.RecoveryDisposition) -> None:
+    store = Store()
+    store.apply(
+        [
+            entry(
+                1,
+                event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="tool", kind=event_pb2.ITEM_KIND_TOOL_CALL)),
+            ),
+            entry(
+                2,
+                event_pb2.Event(
+                    item_completed=event_pb2.ItemCompleted(
+                        item_id="tool", tool=event_pb2.ToolResult(output="side effect committed", succeeded=True)
+                    )
+                ),
+            ),
+        ]
+    )
+    original = store.items["tool"]
+    result = store.apply(
+        [
+            entry(
+                3,
+                event_pb2.Event(
+                    conversation_reconciled=event_pb2.ConversationReconciled(
+                        turn_id="interrupted", items=[event_pb2.ItemRecovery(item_id="tool", disposition=disposition)]
+                    )
+                ),
+            )
+        ]
+    )
+    recovered = store.items["tool"]
+    assert recovered.completion == ToolCompletion(succeeded=True)
+    assert recovered.output == original.output
+    assert recovered.recovery == disposition
+    assert result.payload_writes == ()
+
+
+def test_recovered_tool_content_does_not_fabricate_an_execution_result() -> None:
+    store = Store()
+    store.apply(
+        [
+            entry(
+                1,
+                event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="tool", kind=event_pb2.ITEM_KIND_TOOL_CALL)),
+            ),
+            entry(
+                2, event_pb2.Event(tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="partial stdout"))
+            ),
+        ]
+    )
+    original = store.items["tool"].output
+    store.apply(
+        [
+            entry(
+                3,
+                event_pb2.Event(
+                    conversation_reconciled=event_pb2.ConversationReconciled(
+                        turn_id="lost",
+                        items=[
+                            event_pb2.ItemRecovery(
+                                item_id="tool",
+                                disposition=event_pb2.RECOVERY_DISPOSITION_REVISED,
+                                replacement=event_pb2.RecoveredContent(
+                                    arguments_json='{"command":"run"}', output="interrupted"
+                                ),
+                            )
+                        ],
+                    )
+                ),
+            )
+        ]
+    )
+    recovered = store.items["tool"]
+    assert recovered.completion is None
+    assert recovered.output is not None
+    assert store.payloads[recovered.output] == "interrupted"
+    assert original is not None
+    assert store.payloads[original] == "partial stdout"
+    assert recovered.recovery == event_pb2.RECOVERY_DISPOSITION_REVISED
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

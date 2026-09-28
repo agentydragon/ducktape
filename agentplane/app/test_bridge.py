@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 import shlex
+import shutil
 import signal
 import socket
 from collections.abc import AsyncIterator, Callable
@@ -68,11 +69,17 @@ SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 
 @pytest.fixture
 async def failed_native_journal(request: pytest.FixtureRequest, runner: RunnerHandle) -> AsyncIterator[None]:
-    """Preserve native stderr when an app-level bridge case fails during harness launch."""
+    """Preserve native history and journal evidence when an app-level bridge case fails."""
     yield
     report = request.node.stash.get(_CALL_REPORT, None)
     if report is None or not report.failed:
         return
+    for session_id, session in runner.runner.sessions.items():
+        target = undeclared_outputs_dir() / request.node.name / session_id
+        for dialect, history in (("claude", "projects"), ("codex", "sessions")):
+            source = session.directory / dialect / history
+            if source.exists():
+                shutil.copytree(source, target / dialect / history, dirs_exist_ok=True)
     sessions: dict[str, list[dict[str, Any]]] = {}
     for session_id, session in runner.runner.sessions.items():
         entries = await session.journal.since(0, limit=512)
@@ -469,12 +476,18 @@ def _has_turn_status(entries: list[dict[str, Any]], status: str) -> bool:
     return any(entry["event"].get("turnCompleted", {}).get("status") == status for entry in entries)
 
 
-async def test_resume_after_suspending_during_a_stream_keeps_only_the_partial_folded_item(
-    app_url: str, model: ScriptedModel, store: ThreadStore, spec: protocol_pb2.SessionSpec, failed_native_journal: None
+@pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
+async def test_stream_recovery_reports_the_content_the_model_receives(
+    app_url: str,
+    model: ScriptedModel,
+    runner: RunnerHandle,
+    store: ThreadStore,
+    spec: protocol_pb2.SessionSpec,
+    failed_native_journal: None,
+    stop_mode: str,
 ) -> None:
     seed_prompt, seed_answer = "Remember the seed prompt", "SEED_ANSWER_FOR_STREAM_RECOVERY"
     partial = "PARTIAL_STREAM_MUST_STAY_UNFINISHED"
-    recovery_prompt = "Continue with a fresh answer after resume"
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         thread_id = await _open_thread_with_seed(
             http, model, spec, session_id=SESSION, seed_prompt=seed_prompt, seed_answer=seed_answer
@@ -485,67 +498,112 @@ async def test_resume_after_suspending_during_a_stream_keeps_only_the_partial_fo
         assert accepted.status_code == 200, accepted.text
         request = await _next_model_request(model)
         await model.hold_after_first_delta(request, Text(partial))
-        await _stored_events(
-            http,
-            thread_id,
-            until="textDelta",
-            matches=lambda entries: any(
-                entry["event"].get("textDelta", {}).get("text") == partial for entry in entries
-            ),
-        )
         items, chunks = await _wait_for_folded_items(
             store,
             thread_id,
-            lambda rows, payloads: any(
-                row.state["completion"] is None and _folded_body(payloads, row.text_ref) == partial
-                for row in rows.values()
+            lambda rows, payloads: any(_folded_body(payloads, row.text_ref) == partial for row in rows.values()),
+        )
+        item_id = next(row.entity_id for row in items.values() if _folded_body(chunks, row.text_ref) == partial)
+        assert items[item_id].state["completion"] is None
+        recovery_cursor = await _interrupt_and_recover(http, runner, thread_id, stop_mode)
+        items, chunks = await _wait_for_folded_items(
+            store,
+            thread_id,
+            lambda rows, payloads: (
+                rows[item_id].revision_cursor >= recovery_cursor
+                and rows[item_id].state["recovery"]
+                in {event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT}
             ),
         )
-        partial_items = [row for row in items.values() if _folded_body(chunks, row.text_ref) == partial]
-        assert len(partial_items) == 1
-        assert partial_items[0].state["completion"] is None
-
-        stopped = await http.post(
-            _commands(thread_id), json={"commandId": "stop-during-stream", "stopRunnerSession": {}}
-        )
-        assert stopped.status_code == 200, stopped.text
-        stored = await _stored_events(
-            http,
-            thread_id,
-            until="harnessExited",
-            matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_INTERRUPTED"),
-        )
-        assert any("harnessExited" in entry["event"] for entry in stored)
-        items, chunks = await _folded_items(store, thread_id)
-        partial_items = [row for row in items.values() if _folded_body(chunks, row.text_ref) == partial]
-        assert len(partial_items) == 1
-        assert partial_items[0].state["completion"] == ("text" if spec.harness == protocol_pb2.HARNESS_CLAUDE else None)
-
-        resumed = await http.post(f"/threads/{thread_id}/resume")
-        assert resumed.status_code == 200, resumed.text
-        assert resumed.json()["sessionId"] == SESSION
-        assert resumed.json()["spec"]["harness"] == protocol_pb2.Harness.Name(spec.harness)
-        assert await _thread_id(http) == thread_id
+        assert _folded_body(chunks, items[item_id].text_ref) == partial
+        disposition = items[item_id].state["recovery"]
         accepted = await http.post(
-            _commands(thread_id), json={"commandId": "stream-recovery-input", "submitInput": {"text": recovery_prompt}}
+            _commands(thread_id),
+            json={"commandId": "stream-recovery-input", "submitInput": {"text": "Continue after recovery"}},
         )
         assert accepted.status_code == 200, accepted.text
         request = await _next_model_request(model)
         assert seed_prompt in request.user_texts
         assert seed_answer in request.assistant_texts
-        assert any("interrupted" in text.lower() for text in request.user_texts)
-        assert (partial in request.assistant_texts) == (spec.harness == protocol_pb2.HARNESS_CLAUDE)
-        async with request._exchange as exchange:
-            await exchange.send(*model.stream([Text("STREAM_RECOVERY_DONE")]))
+        assert (partial in request.assistant_texts) == (disposition == event_pb2.RECOVERY_DISPOSITION_RETAINED)
+        await model.reply(request, Text("STREAM_RECOVERY_DONE"))
         await _stored_events(
             http,
             thread_id,
             until="turnCompleted",
-            matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_COMPLETED"),
+            matches=lambda entries: any(
+                entry["event"].get("itemCompleted", {}).get("text") == "STREAM_RECOVERY_DONE" for entry in entries
+            ),
         )
 
 
-async def test_resume_after_hard_kill_during_tool_execution_keeps_the_outcome_unknown(
+async def _interrupt_and_recover(http: httpx.AsyncClient, runner: RunnerHandle, thread_id: str, mode: str) -> int:
+    session = runner.runner.sessions[SESSION]
+    process = session.process
+    assert process is not None
+    turn_id = session.active_turn_id
+    before = session.journal.last_cursor
+    if mode == "kill":
+        os.killpg(process.native_pid, signal.SIGKILL)
+    else:
+        operation = {"interruptTurn": {"turnId": turn_id}} if mode == "interrupt" else {"stopRunnerSession": {}}
+        response = await http.post(_commands(thread_id), json={"commandId": "interrupt-for-recovery", **operation})
+        assert response.status_code == 200, response.text
+    expected = "TURN_STATUS_PROCESS_LOST" if mode == "kill" else "TURN_STATUS_INTERRUPTED"
+    await _stored_events(
+        http,
+        thread_id,
+        until="turnCompleted",
+        matches=lambda entries: any(
+            entry["event"].get("turnCompleted", {}).get("turnId") == turn_id
+            and entry["event"]["turnCompleted"]["status"] == expected
+            for entry in entries
+        ),
+    )
+    if mode != "interrupt":
+        await _stored_events(http, thread_id, until="harnessExited")
+        resumed = await http.post(f"/threads/{thread_id}/resume")
+        assert resumed.status_code == 200, resumed.text
+        assert resumed.json()["sessionId"] == SESSION
+    else:
+        assert session.process is process
+        assert process.running
+    await _stored_events(
+        http,
+        thread_id,
+        until="conversationReconciled",
+        matches=lambda entries: any(
+            entry["event"].get("conversationReconciled", {}).get("turnId") == turn_id for entry in entries
+        ),
+    )
+    reports = [
+        entry
+        for entry in await session.journal.since(before, limit=512)
+        if entry.event.HasField("conversation_reconciled") and entry.event.conversation_reconciled.turn_id == turn_id
+    ]
+    assert reports
+    expected_report = reports[-1].cursor
+    entries = await _stored_events(
+        http,
+        thread_id,
+        until="conversationReconciled",
+        matches=lambda entries: any(
+            int(entry["origin"]["sequence"]) == expected_report
+            and entry["event"].get("conversationReconciled", {}).get("turnId") == turn_id
+            for entry in entries
+        ),
+    )
+
+    return next(
+        int(entry["cursor"])
+        for entry in entries
+        if int(entry["origin"]["sequence"]) == expected_report
+        and entry["event"].get("conversationReconciled", {}).get("turnId") == turn_id
+    )
+
+
+@pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
+async def test_tool_recovery_reports_context_without_repeating_side_effects(
     app_url: str,
     model: ScriptedModel,
     runner: RunnerHandle,
@@ -553,6 +611,7 @@ async def test_resume_after_hard_kill_during_tool_execution_keeps_the_outcome_un
     spec: protocol_pb2.SessionSpec,
     workspace: Path,
     failed_native_journal: None,
+    stop_mode: str,
 ) -> None:
     seed_prompt, seed_answer = "Remember the tool test seed", "SEED_ANSWER_FOR_TOOL_RECOVERY"
     recovery_prompt = "After resume, answer without rerunning the old tool"
@@ -597,30 +656,26 @@ async def test_resume_after_hard_kill_during_tool_execution_keeps_the_outcome_un
         assert len(incomplete_tools) == 1
         assert _folded_body(chunks, incomplete_tools[0].output_ref) == ""
 
-        process = runner.runner.sessions[SESSION].process
-        assert process is not None
-        os.killpg(process.native_pid, signal.SIGKILL)
-        stored = await _stored_events(
-            http,
+        item_id = incomplete_tools[0].entity_id
+        recovery_cursor = await _interrupt_and_recover(http, runner, thread_id, stop_mode)
+        items, chunks = await _wait_for_folded_items(
+            store,
             thread_id,
-            until="turnCompleted",
-            matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_PROCESS_LOST"),
+            lambda rows, payloads: (
+                rows[item_id].revision_cursor >= recovery_cursor
+                and rows[item_id].state["recovery"]
+                in {
+                    event_pb2.RECOVERY_DISPOSITION_RETAINED,
+                    event_pb2.RECOVERY_DISPOSITION_ABSENT,
+                    event_pb2.RECOVERY_DISPOSITION_REVISED,
+                }
+            ),
         )
-        assert any("harnessExited" in entry["event"] for entry in stored)
-        items, chunks = await _folded_items(store, thread_id)
-        incomplete_tools = [
-            row
-            for row in items.values()
-            if row.state["completion"] is None and token in _folded_body(chunks, row.arguments_ref)
-        ]
-        assert len(incomplete_tools) == 1
-        assert _folded_body(chunks, incomplete_tools[0].output_ref) == ""
+        recovered = items[item_id]
+        assert recovered.state["tool_succeeded"] is not True
+        if stop_mode == "kill":
+            assert recovered.state["completion"] is None
         assert marker.read_text().splitlines() == [token]
-
-        resumed = await http.post(f"/threads/{thread_id}/resume")
-        assert resumed.status_code == 200, resumed.text
-        assert resumed.json()["sessionId"] == SESSION
-        assert await _thread_id(http) == thread_id
         accepted = await http.post(
             _commands(thread_id), json={"commandId": "tool-recovery-input", "submitInput": {"text": recovery_prompt}}
         )
@@ -628,6 +683,12 @@ async def test_resume_after_hard_kill_during_tool_execution_keeps_the_outcome_un
         request = await _next_model_request(model)
         assert seed_prompt in request.user_texts
         assert seed_answer in request.assistant_texts
+        assert ("inflight-tool" in request.tool_calls) == (
+            recovered.state["recovery"] != event_pb2.RECOVERY_DISPOSITION_ABSENT
+        )
+        recovered_output = _folded_body(chunks, recovered.output_ref)
+        if recovered_output and recovered.state["recovery"] != event_pb2.RECOVERY_DISPOSITION_ABSENT:
+            assert any(recovered_output in output.text for output in request.tool_outputs)
         assert marker.read_text().splitlines() == [token]
         await model.reply(request, Text("TOOL_RECOVERY_DONE"))
         await _stored_events(
@@ -639,13 +700,16 @@ async def test_resume_after_hard_kill_during_tool_execution_keeps_the_outcome_un
         assert marker.read_text().splitlines() == [token]
 
 
+@pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it(
     app_url: str,
     model: ScriptedModel,
+    runner: RunnerHandle,
     store: ThreadStore,
     spec: protocol_pb2.SessionSpec,
     workspace: Path,
     failed_native_journal: None,
+    stop_mode: str,
 ) -> None:
     seed_prompt, seed_answer = "Remember the completed tool seed", "SEED_ANSWER_FOR_COMPLETED_TOOL"
     recovery_prompt = "Continue after the earlier tool and interrupted answer"
@@ -696,14 +760,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
             ),
         )
 
-        stopped = await http.post(_commands(thread_id), json={"commandId": "stop-after-tool", "stopRunnerSession": {}})
-        assert stopped.status_code == 200, stopped.text
-        await _stored_events(
-            http,
-            thread_id,
-            until="harnessExited",
-            matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_INTERRUPTED"),
-        )
+        recovery_cursor = await _interrupt_and_recover(http, runner, thread_id, stop_mode)
         items, chunks = await _folded_items(store, thread_id)
         completed_tools = [
             row
@@ -712,14 +769,6 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         ]
         assert len(completed_tools) == 1
         assert completed_tools[0].state["tool_succeeded"] is True
-        partial_items = [row for row in items.values() if _folded_body(chunks, row.text_ref) == partial]
-        assert len(partial_items) == 1
-        assert partial_items[0].state["completion"] == ("text" if spec.harness == protocol_pb2.HARNESS_CLAUDE else None)
-
-        resumed = await http.post(f"/threads/{thread_id}/resume")
-        assert resumed.status_code == 200, resumed.text
-        assert resumed.json()["sessionId"] == SESSION
-        assert await _thread_id(http) == thread_id
         accepted = await http.post(
             _commands(thread_id),
             json={"commandId": "completed-tool-recovery-input", "submitInput": {"text": recovery_prompt}},
@@ -729,15 +778,21 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         async with request._exchange as exchange:
             assert seed_prompt in request.user_texts
             assert seed_answer in request.assistant_texts
-            if spec.harness == protocol_pb2.HARNESS_CLAUDE:
-                # Claude keeps the partial assistant block and interruption marker, but drops the
-                # prior tool result from its next model request even though the Thread fold keeps it.
-                assert not any(tool_output in result.text for result in request.tool_outputs)
-                assert tool_output not in "\n".join(
-                    [*request.user_texts, *request.assistant_texts, *request.reasoning_texts]
-                )
-            else:
-                assert any(tool_output in result.text for result in request.tool_outputs)
+            items, chunks = await _wait_for_folded_items(
+                store,
+                thread_id,
+                lambda rows, payloads: (
+                    rows[completed_tools[0].entity_id].revision_cursor >= recovery_cursor
+                    and rows[completed_tools[0].entity_id].state["recovery"]
+                    in {event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT}
+                ),
+            )
+            recovered_tool = items[completed_tools[0].entity_id]
+            assert recovered_tool.state["tool_succeeded"] is True
+            assert tool_output in _folded_body(chunks, recovered_tool.output_ref)
+            assert any(tool_output in result.text for result in request.tool_outputs) == (
+                recovered_tool.state["recovery"] == event_pb2.RECOVERY_DISPOSITION_RETAINED
+            )
             assert marker.read_text().splitlines() == [token]
             await exchange.send(*model.stream([Text("COMPLETED_TOOL_RECOVERY_DONE")]))
         await _stored_events(

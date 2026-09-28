@@ -128,6 +128,12 @@ before returning, so a resumed browser does not read the previous harness's term
 Thread page, **Resume harness** opens that Thread's existing runner session using its retained
 runner-owned spec; it cannot create a new Thread or substitute another harness.
 
+After interruption/resume, runner `ConversationReconciled` events give each affected item a
+`recovery` disposition and `recovery_reason`. The fold retains absent/unknown observations;
+revised continuation content gets a new payload revision without changing the observed tool
+execution result. Original observations remain in the archive. The app does not infer recovery
+behavior from the harness type.
+
 The retained-event SSE API reads committed PostgreSQL events on whichever replica receives
 its request. Transactional `NOTIFY` wakes event/archive and inventory readers; notifications
 are hints and the database cursor remains authoritative.

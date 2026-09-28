@@ -52,6 +52,7 @@ class ModelRequest[RequestT: StreamableRequest]:
     assistant_texts: list[str]
     reasoning_texts: list[str]
     tool_outputs: list[ToolOutput]
+    tool_calls: list[str]
     streaming: bool
 
 

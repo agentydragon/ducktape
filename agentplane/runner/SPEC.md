@@ -166,27 +166,33 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   grace and exits. Whatever supervises the runner must allow it at least twenty seconds before
   killing it; a harness killed outright is `HarnessLost` on the next start instead.
 
-## In-flight turns and native resume
+## Interrupted turns and continuation recovery
 
-`//agentplane/app:test_bridge` runs each case through the app, runner, pinned native harness, and
-scripted model endpoint, then reads the app's materialized Thread rows and payload chunks. The
-observed recovery contract is:
+The runner reports `ConversationReconciled` after an ordinary interruption and after native
+resume, before delivering subsequent input. It covers the most recent completed turn and any
+later interrupted turns on resume; an ordinary interruption covers that turn. Each previously
+observed item is `RETAINED`, `ABSENT`, `REVISED` (with its continuing content), or `UNKNOWN`
+(with a reason). These are point-in-time statements about continuation, not guarantees against
+future compaction. Native interpretation belongs to the runner adapter; clients consume the
+same dispositions for every harness.
 
-- `StopRunnerSession` interrupts an active turn before the harness exits. The turn is
-  `INTERRUPTED`; already observed text stays in the Thread fold. Claude closes its partial text
-  item, while Codex leaves it incomplete. Both keep the interrupted turn distinct from a completed
-  turn. After resume, Claude includes that partial text and its interruption marker in the next
-  model request. Codex includes its interruption marker but not the partial assistant text.
-- If the harness process group is killed while a tool runs, the turn is `PROCESS_LOST`. The Thread
-  keeps the tool call and its arguments incomplete and does not invent an output or terminal result.
-  The blocking shell in the integration test writes stdout before it is killed, but neither pinned
-  harness reports that text as an output delta before the process exits. The native tool call is not
-  reissued during resume in the tested case. A process lost mid-tool still cannot prove whether
-  external side effects happened.
-- If a tool result is complete before the turn is interrupted, the Thread fold keeps its success
-  and output. Codex includes that output in its next model request after resume. Claude drops it
-  from that request even though the Thread fold retains it. Native resume owns transcript recovery;
-  the runner does not synthesize missing native history from the fold.
+Process loss first ends the active turn as `PROCESS_LOST` and reports its items `UNKNOWN`.
+Explicit resume replaces those decisions using surviving native evidence. An unreadable or
+unsupported native history stays `UNKNOWN`; absence of evidence does not establish `ABSENT`.
+Unknown recovery does not prevent the user from continuing, but it provides no context guarantee.
+
+Observed text, arguments, outputs, and execution results remain in the event archive. A fold
+keeps absent/unknown items with their disposition; revised content becomes the item's current
+payload revision. Reconciliation never marks a tool successful or failed, undoes a known result,
+or reissues an old call. Losing a tool's context does not mean its side effects were undone, and
+receiving synthetic interruption content does not prove how execution ended.
+
+`//agentplane/app:test_bridge` checks streaming text, active tool execution, and a completed tool
+followed by streaming text, each interrupted normally, stopped/resumed, and killed/resumed.
+Both native harnesses run against asserting model endpoints. Tests compare recovery dispositions
+and materialized Thread payloads with the next model request, and verify that recovery does not
+repeat a shell side effect. This does not establish exact equality for harness-private context,
+reasoning, compaction, or unmodeled tools.
 
 ## Standing instructions across a resume
 

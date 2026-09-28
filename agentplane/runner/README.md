@@ -55,6 +55,31 @@ exact published prefix from a new process; `test_restart.py` also exercises the 
 both native harnesses. These are not physical power-loss tests. `test_store.py` retains a separate
 fsync-boundary storage image for session metadata and directory discovery.
 
+## Native continuation evidence
+
+`recovery.py` reconstructs observed item content from the journal's indexed turn boundaries.
+The adapters compare it with native continuation evidence and emit `ConversationReconciled`;
+the app only folds that neutral report.
+
+- `claude_history.py` walks the persisted main parent chain, correlates split assistant blocks,
+  and removes unresolved tool-call messages as Claude's resume loader does. Ordinary interrupts
+  use the native terminal item observations. Reasoning, compacted history, and unfinished live
+  tool outcomes remain unknown. The reader is tested against Claude Code 2.1.252.
+- `codex_history.py` reads model `response_item` records, not the app-server's reconstructed
+  turn-item projection, which can omit an unresolved call still sent to the model. At Codex
+  0.152.0, `core/src/tasks/mod.rs` flushes conversation items before the interruption notification;
+  `core/src/context_manager/normalize.rs` supplies `aborted` for a call with no output. The reader
+  reports this synthetic content as a revision without creating an execution result. Reasoning,
+  unmodeled tools, compacted history, and rollback remain unknown.
+
+Unreadable, malformed, or unsupported native evidence produces an explicit unknown report.
+These readers depend on the pinned native formats and must be checked with the app-level recovery
+matrix when upgrading a harness. The matrix covers interrupt, graceful shutdown/resume, and
+process-group kill/resume at three gates: streaming text, tool execution, and streaming after a
+completed tool. The mock reads tool results throughout each request, including older user messages.
+Both harnesses retain the tested completed results; the earlier last-message-only mock falsely
+suggested Claude lost them.
+
 ## SQLite storage
 
 The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication relies on SQLite's

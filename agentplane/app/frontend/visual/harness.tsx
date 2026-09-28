@@ -867,6 +867,8 @@ function item(
       tool_name: extra.tool ?? "",
       completion: extra.complete === false ? null : kind === ItemKind.TOOL_CALL ? "tool" : "text",
       tool_succeeded: extra.output === undefined ? null : !extra.failed,
+      recovery: null,
+      recovery_reason: "",
     },
     {
       thread_id: extra.threadId,

@@ -776,7 +776,14 @@ describe("EntityCard", () => {
     const container = await renderCard(
       entity(
         "item",
-        { kind: ItemKind.TOOL_CALL, tool_name: "Bash", completion: "", tool_succeeded: true },
+        {
+          kind: ItemKind.TOOL_CALL,
+          tool_name: "Bash",
+          completion: "",
+          tool_succeeded: true,
+          recovery: null,
+          recovery_reason: "",
+        },
         { argumentsRef: reference("test-tool", "arguments"), outputRef: reference("test-tool", "output") }
       ),
       { "test-tool:arguments": '{"command": "ls", "timeout": 30}', "test-tool:output": PROSE }
@@ -796,7 +803,14 @@ describe("EntityCard", () => {
     const container = await renderCard(
       entity(
         "item",
-        { kind: ItemKind.ASSISTANT_TEXT, tool_name: "", completion: PROSE, tool_succeeded: null },
+        {
+          kind: ItemKind.ASSISTANT_TEXT,
+          tool_name: "",
+          completion: PROSE,
+          tool_succeeded: null,
+          recovery: null,
+          recovery_reason: "",
+        },
         { textRef: reference("test-reply", "text") }
       ),
       { "test-reply:text": PROSE }
