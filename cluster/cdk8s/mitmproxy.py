@@ -6,21 +6,8 @@ forced through, its root CA and the trust bundle its clients read (trust model a
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_clusterwide_crds.io.cilium import (
-    CiliumClusterwideNetworkPolicy,
-    CiliumClusterwideNetworkPolicySpec,
-    CiliumClusterwideNetworkPolicySpecEgress,
-    CiliumClusterwideNetworkPolicySpecEgressToEndpoints,
-    CiliumClusterwideNetworkPolicySpecEgressToEntities,
-    CiliumClusterwideNetworkPolicySpecEgressToPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumClusterwideNetworkPolicySpecEndpointSelector,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
-)
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
@@ -207,65 +194,17 @@ class Mitmproxy(Construct):
         also loom/gym/TODO.md (the loom eval's per-sandbox archive clamp rests on the same
         assumption).
         """
-
-        def port(
-            number: int,
-            protocol: CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol = (
-                CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-            ),
-        ) -> CiliumClusterwideNetworkPolicySpecEgressToPortsPorts:
-            return CiliumClusterwideNetworkPolicySpecEgressToPortsPorts(port=str(number), protocol=protocol)
-
-        CiliumClusterwideNetworkPolicy(
+        cilium.force_proxy_egress(
             self,
             "sandbox-egress",
-            metadata=ApiObjectMetadata(name="sandbox-force-proxy-egress"),
-            spec=CiliumClusterwideNetworkPolicySpec(
-                endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
-                    match_expressions=[
-                        CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions(
-                            key="k8s:io.kubernetes.pod.namespace",
-                            operator=CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
-                            values=list(SANDBOX_NAMESPACES),
-                        )
-                    ]
-                ),
-                egress=[
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=cilium.KUBE_DNS_LABELS)
-                        ],
-                        to_ports=[
-                            CiliumClusterwideNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    port(53, CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.UDP),
-                                    port(53),
-                                ]
-                            )
-                        ],
-                    ),
-                    # Pod-to-service traffic, which bypasses the proxy via NO_PROXY.
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.CLUSTER]
-                    ),
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
-                        to_ports=[CiliumClusterwideNetworkPolicySpecEgressToPorts(ports=[port(6443)])],
-                    ),
-                    # All external internet traffic goes through here.
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumClusterwideNetworkPolicySpecEgressToEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": NAMESPACE,
-                                    "k8s:app.kubernetes.io/name": NAME,
-                                }
-                            )
-                        ],
-                        to_ports=[CiliumClusterwideNetworkPolicySpecEgressToPorts(ports=[port(_PROXY_PORT)])],
-                    ),
-                ],
-            ),
+            name="sandbox-force-proxy-egress",
+            namespaces=SANDBOX_NAMESPACES,
+            proxy_namespace=NAMESPACE,
+            proxy_name=NAME,
+            proxy_port=_PROXY_PORT,
+            # Pod-to-service traffic, which bypasses the proxy via NO_PROXY.
+            cluster_ports=None,
+            kube_apiserver=True,
         )
 
 

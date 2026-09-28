@@ -15,19 +15,6 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_clusterwide_crds.io.cilium import (
-    CiliumClusterwideNetworkPolicy,
-    CiliumClusterwideNetworkPolicySpec,
-    CiliumClusterwideNetworkPolicySpecEgress,
-    CiliumClusterwideNetworkPolicySpecEgressToEndpoints,
-    CiliumClusterwideNetworkPolicySpecEgressToEntities,
-    CiliumClusterwideNetworkPolicySpecEgressToPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumClusterwideNetworkPolicySpecEndpointSelector,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
-)
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -486,79 +473,23 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
     )
 
 
-_TCP = CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-_UDP = CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.UDP
-
-
-def _ports(
-    *ports: tuple[int, CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol],
-) -> list[CiliumClusterwideNetworkPolicySpecEgressToPorts]:
-    return [
-        CiliumClusterwideNetworkPolicySpecEgressToPorts(
-            ports=[
-                CiliumClusterwideNetworkPolicySpecEgressToPortsPorts(port=str(number), protocol=protocol)
-                for number, protocol in ports
-            ]
-        )
-    ]
-
-
-def _to_endpoint(namespace: str, labels: dict[str, str], port: int) -> CiliumClusterwideNetworkPolicySpecEgress:
-    """Egress to the pods carrying `labels` in `namespace`, on TCP `port`."""
-    return CiliumClusterwideNetworkPolicySpecEgress(
-        to_endpoints=[
-            CiliumClusterwideNetworkPolicySpecEgressToEndpoints(
-                match_labels={"k8s:io.kubernetes.pod.namespace": namespace, **labels}
-            )
-        ],
-        to_ports=_ports((port, _TCP)),
-    )
-
-
-# DNS resolution (CoreDNS in kube-system)
-_DNS = CiliumClusterwideNetworkPolicySpecEgress(
-    to_endpoints=[CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=cilium.KUBE_DNS_LABELS)],
-    to_ports=_ports((53, _UDP), (53, _TCP)),
-)
-
-
-def _namespace_selector(namespace: str) -> CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions:
-    return CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions(
-        key="k8s:io.kubernetes.pod.namespace",
-        operator=CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
-        values=[namespace],
-    )
-
-
 def _sandbox_fence(chart: Chart) -> None:
     """Force all external egress from the haku-sandbox namespace through the dedicated
     haku-egress-proxy. Allows: DNS, cluster-internal traffic, kube-apiserver, and haku-egress-proxy
     port 8080. Blocks: direct external internet access.
     """
-    CiliumClusterwideNetworkPolicy(
+    cilium.force_proxy_egress(
         chart,
         "haku-sandbox-force-proxy-egress",
-        metadata=ApiObjectMetadata(name="haku-sandbox-force-proxy-egress"),
-        spec=CiliumClusterwideNetworkPolicySpec(
-            endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
-                match_expressions=[_namespace_selector("haku-sandbox")]
-            ),
-            egress=[
-                _DNS,
-                # All cluster-internal traffic (pod-to-service, bypasses proxy via NO_PROXY).
-                # This is also how haku-sandbox reaches the Plaid Postgres cluster-internally.
-                CiliumClusterwideNetworkPolicySpecEgress(
-                    to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.CLUSTER]
-                ),
-                # Kubernetes API server
-                CiliumClusterwideNetworkPolicySpecEgress(
-                    to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
-                    to_ports=_ports((6443, _TCP)),
-                ),
-                # Shared proxy for existing sandbox traffic.
-                _to_endpoint(NAME, {"k8s:app.kubernetes.io/name": NAME}, 8080),
-            ],
-        ),
+        name="haku-sandbox-force-proxy-egress",
+        namespaces=["haku-sandbox"],
+        proxy_namespace=NAME,
+        proxy_name=NAME,
+        proxy_port=8080,
+        # All cluster-internal traffic (pod-to-service, bypasses proxy via NO_PROXY).
+        # This is also how haku-sandbox reaches the Plaid Postgres cluster-internally.
+        cluster_ports=None,
+        kube_apiserver=True,
     )
 
 
