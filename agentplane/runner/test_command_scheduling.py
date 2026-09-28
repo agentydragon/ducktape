@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest_bazel
+import pytest
 
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner.adapter import HarnessAdapter
@@ -29,6 +30,7 @@ class BlockingAdapter(HarnessAdapter):
         self.submit_finished = asyncio.Event()
         self.interrupt_started = asyncio.Event()
         self.interrupted_turn_ids: list[str] = []
+        self.model_changes: list[tuple[str, str]] = []
 
     def command(self) -> list[str]:
         return []
@@ -50,7 +52,7 @@ class BlockingAdapter(HarnessAdapter):
         self.interrupt_started.set()
 
     async def change_model(self, command_id: str, model: str) -> None:
-        raise AssertionError(f"unexpected model command {(command_id, model)!r}")
+        self.model_changes.append((command_id, model))
 
     async def on_frame(self, frame: dict[str, Any], source_sequence: int) -> None:
         raise AssertionError(f"unexpected native frame {(frame, source_sequence)!r}")
@@ -61,12 +63,17 @@ class RunningProcess:
 
 
 @asynccontextmanager
-async def session_with_blocked_adapter(tmp_path: Path) -> AsyncIterator[tuple[Session, BlockingAdapter]]:
+async def session_with_blocked_adapter(
+    tmp_path: Path,
+    *,
+    model_context_windows: Mapping[str, int] | None = None,
+    initial_model: str = "test-model",
+) -> AsyncIterator[tuple[Session, BlockingAdapter]]:
     state_dir = tmp_path / "state"
     store = SessionStore(state_dir / "sessions")
     owner = StateOwner(state_dir)
     record = SessionRecord(
-        harness="HARNESS_CODEX", cwd=str(tmp_path / "workspace"), model="test-model", reasoning_effort="low"
+        harness="HARNESS_CODEX", cwd=str(tmp_path / "workspace"), model=initial_model, reasoning_effort="low"
     )
     store.write("scheduling-1", record)
     adapter = BlockingAdapter()
@@ -79,7 +86,7 @@ async def session_with_blocked_adapter(tmp_path: Path) -> AsyncIterator[tuple[Se
                 record=record,
                 journal=journal,
                 store=store,
-                config=RunnerConfig(state_dir=state_dir),
+                config=RunnerConfig(state_dir=state_dir, model_context_windows=model_context_windows or {}),
                 make_adapter=lambda _session: adapter,
                 state_owner_descriptor=owner.descriptor,
             )
@@ -166,6 +173,57 @@ async def test_terminal_commands_release_scheduling_state_and_retry_is_deduplica
         assert session.journal.last_cursor == cursor
         assert not session._scheduled_commands
         assert session._normal_dispatch_task is None
+
+
+@pytest.mark.parametrize(
+    ("initial_model", "requested_model", "context_windows"),
+    [
+        ("qwen-128", "qwen-256", {"qwen-128": 128 * 1024, "qwen-256": 256 * 1024}),
+        ("qwen-128", "unlisted", {"qwen-128": 128 * 1024}),
+        ("unlisted", "qwen-128", {"qwen-128": 128 * 1024}),
+    ],
+)
+async def test_a_model_change_with_a_different_or_missing_context_window_fails(
+    tmp_path: Path, initial_model: str, requested_model: str, context_windows: dict[str, int]
+) -> None:
+    async with session_with_blocked_adapter(
+        tmp_path, initial_model=initial_model, model_context_windows=context_windows
+    ) as (session, adapter):
+        command = command_pb2.Command(
+            command_id="different-window",
+            change_model=command_pb2.ChangeModel(model=requested_model),
+        )
+        await session.command(command)
+        dispatch = session._normal_dispatch_task
+        if dispatch is not None:
+            await dispatch
+
+        result = next(
+            entry.event
+            for entry in await session.journal.since(0, limit=16)
+            if entry.event.WhichOneof("observation") == "command_failed"
+        )
+        assert "requires a new thread" in result.command_failed.reason
+        assert "new session" in result.command_failed.reason
+        assert adapter.model_changes == []
+
+
+async def test_a_same_window_model_change_reaches_the_harness(tmp_path: Path) -> None:
+    async with session_with_blocked_adapter(
+        tmp_path,
+        initial_model="qwen-128",
+        model_context_windows={"qwen-128": 128 * 1024, "qwen-128-alias": 128 * 1024},
+    ) as (session, adapter):
+        await session.command(
+            command_pb2.Command(
+                command_id="same-window",
+                change_model=command_pb2.ChangeModel(model="qwen-128-alias"),
+            )
+        )
+        dispatch = session._normal_dispatch_task
+        if dispatch is not None:
+            await dispatch
+        assert adapter.model_changes == [("same-window", "qwen-128-alias")]
 
 
 if __name__ == "__main__":

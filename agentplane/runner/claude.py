@@ -78,12 +78,16 @@ class ClaudeAdapter(HarnessAdapter):
     def environment(self) -> Mapping[str, str]:
         config_dir = self.session.directory / "claude"
         config_dir.mkdir(exist_ok=True)
-        return {
+        environment = {
             **self.session.config.environment,
             **scenarios.environment(
                 endpoint=self.launch.base_url, token=self.launch.auth_token, config_dir=str(config_dir)
             ),
         }
+        context_window = self.session.config.model_context_windows.get(self.session.record.model)
+        if context_window is not None:
+            environment["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context_window)
+        return environment
 
     async def handshake(self) -> str:
         # Every start sends the session's standing instructions, so a resumed harness has them too.
