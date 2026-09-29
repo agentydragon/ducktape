@@ -45,6 +45,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
     PACKAGES_POLICY,
+    PLAID_PGWEB_POLICY,
 )
 from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_DUCKTAPE_FORK_READS_SET,
@@ -540,7 +541,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     # API. `haku-mailbox` presents the JWT of Haku's own mailbox: JMAP reads and changes that one
     # mailbox and cannot send. It and `forgejo-haku` are Haku's credentials, bound here because
     # claude-ai is the connection Haku runs through (haku/TODO.md). `coinbase` presents nothing: the
-    # sandbox signs with the key above.
+    # sandbox signs with the key above. `plaid-pgweb` presents pgweb's HTTP Basic password on its
+    # query API, so a sandbox of this caller's can run SQL over the Plaid mirror as `plaid_ro`,
+    # which can only SELECT (egress_staging_credentials.py).
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol
@@ -580,6 +583,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
             COINBASE_POLICY,
+            PLAID_PGWEB_POLICY,
             _AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,
@@ -607,6 +611,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
             COINBASE_POLICY,
+            PLAID_PGWEB_POLICY,
             _AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,

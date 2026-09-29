@@ -34,6 +34,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSel
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import kustomize_kustomization
+from cluster.cdk8s.forgejo import db
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
@@ -224,9 +225,9 @@ def _values() -> dict[str, object]:
                 "security": {"INSTALL_LOCK": True, "SECRET_KEY": "change-this-secret-key-in-production"},
                 "database": {
                     "DB_TYPE": "postgres",
-                    "HOST": "forgejo-db-ssd-rw.forgejo:5432",
-                    "NAME": "forgejo",
-                    "USER": "forgejo",
+                    "HOST": f"{db.POSTGRES.rw.host}:{db.POSTGRES.rw.port.number}",
+                    "NAME": db.DATABASE,
+                    "USER": db.DATABASE,
                 },
                 "oauth2_client": {
                     "REGISTER_EMAIL_CONFIRM": False,
@@ -335,7 +336,7 @@ def _helm_release(scope: Construct) -> None:
         values_from=[
             HelmReleaseSpecValuesFrom(
                 kind=HelmReleaseSpecValuesFromKind.SECRET,
-                name="forgejo-db-ssd-creds",
+                name=db.POSTGRES.app_secret.name,
                 values_key="password",
                 # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
                 target_path="gitea.config.database.PASSWD",

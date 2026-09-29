@@ -42,7 +42,8 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/mailbox"
 _INGRESS_NAME = "haku-mailbox-smtp-ingress"
 _INGRESS_LABELS = {"app.kubernetes.io/name": _INGRESS_NAME}
 _TLS_SECRET = "mx-allegedly-works-tls"
-_DB_PASSWORD = SecretRef(namespace=NAMESPACE, name="haku-mailbox-db-app").key("password")  # CNPG-generated
+DATABASE = cnpg.PostgresRef.generated(name="haku-mailbox-db", namespace=NAMESPACE)
+_DB_PASSWORD = DATABASE.app_secret.key("password")
 _PUBLIC_URL = "https://haku-mailbox.allegedly.works"
 # In-repo repack of stalwartlabs/stalwart with stalwart-cli layered in
 # (//cluster/k8s/haku/mailbox/image) -- upstream ships the CLI only as a distroless image,
@@ -109,13 +110,12 @@ def _add_store(chart: Chart) -> None:
     cnpg.cluster(
         chart,
         "db",
-        name="haku-mailbox-db",
-        namespace=NAMESPACE,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="10Gi",
-        # CNPG auto-generates credentials in secret haku-mailbox-db-app.
         initdb=cnpg.same_owner_initdb("stalwart"),
+        wal_archive=False,
     )
 
 

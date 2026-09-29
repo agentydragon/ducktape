@@ -109,7 +109,6 @@ INDEXER_SQL_CONFIG_MAP = "haku-console-db-indexer-sql"
 _INDEXER_SQL_DIR = "/sql"
 _INDEXER_PROVISIONER_NAME = "haku-console-db-indexer-provisioner"
 _AUTHENTIK = "https://auth.allegedly.works"
-_DB_APP = SecretRef(namespace=database.NAMESPACE, name=database.APP_SECRET)
 
 _DB_ENV = {
     "HAKU_CONSOLE_DB_USER": "username",
@@ -128,7 +127,10 @@ def database_env(scope: Construct) -> dict[str, EnvValue]:
     """The CNPG app credential's parts and the SQLAlchemy asyncpg URL assembled from them, as the
     API and the migration Job both read them."""
     return {
-        **{name: _DB_APP.key(key).env_value(scope, f"db-app-{key}") for name, key in _DB_ENV.items()},
+        **{
+            name: database.POSTGRES.app_secret.key(key).env_value(scope, f"db-app-{key}")
+            for name, key in _DB_ENV.items()
+        },
         env_name(Settings, "database_url"): EnvValue.from_value(f"postgresql+asyncpg://{_DB_AUTHORITY}"),
     }
 
@@ -567,9 +569,9 @@ class Console(Construct):
             args=["--set=ON_ERROR_STOP=1", "-f", f"{_INDEXER_SQL_DIR}/indexer-role.sql"],
             # As the database owner: object-level GRANTs need owner privileges, not superuser.
             env_variables={
-                "PGUSER": _DB_APP.key("username").env_value(self, "indexer-db-username"),
-                "PGPASSWORD": _DB_APP.key("password").env_value(self, "indexer-db-password"),
-                "PGHOST": EnvValue.from_value(database.RW_HOST),
+                "PGUSER": database.POSTGRES.app_secret.key("username").env_value(self, "indexer-db-username"),
+                "PGPASSWORD": database.POSTGRES.app_secret.key("password").env_value(self, "indexer-db-password"),
+                "PGHOST": EnvValue.from_value(database.POSTGRES.rw.host),
                 "PGDATABASE": EnvValue.from_value(database.DATABASE),
             },
             resources=ContainerResources(

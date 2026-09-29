@@ -64,6 +64,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.litellm import database
 from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
@@ -172,7 +173,7 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             replicas=2,
             env=_langfuse_env(
                 _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY.secret.name, _MASTER_KEY.key),
-                _SecretEnv("DATABASE_URL", "litellm-db-app", "uri"),
+                _SecretEnv("DATABASE_URL", database.DATABASE.app_secret.name, "uri"),
                 _SecretEnv("LITELLM_SALT_KEY", "litellm-salt-key", "key"),
                 _SecretEnv("ANTHROPIC_API_KEY", "litellm-anthropic-key", "api-key"),
                 _SecretEnv("GROQ_API_KEY", "litellm-groq-key", "GROQ_API_KEY"),

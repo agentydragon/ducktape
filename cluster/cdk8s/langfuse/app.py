@@ -47,6 +47,7 @@ _S3_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="langfuse-seaweedfs-crede
 _SECRETS = SecretRef(namespace=_NAMESPACE, name="langfuse-secrets")
 _OIDC = SecretRef(namespace=_NAMESPACE, name="langfuse-oidc-config")
 _VALKEY = "langfuse-valkey-ovh"
+DATABASE = cnpg.PostgresRef.generated(name="langfuse-db", namespace=_NAMESPACE)
 
 
 def _namespace(scope: Construct) -> None:
@@ -57,13 +58,12 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name="langfuse-db",
-        namespace=_NAMESPACE,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",
         size="10Gi",
-        # CNPG auto-generates credentials in secret langfuse-db-app
         initdb=cnpg.same_owner_initdb("langfuse"),
+        wal_archive=False,
     )
 
 
@@ -227,11 +227,11 @@ def _values() -> dict[str, object]:
         },
         "postgresql": {
             "deploy": False,
-            "host": "langfuse-db-rw",
+            "host": DATABASE.rw.name,
             "auth": {
                 "username": "langfuse",
                 "database": "langfuse",
-                "existingSecret": "langfuse-db-app",
+                "existingSecret": DATABASE.app_secret.name,
                 "secretKeys": {"userPasswordKey": "password"},
             },
         },

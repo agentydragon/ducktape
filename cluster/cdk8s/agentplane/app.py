@@ -233,7 +233,7 @@ class App(Construct):
 
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
-        postgres_app = Secret.from_secret_name(self, "postgres-app-secret", "postgres-app")
+        postgres_app = Secret.from_secret_name(self, "postgres-app-secret", database.postgres(self.env).app_secret.name)
         oidc_secret = Secret.from_secret_name(self, "agentplane-oidc-secret", "agentplane-oidc")
         oidc_session_secret = (
             oidc_secret

@@ -116,7 +116,7 @@ def chart(app: App) -> Chart:
         install=RETRY_FAILED_INSTALL,
         values=_values(),
     )
-    _service_monitor(chart, "cert-manager", component="controller", port="tcp-prometheus-servicemonitor")
+    _service_monitor(chart, "cert-manager", component="controller", port="http-metrics")
     _service_monitor(chart, "cert-manager-webhook", component="webhook", port="metrics")
     return chart
 

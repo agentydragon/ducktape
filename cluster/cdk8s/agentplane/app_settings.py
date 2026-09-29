@@ -38,6 +38,7 @@ AIQUOTA_READ_POLICY = "aiquota-read"
 HAKU_MAILBOX_POLICY = "haku-mailbox"
 COINBASE_POLICY = "coinbase"
 BUILDBUDDY_POLICY = "buildbuddy"
+PLAID_PGWEB_POLICY = "plaid-pgweb"
 
 
 def settings(
@@ -146,6 +147,7 @@ def settings(
                             AIQUOTA_READ_POLICY,
                             HAKU_MAILBOX_POLICY,
                             COINBASE_POLICY,
+                            PLAID_PGWEB_POLICY,
                             GITHUB_CLONE_POLICY,
                             GITHUB_AGENTYDRAGON_AGENT_POLICY,
                             GITHUB_ACTIONS_LOGS_POLICY,
