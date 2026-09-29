@@ -24,53 +24,39 @@ class Counter:
     metric_type: MetricType
     help: str
 
+    @classmethod
+    def gauge(cls, field: str, help: str) -> Counter:
+        return cls(field=field, metric_type=MetricType.GAUGE, help=help)
+
+    @classmethod
+    def counter(cls, field: str, help: str) -> Counter:
+        return cls(field=field, metric_type=MetricType.COUNTER, help=help)
+
 
 COUNTERS = (
     # Fall-off / marginal-link signals
-    Counter(
-        field="DCGM_FI_DEV_XID_ERRORS", metric_type=MetricType.GAUGE, help="Value of the last XID error encountered."
-    ),
-    Counter(
-        field="DCGM_FI_DEV_PCIE_REPLAY_COUNTER", metric_type=MetricType.GAUGE, help="Total number of PCIe retries."
-    ),
+    Counter.gauge(field="DCGM_FI_DEV_XID_ERRORS", help="Value of the last XID error encountered."),
+    Counter.gauge(field="DCGM_FI_DEV_PCIE_REPLAY_COUNTER", help="Total number of PCIe retries."),
     # Power / thermal: fall-off context; the 2026-07-18 event was a 12W idle fall-off.
-    Counter(field="DCGM_FI_DEV_POWER_USAGE", metric_type=MetricType.GAUGE, help="Power draw (in W)."),
-    Counter(
-        field="DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION",
-        metric_type=MetricType.COUNTER,
-        help="Total energy consumption since boot (in mJ).",
+    Counter.gauge(field="DCGM_FI_DEV_POWER_USAGE", help="Power draw (in W)."),
+    Counter.counter(field="DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION", help="Total energy consumption since boot (in mJ)."),
+    Counter.gauge(field="DCGM_FI_DEV_GPU_TEMP", help="GPU temperature (in C)."),
+    Counter.gauge(field="DCGM_FI_DEV_MEMORY_TEMP", help="Memory temperature (in C)."),
+    Counter.counter(
+        field="DCGM_FI_DEV_THERMAL_VIOLATION", help="Throttling duration due to thermal constraints (in us)."
     ),
-    Counter(field="DCGM_FI_DEV_GPU_TEMP", metric_type=MetricType.GAUGE, help="GPU temperature (in C)."),
-    Counter(field="DCGM_FI_DEV_MEMORY_TEMP", metric_type=MetricType.GAUGE, help="Memory temperature (in C)."),
-    Counter(
-        field="DCGM_FI_DEV_THERMAL_VIOLATION",
-        metric_type=MetricType.COUNTER,
-        help="Throttling duration due to thermal constraints (in us).",
-    ),
-    Counter(
-        field="DCGM_FI_DEV_POWER_VIOLATION",
-        metric_type=MetricType.COUNTER,
-        help="Throttling duration due to power constraints (in us).",
-    ),
+    Counter.counter(field="DCGM_FI_DEV_POWER_VIOLATION", help="Throttling duration due to power constraints (in us)."),
     # Link / clocks
-    Counter(field="DCGM_FI_DEV_SM_CLOCK", metric_type=MetricType.GAUGE, help="SM clock frequency (in MHz)."),
-    Counter(field="DCGM_FI_DEV_MEM_CLOCK", metric_type=MetricType.GAUGE, help="Memory clock frequency (in MHz)."),
+    Counter.gauge(field="DCGM_FI_DEV_SM_CLOCK", help="SM clock frequency (in MHz)."),
+    Counter.gauge(field="DCGM_FI_DEV_MEM_CLOCK", help="Memory clock frequency (in MHz)."),
     # Utilization / memory
-    Counter(field="DCGM_FI_DEV_GPU_UTIL", metric_type=MetricType.GAUGE, help="GPU utilization (in %)."),
-    Counter(field="DCGM_FI_DEV_MEM_COPY_UTIL", metric_type=MetricType.GAUGE, help="Memory utilization (in %)."),
-    Counter(field="DCGM_FI_DEV_FB_FREE", metric_type=MetricType.GAUGE, help="Framebuffer memory free (in MiB)."),
-    Counter(field="DCGM_FI_DEV_FB_USED", metric_type=MetricType.GAUGE, help="Framebuffer memory used (in MiB)."),
+    Counter.gauge(field="DCGM_FI_DEV_GPU_UTIL", help="GPU utilization (in %)."),
+    Counter.gauge(field="DCGM_FI_DEV_MEM_COPY_UTIL", help="Memory utilization (in %)."),
+    Counter.gauge(field="DCGM_FI_DEV_FB_FREE", help="Framebuffer memory free (in MiB)."),
+    Counter.gauge(field="DCGM_FI_DEV_FB_USED", help="Framebuffer memory used (in MiB)."),
     # ECC: GeForce may not populate these; an unsupported field is harmless.
-    Counter(
-        field="DCGM_FI_DEV_ECC_SBE_VOL_TOTAL",
-        metric_type=MetricType.COUNTER,
-        help="Total single-bit volatile ECC errors.",
-    ),
-    Counter(
-        field="DCGM_FI_DEV_ECC_DBE_VOL_TOTAL",
-        metric_type=MetricType.COUNTER,
-        help="Total double-bit volatile ECC errors.",
-    ),
+    Counter.counter(field="DCGM_FI_DEV_ECC_SBE_VOL_TOTAL", help="Total single-bit volatile ECC errors."),
+    Counter.counter(field="DCGM_FI_DEV_ECC_DBE_VOL_TOTAL", help="Total double-bit volatile ECC errors."),
 )
 
 
