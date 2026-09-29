@@ -325,6 +325,7 @@ py_test(
         ":health_checks",
         ":image_automation",
         ":kustomize",
+        "//cluster/cdk8s:manifest_roots",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",

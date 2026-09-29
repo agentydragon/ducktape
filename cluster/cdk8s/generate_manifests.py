@@ -192,7 +192,7 @@ from cluster.cdk8s.litellm import (
     proxy as litellm_proxy,
     secrets as litellm_secrets,
 )
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT, PARKED_ROOT
 from cluster.cdk8s.matrix import matrix, user_provisioner as matrix_user_provisioner
 from cluster.cdk8s.monitoring import (
     alloy,
@@ -397,7 +397,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, nvidia_runtimeclass_artifact, nvidia_runtimeclass.chart)
     )
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
-    gecko_namespace_artifact = artifact("gecko-namespace", f"{HAND_WRITTEN_ROOT}/parked/gecko/namespace")
+    gecko_namespace_artifact = artifact("gecko-namespace", f"{PARKED_ROOT}/gecko/namespace")
     gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
     reflector_artifact = artifact("reflector", reflector.OUTPUT_DIR)
     reflector.reflector(flux_chart, write_directory(root, reflector_artifact, reflector.chart))
@@ -683,7 +683,7 @@ def generate_manifests(root: Path) -> None:
         ),
         cert_manager_trust_kustomization,
     )
-    docker_ci_artifact = artifact("docker-ci", f"{HAND_WRITTEN_ROOT}/parked/docker-ci")
+    docker_ci_artifact = artifact("docker-ci", f"{PARKED_ROOT}/docker-ci")
     parked_flux_kustomizations.docker_ci(
         flux_chart, docker_ci_artifact, claude_rbac_kustomization, cert_manager_kustomization, kyverno_kustomization
     )
@@ -980,7 +980,7 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
         kyverno_kustomization,
     )
-    haku_cloud_agent_artifact = artifact("haku-cloud-agent", f"{HAND_WRITTEN_ROOT}/parked/cloud-agent-tf")
+    haku_cloud_agent_artifact = artifact("haku-cloud-agent", f"{PARKED_ROOT}/cloud-agent-tf")
     parked_flux_kustomizations.haku_cloud_agent(
         flux_chart, haku_cloud_agent_artifact, external_secrets_operator_kustomization, tofu_controller_kustomization
     )
@@ -1009,7 +1009,7 @@ def generate_manifests(root: Path) -> None:
     grafana_flux_kustomizations.clickhouse_grafana(
         flux_chart, clickhouse_grafana_artifact, grafana_operator_kustomization
     )
-    agent_box_artifact = artifact("agent-box", f"{HAND_WRITTEN_ROOT}/parked/agent-box")
+    agent_box_artifact = artifact("agent-box", f"{PARKED_ROOT}/agent-box")
     parked_flux_kustomizations.agent_box(
         flux_chart,
         agent_box_artifact,
@@ -1017,7 +1017,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kyverno_kustomization,
     )
-    gecko_artifact = artifact("gecko", f"{HAND_WRITTEN_ROOT}/parked/gecko/app")
+    gecko_artifact = artifact("gecko", f"{PARKED_ROOT}/gecko/app")
     parked_flux_kustomizations.gecko(
         flux_chart,
         gecko_artifact,
@@ -1194,7 +1194,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
     )
-    sdr_artifact = artifact("sdr", f"{HAND_WRITTEN_ROOT}/parked/sdr")
+    sdr_artifact = artifact("sdr", f"{PARKED_ROOT}/sdr")
     parked_flux_kustomizations.sdr(flux_chart, sdr_artifact, external_secrets_operator_kustomization)
     ssh_mcp_artifact = artifact("ssh-mcp", ssh_mcp_generation.OUTPUT_DIR)
     ssh_mcp_generation.ssh_mcp(

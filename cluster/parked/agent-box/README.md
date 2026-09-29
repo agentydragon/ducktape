@@ -10,7 +10,7 @@ TOS note: a single-user personal agent on the user's own ChatGPT-Pro sub via the
 Codex CLI / `codex exec` / SDK is documented functionality, not a TOS violation
 (see `docs/self_hosted_coding_agent_platforms.md`, `docs/ai_subscription_comparison.md`).
 Open follow-ups (per-VM SSH, more users, Codex auth provisioning) are tracked in
-<../../TODO.md> § "agent-box follow-ups".
+<../../k8s/TODO.md> § "agent-box follow-ups".
 
 ## Identity model
 
@@ -85,6 +85,6 @@ around in `nix/nixos.nix`:
 
 - <nix/nixos.nix> — NixOS host config
 - <virtualmachine.yaml> — KubeVirt VM definition
-- <../../../docs/agent_rbac.md> § "agent-box Codex" — cluster RBAC for the
+- <../../docs/agent_rbac.md> § "agent-box Codex" — cluster RBAC for the
   codex user
-- Per-VM SSH beyond a few VMs: <../../../docs/plans/vm_ssh_exposure.md>
+- Per-VM SSH beyond a few VMs: <../../docs/plans/vm_ssh_exposure.md>

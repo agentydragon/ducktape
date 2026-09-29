@@ -34,7 +34,7 @@ def chart(app: App) -> Chart:
 
 def git_credentials_chart(app: App) -> Chart:
     """tf/gitops/budget-ledger's service-user credentials, for the parked Fava
-    (cluster/k8s/parked/budget) and, mirrored into augur, gaffer-private's ledger exporter."""
+    (cluster/parked/budget) and, mirrored into augur, gaffer-private's ledger exporter."""
     chart = Chart(app, "git-credentials", disable_resource_name_hashes=True)
     secret_copy.secret_copy(
         chart, "budget-ledger-git-creds", reader=secret_copy.reader(chart, _NAMESPACE), mirror_namespaces=["augur"]

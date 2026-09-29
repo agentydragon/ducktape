@@ -1835,6 +1835,7 @@ py_test(
     # sub-package boundaries.
     data = [
         "//cluster:generated_manifests",
+        "//cluster:parked_generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s/agents/ha-mcp/app:manifests",
         "//cluster/k8s/agents/loki-read-proxy:manifests",

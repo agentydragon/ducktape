@@ -9,15 +9,15 @@ rules_tf provider mirror, because v1.1.0's GitHub repo/release assets currently
 404 even though the OpenTofu registry still advertises cached metadata. Keeping
 it in the global mirror breaks unrelated Terraform/image jobs.
 
-The HCL root remains at <../../../../tf/gitops/haku-cloud-agent> as historical
+The HCL root remains at <../../../tf/gitops/haku-cloud-agent> as historical
 state and as input to the Haku agent SSOT drift guard. Explicit
 validate/apply-style Bazel targets need the provider restored or replaced.
 Re-enable normal CI coverage only after choosing the path in
-<../../../../haku/runtime/managed_agent/anthropic_hosted/README.md>: replace or
+<../../../haku/runtime/managed_agent/anthropic_hosted/README.md>: replace or
 restore the provider and recreate the cloud agent, or retire this root in favor
 of imperative provisioning. Haku reaches the cluster through the
 `kubectl-machine-mcp` passthrough MCP — see
-<../../agents/kubectl-machine-mcp/README.md>.
+<../kubectl-machine-mcp/README.md>.
 
 ## Manifests
 

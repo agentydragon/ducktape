@@ -162,7 +162,7 @@ Extend the small Kustomize model for an actually used field (`patches`,
   coverage. Other raw packages (`devinfra/firecracker/deploy`,
   `haku/x/zones/deploy`, `x/codex_pod_image/deploy`) need an owner/use decision;
   no active central node for them was found in this audit.
-- **Parked/vendor/example trees:** `cluster/k8s/parked`, vendored Browsertrix charts,
+- **Parked/vendor/example trees:** `cluster/parked`, vendored Browsertrix charts,
   archived experiments and documentation examples are outside the active conversion
   target. Their presence must not inflate an active-manifest completion percentage.
 

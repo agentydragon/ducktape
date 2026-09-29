@@ -12,7 +12,7 @@ This server is **not** auth-aware — it speaks to PostScan Mail with a single
 static `x-api-key` for the account-wide developer key. Its former Kubernetes
 deployment paired it with an `mcp-oauth-facade` sidecar for per-caller auth
 and the agentydragon-only ACL (see
-<cluster/k8s/parked/postscanmail-mcp/deployment.yaml>). That app is now
+<cluster/parked/postscanmail-mcp/deployment.yaml>). That app is now
 decommissioned; any revival must restore an authentication boundary before
 exposing this server.
 """

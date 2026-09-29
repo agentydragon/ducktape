@@ -34,7 +34,7 @@ spec:
               protocol: TCP
 ```
 
-Parked example: <../k8s/parked/manifold-mcp/networkpolicy.yaml>.
+Parked example: <../parked/manifold-mcp/networkpolicy.yaml>.
 
 ### Debugging a mis-classified source
 

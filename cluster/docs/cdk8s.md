@@ -39,8 +39,10 @@ before postBuild substitution (<../cdk8s/AGENTS.md> § Testing a generator).
    `configurations:` or `generatorOptions`, a remote-release patch, an object from
    § What stays hand-written). It lists each `<name>.k8s.yaml` as a resource with a
    comment naming the generator module.
-4. **Hand-written outright**: `flux/flux-system` (`flux bootstrap` output) and
-   `parked/`.
+4. **Hand-written outright**: `flux/flux-system` (`flux bootstrap` output).
+
+The parked tree, `cluster/parked` (`PARKED_ROOT`), is outside both roots and applied by
+nothing; it is hand-written apart from augur-evidence's generated file.
 
 Every directory's Flux Kustomization object is created in topo order by
 `generate_manifests.py` and emitted in the central Flux chart. `artifact-generators`

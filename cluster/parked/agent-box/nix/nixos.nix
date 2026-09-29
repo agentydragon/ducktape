@@ -1,10 +1,10 @@
 # agent-box - headless CLI-only NixOS VM (KubeVirt) hosting agent users, each under
 # its own dedicated, scoped identity. `codex` runs OpenAI Codex. See
-# cluster/k8s/parked/agent-box/README.md.
+# cluster/parked/agent-box/README.md.
 #
 # Multi-user: the host config is generated from `agentUsers` below. Add a future
 # agent user (e.g. `claude`) by appending an entry here + its HM module under
-# cluster/k8s/parked/agent-box/nix/home/ + its identity material (ssh_keys,
+# cluster/parked/agent-box/nix/home/ + its identity material (ssh_keys,
 # .sops.yaml, Authentik SA, JWT rotation, RBAC group).
 {
   pkgs,
@@ -13,7 +13,7 @@
   ...
 }:
 let
-  keys = import ../../../../../nix/ssh-keys.nix;
+  keys = import ../../../../nix/ssh-keys.nix;
   # Humans authorised to log in AS an agent user. An agent user's own key
   # (agent-box-<user>-user) is for outbound git/age, never inbound login.
   loginKeys = with keys; [
@@ -23,21 +23,21 @@ let
   ];
   # One entry per agent user. Each gets its own SSH/age identity (planted by NixOS
   # sops-nix), home dir, NixOS user, and (via flake.nix inlineHomeManagerUsers) its
-  # own home-manager module under cluster/k8s/parked/agent-box/nix/home/<name>.nix.
+  # own home-manager module under cluster/parked/agent-box/nix/home/<name>.nix.
   agentUsers = [
     {
       name = "codex";
-      idSecretPath = ../../../../../ssh_keys/agent-box-codex-user.sops.key;
+      idSecretPath = ../../../../ssh_keys/agent-box-codex-user.sops.key;
     }
   ];
 in
 {
   imports = [
-    ../../../../../nix/nixos/modules/operator.nix
-    ../../../../../nix/nixos/modules/vm-hardware.nix
-    ../../../../../nix/nixos/modules/bazel
-    ../../../../../nix/nixos/modules/system-inspection-sudo.nix
-    ../../../../../nix/nixos/modules/attic-substituter.nix
+    ../../../../nix/nixos/modules/operator.nix
+    ../../../../nix/nixos/modules/vm-hardware.nix
+    ../../../../nix/nixos/modules/bazel
+    ../../../../nix/nixos/modules/system-inspection-sudo.nix
+    ../../../../nix/nixos/modules/attic-substituter.nix
   ];
 
   # Pull from cache.allegedly.works/{main,gaffer}. Reader JWT auto-rotated by the
@@ -45,7 +45,7 @@ in
   # host key (agent-box-host) + each agent user key.
   ducktape.attic-substituter = {
     enable = true;
-    sopsFile = ../../../../../secrets/hosts/agent-box-attic.yaml;
+    sopsFile = ../../../../secrets/hosts/agent-box-attic.yaml;
   };
 
   # Process KubeVirt's NoCloud seed to install the persisted Ed25519 host key
