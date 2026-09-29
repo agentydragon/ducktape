@@ -2237,7 +2237,7 @@ spec:
       name: grafana-deployment
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/grafana-instance
+  path: ./cluster/generated/monitoring/grafana-instance
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2554,7 +2554,7 @@ spec:
     - name: grafana-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grafana
+  path: ./cluster/generated/grafana
   prune: true
   retryInterval: 1m
   sourceRef:
