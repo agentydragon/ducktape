@@ -43,7 +43,7 @@ _WEB = ServiceRef(
     port=Port(name="http", number=8080),
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
-_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-link-oidc/"
+_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-link/"
 _OIDC_CREDENTIALS_NAME = "plaid-link-oidc-config"
 _OIDC_READER = "plaid-link-oidc-reader"
 _CONFIG = {
