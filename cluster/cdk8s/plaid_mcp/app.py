@@ -12,15 +12,21 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ServiceAccount, k8s
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetDeletionPolicy,
+)
 
-from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.plaid_mcp.db import NAMESPACE, POSTGRES
-from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -29,13 +35,17 @@ _NAME = "plaid-mcp"
 _CONFIG_MAP = "plaid-mcp-config"
 _SECRET_MANAGER = "plaid-mcp-secret-manager"
 _CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-client-credentials")
+_OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-link-oidc-config")
 _CREDENTIALS_FILE = "plaid-client-credentials.sops.yaml"
-# The link web UI, behind Authentik's embedded proxy outpost.
+# The link web UI authenticates browser sessions with Authentik OIDC.
 _WEB = ServiceRef(
     name=_NAME,
     port=Port(name="http", number=8080),
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
+_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-link-oidc/"
+_OIDC_CREDENTIALS_NAME = "plaid-link-oidc-config"
+_OIDC_READER = "plaid-link-oidc-reader"
 _CONFIG = {
     "PLAID_MCP_PLAID_ENV": "production",
     "PLAID_MCP_PUBLIC_BASE_URL": "https://plaid-mcp.allegedly.works",
@@ -77,6 +87,34 @@ def _resources() -> k8s.ResourceRequirements:
     )
 
 
+def _oidc_credentials(chart: Chart) -> None:
+    """Read only the app's Authentik client Secret from the Authentik namespace through ESO."""
+    reader = ServiceAccount(
+        chart,
+        "oidc-secret-reader",
+        metadata=ApiObjectMetadata(name=_OIDC_READER, namespace=NAMESPACE),
+        automount_token=False,
+    )
+    store = single_secret_store(
+        chart,
+        "plaid-link-oidc",
+        reader=reader,
+        source_namespace="authentik",
+        source_secret=_OIDC_CREDENTIALS_NAME,
+        consumer_namespace=NAMESPACE,
+    )
+    ExternalSecret(
+        chart,
+        "oidc-external-secret",
+        metadata=ApiObjectMetadata(name=_OIDC_CREDENTIALS_NAME, namespace=NAMESPACE),
+        refresh_interval="10m",
+        secret_store_ref=SecretStoreRef.cluster(store),
+        data_from=[DataFrom.from_extract(_OIDC_CREDENTIALS_NAME)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
+    )
+
+
 def _rbac(chart: Chart) -> None:
     k8s.KubeServiceAccount(
         chart,
@@ -114,9 +152,8 @@ def _deployment(chart: Chart) -> None:
             labels=_WEB.pods.selector,
             annotations={
                 "description": (
-                    "Plaid self-contained link web UI. Authentik proxy outpost protects browser access; no"
-                    " bespoke Plaid MCP tools are exposed in v0. The app writes access-token Secrets and syncs"
-                    " linked Items into the plaid-mcp Postgres database."
+                    "Plaid Link UI authenticates users with Authentik OIDC. The app writes access-token Secrets"
+                    " and syncs linked Items into the plaid-mcp Postgres database."
                 )
             },
         ),
@@ -136,7 +173,13 @@ def _deployment(chart: Chart) -> None:
                             image_pull_policy="Always",
                             security_context=_container_security_context(),
                             ports=[_WEB.port.k8s_container_port()],
-                            env=_env(),
+                            env=[
+                                *_env(),
+                                k8s.EnvVar(name="PLAID_MCP_OIDC_ISSUER", value=_OIDC_ISSUER),
+                                _OIDC_CREDENTIALS.key("client_id").env_var("PLAID_MCP_OIDC_CLIENT_ID"),
+                                _OIDC_CREDENTIALS.key("client_secret").env_var("PLAID_MCP_OIDC_CLIENT_SECRET"),
+                                _OIDC_CREDENTIALS.key("session_secret").env_var("PLAID_MCP_OIDC_SESSION_SECRET"),
+                            ],
                             resources=_resources(),
                             readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=k8s.Probe(http_get=health, initial_delay_seconds=20, period_seconds=20),
@@ -201,6 +244,7 @@ def chart(app: App) -> Chart:
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     k8s.KubeConfigMap(chart, "config", metadata=k8s.ObjectMeta(name=_CONFIG_MAP, namespace=NAMESPACE), data=_CONFIG)
     _rbac(chart)
+    _oidc_credentials(chart)
     _deployment(chart)
     _sync_cronjob(chart)
     k8s.KubeService(
@@ -208,6 +252,18 @@ def chart(app: App) -> Chart:
         "service",
         metadata=k8s.ObjectMeta(name=_WEB.name, namespace=NAMESPACE, labels=_WEB.labels),
         spec=k8s.ServiceSpec(selector=_WEB.pods.selector, ports=[_WEB.port.k8s_service_port()], type="ClusterIP"),
+    )
+    https_route(
+        chart,
+        "public-route",
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=NAMESPACE,
+            annotations={"description": "Plaid Link UI; browser access authenticates with Authentik OIDC."},
+        ),
+        hostnames=["plaid-mcp.allegedly.works"],
+        backend=_WEB,
+        listener=None,
     )
     NetworkPolicy(
         chart,
@@ -217,13 +273,13 @@ def chart(app: App) -> Chart:
             namespace=NAMESPACE,
             annotations={
                 "description": (
-                    "Default-deny ingress for plaid-mcp pods. Only the Authentik embedded proxy outpost can"
-                    " reach the v0 web UI."
+                    "Default-deny ingress for plaid-mcp pods. Only the cluster Gateway can reach the public"
+                    " Link UI route."
                 )
             },
         ),
         endpoint_selector=_WEB.pods.selector,
-        ingress=[authentik.SERVER.pods.admit(_WEB.pod_port)],
+        ingress=[IngressRule.from_gateway(_WEB.pod_port)],
     )
     return chart
 

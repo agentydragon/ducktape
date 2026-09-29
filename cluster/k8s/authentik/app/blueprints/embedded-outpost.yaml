@@ -33,7 +33,6 @@ entries:
         # haku-console and the Agentplane app own their own OAuth; haku-ui stays proxied.
         - !Find [authentik_providers_proxy.proxyprovider, [name, haku-ui]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, hubble]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, plaid-link]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, proxmox]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, public-coder-agent]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, sdr]]

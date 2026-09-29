@@ -54,6 +54,10 @@ function historySummary(link) {
 }
 async function apiFetch(url, options) {
   const response = await fetch(url, options);
+  if (response.status === 401) {
+    window.location.assign("/auth/login");
+    throw new Error("Your Plaid Link session expired. Redirecting to sign in.");
+  }
   const contentType = response.headers.get("content-type") || "";
   const body = contentType.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {

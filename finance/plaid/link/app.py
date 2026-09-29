@@ -31,6 +31,7 @@ from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlread
 from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import PlaidApiLike, sync_link
+from finance.plaid.link.auth import PlaidOidcSettings, install_oidc_auth
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +179,7 @@ class AppState:
 def create_app(
     settings: PlaidWebSettings,
     *,
+    oidc_settings: PlaidOidcSettings,
     storage: PlaidLinkStorage | None = None,
     secrets: SecretStore | None = None,
     client: PlaidWebClient | None = None,
@@ -213,6 +215,7 @@ def create_app(
                 owned_client.close()
 
     app = FastAPI(title="Plaid Link Service", docs_url=None, redoc_url=None, lifespan=lifespan)
+    install_oidc_auth(app, settings, oidc_settings)
 
     def require_client() -> PlaidWebClient:
         if state.client is None:
@@ -448,7 +451,8 @@ async def _sync_one_link(
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     settings = PlaidWebSettings()
-    uvicorn.run(create_app(settings), host=settings.host, port=settings.port, log_level="info")
+    oidc_settings = PlaidOidcSettings()
+    uvicorn.run(create_app(settings, oidc_settings=oidc_settings), host=settings.host, port=settings.port, log_level="info")
 
 
 def _secret_name_for_item(item_id: str) -> str:

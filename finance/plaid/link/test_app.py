@@ -1,9 +1,13 @@
+import json
+import time
+from base64 import b64encode
 from datetime import UTC, date, datetime
 from typing import cast
 from uuid import UUID
 
 import pytest_bazel
 from fastapi.testclient import TestClient
+from itsdangerous import TimestampSigner
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.country_code import CountryCode
 from plaid.model.institution import Institution
@@ -28,6 +32,7 @@ from finance.plaid.db.client import PlaidClient, PlaidSdkApiLike
 from finance.plaid.db.config import PlaidWebSettings
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
 from finance.plaid.link.app import PlaidWebClient, create_app
+from finance.plaid.link.auth import PlaidOidcSettings, session_cookie_name
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -175,14 +180,35 @@ def _client(
         public_base_url="https://plaid-mcp.test",
         target_namespace="plaid-mcp",
     )
-    return TestClient(
+    oidc_settings = PlaidOidcSettings(
+        issuer="https://auth.example.test/application/o/plaid-link-oidc/",
+        client_id="plaid-link",
+        client_secret="test-client-secret",
+        session_secret="test-session-secret",
+    )
+    test_client = TestClient(
         create_app(
             settings,
+            oidc_settings=oidc_settings,
             storage=cast(PlaidLinkStorage, storage or _FakeStorage()),
             secrets=secrets or _FakeSecrets(),
             client=cast(PlaidWebClient, PlaidClient(api=cast(PlaidSdkApiLike, api or _FakePlaidApi()))),
-        )
+        ),
+        base_url=settings.public_base_url,
+        headers={"Origin": settings.public_base_url},
     )
+    session = {
+        "user": {
+            "issuer": oidc_settings.issuer,
+            "subject": "test-subject",
+            "username": "agentydragon",
+            "expires_at": time.time() + 3600,
+        }
+    }
+    encoded_session = b64encode(json.dumps(session, separators=(",", ":")).encode("utf-8"))
+    cookie = TimestampSigner(oidc_settings.session_secret.get_secret_value()).sign(encoded_session).decode("utf-8")
+    test_client.cookies.set(session_cookie_name(settings.public_base_url), cookie, domain="plaid-mcp.test", path="/")
+    return test_client
 
 
 def test_link_ui_exposes_management_actions() -> None:

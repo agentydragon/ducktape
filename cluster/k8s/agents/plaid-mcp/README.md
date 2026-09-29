@@ -8,7 +8,7 @@ The deployment has two public surfaces:
 
 ```text
 Browser -> https://plaid-mcp.allegedly.works/link
-  Gateway -> Authentik embedded proxy outpost -> plaid-mcp web UI (:8080)
+  Gateway -> plaid-mcp web UI (:8080) -> Authentik OIDC login + signed session
     - creates Plaid Link tokens for a chosen institution's supported products
     - exchanges public_tokens
     - writes per-Item access-token Secrets in the plaid-mcp namespace
@@ -36,6 +36,10 @@ There are no bespoke Plaid MCP tools. Agents read `links`, `accounts`,
 - `plaid-pgweb-auth` is the HTTP Basic password of pgweb's `plaid` user, minted by ESO. The
   agentplane-staging egress proxy reads a copy of it; nothing else outside pgweb does.
 - `plaid-client-credentials` is a SOPS-managed Secret in this namespace.
+- `plaid-link-oidc-config` is minted in the `authentik` namespace by
+  `tf/gitops/sso-providers`; a get-only SecretStore and ExternalSecret copy it
+  here for the web Deployment. Only the OIDC reader ServiceAccount can read that
+  source Secret. The sync CronJob receives none of the OIDC values.
 - Plaid access tokens are stored one Secret per linked Item and are not written to Postgres.
 - `plaid_api_events` is append-only and stores redacted Plaid request/response metadata.
 
@@ -91,5 +95,6 @@ curl -i https://plaid-db.allegedly.works/mcp
 
 Expected external behavior:
 
-- `plaid-mcp.allegedly.works` redirects through Authentik proxy auth for the human UI.
+- `plaid-mcp.allegedly.works` redirects unauthenticated browser requests to the app's Authentik OIDC login.
+- The UI and its `/api/*` endpoints require a valid signed app session; only `/healthz` and OIDC endpoints are public.
 - `plaid-db.allegedly.works/mcp` returns the MCP facade OAuth challenge until a client authenticates.
