@@ -1,14 +1,12 @@
 """Grafana Alloy: the HelmRelease, the NetworkPolicy admitting OTLP from Authentik's outpost, and
 the `alloy-config` ConfigMap.
 
-Its `config.alloy` is rendered from the `string.Template` of that name beside this module; each
-`${...}` placeholder is an address or port a generator module owns.
+Its `config.alloy` is rendered from the file of that name beside this module.
 """
 
 from __future__ import annotations
 
-from pathlib import Path, PurePosixPath
-from string import Template
+from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
@@ -22,39 +20,39 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
+from cluster.cdk8s.generation import render_source_file
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository, loki, mimir, tempo
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _NAME = "alloy"
 NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/alloy"
 _OTLP_HTTP_PORT = 4318
-_CONFIG_SOURCE = "cluster/cdk8s/monitoring/config.alloy"
-_CONFIG_FILE = PurePosixPath(_CONFIG_SOURCE).name
 _CONFIG_MAP = "alloy-config"
+_CONFIG_KEY = "config.alloy"
 
 
 def write_config_map(root: Path) -> ConfigMapArgs:
     """Render `config.alloy` into `OUTPUT_DIR`; return the `configMapGenerator` entry packaging it."""
-    config = Template(get_required_path(own_repo_rlocation(_CONFIG_SOURCE)).read_text()).substitute(
-        mimir_push_url=mimir.PUSH_URL,
-        mimir_gateway_url=mimir.GATEWAY_URL,
-        otlp_http_port=_OTLP_HTTP_PORT,
-        loki_push_url=loki.PUSH_URL,
-        tempo_otlp_grpc_endpoint=tempo.OTLP_GRPC_ENDPOINT,
-    )
-    out_dir = root / OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / _CONFIG_FILE).write_text(config)
     return ConfigMapArgs(
         name=_CONFIG_MAP,
         namespace=NAMESPACE,
         # The Helm values name the ConfigMap, and kustomize cannot rewrite a reference inside a
         # HelmRelease's values.
         options=GeneratorOptions(disable_name_suffix_hash=True),
-        files=[_CONFIG_FILE],
+        files=[
+            render_source_file(
+                root,
+                OUTPUT_DIR,
+                f"cluster/cdk8s/monitoring/{_CONFIG_KEY}",
+                mimir_push_url=mimir.PUSH_URL,
+                mimir_gateway_url=mimir.GATEWAY_URL,
+                otlp_http_port=_OTLP_HTTP_PORT,
+                loki_push_url=loki.PUSH_URL,
+                tempo_otlp_grpc_endpoint=tempo.OTLP_GRPC_ENDPOINT,
+            )
+        ],
     )
 
 
@@ -71,7 +69,7 @@ def chart(app: App) -> Chart:
         chart_interval="12h",
         values={
             "alloy": {
-                "configMap": {"name": _CONFIG_MAP, "key": _CONFIG_FILE, "create": False},
+                "configMap": {"name": _CONFIG_MAP, "key": _CONFIG_KEY, "create": False},
                 # The Grafana Alloy chart reads extraPorts from .Values.alloy and reuses
                 # them for both the Service and the container port list.
                 "extraPorts": [
