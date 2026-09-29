@@ -1098,7 +1098,7 @@
       and lists only what is left.
     </p>
     <div class="meta">
-      <span>baseline <b>origin/devel dc2d742623</b></span
+      <span>baseline <b>origin/devel e6eea71931</b></span
       ><span>date <b>2026-09-29</b></span
       ><span>branch <b>claude/jolly-darwin-al6qse</b></span
       ><span>status <b>no open decisions</b></span>
@@ -1194,8 +1194,8 @@
           </p>
           <ul>
             <li>
-              <strong>Ready now:</strong> the namespace edges (#8185), after which 13 non-admission edges remain: 8 that
-              the edge check names, and 5 that #8396 added, which its PR drops; the edge-justification check;
+              <strong>Ready now:</strong> the namespace edges (#8185), after which 15 non-admission edges remain: 8 that
+              the edge check names, and 7 that #8396 and #8428 added, which its PR drops; the edge-justification check;
               <code>harden()</code> and <code>place()</code> on the raw and CRD-embedded workloads, then the drop-ALL
               fleet rule; the revised SeaweedFS provider split (#8035); what is left of C4&#39;s references, and the
               composites they unlock (<code>PrivateBucket</code>, <code>PostgresBackup</code>); and the token rule, then
@@ -1741,7 +1741,7 @@
               <p>
                 Readiness edges turn a fault that heals by retry into a gate that propagates, and the tiny units they
                 produced cost reconcile time and I/O, which is the owner&#39;s reason for the change (#7094). On devel,
-                27 of 235 edges are not admission edges (53 if the 26 direct <code>kyverno</code> edges count as
+                29 of 237 edges are not admission edges (55 if the 26 direct <code>kyverno</code> edges count as
                 runtime, as decision 2 recommends), 84 of the 113 <code>wait: true</code> nodes are unsuspended and gate
                 nothing admission needs, and 45 of 152 measurable units render 3 objects or fewer.
               </p>
@@ -2362,7 +2362,7 @@
                 <td>
                   <div class="rich">
                     <p>
-                      27 of 235 edges wait on runtime state, 14 of them on a namespace unit (53 if the 26 direct
+                      29 of 237 edges wait on runtime state, 14 of them on a namespace unit (55 if the 26 direct
                       <code>kyverno</code> edges count as runtime, as decision 2 recommends). Each turns a fault that
                       heals by retry into a gate that propagates, with one alert per downstream node (#7094).
                     </p>
@@ -2377,7 +2377,7 @@
                     <p>
                       An edge points at the provider of a rendered kind&#39;s CRD, an operator whose
                       <code>failurePolicy: Fail</code> webhook gates it, or a
-                      <code>postBuild.substituteFrom</code> source; 208 of today&#39;s 235 edges qualify, 26 of them
+                      <code>postBuild.substituteFrom</code> source; 208 of today&#39;s 237 edges qualify, 26 of them
                       direct <code>kyverno</code> edges that decision 2 would reclassify as runtime. Any other edge is
                       an <code>ORDERING_EXCEPTIONS</code> entry with one of two reasons.
                     </p>
@@ -3118,9 +3118,9 @@
           <span class="n">5</span><span class="l">mechanisms for copying one Secret into another namespace</span>
         </div>
         <div class="stat">
-          <span class="n">27 / 235</span
+          <span class="n">29 / 237</span
           ><span class="l"
-            >Flux <code>dependsOn</code> edges that admission does not need; 53 if the 26 <code>kyverno</code> edges are
+            >Flux <code>dependsOn</code> edges that admission does not need; 55 if the 26 <code>kyverno</code> edges are
             runtime (decision 2)</span
           >
         </div>
@@ -3441,7 +3441,7 @@
           <div class="rich">
             <p>
               The Flux graph was built for readiness, so it grew tiny units and <code>wait</code> everywhere; its edges
-              are mostly admission edges. On devel there are 158 Kustomizations and 235 <code>dependsOn</code> edges:
+              are mostly admission edges. On devel there are 158 Kustomizations and 237 <code>dependsOn</code> edges:
             </p>
             <ul>
               <li>
@@ -3451,13 +3451,15 @@
                 <code>postBuild</code> source;
               </li>
               <li>
-                the other 27 wait on runtime state: 14 on namespace units, all of which #8185 removes, 5 carry a #7094
+                the other 29 wait on runtime state: 14 on namespace units, all of which #8185 removes, 5 carry a #7094
                 rule-2 reason (<code>bootstrap-never-converges</code>, <code>destructive-if-out-of-order</code>), 2
                 order a user-provisioner Job after its app, <code>artifact-generators</code> waits on
                 <code>flux-system</code>, and #8396 added 5: grocy-sf, grocy-vallejo, plaid-mcp and tana-mcp wait on the
                 <code>mcp-oauth-state-db</code> stores their ExternalSecrets read, and
                 <code>mcp-oauth-state-db</code> on <code>monitoring-crds</code> for a PodMonitor the CNPG operator
-                creates;
+                creates; and #8428 added 2: plaid-mcp waits on <code>authentik</code>, whose namespace its OIDC
+                reader&#39;s Role and RoleBinding render into, and on <code>authentik-tf</code>, whose Terraform writes
+                the Secret its ExternalSecret reads;
               </li>
               <li>
                 <code>wait</code> is true on 113 nodes, and 84 of them are unsuspended and gate nothing admission needs;
@@ -3534,7 +3536,7 @@
           <span class="nid">N6</span><span class="nname">Minting secrets shared server to clients</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >Minted Secrets go through <code>minted_secret.py</code>&#39;s <code>mint_*</code> helpers (15 calls), which
+            >Minted Secrets go through <code>minted_secret.py</code>&#39;s <code>mint_*</code> helpers (16 calls), which
             return <code>None</code>, carry byte-identity knobs and keep two refresh policies; three MCP bearers are one
             call written three times, and Agentplane&#39;s Dex pairs the shared <code>password_generator</code> with
             ExternalSecrets of its own.</span
@@ -3616,7 +3618,7 @@
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
             ><code>https_route(backend: ServiceRef | HostNetworkServiceRef)</code> routes to the backend&#39;s Service
-            port, and 10 of the 11 <code>IngressRule.from_gateway</code> calls admit the Gateway on a reference&#39;s
+            port, and 11 of the 12 <code>IngressRule.from_gateway</code> calls admit the Gateway on a reference&#39;s
             <code>pod_port</code>; authentik&#39;s passes its own port constants.</span
           >
         </div>
@@ -3791,7 +3793,7 @@
           ><span class="nname">Kustomization granularity and admission-only dependencies</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >158 Kustomizations with 235 edges, 27 of which wait on runtime state (53 if the 26 direct
+            >158 Kustomizations with 237 edges, 29 of which wait on runtime state (55 if the 26 direct
             <code>kyverno</code> edges count as runtime, decision 2); 84 unsuspended <code>wait: true</code> nodes gate
             nothing admission needs; 45 of 152 measurable units render 3 objects or fewer.</span
           >
@@ -5647,7 +5649,7 @@ class SecretStoreRef:
           <div class="rich">
             <p>
               On devel the policy functions have about 270 call sites (<code>flux_kustomization</code> 159,
-              <code>helm_release</code> 38, <code>https_route</code> 35, <code>cnpg.cluster</code> 19,
+              <code>helm_release</code> 38, <code>https_route</code> 36, <code>cnpg.cluster</code> 19,
               <code>gitops_terraform</code> 16, <code>valkey_instance</code> 3, <code>fqdn_fence</code> 2), and
               <code>namespaces.namespace</code> has 67. <code>https_route</code> takes the backend&#39;s
               <code>ServiceRef</code>, and <code>cnpg.cluster</code> a <code>PostgresRef</code> and a
@@ -5894,7 +5896,7 @@ class PostgresBackup(Construct):
             <dd>
               <div class="rich">
                 <p>
-                  <code>MintedSecret</code> (the 15 <code>mint_bearer_secret</code> and
+                  <code>MintedSecret</code> (the 16 <code>mint_bearer_secret</code> and
                   <code>mint_db_role_secret</code> calls, and Agentplane Dex&#39;s own generator pairs),
                   <code>PrivateBucket</code> (bucket, identity, credentials, grant), <code>PostgresBackup</code>,
                   <code>ResticBackup</code>, <code>SettingsFile</code>, and each app&#39;s top-level Construct
@@ -6697,11 +6699,12 @@ class FleetRules:
             <p>
               On devel, <code>write_directory</code> writes the directories of 102 of the 158 nodes and derives their
               decryption; 50 nodes take an artifact from a module&#39;s own writer. Edges are admission edges apart from
-              27: 14 namespace-class ones (step 1 removes them), 5 registered rule-2 exceptions, 2 user-provisioner Job
-              edges, <code>artifact-generators</code> to <code>flux-system</code>, and 5 that #8396 added (step 2 drops
-              them); decision 2 classifies the 26 direct <code>kyverno</code> edges. <code>wait</code> still defaults to
-              <code>True</code> (<code>flux.py:142</code>), Orphan is passed by hand, and no synth-time check reads the
-              graph: those parts are postponed or deferred (steps 15, 16 and 17).
+              29: 14 namespace-class ones (step 1 removes them), 5 registered rule-2 exceptions, 2 user-provisioner Job
+              edges, <code>artifact-generators</code> to <code>flux-system</code>, and 5 that #8396 added and 2 that
+              #8428 added (step 2 drops them); decision 2 classifies the 26 direct <code>kyverno</code> edges.
+              <code>wait</code> still defaults to <code>True</code> (<code>flux.py:142</code>), Orphan is passed by
+              hand, and no synth-time check reads the graph: those parts are postponed or deferred (steps 15, 16 and
+              17).
             </p>
           </div>
         </div>
@@ -6930,7 +6933,7 @@ flux_chart.node.add_validation(AdmissionGraph(flux_chart, directories))</code></
                     gate nothing admission needs.
                   </li>
                   <li>
-                    The 27 edges that wait on runtime state (53 with the direct <code>kyverno</code> edges, decision 2),
+                    The 29 edges that wait on runtime state (55 with the direct <code>kyverno</code> edges, decision 2),
                     and units per concern: 45 of 152 measurable units render 3 objects or fewer.
                   </li>
                 </ul>
@@ -7014,7 +7017,7 @@ flux_chart.node.add_validation(AdmissionGraph(flux_chart, directories))</code></
           <div class="rich">
             <p>
               Not on devel; step 11 adds it. Today one Secret crosses namespaces five ways: the external-creds roster
-              (<code>external_creds.py</code>) through a store whose allowlist is kept by hand, 24 per-pair stores that
+              (<code>external_creds.py</code>) through a store whose allowlist is kept by hand, 26 per-pair stores that
               <code>single_secret_store</code> builds from the consumer&#39;s chart (11 of them for
               <code>forgejo/secret_copy.py</code>&#39;s copies), ESO-ServiceAccount stores (forgejo-images&#39; lists 34
               namespaces), Reflector mirrors and ClusterExternalSecret.
@@ -7123,7 +7126,7 @@ def copy(scope: Construct, id: str, *, credential: Credential, target: SecretRef
               <div class="rich">
                 <ul>
                   <li>
-                    <code>single_secret_store</code> and the 24 per-pair stores it builds from the consumer&#39;s chart
+                    <code>single_secret_store</code> and the 26 per-pair stores it builds from the consumer&#39;s chart
                     (<code>external_secrets/single_secret_store.py:11-49</code>;
                     <code>agentplane/staging.py:379-398</code>; <code>forgejo/secret_copy.py:37-78</code>).
                   </li>
@@ -8649,7 +8652,7 @@ _GOOGLE_MCP_BEARER = SecretRef(namespace=staging_config.NAMESPACE, name=&#34;goo
               <li>
                 The other <code>single_secret_store</code> callers (ha-mcp&#39;s own copy of the Home Assistant token,
                 agentplane-staging&#39;s copy of haku-console&#39;s GitHub MCP client, the egress credentials,
-                plaid-mcp, litellm) convert in the same secrets step (12), not here.
+                plaid-mcp, litellm) convert in the same secrets step (11), not here.
               </li>
             </ul>
           </div>
@@ -10362,7 +10365,7 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Step 1. Open, and merges cleanly onto devel dc2d742623. It removes the 14 namespace-class edges
+                    Step 1. Open, and merges cleanly onto devel e6eea71931. It removes the 14 namespace-class edges
                     whose target only creates the namespace, the last of that class, and keeps every direct
                     <code>kyverno</code> and <code>kyverno-policies</code> edge.
                   </p>
@@ -10382,7 +10385,7 @@ CONFIG = {
                     Step 5. It builds <code>Bucket</code>, <code>S3Identity</code> and <code>S3Credentials</code> as
                     single-shot binding subclasses that take <code>access=</code> and <code>identity_ref=</code> at
                     construction, with no grant methods, JSON patches or <code>_ClusterGrant</code> chart singleton, and
-                    its generated manifests are identical to devel&#39;s. A draft awaiting your review.
+                    its generated manifests are identical to those of the devel it merged. A draft awaiting your review.
                     <code>PrivateBucket</code> (step 8) then renders in each consumer&#39;s own unit with its Secret
                     name unchanged and its S3Identity in the tenant.
                   </p>
@@ -10398,7 +10401,7 @@ CONFIG = {
                   <p>
                     Step 6 rebases it; landing it is decision 1, postponed. Docs only, no reviews, last updated
                     2026-09-17. Rebase it onto devel, where the three-layer law it replaces is already gone, and replace
-                    its numbers (713 edges, 278 units) with devel&#39;s (235 and 158). Rule 2&#39;s
+                    its numbers (713 edges, 278 units) with devel&#39;s (237 and 158). Rule 2&#39;s
                     <code>_ORDERING_EXCEPTIONS</code> stays a table, not a synth-time check.
                   </p>
                 </div>
@@ -10500,7 +10503,7 @@ CONFIG = {
       <div class="prose">
         <div class="rich">
           <p>
-            What is left, from devel dc2d742623, in the recommended order. Each step names its gate: <code>ready</code>,
+            What is left, from devel e6eea71931, in the recommended order. Each step names its gate: <code>ready</code>,
             a decision, or a step before it. The PR that lands a convention records it in
             <code>cluster/cdk8s/AGENTS.md</code> or the <code>cdk8s_builders</code> skill (the AGENTS.md changes section
             lists the edits).
@@ -10520,14 +10523,14 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Ready: #8185 is open and merges cleanly onto devel dc2d742623.</p></div>
+            <div class="rich"><p>Ready: #8185 is open and merges cleanly onto devel e6eea71931.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
             <div class="rich">
               <p>
                 Node signatures and call sites in the entry point; the only rendered change is
-                <code>spec.dependsOn</code>, from 235 edges to 221.
+                <code>spec.dependsOn</code>, from 237 edges to 223.
               </p>
             </div>
           </div>
@@ -10564,8 +10567,11 @@ CONFIG = {
                 same PR drops them: grocy-sf&#39;s, grocy-vallejo&#39;s, plaid-mcp&#39;s and tana-mcp&#39;s to
                 <code>mcp-oauth-state-db</code>, whose ClusterSecretStores their ExternalSecrets read and ESO retries
                 until they exist, and <code>mcp-oauth-state-db</code>&#39;s to <code>monitoring-crds</code>, whose
-                PodMonitor the CNPG operator creates. Whatever does not fit fails the check, so no new unjustified edge
-                can land.
+                PodMonitor the CNPG operator creates. #8428&#39;s two fit none either, and the same PR drops them:
+                plaid-mcp&#39;s to <code>authentik</code>, into whose namespace it renders its OIDC reader&#39;s Role
+                and RoleBinding, and to <code>authentik-tf</code>, whose Terraform writes the Secret its ExternalSecret
+                reads; Flux and ESO retry both until they converge. Whatever does not fit fails the check, so no new
+                unjustified edge can land.
               </p>
             </div>
           </div>
@@ -10574,7 +10580,7 @@ CONFIG = {
             <div class="rich">
               <p>
                 Ready. Stack it on #8185, after which every non-admission edge left is in a table or among #8396&#39;s
-                five.
+                five and #8428&#39;s two.
               </p>
             </div>
           </div>
@@ -10583,9 +10589,9 @@ CONFIG = {
             <div class="rich">
               <p>
                 <code>cluster/validation/{crd_layering,dependencies}.py</code>, with the tables beside
-                <code>OPERATOR_CRDS</code> so they are checks, not wiring, and the nodes of #8396&#39;s five edges;
-                tests on synthetic graphs, including suspended units, which <code>flux_kust_resources</code> skips
-                today. The check moves to synth with the graph checks (step 17).
+                <code>OPERATOR_CRDS</code> so they are checks, not wiring, and the nodes of #8396&#39;s five edges and
+                #8428&#39;s two; tests on synthetic graphs, including suspended units, which
+                <code>flux_kust_resources</code> skips today. The check moves to synth with the graph checks (step 17).
               </p>
             </div>
           </div>
@@ -10593,8 +10599,9 @@ CONFIG = {
             <span class="lbl">Risk</span>
             <div class="rich">
               <p>
-                Low: the only rendered change drops #8396&#39;s five edges from <code>spec.dependsOn</code>, and what
-                they ordered converges by retry, as C7 and C8 expect of every such edge.
+                Low: the only rendered change drops #8396&#39;s five edges and #8428&#39;s two from
+                <code>spec.dependsOn</code>, and what they ordered converges by retry, as C7 and C8 expect of every such
+                edge.
               </p>
             </div>
           </div>
@@ -10694,8 +10701,9 @@ CONFIG = {
             <span class="lbl">Gate</span>
             <div class="rich">
               <p>
-                Ready for your review: #8035 is a draft. Its head 5646d3a91f contains devel dc2d742623, its CI is green,
-                and its generated manifests are identical to devel&#39;s.
+                Ready for your review: #8035 is a draft. Its head 5646d3a91f merges devel da973f9b64, its generated
+                manifests are identical to that devel&#39;s, its CI is green, and it merges cleanly onto devel
+                e6eea71931.
               </p>
             </div>
           </div>
@@ -10768,7 +10776,7 @@ CONFIG = {
           <div class="sc">
             <span class="lbl">Scope</span>
             <div class="rich">
-              <p>One PR per area. On devel dc2d742623:</p>
+              <p>One PR per area. On devel e6eea71931:</p>
               <ul>
                 <li>
                   Where the Pods listen on another port than the Service, 9 Service ports in 8 modules and 8 container
@@ -10805,8 +10813,8 @@ CONFIG = {
                   gateway, the SeaweedFS filer); and the haku console&#39;s aiquota URL would close an import cycle;
                 </li>
                 <li>
-                  23 hand-written files outside the generator spell in-cluster hosts, on 44 lines: Gatus&#39;s probes
-                  (17 lines of <code>cluster/k8s/gatus/config.yaml</code>), 11 Authentik blueprints&#39;
+                  22 hand-written files outside the generator spell in-cluster hosts, on 43 lines: Gatus&#39;s probes
+                  (17 lines of <code>cluster/k8s/gatus/config.yaml</code>), 10 Authentik blueprints&#39;
                   <code>internal_host</code>, and among the rest the oci-cache, haku-mailbox, SeaweedFS filer and Alloy
                   configs;
                 </li>
@@ -11607,8 +11615,8 @@ CONFIG = {
                 <div class="rich">
                   <p>
                     It is what the graph grew into, and the owner is moving away from it because the tiny units cost
-                    reconcile time and I/O (#7094). On devel, 27 of 235 edges wait on runtime state that converges by
-                    retry (53 counting the 26 direct <code>kyverno</code> edges, decision 2), 84 unsuspended
+                    reconcile time and I/O (#7094). On devel, 29 of 237 edges wait on runtime state that converges by
+                    retry (55 counting the 26 direct <code>kyverno</code> edges, decision 2), 84 unsuspended
                     <code>wait: true</code> nodes gate nothing admission needs, and 45 of 152 measurable units render 3
                     objects or fewer.
                   </p>
@@ -11723,13 +11731,15 @@ CONFIG = {
           </ul>
           <p>
             The census, the diagnosis, the design space and the worked service were measured on devel d86d9ae49d, where
-            the file:line cites also point. The Flux graph and unit counts wherever they appear, the conventions&#39;
-            adoption and the migration steps were measured on devel 55d6374fd2, and so were the matrix rows for secrets,
-            config files, namespaces, Terraform CRs, repeated deployments and fleet rules; the other rows are from
-            d86d9ae49d. The references (C4 and step 7), the CNPG wiring, the matrix rows for CNPG, backups, Gateway
-            exposure and service connectivity, and the PR states were measured on devel dc2d742623, where the Flux graph
-            and the per-unit counts measure the same. Each example&#39;s chip names the revision its after code was
-            rendered on.
+            the file:line cites also point. The conventions&#39; adoption and the migration steps were measured on devel
+            55d6374fd2, and so were the Flux figures read from the source (decryption, health-check entries, explicit
+            <code>wait</code> keywords, writer, directory and chart counts) and the matrix rows for config files,
+            namespaces, Terraform CRs, repeated deployments and fleet rules; the other rows are from d86d9ae49d. The
+            Flux graph&#39;s node, edge, <code>wait</code> and health-check counts and the per-unit counts wherever they
+            appear, the policy functions&#39; call counts (C2), the mint calls and per-pair stores (C3, C8), the
+            references (C4 and step 7), the CNPG wiring, the matrix rows for secrets, CNPG, backups, Gateway exposure
+            and service connectivity, and the PR states were measured on devel e6eea71931. Each example&#39;s chip names
+            the revision its after code was rendered on.
           </p>
           <p>
             The page is rendered by <code>cluster/docs/cdk8s_conventions/render.py</code> from
@@ -11882,7 +11892,7 @@ CONFIG = {
     },
     {
       "title": "N6 \u00b7 Minting secrets shared server to clients",
-      "today": "Minted Secrets go through `minted_secret.py`'s `mint_*` helpers (15 calls), which return `None`, carry byte-identity knobs and keep two refresh policies; three MCP bearers are one call written three times, and Agentplane's Dex pairs the shared `password_generator` with ExternalSecrets of its own.",
+      "today": "Minted Secrets go through `minted_secret.py`'s `mint_*` helpers (16 calls), which return `None`, carry byte-identity knobs and keep two refresh policies; three MCP bearers are one call written three times, and Agentplane's Dex pairs the shared `password_generator` with ExternalSecrets of its own.",
       "note": "`MintedSecret` returns its objects and takes a template, so it covers bearers and DB-role Secrets without the byte-identity knobs of the `mint_*` helpers, and it renders in the producer's own unit. The producer exports the `SecretKey` and the `Credential`, so clients never re-spell the name (`agentplane/staging.py:75-78` today).",
       "conventions": "C3, C8, C4"
     },
@@ -11930,7 +11940,7 @@ CONFIG = {
     },
     {
       "title": "N14 \u00b7 Expose via Gateway",
-      "today": "`https_route(backend: ServiceRef | HostNetworkServiceRef)` routes to the backend's Service port, and 10 of the 11 `IngressRule.from_gateway` calls admit the Gateway on a reference's `pod_port`; authentik's passes its own port constants.",
+      "today": "`https_route(backend: ServiceRef | HostNetworkServiceRef)` routes to the backend's Service port, and 11 of the 12 `IngressRule.from_gateway` calls admit the Gateway on a reference's `pod_port`; authentik's passes its own port constants.",
       "note": "`https_route` takes the backend's `ServiceRef` and routes to its Service `port`, and the backend admits the Gateway on `pod_port`, so both halves read one value. Helm-rendered backends are `ServiceRef`s with `target_port` (gatus: 80 to 8080).",
       "conventions": "C2, C4"
     },
@@ -12050,7 +12060,7 @@ CONFIG = {
     },
     {
       "title": "N34 \u00b7 Kustomization granularity and admission-only dependencies",
-      "today": "158 Kustomizations with 235 edges, 27 of which wait on runtime state (53 if the 26 direct `kyverno` edges count as runtime, decision 2); 84 unsuspended `wait: true` nodes gate nothing admission needs; 45 of 152 measurable units render 3 objects or fewer.",
+      "today": "158 Kustomizations with 237 edges, 29 of which wait on runtime state (55 if the 26 direct `kyverno` edges count as runtime, decision 2); 84 unsuspended `wait: true` nodes gate nothing admission needs; 45 of 152 measurable units render 3 objects or fewer.",
       "note": "One component is one `write_directory` call and one node (#7094 rule 3); an edge exists only for a CRD, a Fail webhook or a `postBuild` source, anything else is an `ORDERING_EXCEPTIONS` entry, and `wait` sits only on admission targets. Derived Orphan makes folding stateful objects safe, and the synth-time checks keep the graph from drifting back.",
       "conventions": "C7, C6"
     }
