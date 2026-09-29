@@ -39,10 +39,10 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "airlock"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
-_LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "server"}
-_PORT = 8765
 SERVICE = ServiceRef(
-    name=NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAME, labels=tuple(_LABELS.items()))
+    name=NAME,
+    port=Port(name="http", number=8765),
+    pods=Pods(namespace=NAME, labels=(("app.kubernetes.io/name", NAME), ("app.kubernetes.io/component", "server"))),
 )
 _SESSION = SecretRef(namespace=NAME, name="airlock-session-secret").key("session-secret")
 _OIDC = SecretRef(namespace=NAME, name="airlock-oidc-config")
@@ -57,7 +57,7 @@ _CONFIG_MOUNT = "/etc/airlock"
 
 def _probe(path: str, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
     return k8s.Probe(
-        http_get=k8s.HttpGetAction(path=path, port=k8s.IntOrString.from_number(_PORT)),
+        http_get=k8s.HttpGetAction(path=path, port=k8s.IntOrString.from_number(SERVICE.pod_port)),
         initial_delay_seconds=initial_delay_seconds,
         period_seconds=period_seconds,
     )
@@ -67,12 +67,12 @@ def _deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     service_account_name=NAME,
@@ -82,7 +82,7 @@ def _deployment(chart: Chart) -> None:
                             name=NAME,
                             image=f"git.allegedly.works/ducktape-ci/airlock:{_PLACEHOLDER_TAG}",
                             image_pull_policy="Always",
-                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            ports=[SERVICE.port.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="AIRLOCK_IMAGE_TAG", value=_PLACEHOLDER_TAG),
                                 k8s.EnvVar(name="CONFIG_PATH", value=f"{_CONFIG_MOUNT}/config.yaml"),
@@ -160,7 +160,7 @@ def _ingress_from(entity: CiliumNetworkPolicySpecIngressFromEntities) -> CiliumN
             CiliumNetworkPolicySpecIngressToPorts(
                 ports=[
                     CiliumNetworkPolicySpecIngressToPortsPorts(
-                        port=str(_PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
+                        port=str(SERVICE.pod_port), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
                     )
                 ]
             )
@@ -211,14 +211,8 @@ def chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=_LABELS),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(name="http", port=_PORT, target_port=k8s.IntOrString.from_number(_PORT), protocol="TCP")
-            ],
-            type="ClusterIP",
-        ),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAME, labels=SERVICE.labels),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()], type="ClusterIP"),
     )
     # Traffic flows directly: Gateway → backend. The backend handles OIDC and protects browser
     # APIs with its same-origin session cookie.
@@ -237,7 +231,7 @@ def chart(app: App) -> Chart:
         chart,
         "ciliumnetworkpolicy",
         metadata=ApiObjectMetadata(name="airlock-ingress", namespace=NAME),
-        endpoint_selector=_LABELS,
+        endpoint_selector=SERVICE.pods.selector,
         ingress=[
             _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.INGRESS),
             # Kubelet liveness/readiness probes originate from the node host.

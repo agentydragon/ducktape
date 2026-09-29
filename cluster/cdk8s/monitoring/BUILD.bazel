@@ -83,6 +83,7 @@ py_library(
     srcs = ["cilium_monitoring.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
@@ -188,7 +189,6 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/grafana_operator:grafana",
         "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     Cpu,
@@ -15,11 +14,7 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     MemoryResources,
     PodSecurityContextProps,
-    Protocol,
-    Secret,
-    SecretValue,
     Service,
-    ServicePort,
     Volume,
 )
 from constructs import Construct
@@ -29,24 +24,34 @@ from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-NAME = "agentplane-electric"
-PORT = 3000
-_LABELS = {"app.kubernetes.io/name": NAME}
+_NAME = "agentplane-electric"
+_LABELS = {"app.kubernetes.io/name": _NAME}
 # renovate: datasource=docker
 _IMAGE = "docker.io/electricsql/electric:1.8.1@sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211"
 _STORAGE_DIR = "/var/lib/electric"
 _RUN_AS = 65534  # The pinned image owns /app as nobody but leaves Config.User empty.
 
 
+def service(namespace: str) -> ServiceRef:
+    """Electric in one environment's namespace."""
+    return ServiceRef(
+        name=_NAME, port=Port(name="http", number=3000), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+    )
+
+
 class Electric(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
-        secret = Secret.from_secret_name(self, "postgres-electric-secret", "postgres-electric")
+        electric = service(env.namespace)
+        # The replication role's login, which database.py mints.
+        role = SecretRef(namespace=env.namespace, name="postgres-electric")
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=env.namespace, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
@@ -61,16 +66,16 @@ class Electric(Construct):
             image=_IMAGE,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             env_variables={
-                "POSTGRES_USER": EnvValue.from_secret_value(SecretValue(secret=secret, key="username")),
-                "POSTGRES_PASSWORD": EnvValue.from_secret_value(SecretValue(secret=secret, key="password")),
-                "POSTGRES_HOST": EnvValue.from_secret_value(SecretValue(secret=secret, key="host")),
-                "POSTGRES_PORT": EnvValue.from_secret_value(SecretValue(secret=secret, key="port")),
-                "POSTGRES_DB": EnvValue.from_secret_value(SecretValue(secret=secret, key="dbname")),
+                "POSTGRES_USER": role.key("username").env_value(self, "postgres-user-ref"),
+                "POSTGRES_PASSWORD": role.key("password").env_value(self, "postgres-password-ref"),
+                "POSTGRES_HOST": role.key("host").env_value(self, "postgres-host-ref"),
+                "POSTGRES_PORT": role.key("port").env_value(self, "postgres-port-ref"),
+                "POSTGRES_DB": role.key("dbname").env_value(self, "postgres-db-ref"),
                 "DATABASE_URL": EnvValue.from_value(
                     "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
                 ),
                 "ELECTRIC_INSECURE": EnvValue.from_value("true"),
-                "ELECTRIC_PORT": EnvValue.from_value(str(PORT)),
+                "ELECTRIC_PORT": EnvValue.from_value(str(electric.pod_port)),
                 "ELECTRIC_STORAGE": EnvValue.from_value("fast_file"),
                 "ELECTRIC_STORAGE_DIR": EnvValue.from_value(_STORAGE_DIR),
                 "ELECTRIC_PERSISTENT_STATE": EnvValue.from_value("file"),
@@ -80,9 +85,9 @@ class Electric(Construct):
                 # once-per-minute LRU expiry; the upstream default retains every shape forever.
                 "ELECTRIC_MAX_SHAPES": EnvValue.from_value("1024"),
             },
-            ports=[ContainerPort(name="http", number=PORT, protocol=Protocol.TCP)],
-            readiness=http_probe("/v1/health", port=PORT, initial_delay_seconds=5, period_seconds=10),
-            liveness=http_probe("/v1/health", port=PORT, initial_delay_seconds=20, period_seconds=30),
+            ports=[electric.port.container_port()],
+            readiness=http_probe("/v1/health", port=electric.pod_port, initial_delay_seconds=5, period_seconds=10),
+            liveness=http_probe("/v1/health", port=electric.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(100)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
@@ -101,16 +106,21 @@ class Electric(Construct):
         Service(
             self,
             "service",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=electric.name, namespace=env.namespace, labels=electric.labels),
             selector=deployment,
-            ports=[ServicePort(name="http", port=PORT, target_port=PORT, protocol=Protocol.TCP)],
+            ports=[electric.port.service_port()],
         )
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
-            endpoint_selector=_LABELS,
-            ingress=[IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[PORT])],
+            metadata=ApiObjectMetadata(name=_NAME, namespace=env.namespace),
+            endpoint_selector=electric.pods.selector,
+            # app.py imports this module, so the app's Pods are named here.
+            ingress=[
+                IngressRule.from_endpoints(
+                    cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[electric.pod_port]
+                )
+            ],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_endpoints(

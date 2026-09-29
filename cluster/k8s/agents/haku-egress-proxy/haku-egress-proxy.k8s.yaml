@@ -119,6 +119,7 @@ spec:
           ports:
             - containerPort: 8080
               name: proxy
+              protocol: TCP
           readinessProbe:
             periodSeconds: 5
             tcpSocket:
@@ -164,6 +165,7 @@ spec:
   ports:
     - name: proxy
       port: 8080
+      protocol: TCP
       targetPort: 8080
   selector:
     app.kubernetes.io/name: haku-egress-proxy
@@ -386,8 +388,10 @@ spec:
           ports:
             - containerPort: 8181
               name: proxy
+              protocol: TCP
             - containerPort: 9090
               name: metrics
+              protocol: TCP
           resources:
             limits:
               cpu: 500m
@@ -432,10 +436,12 @@ spec:
   ports:
     - name: proxy
       port: 8181
-      targetPort: proxy
+      protocol: TCP
+      targetPort: 8181
     - name: metrics
       port: 9090
-      targetPort: metrics
+      protocol: TCP
+      targetPort: 9090
   selector:
     app.kubernetes.io/name: haku-openclaw-spike-proxy
 ---

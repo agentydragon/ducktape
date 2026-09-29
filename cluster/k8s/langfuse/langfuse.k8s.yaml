@@ -263,12 +263,12 @@ spec:
       clusterEnabled: true
       database: langfuse
       deploy: false
-      host: clickhouse.clickhouse.svc.cluster.local
+      host: clickhouse.clickhouse.svc
       httpPort: 8123
       migration:
         autoMigrate: true
         ssl: false
-        url: clickhouse://clickhouse.clickhouse.svc.cluster.local:9000
+        url: clickhouse://clickhouse.clickhouse.svc:9000
       nativePort: 9000
     ingress:
       enabled: false

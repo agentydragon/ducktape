@@ -26,28 +26,17 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Bumped ahead of the Cilium fix to the 7.2 *series*, deliberately crossing the
-    # Cilium compatibility ceiling `issues/6825` was tracking. `linuxPackages_latest`
-    # is still not a substitute: it is a moving alias, and on 2026-09-04 it floated
-    # across that same ceiling and took this host's CNI down.
+    # Follow `linuxPackages_latest`; the current locked alias resolves to the same
+    # Linux 7.2.7 derivation validated on `rugged` on 2026-09-28. The Cilium
+    # FnSetRetval probe failure was fixed in Cilium 1.19.8, so the old kernel ceiling
+    # no longer applies. The incident record is
+    # `cluster/docs/lessons_learned/2026_07_16_cilium_set_retval_probe_kernel_7_2.md`.
     #
     #   >= 6.17   IPU7 camera driver mainlined in 6.17.
     #   >= 7.1.8  drm/xe TTM `beneficial_order` fix `ba7fd1634228`; without it this
     #             host hits a kswapd/Xe-shrinker swap storm. Confirmed present in
     #             7.1.8 by reverse-patch test (<../../../../nix/debug/rugged/stalls/report.md>).
-    #
-    # TODO(added 2026-09-16): kernel `b1f7f67b74c2` (first in 7.2-rc1) hardens the
-    #   verifier, so cilium/ebpf's FnSetRetval probe gets EINVAL and cilium-agent
-    #   fatals at startup — observed on 7.2.0 with Cilium 1.19.6
-    #   (<../../../../cluster/docs/lessons_learned/2026_07_16_cilium_set_retval_probe_kernel_7_2.md>).
-    #   `rugged` will not run cilium-agent, and so will not function as a k8s
-    #   cluster node, until a released Cilium version contains the FnSetRetval
-    #   probe fix (backport: cilium/cilium#48376) and live Linux 7.2 validation
-    #   succeeds. Accepted: `rugged` is a roaming, often-offline node (see
-    #   cluster/README.md § Node Types), not a stable cluster member. Remove this
-    #   TODO once that Cilium version is deployed and cilium-agent is confirmed
-    #   Ready on this host. Tracked: https://github.com/agentydragon/ducktape/issues/6825.
-    boot.kernelPackages = pkgs.linuxPackages_7_2;
+    boot.kernelPackages = pkgs.linuxPackages_latest;
 
     # Firmware for IPU and Intel Visual Sensing Controller
     hardware.firmware = with pkgs; [

@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, Size
-from cdk8s_plus_34 import Cpu, k8s
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import cilium
@@ -21,27 +21,27 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.mcp_oauth_state import CONSUMER_SECRET, PLAID_DB, add_consumer_credentials
 from cluster.cdk8s.plaid_mcp import db
-from cluster.cdk8s.plaid_mcp.app import NAMESPACE
+from cluster.cdk8s.plaid_mcp.db import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/reader"
 SERVICEMONITOR_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/servicemonitor"
 _NAME = "plaid-db-mcp"
-_LABELS = {"app.kubernetes.io/name": _NAME}
 _CONFIG_MAP = "plaid-db-mcp-config"
 _OIDC = SecretRef(namespace=NAMESPACE, name="plaid-db-mcp-oidc")
-_UPSTREAM_PORT = 8000
-_HTTP_PORT = 8765
-_METRICS_PORT = 9090
+# postgres-mcp, which the facade reaches over the Pod's loopback.
+_UPSTREAM = Port(name="upstream", number=8000)
 _HTTP = ServiceRef(
-    name=_NAME, port=Port(name="http", number=_HTTP_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+    name=_NAME,
+    port=Port(name="http", number=8765),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
-_VALKEY = "plaid-valkey-kimsufi"
+_METRICS = ServiceRef(name=_HTTP.name, port=Port(name="metrics", number=9090), pods=_HTTP.pods)
 
 
 def _container_security_context() -> k8s.SecurityContext:
@@ -55,15 +55,15 @@ def _container_security_context() -> k8s.SecurityContext:
 
 
 def _deployment(chart: Chart) -> None:
-    upstream = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(_UPSTREAM_PORT))
-    health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_HTTP_PORT))
+    upstream = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(_UPSTREAM.number))
+    health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_HTTP.pod_port))
     k8s.KubeDeployment(
         chart,
         "deployment",
         metadata=k8s.ObjectMeta(
             name=_NAME,
             namespace=NAMESPACE,
-            labels=_LABELS,
+            labels=_HTTP.pods.selector,
             annotations={
                 "description": (
                     "Read-only Postgres MCP over the Plaid sync database, fronted by mcp-oauth-facade. The"
@@ -73,9 +73,9 @@ def _deployment(chart: Chart) -> None:
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_HTTP.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_HTTP.pods.selector),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     automount_service_account_token=False,
@@ -90,9 +90,9 @@ def _deployment(chart: Chart) -> None:
                                 "--access-mode=restricted",
                                 "--transport=streamable-http",
                                 "--streamable-http-host=0.0.0.0",
-                                f"--streamable-http-port={_UPSTREAM_PORT}",
+                                f"--streamable-http-port={_UPSTREAM.number}",
                             ],
-                            ports=[k8s.ContainerPort(name="upstream", container_port=_UPSTREAM_PORT, protocol="TCP")],
+                            ports=[_UPSTREAM.k8s_container_port()],
                             env=[db.READONLY.key("DATABASE_URL").env_var("AIRMAN_MCP_DATABASE_URL")],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -110,14 +110,17 @@ def _deployment(chart: Chart) -> None:
                             image="git.allegedly.works/ducktape-ci/mcp-oauth-facade:unset",
                             image_pull_policy="Always",
                             ports=[
-                                k8s.ContainerPort(name="http", container_port=_HTTP_PORT, protocol="TCP"),
+                                _HTTP.port.k8s_container_port(),
                                 # Prometheus metrics, cluster-internal only (not on the HTTPRoute).
-                                k8s.ContainerPort(name="metrics", container_port=_METRICS_PORT, protocol="TCP"),
+                                _METRICS.port.k8s_container_port(),
                             ],
                             env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_CONFIG_MAP))],
                             env=[
                                 _OIDC.key("client_id").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID"),
                                 _OIDC.key("client_secret").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET"),
+                                SecretRef(namespace=NAMESPACE, name=CONSUMER_SECRET)
+                                .key("uri")
+                                .env_var("MCP_FACADE_PERSISTENCE__URL"),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -139,6 +142,7 @@ def _deployment(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
+    add_consumer_credentials(chart, PLAID_DB)
     k8s.KubeConfigMap(
         chart,
         "config",
@@ -148,31 +152,18 @@ def chart(app: App) -> Chart:
             "MCP_FACADE_AUTH__PUBLIC_BASE_URL": "https://plaid-db.allegedly.works",
             "MCP_FACADE_FACADE_NAME": "Plaid DB MCP Facade",
             "MCP_FACADE_UPSTREAM__KIND": "http",
-            "MCP_FACADE_UPSTREAM__URL": f"http://localhost:{_UPSTREAM_PORT}/mcp",
-            "MCP_FACADE_PERSISTENCE__KIND": "valkey",
-            # The RedisReplication's primary Service.
-            "MCP_FACADE_PERSISTENCE__HOST": f"{_VALKEY}-master.{NAMESPACE}.svc.cluster.local",
-            "MCP_FACADE_PERSISTENCE__DB": "0",
+            "MCP_FACADE_UPSTREAM__URL": f"http://localhost:{_UPSTREAM.number}/mcp",
+            "MCP_FACADE_PERSISTENCE__KIND": "postgres",
         },
     )
     _deployment(chart)
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=_HTTP.name, namespace=NAMESPACE, labels=_HTTP.labels),
         spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name="http", port=_HTTP_PORT, target_port=k8s.IntOrString.from_string("http"), protocol="TCP"
-                ),
-                k8s.ServicePort(
-                    name="metrics",
-                    port=_METRICS_PORT,
-                    target_port=k8s.IntOrString.from_string("metrics"),
-                    protocol="TCP",
-                ),
-            ],
+            selector=_HTTP.pods.selector,
+            ports=[_HTTP.port.k8s_service_port(), _METRICS.port.k8s_service_port()],
             type="ClusterIP",
         ),
     )
@@ -208,24 +199,8 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        endpoint_selector=_LABELS,
-        ingress=[
-            IngressRule.from_gateway(_HTTP_PORT),
-            # monitoring: Prometheus metrics scraping
-            cilium.SCRAPERS.admit(_METRICS_PORT),
-        ],
-    )
-    valkey_instance(
-        chart,
-        name=_VALKEY,
-        namespace=NAMESPACE,
-        description="Kimsufi Valkey for the Plaid DB MCP OAuth facade state",
-        memory_request=Size.mebibytes(64),
-        cpu_limit=Cpu.millis(200),
-        memory_limit=Size.mebibytes(128),
-        max_memory_percent_of_limit=None,
-        storage_class="local-path-ovh",
-        storage_size=Size.gibibytes(1),
+        endpoint_selector=_HTTP.pods.selector,
+        ingress=[IngressRule.from_gateway(_HTTP.pod_port), cilium.SCRAPERS.admit(_METRICS.pod_port)],
     )
     return chart
 
@@ -236,8 +211,8 @@ def servicemonitor_chart(app: App) -> Chart:
         chart,
         "servicemonitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-        endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
+        selector=ServiceMonitorSpecSelector(match_labels=_HTTP.labels),
+        endpoints=[Endpoint.plain(port=_METRICS.port.name, scrape_timeout="10s")],
     )
     return chart
 

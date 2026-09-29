@@ -57,8 +57,7 @@ SERVICE = ServiceRef(
     port=Port(name="http", number=2586),
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
-_DATABASE_CLUSTER = "ntfy-db"
-_DATABASE_APP = SecretRef(namespace=NAMESPACE, name=f"{_DATABASE_CLUSTER}-app")
+DATABASE = cnpg.PostgresRef.generated(name="ntfy-db", namespace=NAMESPACE)
 _AUTH_SOURCE_SECRET = "ntfy-credentials"
 _AUTH = SecretRef(namespace=NAMESPACE, name="ntfy-auth")
 SECRET_STORE = "kubernetes-ntfy-secret-store"
@@ -151,12 +150,12 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name=_DATABASE_CLUSTER,
-        namespace=NAMESPACE,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-hdd",
         size="2Gi",
         initdb=cnpg.same_owner_initdb(NAME),
+        wal_archive=False,
     )
 
 
@@ -221,7 +220,7 @@ class Ntfy(Construct):
                 "NTFY_AUTH_ACCESS": EnvValue.from_value("alertmanager:alerts:wo,android:alerts:ro"),
                 "NTFY_BEHIND_PROXY": EnvValue.from_value("true"),
                 "NTFY_ENABLE_METRICS": EnvValue.from_value("true"),
-                "NTFY_DATABASE_URL": _DATABASE_APP.key("uri").env_value(self, "database-url-ref"),
+                "NTFY_DATABASE_URL": DATABASE.app_secret.key("uri").env_value(self, "database-url-ref"),
                 "NTFY_AUTH_USERS": _AUTH.key("NTFY_AUTH_USERS").env_value(self, "auth-users-ref"),
                 "NTFY_AUTH_TOKENS": _AUTH.key("NTFY_AUTH_TOKENS").env_value(self, "auth-tokens-ref"),
             },

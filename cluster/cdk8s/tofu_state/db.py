@@ -39,17 +39,16 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/tofu-state"
 _DB_DIR = f"{OUTPUT_DIR}/db"
 _NAMESPACE = "tofu-state"
-_CLUSTER_NAME = "tofu-state-db-ovh"
 _CREDENTIALS_FILE = "credentials.sops.yaml"
+DATABASE = cnpg.PostgresRef.generated(name="tofu-state-db-ovh", namespace=_NAMESPACE)
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, _CLUSTER_NAME, disable_resource_name_hashes=True)
+    chart = Chart(app, DATABASE.name, disable_resource_name_hashes=True)
     cnpg.cluster(
         chart,
         "cluster",
-        name=_CLUSTER_NAME,
-        namespace=_NAMESPACE,
+        ref=DATABASE,
         # A tf-runner holds a session-scoped advisory lock for the length of a plan or
         # apply. When its node drops off the network the session survives -- no RST from
         # a vanished peer -- and every later run on that state fails with "error
@@ -67,9 +66,13 @@ def chart(app: App) -> Chart:
         postgresql=ClusterSpecPostgresql(
             parameters={"tcp_keepalives_idle": "60", "tcp_keepalives_interval": "10", "tcp_keepalives_count": "6"}
         ),
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",
         size="1Gi",
+        # CNPG's default bootstrap: an `app` database and owner. Terraform's `tfstate` role is
+        # managed below.
+        initdb=None,
+        wal_archive=False,
         managed=ClusterSpecManaged(
             roles=[
                 ClusterSpecManagedRoles(
@@ -90,7 +93,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, _DB_DIR, chart)
     write_yaml(
         root / _DB_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[_CREDENTIALS_FILE, f"{_CLUSTER_NAME}.k8s.yaml"]),
+        kustomize_kustomization(resources=[_CREDENTIALS_FILE, f"{DATABASE.name}.k8s.yaml"]),
     )
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=["namespace.k8s.yaml", "db"])

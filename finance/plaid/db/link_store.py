@@ -3,18 +3,30 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
+from pydantic import BaseModel
 from sqlalchemy import delete, exists, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from finance.plaid.db.models import (
+    PlaidAccount,
+    PlaidBalance,
+    PlaidHolding,
+    PlaidInvestmentTransaction,
+    PlaidLiabilities,
+    PlaidLiabilityEntry,
+    PlaidSecurity,
+    PlaidTransaction,
+)
 from finance.plaid.db.schema import (
     AccountRow,
     BalanceSnapshotRow,
@@ -313,20 +325,23 @@ class PlaidLinkStorage:
             )
             await session.commit()
 
-    async def apply_accounts(self, *, item_id: str, accounts: list[dict[str, Any]], captured_at: datetime) -> None:
+    async def apply_accounts(
+        self, *, item_id: str, accounts: Sequence[PlaidAccount | dict[str, Any]], captured_at: datetime
+    ) -> None:
         async with self._session_factory() as session:
-            for account in accounts:
-                balances = account.get("balances") or {}
+            for account_value in accounts:
+                account = _validated_payload(PlaidAccount, account_value)
+                balances = account.balances or PlaidBalance()
                 values = {
-                    "account_id": account["account_id"],
+                    "account_id": account.account_id,
                     "item_id": item_id,
-                    "name": account["name"],
-                    "official_name": account.get("official_name"),
-                    "mask": account.get("mask"),
-                    "type": account["type"],
-                    "subtype": account.get("subtype"),
-                    "iso_currency_code": balances.get("iso_currency_code"),
-                    "raw_json": account,
+                    "name": account.name,
+                    "official_name": account.official_name,
+                    "mask": account.mask,
+                    "type": account.type,
+                    "subtype": account.subtype,
+                    "iso_currency_code": balances.iso_currency_code,
+                    "raw_json": account.model_dump(mode="json", exclude_unset=True),
                     "updated_at": captured_at,
                 }
                 stmt = pg_insert(AccountRow).values(**values)
@@ -336,13 +351,13 @@ class PlaidLinkStorage:
                 await session.execute(stmt)
                 session.add(
                     BalanceSnapshotRow(
-                        account_id=account["account_id"],
+                        account_id=account.account_id,
                         item_id=item_id,
                         captured_at=captured_at,
-                        available=balances.get("available"),
-                        current=balances.get("current"),
-                        limit=balances.get("limit"),
-                        iso_currency_code=balances.get("iso_currency_code"),
+                        available=balances.available,
+                        current=balances.current,
+                        limit=balances.limit,
+                        iso_currency_code=balances.iso_currency_code,
                     )
                 )
             await session.commit()
@@ -353,29 +368,30 @@ class PlaidLinkStorage:
         item_id: str,
         start_date: date,
         end_date: date,
-        transactions: list[dict[str, Any]],
+        transactions: Sequence[PlaidTransaction | dict[str, Any]],
         captured_at: datetime,
     ) -> None:
-        seen = {txn["transaction_id"] for txn in transactions}
+        transaction_payloads = [_validated_payload(PlaidTransaction, value) for value in transactions]
+        seen = {txn.transaction_id for txn in transaction_payloads}
         async with self._session_factory() as session:
-            for txn in transactions:
-                pfc = txn.get("personal_finance_category") or {}
+            for txn in transaction_payloads:
+                pfc = txn.personal_finance_category
                 values = {
-                    "transaction_id": txn["transaction_id"],
-                    "account_id": txn["account_id"],
+                    "transaction_id": txn.transaction_id,
+                    "account_id": txn.account_id,
                     "item_id": item_id,
-                    "date": date.fromisoformat(txn["date"]) if isinstance(txn["date"], str) else txn["date"],
-                    "amount": txn["amount"],
-                    "iso_currency_code": txn.get("iso_currency_code"),
-                    "name": txn["name"],
-                    "merchant_name": txn.get("merchant_name"),
-                    "pending": txn["pending"],
-                    "pending_transaction_id": txn.get("pending_transaction_id"),
-                    "pfc_primary": pfc.get("primary"),
-                    "pfc_detailed": pfc.get("detailed"),
+                    "date": txn.date,
+                    "amount": txn.amount,
+                    "iso_currency_code": txn.iso_currency_code,
+                    "name": txn.name,
+                    "merchant_name": txn.merchant_name,
+                    "pending": txn.pending,
+                    "pending_transaction_id": txn.pending_transaction_id,
+                    "pfc_primary": pfc.primary if pfc is not None else None,
+                    "pfc_detailed": pfc.detailed if pfc is not None else None,
                     "removed": False,
                     "removed_at": None,
-                    "raw_json": txn,
+                    "raw_json": txn.model_dump(mode="json", exclude_unset=True),
                     "updated_at": captured_at,
                 }
                 stmt = pg_insert(TransactionRow).values(**values)
@@ -402,17 +418,23 @@ class PlaidLinkStorage:
             await session.commit()
 
     async def apply_holdings(
-        self, *, item_id: str, securities: list[dict[str, Any]], holdings: list[dict[str, Any]], captured_at: datetime
+        self,
+        *,
+        item_id: str,
+        securities: Sequence[PlaidSecurity | dict[str, Any]],
+        holdings: Sequence[PlaidHolding | dict[str, Any]],
+        captured_at: datetime,
     ) -> None:
         async with self._session_factory() as session:
-            for security in securities:
+            for security_value in securities:
+                security = _validated_payload(PlaidSecurity, security_value)
                 values = {
-                    "security_id": security["security_id"],
-                    "name": security.get("name"),
-                    "ticker_symbol": security.get("ticker_symbol"),
-                    "type": security.get("type"),
-                    "iso_currency_code": security.get("iso_currency_code"),
-                    "raw_json": security,
+                    "security_id": security.security_id,
+                    "name": security.name,
+                    "ticker_symbol": security.ticker_symbol,
+                    "type": security.type,
+                    "iso_currency_code": security.iso_currency_code,
+                    "raw_json": security.model_dump(mode="json", exclude_unset=True),
                     "updated_at": captured_at,
                 }
                 stmt = pg_insert(SecurityRow).values(**values)
@@ -420,45 +442,50 @@ class PlaidLinkStorage:
                     index_elements=["security_id"], set_={k: v for k, v in values.items() if k != "security_id"}
                 )
                 await session.execute(stmt)
-            for holding in holdings:
+            for holding_value in holdings:
+                holding = _validated_payload(PlaidHolding, holding_value)
                 session.add(
                     HoldingSnapshotRow(
-                        account_id=holding["account_id"],
-                        security_id=holding["security_id"],
+                        account_id=holding.account_id,
+                        security_id=holding.security_id,
                         item_id=item_id,
                         captured_at=captured_at,
-                        quantity=holding.get("quantity"),
-                        cost_basis=holding.get("cost_basis"),
-                        institution_price=holding.get("institution_price"),
-                        institution_value=holding.get("institution_value"),
-                        iso_currency_code=holding.get("iso_currency_code"),
-                        raw_json=holding,
+                        quantity=holding.quantity,
+                        cost_basis=holding.cost_basis,
+                        institution_price=holding.institution_price,
+                        institution_value=holding.institution_value,
+                        iso_currency_code=holding.iso_currency_code,
+                        raw_json=holding.model_dump(mode="json", exclude_unset=True),
                     )
                 )
             await session.commit()
 
     async def upsert_investment_transactions(
-        self, *, item_id: str, transactions: list[dict[str, Any]], captured_at: datetime
+        self,
+        *,
+        item_id: str,
+        transactions: Sequence[PlaidInvestmentTransaction | dict[str, Any]],
+        captured_at: datetime,
     ) -> None:
         async with self._session_factory() as session:
-            for txn in transactions:
-                txn_date = txn["date"]
+            for txn_value in transactions:
+                txn = _validated_payload(PlaidInvestmentTransaction, txn_value)
                 values = {
-                    "investment_transaction_id": txn["investment_transaction_id"],
-                    "account_id": txn["account_id"],
-                    "security_id": txn.get("security_id"),
+                    "investment_transaction_id": txn.investment_transaction_id,
+                    "account_id": txn.account_id,
+                    "security_id": txn.security_id,
                     "item_id": item_id,
-                    "date": date.fromisoformat(txn_date) if isinstance(txn_date, str) else txn_date,
-                    "amount": txn.get("amount"),
-                    "quantity": txn.get("quantity"),
-                    "price": txn.get("price"),
-                    "fees": txn.get("fees"),
-                    "type": txn.get("type"),
-                    "subtype": txn.get("subtype"),
-                    "iso_currency_code": txn.get("iso_currency_code"),
+                    "date": txn.date,
+                    "amount": txn.amount,
+                    "quantity": txn.quantity,
+                    "price": txn.price,
+                    "fees": txn.fees,
+                    "type": txn.type,
+                    "subtype": txn.subtype,
+                    "iso_currency_code": txn.iso_currency_code,
                     "removed": False,
                     "removed_at": None,
-                    "raw_json": txn,
+                    "raw_json": txn.model_dump(mode="json", exclude_unset=True),
                     "updated_at": captured_at,
                 }
                 stmt = pg_insert(InvestmentTransactionRow).values(**values)
@@ -470,19 +497,24 @@ class PlaidLinkStorage:
             await session.commit()
 
     async def append_liability_snapshots(
-        self, *, item_id: str, liabilities: dict[str, list[dict[str, Any]] | None], captured_at: datetime
+        self, *, item_id: str, liabilities: PlaidLiabilities | dict[str, Any], captured_at: datetime
     ) -> None:
         row_by_type = {
             "credit": LiabilityCreditSnapshotRow,
             "mortgage": LiabilityMortgageSnapshotRow,
             "student": LiabilityStudentSnapshotRow,
         }
+        payload = _validated_payload(PlaidLiabilities, liabilities)
         async with self._session_factory() as session:
             for key, row_type in row_by_type.items():
-                for entry in liabilities.get(key) or []:
+                for entry_value in getattr(payload, key) or []:
+                    entry = _validated_payload(PlaidLiabilityEntry, entry_value)
                     session.add(
                         row_type(
-                            account_id=entry["account_id"], item_id=item_id, captured_at=captured_at, raw_json=entry
+                            account_id=entry.account_id,
+                            item_id=item_id,
+                            captured_at=captured_at,
+                            raw_json=entry.model_dump(mode="json", exclude_unset=True),
                         )
                     )
             await session.commit()
@@ -511,6 +543,10 @@ def _stored_link(
         latest_transaction_date=latest_transaction_date,
         synced_transaction_count=synced_transaction_count,
     )
+
+
+def _validated_payload[PayloadT: BaseModel](model_type: type[PayloadT], value: PayloadT | dict[str, Any]) -> PayloadT:
+    return cast(PayloadT, model_type.model_validate(value))
 
 
 def _merge_products(*groups: list[str]) -> list[str]:

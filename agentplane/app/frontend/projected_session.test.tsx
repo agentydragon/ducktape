@@ -2,16 +2,17 @@
 
 import { create, equals, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
-import { act } from "react";
+import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
-import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
-import { command, getThread, models, type ThreadView } from "./client";
+import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../protocol/event_pb";
+import { command, getThread, models, resumeThread, type ThreadView } from "./client";
 import { historyRows, rowKey } from "./history_rows";
 import { LocalCommands } from "./local_commands";
+import { STREAMING_CURSOR } from "./markdown";
 import { EntityCard, HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "./stream_status";
@@ -30,10 +31,16 @@ vi.mock("./client", async (importOriginal) => ({
   command: vi.fn(),
   getThread: vi.fn(),
   models: vi.fn(),
+  resumeThread: vi.fn(),
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
+const mounted: Array<{
+  root: ReturnType<typeof createRoot>;
+  container: HTMLDivElement;
+  topbarTitle?: HTMLDivElement;
+  topbarActions?: HTMLDivElement;
+}> = [];
 const THREAD: ThreadView = {
   id: "10000000-0000-4000-8000-000000000001",
   sandbox: "composer-test",
@@ -68,6 +75,7 @@ beforeEach(() => {
     harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
   });
   vi.mocked(command).mockReturnValue(new Promise(() => {}));
+  vi.mocked(resumeThread).mockResolvedValue({} as never);
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
@@ -170,12 +178,6 @@ function threadState({
 }
 
 async function render(state: ThreadState = threadState()): Promise<HTMLDivElement> {
-  const sync: ThreadSync = {
-    Thread: ({ children }) => <>{children}</>,
-    useThread: () => state,
-    useCommandRows: () => [],
-    usePayload: () => ({ body: null, error: null, retry: () => {} }),
-  };
   const container = document.createElement("div");
   document.body.append(container);
   // The real shell topbar (app.tsx) isn't mounted here, so ProjectedSession's title/menu need
@@ -184,20 +186,39 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
   const topbarTitle = document.createElement("div");
   const topbarActions = document.createElement("div");
   const root = createRoot(container);
-  mounted.push({ root, container });
+  mounted.push({ root, container, topbarTitle, topbarActions });
   await act(async () => {
-    root.render(
-      <MantineProvider env="test">
-        <ThreadSyncContext.Provider value={sync}>
-          <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
-            <ProjectedSession threadId={THREAD.id} />
-          </TopbarContext.Provider>
-        </ThreadSyncContext.Provider>
-      </MantineProvider>
-    );
+    root.render(page(state, topbarTitle, topbarActions));
   });
   container.append(topbarTitle, topbarActions);
   return container;
+}
+
+function page(state: ThreadState, topbarTitle: HTMLDivElement, topbarActions: HTMLDivElement): JSX.Element {
+  const sync: ThreadSync = {
+    Thread: ({ children }) => <>{children}</>,
+    useThread: () => state,
+    useCommandRows: () => [],
+    usePayload: () => ({ body: null, error: null, retry: () => {} }),
+  };
+  return (
+    <MantineProvider env="test">
+      <ThreadSyncContext.Provider value={sync}>
+        <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
+          <ProjectedSession threadId={THREAD.id} />
+        </TopbarContext.Provider>
+      </ThreadSyncContext.Provider>
+    </MantineProvider>
+  );
+}
+
+async function rerender(container: HTMLDivElement, state: ThreadState): Promise<void> {
+  const current = mounted.find((entry) => entry.container === container);
+  const topbarTitle = current?.topbarTitle;
+  const topbarActions = current?.topbarActions;
+  if (!current || !topbarTitle || !topbarActions) throw new Error("Missing mounted thread page");
+  await act(async () => current.root.render(page(state, topbarTitle, topbarActions)));
+  container.append(topbarTitle, topbarActions);
 }
 
 function composer(container: HTMLDivElement): HTMLTextAreaElement {
@@ -294,6 +315,36 @@ it("sends the draft from the Send button, which an empty draft disables", async 
   await type(composer(container), "hello");
   await act(async () => button(container, "Send").click());
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
+});
+
+it("resumes the existing Thread and restores sending on the open and reloaded pages", async () => {
+  const ended = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+  const original = await render(ended);
+  expect(composer(original).disabled).toBe(true);
+  await act(async () => button(original, "Resume harness").click());
+  expect(resumeThread).toHaveBeenCalledWith(THREAD.id);
+
+  const running = threadState();
+  await rerender(original, running);
+  expect(composer(original).disabled).toBe(false);
+  await type(composer(original), "from the open page");
+  await press(composer(original), {});
+
+  const reloaded = await render(running);
+  expect(composer(reloaded).disabled).toBe(false);
+  await type(composer(reloaded), "from the reloaded page");
+  await press(composer(reloaded), {});
+  expect(sentOperations()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ case: "submitInput", value: expect.objectContaining({ text: "from the open page" }) }),
+      expect.objectContaining({
+        case: "submitInput",
+        value: expect.objectContaining({ text: "from the reloaded page" }),
+      }),
+    ])
+  );
+  expect(new Set(vi.mocked(command).mock.calls.map(([, value]) => value.commandId)).size).toBe(2);
+  expect(vi.mocked(command).mock.calls.every(([threadId]) => threadId === THREAD.id)).toBe(true);
 });
 
 it("shows the thread id in the More menu, not inline once a name is set", async () => {
@@ -705,6 +756,22 @@ it("marks an unfinished run as streaming in the live turn, and as incomplete onc
   expect(retained.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Incomplete");
 });
 
+it("puts a live assistant-text cursor inline after its Markdown body", async () => {
+  const body = "The answer is still being written.";
+  const [row] = await renderHistory(
+    [testItem(1, ItemKind.ASSISTANT_TEXT, { completion: null }, { textRef: reference("streaming-reply", "text") })],
+    true,
+    { "streaming-reply:text": body }
+  );
+  const cursor = row.querySelector<HTMLElement>(".agentplane-streaming-cursor");
+
+  expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
+  expect(cursor?.getAttribute("data-character")).toBe(STREAMING_CURSOR);
+  expect(cursor?.closest(".agentplane-markdown")).not.toBeNull();
+  expect(cursor?.parentElement?.textContent?.trimEnd()).toBe(body);
+  expect(row.querySelector(".mantine-Badge-root")).toBeNull();
+});
+
 it("shows a lone reasoning step as its own reasoning block, and assistant text without a role label", async () => {
   const [reasoning, answer] = await renderHistory(
     [
@@ -721,12 +788,155 @@ it("shows a lone reasoning step as its own reasoning block, and assistant text w
 
 const PROSE = "Run **every** test\n- first";
 
+describe("recovery presentation", () => {
+  it.each([RecoveryDisposition.RETAINED, RecoveryDisposition.REVISED, RecoveryDisposition.UNKNOWN])(
+    "does not revive an interrupted reply's streaming cursor for recovery %s",
+    async (recovery) => {
+      const [row] = await renderHistory(
+        [
+          testItem(
+            1,
+            ItemKind.ASSISTANT_TEXT,
+            { completion: null, recovery },
+            { textRef: reference("recovered-reply", "text") }
+          ),
+        ],
+        true,
+        { "recovered-reply:text": "Interrupted reply" }
+      );
+      expect(row.querySelector(".agentplane-streaming-cursor")).toBeNull();
+      expect(row.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+    }
+  );
+
+  it.each([null, "text"])("labels retained text with completion %s", async (completion) => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.ASSISTANT_TEXT,
+        { completion, recovery: RecoveryDisposition.RETAINED },
+        { textRef: reference("test-entity-1", "text") }
+      ),
+      { "test-entity-1:text": "Remember the name in the margin" }
+    );
+    expect(container.textContent).toContain("Remember the name in the margin");
+    expect(container.querySelector('[aria-label="Retained in context"]')).not.toBeNull();
+  });
+
+  it("collapses discarded text and preserves it behind a disclosure", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.ASSISTANT_TEXT,
+        { completion: null, recovery: RecoveryDisposition.ABSENT },
+        { textRef: reference("test-entity-1", "text") }
+      ),
+      { "test-entity-1:text": "The seam widened." }
+    );
+    expect(container.textContent).not.toContain("The seam widened.");
+    await disclose(container, "Discarded output (not retained in model context)");
+    expect(container.textContent).toContain("The seam widened.");
+    expect(container.querySelector('[aria-label="Not retained in context"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+  });
+
+  it("shows unknown retention and its reason without hiding the observed text", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.ASSISTANT_TEXT,
+        {
+          completion: null,
+          recovery: RecoveryDisposition.UNKNOWN,
+          recovery_reason: "The harness history could not be inspected.",
+        },
+        { textRef: reference("test-entity-1", "text") }
+      ),
+      { "test-entity-1:text": "The bells were ringing." }
+    );
+    expect(container.textContent).toContain("The bells were ringing.");
+    expect(container.textContent).toContain("The harness history could not be inspected.");
+    expect(container.querySelector('[aria-label="Retention unknown"]')).not.toBeNull();
+  });
+
+  it("labels revised content as continuation, without inventing a tool outcome", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.TOOL_CALL,
+        {
+          tool_name: "Bash",
+          completion: null,
+          tool_succeeded: null,
+          recovery: RecoveryDisposition.REVISED,
+        },
+        { outputRef: reference("test-entity-1", "output") }
+      ),
+      { "test-entity-1:output": "aborted" }
+    );
+    expect(container.querySelector('[aria-label="Revised for continuation"]')).not.toBeNull();
+    expect(container.textContent).toContain("Recovery content does not establish a tool execution outcome.");
+    await disclose(container, "Continuation output");
+    expect(container.textContent).toContain("aborted");
+    expect(container.querySelector('[aria-label="Succeeded"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Failed"]')).toBeNull();
+  });
+
+  it("preserves a successful execution result when its context was discarded", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.TOOL_CALL,
+        {
+          tool_name: "Bash",
+          completion: "tool",
+          tool_succeeded: true,
+          recovery: RecoveryDisposition.ABSENT,
+        },
+        { outputRef: reference("test-entity-1", "output") }
+      ),
+      { "test-entity-1:output": "Created report.txt" }
+    );
+    await disclose(container, "Bash: discarded context (not retained in model context)");
+    expect(container.textContent).toContain("does not undo tool side effects");
+    expect(container.querySelector('[aria-label="Succeeded"]')).not.toBeNull();
+    await disclose(container, "Output");
+    expect(container.textContent).toContain("Created report.txt");
+  });
+
+  it("summarizes recovery in a collapsed tool run without marking recovered items streaming", async () => {
+    const [run] = await renderHistory(
+      [
+        testItem(1, ItemKind.TOOL_CALL, { completion: null, recovery: RecoveryDisposition.UNKNOWN }),
+        testItem(2, ItemKind.TOOL_CALL, {
+          completion: "tool",
+          tool_succeeded: false,
+          recovery: RecoveryDisposition.RETAINED,
+        }),
+      ],
+      true
+    );
+    expect(run.querySelector('[aria-label="Retention unknown"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Retained in context"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Failed"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Streaming"]')).toBeNull();
+  });
+});
+
 describe("EntityCard", () => {
   it("renders a tool call's JSON arguments highlighted and its plain output verbatim, both as code", async () => {
     const container = await renderCard(
       entity(
         "item",
-        { kind: ItemKind.TOOL_CALL, tool_name: "Bash", completion: "", tool_succeeded: true },
+        {
+          kind: ItemKind.TOOL_CALL,
+          tool_name: "Bash",
+          completion: "",
+          tool_succeeded: true,
+          recovery: null,
+          recovery_reason: "",
+        },
         { argumentsRef: reference("test-tool", "arguments"), outputRef: reference("test-tool", "output") }
       ),
       { "test-tool:arguments": '{"command": "ls", "timeout": 30}', "test-tool:output": PROSE }
@@ -746,7 +956,14 @@ describe("EntityCard", () => {
     const container = await renderCard(
       entity(
         "item",
-        { kind: ItemKind.ASSISTANT_TEXT, tool_name: "", completion: PROSE, tool_succeeded: null },
+        {
+          kind: ItemKind.ASSISTANT_TEXT,
+          tool_name: "",
+          completion: PROSE,
+          tool_succeeded: null,
+          recovery: null,
+          recovery_reason: "",
+        },
         { textRef: reference("test-reply", "text") }
       ),
       { "test-reply:text": PROSE }

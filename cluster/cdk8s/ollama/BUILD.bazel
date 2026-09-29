@@ -44,12 +44,14 @@ py_library(
 py_library(
     name = "app",
     srcs = ["app.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    # Clients in other packages read SERVICE.
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

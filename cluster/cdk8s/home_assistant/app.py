@@ -84,7 +84,7 @@ _SETTINGS_DIR = "/etc/provisioner"
 # Where the config volume mounts, in Home Assistant and in its component installer.
 _CONFIG_DIR = "/config"
 # Home Assistant's own listener; Caddy (the hand-written Caddyfile) proxies to it.
-_BACKEND_PORT = 8124
+_BACKEND = Port(name="backend", number=8124)
 # From the hand-written files beside the kustomization.yaml, under names without a content hash:
 # Reloader restarts the Deployment when either changes.
 _FIXED_NAME = GeneratorOptions(disable_name_suffix_hash=True)
@@ -144,14 +144,12 @@ AGENTPLANE_READER_TOKEN = tokens.TokenConfig(
 )
 _TOKENS = (HA_MCP_TOKEN, AGENTPLANE_READER_TOKEN)
 
-_BREAK_GLASS_PASSWORD = k8s.EnvVarSource(
-    secret_key_ref=k8s.SecretKeySelector(name="home-assistant-break-glass", key="password")
-)
+_BREAK_GLASS_PASSWORD = SecretRef(namespace=_NAMESPACE, name="home-assistant-break-glass").key("password")
 # The home zone's `latitude` and `longitude`, encrypted in home-location.sops.yaml so that this public
 # repository does not show them. Optional: without it, onboarding leaves the location as set in the
 # UI. Changing it re-runs nothing by itself: bump the onboarding Job's bootstrap-revision in the same
 # change.
-_LOCATION_SECRET = "home-assistant-location"
+_LOCATION = SecretRef(namespace=_NAMESPACE, name="home-assistant-location")
 
 
 def _quantities(**values: str) -> dict[str, k8s.Quantity]:
@@ -196,7 +194,7 @@ def _config_map_volume(name: str, config_map: str) -> k8s.Volume:
 
 def _backend_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
     return k8s.Probe(
-        http_get=k8s.HttpGetAction(host="127.0.0.1", port=k8s.IntOrString.from_string("backend"), path="/"),
+        http_get=k8s.HttpGetAction(host="127.0.0.1", port=k8s.IntOrString.from_string(_BACKEND.name), path="/"),
         initial_delay_seconds=initial_delay_seconds,
         period_seconds=period_seconds,
     )
@@ -251,9 +249,9 @@ def _deployment(scope: Construct) -> None:
                                 # API after startup. This keeps the empty-PVC bootstrap port
                                 # aligned with Caddy while the API applies the loopback/proxy
                                 # settings.
-                                k8s.EnvVar(name="SETUP_PORT", value=str(_BACKEND_PORT)),
+                                k8s.EnvVar(name="SETUP_PORT", value=str(_BACKEND.number)),
                             ],
-                            ports=[k8s.ContainerPort(name="backend", container_port=_BACKEND_PORT)],
+                            ports=[_BACKEND.k8s_container_port()],
                             readiness_probe=_backend_probe(initial_delay_seconds=15, period_seconds=10),
                             liveness_probe=_backend_probe(initial_delay_seconds=60, period_seconds=30),
                             resources=k8s.ResourceRequirements(
@@ -330,7 +328,7 @@ _ONBOARDING_SETTINGS = ConfigMapArgs(
                 "owner_display_name": "Home Assistant Local Administrator",
                 "http_config": onboarding.HttpConfig(
                     server_host=["127.0.0.1"],
-                    server_port=_BACKEND_PORT,
+                    server_port=_BACKEND.number,
                     cors_allowed_origins=["https://cast.home-assistant.io"],
                     use_x_forwarded_for=True,
                     trusted_proxies=["127.0.0.1/32"],
@@ -383,18 +381,10 @@ def _onboarding_job(scope: Construct) -> None:
                             command=["/homeassistant/provisioner/onboarding/onboard_bin"],
                             env=[
                                 _settings_env(onboarding.Settings),
-                                k8s.EnvVar(
-                                    name=env_name(onboarding.Settings, "owner_password"),
-                                    value_from=_BREAK_GLASS_PASSWORD,
-                                ),
+                                _BREAK_GLASS_PASSWORD.env_var(env_name(onboarding.Settings, "owner_password")),
                                 *(
-                                    k8s.EnvVar(
-                                        name=env_name(onboarding.Settings, "core_config", "location", key),
-                                        value_from=k8s.EnvVarSource(
-                                            secret_key_ref=k8s.SecretKeySelector(
-                                                name=_LOCATION_SECRET, key=key, optional=True
-                                            )
-                                        ),
+                                    _LOCATION.key(key).env_var(
+                                        env_name(onboarding.Settings, "core_config", "location", key), optional=True
                                     )
                                     for key in ("latitude", "longitude")
                                 ),
@@ -485,10 +475,7 @@ def _token_provisioner(scope: Construct) -> None:
                                     command=["/homeassistant/provisioner/tokens/provision_bin"],
                                     env=[
                                         _settings_env(tokens.Settings),
-                                        k8s.EnvVar(
-                                            name=env_name(tokens.Settings, "owner_password"),
-                                            value_from=_BREAK_GLASS_PASSWORD,
-                                        ),
+                                        _BREAK_GLASS_PASSWORD.env_var(env_name(tokens.Settings, "owner_password")),
                                     ],
                                     resources=k8s.ResourceRequirements(
                                         requests=_quantities(cpu="20m", memory="64Mi"),
@@ -547,7 +534,7 @@ def _monitoring(scope: Construct) -> None:
                 [
                     Rule.alert(
                         "HomeAssistantUnavailable",
-                        'up{namespace="home-assistant", service="home-assistant"} == 0',
+                        f'up{{namespace="{SERVICE.pods.namespace}", service="{SERVICE.name}"}} == 0',
                         for_="10m",
                         labels={"severity": "warning"},
                         summary="Home Assistant is unavailable",

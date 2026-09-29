@@ -17,6 +17,7 @@ py_library(
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:valkey",
+        "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/seaweedfs:s3",

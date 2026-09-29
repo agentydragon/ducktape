@@ -30,23 +30,21 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ollama"
 _NAME = "ollama"
 _NAMESPACE = "ollama"
-_LABELS = {"app.kubernetes.io/name": _NAME}
-_OLLAMA_PORT = 11434
-_AUTH_PROXY_PORT = 11435
-_AUTH_PROXY = ServiceRef(
-    name=_NAME,
-    port=Port(name="auth-proxy", number=_AUTH_PROXY_PORT),
-    pods=Pods(namespace=_NAMESPACE, labels=tuple(_LABELS.items())),
-)
+_PODS = Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),))
+# Ollama's own API, without auth, for in-cluster clients.
+SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=11434), pods=_PODS)
+# The bearer-checking nginx in front of it, which the public route targets.
+_AUTH_PROXY = ServiceRef(name=_NAME, port=Port(name="auth-proxy", number=11435), pods=_PODS)
 _MODELS_CLAIM = "llm-models"
 _SSD_MODELS_CLAIM = "qwen38-iq4-ssd"
 _SSD_MODELS_VOLUME = "wyrm2-qwen38-iq4-ssd"
-_DIRECT_TOKEN = "ollama-direct-token"
+_DIRECT_TOKEN = SecretRef(namespace=_NAMESPACE, name="ollama-direct-token").key("token")
 # Both rendered by the hand-written kustomization.yaml's configMapGenerator.
 _AUTH_PROXY_CONFIG_MAP = "ollama-auth-proxy"
 _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
@@ -145,7 +143,7 @@ def _ollama_container() -> k8s.Container:
         name="ollama",
         # renovate: datasource=docker
         image="ollama/ollama:0.34.4",
-        ports=[k8s.ContainerPort(name="ollama", container_port=_OLLAMA_PORT, protocol="TCP")],
+        ports=[k8s.ContainerPort(name="ollama", container_port=SERVICE.pod_port, protocol="TCP")],
         env=[
             k8s.EnvVar(name="OLLAMA_MODELS", value="/models"),
             # SSD blobs are externally managed read-only symlinks. Keep startup GC
@@ -160,7 +158,7 @@ def _ollama_container() -> k8s.Container:
             # 2/0 GiB passed short requests but GPU1 OOMed during 145K prefill.
             # Leave runtime allocation room on both GPUs plus desktop headroom.
             k8s.EnvVar(name="LLAMA_ARG_FIT_TARGET", value="4096,2048"),
-            k8s.EnvVar(name="OLLAMA_HOST", value=f"0.0.0.0:{_OLLAMA_PORT}"),
+            k8s.EnvVar(name="OLLAMA_HOST", value=f"0.0.0.0:{SERVICE.pod_port}"),
             k8s.EnvVar(name="NVIDIA_VISIBLE_DEVICES", value="all"),
             k8s.EnvVar(name="OLLAMA_KV_CACHE_TYPE", value="q8_0"),
             k8s.EnvVar(name="OLLAMA_FLASH_ATTENTION", value="1"),
@@ -192,19 +190,14 @@ def _auth_proxy_container() -> k8s.Container:
         name="auth-proxy",
         # renovate: datasource=docker
         image="nginx:1.31-alpine",
-        ports=[k8s.ContainerPort(name="auth-proxy", container_port=_AUTH_PROXY_PORT, protocol="TCP")],
-        env=[
-            k8s.EnvVar(
-                name="OLLAMA_DIRECT_TOKEN",
-                value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=_DIRECT_TOKEN, key="token")),
-            )
-        ],
+        ports=[_AUTH_PROXY.port.k8s_container_port()],
+        env=[_DIRECT_TOKEN.env_var("OLLAMA_DIRECT_TOKEN")],
         volume_mounts=[
             k8s.VolumeMount(name="nginx-templates", mount_path="/etc/nginx/templates"),
             k8s.VolumeMount(name="nginx-config", mount_path="/etc/nginx/nginx.conf", sub_path="nginx.conf"),
         ],
         liveness_probe=k8s.Probe(
-            tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_string("auth-proxy")),
+            tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_string(_AUTH_PROXY.port.name)),
             initial_delay_seconds=5,
             period_seconds=30,
         ),
@@ -215,13 +208,13 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_PODS.selector),
         spec=k8s.DeploymentSpec(
             replicas=0 if _PAUSED_FOR_HOST_EXPERIMENTS else 1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_PODS.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_PODS.selector),
                 spec=k8s.PodSpec(
                     runtime_class_name="nvidia",
                     node_selector={"feature.node.kubernetes.io/pci-10de.present": "true"},
@@ -269,21 +262,11 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels={"app": "ollama"}),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=_NAMESPACE, labels={"app": "ollama"}),
         spec=k8s.ServiceSpec(
             type="ClusterIP",
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name="http", port=_OLLAMA_PORT, target_port=k8s.IntOrString.from_string("ollama"), protocol="TCP"
-                ),
-                k8s.ServicePort(
-                    name="auth-proxy",
-                    port=_AUTH_PROXY_PORT,
-                    target_port=k8s.IntOrString.from_string("auth-proxy"),
-                    protocol="TCP",
-                ),
-            ],
+            selector=_PODS.selector,
+            ports=[SERVICE.port.k8s_service_port(), _AUTH_PROXY.port.k8s_service_port()],
         ),
     )
 
@@ -297,7 +280,7 @@ def _rbac(scope: Construct) -> None:
             k8s.PolicyRule(
                 api_groups=[""],
                 resources=["secrets"],
-                resource_names=["litellm-master-key", _DIRECT_TOKEN],
+                resource_names=["litellm-master-key", _DIRECT_TOKEN.secret.name],
                 verbs=["get"],
             )
         ],
@@ -423,9 +406,9 @@ def _direct_token(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "direct-token",
-        name=_DIRECT_TOKEN,
-        namespace=_NAMESPACE,
-        key="token",
+        name=_DIRECT_TOKEN.secret.name,
+        namespace=_DIRECT_TOKEN.secret.namespace,
+        key=_DIRECT_TOKEN.key,
         # A direct-API credential is generated once, not periodically rotated.
         refresh="8760h",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,

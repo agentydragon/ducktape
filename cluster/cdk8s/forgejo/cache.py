@@ -1,20 +1,29 @@
-"""Forgejo's shared cache and queue: an OVH Valkey `RedisReplication`, and the `forgejo-cache`
-Flux Kustomization owning it."""
+"""Forgejo's shared cache and queue: an OVH Valkey `RedisReplication`, owned by the `forgejo`
+Kustomization."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cdk8s import App, Chart, Size
 from cdk8s_plus_34 import Cpu
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import RedisReplicationSpecTolerations
 
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.forgejo.namespace import NAMESPACE
+from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
-OUTPUT_DIR = f"{GENERATED_ROOT}/forgejo/cache"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/cache"
 NAME = "forgejo-valkey-ovh"
+# The redis-operator's Service in front of the replication's current master.
+MASTER = ServiceRef(
+    name=f"{NAME}-master",
+    port=Port(name="redis-client", number=6379),
+    pods=Pods(namespace=NAMESPACE, labels=(("app", NAME), ("redis-role", "master"))),
+)
 
 
 def chart(app: App) -> Chart:
@@ -22,7 +31,7 @@ def chart(app: App) -> Chart:
     valkey_instance(
         chart,
         name=NAME,
-        namespace="forgejo",
+        namespace=NAMESPACE,
         description=(
             "OVH Valkey for Forgejo cache + queue (shared, HA-ready replacement for per-instance memory cache /"
             " leveldb queue)"
@@ -42,15 +51,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def forgejo_cache(chart: Chart, directory: RenderedDirectory, valkey: Kustomization) -> Kustomization:
-    name = "forgejo-cache"
-    return flux_kustomization(
-        chart,
-        name,
-        directory,
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        timeout="5m",
-        # Retry until the forgejo aggregate creates the Namespace. Waiting for
-        # Forgejo readiness would deadlock its cache-dependent startup.
-        depends_on=flux_kustomization_depends_on_many(valkey),
-    )
+def write_manifests(root: Path) -> None:
+    write_charts(root, OUTPUT_DIR, chart)

@@ -23,10 +23,8 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/kube-api-proxy"
 _PROXY = "kubeapi-proxy"
 _CONFIG_MAP = "kubeapi-proxy-config"
 _ROUTE = "kubeapi-allegedly-works"
-_PORT = 8080
-_LABELS = {"app": _PROXY}
 _SERVICE = ServiceRef(
-    name=_PROXY, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+    name=_PROXY, port=Port(name="http", number=8080), pods=Pods(namespace=NAMESPACE, labels=(("app", _PROXY),))
 )
 # kube-controller-manager publishes the apiserver's CA as this ConfigMap in every namespace.
 _CLUSTER_CA_CONFIG_MAP = "kube-root-ca.crt"
@@ -47,7 +45,7 @@ http {{
     ''      close;
   }}
   server {{
-    listen {_PORT};
+    listen {_SERVICE.pod_port};
     location / {{
       proxy_pass https://kubernetes.default.svc:443;
       proxy_ssl_verify on;
@@ -87,9 +85,9 @@ def _deployment(chart: Chart) -> None:
         ),
         spec=k8s.DeploymentSpec(
             replicas=2,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     # nginx forwards each caller's own bearer and needs only the cluster CA.
                     automount_service_account_token=False,
@@ -98,7 +96,7 @@ def _deployment(chart: Chart) -> None:
                             name="nginx",
                             # renovate: datasource=docker
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
-                            ports=[k8s.ContainerPort(container_port=_PORT)],
+                            ports=[k8s.ContainerPort(container_port=_SERVICE.pod_port)],
                             volume_mounts=[
                                 # A subPath mount doesn't hot-reload: Reloader's `autoReloadAll`
                                 # rolls the pods when the config changes.
@@ -189,13 +187,8 @@ def chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=_PROXY, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(name="http", port=_PORT, target_port=k8s.IntOrString.from_number(_PORT), protocol="TCP")
-            ],
-        ),
+        metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.port.k8s_service_port()]),
     )
     return chart
 
