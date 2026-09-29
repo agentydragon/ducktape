@@ -31,7 +31,7 @@ from agentplane.action_service.catalog import (
     UnknownActionError,
 )
 from agentplane.action_service.db import ActionConflictError, ActionNotFoundError
-from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE, DirectToolProvider, refusal
+from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE, DIRECT_WAIT_SECONDS, DirectToolProvider, refusal
 from agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -334,8 +334,10 @@ def create_server(
     updates: ActionUpdates,
     verifier: CallerTokenVerifier,
     *,
+    direct_wait_seconds: float = DIRECT_WAIT_SECONDS,
     max_wait_seconds: float,
 ) -> FastMCP:
+    direct_wait_seconds = min(direct_wait_seconds, max_wait_seconds)
     waiter = ActionWaiter(service, updates, max_wait_seconds=max_wait_seconds)
     # strict_input_validation is left at FastMCP's own default (False): its own tool dispatch
     # validates arguments via TypeAdapter.validate_python on the already-JSON-decoded arguments
@@ -417,11 +419,11 @@ def create_server(
             )
         except UndecidedRequestError as undecided:
             return refusal(action, str(undecided))
-        view = await wait_for_receipt(view.id, principal, WaitOptions(wait_seconds=max_wait_seconds))
+        view = await wait_for_receipt(view.id, principal, WaitOptions(wait_seconds=direct_wait_seconds))
         await revalidate(principal)
         return tool_result(view, catalog.groups[action.group].executor, max_wait_seconds=max_wait_seconds)
 
-    server.add_provider(DirectToolProvider(catalog, service, external_caller, call_direct, max_wait_seconds))
+    server.add_provider(DirectToolProvider(catalog, service, external_caller, call_direct, direct_wait_seconds))
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors

@@ -191,6 +191,7 @@ async def review(
             connections=connections,
             enrollments=enrollments,
             updates=ActionUpdates(db_url),
+            max_wait_seconds=30.0,
         )
         downstream_http = await stack.enter_async_context(
             httpx.AsyncClient(transport=httpx.ASGITransport(app=downstream), base_url="http://test-actions.invalid")

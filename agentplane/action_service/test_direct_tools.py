@@ -224,7 +224,12 @@ async def direct(
     )
     updates = ActionUpdates(db_url)
     mcp_app = create_server(
-        service, catalog, updates, ConnectionBearers(grant, policies), max_wait_seconds=direct_wait_seconds
+        service,
+        catalog,
+        updates,
+        ConnectionBearers(grant, policies),
+        direct_wait_seconds=direct_wait_seconds,
+        max_wait_seconds=30.0,
     ).http_app(path="/mcp", stateless_http=True, json_response=False)
 
     @asynccontextmanager
