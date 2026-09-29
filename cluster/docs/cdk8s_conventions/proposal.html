@@ -1098,7 +1098,7 @@
       and lists only what is left.
     </p>
     <div class="meta">
-      <span>baseline <b>origin/devel e6eea71931</b></span
+      <span>baseline <b>origin/devel 45b6f02f31</b></span
       ><span>date <b>2026-09-29</b></span
       ><span>branch <b>claude/jolly-darwin-al6qse</b></span
       ><span>status <b>no open decisions</b></span>
@@ -10365,7 +10365,7 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Step 1. Open, and merges cleanly onto devel e6eea71931. It removes the 14 namespace-class edges
+                    Step 1. Open, and merges cleanly onto devel 45b6f02f31. It removes the 14 namespace-class edges
                     whose target only creates the namespace, the last of that class, and keeps every direct
                     <code>kyverno</code> and <code>kyverno-policies</code> edge.
                   </p>
@@ -10503,7 +10503,7 @@ CONFIG = {
       <div class="prose">
         <div class="rich">
           <p>
-            What is left, from devel e6eea71931, in the recommended order. Each step names its gate: <code>ready</code>,
+            What is left, from devel 45b6f02f31, in the recommended order. Each step names its gate: <code>ready</code>,
             a decision, or a step before it. The PR that lands a convention records it in
             <code>cluster/cdk8s/AGENTS.md</code> or the <code>cdk8s_builders</code> skill (the AGENTS.md changes section
             lists the edits).
@@ -10523,7 +10523,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Ready: #8185 is open and merges cleanly onto devel e6eea71931.</p></div>
+            <div class="rich"><p>Ready: #8185 is open and merges cleanly onto devel 45b6f02f31.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -10703,7 +10703,7 @@ CONFIG = {
               <p>
                 Ready for your review: #8035 is a draft. Its head 5646d3a91f merges devel da973f9b64, its generated
                 manifests are identical to that devel&#39;s, its CI is green, and it merges cleanly onto devel
-                e6eea71931.
+                45b6f02f31.
               </p>
             </div>
           </div>
@@ -10776,7 +10776,7 @@ CONFIG = {
           <div class="sc">
             <span class="lbl">Scope</span>
             <div class="rich">
-              <p>One PR per area. On devel e6eea71931:</p>
+              <p>One PR per area. On devel 45b6f02f31:</p>
               <ul>
                 <li>
                   Where the Pods listen on another port than the Service, 9 Service ports in 8 modules and 8 container
@@ -10911,8 +10911,8 @@ CONFIG = {
                 The token rule: every pod spec states <code>automountServiceAccountToken</code>,
                 <code>false</code> unless the Pod calls the API, and never <code>true</code> under the
                 <code>default</code> ServiceAccount. One area per PR states <code>false</code> on the Pods whose
-                ServiceAccount no RoleBinding or ClusterRoleBinding names (28 generated pod specs mount an unused token
-                today, 27 of them as <code>default</code>) and <code>true</code> on the rest. claude-sandbox&#39;s
+                ServiceAccount no RoleBinding or ClusterRoleBinding names (9 generated pod specs mount an unused token
+                today, 8 of them as <code>default</code>) and <code>true</code> on the rest. claude-sandbox&#39;s
                 <code>langfuse-log-reader</code> and <code>ollama-reader</code> RoleBindings, which name its
                 <code>default</code> ServiceAccount, move to a named one that its sandbox Pods run as. The fleet rule
                 lands once the areas state the value.
@@ -10927,10 +10927,13 @@ CONFIG = {
             <span class="lbl">Scope</span>
             <div class="rich">
               <p>
-                <code>fleet_rules.py</code>, <code>pod_policy</code>, the 34 generated pod specs that state nothing, and
-                claude-sandbox&#39;s RBAC: #8365, #8366 and #8367 (agents, apps and platform) and #8368 (the fleet rule)
-                are open. Until fleet rules reach every chart (step 17), the rule covers only the 12 charts that call
-                <code>add_fleet_rules</code>.
+                <code>fleet_rules.py</code>, <code>pod_policy</code>, the 13 generated pod specs that still state
+                nothing, and claude-sandbox&#39;s RBAC. The apps and platform areas are on devel (#8366, #8367). #8365
+                states the agents area&#39;s 10, and #8368 adds the fleet rule; both are open. The other 3 are Jobs
+                #8366 left as they are, grocy&#39;s two <code>grocy-config-ovh-verify-20260520</code> and ollama&#39;s
+                <code>setup-gpt-oss-v8</code>: a Job&#39;s pod template is immutable, so each states the value when it
+                is next renamed. Until fleet rules reach every chart (step 17), the rule covers only the 12 charts that
+                call <code>add_fleet_rules</code>.
               </p>
             </div>
           </div>
@@ -11738,8 +11741,8 @@ CONFIG = {
             Flux graph&#39;s node, edge, <code>wait</code> and health-check counts and the per-unit counts wherever they
             appear, the policy functions&#39; call counts (C2), the mint calls and per-pair stores (C3, C8), the
             references (C4 and step 7), the CNPG wiring, the matrix rows for secrets, CNPG, backups, Gateway exposure
-            and service connectivity, and the PR states were measured on devel e6eea71931. Each example&#39;s chip names
-            the revision its after code was rendered on.
+            and service connectivity, the token rule&#39;s pod-spec counts, and the PR states were measured on devel
+            45b6f02f31. Each example&#39;s chip names the revision its after code was rendered on.
           </p>
           <p>
             The page is rendered by <code>cluster/docs/cdk8s_conventions/render.py</code> from
