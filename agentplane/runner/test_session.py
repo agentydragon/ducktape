@@ -67,6 +67,9 @@ class DerivingAdapter(HarnessAdapter):
     async def handshake(self) -> str:
         return "test-native-session"
 
+    async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
+        return event_pb2.ConversationReconciled(turn_id=turn_id)
+
     async def submit(self, command_id: str, text: str) -> None:
         raise AssertionError(f"unexpected input {(command_id, text)!r}")
 

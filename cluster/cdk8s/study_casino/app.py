@@ -45,9 +45,7 @@ _SERVICE = ServiceRef(
     port=Port(name="http", number=8080),
     pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
-_DB_NAME = "study-casino-db"
-# CNPG generates the owner's credentials in `<cluster>-app`.
-_DB_APP = SecretRef(namespace=_NAMESPACE, name=f"{_DB_NAME}-app")
+POSTGRES = cnpg.PostgresRef.generated(name="study-casino-db", namespace=_NAMESPACE)
 _OIDC = SecretRef(namespace=_NAMESPACE, name="study-casino-oidc")
 _DATABASE = "studycasino"
 _REGION = "hil"
@@ -85,14 +83,13 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name=_DB_NAME,
-        namespace=_NAMESPACE,
+        ref=POSTGRES,
         annotations={"description": "CNPG Postgres for study-casino state."},
         # 3 instances, one per OVH SSD (control-plane) node. Tolerates 1-node loss without read-quorum or
         # primary-availability impact.
         instances=3,
         image_name=None,
-        node_selector={"topology.kubernetes.io/region": _REGION},
+        placement=node_scheduling.Placement(node_selector={"topology.kubernetes.io/region": _REGION}),
         storage_class="local-path-ovh-ssd",
         size="1Gi",
         # Declaratively-managed roles. CNPG creates `study_casino_ro` on first
@@ -111,8 +108,8 @@ def _database(scope: Construct) -> None:
                 )
             ]
         ),
-        # CNPG auto-generates credentials in secret study-casino-db-app
         initdb=cnpg.same_owner_initdb(_DATABASE),
+        wal_archive=False,
     )
 
 
@@ -159,9 +156,9 @@ def _readonly_provisioner(scope: Construct) -> None:
                             env=[
                                 # Run as the database owner. Object-level GRANTs only need owner
                                 # privileges, not superuser; this lets us drop enableSuperuserAccess.
-                                _DB_APP.key("username").env_var("PGUSER"),
-                                _DB_APP.key("password").env_var("PGPASSWORD"),
-                                k8s.EnvVar(name="PGHOST", value=f"{_DB_NAME}-rw.{_NAMESPACE}.svc"),
+                                POSTGRES.app_secret.key("username").env_var("PGUSER"),
+                                POSTGRES.app_secret.key("password").env_var("PGPASSWORD"),
+                                k8s.EnvVar(name="PGHOST", value=POSTGRES.rw.host),
                                 k8s.EnvVar(name="PGDATABASE", value=_DATABASE),
                             ],
                             volume_mounts=[k8s.VolumeMount(name="sql", mount_path="/sql", read_only=True)],
@@ -229,11 +226,11 @@ def _deployment(scope: Construct) -> None:
                                 # `$(VAR)` syntax in env values is resolved by the kubelet from
                                 # earlier-defined env vars in the same container. `+psycopg`
                                 # forces SQLAlchemy to pick the psycopg v3 driver.
-                                _DB_APP.key("user").env_var("PG_USER"),
-                                _DB_APP.key("password").env_var("PG_PASSWORD"),
-                                _DB_APP.key("host").env_var("PG_HOST"),
-                                _DB_APP.key("port").env_var("PG_PORT"),
-                                _DB_APP.key("dbname").env_var("PG_DBNAME"),
+                                POSTGRES.app_secret.key("user").env_var("PG_USER"),
+                                POSTGRES.app_secret.key("password").env_var("PG_PASSWORD"),
+                                POSTGRES.app_secret.key("host").env_var("PG_HOST"),
+                                POSTGRES.app_secret.key("port").env_var("PG_PORT"),
+                                POSTGRES.app_secret.key("dbname").env_var("PG_DBNAME"),
                                 k8s.EnvVar(
                                     name="STUDY_CASINO_DATABASE_URL",
                                     value="postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DBNAME)",

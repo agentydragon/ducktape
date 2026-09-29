@@ -20,8 +20,6 @@ data:
 
     USERNAME = "agentydragon"
     EMAIL = "agentydragon@allegedly.works"
-    DB_HOST = "atuin-db-rw.atuin.svc.cluster.local"
-    DB_PORT = 5432
     DB_NAME = "atuin"
     DB_USER = "atuin"
 
@@ -30,7 +28,8 @@ data:
         user_password = os.environ["ATUIN_USER_PASSWORD"]
         db_password = os.environ["POSTGRES_PASSWORD"]
 
-        conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=db_password)
+        # libpq reads the host and port from PGHOST and PGPORT.
+        conn = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=db_password)
         conn.autocommit = True
 
         ph = argon2.PasswordHasher()
@@ -103,6 +102,10 @@ spec:
                 secretKeyRef:
                   key: password
                   name: atuin-db-app
+            - name: PGHOST
+              value: atuin-db-rw.atuin.svc
+            - name: PGPORT
+              value: "5432"
           image: python:3.14-alpine
           name: provisioner
           volumeMounts:

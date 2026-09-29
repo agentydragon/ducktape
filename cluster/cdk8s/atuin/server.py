@@ -12,15 +12,12 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "atuin"
 NAMESPACE = "atuin"
 OUTPUT_DIR = f"{GENERATED_ROOT}/atuin"
-# CNPG generates the application credentials in `<cluster>-app`.
-DB_APP = SecretRef(namespace=NAMESPACE, name="atuin-db-app")
-_DB_CLUSTER = "atuin-db"
+DATABASE = cnpg.PostgresRef.generated(name="atuin-db", namespace=NAMESPACE)
 SERVER = ServiceRef(
     name="atuin-server",
     port=Port(name="http", number=8888),
@@ -32,12 +29,12 @@ def _database(chart: Chart) -> None:
     cnpg.cluster(
         chart,
         "database",
-        name=_DB_CLUSTER,
-        namespace=NAMESPACE,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",
         size="2Gi",
         initdb=cnpg.same_owner_initdb(NAME),
+        wal_archive=False,
     )
 
 
@@ -71,7 +68,7 @@ def _server(chart: Chart) -> None:
                                 k8s.EnvVar(name="ATUIN_HOST", value="0.0.0.0"),
                                 k8s.EnvVar(name="ATUIN_PORT", value=str(SERVER.pod_port)),
                                 k8s.EnvVar(name="ATUIN_OPEN_REGISTRATION", value="false"),
-                                DB_APP.key("uri").env_var("ATUIN_DB_URI"),
+                                DATABASE.app_secret.key("uri").env_var("ATUIN_DB_URI"),
                                 k8s.EnvVar(name="RUST_LOG", value="info"),
                             ],
                             resources=k8s.ResourceRequirements(

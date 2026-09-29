@@ -8,7 +8,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.atuin.server import DB_APP, NAMESPACE
+from cluster.cdk8s.atuin.server import DATABASE, NAMESPACE
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
@@ -36,8 +36,6 @@ _SCRIPT = textwrap.dedent(
 
     USERNAME = "agentydragon"
     EMAIL = "agentydragon@allegedly.works"
-    DB_HOST = "atuin-db-rw.atuin.svc.cluster.local"
-    DB_PORT = 5432
     DB_NAME = "atuin"
     DB_USER = "atuin"
 
@@ -46,7 +44,8 @@ _SCRIPT = textwrap.dedent(
         user_password = os.environ["ATUIN_USER_PASSWORD"]
         db_password = os.environ["POSTGRES_PASSWORD"]
 
-        conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=db_password)
+        # libpq reads the host and port from PGHOST and PGPORT.
+        conn = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=db_password)
         conn.autocommit = True
 
         ph = argon2.PasswordHasher()
@@ -129,7 +128,9 @@ def chart(app: App) -> Chart:
                             ],
                             env=[
                                 _USER_PASSWORD.env_var("ATUIN_USER_PASSWORD"),
-                                DB_APP.key("password").env_var("POSTGRES_PASSWORD"),
+                                DATABASE.app_secret.key("password").env_var("POSTGRES_PASSWORD"),
+                                k8s.EnvVar(name="PGHOST", value=DATABASE.rw.host),
+                                k8s.EnvVar(name="PGPORT", value=str(DATABASE.rw.port.number)),
                             ],
                             volume_mounts=[k8s.VolumeMount(name="script", mount_path=_SCRIPT_DIR, read_only=True)],
                         )
