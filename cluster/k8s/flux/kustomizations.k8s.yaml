@@ -79,7 +79,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/flux-image-automation-ghcr
+  path: ./cluster/generated/flux-image-automation-ghcr
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -1279,7 +1279,7 @@ spec:
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
       kind: Database
   interval: 10m
-  path: ./cluster/k8s/mcp-oauth-state
+  path: ./cluster/generated/mcp-oauth-state
   prune: true
   retryInterval: 1m
   sourceRef:

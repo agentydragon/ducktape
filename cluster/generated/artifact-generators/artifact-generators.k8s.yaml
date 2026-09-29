@@ -121,8 +121,8 @@ spec:
       name: tofu-state-db
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/mcp-oauth-state/**"
-          to: "@artifact/cluster/k8s/mcp-oauth-state/"
+        - from: "@repo/cluster/generated/mcp-oauth-state/**"
+          to: "@artifact/cluster/generated/mcp-oauth-state/"
       name: mcp-oauth-state
       originRevision: "@repo"
     - copy:
@@ -236,8 +236,8 @@ spec:
       name: cdi
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/flux-image-automation-ghcr/**"
-          to: "@artifact/cluster/k8s/flux-image-automation-ghcr/"
+        - from: "@repo/cluster/generated/flux-image-automation-ghcr/**"
+          to: "@artifact/cluster/generated/flux-image-automation-ghcr/"
       name: flux-image-automation-ghcr
       originRevision: "@repo"
     - copy:
