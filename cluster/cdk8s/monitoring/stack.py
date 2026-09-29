@@ -333,7 +333,7 @@ def _values() -> dict[str, object]:
                 "retention": "120h",
             },
         },
-        # Grafana disabled — managed by grafana-operator (cluster/k8s/monitoring/grafana-instance/).
+        # Grafana disabled — managed by grafana-operator (grafana_instance.py).
         # Dashboards, datasources, and service accounts are GrafanaDashboard/GrafanaDatasource/
         # GrafanaServiceAccount CRs. JWT auth eliminates admin password bootstrap dependency.
         "grafana": {"enabled": False},

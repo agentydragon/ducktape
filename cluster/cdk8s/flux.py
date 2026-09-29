@@ -265,6 +265,9 @@ class _KustomizeKustomization(BaseModel):
         default=None, description="Paths to Kustomize Component directories, per kustomize.config.k8s.io/v1beta1."
     )
     config_map_generator: list[ConfigMapArgs] | None = None
+    configurations: list[str] | None = Field(
+        default=None, description="Transformer configuration files, relative to the directory."
+    )
 
 
 def kustomize_kustomization(
@@ -273,6 +276,7 @@ def kustomize_kustomization(
     namespace: str | None = None,
     components: Sequence[str] = (),
     config_map_generator: Sequence[ConfigMapArgs] = (),
+    configurations: Sequence[str] = (),
 ) -> dict[str, object]:
     """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
 
@@ -286,5 +290,6 @@ def kustomize_kustomization(
         resources=resources,
         components=list(components) if components else None,
         config_map_generator=list(config_map_generator) if config_map_generator else None,
+        configurations=list(configurations) if configurations else None,
     )
     return manifest.model_dump(by_alias=True, exclude_none=True)
