@@ -305,7 +305,6 @@ def generate_manifests(root: Path) -> None:
     home_assistant_namespace.write_manifests(root)
     nix_cache_attic.write_manifests(root)
     vm_images_publisher_publisher.write_manifests(root)
-    alloy.write_manifests(root)
     grafana_instance.write_manifests(root)
     grafana_app.write_manifests(root)
     github_exporter_app.write_manifests(root)
@@ -958,7 +957,17 @@ def generate_manifests(root: Path) -> None:
         ),
     )
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
-    monitoring_flux_kustomizations.alloy(flux_chart, monitoring_alloy_artifact, monitoring_crds_kustomization)
+    alloy.alloy(
+        flux_chart,
+        write_directory(
+            root,
+            monitoring_alloy_artifact,
+            alloy.chart,
+            namespace=alloy.NAMESPACE,
+            config_map_generator=[alloy.write_config_map(root)],
+        ),
+        monitoring_crds_kustomization,
+    )
     public_coder_agent_backup_artifact = artifact("public-coder-agent-backup", public_coder_backup.OUTPUT_DIR)
     public_coder_backup.public_coder_agent_backup(
         flux_chart,

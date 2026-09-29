@@ -110,12 +110,18 @@ py_library(
 py_library(
     name = "alloy",
     srcs = ["alloy.py"],
+    data = ["config.alloy"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_helmrepository",
-        "//cluster/cdk8s:generation",
+        ":loki",
+        ":mimir",
+        ":tempo",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -167,6 +173,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_helmrepository",
+        ":mimir",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
@@ -182,6 +189,7 @@ py_library(
     srcs = ["grafana_instance.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":mimir",
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",

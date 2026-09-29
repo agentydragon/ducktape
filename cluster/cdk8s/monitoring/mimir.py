@@ -19,6 +19,9 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/mimir"
 _NAMESPACE = "monitoring"
 _CREDENTIALS_SECRET = "mimir-seaweedfs-credentials"
 _S3_ENDPOINT = "seaweedfs-s3.seaweedfs.svc:8333"
+# The chart names the gateway Service after the release.
+GATEWAY_URL = f"http://{NAME}-gateway.{_NAMESPACE}.svc.cluster.local"
+PUSH_URL = f"{GATEWAY_URL}/api/v1/push"
 
 
 def _s3(bucket: str) -> dict[str, object]:

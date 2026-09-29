@@ -12,23 +12,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
-def alloy(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "alloy",
-        artifact,
-        wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="alloy", namespace="monitoring"
-            )
-        ],
-        timeout="5m",
-        # the chart's serviceMonitor
-        depends_on=flux_kustomization_depends_on_many(monitoring_crds),
-    )
-
-
 def monitoring_crds(chart: Chart) -> Kustomization:
     return flux_kustomization(
         chart,
