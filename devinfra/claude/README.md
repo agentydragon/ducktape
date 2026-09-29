@@ -165,7 +165,8 @@ the rotation job succeeds, and environment setup warns that telemetry auth is
 not available yet.
 
 Rationale, probe evidence, and the hosted-environment variables are in
-<plans/transcript_collection.md>.
+<plans/transcript_collection.md>. Cloud sessions that already ran can be archived
+after the fact with <session_export/README.md>.
 
 ## Web Setup
 

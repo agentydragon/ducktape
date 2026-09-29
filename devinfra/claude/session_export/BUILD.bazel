@@ -1,0 +1,89 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "api",
+    srcs = ["api.py"],
+    deps = [
+        ":models",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "archive",
+    srcs = ["archive.py"],
+    deps = [
+        ":api",
+        ":models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "export_sessions",
+    srcs = ["export_sessions.py"],
+    deps = [
+        ":api",
+        ":archive",
+        ":models",
+        "//util/bazel:workspace",
+    ],
+)
+
+py_binary(
+    name = "export_sessions_bin",
+    main_module = "devinfra.claude.session_export.export_sessions",
+    deps = [":export_sessions"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":api",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_api",
+    srcs = ["test_api.py"],
+    deps = [
+        ":api",
+        ":conftest",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_archive",
+    srcs = ["test_archive.py"],
+    deps = [
+        ":api",
+        ":archive",
+        ":conftest",
+        ":models",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

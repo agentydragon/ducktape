@@ -9,10 +9,12 @@ itself is agent-agnostic.
 
 ## Facts this design rests on (probed live 2026-07-05/06)
 
-- **No export API exists.** Claude Code web session transcripts cannot be downloaded
-  after the fact: the enterprise Compliance API covers claude.ai chats/files/projects
-  only, and the account data export has no documented Code-session coverage. The
-  transcript exists only inside the container while it lives.
+- **No official export exists, but the history is retrievable (re-probed 2026-09-29).**
+  The Compliance API's session endpoints exclude Claude Code cloud sessions and the
+  account data export documents none. Anthropic stores each session's event log and
+  `claude.ai/code` reads it over a private API, which <../session_export/> archives
+  after the fact (contract: <../session_export/docs/api.md>). The shipping legs below
+  are therefore not the only way to keep web transcripts.
 - **Env-var delivery in hosted sessions splits by mechanism** (verified via
   `/proc/<claude-pid>/environ`, claude 2.1.42): the web UI "Environment Variables"
   knob reaches the `claude` process (12 `OTEL_*` vars confirmed); `startup_env_script`
