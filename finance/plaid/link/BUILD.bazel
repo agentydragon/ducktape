@@ -8,28 +8,38 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
     name = "app",
-    srcs = ["app.py", "auth.py"],
+    srcs = ["app.py"],
     data = [
         "link.css",
         "link.html",
         "link.js",
     ],
     deps = [
+        ":auth",
         "//finance/plaid/db:client",
         "//finance/plaid/db:config",
         "//finance/plaid/db:link_store",
         "//finance/plaid/db:products",
         "//finance/plaid/db:secret_store",
         "//finance/plaid/db:sync",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    deps = [
+        "//finance/plaid/db:config",
         "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//joserfc",
         "@pypi//pydantic",
-        "@pypi//pydantic_settings",
         "@pypi//starlette",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -73,6 +83,7 @@ py_test(
     name = "test_app",
     srcs = ["test_app.py"],
     deps = [
+        ":auth",
         ":app",
         "//:conftest",
         "//finance/plaid/db:client",

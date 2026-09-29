@@ -32,7 +32,7 @@ from finance.plaid.db.client import PlaidClient, PlaidSdkApiLike
 from finance.plaid.db.config import PlaidWebSettings
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
 from finance.plaid.link.app import PlaidWebClient, create_app
-from finance.plaid.link.auth import PlaidOidcSettings, session_cookie_name
+from finance.plaid.link.auth import session_cookie_name
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -179,17 +179,14 @@ def _client(
         DATABASE_URL="postgresql://example.invalid/plaid",
         public_base_url="https://plaid-mcp.test",
         target_namespace="plaid-mcp",
-    )
-    oidc_settings = PlaidOidcSettings(
-        issuer="https://auth.example.test/application/o/plaid-link-oidc/",
-        client_id="plaid-link",
-        client_secret="test-client-secret",
-        session_secret="test-session-secret",
+        oidc_issuer="https://auth.example.test/application/o/plaid-link-oidc/",
+        oidc_client_id="plaid-link",
+        oidc_client_secret="test-client-secret",
+        oidc_session_secret="test-session-secret",
     )
     test_client = TestClient(
         create_app(
             settings,
-            oidc_settings=oidc_settings,
             storage=cast(PlaidLinkStorage, storage or _FakeStorage()),
             secrets=secrets or _FakeSecrets(),
             client=cast(PlaidWebClient, PlaidClient(api=cast(PlaidSdkApiLike, api or _FakePlaidApi()))),
@@ -199,14 +196,14 @@ def _client(
     )
     session = {
         "user": {
-            "issuer": oidc_settings.issuer,
+            "issuer": settings.oidc_issuer,
             "subject": "test-subject",
             "username": "agentydragon",
             "expires_at": time.time() + 3600,
         }
     }
     encoded_session = b64encode(json.dumps(session, separators=(",", ":")).encode("utf-8"))
-    cookie = TimestampSigner(oidc_settings.session_secret.get_secret_value()).sign(encoded_session).decode("utf-8")
+    cookie = TimestampSigner(settings.oidc_session_secret.get_secret_value()).sign(encoded_session).decode("utf-8")
     test_client.cookies.set(session_cookie_name(settings.public_base_url), cookie, domain="plaid-mcp.test", path="/")
     return test_client
 
