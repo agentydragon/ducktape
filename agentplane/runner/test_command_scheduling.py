@@ -41,6 +41,9 @@ class BlockingAdapter(HarnessAdapter):
     async def handshake(self) -> str:
         return "native-session"
 
+    async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
+        return event_pb2.ConversationReconciled(turn_id=turn_id)
+
     async def submit(self, command_id: str, text: str) -> None:
         assert (command_id, text) == ("input-1", "blocked native input")
         self.submit_started.set()

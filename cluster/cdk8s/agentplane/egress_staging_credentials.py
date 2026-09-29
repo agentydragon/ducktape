@@ -17,6 +17,7 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
+from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
@@ -26,6 +27,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
+    PLAID_PGWEB_POLICY,
 )
 from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, FORGEJO_HOST_ALIASES, FORGEJO_PUBLIC_HOST, HOME_ASSISTANT_HOST
 from cluster.cdk8s.agentplane.egress_credentials import (
@@ -37,8 +39,10 @@ from cluster.cdk8s.agentplane.egress_credentials import (
 from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
+from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
 # Written by tf/gitops/agent-machine-access/grocy-sf.tf into agents-infra, named after the Authentik
 # service account whose app password it holds.
@@ -70,6 +74,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _aiquota_read(construct, namespace=namespace)
     _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
+    _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
 
 
 def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
@@ -524,4 +529,79 @@ def _buildbuddy(scope: Construct, *, namespace: str, credentials_namespace: str)
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="buildbuddy"),
             )
         ],
+    )
+
+
+def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target=plaid_pgweb.AUTH.name,
+        source=plaid_pgweb.AUTH.name,
+        key=plaid_pgweb.AUTH_KEY,
+        store=single_secret_store(
+            scope,
+            "agentplane-staging-plaid-pgweb",
+            reader=reader,
+            source_namespace=plaid_pgweb.AUTH.namespace,
+            source_secret=plaid_pgweb.AUTH.name,
+            consumer_namespace=credentials_namespace,
+        ),
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-plaid-pgweb",
+        metadata=ApiObjectMetadata(name="plaid-pgweb", namespace=namespace),
+        description=(
+            f"The HTTP Basic password of pgweb's `{plaid_pgweb.AUTH_USER}` user "
+            "(cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by "
+            "ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres "
+            "role that can only SELECT from the Plaid mirror -- every linked account's balances, "
+            "transactions and holdings -- and `plaid-pgweb`'s rules present the password only on pgweb's "
+            "query API."
+        ),
+        source=Source.secret_ref(name=plaid_pgweb.AUTH.name, key=plaid_pgweb.AUTH_KEY),
+        targets=[
+            EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
+        ],
+    )
+    # pgweb's other API routes and its web UI stay unreachable. Its session routes (`connect`,
+    # `disconnect`, `switchdb`) are POSTs, so POST is admitted on the query route alone.
+    reads = [
+        # keep-sorted start
+        "/api/connection",
+        "/api/info",
+        "/api/objects",
+        "/api/query",
+        "/api/schemas",
+        "/api/tables/**",
+        # keep-sorted end
+    ]
+    EgressPolicy(
+        scope,
+        "egresspolicy-plaid-pgweb",
+        metadata=ApiObjectMetadata(name=PLAID_PGWEB_POLICY, namespace=namespace),
+        rules=[
+            EgressPolicySpecRules(
+                hosts=[plaid_pgweb.SERVICE.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.GET],
+                paths=reads,
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="plaid-pgweb"),
+            ),
+            EgressPolicySpecRules(
+                hosts=[plaid_pgweb.SERVICE.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.POST],
+                paths=["/api/query"],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="plaid-pgweb"),
+            ),
+        ],
+    )
+    NetworkPolicy(
+        scope,
+        "networkpolicy-egress-to-plaid-pgweb",
+        metadata=ApiObjectMetadata(name="agentplane-egress-to-plaid-pgweb", namespace=namespace),
+        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
+        egress=[plaid_pgweb.SERVICE.egress()],
     )

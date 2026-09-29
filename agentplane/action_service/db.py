@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from typing import Protocol
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue, TypeAdapter
@@ -965,9 +965,3 @@ def _redact_value(value: JsonValue | None) -> JsonValue | None:
     if isinstance(value, list):
         return [_redact_value(item) for item in value]
     return value
-
-
-def verify_metadata_for_connection(connection: Any) -> None:
-    """Fail startup if this image's mappings cannot read the migrated schema."""
-    for table in Base.metadata.tables.values():
-        connection.execute(select(table).limit(0))

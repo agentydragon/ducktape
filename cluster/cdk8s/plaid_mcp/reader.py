@@ -23,7 +23,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.mcp_oauth_state import CONSUMER_SECRET, PLAID_DB, add_consumer_credentials
 from cluster.cdk8s.plaid_mcp import db
-from cluster.cdk8s.plaid_mcp.app import NAMESPACE
+from cluster.cdk8s.plaid_mcp.db import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretRef
