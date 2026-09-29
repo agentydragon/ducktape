@@ -24,7 +24,6 @@ py_library(
         "//finance/plaid/db:secret_store",
         "//finance/plaid/db:sync",
         "@pypi//fastapi",
-        "@pypi//plaid_python",
         "@pypi//pydantic",
         "@pypi//uvicorn",
     ],
