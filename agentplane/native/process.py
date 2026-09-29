@@ -151,10 +151,6 @@ class NativeProcess:
         records = (self.logs / "stdout.jsonl").read_text().splitlines()
         return [json.loads(json.loads(line)["text"]) for line in records]
 
-    def stderr_text(self) -> str:
-        records = (self.logs / "stderr.jsonl").read_text().splitlines()
-        return "".join(json.loads(line)["text"] for line in records)
-
     def _stdout(self) -> None:
         assert self.process is not None
         assert self.process.stdout is not None

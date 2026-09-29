@@ -126,6 +126,39 @@ message ItemCompleted {
   }
 }
 
+enum RecoveryDisposition {
+  RECOVERY_DISPOSITION_UNSPECIFIED = 0;
+  // This item's observed content survived in the continuing conversation.
+  RECOVERY_DISPOSITION_RETAINED = 1;
+  RECOVERY_DISPOSITION_ABSENT = 2;
+  // The adapter cannot establish what survived. Never interpret this as absent.
+  RECOVERY_DISPOSITION_UNKNOWN = 3;
+  RECOVERY_DISPOSITION_REVISED = 4;
+}
+
+message RecoveredContent {
+  string text = 1;
+  string arguments_json = 2;
+  string output = 3;
+}
+
+message ItemRecovery {
+  string item_id = 1;
+  RecoveryDisposition disposition = 2;
+  // Explains an UNKNOWN decision. Content and execution outcomes remain in the archive.
+  string reason = 3;
+  // Present exactly for REVISED. This is continuation content, not a tool execution result.
+  RecoveredContent replacement = 4;
+}
+
+// A point-in-time report after interruption or native resume, before a subsequent input is
+// delivered. Decisions concern continuation, not tool side effects or future compaction.
+// Replaying this event must not repeat a tool or erase previously observed content/results.
+message ConversationReconciled {
+  string turn_id = 1;
+  repeated ItemRecovery items = 2;
+}
+
 message Native {
   Direction direction = 1;
   string line = 2;
@@ -162,5 +195,6 @@ message Event {
     Native native = 20;
     ModelChanged model_changed = 21;
     DebugCheckpoint debug_checkpoint = 22;
+    ConversationReconciled conversation_reconciled = 23;
   }
 }

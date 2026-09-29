@@ -45,6 +45,8 @@ export interface Scenario extends ScenarioOptions {
    * `reconnecting` fails every live read of the thread's rows once they have loaded, which
    * Electric's client retries. */
   sessionReplay?: "catching-up" | "unavailable" | "reconnecting";
+  /** The runner feed ended while the Sandbox remains available, so the Thread can resume it. */
+  endedAttachment?: boolean;
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;
   /** Mundane lifecycle observations collapse into one comma-joined row; a prominent one (harness
@@ -65,6 +67,8 @@ export interface Scenario extends ScenarioOptions {
   /** One assistant message containing a fenced code block, to exercise Markdown's syntax
    * highlighting of a registered language (`markdown.tsx`'s `Renderer.code` override). */
   markdownCodeFence?: boolean;
+  /** Interleave completed assistant text, folded tool/reasoning runs, and streaming assistant text. */
+  streamingInterleaved?: boolean;
   /** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
    * `EntityCard` renders it directly -- the standalone case, distinct from `openReasoning`'s
    * reasoning-nested-inside-a-run-card one. */
@@ -75,6 +79,8 @@ export interface Scenario extends ScenarioOptions {
   commandAdmissionTimedOut?: boolean;
   /** Fail the Action group listing, which says whether a stored result is an MCP `CallToolResult`. */
   actionGroupsUnavailable?: boolean;
+  recovery?: "messages" | "tools";
+  openRecoveryDetails?: boolean;
   failedTurn?: "before-content" | "after-content";
 }
 
@@ -93,6 +99,69 @@ const SESSION_STATES_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000002";
 const SUSPENDED_SANDBOX_SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000004";
 const DELETED_SANDBOX_SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000005";
 export const SCENARIOS: Record<string, Scenario> = {
+  session_recovery_messages: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 1000 },
+    recovery: "messages",
+    openRecoveryDetails: false,
+    readySelectors: ['[aria-label="Retention unknown"]'],
+    captureViewport: true,
+  },
+  session_recovery_messages_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 412, height: 915 },
+    recovery: "messages",
+    openRecoveryDetails: false,
+    readySelectors: ['[aria-label="Retention unknown"]'],
+    captureViewport: true,
+  },
+  session_recovery_messages_open: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 1100 },
+    recovery: "messages",
+    openRecoveryDetails: true,
+    readySelectors: ['[aria-label="Retention unknown"]', '[aria-label="Not retained in context"]'],
+    captureViewport: true,
+  },
+  session_recovery_messages_open_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 412, height: 915 },
+    recovery: "messages",
+    openRecoveryDetails: true,
+    readySelectors: ['[aria-label="Retention unknown"]', '[aria-label="Not retained in context"]'],
+    captureViewport: true,
+  },
+  session_recovery_tools: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    recovery: "tools",
+    openRecoveryDetails: false,
+    readySelectors: ['[aria-label="Retention unknown"]'],
+    captureViewport: true,
+  },
+  session_recovery_tools_open: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 1100 },
+    recovery: "tools",
+    openRecoveryDetails: true,
+    readySelectors: ['[aria-label="Retention unknown"]', "details[open] details[open] pre"],
+    captureViewport: true,
+  },
+  session_recovery_tools_open_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 412, height: 1100 },
+    recovery: "tools",
+    openRecoveryDetails: true,
+    readySelectors: ['[aria-label="Retention unknown"]', "details[open] details[open] pre"],
+    captureViewport: true,
+  },
   session_error: {
     element: "#app",
     route: SESSION_ROUTE,
@@ -632,6 +701,24 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     outputName: "session-states",
     readySelectors: ['[data-thread-anchor="16"]'],
+    captureViewport: true,
+  },
+  session_streaming_interleaved: {
+    // Match the screenshot's 572px thread pane using the production shell container: the default
+    // sidebar is 240px, so an 812px viewport leaves the thread pane at 572px.
+    element: ".agentplane-shell-main-content",
+    route: SESSION_STATES_ROUTE,
+    viewport: { width: 812, height: 900 },
+    outputName: "session-streaming-interleaved",
+    streamingInterleaved: true,
+    readySelectors: ['.agentplane-streaming-cursor[aria-label="Streaming"]'],
+  },
+  session_resume: {
+    element: "#app",
+    route: SESSION_STATES_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    endedAttachment: true,
+    readySelectors: ['[aria-label="Runner feed ended · harness stopped"]', '[aria-label="Resume harness"]'],
     captureViewport: true,
   },
   session_pending: {

@@ -31,17 +31,17 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gatus"
 _NAME = "gatus"
 _NAMESPACE = "gatus"
-_LABELS = {"app.kubernetes.io/name": _NAME}
-_DB_NAME = "gatus-db"
+DATABASE = cnpg.PostgresRef.generated(name="gatus-db", namespace=_NAMESPACE)
 _HELM_REPOSITORY = "twin"
-_PORT = 8080
 # The chart's Service: port 80 to the Pods' `http` (8080), selecting `app.kubernetes.io/name`.
-SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=80), pods=cilium.PROBER, target_port=_PORT)
+SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=80), pods=cilium.PROBER, target_port=8080)
+_LITELLM_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("api-key")
 
 
 def _namespace(scope: Construct) -> None:
@@ -52,13 +52,12 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name=_DB_NAME,
-        namespace=_NAMESPACE,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="1Gi",
-        # CNPG auto-generates credentials in secret gatus-db-app
         initdb=cnpg.same_owner_initdb("gatus"),
+        wal_archive=False,
     )
 
 
@@ -85,8 +84,8 @@ def _helm_release(scope: Construct) -> None:
         values={
             "externalConfigMap": "gatus-config",
             "env": {
-                "GATUS_DB_URI": {"valueFrom": {"secretKeyRef": {"name": f"{_DB_NAME}-app", "key": "uri"}}},
-                "LITELLM_API_KEY": {"valueFrom": {"secretKeyRef": {"name": "litellm-master-key", "key": "api-key"}}},
+                "GATUS_DB_URI": {"valueFrom": DATABASE.app_secret.key("uri").value_from()},
+                "LITELLM_API_KEY": {"valueFrom": _LITELLM_KEY.value_from()},
             },
             "envFrom": [{"secretRef": {"name": "gatus-oidc-secret"}}],
             "ingress": {"enabled": False},
@@ -117,12 +116,12 @@ def _network_policies(scope: Construct) -> None:
         scope,
         "ingress",
         metadata=ApiObjectMetadata(name="gatus-ingress", namespace=_NAMESPACE),
-        endpoint_selector=_LABELS,
+        endpoint_selector=SERVICE.pods.selector,
         ingress=[
             # Cilium Gateway API (reserved:ingress identity) → Gatus
-            IngressRule.from_gateway(_PORT),
+            IngressRule.from_gateway(SERVICE.pod_port),
             # Prometheus → Gatus (ServiceMonitor scraping)
-            cilium.SCRAPERS.admit(_PORT),
+            cilium.SCRAPERS.admit(SERVICE.pod_port),
         ],
     )
     # Route Gatus's DNS through Cilium's DNS proxy, so its queries are observable
@@ -138,7 +137,7 @@ def _network_policies(scope: Construct) -> None:
         scope,
         "dns-visibility",
         metadata=ApiObjectMetadata(name="gatus-dns-visibility", namespace=_NAMESPACE),
-        endpoint_selector=_LABELS,
+        endpoint_selector=SERVICE.pods.selector,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # Everything else, deliberately unrestricted.
@@ -178,8 +177,8 @@ def chart(app: App) -> Chart:
         chart,
         "service-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-        endpoints=[Endpoint.plain(port="http")],
+        selector=ServiceMonitorSpecSelector(match_labels=SERVICE.labels),
+        endpoints=[Endpoint.plain(port=SERVICE.port.name)],
     )
     return chart
 

@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - namespace.k8s.yaml
   - db
+  - cache/forgejo-valkey-ovh.k8s.yaml
   - app

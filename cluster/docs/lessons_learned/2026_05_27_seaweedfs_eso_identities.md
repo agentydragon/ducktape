@@ -118,7 +118,7 @@ the tenant cannot yet move to the operator-managed bucket/IAM path.
 One file:
 
 ```yaml
-# cluster/k8s/seaweedfs/secrets/identities/<new-tenant>.sops.yaml
+# cluster/k8s/seaweedfs/cluster/identities/<new-tenant>.sops.yaml
 apiVersion: v1
 kind: Secret
 metadata:
@@ -158,7 +158,7 @@ spec:
 ```
 
 Then `sops -e -i` the file (encrypts only the cred fields per the
-`.sops.yaml` rule). Add to `secrets/kustomization.yaml`. Commit + push.
+`.sops.yaml` rule). Add to `cluster/k8s/seaweedfs/cluster/kustomization.yaml`. Commit + push.
 ESO assembles, Reloader rolls the s3 deployment.
 
 No other tenants' creds get touched. PR reviewer sees the plaintext

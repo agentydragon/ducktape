@@ -99,7 +99,8 @@ spec:
   ports:
     - name: http
       port: 8080
-      targetPort: http
+      protocol: TCP
+      targetPort: 8080
   selector:
     app.kubernetes.io/name: kubectl-passthrough-mcp
   type: ClusterIP

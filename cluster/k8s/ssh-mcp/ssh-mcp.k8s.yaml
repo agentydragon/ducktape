@@ -264,8 +264,8 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: public-coder-devbox
             k8s:io.kubernetes.pod.namespace: public-coder-agent
+            kubevirt.io/domain: public-coder-devbox
       toPorts:
         - ports:
             - port: "22"

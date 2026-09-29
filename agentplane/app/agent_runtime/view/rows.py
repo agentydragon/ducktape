@@ -42,6 +42,8 @@ def fold_item(view: ThreadItemEntityView) -> fold.Item:
         arguments=_fold_ref(view.arguments_ref),
         output=_fold_ref(view.output_ref),
         completion=_fold_completion(view.state),
+        recovery=view.state.recovery,
+        recovery_reason=view.state.recovery_reason,
     )
 
 
@@ -170,6 +172,8 @@ def _item_entity(thread_id: UUID, item: fold.Item, extents: Mapping[fold.Payload
             tool_name=item.tool_name,
             completion=None if item.completion is None else "tool" if tool is not None else "text",
             tool_succeeded=None if tool is None else tool.succeeded,
+            recovery=item.recovery,
+            recovery_reason=item.recovery_reason,
         ),
         text_ref=_reference(item.text, extents),
         arguments_ref=_reference(item.arguments, extents),

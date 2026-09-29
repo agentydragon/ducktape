@@ -1,10 +1,17 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # cdk8s-generated (cluster/cdk8s/seaweedfs/cluster.py, cluster/cdk8s/stateful_infra.py)
-  # -- see cluster/docs/cdk8s.md.
+  # cdk8s-generated (cluster/cdk8s/seaweedfs/{cluster,s3_config,filer_db}.py,
+  # cluster/cdk8s/stateful_infra.py) -- see cluster/docs/cdk8s.md.
   - seaweedfs.k8s.yaml
+  - s3-config.k8s.yaml
+  - seaweedfs-filer-db-ssd.k8s.yaml
   - priorityclass.k8s.yaml
+  - seaweedfs-filer-db-ssd-creds.sops.yaml
+  # Per-tenant S3 credentials. Legacy entries also contain an ExternalSecret that renders
+  # static gateway JSON. Migrated entries contain only the SOPS Secret; their
+  # S3Identity/S3Credentials CRs live with the corresponding Bucket CR.
+  - identities/admin.sops.yaml
 
 # Inject filer.toml into the Seaweed CR's spec.filer.config string field.
 # The intermediate ConfigMap exists only to carry the file content into a

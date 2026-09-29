@@ -128,7 +128,7 @@ def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
     assert bearer == {"name": remote_ref["key"], "key": remote_ref["property"]}
     service = one(r for r in ssh_resources if r["kind"] == "Service")
     endpoint = urlsplit(config["url"])
-    assert endpoint.hostname == f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local"
+    assert endpoint.hostname == f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc"
     assert endpoint.port == one(service["spec"]["ports"])["port"]
     assert service["spec"]["selector"].items() <= backend["spec"]["template"]["metadata"]["labels"].items()
     # Private SSH material never crosses the backend namespace boundary.

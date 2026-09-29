@@ -15,7 +15,6 @@ from pathlib import Path
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ConfigMap,
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     Cpu,
@@ -24,7 +23,6 @@ from cdk8s_plus_34 import (
     DeploymentStrategy,
     EnvValue,
     ImagePullPolicy,
-    ISecret,
     LabeledNode,
     MemoryResources,
     Node,
@@ -34,12 +32,9 @@ from cdk8s_plus_34 import (
     PercentOrAbsolute,
     PodSecurityContextProps,
     Probe,
-    Protocol,
     Secret,
-    SecretValue,
     Service,
     ServiceAccount,
-    ServicePort,
     ServiceType,
     TaintedNode,
     TaintEffect,
@@ -64,15 +59,23 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.litellm import database
 from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
-_CONTAINER_PORT = 4000
+_HTTP = Port(name="http", number=4000)
+# The namespace the proxy runs in and reads its Secrets from.
+_NAMESPACE = "litellm"
+# The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
+_MASTER_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("api-key")
+# Langfuse's project keys.
+_LANGFUSE = SecretRef(namespace=_NAMESPACE, name="langfuse-secrets")
 _CONFIG_DIR = "/etc/litellm"
 
 
@@ -85,8 +88,7 @@ class _LiteralEnv:
 @dataclass(frozen=True)
 class _SecretEnv:
     name: str
-    secret_name: str
-    key: str
+    secret: SecretKey
     optional: bool = False
 
 
@@ -97,9 +99,7 @@ _EnvEntry = _LiteralEnv | _SecretEnv
 class ServiceSpec:
     """The small set of Service fields that differs between the proxies."""
 
-    labels: dict[str, str] | None = None
     type: ServiceType | None = ServiceType.CLUSTER_IP
-    protocol: Protocol | None = Protocol.TCP
 
 
 @dataclass(frozen=True)
@@ -140,22 +140,20 @@ class ProxySpec:
 
 def service(spec: ProxySpec) -> ServiceRef:
     return ServiceRef(
-        name=spec.name,
-        port=Port(name="http", number=_CONTAINER_PORT),
-        pods=Pods(namespace=spec.namespace, labels=(("app.kubernetes.io/name", spec.name),)),
+        name=spec.name, port=_HTTP, pods=Pods(namespace=spec.namespace, labels=(("app.kubernetes.io/name", spec.name),))
     )
 
 
 def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
-    return (_LiteralEnv("HOST", "0.0.0.0"), _LiteralEnv("PORT", "4000"), *entries)
+    return (_LiteralEnv("HOST", "0.0.0.0"), _LiteralEnv("PORT", str(_HTTP.number)), *entries)
 
 
 def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
     return (
         *_base_env(*entries),
         _LiteralEnv("LANGFUSE_OTEL_HOST", "http://langfuse-web.langfuse.svc.cluster.local:3000"),
-        _SecretEnv("LANGFUSE_PUBLIC_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_PUBLIC_KEY"),
-        _SecretEnv("LANGFUSE_SECRET_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_SECRET_KEY"),
+        _SecretEnv("LANGFUSE_PUBLIC_KEY", _LANGFUSE.key("LANGFUSE_INIT_PROJECT_PUBLIC_KEY")),
+        _SecretEnv("LANGFUSE_SECRET_KEY", _LANGFUSE.key("LANGFUSE_INIT_PROJECT_SECRET_KEY")),
     )
 
 
@@ -168,16 +166,30 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
             replicas=2,
             env=_langfuse_env(
-                _SecretEnv("LITELLM_MASTER_KEY", "litellm-master-key", "api-key"),
-                _SecretEnv("DATABASE_URL", "litellm-db-app", "uri"),
-                _SecretEnv("LITELLM_SALT_KEY", "litellm-salt-key", "key"),
-                _SecretEnv("ANTHROPIC_API_KEY", "litellm-anthropic-key", "api-key"),
-                _SecretEnv("GROQ_API_KEY", "litellm-groq-key", "GROQ_API_KEY"),
-                _SecretEnv("GEMINI_API_KEY", "litellm-gemini-key", "GEMINI_API_KEY"),
-                _SecretEnv("MISTRAL_API_KEY", "litellm-mistral-key", "MISTRAL_API_KEY"),
-                _SecretEnv("CLIPROXY_CLIENT_KEY", "litellm-cliproxy-key", "CLIPROXY_CLIENT_KEY"),
+                _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY),
+                _SecretEnv("DATABASE_URL", database.DATABASE.app_secret.key("uri")),
+                _SecretEnv("LITELLM_SALT_KEY", SecretRef(namespace=_NAMESPACE, name="litellm-salt-key").key("key")),
                 _SecretEnv(
-                    "TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token", optional=True
+                    "ANTHROPIC_API_KEY", SecretRef(namespace=_NAMESPACE, name="litellm-anthropic-key").key("api-key")
+                ),
+                _SecretEnv(
+                    "GROQ_API_KEY", SecretRef(namespace=_NAMESPACE, name="litellm-groq-key").key("GROQ_API_KEY")
+                ),
+                _SecretEnv(
+                    "GEMINI_API_KEY", SecretRef(namespace=_NAMESPACE, name="litellm-gemini-key").key("GEMINI_API_KEY")
+                ),
+                _SecretEnv(
+                    "MISTRAL_API_KEY",
+                    SecretRef(namespace=_NAMESPACE, name="litellm-mistral-key").key("MISTRAL_API_KEY"),
+                ),
+                _SecretEnv(
+                    "CLIPROXY_CLIENT_KEY",
+                    SecretRef(namespace=_NAMESPACE, name="litellm-cliproxy-key").key("CLIPROXY_CLIENT_KEY"),
+                ),
+                _SecretEnv(
+                    "TANA_FIREBASE_REFRESH_TOKEN",
+                    SecretRef(namespace=_NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token"),
+                    optional=True,
                 ),
             ),
             startup_failure_threshold=36,
@@ -206,7 +218,6 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             strategy=DeploymentStrategy.rolling_update(
                 max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
             ),
-            service=ServiceSpec(labels={"app.kubernetes.io/name": "litellm"}),
             hostname="litellm.allegedly.works",
             forgejo_image_credentials=True,
         ),
@@ -227,7 +238,7 @@ def _formatted_config_map_data(data: dict[str, object]) -> dict[str, str]:
 def _http_probe(path: str, initial_delay_seconds: int, failure_threshold: int) -> Probe:
     return http_probe(
         path,
-        port=_CONTAINER_PORT,
+        port=_HTTP.number,
         initial_delay_seconds=initial_delay_seconds,
         timeout_seconds=5,
         failure_threshold=failure_threshold,
@@ -267,33 +278,22 @@ class LiteLLMProxy(Construct):
         )
 
     def _env_variables(self) -> dict[str, EnvValue]:
-        secrets: dict[str, ISecret] = {}
-
-        def secret_for(name: str) -> ISecret:
-            if name not in secrets:
-                secrets[name] = Secret.from_secret_name(self, f"{name}-secret", name)
-            return secrets[name]
-
-        result: dict[str, EnvValue] = {}
-        for entry in self.spec.env:
-            if isinstance(entry, _LiteralEnv):
-                result[entry.name] = EnvValue.from_value(entry.value)
-            else:
-                secret_value = SecretValue(secret=secret_for(entry.secret_name), key=entry.key)
-                result[entry.name] = (
-                    EnvValue.from_secret_value(secret_value, optional=True)
-                    if entry.optional
-                    else EnvValue.from_secret_value(secret_value)
-                )
-        return result
+        return {
+            entry.name: (
+                EnvValue.from_value(entry.value)
+                if isinstance(entry, _LiteralEnv)
+                else entry.secret.env_value(self, f"{entry.name}-secret", optional=entry.optional)
+            )
+            for entry in self.spec.env
+        }
 
     def _add_deployment(self, config_map: ConfigMap, service_account: ServiceAccount | None) -> Deployment:
-        labels = service(self.spec).pods.selector
+        ref = service(self.spec)
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace, labels=labels),
-            pod_metadata=ApiObjectMetadata(labels=labels),
+            metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace, labels=ref.pods.selector),
+            pod_metadata=ApiObjectMetadata(labels=ref.pods.selector),
             replicas=self.spec.replicas,
             strategy=self.spec.strategy,
             service_account=service_account,
@@ -318,7 +318,7 @@ class LiteLLMProxy(Construct):
             name="litellm",
             image=f"{self.spec.image_name}:{_PLACEHOLDER_TAG}",
             args=["--config", f"{_CONFIG_DIR}/config.yaml"],
-            ports=[ContainerPort(name="http", number=_CONTAINER_PORT, protocol=Protocol.TCP)],
+            ports=[ref.port.container_port()],
             env_variables=self._env_variables(),
             image_pull_policy=self.spec.image_pull_policy,
             liveness=_http_probe("/health/liveliness", 30, 3),
@@ -350,18 +350,13 @@ class LiteLLMProxy(Construct):
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
+        ref = service(self.spec)
         Service(
             self,
             "service",
-            metadata=ApiObjectMetadata(
-                name=self.spec.name, namespace=self.spec.namespace, labels=self.spec.service.labels
-            ),
+            metadata=ApiObjectMetadata(name=ref.name, namespace=ref.pods.namespace, labels=ref.labels),
             selector=deployment,
-            ports=[
-                ServicePort(
-                    name="http", port=_CONTAINER_PORT, target_port=_CONTAINER_PORT, protocol=self.spec.service.protocol
-                )
-            ],
+            ports=[ref.port.service_port()],
             type=self.spec.service.type,
         )
 
@@ -393,16 +388,19 @@ class LiteLLMProxy(Construct):
 class LiteLLMServiceMonitor(Construct):
     """The monitoring resource shared by the main LiteLLM service."""
 
-    def __init__(self, scope: Construct, id: str) -> None:
+    def __init__(self, scope: Construct, id: str, service: ServiceRef) -> None:
         super().__init__(scope, id)
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=ApiObjectMetadata(name="litellm", namespace="litellm"),
-            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
+            metadata=ApiObjectMetadata(name=service.name, namespace=service.pods.namespace),
+            selector=ServiceMonitorSpecSelector(match_labels=service.labels),
             endpoints=[
                 Endpoint.bearer_token_secret(
-                    port="http", secret_name="litellm-master-key", key="api-key", scrape_timeout="10s"
+                    port=service.port.name,
+                    secret_name=_MASTER_KEY.secret.name,
+                    key=_MASTER_KEY.key,
+                    scrape_timeout="10s",
                 )
             ],
         )
@@ -412,7 +410,7 @@ def _chart(app: App) -> Chart:
     (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
     chart = Chart(app, spec.name, disable_resource_name_hashes=True)
     LiteLLMProxy(chart, "proxy", spec)
-    LiteLLMServiceMonitor(chart, "monitoring")
+    LiteLLMServiceMonitor(chart, "monitoring", service(spec))
     add_fleet_rules(chart)
     return chart
 

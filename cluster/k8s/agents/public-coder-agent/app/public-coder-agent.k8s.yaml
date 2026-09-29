@@ -162,9 +162,9 @@ spec:
             - name: NODE_USE_ENV_PROXY
               value: "1"
             - name: HTTP_PROXY
-              value: http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080
+              value: http://public-coder-agent-proxy.public-coder-agent.svc:8080
             - name: HTTPS_PROXY
-              value: http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080
+              value: http://public-coder-agent-proxy.public-coder-agent.svc:8080
             - name: NO_PROXY
               value: 127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local
             - name: NODE_EXTRA_CA_CERTS
@@ -180,6 +180,7 @@ spec:
           ports:
             - containerPort: 18789
               name: gateway
+              protocol: TCP
           readinessProbe:
             failureThreshold: 3
             httpGet:
@@ -266,6 +267,7 @@ spec:
   ports:
     - name: gateway
       port: 18789
+      protocol: TCP
       targetPort: 18789
   selector:
     app.kubernetes.io/name: public-coder-agent

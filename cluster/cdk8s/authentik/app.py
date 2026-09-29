@@ -72,10 +72,7 @@ def _pod_env() -> dict[str, object]:
             {"secretRef": {"name": "authentik-user-password"}},
         ],
         "env": [
-            {
-                "name": "AUTHENTIK_POSTGRESQL__PASSWORD",
-                "valueFrom": {"secretKeyRef": {"name": db.CREDENTIALS_SECRET, "key": "password"}},
-            }
+            {"name": "AUTHENTIK_POSTGRESQL__PASSWORD", "valueFrom": db.POSTGRES.app_secret.key("password").value_from()}
         ],
     }
 
@@ -118,7 +115,7 @@ def _values() -> dict[str, object]:
     return {
         "global": {
             "deploymentAnnotations": {
-                "secret.reloader.stakater.com/reload": f"{db.CREDENTIALS_SECRET},authentik-user-password",
+                "secret.reloader.stakater.com/reload": f"{db.POSTGRES.app_secret.name},authentik-user-password",
                 "configmap.reloader.stakater.com/reload": _BLUEPRINTS_CONFIG_MAP,
             }
         },
@@ -128,7 +125,7 @@ def _values() -> dict[str, object]:
             # The empty secrets below arrive via envFrom (`_pod_env`) instead.
             "secret_key": "",
             "error_reporting": {"enabled": False},
-            "postgresql": {"host": f"{db.NAME}-rw", "name": db.DATABASE, "user": db.DATABASE, "password": ""},
+            "postgresql": {"host": db.POSTGRES.rw.name, "name": db.DATABASE, "user": db.DATABASE, "password": ""},
             "redis": {"host": ""},
             "bootstrap": {"password": "", "token": ""},
         },
@@ -139,7 +136,7 @@ def _values() -> dict[str, object]:
             # Beside the database: Django issues many serialized queries per request, and an
             # unpinned server once landed at home, 114ms from the OVH primary, where the static
             # OIDC discovery document took ~1.6s. It also made `Home down` take SSO with it.
-            "nodeSelector": dict(db.NODE_SELECTOR),
+            "nodeSelector": dict(db.PLACEMENT.node_selector),
             **_spread("server"),
             # 20 minutes for first-boot migrations: a startup kill mid-migration leaves the
             # connection idle-in-transaction and blocks the next attempt.

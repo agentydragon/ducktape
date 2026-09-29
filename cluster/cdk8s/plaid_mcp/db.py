@@ -29,13 +29,13 @@ from cluster.cdk8s.external_secrets.single_secret_store import single_secret_sto
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.plaid_mcp.app import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/db"
-_CLUSTER = "plaid-mcp-db"
+NAMESPACE = "plaid-mcp"
+POSTGRES = cnpg.PostgresRef.generated(name="plaid-mcp-db", namespace=NAMESPACE)
 _DATABASE = "plaidmcp"
 _READONLY_ROLE = "plaid_ro"
 READONLY = SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-readonly")
@@ -47,22 +47,20 @@ _PROVISIONER = "plaid-mcp-db-readonly-provisioner"
 _PROVISIONER_LABELS = {"app": _PROVISIONER}
 _SQL_CONFIG_MAP = "plaid-mcp-db-readonly-sql"
 _SQL_FILE = "readonly-role.sql"
-_PRIMARY_HOST = f"{_CLUSTER}-rw.{NAMESPACE}.svc"
 
 
 def _cluster(chart: Chart) -> None:
     cnpg.cluster(
         chart,
         "cluster",
-        name=_CLUSTER,
-        namespace=NAMESPACE,
+        ref=POSTGRES,
         annotations={
             "description": (
                 "CNPG Postgres mirror for Plaid link metadata, full-refresh sync state, and Plaid-shaped"
                 " financial data."
             )
         },
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="5Gi",
         managed=ClusterSpecManaged(
@@ -79,8 +77,8 @@ def _cluster(chart: Chart) -> None:
                 )
             ]
         ),
-        # CNPG auto-generates credentials in secret plaid-mcp-db-app.
         initdb=cnpg.same_owner_initdb(_DATABASE),
+        wal_archive=False,
     )
 
 
@@ -93,8 +91,8 @@ def _readonly_credentials(chart: Chart) -> None:
         name=READONLY.name,
         namespace=NAMESPACE,
         role=_READONLY_ROLE,
-        host=_PRIMARY_HOST,
-        port=5432,
+        host=POSTGRES.rw.host,
+        port=POSTGRES.rw.port.number,
         database=_DATABASE,
         secret_type=None,
     )
@@ -130,12 +128,6 @@ def _readonly_copy(chart: Chart) -> None:
     )
 
 
-def _app_secret_env(name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=f"{_CLUSTER}-app", key=key))
-    )
-
-
 def _readonly_provisioner(chart: Chart) -> None:
     NetworkPolicy(
         chart,
@@ -151,7 +143,7 @@ def _readonly_provisioner(chart: Chart) -> None:
         ),
         endpoint_selector=_PROVISIONER_LABELS,
         # Cilium exposes Kubernetes pod labels with the k8s: prefix.
-        egress=[cilium.dns_egress(), EgressRule.to_endpoints({"k8s:cnpg.io/cluster": _CLUSTER}, 5432)],
+        egress=[cilium.dns_egress(), EgressRule.to_endpoints({"k8s:cnpg.io/cluster": POSTGRES.name}, 5432)],
     )
     k8s.KubeJob(
         chart,
@@ -185,9 +177,9 @@ def _readonly_provisioner(chart: Chart) -> None:
                             args=[f"set -x\nexec psql \\\n  --set=ON_ERROR_STOP=1 \\\n  -f /sql/{_SQL_FILE}\n"],
                             termination_message_policy="FallbackToLogsOnError",
                             env=[
-                                _app_secret_env("PGUSER", "username"),
-                                _app_secret_env("PGPASSWORD", "password"),
-                                k8s.EnvVar(name="PGHOST", value=_PRIMARY_HOST),
+                                POSTGRES.app_secret.key("username").env_var("PGUSER"),
+                                POSTGRES.app_secret.key("password").env_var("PGPASSWORD"),
+                                k8s.EnvVar(name="PGHOST", value=POSTGRES.rw.host),
                                 k8s.EnvVar(name="PGDATABASE", value=_DATABASE),
                             ],
                             volume_mounts=[k8s.VolumeMount(name="sql", mount_path="/sql", read_only=True)],
@@ -201,7 +193,7 @@ def _readonly_provisioner(chart: Chart) -> None:
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, _CLUSTER, disable_resource_name_hashes=True)
+    chart = Chart(app, POSTGRES.name, disable_resource_name_hashes=True)
     _readonly_credentials(chart)
     _readonly_copy(chart)
     _cluster(chart)
@@ -214,7 +206,7 @@ def write_manifests(root: Path) -> None:
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
         kustomize_kustomization(
-            resources=[f"{_CLUSTER}.k8s.yaml"],
+            resources=[f"{POSTGRES.name}.k8s.yaml"],
             config_map_generator=[ConfigMapArgs(name=_SQL_CONFIG_MAP, namespace=NAMESPACE, files=[_SQL_FILE])],
         ),
     )

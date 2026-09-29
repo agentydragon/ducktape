@@ -29,6 +29,15 @@ thread, per stage, cold and warm, against regression ceilings; its module docstr
 interval. Each run writes its timings to
 `bazel-testlogs/agentplane/acceptance/test_thread_latency/test.outputs/`.
 
+## Suspend and resume
+
+`//agentplane/acceptance:test_suspend_resume` opens one Claude Thread and one Codex Thread in the
+same owned testing Sandbox, asks each to remember a unique token, suspends until the old Pod is
+gone, then resumes both original Threads. It requires native resume evidence, the expected token
+from each model, and no cross-Thread token. Run it after the app and runner image changes have
+reached `agentplane-testing`; it uses the same controlled-host and cleanup requirements as the
+other live targets below.
+
 ## MCP integration
 
 `//agentplane/acceptance:test_mcp` belongs to this deployed suite. Both real harnesses

@@ -51,18 +51,13 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "public-s3"
 OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/public-s3"
-_PORT = 8333
-_METRICS_PORT = 9327
 _CONFIG_MAP = "public-s3-bootstrap-config"
 _CONFIG_KEY = "seaweedfs_s3_config.json"
 _CONFIG_DIR = "/etc/sw"
-_SELECTOR = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "s3"}
-_LABELS = {**_SELECTOR, "app.kubernetes.io/part-of": "seaweedfs"}
-_S3 = ServiceRef(
-    name=NAME,
-    port=Port(name="s3-http", number=_PORT),
-    pods=Pods(namespace=namespace.NAME, labels=tuple(_SELECTOR.items())),
-)
+_PODS = Pods(namespace=namespace.NAME, labels=(("app.kubernetes.io/name", NAME), ("app.kubernetes.io/component", "s3")))
+_S3 = ServiceRef(name=NAME, port=Port(name="s3-http", number=8333), pods=_PODS)
+_METRICS = ServiceRef(name=NAME, port=Port(name="s3-metrics", number=9327), pods=_PODS)
+_LABELS = {**_PODS.selector, "app.kubernetes.io/part-of": "seaweedfs"}
 _CLAUDE_READER = "claude-reader"
 _CLAUDE_READER_POLICY = "claude-reader-buckets"
 # Buckets claude-reader may list and read.
@@ -184,7 +179,7 @@ def _gateway(scope: Construct) -> None:
         ),
         spec=k8s.DeploymentSpec(
             replicas=2,
-            selector=k8s.LabelSelector(match_labels=_SELECTOR),
+            selector=k8s.LabelSelector(match_labels=_PODS.selector),
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
@@ -199,15 +194,14 @@ def _gateway(scope: Construct) -> None:
                             command=[
                                 "/bin/sh",
                                 "-ec",
-                                f"weed -logtostderr=true s3 -port={_PORT} -filer=seaweedfs-filer:8888"
-                                f" -config={_CONFIG_DIR}/{_CONFIG_KEY} -metricsPort={_METRICS_PORT} -ip.bind=0.0.0.0",
+                                f"weed -logtostderr=true s3 -port={_S3.pod_port} -filer=seaweedfs-filer:8888"
+                                f" -config={_CONFIG_DIR}/{_CONFIG_KEY} -metricsPort={_METRICS.pod_port} -ip.bind=0.0.0.0",
                             ],
-                            ports=[
-                                k8s.ContainerPort(name="s3-http", container_port=_PORT, protocol="TCP"),
-                                k8s.ContainerPort(name="s3-metrics", container_port=_METRICS_PORT, protocol="TCP"),
-                            ],
+                            ports=[_S3.port.k8s_container_port(), _METRICS.port.k8s_container_port()],
                             readiness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(path="/status", port=k8s.IntOrString.from_number(_PORT)),
+                                http_get=k8s.HttpGetAction(
+                                    path="/status", port=k8s.IntOrString.from_number(_S3.pod_port)
+                                ),
                                 initial_delay_seconds=10,
                                 timeout_seconds=3,
                                 period_seconds=15,
@@ -242,21 +236,11 @@ def _gateway(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=namespace.NAME, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=_S3.name, namespace=namespace.NAME, labels=_LABELS),
         spec=k8s.ServiceSpec(
             type="ClusterIP",
-            selector=_SELECTOR,
-            ports=[
-                k8s.ServicePort(
-                    name="s3-http", protocol="TCP", port=_PORT, target_port=k8s.IntOrString.from_string("s3-http")
-                ),
-                k8s.ServicePort(
-                    name="s3-metrics",
-                    protocol="TCP",
-                    port=_METRICS_PORT,
-                    target_port=k8s.IntOrString.from_string("s3-metrics"),
-                ),
-            ],
+            selector=_PODS.selector,
+            ports=[_S3.port.k8s_service_port(), _METRICS.port.k8s_service_port()],
         ),
     )
     https_route(

@@ -326,21 +326,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: seaweedfs-namespace
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/generated/seaweedfs/namespace
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-namespace
-    namespace: ducktape-flux
-  suspend: false
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: reflector
   namespace: ducktape-flux
 spec:
@@ -784,9 +769,6 @@ metadata:
   name: seaweedfs-operator
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: seaweedfs-namespace
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/operator
   prune: true
@@ -825,26 +807,6 @@ spec:
   sourceRef:
     kind: GitRepository
     name: external-snapshotter-source
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: forgejo-cache
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: valkey
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/cache
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-cache
     namespace: ducktape-flux
   timeout: 5m
   wait: true
@@ -1268,32 +1230,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: seaweedfs-filer-db
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  dependsOn:
-    - name: seaweedfs-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/seaweedfs/db
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-filer-db
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: tofu-state-db
   namespace: ducktape-flux
 spec:
@@ -1323,26 +1259,35 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: seaweedfs-secrets
+  annotations:
+    description: Shared OVH-HA CNPG cluster and per-MCP databases for OAuth client state.
+  name: mcp-oauth-state-db
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: seaweedfs-namespace
+    - name: cnpg
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: kyverno
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
+      kind: Database
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/secrets
+  path: ./cluster/k8s/mcp-oauth-state
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: seaweedfs-secrets
+    name: mcp-oauth-state
     namespace: ducktape-flux
-  suspend: false
+  timeout: 10m
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -1687,8 +1632,16 @@ metadata:
   name: seaweedfs-cluster
   namespace: ducktape-flux
 spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: seaweedfs-operator
+      namespace: ducktape-flux
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/seaweedfs/cluster
@@ -2206,6 +2159,8 @@ spec:
     - name: seaweedfs-operator
       namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: valkey
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/forgejo
@@ -2823,7 +2778,7 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: valkey
+    - name: mcp-oauth-state-db
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -2851,7 +2806,7 @@ spec:
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: valkey
+    - name: mcp-oauth-state-db
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -3002,6 +2957,12 @@ spec:
   dependsOn:
     - name: volsync
       namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: mcp-oauth-state-db
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
@@ -3023,6 +2984,12 @@ metadata:
 spec:
   dependsOn:
     - name: volsync
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: mcp-oauth-state-db
+      namespace: ducktape-flux
+    - name: monitoring-crds
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
@@ -3312,32 +3279,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: grocy-mcp-sf
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: valkey
-      namespace: ducktape-flux
-    - name: monitoring-crds
-      namespace: ducktape-flux
-    - name: kyverno
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/grocy/sf/mcp
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: grocy-mcp-sf
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: grocy-sf-user-perms
   namespace: ducktape-flux
 spec:
@@ -3351,32 +3292,6 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: grocy-sf-user-perms
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: grocy-mcp-vallejo
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: valkey
-      namespace: ducktape-flux
-    - name: monitoring-crds
-      namespace: ducktape-flux
-    - name: kyverno
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/grocy/vallejo/mcp
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: grocy-mcp-vallejo
     namespace: ducktape-flux
   timeout: 5m
   wait: true

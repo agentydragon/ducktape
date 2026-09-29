@@ -19,8 +19,6 @@ py_library(
     srcs = ["namespace.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
     ],
@@ -145,9 +143,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
@@ -160,8 +157,6 @@ py_library(
     srcs = ["s3_config.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
