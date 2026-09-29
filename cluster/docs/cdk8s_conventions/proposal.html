@@ -3625,8 +3625,8 @@
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
             >Producers declare 86 <code>ServiceRef</code>s in 60 modules, and clients project <code>url</code> and
-            <code>egress()</code> from them; 17 <code>cilium.endpoint_labels</code> calls in 11 modules still name Pods
-            by string, and consumers still spell 29 in-cluster URLs and 8 hosts (step 7).</span
+            <code>egress()</code> from them; 22 <code>cilium.endpoint_labels</code> calls in 12 modules still name Pods
+            by string, and consumers still spell 31 in-cluster URLs and 8 hosts (step 7).</span
           >
         </div>
         <div class="need">
@@ -5747,7 +5747,6 @@ def https_route(
               <div class="rich">
                 <ul>
                   <li><code>valkey_instance</code>&#39;s name-doubles-as-id convention.</li>
-                  <li>#8035&#39;s one-line ducktape subclasses.</li>
                 </ul>
               </div>
             </dd>
@@ -6011,11 +6010,11 @@ class PostgresBackup(Construct):
               On devel, <code>secret_ref.py</code>, <code>service_ref.py</code> and <code>cnpg.PostgresRef</code> hold
               the references: 86 <code>ServiceRef</code>s in 60 modules, and a <code>PostgresRef</code> for each of the
               19 <code>cnpg.cluster</code> calls, from which consumers read the <code>-app</code> Secret and the
-              <code>-rw</code> host. Producers build from them: 49 of 55 Services take their ports from a
-              <code>Port</code> projection and the other 6 from their <code>ServiceRef</code>&#39;s
-              <code>port</code> and <code>pod_port</code>, 64 of 78 container ports are projections, and 14 of 17
-              ServiceMonitors select a reference&#39;s labels. Every Secret key read into env is a
-              <code>SecretKey</code> projection. Step 7 has the rest: ports whose Pods listen elsewhere, and the
+              <code>-rw</code> host. Producers build from them: 49 of 57 Services take their ports from a
+              <code>Port</code> projection, 6 from their <code>ServiceRef</code>&#39;s <code>port</code> and
+              <code>pod_port</code>, and the testing fixtures&#39; 2 from no reference; 64 of 80 container ports are
+              projections; and 14 of 17 ServiceMonitors select a reference&#39;s labels. Every Secret key read into env
+              is a <code>SecretKey</code> projection. Step 7 has the rest: ports whose Pods listen elsewhere, and the
               consumers and Cilium peers that still spell an address or a selector.
             </p>
           </div>
@@ -6193,14 +6192,15 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
                 <ul>
                   <li>
                     Service and container ports built inline from <code>port</code> and <code>pod_port</code> where the
-                    Pods listen elsewhere: 9 Service ports and 8 container ports.
+                    Pods listen elsewhere (9 and 8), and the testing fixtures&#39; 2 Services and 2 container ports,
+                    which declare no reference.
                   </li>
                   <li>7 spellings of the SeaweedFS S3 endpoint.</li>
                   <li>
-                    <code>cilium.endpoint_labels</code> called with a string name, 17 times, and 6 Cilium rules that
+                    <code>cilium.endpoint_labels</code> called with a string name, 22 times, and 6 Cilium rules that
                     name CNPG Pods by label.
                   </li>
-                  <li>29 in-cluster URLs and 8 hosts that consumers spell.</li>
+                  <li>31 in-cluster URLs and 8 hosts that consumers spell.</li>
                   <li>The consumer re-declaring bearer names (<code>agentplane/staging.py:75-78</code>).</li>
                   <li>
                     Hand-typed probe URLs (<code>cluster/k8s/gatus/config.yaml:194-206</code>), and the grocy MCP&#39;s
@@ -10375,16 +10375,16 @@ CONFIG = {
                 cdk8s: build SeaweedFS Bucket, S3Identity and S3Credentials once, through single-shot
                 providers/seaweedfs kind classes
               </td>
-              <td><span class="chip chip-revise">revise</span></td>
+              <td><span class="chip chip-land-as-is">land as is</span></td>
               <td>
                 <div class="rich">
                   <p>
-                    Step 5. Keep the providers split. Make <code>Bucket</code>, <code>S3Identity</code>,
-                    <code>S3Credentials</code> and <code>ResourceReferenceGrant</code> single-shot binding subclasses
-                    that take <code>access=</code> and <code>identity_ref=</code> at construction; drop the grant
-                    methods, the JSON patches, the <code>_ClusterGrant</code> chart singleton and the one-line ducktape
-                    subclasses. <code>PrivateBucket</code> (step 8) then renders in each consumer&#39;s own unit with
-                    its Secret name unchanged and its S3Identity in the tenant.
+                    Step 5. It builds <code>Bucket</code>, <code>S3Identity</code> and <code>S3Credentials</code> as
+                    single-shot binding subclasses that take <code>access=</code> and <code>identity_ref=</code> at
+                    construction, with no grant methods, JSON patches or <code>_ClusterGrant</code> chart singleton, and
+                    its generated manifests are identical to devel&#39;s. A draft awaiting your review.
+                    <code>PrivateBucket</code> (step 8) then renders in each consumer&#39;s own unit with its Secret
+                    name unchanged and its S3Identity in the tenant.
                   </p>
                 </div>
               </td>
@@ -10680,12 +10680,11 @@ CONFIG = {
           <div class="st">
             <div class="rich">
               <p>
-                Revise #8035 into single-shot SeaweedFS kind classes (C1): <code>Bucket</code>, <code>S3Identity</code>,
-                <code>S3Credentials</code> and <code>ResourceReferenceGrant</code> subclass their bindings and take
-                <code>access=</code> and <code>identity_ref=</code> at construction, with no grant methods, JSON
-                patches, <code>_ClusterGrant</code> singleton or one-line ducktape subclasses. It builds on the
-                <code>ResourceReferenceGrant</code> class in
-                <code>providers/seaweedfs/resource_reference_grant.py</code>, and replaces
+                Land #8035 (C1): <code>Bucket</code>, <code>S3Identity</code> and <code>S3Credentials</code> become
+                single-shot classes that subclass their bindings and take <code>access=</code> and
+                <code>identity_ref=</code> at construction, beside devel&#39;s <code>ResourceReferenceGrant</code>, and
+                <code>seaweedfs/s3.py</code>&#39;s policy functions build each object complete, once, with no grant
+                methods, JSON patches or <code>_ClusterGrant</code> singleton. It replaces
                 <code>providers/seaweedfs/s3.py</code>&#39;s <code>Identity</code> and <code>Bucket</code>, which take
                 <code>name=, namespace=</code> and which only their own test calls.
               </p>
@@ -10693,17 +10692,25 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Ready: the naming is chosen.</p></div>
+            <div class="rich">
+              <p>
+                Ready for your review: #8035 is a draft. Its head 5646d3a91f contains devel dc2d742623, its CI is green,
+                and its generated manifests are identical to devel&#39;s.
+              </p>
+            </div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
             <div class="rich">
-              <p><code>providers/seaweedfs/</code> and the constructs in <code>seaweedfs/s3.py</code> that call it.</p>
+              <p>
+                <code>providers/seaweedfs/</code>, <code>seaweedfs/s3.py</code> and the 16 modules that build SeaweedFS
+                S3 objects.
+              </p>
             </div>
           </div>
           <div class="sr">
             <span class="lbl">Risk</span>
-            <div class="rich"><p>Low: render-identical.</p></div>
+            <div class="rich"><p>Low: the generated manifests do not change.</p></div>
           </div>
         </li>
         <li>
@@ -10734,11 +10741,13 @@ CONFIG = {
               <p>
                 References, what the area PRs left: a <code>ServiceRef</code> projection for a port whose Pods listen
                 elsewhere, which activitywatch, cpap-sync, website, github-api-proxy, loki-read-proxy, oci-cache, the
-                haku console and agentplane&#39;s egress build inline; the consumers and Cilium peers that still spell
-                an address or a selector; and <code>plaid_mcp/pgweb.py</code>, which selects its Pods by its own
-                <code>_LABELS</code> rather than <code>SERVICE.pods</code>, spells its CNPG egress
-                (<code>_DB_CLUSTER</code>, 5432) and imports <code>NAMESPACE</code> through
-                <code>plaid_mcp.app</code> rather than <code>db</code>. <code>cilium.AGENTPLANE_STAGING_PROXY</code> and
+                haku console and agentplane&#39;s egress build inline; the testing fixtures
+                (<code>agentplane/actions_testing_fixtures.py</code>), which build two Services and their Pods with no
+                reference; the consumers and Cilium peers that still spell an address or a selector; and
+                <code>plaid_mcp/pgweb.py</code>, which selects its Pods by its own <code>_LABELS</code> rather than
+                <code>SERVICE.pods</code>, spells its CNPG egress (<code>_DB_CLUSTER</code>, 5432) and imports
+                <code>NAMESPACE</code> through <code>plaid_mcp.app</code> rather than <code>db</code>.
+                <code>cilium.AGENTPLANE_STAGING_PROXY</code> and
                 <code>agentplane.egress.proxy(&#34;agentplane-staging&#34;).pods</code> name the same Pods, and one of
                 them goes. Every area&#39;s producers (#8416, #8418, #8419, #8420, #8422, #8423, #8424) and
                 <code>PostgresRef</code> (#8425) are on devel, and every Secret key read into env is a
@@ -10764,9 +10773,10 @@ CONFIG = {
                 <li>
                   Where the Pods listen on another port than the Service, 9 Service ports in 8 modules and 8 container
                   ports in 6 are built inline from <code>port</code> and <code>pod_port</code>, because
-                  <code>Port</code>&#39;s projections use <code>port</code>. 4 container ports read no reference:
-                  aw-server&#39;s, dcgm-exporter&#39;s and gateway-probe&#39;s, which no Service fronts, and
-                  haku-mailbox&#39;s SMTP port, which carries a hostPort;
+                  <code>Port</code>&#39;s projections use <code>port</code>. 6 container ports read no reference:
+                  aw-server&#39;s, dcgm-exporter&#39;s and gateway-probe&#39;s, which no Service fronts,
+                  haku-mailbox&#39;s SMTP port, which carries a hostPort, and the testing fixtures&#39; 2, whose
+                  Services spell their ports too;
                 </li>
                 <li>
                   3 of 17 ServiceMonitors select by hand where no one <code>ServiceRef</code> fits: Talos etcd&#39;s
@@ -10774,21 +10784,23 @@ CONFIG = {
                   chart labels the Hubble Service with labels its Pods lack;
                 </li>
                 <li>
-                  17 <code>cilium.endpoint_labels</code> calls in 11 modules name Pods by string: 3 in
-                  agentplane-staging&#39;s egress to ssh-mcp, tana-mcp and google-mcp, whose references are public now;
-                  7 on agentplane servers admitting a client that imports them; 5 whose peer has no
-                  <code>Pods</code> reference (Alloy, the testing OAuth fixture, and agentplane-staging&#39;s Action
-                  Service, whose namespace agentplane keeps private); and CLIProxyAPI&#39;s admissions of LiteLLM, whose
-                  reference needs a <code>ProxySpec</code>, and aiquota, which imports it. 6 more rules name CNPG Pods
-                  by <code>cnpg.io/cluster</code>, which <code>PostgresRef.rw.egress()</code> replaces;
+                  22 <code>cilium.endpoint_labels</code> calls in 12 modules name Pods by string: 6 whose peer&#39;s
+                  reference is public (agentplane-staging&#39;s egress to ssh-mcp, tana-mcp and google-mcp, and the
+                  testing fixtures&#39; admissions of the app and the Action Service); 7 on agentplane servers admitting
+                  a client that imports them; 6 whose peer has no <code>Pods</code> reference (Alloy, the testing
+                  fixtures, and agentplane-staging&#39;s Action Service, whose namespace agentplane keeps private); 1
+                  whose peer&#39;s reference is private (the OAuth fixture&#39;s egress to Dex); and CLIProxyAPI&#39;s
+                  admissions of LiteLLM, whose reference needs a <code>ProxySpec</code>, and aiquota, which imports it.
+                  6 more rules name CNPG Pods by <code>cnpg.io/cluster</code>, which
+                  <code>PostgresRef.rw.egress()</code> replaces;
                 </li>
                 <li>
-                  consumers spell 29 in-cluster URLs in 17 modules and 8 hosts in 8. 17, in 8 modules, have a public
+                  consumers spell 31 in-cluster URLs in 18 modules and 8 hosts in 8. 17, in 8 modules, have a public
                   reference to read: agentplane&#39;s <code>app_settings.py</code> and <code>sandbox_pod.py</code>,
                   agentplane-staging&#39;s MCP URLs, the Ollama and CLIProxyAPI clients in agentplane-index and LiteLLM,
                   haku-ci&#39;s proxy and registry mirror, Kyverno&#39;s proxy injection, and ssh-mcp&#39;s devbox host.
-                  5 have a reference that is private (Langfuse&#39;s, Grafana&#39;s) or needs a
-                  <code>ProxySpec</code> (LiteLLM&#39;s three clients); 14 name a Service no module exports a reference
+                  6 have a reference that is private (Langfuse&#39;s, Grafana&#39;s, Dex&#39;s) or needs a
+                  <code>ProxySpec</code> (LiteLLM&#39;s three clients); 15 name a Service no module exports a reference
                   for (the testing fixtures, the monitoring stack&#39;s Helm Services, Valkey, VolSync, the Cilium
                   gateway, the SeaweedFS filer); and the haku console&#39;s aiquota URL would close an import cycle;
                 </li>
@@ -11710,13 +11722,14 @@ CONFIG = {
             </li>
           </ul>
           <p>
-            The census, the diagnosis and the worked service were measured on devel d86d9ae49d, where the file:line
-            cites also point. The Flux graph and unit counts wherever they appear, the conventions&#39; adoption and the
-            migration steps were measured on devel 55d6374fd2, and so were the matrix rows for secrets, config files,
-            namespaces, Terraform CRs, repeated deployments and fleet rules; the other rows are from d86d9ae49d. The
-            references (C4 and step 7), the CNPG wiring, the matrix rows for CNPG, backups, Gateway exposure and service
-            connectivity, and the PR states were measured on devel dc2d742623, where the Flux graph and the per-unit
-            counts measure the same. Each example&#39;s chip names the revision its after code was rendered on.
+            The census, the diagnosis, the design space and the worked service were measured on devel d86d9ae49d, where
+            the file:line cites also point. The Flux graph and unit counts wherever they appear, the conventions&#39;
+            adoption and the migration steps were measured on devel 55d6374fd2, and so were the matrix rows for secrets,
+            config files, namespaces, Terraform CRs, repeated deployments and fleet rules; the other rows are from
+            d86d9ae49d. The references (C4 and step 7), the CNPG wiring, the matrix rows for CNPG, backups, Gateway
+            exposure and service connectivity, and the PR states were measured on devel dc2d742623, where the Flux graph
+            and the per-unit counts measure the same. Each example&#39;s chip names the revision its after code was
+            rendered on.
           </p>
           <p>
             The page is rendered by <code>cluster/docs/cdk8s_conventions/render.py</code> from
@@ -11923,7 +11936,7 @@ CONFIG = {
     },
     {
       "title": "N15 \u00b7 Service-to-service connectivity",
-      "today": "Producers declare 86 `ServiceRef`s in 60 modules, and clients project `url` and `egress()` from them; 17 `cilium.endpoint_labels` calls in 11 modules still name Pods by string, and consumers still spell 29 in-cluster URLs and 8 hosts (step 7).",
+      "today": "Producers declare 86 `ServiceRef`s in 60 modules, and clients project `url` and `egress()` from them; 22 `cilium.endpoint_labels` calls in 12 modules still name Pods by string, and consumers still spell 31 in-cluster URLs and 8 hosts (step 7).",
       "note": "The producer exports a `ServiceRef`: the client projects `url` and `egress()`, and the server admits the client's `Pods` on `pod_port`, so nothing is re-spelled. A facade returning both halves would be taken apart by index (#8111), and a hostNetwork server exports a reference with no `egress()`.",
       "conventions": "C4"
     },
