@@ -1,7 +1,7 @@
 import { Text } from "@mantine/core";
 import DOMPurify from "dompurify";
 import { Marked } from "marked";
-import { type JSX, useMemo } from "react";
+import { createElement, type JSX, type ReactNode, useMemo } from "react";
 
 import { highlight, isRegisteredLanguage } from "./syntax_highlight";
 
@@ -65,21 +65,24 @@ const ALLOWED_TAGS = [
 ];
 
 /**
- * Markdown as HTML. The local class supplies the small amount of prose styling this transcript
- * needs; Mantine 9 removed the old `TypographyStylesProvider` wrapper. Renders through `Text` (at
- * its default `md` size, matching `VerbatimText`) rather than a bare `div`, so this reads
- * `theme.fontSizes`/`lineHeights` like the rest of the app; `component="div"` because the sanitized
- * HTML can contain block-level tags (headings, lists, `pre`, `table`) that a `Text`'s default `<p>`
- * can't legally contain.
+ * Markdown passes through Marked and DOMPurify before its allowlisted fragment becomes React nodes.
+ * That lets React reconcile the final streaming cursor across body updates instead of replacing its
+ * DOM node with each sanitized HTML string. The local class supplies the small amount of prose
+ * styling this transcript needs; Mantine 9 removed the old `TypographyStylesProvider` wrapper.
+ * Render through `Text` (at its default `md` size, matching `VerbatimText`) rather than a bare `div`,
+ * so this reads `theme.fontSizes`/`lineHeights` like the rest of the app; `component="div"` because
+ * the content can contain block-level tags that a `Text`'s default `<p>` can't legally contain.
  */
-function appendStreamingCursor(html: string): string {
-  const template = document.createElement("template");
-  template.innerHTML = html;
+const STREAMING_CURSOR_MARKER = "data-agentplane-streaming-cursor";
+const STREAMING_CURSOR_KEY = "agentplane-streaming-cursor";
+
+function appendStreamingCursor(content: DocumentFragment): void {
   const cursor = document.createElement("span");
   cursor.className = "agentplane-streaming-cursor";
   cursor.setAttribute("role", "img");
   cursor.setAttribute("aria-label", "Streaming");
   cursor.setAttribute("data-character", STREAMING_CURSOR);
+  cursor.setAttribute(STREAMING_CURSOR_MARKER, "");
 
   // Marked leaves whitespace between its top-level blocks. Skip whitespace-only nodes so the
   // cursor becomes part of the last rendered text block (paragraph, list item, code, etc.).
@@ -87,7 +90,7 @@ function appendStreamingCursor(html: string): string {
     [...parent.childNodes]
       .reverse()
       .find((node) => node.nodeType !== Node.TEXT_NODE || Boolean(node.textContent?.trim())) ?? null;
-  let last = lastContentChild(template.content);
+  let last = lastContentChild(content);
   while (last instanceof Element) {
     const child = lastContentChild(last);
     if (!child) break;
@@ -106,12 +109,25 @@ function appendStreamingCursor(html: string): string {
     } else parent?.insertBefore(cursor, last.nextSibling);
   } else if (last instanceof Element && !["BR", "HR"].includes(last.tagName)) last.append(cursor);
   else if (last?.parentNode) last.parentNode.insertBefore(cursor, last.nextSibling);
-  else template.content.append(cursor);
-  return template.innerHTML;
+  else content.append(cursor);
+}
+
+function toReactNode(node: ChildNode, key: string): ReactNode {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+  if (!(node instanceof Element)) return null;
+
+  const cursor = node.hasAttribute(STREAMING_CURSOR_MARKER);
+  const props = Object.fromEntries(
+    [...node.attributes]
+      .filter((attribute) => attribute.name !== STREAMING_CURSOR_MARKER)
+      .map((attribute) => [attribute.name === "class" ? "className" : attribute.name, attribute.value])
+  );
+  const children = [...node.childNodes].map((child, index) => toReactNode(child, `${key}.${index}`));
+  return createElement(node.tagName.toLowerCase(), { ...props, key: cursor ? STREAMING_CURSOR_KEY : key }, ...children);
 }
 
 export function Markdown({ source, streaming = false }: { source: string; streaming?: boolean }): JSX.Element {
-  const html = useMemo(() => {
+  const content = useMemo(() => {
     const rendered = marked.parse(source);
     if (typeof rendered !== "string") throw new Error("asynchronous Markdown rendering is not supported");
     const sanitized = DOMPurify.sanitize(rendered, {
@@ -123,7 +139,14 @@ export function Markdown({ source, streaming = false }: { source: string; stream
       ALLOWED_ATTR: ["align", "class", "href", "title"],
       ALLOW_DATA_ATTR: false,
     });
-    return streaming ? appendStreamingCursor(sanitized) : sanitized;
+    const template = document.createElement("template");
+    template.innerHTML = sanitized;
+    if (streaming) appendStreamingCursor(template.content);
+    return [...template.content.childNodes].map((node, index) => toReactNode(node, String(index)));
   }, [source, streaming]);
-  return <Text component="div" className="agentplane-markdown" dangerouslySetInnerHTML={{ __html: html }} />;
+  return (
+    <Text component="div" className="agentplane-markdown">
+      {content}
+    </Text>
+  );
 }

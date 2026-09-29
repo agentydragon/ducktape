@@ -39,7 +39,7 @@
   margin-inline-start: 0.12em;
   color: var(--mantine-primary-color-filled);
   font-weight: 700;
-  animation: agentplane-streaming-cursor-blink 1s steps(1, start) infinite;
+  animation: agentplane-streaming-cursor-blink 1s steps(1, end) infinite;
 }
 
 .agentplane-streaming-cursor::before {
@@ -53,8 +53,12 @@
 }
 
 @keyframes agentplane-streaming-cursor-blink {
-  50%,
+  0%,
   100% {
+    opacity: 1;
+  }
+
+  50% {
     opacity: 0;
   }
 }
