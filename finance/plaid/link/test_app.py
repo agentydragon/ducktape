@@ -52,6 +52,7 @@ class _FakeStorage:
     def __init__(self) -> None:
         self.purged_item_ids: list[str] = []
         self.queued_transaction_syncs: list[str] = []
+        self.webhook_deliveries: list[dict[str, str | None]] = []
 
     def _link(self) -> StoredLink:
         return StoredLink(
@@ -88,6 +89,23 @@ class _FakeStorage:
 
     async def enqueue_transaction_sync(self, item_id: str) -> None:
         self.queued_transaction_syncs.append(item_id)
+
+    async def record_plaid_webhook_delivery(self, raw_body: str) -> int:
+        self.webhook_deliveries.append({"raw_body": raw_body, "disposition": "received"})
+        return len(self.webhook_deliveries)
+
+    async def update_plaid_webhook_delivery(
+        self,
+        delivery_id: int,
+        *,
+        webhook_type: str | None,
+        webhook_code: str | None,
+        item_id: str | None,
+        disposition: str,
+    ) -> None:
+        self.webhook_deliveries[delivery_id - 1].update(
+            {"webhook_type": webhook_type, "webhook_code": webhook_code, "item_id": item_id, "disposition": disposition}
+        )
 
     async def finish_transaction_sync(self, claim: object) -> None:
         raise AssertionError("the fake worker never claims transaction syncs")
@@ -433,18 +451,28 @@ def test_link_token_never_pins_an_institution() -> None:
     assert api.link_token_requests[0]["webhook"] == "https://plaid-mcp.test/webhooks/plaid"
 
 
-def test_signed_transactions_webhook_is_queued_and_body_tampering_is_rejected() -> None:
-    api = _FakePlaidApi()
-    storage = _FakeStorage()
-    body = json.dumps(
-        {"webhook_type": "TRANSACTIONS", "webhook_code": "SYNC_UPDATES_AVAILABLE", "item_id": "item_123"},
-        separators=(",", ":"),
-    ).encode()
+def _signed_webhook(api: _FakePlaidApi, payload: dict[str, object]) -> tuple[bytes, str]:
+    body = json.dumps(payload, separators=(",", ":")).encode()
     token = jwt.encode(
         {"iat": int(time.time()), "request_body_sha256": hashlib.sha256(body).hexdigest()},
         api.webhook_private_key,
         algorithm="ES256",
         headers={"kid": "test-key"},
+    )
+    return body, token
+
+
+def test_signed_transactions_webhook_is_queued_and_body_tampering_is_rejected() -> None:
+    api = _FakePlaidApi()
+    storage = _FakeStorage()
+    body, token = _signed_webhook(
+        api,
+        {
+            "webhook_type": "TRANSACTIONS",
+            "webhook_code": "SYNC_UPDATES_AVAILABLE",
+            "item_id": "item_123",
+            "future_plaid_field": {"kept": True},
+        },
     )
 
     with _client(storage=storage, api=api) as client:
@@ -460,7 +488,71 @@ def test_signed_transactions_webhook_is_queued_and_body_tampering_is_rejected() 
     assert response.status_code == 200
     assert response.json() == {"status": "queued"}
     assert storage.queued_transaction_syncs == ["item_123"]
+    assert storage.webhook_deliveries == [
+        {
+            "raw_body": body.decode(),
+            "disposition": "queued",
+            "webhook_type": "TRANSACTIONS",
+            "webhook_code": "SYNC_UPDATES_AVAILABLE",
+            "item_id": "item_123",
+        }
+    ]
     assert tampered.status_code == 401
+
+
+def test_authenticated_unhandled_webhook_is_recorded_and_ignored() -> None:
+    api = _FakePlaidApi()
+    storage = _FakeStorage()
+    body, token = _signed_webhook(
+        api,
+        {
+            "webhook_type": "TRANSACTIONS",
+            "webhook_code": "INITIAL_UPDATE",
+            "item_id": "item_123",
+            "new_plaid_field": "preserve this",
+        },
+    )
+
+    with _client(storage=storage, api=api) as client:
+        response = client.post(
+            "/webhooks/plaid", content=body, headers={"Plaid-Verification": token, "Content-Type": "application/json"}
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ignored"}
+    assert storage.queued_transaction_syncs == []
+    assert storage.webhook_deliveries == [
+        {
+            "raw_body": body.decode(),
+            "disposition": "ignored",
+            "webhook_type": "TRANSACTIONS",
+            "webhook_code": "INITIAL_UPDATE",
+            "item_id": "item_123",
+        }
+    ]
+
+
+def test_authenticated_unrecognized_envelope_body_is_recorded() -> None:
+    api = _FakePlaidApi()
+    storage = _FakeStorage()
+    body, token = _signed_webhook(api, {"future_envelope": {"value": 42}})
+
+    with _client(storage=storage, api=api) as client:
+        response = client.post(
+            "/webhooks/plaid", content=body, headers={"Plaid-Verification": token, "Content-Type": "application/json"}
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ignored"}
+    assert storage.webhook_deliveries == [
+        {
+            "raw_body": body.decode(),
+            "disposition": "ignored",
+            "webhook_type": None,
+            "webhook_code": None,
+            "item_id": None,
+        }
+    ]
 
 
 def test_link_token_rejects_an_empty_product_set() -> None:

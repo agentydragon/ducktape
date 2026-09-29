@@ -236,19 +236,47 @@ def create_app(
             await require_webhook_verifier().verify(token=plaid_verification, body=raw_body)
         except InvalidPlaidWebhookError as exc:
             raise HTTPException(401, "invalid Plaid webhook signature") from exc
+        storage = require_storage()
+        delivery_id = await storage.record_plaid_webhook_delivery(raw_body.decode("utf-8"))
         try:
             event = PlaidWebhookEnvelope.model_validate_json(raw_body)
         except ValidationError:
             logger.warning("ignoring authenticated Plaid webhook with an unrecognized envelope")
+            await storage.update_plaid_webhook_delivery(
+                delivery_id, webhook_type=None, webhook_code=None, item_id=None, disposition="ignored"
+            )
             return {"status": "ignored"}
         if event.webhook_type != "TRANSACTIONS" or event.webhook_code != "SYNC_UPDATES_AVAILABLE":
+            await storage.update_plaid_webhook_delivery(
+                delivery_id,
+                webhook_type=event.webhook_type,
+                webhook_code=event.webhook_code,
+                item_id=event.item_id,
+                disposition="ignored",
+            )
             return {"status": "ignored"}
         if event.item_id is None:
             logger.warning("ignoring authenticated transaction webhook without item_id")
+            await storage.update_plaid_webhook_delivery(
+                delivery_id,
+                webhook_type=event.webhook_type,
+                webhook_code=event.webhook_code,
+                item_id=None,
+                disposition="ignored",
+            )
             return {"status": "ignored"}
-        link = await require_storage().get_link(event.item_id)
+        link = await storage.get_link(event.item_id)
+        disposition = "ignored"
         if link is not None and Product.TRANSACTIONS.value in link.products_requested:
-            await require_storage().enqueue_transaction_sync(event.item_id)
+            await storage.enqueue_transaction_sync(event.item_id)
+            disposition = "queued"
+        await storage.update_plaid_webhook_delivery(
+            delivery_id,
+            webhook_type=event.webhook_type,
+            webhook_code=event.webhook_code,
+            item_id=event.item_id,
+            disposition=disposition,
+        )
         return {"status": "queued"}
 
     @app.get("/link", response_class=HTMLResponse)

@@ -210,6 +210,19 @@ class TransactionSyncQueueRow(Base):
     retry_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PlaidWebhookDeliveryRow(Base):
+    __tablename__ = "plaid_webhook_deliveries"
+    __table_args__ = (Index("idx_plaid_webhook_deliveries_received_at", "received_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    raw_body: Mapped[str] = mapped_column(Text, nullable=False)
+    webhook_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    webhook_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    item_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    disposition: Mapped[str] = mapped_column(String, nullable=False, default="received")
+
+
 class PlaidApiEventRow(Base):
     __tablename__ = "plaid_api_events"
 

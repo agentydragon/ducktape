@@ -38,6 +38,7 @@ from finance.plaid.db.schema import (
     LiabilityStudentSnapshotRow,
     LinkRow,
     PlaidApiEventRow,
+    PlaidWebhookDeliveryRow,
     SecurityRow,
     SyncRunRow,
     TransactionRow,
@@ -332,6 +333,35 @@ class PlaidLinkStorage:
         )
         async with self._session_factory() as session:
             await session.execute(statement)
+            await session.commit()
+
+    async def record_plaid_webhook_delivery(self, raw_body: str) -> int:
+        """Persist the complete body of a signature-verified Plaid delivery before dispatch."""
+        async with self._session_factory() as session:
+            row = PlaidWebhookDeliveryRow(raw_body=raw_body, received_at=utcnow(), disposition="received")
+            session.add(row)
+            await session.flush()
+            delivery_id = row.id
+            await session.commit()
+            return delivery_id
+
+    async def update_plaid_webhook_delivery(
+        self,
+        delivery_id: int,
+        *,
+        webhook_type: str | None,
+        webhook_code: str | None,
+        item_id: str | None,
+        disposition: str,
+    ) -> None:
+        async with self._session_factory() as session:
+            row = await session.get(PlaidWebhookDeliveryRow, delivery_id)
+            if row is None:
+                raise ValueError(f"Plaid webhook delivery not found: {delivery_id}")
+            row.webhook_type = webhook_type
+            row.webhook_code = webhook_code
+            row.item_id = item_id
+            row.disposition = disposition
             await session.commit()
 
     async def claim_transaction_sync(self) -> TransactionSyncClaim | None:

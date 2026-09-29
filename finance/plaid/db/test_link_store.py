@@ -225,6 +225,46 @@ async def test_transaction_sync_queue_coalesces_events_during_a_claim(storage: P
     assert await storage.claim_transaction_sync() is None
 
 
+async def test_plaid_webhook_delivery_keeps_full_body_and_dispatch_metadata(
+    storage: PlaidLinkStorage, db_url: str
+) -> None:
+    raw_body = '{"webhook_type":"ITEM","webhook_code":"WEBHOOK_UPDATE_ACKNOWLEDGED","extra":{"value":42}}'
+    delivery_id = await storage.record_plaid_webhook_delivery(raw_body)
+    await storage.update_plaid_webhook_delivery(
+        delivery_id,
+        webhook_type="ITEM",
+        webhook_code="WEBHOOK_UPDATE_ACKNOWLEDGED",
+        item_id=None,
+        disposition="ignored",
+    )
+
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.connect() as conn:
+            delivery = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT raw_body, webhook_type, webhook_code, item_id, disposition "
+                            "FROM plaid_webhook_deliveries WHERE id = :delivery_id"
+                        ),
+                        {"delivery_id": delivery_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+        assert delivery == {
+            "raw_body": raw_body,
+            "webhook_type": "ITEM",
+            "webhook_code": "WEBHOOK_UPDATE_ACKNOWLEDGED",
+            "item_id": None,
+            "disposition": "ignored",
+        }
+    finally:
+        await engine.dispose()
+
+
 async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
     storage: PlaidLinkStorage, db_url: str
 ) -> None:

@@ -82,9 +82,22 @@ inherited links whose original Link request was not logged.
 The app sets the webhook URL when creating a new Item. For existing Items, the
 next daily or manual sync calls `/item/webhook/update` if needed. The public
 `/webhooks/plaid` endpoint verifies Plaid's ES256 JWT and raw-body hash, then
+stores the complete authenticated request body and envelope metadata in the
+`plaid_webhook_deliveries` table before dispatch. The public-schema table is
+readable by `plaid_ro`; use it to inspect handled, ignored, and unrecognized
+deliveries, including future fields that the current envelope model does not
+recognize. For example:
+
+```sql
+SELECT received_at, webhook_type, webhook_code, item_id, disposition, raw_body
+FROM plaid_webhook_deliveries
+ORDER BY received_at DESC;
+```
+
+The audit row is retained when an Item is removed. The endpoint
 durably queues `TRANSACTIONS / SYNC_UPDATES_AVAILABLE` events; the background
 worker coalesces duplicate notifications and runs `/transactions/sync`.
-Other webhook event types are acknowledged and ignored. The cursor and all
+Other webhook event types are recorded, acknowledged, and ignored. The cursor and all
 added, modified, and removed transactions commit together after pagination
 completes. If Plaid reports a mutation during pagination, the sync restarts
 from the saved cursor.
