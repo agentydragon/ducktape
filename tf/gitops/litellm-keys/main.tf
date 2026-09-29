@@ -83,8 +83,35 @@ resource "kubernetes_secret" "cheap_experiments" {
   }
 }
 
-# The Agentplane staging key is intentionally absent during the teardown phase
-# of its two-PR replacement. Recreate it after this deletion has reconciled.
+# Deliberately has no key-level max_budget; testing retains its own budgeted key.
+resource "litellm_key" "agentplane_staging" {
+  key_alias = "agentplane-staging"
+  # Staging Codex and key access both use the GPT-6 subscription routes.
+  models = concat(
+    var.model_allowlists.gpt6_oai_lane_models,
+    var.model_allowlists.claude_client_models,
+    var.model_allowlists.antigravity_client_models,
+    var.model_allowlists.ollama_chat_client_models,
+  )
+  metadata = {
+    consumer = "agentplane-staging"
+  }
+}
+
+# Only the workload-authenticated LLM ingress holds the model key; runners use a placeholder.
+resource "kubernetes_secret" "agentplane_staging" {
+  metadata {
+    name      = "litellm-key-agentplane-staging"
+    namespace = "agentplane-staging"
+    annotations = {
+      description = "Server-held key for OpenAI/Claude subscription and local Ollama chat routes in Agentplane staging; never mounted into runner Pods"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.agentplane_staging.key
+  }
+}
 
 # ============================================================================
 # codex-pod — OpenAI/ChatGPT-backend key for the interactive codex agent pod
