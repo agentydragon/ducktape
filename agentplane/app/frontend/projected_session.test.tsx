@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
-import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
+import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../protocol/event_pb";
 import { command, getThread, models, resumeThread, type ThreadView } from "./client";
 import { historyRows, rowKey } from "./history_rows";
 import { LocalCommands } from "./local_commands";
@@ -788,12 +788,155 @@ it("shows a lone reasoning step as its own reasoning block, and assistant text w
 
 const PROSE = "Run **every** test\n- first";
 
+describe("recovery presentation", () => {
+  it.each([RecoveryDisposition.RETAINED, RecoveryDisposition.REVISED, RecoveryDisposition.UNKNOWN])(
+    "does not revive an interrupted reply's streaming cursor for recovery %s",
+    async (recovery) => {
+      const [row] = await renderHistory(
+        [
+          testItem(
+            1,
+            ItemKind.ASSISTANT_TEXT,
+            { completion: null, recovery },
+            { textRef: reference("recovered-reply", "text") }
+          ),
+        ],
+        true,
+        { "recovered-reply:text": "Interrupted reply" }
+      );
+      expect(row.querySelector(".agentplane-streaming-cursor")).toBeNull();
+      expect(row.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+    }
+  );
+
+  it.each([null, "text"])("labels retained text with completion %s", async (completion) => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.ASSISTANT_TEXT,
+        { completion, recovery: RecoveryDisposition.RETAINED },
+        { textRef: reference("test-entity-1", "text") }
+      ),
+      { "test-entity-1:text": "Remember the name in the margin" }
+    );
+    expect(container.textContent).toContain("Remember the name in the margin");
+    expect(container.querySelector('[aria-label="Retained in context"]')).not.toBeNull();
+  });
+
+  it("collapses discarded text and preserves it behind a disclosure", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.ASSISTANT_TEXT,
+        { completion: null, recovery: RecoveryDisposition.ABSENT },
+        { textRef: reference("test-entity-1", "text") }
+      ),
+      { "test-entity-1:text": "The seam widened." }
+    );
+    expect(container.textContent).not.toContain("The seam widened.");
+    await disclose(container, "Discarded output (not retained in model context)");
+    expect(container.textContent).toContain("The seam widened.");
+    expect(container.querySelector('[aria-label="Not retained in context"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+  });
+
+  it("shows unknown retention and its reason without hiding the observed text", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.ASSISTANT_TEXT,
+        {
+          completion: null,
+          recovery: RecoveryDisposition.UNKNOWN,
+          recovery_reason: "The harness history could not be inspected.",
+        },
+        { textRef: reference("test-entity-1", "text") }
+      ),
+      { "test-entity-1:text": "The bells were ringing." }
+    );
+    expect(container.textContent).toContain("The bells were ringing.");
+    expect(container.textContent).toContain("The harness history could not be inspected.");
+    expect(container.querySelector('[aria-label="Retention unknown"]')).not.toBeNull();
+  });
+
+  it("labels revised content as continuation, without inventing a tool outcome", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.TOOL_CALL,
+        {
+          tool_name: "Bash",
+          completion: null,
+          tool_succeeded: null,
+          recovery: RecoveryDisposition.REVISED,
+        },
+        { outputRef: reference("test-entity-1", "output") }
+      ),
+      { "test-entity-1:output": "aborted" }
+    );
+    expect(container.querySelector('[aria-label="Revised for continuation"]')).not.toBeNull();
+    expect(container.textContent).toContain("Recovery content does not establish a tool execution outcome.");
+    await disclose(container, "Continuation output");
+    expect(container.textContent).toContain("aborted");
+    expect(container.querySelector('[aria-label="Succeeded"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Failed"]')).toBeNull();
+  });
+
+  it("preserves a successful execution result when its context was discarded", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.TOOL_CALL,
+        {
+          tool_name: "Bash",
+          completion: "tool",
+          tool_succeeded: true,
+          recovery: RecoveryDisposition.ABSENT,
+        },
+        { outputRef: reference("test-entity-1", "output") }
+      ),
+      { "test-entity-1:output": "Created report.txt" }
+    );
+    await disclose(container, "Bash: discarded context (not retained in model context)");
+    expect(container.textContent).toContain("does not undo tool side effects");
+    expect(container.querySelector('[aria-label="Succeeded"]')).not.toBeNull();
+    await disclose(container, "Output");
+    expect(container.textContent).toContain("Created report.txt");
+  });
+
+  it("summarizes recovery in a collapsed tool run without marking recovered items streaming", async () => {
+    const [run] = await renderHistory(
+      [
+        testItem(1, ItemKind.TOOL_CALL, { completion: null, recovery: RecoveryDisposition.UNKNOWN }),
+        testItem(2, ItemKind.TOOL_CALL, {
+          completion: "tool",
+          tool_succeeded: false,
+          recovery: RecoveryDisposition.RETAINED,
+        }),
+      ],
+      true
+    );
+    expect(run.querySelector('[aria-label="Retention unknown"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Retained in context"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Failed"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Streaming"]')).toBeNull();
+  });
+});
+
 describe("EntityCard", () => {
   it("renders a tool call's JSON arguments highlighted and its plain output verbatim, both as code", async () => {
     const container = await renderCard(
       entity(
         "item",
-        { kind: ItemKind.TOOL_CALL, tool_name: "Bash", completion: "", tool_succeeded: true },
+        {
+          kind: ItemKind.TOOL_CALL,
+          tool_name: "Bash",
+          completion: "",
+          tool_succeeded: true,
+          recovery: null,
+          recovery_reason: "",
+        },
         { argumentsRef: reference("test-tool", "arguments"), outputRef: reference("test-tool", "output") }
       ),
       { "test-tool:arguments": '{"command": "ls", "timeout": 30}', "test-tool:output": PROSE }
@@ -813,7 +956,14 @@ describe("EntityCard", () => {
     const container = await renderCard(
       entity(
         "item",
-        { kind: ItemKind.ASSISTANT_TEXT, tool_name: "", completion: PROSE, tool_succeeded: null },
+        {
+          kind: ItemKind.ASSISTANT_TEXT,
+          tool_name: "",
+          completion: PROSE,
+          tool_succeeded: null,
+          recovery: null,
+          recovery_reason: "",
+        },
         { textRef: reference("test-reply", "text") }
       ),
       { "test-reply:text": PROSE }

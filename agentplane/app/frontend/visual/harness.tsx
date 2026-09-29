@@ -15,7 +15,7 @@ import { sampleConnection } from "../connections_fixture";
 import type { BindingView, Decision, McpLinkageView, PolicyView, SandboxView, ThreadView } from "../client";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
-import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
+import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
 import { CommandSchema } from "../../../protocol/command_pb";
 import { EventEntrySchema } from "../../../protocol/event_log_pb";
 import {
@@ -853,6 +853,8 @@ function item(
     arguments?: string;
     output?: string;
     failed?: boolean;
+    recovery?: RecoveryDisposition;
+    recoveryReason?: string;
     complete?: boolean;
     turn?: string;
     threadId?: string;
@@ -867,6 +869,8 @@ function item(
       tool_name: extra.tool ?? "",
       completion: extra.complete === false ? null : kind === ItemKind.TOOL_CALL ? "tool" : "text",
       tool_succeeded: extra.output === undefined ? null : !extra.failed,
+      recovery: extra.recovery ?? null,
+      recovery_reason: extra.recoveryReason ?? "",
     },
     {
       thread_id: extra.threadId,
@@ -1225,7 +1229,79 @@ function standaloneReasoningRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+function recoveryRows(threadId: string): Record<string, unknown>[] {
+  const rows =
+    scenario.recovery === "tools"
+      ? [
+          item(10, "revised-tool", ItemKind.TOOL_CALL, null, {
+            threadId,
+            tool: "Bash",
+            complete: false,
+            recovery: RecoveryDisposition.REVISED,
+            arguments: '{"command":"write-report"}',
+          }),
+          item(20, "discarded-tool", ItemKind.TOOL_CALL, null, {
+            threadId,
+            tool: "Bash",
+            output: "Created report.txt",
+            recovery: RecoveryDisposition.ABSENT,
+          }),
+          item(30, "failed-tool", ItemKind.TOOL_CALL, null, {
+            threadId,
+            tool: "Read",
+            output: "Permission denied",
+            failed: true,
+            recovery: RecoveryDisposition.RETAINED,
+          }),
+          item(40, "unknown-tool", ItemKind.TOOL_CALL, null, {
+            threadId,
+            tool: "Bash",
+            complete: false,
+            recovery: RecoveryDisposition.UNKNOWN,
+            recoveryReason: "The harness history could not be inspected.",
+          }),
+        ]
+      : [
+          item(
+            10,
+            "retained-text",
+            ItemKind.ASSISTANT_TEXT,
+            "The sound was delicate, almost sweet. The seam widened.",
+            {
+              threadId,
+              complete: false,
+              recovery: RecoveryDisposition.RETAINED,
+            }
+          ),
+          item(20, "discarded-text", ItemKind.ASSISTANT_TEXT, "Remember the name in the margin", {
+            threadId,
+            complete: false,
+            recovery: RecoveryDisposition.ABSENT,
+          }),
+          item(30, "revised-text", ItemKind.ASSISTANT_TEXT, "This is the text retained for the next turn.", {
+            threadId,
+            complete: false,
+            recovery: RecoveryDisposition.REVISED,
+          }),
+          item(
+            40,
+            "unknown-text",
+            ItemKind.ASSISTANT_TEXT,
+            "Then she heard the bells of her city, ringing under the floor.",
+            {
+              threadId,
+              complete: false,
+              recovery: RecoveryDisposition.UNKNOWN,
+              recoveryReason: "The harness history could not be inspected.",
+            }
+          ),
+        ];
+  if (scenario.recovery === "tools") rows[0].output_ref = payload(10, "revised-tool", "output", "aborted");
+  return [{ ...viewState(40, null), thread_id: threadId }, ...rows];
+}
+
 function threadEntityRows(threadId: string): Record<string, unknown>[] {
+  if (scenario.recovery) return recoveryRows(threadId);
   if (scenario.endedAttachment) return endedAttachmentRows(threadId);
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
@@ -1944,6 +2020,25 @@ if (scenario.openToolPayloads) {
     if (unopened.size === 0) openToolPayloads.disconnect();
   });
   openToolPayloads.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openRecoveryDetails) {
+  const openRecovery = new MutationObserver(() => {
+    const summaries = [...document.querySelectorAll("summary")];
+    openRun(summaries);
+    for (const summary of summaries) {
+      const text = summary.textContent ?? "";
+      const details = summary.parentElement;
+      if (
+        details instanceof HTMLDetailsElement &&
+        !details.open &&
+        (text.includes("not retained in model context") || text === "Continuation output" || text === "Output")
+      ) {
+        summary.click();
+      }
+    }
+  });
+  openRecovery.observe(document, { childList: true, subtree: true });
 }
 
 if (scenario.openEvidence) {

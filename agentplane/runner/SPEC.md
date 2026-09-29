@@ -166,6 +166,34 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   grace and exits. Whatever supervises the runner must allow it at least twenty seconds before
   killing it; a harness killed outright is `HarnessLost` on the next start instead.
 
+## Interrupted turns and continuation recovery
+
+The runner reports `ConversationReconciled` after an ordinary interruption and after native
+resume, before delivering subsequent input. It covers the most recent completed turn and any
+later interrupted turns on resume; an ordinary interruption covers that turn. Each previously
+observed item is `RETAINED`, `ABSENT`, `REVISED` (with its continuing content), or `UNKNOWN`
+(with a reason). These are point-in-time statements about continuation, not guarantees against
+future compaction. Native interpretation belongs to the runner adapter; clients consume the
+same dispositions for every harness.
+
+Process loss first ends the active turn as `PROCESS_LOST` and reports its items `UNKNOWN`.
+Explicit resume replaces those decisions using surviving native evidence. An unreadable or
+unsupported native history stays `UNKNOWN`; absence of evidence does not establish `ABSENT`.
+Unknown recovery does not prevent the user from continuing, but it provides no context guarantee.
+
+Observed text, arguments, outputs, and execution results remain in the event archive. A fold
+keeps absent/unknown items with their disposition; revised content becomes the item's current
+payload revision. Reconciliation never marks a tool successful or failed, undoes a known result,
+or reissues an old call. Losing a tool's context does not mean its side effects were undone, and
+receiving synthetic interruption content does not prove how execution ended.
+
+`//agentplane/app:test_bridge` checks streaming text, active tool execution, and a completed tool
+followed by streaming text, each interrupted normally, stopped/resumed, and killed/resumed.
+Both native harnesses run against asserting model endpoints. Tests compare recovery dispositions
+and materialized Thread payloads with the next model request, and verify that recovery does not
+repeat a shell side effect. This does not establish exact equality for harness-private context,
+reasoning, compaction, or unmodeled tools.
+
 ## Standing instructions across a resume
 
 Both harnesses put the session's instructions in front of the model on every turn, a resumed
@@ -234,7 +262,7 @@ hooks off, so the runner's own handling of it is read off the harnesses' schemas
 - Read-only authorization for follower attachments; every attachment may issue commands.
 - Log compaction or retention; a session log grows for the session's lifetime.
 - Transport security; the listener is plaintext on loopback.
-- Recovery semantics for a turn lost mid-tool beyond reporting `PROCESS_LOST`.
+- Determining whether an incomplete tool call caused side effects outside the harness process group.
 - Duplicate-free recovery when native execution precedes durable runner evidence.
 
 ### History-independent recovery and replay

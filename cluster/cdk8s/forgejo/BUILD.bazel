@@ -8,6 +8,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cache",
+        ":db",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
@@ -69,7 +70,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
-        "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s:secret_ref",
         "@pypi//cdk8s",
     ],
 )

@@ -23,6 +23,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
+    PLAID_PGWEB_POLICY,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import KUBERNETES_AUDIENCE, KUBERNETES_CREDENTIAL, KUBERNETES_HOST
@@ -120,6 +121,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
+            PLAID_PGWEB_POLICY,
         }
         for doc in manifests
     )

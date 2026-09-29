@@ -23,6 +23,7 @@ Observation = (
     | event_pb2.ToolOutputDelta
     | event_pb2.ItemCompleted
     | event_pb2.Native
+    | event_pb2.ConversationReconciled
     | event_pb2.DebugCheckpoint
 )
 
@@ -45,6 +46,7 @@ _FIELDS: dict[type[Message], str] = {
     event_pb2.ToolOutputDelta: "tool_output_delta",
     event_pb2.ItemCompleted: "item_completed",
     event_pb2.Native: "native",
+    event_pb2.ConversationReconciled: "conversation_reconciled",
     event_pb2.DebugCheckpoint: "debug_checkpoint",
 }
 

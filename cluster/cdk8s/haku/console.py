@@ -119,7 +119,7 @@ _DB_AUTHORITY = (
 def database_env(scope: Construct) -> dict[str, EnvValue]:
     """The CNPG app credential's parts and the SQLAlchemy asyncpg URL assembled from them, as the
     API and the migration Job both read them."""
-    secret = Secret.from_secret_name(scope, "db-app-secret", database.APP_SECRET)
+    secret = Secret.from_secret_name(scope, "db-app-secret", database.POSTGRES.app_secret.name)
     return {
         **{name: EnvValue.from_secret_value(SecretValue(secret=secret, key=key)) for name, key in _DB_ENV.items()},
         env_name(Settings, "database_url"): EnvValue.from_value(f"postgresql+asyncpg://{_DB_AUTHORITY}"),
@@ -525,7 +525,7 @@ class Console(Construct):
             restart_policy=RestartPolicy.NEVER,
             automount_service_account_token=False,
         )
-        app_secret = Secret.from_secret_name(self, "indexer-db-app-secret", database.APP_SECRET)
+        app_secret = Secret.from_secret_name(self, "indexer-db-app-secret", database.POSTGRES.app_secret.name)
         container = job.add_container(
             name="psql",
             image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
@@ -536,7 +536,7 @@ class Console(Construct):
             env_variables={
                 "PGUSER": EnvValue.from_secret_value(SecretValue(secret=app_secret, key="username")),
                 "PGPASSWORD": EnvValue.from_secret_value(SecretValue(secret=app_secret, key="password")),
-                "PGHOST": EnvValue.from_value(database.RW_HOST),
+                "PGHOST": EnvValue.from_value(database.POSTGRES.rw.host),
                 "PGDATABASE": EnvValue.from_value(database.DATABASE),
             },
             resources=ContainerResources(

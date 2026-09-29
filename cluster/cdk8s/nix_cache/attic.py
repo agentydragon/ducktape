@@ -38,7 +38,7 @@ SERVICE = ServiceRef(
     port=Port(name="http", number=8080),
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
-_DB = "attic-db"
+DATABASE = cnpg.PostgresRef.generated(name="attic-db", namespace=NAMESPACE)
 # The operator mints the S3 key pair straight into this namespace (`_storage` below).
 _S3 = SecretRef(namespace=NAMESPACE, name="attic-s3-credentials")
 _GITHUB_PAT = SecretRef(namespace=NAMESPACE, name="github-secrets-sync-pat")
@@ -54,14 +54,13 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "db",
-        name=_DB,
-        namespace=NAMESPACE,
+        ref=DATABASE,
         image_name=None,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="2Gi",
-        # CNPG generates the credentials in Secret attic-db-app.
         initdb=cnpg.same_owner_initdb("attic"),
+        wal_archive=False,
     )
 
 
@@ -113,9 +112,7 @@ def _server(scope: Construct) -> None:
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
                             env=[
-                                SecretRef(namespace=NAMESPACE, name=f"{_DB}-app")
-                                .key("uri")
-                                .env_var("ATTIC_SERVER_DATABASE_URL"),
+                                DATABASE.app_secret.key("uri").env_var("ATTIC_SERVER_DATABASE_URL"),
                                 SecretRef(namespace=NAMESPACE, name="attic-jwt-token")
                                 .key("jwt-token")
                                 .env_var("ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64"),
