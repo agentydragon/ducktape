@@ -5,8 +5,8 @@
  */
 import { createContext, useContext, type Context, type JSX, type ReactNode } from "react";
 
-import type { ThreadEntityView } from "./client";
-import type { StreamConnection } from "./live_stream";
+import type { ThreadEntityView } from "../client";
+import type { StreamConnection } from "../live_stream";
 
 export type Decimal = string | bigint;
 export function decimalBigInt(value: Decimal): bigint {

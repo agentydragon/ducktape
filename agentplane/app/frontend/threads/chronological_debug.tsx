@@ -8,8 +8,8 @@ import {
   displayableError,
   type ArchivedObservationEntry,
   type ObservationPage,
-} from "./client";
-import { JsonView } from "./json_view";
+} from "../client";
+import { JsonView } from "../json_view";
 
 type PageRequest = { before?: string; after?: string };
 const OpenDebug = createContext<((cursor?: string) => void) | null>(null);

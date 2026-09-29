@@ -9,11 +9,11 @@ import { ActionHistory } from "./actions/history";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
-import { ProjectedSession } from "./projected_session";
+import { ProjectedSession } from "./threads/projected_session";
 import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
-import { electricThreadSync } from "./thread_store";
-import { ThreadSyncContext } from "./thread_sync";
+import { electricThreadSync } from "./threads/thread_store";
+import { ThreadSyncContext } from "./threads/thread_sync";
 import { TopbarContext, type TopbarSlots } from "./topbar";
 import "./shell.css";
 

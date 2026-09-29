@@ -3,7 +3,7 @@
 A passing `bbr test //agentplane/app/frontend:visual` only proves every scene mounted
 without an uncaught error — it says nothing about whether it looks right (there are no checked-in
 pixel baselines here; see `util/testing/frontend_visual/README.md`). Before calling a visual
-change (`projected_session.tsx`, `projected_session.css`, or any other component/stylesheet here) done, actually look
+change (`threads/projected_session.tsx`, `threads/projected_session.css`, or any other component/stylesheet here) done, actually look
 at a rendered PNG of every state you touched. Either of these satisfies that — the point is seeing
 the real pixels, not a specific mechanism for getting there:
 

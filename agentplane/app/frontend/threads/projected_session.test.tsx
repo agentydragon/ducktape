@@ -6,16 +6,16 @@ import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CommandSchema, type Command } from "../../protocol/command_pb";
-import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
-import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../protocol/event_pb";
-import { command, getThread, models, resumeThread, type ThreadView } from "./client";
+import { CommandSchema, type Command } from "../../../protocol/command_pb";
+import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_pb";
+import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
+import { command, getThread, models, resumeThread, type ThreadView } from "../client";
 import { historyRows, rowKey } from "./history_rows";
 import { LocalCommands } from "./local_commands";
-import { STREAMING_CURSOR } from "./markdown";
+import { STREAMING_CURSOR } from "../markdown";
 import { EntityCard, HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
-import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "./stream_status";
+import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
 import { testItem } from "./thread_entity_fixture";
 import {
   ThreadSyncContext,
@@ -24,10 +24,10 @@ import {
   type ThreadState,
   type ThreadSync,
 } from "./thread_sync";
-import { TopbarContext } from "./topbar";
+import { TopbarContext } from "../topbar";
 
-vi.mock("./client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./client")>()),
+vi.mock("../client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../client")>()),
   command: vi.fn(),
   getThread: vi.fn(),
   models: vi.fn(),

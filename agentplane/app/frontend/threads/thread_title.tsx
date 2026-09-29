@@ -1,7 +1,7 @@
 import { TextInput } from "@mantine/core";
 import { type JSX, useState } from "react";
 
-import { displayableError, renameThread, type ThreadView } from "./client";
+import { displayableError, renameThread, type ThreadView } from "../client";
 import "./thread_title.css";
 
 /**

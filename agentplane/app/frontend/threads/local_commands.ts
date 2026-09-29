@@ -1,7 +1,7 @@
 import { equals, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
-import { CommandSchema, type Command } from "../../protocol/command_pb";
-import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
+import { CommandSchema, type Command } from "../../../protocol/command_pb";
+import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_pb";
 
 export interface LocalCommand {
   command: Command;

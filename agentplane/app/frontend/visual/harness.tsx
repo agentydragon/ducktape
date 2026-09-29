@@ -28,7 +28,7 @@ import {
 } from "../../../runner/protocol_pb";
 import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
-import { LocalCommands } from "../local_commands";
+import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";
 import { ThemeProvider } from "../theme";
 

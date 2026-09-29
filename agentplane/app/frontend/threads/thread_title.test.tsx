@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { ThreadView } from "./client";
+import type { ThreadView } from "../client";
 import { ThreadTitle } from "./thread_title";
 
 const fetchMock = vi.hoisted(() => {

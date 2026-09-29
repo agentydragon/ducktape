@@ -3,8 +3,8 @@
 import { create, equals } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { CommandSchema, type Command } from "../../protocol/command_pb";
-import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
+import { CommandSchema, type Command } from "../../../protocol/command_pb";
+import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_pb";
 import { LocalCommands, MAX_RETAINED_COMMANDS } from "./local_commands";
 
 const COMMAND = create(CommandSchema, {

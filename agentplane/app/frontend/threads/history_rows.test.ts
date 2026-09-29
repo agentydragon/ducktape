@@ -1,7 +1,7 @@
 import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
-import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
+import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
 import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun } from "./history_rows";
 import { testEntity, testItem } from "./thread_entity_fixture";
 import type { ThreadEntity } from "./thread_sync";

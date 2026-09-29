@@ -36,8 +36,8 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import { CommandSchema, type Command } from "../../protocol/command_pb";
-import { ItemKind, RecoveryDisposition } from "../../protocol/event_pb";
+import { CommandSchema, type Command } from "../../../protocol/command_pb";
+import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
 import {
   command,
   threadEvidence,
@@ -52,7 +52,7 @@ import {
   type NativeFramePage,
   type SandboxView,
   type ThreadView,
-} from "./client";
+} from "../client";
 import {
   decimalBigInt,
   useThreadSync,
@@ -70,14 +70,14 @@ import {
   type HistoryRow,
 } from "./history_rows";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
-import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
-import { StaleNotice, useStreamStatus, type StreamStatus } from "./stream_status";
-import { HighlightedText, JsonView } from "./json_view";
-import { Markdown } from "./markdown";
+import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "../live";
+import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
+import { HighlightedText, JsonView } from "../json_view";
+import { Markdown } from "../markdown";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { ChronologicalDebugIcon, ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
-import { TopbarActions, TopbarTitle } from "./topbar";
+import { TopbarActions, TopbarTitle } from "../topbar";
 import "./projected_session.css";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
