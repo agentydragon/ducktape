@@ -159,7 +159,7 @@ def _filer_db_env(name: str, key: str) -> SeaweedSpecFilerEnv:
     return SeaweedSpecFilerEnv(
         name=name,
         value_from=SeaweedSpecFilerEnvValueFrom(
-            secret_key_ref=SeaweedSpecFilerEnvValueFromSecretKeyRef(name=filer_db.CREDENTIALS_SECRET, key=key)
+            secret_key_ref=SeaweedSpecFilerEnvValueFromSecretKeyRef(name=filer_db.POSTGRES.app_secret.name, key=key)
         ),
     )
 

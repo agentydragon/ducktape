@@ -218,7 +218,12 @@ from cluster.cdk8s.parked import (
     augur_evidence as parked_augur_evidence,
     flux_kustomizations as parked_flux_kustomizations,
 )
-from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
+from cluster.cdk8s.plaid_mcp import (
+    app as plaid_mcp_app,
+    db as plaid_mcp_db,
+    pgweb as plaid_mcp_pgweb,
+    reader as plaid_mcp_reader,
+)
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
@@ -313,6 +318,7 @@ def generate_manifests(root: Path) -> None:
     oci_cache_zot.write_manifests(root)
     plaid_mcp_app.write_manifests(root)
     plaid_mcp_db.write_manifests(root)
+    plaid_mcp_pgweb.write_manifests(root)
     plaid_mcp_reader.write_manifests(root)
     tana_mcp.write_manifests(root)
     haku_egress_proxy.write_manifests(root)

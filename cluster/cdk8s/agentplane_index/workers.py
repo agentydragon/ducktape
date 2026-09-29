@@ -34,9 +34,7 @@ from util.settings_contract import env_name
 
 NAME = "agentplane-index"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-index"
-_DB_CLUSTER = f"{NAME}-db"
-# CNPG owns this Secret (username/password).
-_DB_APP = SecretRef(namespace=NAME, name=f"{_DB_CLUSTER}-app")
+DATABASE = cnpg.PostgresRef.generated(name=f"{NAME}-db", namespace=NAME)
 _DB_OWNER = "indexer"
 _READ_TOKEN = SecretRef(namespace=NAME, name=f"{NAME}-read-token").key("token")
 _HAKU_FORGEJO_GIT = SecretRef(namespace=NAME, name="haku-forgejo-git")
@@ -92,12 +90,12 @@ def _database(chart: Chart) -> None:
     cnpg.cluster(
         chart,
         "database-cluster",
-        name=_DB_CLUSTER,
-        namespace=NAME,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),
+        wal_archive=False,
     )
 
 
@@ -118,7 +116,7 @@ def _worker(
         chart,
         f"{instance}-database",
         metadata=ApiObjectMetadata(name=f"{NAME}-{instance}", namespace=NAME),
-        cluster=DatabaseSpecCluster(name=_DB_CLUSTER),
+        cluster=DatabaseSpecCluster(name=DATABASE.name),
         name=database,
         owner=_DB_OWNER,
         database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
@@ -157,13 +155,13 @@ def _worker(
                             ),
                             env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=CONFIG_MAP.name))],
                             env=[
-                                _DB_APP.key("username").env_var("DB_USERNAME"),
-                                _DB_APP.key("password").env_var("DB_PASSWORD"),
+                                DATABASE.app_secret.key("username").env_var("DB_USERNAME"),
+                                DATABASE.app_secret.key("password").env_var("DB_PASSWORD"),
                                 k8s.EnvVar(
                                     name=env_name(Settings, "database_url"),
                                     value=(
                                         "postgresql+asyncpg://$(DB_USERNAME):$(DB_PASSWORD)"
-                                        f"@{_DB_CLUSTER}-rw.{NAME}.svc/{database}"
+                                        f"@{DATABASE.rw.host}/{database}"
                                     ),
                                 ),
                                 k8s.EnvVar(name=env_name(Settings, "repository_url"), value=url),

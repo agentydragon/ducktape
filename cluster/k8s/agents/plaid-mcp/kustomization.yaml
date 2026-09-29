@@ -5,4 +5,5 @@ resources:
   - db
   - app
   - reader
+  - pgweb
   - servicemonitor/plaid-db-mcp.k8s.yaml

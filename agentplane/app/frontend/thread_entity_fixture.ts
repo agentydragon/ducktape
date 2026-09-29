@@ -38,7 +38,7 @@ export function testItem(
   return testEntity(
     cursor,
     "item",
-    { kind, tool_name: "", completion: "text", tool_succeeded: null, ...state },
+    { kind, tool_name: "", completion: "text", tool_succeeded: null, recovery: null, recovery_reason: "", ...state },
     overrides
   );
 }

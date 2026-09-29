@@ -11,6 +11,7 @@ py_library(
         "//cluster/cdk8s/agentplane_index:__pkg__",
     ],
     deps = [
+        ":db",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
@@ -70,7 +71,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
-        "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s:secret_ref",
         "@pypi//cdk8s",
     ],
 )

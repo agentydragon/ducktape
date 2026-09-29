@@ -233,8 +233,7 @@ class App(Construct):
 
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
-        # The initdb owner's credentials, which CNPG generates for database.py's Cluster.
-        postgres_app = SecretRef(namespace=namespace, name="postgres-app")
+        postgres_app = database.postgres(self.env).app_secret
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
             "AGENTPLANE_DB_USER": postgres_app.key("username").env_value(self, "postgres-app-user-ref"),

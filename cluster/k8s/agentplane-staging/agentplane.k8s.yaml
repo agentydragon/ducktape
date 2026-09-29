@@ -1651,6 +1651,7 @@ data:
           - aiquota-read
           - haku-mailbox
           - coinbase
+          - plaid-pgweb
           - github-clone
           - github-agentydragon-agent
           - github-actions-logs
@@ -4138,6 +4139,7 @@ spec:
     - aiquota-read
     - haku-mailbox
     - coinbase
+    - plaid-pgweb
     - agentplane-testing
     - github-downloads
     - github-clone
@@ -4167,6 +4169,7 @@ spec:
     - aiquota-read
     - haku-mailbox
     - coinbase
+    - plaid-pgweb
     - agentplane-testing
     - github-downloads
     - github-clone
@@ -5124,3 +5127,139 @@ spec:
         - remote.buildbuddy.io
       credentialRef:
         name: buildbuddy
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-plaid-pgweb-reader
+  namespace: plaid-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-pgweb-auth
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-plaid-pgweb-reader
+  namespace: plaid-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-plaid-pgweb-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-plaid-pgweb-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: plaid-mcp
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-pgweb-auth
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: plaid-pgweb-auth
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-plaid-pgweb-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: plaid-pgweb-auth
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: plaid-pgweb
+  namespace: agentplane-staging
+spec:
+  description: The HTTP Basic password of pgweb's `plaid` user (cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres role that can only SELECT from the Plaid mirror -- every linked account's balances, transactions and holdings -- and `plaid-pgweb`'s rules present the password only on pgweb's query API.
+  source:
+    secretRef:
+      name: plaid-pgweb-auth
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: plaid-pgweb
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/connection
+        - /api/info
+        - /api/objects
+        - /api/query
+        - /api/schemas
+        - /api/tables/**
+      clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+    - hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /api/query
+      clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-plaid-pgweb
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: plaid-pgweb
+            k8s:io.kubernetes.pod.namespace: plaid-mcp
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress

@@ -28,9 +28,10 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 from cluster.cdk8s import ducktape_flux, flux
 from cluster.cdk8s.providers.tofu_controller.terraform import Terraform
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
+from cluster.cdk8s.tofu_state import db
 
 NAMESPACE = "flux-system"
-_STATE_DB = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+_STATE_DB = f"postgres://tfstate@{db.DATABASE.rw.host}:{db.DATABASE.rw.port.number}/tfstate?sslmode=disable"
 _STATE_DB_PASSWORD = SecretRef(namespace=NAMESPACE, name="tofu-state-db-credentials").key("password")
 
 

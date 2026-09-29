@@ -93,7 +93,7 @@ spec:
           HOST: redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0
         database:
           DB_TYPE: postgres
-          HOST: forgejo-db-ssd-rw.forgejo:5432
+          HOST: forgejo-db-ssd-rw.forgejo.svc:5432
           NAME: forgejo
           USER: forgejo
         indexer:
