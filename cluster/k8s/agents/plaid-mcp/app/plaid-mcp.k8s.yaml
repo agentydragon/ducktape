@@ -201,7 +201,7 @@ spec:
                   key: client_secret
                   name: plaid-client-credentials
             - name: PLAID_MCP_OIDC_ISSUER
-              value: https://auth.allegedly.works/application/o/plaid-link-oidc/
+              value: https://auth.allegedly.works/application/o/plaid-link/
             - name: PLAID_MCP_OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
