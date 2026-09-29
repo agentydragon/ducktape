@@ -83,8 +83,8 @@ py_test(
     name = "test_app",
     srcs = ["test_app.py"],
     deps = [
-        ":auth",
         ":app",
+        ":auth",
         "//:conftest",
         "//finance/plaid/db:client",
         "//finance/plaid/db:config",

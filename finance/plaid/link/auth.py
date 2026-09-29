@@ -21,6 +21,9 @@ from starlette.responses import Response
 
 from finance.plaid.db.config import PlaidWebSettings
 
+# SessionMiddleware imports itsdangerous lazily; Gazelle cannot see the runtime dependency.
+# gazelle:include_dep @pypi//itsdangerous
+
 logger = logging.getLogger(__name__)
 
 _CLIENT_NAME = "authentik"
@@ -73,7 +76,7 @@ def create_auth_router(settings: PlaidWebSettings) -> APIRouter:
     async def callback(request: Request) -> Response:
         try:
             token = await client(request).authorize_access_token(request)
-        except (OAuthError, JoseError, json.JSONDecodeError, httpx.HTTPError):
+        except OAuthError, JoseError, json.JSONDecodeError, httpx.HTTPError:
             # Provider responses and query parameters are caller-controlled. Do not reflect
             # arbitrary identity-provider text into the browser.
             logger.warning("Authentik sign-in failed")
@@ -139,10 +142,7 @@ def install_oidc_auth(app: FastAPI, settings: PlaidWebSettings) -> None:
     app.state.oauth = build_oauth(settings)
     # Starlette puts the most recently added middleware on the outside. SessionMiddleware
     # therefore needs to be added after the auth checker so it decodes the cookie first.
-    app.add_middleware(
-        RequirePlaidSessionMiddleware,
-        settings=settings,
-    )
+    app.add_middleware(RequirePlaidSessionMiddleware, settings=settings)
     secure_cookie = settings.public_base_url.startswith("https://")
     app.add_middleware(
         SessionMiddleware,
