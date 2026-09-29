@@ -90,6 +90,13 @@ cluster/k8s/agents/public-coder-agent/backup/kustomization.yaml linguist-generat
 cluster/k8s/home-assistant/app/kustomization.yaml linguist-generated=true
 cluster/k8s/home-assistant/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/app/kustomization.yaml linguist-generated=true
+cluster/k8s/grocy/sf/app/kustomization.yaml linguist-generated=true
+cluster/k8s/grocy/sf/mcp/kustomization.yaml linguist-generated=true
+cluster/k8s/grocy/sf/user-perms/kustomization.yaml linguist-generated=true
+cluster/k8s/grocy/vallejo/app/kustomization.yaml linguist-generated=true
+cluster/k8s/grocy/vallejo/mcp/kustomization.yaml linguist-generated=true
+cluster/k8s/grocy/vallejo/user-perms/kustomization.yaml linguist-generated=true
+cluster/k8s/grocy/user-perms-base/kustomization.yaml linguist-generated=true
 cluster/k8s/flux-image-automation-ghcr/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/forgejo-tea/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/shared-secrets/kustomization.yaml linguist-generated=true
@@ -144,8 +151,6 @@ x/codex_pod_image/deploy/** cluster-manifest-ignored=true
 cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignored=true
 # rotate.py's token list, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=true
-# provision.py's user→permission policy, mounted via configMapGenerator — not a K8s manifest.
-cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
 haku/x/dispatch/deploy/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.

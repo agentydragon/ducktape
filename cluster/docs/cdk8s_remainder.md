@@ -21,28 +21,6 @@ configuration typed.
 
 ## Convert: configuration with an existing application contract
 
-### Grocy household overlays and policy
-
-`cluster/k8s/grocy/{sf,vallejo}/mcp/config.yaml` configures the two MCP server
-instances through a hand-written configMapGenerator; `cluster/cdk8s/grocy/mcp.py`
-builds each household's server directly, and `grocy_mcp/mcp_types.py:ServerSettings`
-owns the runtime settings contract.
-
-Proposed: render non-secret settings from that contract. Keep the shared bot-owned
-image pin until image ownership changes explicitly. Where the app/user-perms overlays
-express household variation, pass it into per-household construction as the MCP
-server does, instead of a generated base and a YAML patch.
-
-`grocy/user-perms-base/policy.yaml` uses a YAML anchor for the human users' permission
-set and an explicit empty set for Haku. Its consumer already has
-`cluster/provisioners/grocy_user_perms/provision.py:Policy`. A typed generated policy
-can share the human permission set while preserving Haku's empty set. Keep live
-permission-name validation: the installed Grocy API owns that vocabulary.
-
-Done: the MCP config renders from `ServerSettings`; policy meaning is unchanged after
-anchor expansion, serialization is deterministic, and ConfigMap name rewriting/rollout
-behavior is preserved.
-
 ### Airlock
 
 `cluster/k8s/agents/airlock/config.yaml` is non-secret broker configuration.
