@@ -1098,8 +1098,8 @@
       and lists only what is left.
     </p>
     <div class="meta">
-      <span>baseline <b>origin/devel 55d6374fd2</b></span
-      ><span>date <b>2026-09-28</b></span
+      <span>baseline <b>origin/devel dc2d742623</b></span
+      ><span>date <b>2026-09-29</b></span
       ><span>branch <b>claude/jolly-darwin-al6qse</b></span
       ><span>status <b>no open decisions</b></span>
     </div>
@@ -1197,10 +1197,10 @@
               <strong>Ready now:</strong> the namespace edges (#8185), after which 13 non-admission edges remain: 8 that
               the edge check names, and 5 that #8396 added, which its PR drops; the edge-justification check;
               <code>harden()</code> and <code>place()</code> on the raw and CRD-embedded workloads, then the drop-ALL
-              fleet rule; the revised SeaweedFS provider split (#8035); C4&#39;s references and what they unlock
-              (<code>PostgresRef</code>, <code>PrivateBucket</code>, <code>PostgresBackup</code>); and the token rule,
-              then the <code>Credential</code> grants and <code>MintedSecret</code>. <code>SettingsFile</code>&#39;s
-              last two sites wait on how each should use it.
+              fleet rule; the revised SeaweedFS provider split (#8035); what is left of C4&#39;s references, and the
+              composites they unlock (<code>PrivateBucket</code>, <code>PostgresBackup</code>); and the token rule, then
+              the <code>Credential</code> grants and <code>MintedSecret</code>. <code>SettingsFile</code>&#39;s last two
+              sites wait on how each should use it.
             </li>
             <li>
               <strong>Postponed or deferred by you:</strong> the Kyverno edges, adopting #7094 and the admission-only
@@ -3544,18 +3544,22 @@
           <span class="nid">N7</span><span class="nname">CNPG database and consumer wiring</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            ><code>cnpg.cluster</code> exposes nothing; consumers re-derive <code>-app</code> and <code>-rw</code> hosts
-            (12 hand derivations) and restate the zone.</span
+            >Each of the 19 <code>cnpg.cluster</code> calls takes its module&#39;s <code>PostgresRef</code> and a
+            <code>Placement</code>, 18 of them <code>HIL_OVH</code>; consumers read the reference&#39;s
+            <code>app_secret</code> and <code>rw</code>, and no module spells an <code>-app</code> or
+            <code>-rw</code> name. 6 Cilium rules still name CNPG Pods by <code>cnpg.io/cluster</code> (step 7).</span
           >
         </div>
         <div class="need">
           <span class="nid">N8</span><span class="nname">Backups (Barman, VolSync)</span
           ><span class="chip chip-planned">planned</span
           ><span class="ntoday"
-            >Only authentik-db-ovh has Barman backups: six objects in a unit of their own, with its names as literals in
-            two modules. <code>ResticBackup</code> (<code>restic_backup.py</code>) builds the VolSync Restic backups of
-            public-coder and haku-openclaw-spike: seven objects, five of whose names it derives from the namespace.
-            grocy and home-assistant build their ReplicationSources in their app modules (<code>grocy/app.py:345</code>,
+            >Only authentik-db-ovh has Barman backups: six objects in a unit of their own, which
+            <code>authentik/db_backups.py</code> builds with the database&#39;s name spelled again beside the
+            <code>PostgresRef</code> in <code>authentik/db.py</code>.
+            <code>ResticBackup</code> (<code>restic_backup.py</code>) builds the VolSync Restic backups of public-coder
+            and haku-openclaw-spike: seven objects, five of whose names it derives from the namespace. grocy and
+            home-assistant build their ReplicationSources in their app modules (<code>grocy/app.py:345</code>,
             <code>home_assistant/app.py:563</code>).</span
           >
         </div>
@@ -3611,17 +3615,18 @@
           <span class="nid">N14</span><span class="nname">Expose via Gateway</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            ><code>https_route(backend: str, port: int)</code> (<code>gateway.py:50-64</code>) sits beside a separately
-            spelled <code>IngressRule.from_gateway(PORT)</code>, and 5 of its 35 calls target port 80 on Pods that
-            listen elsewhere.</span
+            ><code>https_route(backend: ServiceRef | HostNetworkServiceRef)</code> routes to the backend&#39;s Service
+            port, and 10 of the 11 <code>IngressRule.from_gateway</code> calls admit the Gateway on a reference&#39;s
+            <code>pod_port</code>; authentik&#39;s passes its own port constants.</span
           >
         </div>
         <div class="need">
           <span class="nid">N15</span><span class="nname">Service-to-service connectivity</span
           ><span class="chip chip-frequent">frequent</span
           ><span class="ntoday"
-            >The client&#39;s URL and egress and the server&#39;s ingress are each hand-written from string constants,
-            and <code>endpoint_labels</code> is called with string names at 30 of 38 sites.</span
+            >Producers declare 86 <code>ServiceRef</code>s in 60 modules, and clients project <code>url</code> and
+            <code>egress()</code> from them; 17 <code>cilium.endpoint_labels</code> calls in 11 modules still name Pods
+            by string, and consumers still spell 29 in-cluster URLs and 8 hosts (step 7).</span
           >
         </div>
         <div class="need">
@@ -5276,7 +5281,7 @@
                 a <code>resourceNames</code> entry is the producer&#39;s <code>SecretRef</code> through
                 <code>Secret.from_secret_name</code>, so the Role and the program&#39;s config cannot name different
                 Secrets. A cdk8s-plus ServiceAccount turns its token off; every pod spec states its own token choice
-                (C5, step 11), so converting one changes no Pod, and Secret reads across namespaces go through the
+                (C5, step 10), so converting one changes no Pod, and Secret reads across namespaces go through the
                 grants (C8).
               </p>
             </div>
@@ -5644,9 +5649,9 @@ class SecretStoreRef:
               On devel the policy functions have about 270 call sites (<code>flux_kustomization</code> 159,
               <code>helm_release</code> 38, <code>https_route</code> 35, <code>cnpg.cluster</code> 19,
               <code>gitops_terraform</code> 16, <code>valkey_instance</code> 3, <code>fqdn_fence</code> 2), and
-              <code>namespaces.namespace</code> has 67. What is left changes parameters, not shapes:
-              <code>https_route</code> takes a <code>ServiceRef</code> and <code>cnpg.cluster</code> a
-              <code>PostgresRef</code> with the references (steps 7 and 8).
+              <code>namespaces.namespace</code> has 67. <code>https_route</code> takes the backend&#39;s
+              <code>ServiceRef</code>, and <code>cnpg.cluster</code> a <code>PostgresRef</code> and a
+              <code>Placement</code>.
             </p>
           </div>
         </div>
@@ -5741,13 +5746,6 @@ def https_route(
             <dd>
               <div class="rich">
                 <ul>
-                  <li>
-                    <code>cnpg.cluster</code>&#39;s <code>node_selector</code> mapping and nameless outputs
-                    (<code>cnpg.py:59-103</code>).
-                  </li>
-                  <li>
-                    <code>https_route</code>&#39;s <code>backend: str, port: int</code> (<code>gateway.py:50-64</code>).
-                  </li>
                   <li><code>valkey_instance</code>&#39;s name-doubles-as-id convention.</li>
                   <li>#8035&#39;s one-line ducktape subclasses.</li>
                 </ul>
@@ -5820,8 +5818,8 @@ def https_route(
               VolSync backups of public-coder and haku-openclaw-spike, and
               <code>SettingsFile</code> (<code>settings_file.py</code>), which 5 of the 7 in-repo settings files go
               through (step 3 has the other two). <code>MintedSecret</code>, <code>PrivateBucket</code> and
-              <code>PostgresBackup</code> expose references as attributes, so they follow the references (steps 9, 10
-              and 12); until then <code>minted_secret.py</code>&#39;s helpers and the SeaweedFS constructs in
+              <code>PostgresBackup</code> expose references as attributes, so they follow the references (steps 8, 9 and
+              11); until then <code>minted_secret.py</code>&#39;s helpers and the SeaweedFS constructs in
               <code>seaweedfs/s3.py</code> do those jobs.
             </p>
           </div>
@@ -6010,12 +6008,15 @@ class PostgresBackup(Construct):
           <span class="lbl">On devel</span>
           <div class="rich">
             <p>
-              On devel, <code>secret_ref.py</code> and <code>service_ref.py</code> hold the generic references: 36
-              <code>ServiceRef</code>s in 33 modules, <code>SecretKey</code> projections where
-              <code>env_helpers</code> was, <code>https_route(backend: ServiceRef)</code>, and
-              <code>cilium.SCRAPERS</code> and <code>cilium.PROBER</code>. Few producers build from them yet (4 of 54
-              Services, 4 of 17 ServiceMonitors), most consumers still spell addresses, and <code>PostgresRef</code> is
-              not on devel (steps 7 and 8).
+              On devel, <code>secret_ref.py</code>, <code>service_ref.py</code> and <code>cnpg.PostgresRef</code> hold
+              the references: 86 <code>ServiceRef</code>s in 60 modules, and a <code>PostgresRef</code> for each of the
+              19 <code>cnpg.cluster</code> calls, from which consumers read the <code>-app</code> Secret and the
+              <code>-rw</code> host. Producers build from them: 49 of 55 Services take their ports from a
+              <code>Port</code> projection and the other 6 from their <code>ServiceRef</code>&#39;s
+              <code>port</code> and <code>pod_port</code>, 64 of 78 container ports are projections, and 14 of 17
+              ServiceMonitors select a reference&#39;s labels. Every Secret key read into env is a
+              <code>SecretKey</code> projection. Step 7 has the rest: ports whose Pods listen elsewhere, and the
+              consumers and Cilium peers that still spell an address or a selector.
             </p>
           </div>
         </div>
@@ -6190,18 +6191,17 @@ def service(household: str) -&gt; ServiceRef:  # household_chart() builds its Se
             <dd>
               <div class="rich">
                 <ul>
-                  <li>Ports spelled by hand at 50 of 54 Services and 71 of 76 container ports.</li>
                   <li>
-                    13 hand derivations of <code>-app</code> and <code>-rw</code> (<code>terraform.py:32</code>,
-                    <code>atuin/user_provisioner.py:36-37</code>, <code>attic.py:112</code>), and 7 spellings of the
-                    SeaweedFS S3 endpoint.
+                    Service and container ports built inline from <code>port</code> and <code>pod_port</code> where the
+                    Pods listen elsewhere: 9 Service ports and 8 container ports.
                   </li>
-                  <li><code>cilium.endpoint_labels</code> called with a string name at 30 of 38 sites.</li>
+                  <li>7 spellings of the SeaweedFS S3 endpoint.</li>
+                  <li>
+                    <code>cilium.endpoint_labels</code> called with a string name, 17 times, and 6 Cilium rules that
+                    name CNPG Pods by label.
+                  </li>
+                  <li>29 in-cluster URLs and 8 hosts that consumers spell.</li>
                   <li>The consumer re-declaring bearer names (<code>agentplane/staging.py:75-78</code>).</li>
-                  <li>
-                    Secret keys named by string: 19 <code>k8s.SecretKeySelector</code>s, 38 cdk8s-plus
-                    <code>SecretValue</code>s and the grocy MCP&#39;s <code>_secret_env</code>.
-                  </li>
                   <li>
                     Hand-typed probe URLs (<code>cluster/k8s/gatus/config.yaml:194-206</code>), and the grocy MCP&#39;s
                     household literals beside <code>grocy.app.HOUSEHOLDS</code>.
@@ -6517,7 +6517,7 @@ def place(workload: Construct, placement: Placement, *, tolerate_control_plane: 
               On devel, 12 of 192 charts register <code>FleetRules</code> through their own
               <code>add_fleet_rules</code> call, and the Flux graph is checked after the fact over
               <code>kustomize build</code> output. Attaching the rules at the writer is deferred until the shared
-              layer&#39;s scope is agreed (step 18).
+              layer&#39;s scope is agreed (step 17).
             </p>
           </div>
         </div>
@@ -6566,7 +6566,7 @@ class FleetRules:
                 <p>
                   Every chart the repo writes, and the Flux graph. Whole-fleet properties: hardening, SNI-pinned HTTPS
                   egress, resolved references, a stated <code>automountServiceAccountToken</code> on every pod spec,
-                  never <code>true</code> under the <code>default</code> ServiceAccount (step 11, landing before any
+                  never <code>true</code> under the <code>default</code> ServiceAccount (step 10, landing before any
                   ServiceAccount conversion), and the admission rules of the graph.
                 </p>
               </div>
@@ -6701,7 +6701,7 @@ class FleetRules:
               edges, <code>artifact-generators</code> to <code>flux-system</code>, and 5 that #8396 added (step 2 drops
               them); decision 2 classifies the 26 direct <code>kyverno</code> edges. <code>wait</code> still defaults to
               <code>True</code> (<code>flux.py:142</code>), Orphan is passed by hand, and no synth-time check reads the
-              graph: those parts are postponed or deferred (steps 16, 17 and 18).
+              graph: those parts are postponed or deferred (steps 15, 16 and 17).
             </p>
           </div>
         </div>
@@ -7013,7 +7013,7 @@ flux_chart.node.add_validation(AdmissionGraph(flux_chart, directories))</code></
           <span class="lbl">On devel</span>
           <div class="rich">
             <p>
-              Not on devel; step 12 adds it. Today one Secret crosses namespaces five ways: the external-creds roster
+              Not on devel; step 11 adds it. Today one Secret crosses namespaces five ways: the external-creds roster
               (<code>external_creds.py</code>) through a store whose allowlist is kept by hand, 24 per-pair stores that
               <code>single_secret_store</code> builds from the consumer&#39;s chart (11 of them for
               <code>forgejo/secret_copy.py</code>&#39;s copies), ESO-ServiceAccount stores (forgejo-images&#39; lists 34
@@ -7874,7 +7874,7 @@ _USER_PASSWORD = SecretRef(namespace=NAMESPACE, name=ATUIN_USER_PASSWORD.name)
               </li>
               <li>
                 Deployment <code>atuin-server</code>: gains <code>automountServiceAccountToken: false</code> (step
-                11&#39;s rule), <code>protocol: TCP</code> on its containerPort, and from <code>harden()</code> the
+                10&#39;s rule), <code>protocol: TCP</code> on its containerPort, and from <code>harden()</code> the
                 container&#39;s <code>allowPrivilegeEscalation: false</code> and drop-ALL and the Pod&#39;s
                 RuntimeDefault seccomp. Its nodeSelector is byte-identical: <code>place(HIL_OVH)</code> writes the same
                 one. The pod template changes, so the server restarts once.
@@ -9946,7 +9946,7 @@ def _resigner_identity(chart: Chart) -&gt; ServiceAccount:
                 calls <code>load_incluster_config()</code> (tana/firebase_resigner/resigner.py:216) and reads and
                 patches the refresh-token Secret. Without the pod-level line, the ServiceAccount&#39;s new
                 <code>false</code> would take the token away and the resigner would fail at startup; this is why step
-                11&#39;s rule lands before any ServiceAccount conversion.
+                10&#39;s rule lands before any ServiceAccount conversion.
               </li>
               <li>
                 The RoleBinding subject gains <code>apiGroup: &#34;&#34;</code>, which RBAC treats as the same subject.
@@ -10254,7 +10254,7 @@ CONFIG = {
                 <code>default-vpa-requests-only</code>) reach an object&#39;s first version. The
                 <code>restrict-agent-*</code> policies gate agents&#39; own requests, which come after bootstrap. Keep
                 the <code>kyverno-policies</code> edges its CRDs need (rule 1), and drop the 26 Kyverno-only edges in
-                their own batch (step 14).
+                their own batch (step 13).
               </p>
             </div>
           </div>
@@ -10362,7 +10362,7 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Step 1. Open, and merges cleanly onto devel 55d6374fd2. It removes the 14 namespace-class edges
+                    Step 1. Open, and merges cleanly onto devel dc2d742623. It removes the 14 namespace-class edges
                     whose target only creates the namespace, the last of that class, and keeps every direct
                     <code>kyverno</code> and <code>kyverno-policies</code> edge.
                   </p>
@@ -10383,7 +10383,7 @@ CONFIG = {
                     <code>S3Credentials</code> and <code>ResourceReferenceGrant</code> single-shot binding subclasses
                     that take <code>access=</code> and <code>identity_ref=</code> at construction; drop the grant
                     methods, the JSON patches, the <code>_ClusterGrant</code> chart singleton and the one-line ducktape
-                    subclasses. <code>PrivateBucket</code> (step 9) then renders in each consumer&#39;s own unit with
+                    subclasses. <code>PrivateBucket</code> (step 8) then renders in each consumer&#39;s own unit with
                     its Secret name unchanged and its S3Identity in the tenant.
                   </p>
                 </div>
@@ -10411,7 +10411,7 @@ CONFIG = {
               <td>
                 <div class="rich">
                   <p>
-                    Step 12. It uses the right mechanism (C8). Rebase it onto the <code>write_directory</code> form,
+                    Step 11. It uses the right mechanism (C8). Rebase it onto the <code>write_directory</code> form,
                     where the external-creds siblings are every entry&#39;s
                     <code>secret_file</code> (<code>generate_manifests.py:619</code>), and express each entry as
                     <code>Credential(source=..., consumers=...)</code>, which replaces
@@ -10445,7 +10445,7 @@ CONFIG = {
                 <div class="rich">
                   <p>
                     Step 6. It uses existing helpers and adds no mechanism; its ESO-generated key moves to
-                    <code>MintedSecret</code> with the rest in step 12. Rebase it before landing.
+                    <code>MintedSecret</code> with the rest in step 11. Rebase it before landing.
                   </p>
                 </div>
               </td>
@@ -10500,14 +10500,14 @@ CONFIG = {
       <div class="prose">
         <div class="rich">
           <p>
-            What is left, from devel 55d6374fd2, in the recommended order. Each step names its gate: <code>ready</code>,
+            What is left, from devel dc2d742623, in the recommended order. Each step names its gate: <code>ready</code>,
             a decision, or a step before it. The PR that lands a convention records it in
             <code>cluster/cdk8s/AGENTS.md</code> or the <code>cdk8s_builders</code> skill (the AGENTS.md changes section
             lists the edits).
           </p>
         </div>
       </div>
-      <h3 class="track"><span class="chip chip-ready-now">ready now</span><span>13 steps</span></h3>
+      <h3 class="track"><span class="chip chip-ready-now">ready now</span><span>12 steps</span></h3>
       <ol class="steps">
         <li>
           <div class="st">
@@ -10520,7 +10520,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Ready: #8185 is open and merges cleanly onto devel 55d6374fd2.</p></div>
+            <div class="rich"><p>Ready: #8185 is open and merges cleanly onto devel dc2d742623.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -10558,7 +10558,7 @@ CONFIG = {
                 <code>kyverno-policies</code> renders exist); the bootstrap edge <code>artifact-generators</code> to
                 <code>flux-system</code>; or a registered exception with one of #7094 rule 2&#39;s two reasons (the five
                 edges that carry one today, moved from comments into the table). Two tables hold what is not settled:
-                the 26 direct <code>kyverno</code> edges (decision 2) and the two user-provisioner Job edges (step 19).
+                the 26 direct <code>kyverno</code> edges (decision 2) and the two user-provisioner Job edges (step 18).
                 <code>external-secrets-operator</code> to <code>external-secrets-crds</code> needs
                 <code>OPERATOR_CRDS</code> to name the CRD unit. The five edges #8396 added fit none of these, and the
                 same PR drops them: grocy-sf&#39;s, grocy-vallejo&#39;s, plaid-mcp&#39;s and tana-mcp&#39;s to
@@ -10585,7 +10585,7 @@ CONFIG = {
                 <code>cluster/validation/{crd_layering,dependencies}.py</code>, with the tables beside
                 <code>OPERATOR_CRDS</code> so they are checks, not wiring, and the nodes of #8396&#39;s five edges;
                 tests on synthetic graphs, including suspended units, which <code>flux_kust_resources</code> skips
-                today. The check moves to synth with the graph checks (step 18).
+                today. The check moves to synth with the graph checks (step 17).
               </p>
             </div>
           </div>
@@ -10641,7 +10641,7 @@ CONFIG = {
               <p>
                 <code>harden()</code> and <code>place()</code> on the raw and CRD-embedded workloads, one area per PR
                 (agents, apps, platform, ...), deleting the literal hardening structs and the placement keywords their
-                pod specs state. The provisioner Jobs stay out (step 19), as do required affinities that are not zone
+                pod specs state. The provisioner Jobs stay out (step 18), as do required affinities that are not zone
                 affinities.
               </p>
             </div>
@@ -10711,7 +10711,7 @@ CONFIG = {
             <div class="rich">
               <p>
                 Rebase and land the open PRs that already follow the conventions: #7695 (N25&#39;s pins), #7909, and the
-                incidental #7859; #7426 (C9) is on devel. Rebase #7094 too, without landing it (step 15).
+                incidental #7859; #7426 (C9) is on devel. Rebase #7094 too, without landing it (step 14).
               </p>
             </div>
           </div>
@@ -10732,42 +10732,75 @@ CONFIG = {
           <div class="st">
             <div class="rich">
               <p>
-                References, area by area, where a name, port or selector is still spelled: each producer&#39;s Service,
-                container ports, Cilium rules and ServiceMonitor read its <code>ServiceRef</code>; each consumer&#39;s
-                address comes from <code>ServiceRef.url</code>, <code>host</code> or <code>fqdn</code>; and a Secret key
-                read into env is a <code>SecretKey</code> projection, including the grocy MCP&#39;s
-                <code>_secret_env</code>, the last module-local helper that takes a string key. The reference types,
-                <code>https_route(backend: ServiceRef)</code>, <code>cilium.SCRAPERS</code> and
-                <code>cilium.PROBER</code> are on devel, <code>env_helpers</code> is gone, and ntfy, home-assistant,
-                ha-mcp, gatus and the grocy app build from their references.
+                References, what the area PRs left: a <code>ServiceRef</code> projection for a port whose Pods listen
+                elsewhere, which activitywatch, cpap-sync, website, github-api-proxy, loki-read-proxy, oci-cache, the
+                haku console and agentplane&#39;s egress build inline; the consumers and Cilium peers that still spell
+                an address or a selector; and <code>plaid_mcp/pgweb.py</code>, which selects its Pods by its own
+                <code>_LABELS</code> rather than <code>SERVICE.pods</code>, spells its CNPG egress
+                (<code>_DB_CLUSTER</code>, 5432) and imports <code>NAMESPACE</code> through
+                <code>plaid_mcp.app</code> rather than <code>db</code>. <code>cilium.AGENTPLANE_STAGING_PROXY</code> and
+                <code>agentplane.egress.proxy(&#34;agentplane-staging&#34;).pods</code> name the same Pods, and one of
+                them goes. Every area&#39;s producers (#8416, #8418, #8419, #8420, #8422, #8423, #8424) and
+                <code>PostgresRef</code> (#8425) are on devel, and every Secret key read into env is a
+                <code>SecretKey</code> projection.
               </p>
             </div>
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Ready.</p></div>
+            <div class="rich">
+              <p>
+                Ready, except where a server cannot import its client (7 agentplane server rules, and CLIProxyAPI&#39;s
+                admissions of LiteLLM and aiquota): whether that identity moves to a leaf constant, as
+                <code>cilium.PROBER</code> did, is your call (#8420).
+              </p>
+            </div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
             <div class="rich">
-              <p>One PR per area. On devel 55d6374fd2:</p>
+              <p>One PR per area. On devel dc2d742623:</p>
               <ul>
                 <li>
-                  50 of 54 Services and 71 of 76 container ports spell their port by hand, among them the Services of 23
-                  of the 33 modules that declare a <code>ServiceRef</code>;
+                  Where the Pods listen on another port than the Service, 9 Service ports in 8 modules and 8 container
+                  ports in 6 are built inline from <code>port</code> and <code>pod_port</code>, because
+                  <code>Port</code>&#39;s projections use <code>port</code>. 4 container ports read no reference:
+                  aw-server&#39;s, dcgm-exporter&#39;s and gateway-probe&#39;s, which no Service fronts, and
+                  haku-mailbox&#39;s SMTP port, which carries a hostPort;
                 </li>
                 <li>
-                  13 of 17 ServiceMonitors select by hand, and 33 <code>cilium.endpoint_labels</code> calls in 15
-                  modules name Pods by string;
+                  3 of 17 ServiceMonitors select by hand where no one <code>ServiceRef</code> fits: Talos etcd&#39;s
+                  Service has no Pods, github-exporter&#39;s monitor covers one Service per account, and the Cilium
+                  chart labels the Hubble Service with labels its Pods lack;
                 </li>
                 <li>
-                  consumers spell 44 in-cluster URLs in 26 modules and 20 hosts in 15, besides the CNPG and SeaweedFS S3
-                  hosts that steps 8 and 9 take, and Gatus&#39;s probes are hand-typed URLs in
-                  <code>cluster/k8s/gatus/config.yaml</code>;
+                  17 <code>cilium.endpoint_labels</code> calls in 11 modules name Pods by string: 3 in
+                  agentplane-staging&#39;s egress to ssh-mcp, tana-mcp and google-mcp, whose references are public now;
+                  7 on agentplane servers admitting a client that imports them; 5 whose peer has no
+                  <code>Pods</code> reference (Alloy, the testing OAuth fixture, and agentplane-staging&#39;s Action
+                  Service, whose namespace agentplane keeps private); and CLIProxyAPI&#39;s admissions of LiteLLM, whose
+                  reference needs a <code>ProxySpec</code>, and aiquota, which imports it. 6 more rules name CNPG Pods
+                  by <code>cnpg.io/cluster</code>, which <code>PostgresRef.rw.egress()</code> replaces;
                 </li>
                 <li>
-                  19 <code>k8s.SecretKeySelector</code>s and 38 cdk8s-plus <code>SecretValue</code>s name a Secret by
-                  string.
+                  consumers spell 29 in-cluster URLs in 17 modules and 8 hosts in 8. 17, in 8 modules, have a public
+                  reference to read: agentplane&#39;s <code>app_settings.py</code> and <code>sandbox_pod.py</code>,
+                  agentplane-staging&#39;s MCP URLs, the Ollama and CLIProxyAPI clients in agentplane-index and LiteLLM,
+                  haku-ci&#39;s proxy and registry mirror, Kyverno&#39;s proxy injection, and ssh-mcp&#39;s devbox host.
+                  5 have a reference that is private (Langfuse&#39;s, Grafana&#39;s) or needs a
+                  <code>ProxySpec</code> (LiteLLM&#39;s three clients); 14 name a Service no module exports a reference
+                  for (the testing fixtures, the monitoring stack&#39;s Helm Services, Valkey, VolSync, the Cilium
+                  gateway, the SeaweedFS filer); and the haku console&#39;s aiquota URL would close an import cycle;
+                </li>
+                <li>
+                  23 hand-written files outside the generator spell in-cluster hosts, on 44 lines: Gatus&#39;s probes
+                  (17 lines of <code>cluster/k8s/gatus/config.yaml</code>), 11 Authentik blueprints&#39;
+                  <code>internal_host</code>, and among the rest the oci-cache, haku-mailbox, SeaweedFS filer and Alloy
+                  configs;
+                </li>
+                <li>
+                  <code>cluster/cdk8s/AGENTS.md</code> § &#39;References, not names&#39; still gives
+                  <code>cilium.endpoint_labels(namespace, egress.NAME)</code> as its example.
                 </li>
               </ul>
             </div>
@@ -10777,41 +10810,11 @@ CONFIG = {
             <div class="rich">
               <p>
                 Low. Mostly identical render: named targetPorts become numbers, <code>Port</code> adds
-                <code>protocol: TCP</code> where it was implied, and a URL built from <code>ServiceRef.url</code> drops
-                <code>.cluster.local</code> (E8, E12).
-              </p>
-            </div>
-          </div>
-        </li>
-        <li>
-          <div class="st">
-            <div class="rich">
-              <p>
-                cnpg: <code>PostgresRef</code> and <code>cluster(ref=, placement=, wal_archive=)</code>, with
-                <code>initdb=cnpg.same_owner_initdb(...)</code> at the same-owner sites; repoint the 13 hand-written
-                <code>-app</code>/<code>-rw</code> derivations.
-              </p>
-            </div>
-          </div>
-          <div class="sg">
-            <span class="lbl">Gate</span>
-            <div class="rich"><p>Ready.</p></div>
-          </div>
-          <div class="sc">
-            <span class="lbl">Scope</span>
-            <div class="rich">
-              <p>The 19 <code>cnpg.cluster</code> calls and their consumers.</p>
-            </div>
-          </div>
-          <div class="sr">
-            <span class="lbl">Risk</span>
-            <div class="rich">
-              <p>
-                Low for DNS clients in ordinary Pods. Not for hosts compared as strings (<code
-                  >agentplane/egress.py:98-109</code
-                >
-                feeds the egress proxy allowlist) or for hostNetwork Pods; those keep the FQDN through
-                <code>ServiceRef.fqdn</code>. A changed URL in a hashed config re-runs its Job.
+                <code>protocol: TCP</code> where it was implied, a URL built from <code>ServiceRef.url</code> drops
+                <code>.cluster.local</code> (E8, E12), and a rule from <code>egress()</code> gains the namespace key or
+                loses a <code>k8s:</code> prefix. A host compared as a string (a <code>NO_PROXY</code> entry, the egress
+                proxy&#39;s allowlist) or read from a hostNetwork Pod keeps the FQDN through <code>.fqdn</code>. A
+                changed URL in a pod template or a hashed config restarts its workload once.
               </p>
             </div>
           </div>
@@ -10862,7 +10865,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>After steps 8 and 9.</p></div>
+            <div class="rich"><p>After step 8.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -10898,7 +10901,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>Ready. It lands before step 12 converts any ServiceAccount.</p></div>
+            <div class="rich"><p>Ready. It lands before step 11 converts any ServiceAccount.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -10906,7 +10909,7 @@ CONFIG = {
               <p>
                 <code>fleet_rules.py</code>, <code>pod_policy</code>, the 34 generated pod specs that state nothing, and
                 claude-sandbox&#39;s RBAC: #8365, #8366 and #8367 (agents, apps and platform) and #8368 (the fleet rule)
-                are open. Until fleet rules reach every chart (step 18), the rule covers only the 12 charts that call
+                are open. Until fleet rules reach every chart (step 17), the rule covers only the 12 charts that call
                 <code>add_fleet_rules</code>.
               </p>
             </div>
@@ -10942,7 +10945,7 @@ CONFIG = {
           </div>
           <div class="sg">
             <span class="lbl">Gate</span>
-            <div class="rich"><p>After step 11.</p></div>
+            <div class="rich"><p>After step 10.</p></div>
           </div>
           <div class="sc">
             <span class="lbl">Scope</span>
@@ -10954,7 +10957,7 @@ CONFIG = {
               <p>
                 Medium. ExternalSecrets fail transiently while a store is renamed; check ExternalSecret status on the
                 live cluster after each PR. ServiceAccount conversions: grep each account&#39;s pods for
-                <code>service_account_name</code> before converting, and state the token on each (step 11&#39;s rule
+                <code>service_account_name</code> before converting, and state the token on each (step 10&#39;s rule
                 catches a miss). Each RoleBinding names both the new and the old reader until its namespace&#39;s last
                 old copy moves. The 4 DB-role mint calls lose their 8760h re-mint.
               </p>
@@ -11113,7 +11116,7 @@ CONFIG = {
                 On top of the writer: fleet rules attached to every chart (C6), replacing the 12
                 <code>add_fleet_rules</code> calls; the graph checks at synth (<code>AdmissionGraph</code>), which also
                 cover <code>haku-state-workloads</code>; health checks derived from the rendered objects, or
-                <code>wait: true</code> with Flux&#39;s own checks, which belongs with step 16; and absorbing
+                <code>wait: true</code> with Flux&#39;s own checks, which belongs with step 15; and absorbing
                 hand-written kustomization glue through <code>components</code> and <code>config_map_generator</code>,
                 one directory per PR, nix-cache first. The 40 directories with a hand-written
                 <code>kustomization.yaml</code> keep it until then.
@@ -11176,7 +11179,7 @@ CONFIG = {
         <li>
           <div class="rich">
             <p>
-              § Boundaries, with steps 16 and 17: construction runs forward, with no registry, sorter, lazy reference or
+              § Boundaries, with steps 15 and 16: construction runs forward, with no registry, sorter, lazy reference or
               node class. Stateful data survives, with Orphan derived for every generated directory that renders a
               stateful kind; a HelmRelease holding state passes it explicitly. Escape hatches stay: an explicit
               <code>deletion_policy</code> on the node wins; a directory needing a decryption the writer cannot derive
@@ -11198,9 +11201,9 @@ CONFIG = {
         <li>
           <div class="rich">
             <p>
-              § Shape of a generator, &#39;References, not names&#39; (<code>AGENTS.md:52-57</code>): producers export
-              references (<code>ntfy.SERVICE</code>, <code>atuin.DATABASE.rw</code>, <code>ha_mcp.BEARER</code>), a
-              repeated deployment exports a pure function of its instance key
+              § Shape of a generator, &#39;References, not names&#39; (<code>AGENTS.md:52-57</code>), with step 7:
+              producers export references (<code>ntfy.SERVICE</code>, <code>atuin.DATABASE.rw</code>,
+              <code>ha_mcp.BEARER</code>), a repeated deployment exports a pure function of its instance key
               (<code>grocy.app.service(household)</code>), and consumers project them (<code>.egress()</code>,
               <code>.env_var(...)</code>, <code>Pods.admit(...)</code>).
               <code>cilium.endpoint_labels(namespace, name)</code> with a string name is retired.
@@ -11212,13 +11215,13 @@ CONFIG = {
             <p>§ The Flux graph:</p>
             <ul>
               <li>
-                With step 17: <code>flux_kustomization</code> derives Orphan from the directory too. Replace &#39;a
+                With step 16: <code>flux_kustomization</code> derives Orphan from the directory too. Replace &#39;a
                 second fact that needs to cross is a second parameter&#39; (<code>AGENTS.md:139-140</code>) with
                 &#39;the rendered directory is the one value that crosses; a fact it does not carry is a keyword&#39;,
                 and delete the SOPS-decryption-constant sentence (<code>AGENTS.md:151-152</code>).
               </li>
               <li>
-                With step 2, and step 16 for <code>wait</code>: a predecessor is an admission prerequisite (the
+                With step 2, and step 15 for <code>wait</code>: a predecessor is an admission prerequisite (the
                 CRD&#39;s provider, a Fail-webhook operator, a <code>postBuild</code> source); any other edge is an
                 <code>ORDERING_EXCEPTIONS</code> entry with one of two reasons; <code>wait</code> defaults to off, and
                 only an admission target gates, with health checks from <code>directory.health_checks(kinds)</code>; one
@@ -11240,7 +11243,7 @@ CONFIG = {
         <li>
           <div class="rich">
             <p>
-              § Testing a generator and § Adding a fleet rule, with step 18: the writer attaches fleet rules to every
+              § Testing a generator and § Adding a fleet rule, with step 17: the writer attaches fleet rules to every
               chart. <code>add_fleet_rules</code> goes, with the registration-timing note in the environment-chart
               bullet (<code>AGENTS.md:48-50</code>). Exceptions are <code>FleetExceptions</code> fields at the writer
               call. Rules read <code>pod_policy.POD_SPEC_PATHS</code>, and the graph rules run on the kustomizations
@@ -11258,7 +11261,7 @@ CONFIG = {
                 <code>pod_policy.harden</code> and <code>place</code>, which writes a nodeSelector.
               </li>
               <li>
-                With step 11, extend the <code>automount_token=False</code> entry (<code>AGENTS.md:281-282</code>):
+                With step 10, extend the <code>automount_token=False</code> entry (<code>AGENTS.md:281-282</code>):
                 every pod spec states <code>automountServiceAccountToken</code>, <code>false</code> unless the Pod calls
                 the API, and a Pod that states <code>true</code> runs as its own ServiceAccount, never
                 <code>default</code>.
@@ -11286,7 +11289,7 @@ CONFIG = {
         </li>
         <li>
           <div class="rich">
-            <p>New § Secrets across namespaces, with step 12:</p>
+            <p>New § Secrets across namespaces, with step 11:</p>
             <ul>
               <li>
                 A <code>Credential</code> (source <code>SecretRef</code>, a non-empty set of consumer namespaces) is the
@@ -11319,7 +11322,7 @@ CONFIG = {
         <li>
           <div class="rich">
             <p>
-              <code>cluster/AGENTS.md:217-224</code>, rewritten to the admission-only wording with step 15: &#39;A
+              <code>cluster/AGENTS.md:217-224</code>, rewritten to the admission-only wording with step 14: &#39;A
               Kustomization applying kind K depends on what makes the API server admit K: the Kustomization providing
               K&#39;s CRD, and the operator itself only where its <code>failurePolicy: Fail</code> webhook gates K (ESO,
               CNPG, cert-manager, virt-api, CDI, and Kyverno if decision 2 rules it one). prometheus-operator,
@@ -11708,10 +11711,12 @@ CONFIG = {
           </ul>
           <p>
             The census, the diagnosis and the worked service were measured on devel d86d9ae49d, where the file:line
-            cites also point. The Flux graph and unit counts wherever they appear, the conventions&#39; adoption, the
-            migration steps and the PR states were measured on devel 55d6374fd2, and so were the matrix rows for
-            secrets, config files, namespaces, Terraform CRs, repeated deployments and fleet rules; the other rows are
-            from d86d9ae49d. Each example&#39;s chip names the revision its after code was rendered on.
+            cites also point. The Flux graph and unit counts wherever they appear, the conventions&#39; adoption and the
+            migration steps were measured on devel 55d6374fd2, and so were the matrix rows for secrets, config files,
+            namespaces, Terraform CRs, repeated deployments and fleet rules; the other rows are from d86d9ae49d. The
+            references (C4 and step 7), the CNPG wiring, the matrix rows for CNPG, backups, Gateway exposure and service
+            connectivity, and the PR states were measured on devel dc2d742623, where the Flux graph and the per-unit
+            counts measure the same. Each example&#39;s chip names the revision its after code was rendered on.
           </p>
           <p>
             The page is rendered by <code>cluster/docs/cdk8s_conventions/render.py</code> from
@@ -11870,13 +11875,13 @@ CONFIG = {
     },
     {
       "title": "N7 \u00b7 CNPG database and consumer wiring",
-      "today": "`cnpg.cluster` exposes nothing; consumers re-derive `-app` and `-rw` hosts (12 hand derivations) and restate the zone.",
+      "today": "Each of the 19 `cnpg.cluster` calls takes its module's `PostgresRef` and a `Placement`, 18 of them `HIL_OVH`; consumers read the reference's `app_secret` and `rw`, and no module spells an `-app` or `-rw` name. 6 Cilium rules still name CNPG Pods by `cnpg.io/cluster` (step 7).",
       "note": "`PostgresRef` holds what CNPG derives (`<name>-app`, `<name>-rw`, the instance label) in one place. `cnpg.cluster` stays a function (PLAN.md F) and takes the same `Placement` the app's `place()` takes, so app and database share a region as long as both read one constant (`cluster/docs/cnpg_conventions.md` R5).",
       "conventions": "C2, C4, C5"
     },
     {
       "title": "N8 \u00b7 Backups (Barman, VolSync)",
-      "today": "Only authentik-db-ovh has Barman backups: six objects in a unit of their own, with its names as literals in two modules. `ResticBackup` (`restic_backup.py`) builds the VolSync Restic backups of public-coder and haku-openclaw-spike: seven objects, five of whose names it derives from the namespace. grocy and home-assistant build their ReplicationSources in their app modules (`grocy/app.py:345`, `home_assistant/app.py:563`).",
+      "today": "Only authentik-db-ovh has Barman backups: six objects in a unit of their own, which `authentik/db_backups.py` builds with the database's name spelled again beside the `PostgresRef` in `authentik/db.py`. `ResticBackup` (`restic_backup.py`) builds the VolSync Restic backups of public-coder and haku-openclaw-spike: seven objects, five of whose names it derives from the namespace. grocy and home-assistant build their ReplicationSources in their app modules (`grocy/app.py:345`, `home_assistant/app.py:563`).",
       "note": "The ObjectStore name and the plugin's `barmanObjectName` both derive from one `PostgresRef`. A backup is `cluster(wal_archive=True)` plus one `PostgresBackup` from `cnpg_backup.py`, rendered in the unit that owns the database, so authentik-db-backups can fold into that unit with the stateful-migration handover (E9).",
       "conventions": "C3, C2, C4"
     },
@@ -11912,13 +11917,13 @@ CONFIG = {
     },
     {
       "title": "N14 \u00b7 Expose via Gateway",
-      "today": "`https_route(backend: str, port: int)` (`gateway.py:50-64`) sits beside a separately spelled `IngressRule.from_gateway(PORT)`, and 5 of its 35 calls target port 80 on Pods that listen elsewhere.",
+      "today": "`https_route(backend: ServiceRef | HostNetworkServiceRef)` routes to the backend's Service port, and 10 of the 11 `IngressRule.from_gateway` calls admit the Gateway on a reference's `pod_port`; authentik's passes its own port constants.",
       "note": "`https_route` takes the backend's `ServiceRef` and routes to its Service `port`, and the backend admits the Gateway on `pod_port`, so both halves read one value. Helm-rendered backends are `ServiceRef`s with `target_port` (gatus: 80 to 8080).",
       "conventions": "C2, C4"
     },
     {
       "title": "N15 \u00b7 Service-to-service connectivity",
-      "today": "The client's URL and egress and the server's ingress are each hand-written from string constants, and `endpoint_labels` is called with string names at 30 of 38 sites.",
+      "today": "Producers declare 86 `ServiceRef`s in 60 modules, and clients project `url` and `egress()` from them; 17 `cilium.endpoint_labels` calls in 11 modules still name Pods by string, and consumers still spell 29 in-cluster URLs and 8 hosts (step 7).",
       "note": "The producer exports a `ServiceRef`: the client projects `url` and `egress()`, and the server admits the client's `Pods` on `pod_port`, so nothing is re-spelled. A facade returning both halves would be taken apart by index (#8111), and a hostNetwork server exports a reference with no `egress()`.",
       "conventions": "C4"
     },
@@ -11943,7 +11948,7 @@ CONFIG = {
     {
       "title": "N19 \u00b7 RBAC grants",
       "today": "Raw and tier-1 Role and RoleBinding code side by side, role and ServiceAccount names re-spelled across charts, and 17 copies of the reader ServiceAccount, beside 8 `forgejo-secret-reader`s.",
-      "note": "Tier-1 cdk8s-plus `Role`, `RoleBinding` and `ServiceAccount` stay, and a `resourceNames` entry is the producer's `SecretRef` through `Secret.from_secret_name`, so the Role and the program's config cannot name different Secrets. A cdk8s-plus ServiceAccount turns its token off; every pod spec states its own token choice (C5, step 11), so converting one changes no Pod, and Secret reads across namespaces go through the grants (C8).",
+      "note": "Tier-1 cdk8s-plus `Role`, `RoleBinding` and `ServiceAccount` stay, and a `resourceNames` entry is the producer's `SecretRef` through `Secret.from_secret_name`, so the Role and the program's config cannot name different Secrets. A cdk8s-plus ServiceAccount turns its token off; every pod spec states its own token choice (C5, step 10), so converting one changes no Pod, and Secret reads across namespaces go through the grants (C8).",
       "conventions": "C4, C8"
     },
     {
