@@ -2424,6 +2424,7 @@ data:
       jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
     allowed_service_account_namespaces:
       - agentplane-staging
+    max_wait_seconds: 180
     web_push:
       subject: mailto:agentydragon@gmail.com
       public_base_url: https://agentplane-staging.allegedly.works

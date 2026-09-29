@@ -13,7 +13,10 @@ from agentplane.action_service.models import ActionRequestView, ActionState, Pri
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.updates import ActionUpdates
 
-WaitSeconds = Annotated[float, Field(ge=0, le=30, allow_inf_nan=False)]
+WaitSeconds = Annotated[
+    float,
+    Field(ge=0, allow_inf_nan=False, description="Capped by this instance's max_wait_seconds setting."),
+]
 
 
 class WaitUntil(StrEnum):
@@ -28,6 +31,13 @@ class WaitOptions(BaseModel):
     wait_until: WaitUntil = WaitUntil.TERMINAL
 
 
+class WaitLimitExceededError(ValueError):
+    """A caller requested a wait longer than this Action Service instance allows."""
+
+    def __init__(self, max_wait_seconds: float) -> None:
+        super().__init__(f"wait.wait_seconds must be at most {max_wait_seconds:g} seconds for this instance.")
+
+
 def satisfied(view: ActionRequestView, until: WaitUntil) -> bool:
     if until is WaitUntil.DECISION:
         return view.state is not ActionState.DECISION_PENDING
@@ -40,11 +50,22 @@ def satisfied(view: ActionRequestView, until: WaitUntil) -> bool:
 
 
 class ActionWaiter:
-    def __init__(self, service: ActionService, updates: ActionUpdates) -> None:
+    def __init__(
+        self,
+        service: ActionService,
+        updates: ActionUpdates,
+        max_wait_seconds: float,
+    ) -> None:
         self._service = service
         self._updates = updates
+        self._max_wait_seconds = max_wait_seconds
+
+    def validate(self, options: WaitOptions) -> None:
+        if options.wait_seconds > self._max_wait_seconds:
+            raise WaitLimitExceededError(self._max_wait_seconds)
 
     async def get(self, request_id: UUID, principal: Principal, options: WaitOptions) -> ActionRequestView:
+        self.validate(options)
         if options.wait_seconds == 0:
             return await self._service.get(request_id, principal)
         # Authorize before allocating a subscription, then re-read AFTER subscribing so a

@@ -38,7 +38,7 @@ from agentplane.action_service.catalog import (
 from agentplane.action_service.conftest import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.connections import ConnectionAuthority, Grant, GrantBinding, NewConnection
 from agentplane.action_service.db import ActionStore, make_sessionmaker
-from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE, DIRECT_WAIT_SECONDS
+from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.mcp_frontend import TransportDisconnects, create_server
 from agentplane.action_service.models import ActionState, CallerPrincipal, ExecutionResult, ExecutionState
@@ -189,7 +189,7 @@ class Direct:
 
 @pytest.fixture
 def direct_wait_seconds() -> float:
-    return DIRECT_WAIT_SECONDS
+    return 30.0
 
 
 @pytest.fixture
@@ -224,7 +224,7 @@ async def direct(
     )
     updates = ActionUpdates(db_url)
     mcp_app = create_server(
-        service, catalog, updates, ConnectionBearers(grant, policies), direct_wait_seconds=direct_wait_seconds
+        service, catalog, updates, ConnectionBearers(grant, policies), max_wait_seconds=direct_wait_seconds
     ).http_app(path="/mcp", stateless_http=True, json_response=False)
 
     @asynccontextmanager

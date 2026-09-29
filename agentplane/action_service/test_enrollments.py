@@ -255,6 +255,7 @@ async def test_operator_routes_require_auth_and_reject_redirect_injection(
         catalog,
         callers=admitted_callers(),
         updates=ActionUpdates(db_url),
+        max_wait_seconds=30,
         connections=consent.connections,
         enrollments=consent.authority,
     )

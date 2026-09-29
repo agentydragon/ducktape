@@ -100,6 +100,7 @@ async def callback_client(
         catalog,
         callers=admitted_callers(),
         updates=ActionUpdates(db_url),
+        max_wait_seconds=30,
         mcp_linkage=linkage,
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test-actions") as http:

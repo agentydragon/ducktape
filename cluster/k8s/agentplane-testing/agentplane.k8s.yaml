@@ -2297,6 +2297,7 @@ data:
       token_profile: dex
     allowed_service_account_namespaces:
       - agentplane-testing
+    max_wait_seconds: 180
     mcp_servers:
       example:
         server_id: example

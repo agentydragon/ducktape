@@ -99,6 +99,7 @@ _ACTION_FEDERATION = ExchangeFederationSettings(
 _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
     operator_oidc=_FEDERATION_TARGET,
     allowed_service_account_namespaces=frozenset({_NAMESPACE}),
+    max_wait_seconds=180,
     web_push=WebPushDeploymentSettings(
         subject="mailto:agentydragon@gmail.com",
         public_base_url=f"https://{_HOSTNAME}",

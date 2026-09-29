@@ -240,6 +240,7 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
         connections=service,
         callers=admitted_callers(),
         updates=ActionUpdates(db_url),
+        max_wait_seconds=30,
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://service") as http:
         assert (await http.get("/v1/operator/connections")).status_code == 401

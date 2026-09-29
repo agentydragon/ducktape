@@ -216,9 +216,10 @@ def create_app(
     push_identity: PushIdentity | None = None,
     push_subscriptions: PushSubscriptionStore | None = None,
     mcp_linkage: McpLinkageAuthority | None = None,
+    max_wait_seconds: float,
 ) -> FastAPI:
     verifier = CallerTokenVerifier(workload_resolver, callers=callers, oauth=oauth)
-    mcp_app = create_server(service, catalog, updates, verifier).http_app(
+    mcp_app = create_server(service, catalog, updates, verifier, max_wait_seconds=max_wait_seconds).http_app(
         path="/mcp", stateless_http=True, json_response=False, host_origin_protection="auto"
     )
 
