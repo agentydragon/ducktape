@@ -12,13 +12,19 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/website"
 _NAME = "website"
 _NAMESPACE = "website"
-_LABELS = {"app.kubernetes.io/name": _NAME}
 _CONTENT_CONFIG_MAP = "website-content"
-_PORT = 8080
+# nginx-unprivileged listens on 8080.
+_SERVICE = ServiceRef(
+    name=_NAME,
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+    target_port=8080,
+)
 
 _INDEX_HTML = textwrap.dedent(
     """\
@@ -144,23 +150,23 @@ def chart(app: App) -> Chart:
         metadata=k8s.ObjectMeta(name=_CONTENT_CONFIG_MAP, namespace=_NAMESPACE),
         data={"index.html": _INDEX_HTML},
     )
-    probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_number(_PORT))
+    probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_number(_SERVICE.pod_port))
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=2,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     containers=[
                         k8s.Container(
                             name="nginx",
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
-                            ports=[k8s.ContainerPort(container_port=_PORT)],
+                            ports=[k8s.ContainerPort(container_port=_SERVICE.pod_port)],
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),
@@ -194,11 +200,16 @@ def chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=_NAMESPACE),
         spec=k8s.ServiceSpec(
-            selector=_LABELS,
+            selector=_SERVICE.pods.selector,
             ports=[
-                k8s.ServicePort(name="http", port=80, target_port=k8s.IntOrString.from_number(_PORT), protocol="TCP")
+                k8s.ServicePort(
+                    name=_SERVICE.port.name,
+                    port=_SERVICE.port.number,
+                    target_port=k8s.IntOrString.from_number(_SERVICE.pod_port),
+                    protocol="TCP",
+                )
             ],
             type="ClusterIP",
         ),
@@ -208,8 +219,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["www.allegedly.works", "allegedly.works"],
-        backend=_NAME,
-        port=80,
+        backend=_SERVICE,
         hsts=False,
         listener=None,
     )

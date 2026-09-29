@@ -44,7 +44,7 @@ export function ThreadTitle({
       aria-label="Thread name"
       disabled={thread === null}
       variant="unstyled"
-      size="md"
+      size="sm"
       value={shown}
       placeholder={threadId}
       maxLength={200}

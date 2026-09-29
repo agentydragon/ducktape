@@ -5,12 +5,9 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 
 NAME = "seaweedfs"
-OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/namespace"
 
 
 def chart(app: App) -> Chart:
@@ -32,8 +29,3 @@ def chart(app: App) -> Chart:
         },
     )
     return chart
-
-
-def seaweedfs_namespace(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    name = "seaweedfs-namespace"
-    return flux_kustomization(chart, name, directory, retry_interval=None, wait=None, suspend=False)

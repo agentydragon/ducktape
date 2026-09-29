@@ -2,10 +2,10 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: auto
     name: haku-console
   name: haku-console
+spec: {}
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -591,8 +591,6 @@ spec:
               value: https://auth.allegedly.works
             - name: HAKU_CONSOLE__PUBLIC_BASE_URL
               value: https://haku.allegedly.works
-            - name: HAKU_CONSOLE_CONFIG_FILE
-              value: /etc/haku-console/config/config.yaml
             - name: HAKU_CONSOLE__STATIC_IMAGE_TAG_FILE
               value: /etc/haku-console/static-metadata/image-tag
             - name: HAKU_CONSOLE__MAX_WAIT_FOR_RESULT_MS
@@ -688,6 +686,8 @@ spec:
                   optional: false
             - name: HAKU_CONSOLE__OPERATOR_IDENTITY__TRUST_DOMAIN
               value: auth.allegedly.works/authentik-user-id/v1
+            - name: HAKU_CONSOLE_CONFIG_FILE
+              value: /etc/haku-console/config/config.yaml
           image: git.allegedly.works/ducktape-ci/haku-console:unset
           imagePullPolicy: Always
           livenessProbe:
@@ -702,6 +702,7 @@ spec:
           ports:
             - containerPort: 8080
               name: api
+              protocol: TCP
           readinessProbe:
             failureThreshold: 3
             httpGet:
@@ -837,7 +838,7 @@ spec:
             - name: HAKU_CONSOLE_AUTH_ORIGIN
               value: https://auth.allegedly.works
             - name: HAKU_CONSOLE_API_UPSTREAM
-              value: haku-console.haku-console.svc.cluster.local:8080
+              value: haku-console.haku-console.svc:8080
           image: git.allegedly.works/ducktape-ci/haku-console-static:unset
           imagePullPolicy: Always
           livenessProbe:
@@ -852,6 +853,7 @@ spec:
           ports:
             - containerPort: 8081
               name: http
+              protocol: TCP
           readinessProbe:
             failureThreshold: 3
             httpGet:

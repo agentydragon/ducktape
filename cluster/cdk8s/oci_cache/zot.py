@@ -21,23 +21,21 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/oci-cache"
 _NAMESPACE = "oci-cache"
 _NAME = "zot"
-_LABELS = {"app.kubernetes.io/name": _NAME}
-_PUBLIC_AUTH_PORT = 8080
+_PODS = Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),))
+# Zot's plain-HTTP registry on the `oci-cache` Service, where in-cluster Docker mirrors point.
+HTTP = ServiceRef(name=_NAMESPACE, port=Port(name="http", number=80), pods=_PODS, target_port=5000)
+# The nginx sidecar's authenticated port on the same Service.
+_PUBLIC_AUTH = ServiceRef(name=_NAMESPACE, port=Port(name="public-auth", number=8080), pods=_PODS)
 _VALKEY = "oci-cache-valkey"
-
-
-def _s3_secret_env(name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name,
-        value_from=k8s.EnvVarSource(
-            secret_key_ref=k8s.SecretKeySelector(name="registry-cache-s3-credentials", key=key)
-        ),
-    )
+# The operator mints the registry-cache bucket's key pair here (seaweedfs/registry_cache_bucket.py).
+_S3_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="registry-cache-s3-credentials")
 
 
 def _tcp_probe(port: str, *, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -55,7 +53,7 @@ def _deployment(chart: Chart) -> None:
         metadata=k8s.ObjectMeta(
             name=_NAME,
             namespace=_NAMESPACE,
-            labels=_LABELS,
+            labels=_PODS.selector,
             annotations={
                 "description": (
                     "Zot OCI pull-through cache. On-demand mirror for docker.io, ghcr.io, quay.io,"
@@ -71,9 +69,9 @@ def _deployment(chart: Chart) -> None:
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_PODS.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_PODS.selector),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     security_context=k8s.PodSecurityContext(
@@ -85,12 +83,14 @@ def _deployment(chart: Chart) -> None:
                             image="ghcr.io/project-zot/zot-linux-amd64:v2.1.21",
                             image_pull_policy="IfNotPresent",
                             args=["serve", "/etc/zot/config.json"],
-                            ports=[k8s.ContainerPort(name="http", container_port=5000, protocol="TCP")],
+                            ports=[
+                                k8s.ContainerPort(name=HTTP.port.name, container_port=HTTP.pod_port, protocol="TCP")
+                            ],
                             # docker/distribution S3 driver reads the AWS default credential
                             # chain when accesskey/secretkey are omitted from config.json.
                             env=[
-                                _s3_secret_env("AWS_ACCESS_KEY_ID", "accessKey"),
-                                _s3_secret_env("AWS_SECRET_ACCESS_KEY", "secretKey"),
+                                _S3_CREDENTIALS.key("accessKey").env_var("AWS_ACCESS_KEY_ID"),
+                                _S3_CREDENTIALS.key("secretKey").env_var("AWS_SECRET_ACCESS_KEY"),
                             ],
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/etc/zot", read_only=True),
@@ -108,8 +108,8 @@ def _deployment(chart: Chart) -> None:
                             ),
                             # TCP probe only confirms Zot is listening. Pull-through behavior is
                             # covered by the README smoke tests.
-                            readiness_probe=_tcp_probe("http", initial_delay_seconds=5, period_seconds=10),
-                            liveness_probe=_tcp_probe("http", initial_delay_seconds=20, period_seconds=20),
+                            readiness_probe=_tcp_probe(HTTP.port.name, initial_delay_seconds=5, period_seconds=10),
+                            liveness_probe=_tcp_probe(HTTP.port.name, initial_delay_seconds=20, period_seconds=20),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
                                 run_as_non_root=True,
@@ -125,9 +125,7 @@ def _deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="public-auth-proxy",
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
-                            ports=[
-                                k8s.ContainerPort(name="public-auth", container_port=_PUBLIC_AUTH_PORT, protocol="TCP")
-                            ],
+                            ports=[_PUBLIC_AUTH.port.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="public-auth-config", mount_path="/etc/nginx/conf.d", read_only=True
@@ -141,8 +139,12 @@ def _deployment(chart: Chart) -> None:
                                 },
                                 limits={"memory": k8s.Quantity.from_string("64Mi")},
                             ),
-                            readiness_probe=_tcp_probe("public-auth", initial_delay_seconds=5, period_seconds=10),
-                            liveness_probe=_tcp_probe("public-auth", initial_delay_seconds=20, period_seconds=20),
+                            readiness_probe=_tcp_probe(
+                                _PUBLIC_AUTH.port.name, initial_delay_seconds=5, period_seconds=10
+                            ),
+                            liveness_probe=_tcp_probe(
+                                _PUBLIC_AUTH.port.name, initial_delay_seconds=20, period_seconds=20
+                            ),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
                                 run_as_non_root=True,
@@ -181,9 +183,9 @@ def chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAMESPACE, namespace=_NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=HTTP.name, namespace=_NAMESPACE, labels=HTTP.labels),
         spec=k8s.ServiceSpec(
-            selector=_LABELS,
+            selector=HTTP.pods.selector,
             ports=[
                 # Exposed on 80 (→ container 5000) for conventional registry addressing by
                 # unrestricted consumers. NOTE: this does NOT let a port-restricted egress
@@ -191,16 +193,16 @@ def chart(app: App) -> Chart:
                 # backend targetPort (5000), not this Service port. So haku-ci's force-proxy
                 # egress allows 5000 explicitly (see haku_ci/runner.py).
                 # Plain HTTP.
-                k8s.ServicePort(name="http", port=80, target_port=k8s.IntOrString.from_string("http"), protocol="TCP"),
+                k8s.ServicePort(
+                    name=HTTP.port.name,
+                    port=HTTP.port.number,
+                    target_port=k8s.IntOrString.from_number(HTTP.pod_port),
+                    protocol="TCP",
+                ),
                 # Authenticated public entrypoint. The HTTPRoute for oci-cache.allegedly.works
                 # targets this port; in-cluster Docker mirrors must use the unauthenticated
                 # `http` port above.
-                k8s.ServicePort(
-                    name="public-auth",
-                    port=_PUBLIC_AUTH_PORT,
-                    target_port=k8s.IntOrString.from_string("public-auth"),
-                    protocol="TCP",
-                ),
+                _PUBLIC_AUTH.port.k8s_service_port(),
             ],
         ),
     )
@@ -219,8 +221,7 @@ def chart(app: App) -> Chart:
             },
         ),
         hostnames=["oci-cache.allegedly.works"],
-        backend=_NAMESPACE,
-        port=_PUBLIC_AUTH_PORT,
+        backend=_PUBLIC_AUTH,
         hsts=False,
         listener=None,
     )
@@ -232,8 +233,8 @@ def chart(app: App) -> Chart:
             namespace=_NAMESPACE,
             annotations={"description": "Zot OCI-cache application metrics scraped into Mimir by Alloy."},
         ),
-        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-        endpoints=[Endpoint.plain(port="http", scrape_timeout="10s")],
+        selector=ServiceMonitorSpecSelector(match_labels=HTTP.labels),
+        endpoints=[Endpoint.plain(port=HTTP.port.name, scrape_timeout="10s")],
     )
     valkey_instance(
         chart,

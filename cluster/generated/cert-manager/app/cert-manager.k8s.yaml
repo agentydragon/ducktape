@@ -2,8 +2,10 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
     rbac.ducktape.io/agent-readable-logs: "true"
   name: cert-manager
+spec: {}
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
@@ -98,7 +100,7 @@ metadata:
 spec:
   endpoints:
     - path: /metrics
-      port: tcp-prometheus-servicemonitor
+      port: http-metrics
   selector:
     matchLabels:
       app.kubernetes.io/component: controller

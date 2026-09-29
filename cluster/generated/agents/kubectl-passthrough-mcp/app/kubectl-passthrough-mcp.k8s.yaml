@@ -4,6 +4,7 @@ metadata:
   labels:
     goldilocks.fairwinds.com/enabled: "false"
   name: kubectl-passthrough-mcp
+spec: {}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -98,7 +99,8 @@ spec:
   ports:
     - name: http
       port: 8080
-      targetPort: http
+      protocol: TCP
+      targetPort: 8080
   selector:
     app.kubernetes.io/name: kubectl-passthrough-mcp
   type: ClusterIP

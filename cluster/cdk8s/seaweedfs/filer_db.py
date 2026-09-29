@@ -15,33 +15,31 @@ from __future__ import annotations
 from cdk8s import App, Chart, Size
 from cdk8s_plus_34 import Cpu
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecBootstrapInitdb,
-    ClusterSpecBootstrapInitdbSecret,
     ClusterSpecResources,
     ClusterSpecResourcesLimits,
     ClusterSpecResourcesRequests,
 )
 
 from cluster.cdk8s import cnpg, node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.seaweedfs import namespace
+from cluster.cdk8s.secret_ref import SecretRef
 
-NAME = "seaweedfs-filer-db-ssd"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/db"
-# The application role's credentials, which the filer authenticates with too. The -creds
-# name deliberately avoids CNPG's reserved <cluster>-app: CNPG auto-generates a bogus one
-# (default user "app") for this cluster.
-CREDENTIALS_SECRET = "seaweedfs-filer-db-ssd-creds"
+POSTGRES = cnpg.PostgresRef(
+    name="seaweedfs-filer-db-ssd",
+    namespace=namespace.NAME,
+    # The application role's credentials, which the filer authenticates with too. The -creds
+    # name deliberately avoids CNPG's reserved <cluster>-app: CNPG auto-generates a bogus one
+    # (default user "app") for this cluster.
+    app_secret=SecretRef(namespace=namespace.NAME, name="seaweedfs-filer-db-ssd-creds"),
+)
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    chart = Chart(app, POSTGRES.name, disable_resource_name_hashes=True)
     cnpg.cluster(
         chart,
         "cluster",
-        name=NAME,
-        namespace=namespace.NAME,
+        ref=POSTGRES,
         annotations={
             "description": (
                 "SeaweedFS filer metadata DB on the SSD tier (physically cloned from the retired"
@@ -50,7 +48,7 @@ def chart(app: App) -> Chart:
         },
         # Existing SSD-local replicas remain pinned by their PVs. Prefer a worker for
         # any future placement that is not constrained by an existing claim.
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",
         size="2Gi",
         # QoS / eviction protection. Without these the instance pods are BestEffort -- the
@@ -79,17 +77,7 @@ def chart(app: App) -> Chart:
         # does not exist` because no "app" role was cloned. CNPG keeps the seaweedfs role's
         # password in sync with this Secret -- a no-op, since the Secret holds the value
         # physically replicated from the source.
-        initdb=ClusterSpecBootstrapInitdb(
-            database="seaweedfs", owner="seaweedfs", secret=ClusterSpecBootstrapInitdbSecret(name=CREDENTIALS_SECRET)
-        ),
+        initdb=cnpg.same_owner_initdb("seaweedfs", secret=POSTGRES.app_secret),
+        wal_archive=False,
     )
     return chart
-
-
-def seaweedfs_filer_db(
-    chart: Chart, directory: RenderedDirectory, seaweedfs_namespace: Kustomization, cnpg: Kustomization
-) -> Kustomization:
-    name = "seaweedfs-filer-db"
-    return flux_kustomization(
-        chart, name, directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(seaweedfs_namespace, cnpg)
-    )

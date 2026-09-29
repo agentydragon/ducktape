@@ -5,11 +5,15 @@ from __future__ import annotations
 from cdk8s import Chart
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def seaweedfs_cluster(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_operator: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    seaweedfs_operator: Kustomization,
+    cnpg: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     name = "seaweedfs-cluster"
     return flux_kustomization(
@@ -18,7 +22,8 @@ def seaweedfs_cluster(
         artifact,
         retry_interval=None,
         suspend=False,
-        depends_on=flux_kustomization_depends_on_many(seaweedfs_operator),
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(seaweedfs_operator, cnpg, external_secrets_operator),
         wait=False,
         timeout="5m",
     )

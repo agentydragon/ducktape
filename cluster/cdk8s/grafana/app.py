@@ -23,6 +23,7 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecValuesFromValueFromSecretKeyRef,
 )
 
+from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
@@ -58,8 +59,8 @@ def chart(app: App) -> Chart:
             is_default=False,
             editable=False,
             json_data={
-                "host": "clickhouse.clickhouse.svc.cluster.local",
-                "port": 8123,
+                "host": client.HTTP.host,
+                "port": client.HTTP.port.number,
                 "protocol": "http",
                 "username": "grafana",
                 "defaultDatabase": "aiquota",

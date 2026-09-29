@@ -8,6 +8,7 @@ metadata:
     name: agentplane-index
     rbac.ducktape.io/agent-readable-logs: "true"
   name: agentplane-index
+spec: {}
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
@@ -172,6 +173,7 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+              protocol: TCP
           readinessProbe:
             httpGet:
               path: /healthz
@@ -223,7 +225,8 @@ spec:
   ports:
     - name: http
       port: 8080
-      targetPort: http
+      protocol: TCP
+      targetPort: 8080
   selector:
     app.kubernetes.io/instance: ducktape
     app.kubernetes.io/name: agentplane-index
@@ -282,7 +285,7 @@ spec:
             - name: AGENTPLANE_INDEX_DATABASE_URL
               value: postgresql+asyncpg://$(DB_USERNAME):$(DB_PASSWORD)@agentplane-index-db-rw.agentplane-index.svc/haku_state
             - name: AGENTPLANE_INDEX_REPOSITORY_URL
-              value: http://forgejo-http.forgejo:3000/haku/haku-state.git
+              value: http://forgejo-http.forgejo.svc:3000/haku/haku-state.git
             - name: AGENTPLANE_INDEX_BRANCH
               value: main
             - name: AGENTPLANE_INDEX_GIT_USERNAME
@@ -314,6 +317,7 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+              protocol: TCP
           readinessProbe:
             httpGet:
               path: /healthz
@@ -365,7 +369,8 @@ spec:
   ports:
     - name: http
       port: 8080
-      targetPort: http
+      protocol: TCP
+      targetPort: 8080
   selector:
     app.kubernetes.io/instance: haku-state
     app.kubernetes.io/name: agentplane-index

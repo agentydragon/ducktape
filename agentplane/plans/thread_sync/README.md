@@ -12,24 +12,17 @@ would be for.
 
 ## Open on the Electric design
 
-1. **Eviction (P10).** The store keeps every row and body it has loaded until the thread closes.
-   The rule has to keep **P5**: evict rows outside the virtualizer's range and a margin, holding the
-   scroll anchor while the list above it shrinks, and release their bodies' pair subsets. The store
-   already ignores live updates to rows it does not hold, so evicting a row is dropping it, and
-   scrolling back re-reads it as a subset. Done when retained heap and row counts stabilize over
-   repeated scroll, load and evict cycles while the thread grows (<../../docs/thread_view_sync.md>
-   § Acceptance evidence).
-2. **Pending commands past the newest 200.** The pending subset returns the newest 200 with no
+1. **Pending commands past the newest 200.** The pending subset returns the newest 200 with no
    older page and no count, and the pending panel has no height cap, so on a phone it can squeeze
    the history view to nothing. Porting means a subset form such as
    `… pending = true AND entity_index < $1`, a load-older for it, and the cap. The design doc's
    "keyset page by admission cursor" describes the page that does not exist yet.
-3. **Electric's server memory** under history growth, a restart and a stalled reader is still an
+2. **Electric's server memory** under history growth, a restart and a stalled reader is still an
    adoption gate (<../../docs/thread_view_sync.md> § Server memory ownership). Probes exist on the
    parked spike PR #7490 (`shape_history_memory_test`, `shape_stalled_reader_test`,
    `shape_capacity_test`); they need rewriting against `testing/electric_service.py` and the thread
    tables.
-4. **Compacting completed bodies (D5).** A body completed with the text that streamed keeps the
+3. **Compacting completed bodies (D5).** A body completed with the text that streamed keeps the
    generation it streamed in: one chunk per appending batch and one manifest per revision.
    Electric's behaviour is pinned (`test_electric_chunk_compaction.py`). Rewriting chunk 0 to the
    whole text and deleting the rest in one transaction needs no client change, since the store
@@ -39,12 +32,19 @@ would be for.
    delete's values. **S1** for intermediate references needs the replaced chunks' lengths, which
    `thread_payload_chunk` has no column for; without them a compacted body answers only its final
    reference.
-5. **Measure it on `agentplane-testing`.**
+4. **Measure it on `agentplane-testing`.**
    - A PING turn under 3 s. Measured at 5.2 s (Codex) and 7.5 s (Claude); the runner's per-Event
      journal commits are most of it (<../../debug/turn_latency_20260924.md>).
    - The live log's traffic for a reader scrolled away from an active tail (**E5**).
    - Shapes against `ELECTRIC_MAX_SHAPES`: one entity shape per thread, plus one per payload field
      in use.
+
+## Accepted browser-cache tradeoff (D6)
+
+The store retains loaded rows and bodies until the Thread closes; long content remains
+load-on-demand. The owner accepts this cache growth for now. Bounding browser cache state remains a
+desire, not an open Electric adoption gate. If resource pressure makes eviction worthwhile, the
+deferred design and evidence are in <../../docs/thread_view_sync.md#accepted-browser-cache-state-d6>.
 
 ## A second implementation
 
@@ -69,18 +69,18 @@ commit order.
 `+` meets it, `~` meets it with work or a caveat, `−` fails it. Cells are judgements from the option
 files, not measurements. Rows where every column is `+` are left out.
 
-| Req                   | Electric (deployed) | Window poll | Moving window | SSE push |
-| --------------------- | ------------------- | ----------- | ------------- | -------- |
-| P6 disconnect resumes | +                   | +           | +             | ~        |
-| P10 bounded tab state | −                   | +           | +             | +        |
-| E4 scroll loads new   | +                   | −           | +             | +        |
-| E5 no re-transfer     | ~                   | −           | +             | +        |
-| O1 bounded/shared     | +                   | +           | +             | −        |
-| O2 horizontal scale   | ~                   | +           | +             | ~        |
-| O4 few moving parts   | ~                   | +           | +             | ~        |
-| D1 no overlap re-sent | +                   | −           | +             | +        |
-| D3 incremental        | +                   | +           | +             | ~        |
+| Req / desire             | Electric (deployed) | Window poll | Moving window | SSE push |
+| ------------------------ | ------------------- | ----------- | ------------- | -------- |
+| P6 disconnect resumes    | +                   | +           | +             | ~        |
+| D6 bounded browser cache | − (accepted)        | +           | +             | +        |
+| E4 scroll loads new      | +                   | −           | +             | +        |
+| E5 no re-transfer        | ~                   | −           | +             | +        |
+| O1 bounded/shared        | +                   | +           | +             | −        |
+| O2 horizontal scale      | ~                   | +           | +             | ~        |
+| O4 few moving parts      | ~                   | +           | +             | ~        |
+| D1 no overlap re-sent    | +                   | −           | +             | +        |
+| D3 incremental           | +                   | +           | +             | ~        |
 
 The window poll's `−` cells are one omission — the client never says what it holds — and adding it
-is the moving window. Electric's `−` on P10 is item 1 above; its `~` on E5 is
+is the moving window. Electric's `−` on D6 is the accepted browser-cache tradeoff above; its `~` on E5 is
 <../../docs/thread_sync_electric_limits.md> § What does not.

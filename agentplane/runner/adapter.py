@@ -10,6 +10,10 @@ import abc
 from collections.abc import Mapping
 from typing import Any
 
+from agentplane.protocol import event_pb2
+
+# gazelle:include_dep @pypi//protobuf
+
 
 class HarnessAdapter(abc.ABC):
     """Launches one harness, sends it commands, and translates its stdout.
@@ -29,6 +33,10 @@ class HarnessAdapter(abc.ABC):
     @abc.abstractmethod
     async def handshake(self) -> str:
         """Initialize the freshly started harness and return its native session id."""
+
+    @abc.abstractmethod
+    async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
+        """Report what survived an interrupted turn, using native continuation evidence."""
 
     @abc.abstractmethod
     async def submit(self, command_id: str, text: str) -> None: ...

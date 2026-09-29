@@ -37,13 +37,14 @@ from cluster.cdk8s import cilium, external_creds, public_coder_devbox
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "public-coder-agent-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/proxy"
@@ -53,9 +54,14 @@ _CONFIG_FILE = "iron.yaml"
 _CA_SECRET_NAME = "public-coder-agent-proxy-ca"
 _CA_DIR = "/ca"
 LABELS = {"app.kubernetes.io/name": NAME}
+# The forward proxy the Agent's HTTP(S)_PROXY names, and iron-proxy's metrics on the same Service.
+PROXY = ServiceRef(
+    name=NAME, port=Port(name="proxy", number=8080), pods=Pods(namespace=NAMESPACE, labels=tuple(LABELS.items()))
+)
+_METRICS = ServiceRef(name=NAME, port=Port(name="metrics", number=9090), pods=PROXY.pods)
 _IMAGE = "git.allegedly.works/ducktape-ci/iron-proxy:unset"
-PROXY_PORT = 8080
-_METRICS_PORT = 9090
+# public_coder_agent_config's ExternalSecret writes it; here, because that module imports this one.
+GITHUB_TOKEN = SecretRef(namespace=NAMESPACE, name="public-coder-agent-github-token").key("GITHUB_TOKEN")
 # Each credential iron's `secrets` transform reads from the proxy container's env, and the
 # non-secret placeholder the app presents in its place.
 _GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
@@ -136,7 +142,7 @@ def _iron_config() -> dict:
         # Explicit forward proxy: consumers point HTTP_PROXY at the Service. The built-in DNS
         # interception mode is off -- nothing here hijacks resolution.
         "dns": {"enabled": False},
-        "proxy": {"tunnel_listen": f":{PROXY_PORT}"},
+        "proxy": {"tunnel_listen": f":{PROXY.pod_port}"},
         "tls": {
             "mode": "mitm",
             # The interception root `_ca` issues, owned by cert-manager so it cannot drift the
@@ -202,7 +208,7 @@ def _substitutions() -> list[dict]:
             # curl/clickhouse-client normally without ever receiving this dedicated account
             # password.
             "replace": {"proxy_value": CLICKHOUSE_PASSWORD_PLACEHOLDER, "match_headers": ["Authorization"]},
-            "rules": [{"host": client.HOST}],
+            "rules": [{"host": client.HTTP.fqdn}],
         },
         {
             "source": {"type": "env", "var": _AIQUOTA_BEARER_ENV},
@@ -246,7 +252,7 @@ def _config_map(scope: Construct) -> k8s.KubeConfigMap:
     )
 
 
-def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
+def _container(aiquota_bearer: SecretKey) -> k8s.Container:
     return k8s.Container(
         name="iron-proxy",
         # Bootstrap on upstream 0.49.0. Once CI publishes the commit-pinned Forgejo image, Flux
@@ -258,32 +264,35 @@ def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
         env=[
             # The real GitHub credential lives here and nowhere else. It reaches the agent's
             # traffic only as a substitution performed here.
-            secret_env_var(_GITHUB_TOKEN_ENV, "public-coder-agent-github-token", "GITHUB_TOKEN"),
+            GITHUB_TOKEN.env_var(_GITHUB_TOKEN_ENV),
             # Dedicated Haku Console bearer, held by the proxy rather than the agent. iron.yaml
             # substitutes it only for the exact public Haku host's Authorization header.
-            secret_env_var(_HAKU_CONSOLE_TOKEN_ENV, "haku-console-public-coder-agent", "token"),
+            SecretRef(namespace=NAMESPACE, name="haku-console-public-coder-agent")
+            .key("token")
+            .env_var(_HAKU_CONSOLE_TOKEN_ENV),
             # The agent sees only the corresponding placeholder. This password is valid solely for
             # the native read-only public_coder_analytics ClickHouse account and is substituted by
             # iron.yaml on the private ClusterIP host.
-            secret_env_var(_CLICKHOUSE_PASSWORD_ENV, client.PUBLIC_CODER_CREDENTIALS, client.PASSWORD_KEY),
+            SecretRef(namespace=NAMESPACE, name=client.PUBLIC_CODER_CREDENTIALS)
+            .key(client.PASSWORD_KEY)
+            .env_var(_CLICKHOUSE_PASSWORD_ENV),
             # The same bearer used by aiquota-api. It is reflected here solely for iron-proxy to
             # substitute into the agent's placeholder on the two read endpoints; the OpenClaw
             # workload never receives it.
-            k8s.EnvVar(name=_AIQUOTA_BEARER_ENV, value_from=k8s.EnvVarSource(secret_key_ref=aiquota_bearer)),
+            aiquota_bearer.env_var(_AIQUOTA_BEARER_ENV),
             # The Brave Search API key is consumed only by iron-proxy. The OpenClaw Pod gets a
             # non-secret placeholder that is swapped only for Brave's X-Subscription-Token header
             # on its API host. Synced into this namespace from the external-creds source at
             # cluster/k8s/external-creds/brave-search-api-key.sops.yaml.
-            secret_env_var(_BRAVE_API_KEY_ENV, "brave-search-api-key", "api-key"),
+            SecretRef(namespace=NAMESPACE, name="brave-search-api-key").key("api-key").env_var(_BRAVE_API_KEY_ENV),
             # Matrix password login is the one credential that lives in a JSON body rather than
             # Authorization. iron.yaml swaps the app's placeholder only on the Matrix login
             # endpoint.
-            secret_env_var(_MATRIX_PASSWORD_ENV, "public-coder-agent-matrix-bot-password", "password"),
+            SecretRef(namespace=NAMESPACE, name="public-coder-agent-matrix-bot-password")
+            .key("password")
+            .env_var(_MATRIX_PASSWORD_ENV),
         ],
-        ports=[
-            k8s.ContainerPort(name="proxy", container_port=PROXY_PORT),
-            k8s.ContainerPort(name="metrics", container_port=_METRICS_PORT),
-        ],
+        ports=[PROXY.port.k8s_container_port(), _METRICS.port.k8s_container_port()],
         security_context=k8s.SecurityContext(
             allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
         ),
@@ -298,16 +307,16 @@ def _container(aiquota_bearer: k8s.SecretKeySelector) -> k8s.Container:
     )
 
 
-def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer: k8s.SecretKeySelector) -> None:
+def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer: SecretKey) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=LABELS),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=PROXY.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=LABELS),
+            selector=k8s.LabelSelector(match_labels=PROXY.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=LABELS),
+                metadata=k8s.ObjectMeta(labels=PROXY.pods.selector),
                 spec=k8s.PodSpec(
                     # Private package in the in-cluster Forgejo registry. The credential is
                     # reflected into this namespace by cluster/k8s/forgejo-images/.
@@ -343,17 +352,15 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name=PROXY.name, namespace=NAMESPACE),
         spec=k8s.ServiceSpec(
-            selector=LABELS,
+            selector=PROXY.pods.selector,
             ports=[
-                k8s.ServicePort(name="proxy", port=PROXY_PORT, target_port=k8s.IntOrString.from_number(PROXY_PORT)),
+                PROXY.port.k8s_service_port(),
                 # iron-proxy's Prometheus metrics. mitmproxy's `mitmweb` UI on 8081 goes with it
                 # -- it was never routed, and a browsable log of the agent's intercepted traffic
                 # is not a thing to leave reachable in-cluster.
-                k8s.ServicePort(
-                    name="metrics", port=_METRICS_PORT, target_port=k8s.IntOrString.from_number(_METRICS_PORT)
-                ),
+                _METRICS.port.k8s_service_port(),
             ],
         ),
     )
@@ -369,12 +376,12 @@ def _ingress_policy(scope: Construct, app_namespace: str, app_labels: dict[str, 
         scope,
         "ingress",
         metadata=ApiObjectMetadata(name="allow-public-coder-agent-proxy-ingress", namespace=NAMESPACE),
-        endpoint_selector=LABELS,
+        endpoint_selector=PROXY.pods.selector,
         ingress=[
             IngressRule.from_endpoints(
                 _endpoint(app_namespace, app_labels),
-                _endpoint(public_coder_devbox.NAMESPACE, public_coder_devbox.POD_LABELS),
-                ports=[PROXY_PORT],
+                _endpoint(public_coder_devbox.SSH.pods.namespace, public_coder_devbox.SSH.pods.selector),
+                ports=[PROXY.pod_port],
             )
         ],
     )
@@ -406,7 +413,7 @@ def _egress_policy(scope: Construct) -> None:
         scope,
         "egress",
         metadata=ApiObjectMetadata(name="allow-public-coder-agent-proxy-egress", namespace=NAMESPACE),
-        endpoint_selector=LABELS,
+        endpoint_selector=PROXY.pods.selector,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # `world` alone does not mean "everywhere". Cilium carves the cluster's own nodes out
@@ -423,7 +430,7 @@ def _egress_policy(scope: Construct) -> None:
             # The agent's normalized analytics reads leave the app through this Iron proxy, then
             # use the private ClickHouse HTTP ClusterIP service. Do not grant this egress to the
             # app Pod itself.
-            EgressRule.to_endpoints(_endpoint(client.NAMESPACE, client.LABELS), client.HTTP_PORT),
+            EgressRule.to_endpoints(_endpoint(client.NAMESPACE, client.LABELS), client.HTTP.pod_port),
             # The confined configuration, for restoration: TCP 443 by toFQDNs to the GitHub hosts
             # (clone, push to forks, and open pull requests via the REST API) github.com,
             # api.github.com, codeload.github.com, objects.githubusercontent.com,
@@ -435,7 +442,7 @@ def _egress_policy(scope: Construct) -> None:
     )
 
 
-def chart(app: App, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: k8s.SecretKeySelector) -> Chart:
+def chart(app: App, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: SecretKey) -> Chart:
     """`app_namespace` and `app_labels` are the OpenClaw Agent pod's: public_coder_agent_config
     exports them, and imports this module for the proxy's address. `aiquota_bearer` is the
     mirror aiquota writes into this namespace."""
@@ -449,9 +456,7 @@ def chart(app: App, *, app_namespace: str, app_labels: dict[str, str], aiquota_b
     return chart
 
 
-def write_manifests(
-    root: Path, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: k8s.SecretKeySelector
-) -> None:
+def write_manifests(root: Path, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: SecretKey) -> None:
     write_charts(
         root,
         OUTPUT_DIR,

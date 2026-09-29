@@ -39,7 +39,6 @@ export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
 export type ThreadScope = components["schemas"]["ThreadScopeResponse"];
 export type ThreadEntityView = components["schemas"]["ThreadEntityView"];
-export type CommandReconciliationResponse = components["schemas"]["CommandReconciliationResponse"];
 export type EvidencePage = components["schemas"]["EvidencePage"];
 export type NativeFramePage = components["schemas"]["NativeFramePage"];
 export type ObservationPage = components["schemas"]["ObservationPage"];
@@ -64,21 +63,6 @@ export function modelsForHarness(catalog: ModelCatalog, harness: Harness): Model
 export type Decision = components["schemas"]["Decision"];
 export type Connection = components["schemas"]["Connection"];
 export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
-
-export async function reconcileCommands(
-  threadId: string,
-  projectionEpoch: string,
-  commandIds: string[],
-  signal?: AbortSignal
-): Promise<CommandReconciliationResponse> {
-  const { data, error } = await api.POST("/threads/{thread_id}/commands/reconcile", {
-    params: { path: { thread_id: threadId } },
-    body: { projection_epoch: projectionEpoch, command_ids: commandIds },
-    signal,
-  });
-  if (error) throw new Error(displayableError(error));
-  return data;
-}
 
 export async function threadObservationEntry(
   threadId: string,
@@ -289,6 +273,14 @@ export async function openSession(sandbox: string, sessionId: string, spec: Sess
   return fromJson(AttachedSchema, data as JsonValue);
 }
 
+export async function resumeThread(threadId: string): Promise<Attached> {
+  const { data, error } = await api.POST("/threads/{thread_id}/resume", {
+    params: { path: { thread_id: threadId } },
+  });
+  if (error) throw new Error(displayableError(error));
+  return fromJson(AttachedSchema, data as JsonValue);
+}
+
 export async function models(): Promise<ModelCatalog> {
   const { data, error } = await api.GET("/models");
   if (error) throw new Error(displayableError(error));
@@ -316,10 +308,6 @@ export async function command(threadId: string, message: Command): Promise<Event
   });
   if (error) throw new Error(displayableError(error));
   return fromJson(EventEntrySchema, data as JsonValue);
-}
-
-export function eventsUrl(threadId: string): string {
-  return `/threads/${encodeURIComponent(threadId)}/events/stream`;
 }
 
 /**

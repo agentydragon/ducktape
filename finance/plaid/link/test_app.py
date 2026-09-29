@@ -1,20 +1,27 @@
 from datetime import UTC, date, datetime
-from types import SimpleNamespace
 from typing import cast
 from uuid import UUID
 
 import pytest_bazel
 from fastapi.testclient import TestClient
 from plaid.model.accounts_get_request import AccountsGetRequest
+from plaid.model.country_code import CountryCode
+from plaid.model.institution import Institution
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
+from plaid.model.institutions_get_by_id_response import InstitutionsGetByIdResponse
 from plaid.model.institutions_search_request import InstitutionsSearchRequest
+from plaid.model.institutions_search_response import InstitutionsSearchResponse
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
 from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+from plaid.model.item_public_token_exchange_response import ItemPublicTokenExchangeResponse
 from plaid.model.item_remove_request import ItemRemoveRequest
+from plaid.model.item_remove_response import ItemRemoveResponse
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.link_token_create_response import LinkTokenCreateResponse
+from plaid.model.products import Products
 from plaid.model.transactions_get_request import TransactionsGetRequest
 
 from finance.plaid.db.client import PlaidClient, PlaidSdkApiLike
@@ -85,17 +92,29 @@ class _FakePlaidApi:
         self.exchanged_public_tokens: list[str] = []
         self.removed_access_tokens: list[str] = []
 
-    def link_token_create(self, request: LinkTokenCreateRequest) -> SimpleNamespace:
+    def link_token_create(self, request: LinkTokenCreateRequest) -> LinkTokenCreateResponse:
         self.link_token_requests.append(request.to_dict())
-        return SimpleNamespace(link_token=f"link-token-{len(self.link_token_requests)}")
+        return cast(
+            LinkTokenCreateResponse,
+            LinkTokenCreateResponse(
+                link_token=f"link-token-{len(self.link_token_requests)}",
+                expiration=datetime(2026, 6, 1, tzinfo=UTC),
+                request_id="req-link-token",
+            ),
+        )
 
-    def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest) -> SimpleNamespace:
+    def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest) -> ItemPublicTokenExchangeResponse:
         self.exchanged_public_tokens.append(request.public_token)
-        return SimpleNamespace(access_token="access-sandbox-new", item_id="item-sandbox-new")
+        return cast(
+            ItemPublicTokenExchangeResponse,
+            ItemPublicTokenExchangeResponse(
+                access_token="access-sandbox-new", item_id="item-sandbox-new", request_id="req-token-exchange"
+            ),
+        )
 
-    def item_remove(self, request: ItemRemoveRequest) -> object:
+    def item_remove(self, request: ItemRemoveRequest) -> ItemRemoveResponse:
         self.removed_access_tokens.append(request.access_token)
-        return object()
+        return cast(ItemRemoveResponse, ItemRemoveResponse(request_id="req-item-remove"))
 
     def item_get(self, request: ItemGetRequest) -> object:
         raise AssertionError("unexpected sync call in smoke test")
@@ -115,20 +134,34 @@ class _FakePlaidApi:
     def liabilities_get(self, request: LiabilitiesGetRequest) -> object:
         raise AssertionError("unexpected sync call in smoke test")
 
-    def institutions_search(self, request: InstitutionsSearchRequest) -> SimpleNamespace:
-        return SimpleNamespace(to_dict=lambda: {"institutions": [{"institution_id": "ins_3", "name": "Chase"}]})
-
-    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest) -> SimpleNamespace:
-        return SimpleNamespace(
-            to_dict=lambda: {
-                "institution": {
-                    "institution_id": "ins_3",
-                    "name": "Chase",
-                    "url": "https://chase.example",
-                    "products": ["auth", "transactions", "identity", "liabilities"],
-                }
-            }
+    def institutions_search(self, request: InstitutionsSearchRequest) -> InstitutionsSearchResponse:
+        return cast(
+            InstitutionsSearchResponse,
+            InstitutionsSearchResponse(institutions=[_institution()], request_id="req-institutions-search"),
         )
+
+    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest) -> InstitutionsGetByIdResponse:
+        return cast(
+            InstitutionsGetByIdResponse,
+            InstitutionsGetByIdResponse(
+                institution=_institution(url="https://chase.example"), request_id="req-institutions-get"
+            ),
+        )
+
+
+def _institution(*, url: str | None = None) -> Institution:
+    return cast(
+        Institution,
+        Institution(
+            institution_id="ins_3",
+            name="Chase",
+            products=[Products("auth"), Products("transactions"), Products("identity"), Products("liabilities")],
+            country_codes=[CountryCode("US")],
+            routing_numbers=[],
+            oauth=False,
+            url=url,
+        ),
+    )
 
 
 def _client(

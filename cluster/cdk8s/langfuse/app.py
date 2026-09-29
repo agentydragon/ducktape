@@ -20,19 +20,35 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/langfuse"
 _NAME = "langfuse"
 _NAMESPACE = "langfuse"
-_S3_CREDENTIALS_SECRET = "langfuse-seaweedfs-credentials"
+# The chart's web Service (`langfuse.selectorLabels` plus `app: web`), for release `_NAME`.
+_WEB = ServiceRef(
+    name="langfuse-web",
+    port=Port(name="http", number=3000),
+    pods=Pods(
+        namespace=_NAMESPACE,
+        labels=(("app.kubernetes.io/name", _NAME), ("app.kubernetes.io/instance", _NAME), ("app", "web")),
+    ),
+)
+_S3_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="langfuse-seaweedfs-credentials")
+# The SOPS sibling.
+_SECRETS = SecretRef(namespace=_NAMESPACE, name="langfuse-secrets")
+_OIDC = SecretRef(namespace=_NAMESPACE, name="langfuse-oidc-config")
 _VALKEY = "langfuse-valkey-ovh"
+DATABASE = cnpg.PostgresRef.generated(name="langfuse-db", namespace=_NAMESPACE)
 
 
 def _namespace(scope: Construct) -> None:
@@ -43,13 +59,12 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name="langfuse-db",
-        namespace=_NAMESPACE,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",
         size="10Gi",
-        # CNPG auto-generates credentials in secret langfuse-db-app
         initdb=cnpg.same_owner_initdb("langfuse"),
+        wal_archive=False,
     )
 
 
@@ -81,7 +96,7 @@ def _storage(scope: Construct) -> None:
         namespace=_NAMESPACE,
         # A new Secret during the staged handoff: the existing one is populated by the old
         # cross-namespace S3Credentials object and cannot be adopted here.
-        secret=_S3_CREDENTIALS_SECRET,
+        secret=_S3_CREDENTIALS.name,
         key_fields=s3.SecretKeyFields(access_key="s3-access-key-id", secret_key="s3-secret-access-key"),
         description="Langfuse's tenant-local SeaweedFS credentials.",
     )
@@ -114,10 +129,6 @@ def _log_reader(scope: Construct) -> None:
     )
 
 
-def _secret_key_ref(name: str, key: str) -> dict[str, object]:
-    return {"secretKeyRef": {"name": name, "key": key}}
-
-
 def _values() -> dict[str, object]:
     resources = {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "1", "memory": "2Gi"}}
     return {
@@ -141,10 +152,10 @@ def _values() -> dict[str, object]:
             "affinity": node_scheduling.PREFER_WORKERS,
             "nextauth": {
                 "url": "https://langfuse.allegedly.works",
-                "secret": _secret_key_ref("langfuse-secrets", "nextauth-secret"),
+                "secret": _SECRETS.key("nextauth-secret").value_from(),
             },
-            "salt": _secret_key_ref("langfuse-secrets", "salt"),
-            "encryptionKey": _secret_key_ref("langfuse-secrets", "encryption-key"),
+            "salt": _SECRETS.key("salt").value_from(),
+            "encryptionKey": _SECRETS.key("encryption-key").value_from(),
             "web": {
                 "resources": resources,
                 # The image runs initialization before its health endpoints are
@@ -185,11 +196,8 @@ def _values() -> dict[str, object]:
                     "value": "https://auth.allegedly.works/application/o/langfuse",
                 },
                 {"name": "AUTH_CUSTOM_SCOPE", "value": "openid email profile"},
-                {"name": "AUTH_CUSTOM_CLIENT_ID", "valueFrom": _secret_key_ref("langfuse-oidc-config", "client-id")},
-                {
-                    "name": "AUTH_CUSTOM_CLIENT_SECRET",
-                    "valueFrom": _secret_key_ref("langfuse-oidc-config", "client-secret"),
-                },
+                {"name": "AUTH_CUSTOM_CLIENT_ID", "valueFrom": _OIDC.key("client-id").value_from()},
+                {"name": "AUTH_CUSTOM_CLIENT_SECRET", "valueFrom": _OIDC.key("client-secret").value_from()},
                 # Link the SSO identity to the headless-init admin user (same email)
                 # so login lands on the existing org/project instead of an empty one.
                 {"name": "AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING", "value": "true"},
@@ -201,11 +209,11 @@ def _values() -> dict[str, object]:
                 {"name": "LANGFUSE_INIT_PROJECT_NAME", "value": "litellm"},
                 {
                     "name": "LANGFUSE_INIT_PROJECT_PUBLIC_KEY",
-                    "valueFrom": _secret_key_ref("langfuse-secrets", "LANGFUSE_INIT_PROJECT_PUBLIC_KEY"),
+                    "valueFrom": _SECRETS.key("LANGFUSE_INIT_PROJECT_PUBLIC_KEY").value_from(),
                 },
                 {
                     "name": "LANGFUSE_INIT_PROJECT_SECRET_KEY",
-                    "valueFrom": _secret_key_ref("langfuse-secrets", "LANGFUSE_INIT_PROJECT_SECRET_KEY"),
+                    "valueFrom": _SECRETS.key("LANGFUSE_INIT_PROJECT_SECRET_KEY").value_from(),
                 },
                 # Email matches the Authentik identity (agentydragon@gmail.com) so the
                 # SSO account links to this org owner. Headless init adds this user as
@@ -214,26 +222,26 @@ def _values() -> dict[str, object]:
                 {"name": "LANGFUSE_INIT_USER_NAME", "value": "Rai"},
                 {
                     "name": "LANGFUSE_INIT_USER_PASSWORD",
-                    "valueFrom": _secret_key_ref("langfuse-secrets", "LANGFUSE_INIT_USER_PASSWORD"),
+                    "valueFrom": _SECRETS.key("LANGFUSE_INIT_USER_PASSWORD").value_from(),
                 },
             ],
         },
         "postgresql": {
             "deploy": False,
-            "host": "langfuse-db-rw",
+            "host": DATABASE.rw.name,
             "auth": {
                 "username": "langfuse",
                 "database": "langfuse",
-                "existingSecret": "langfuse-db-app",
+                "existingSecret": DATABASE.app_secret.name,
                 "secretKeys": {"userPasswordKey": "password"},
             },
         },
         # ClickHouse is managed centrally in the clickhouse namespace.
         "clickhouse": {
             "deploy": False,
-            "host": "clickhouse.clickhouse.svc.cluster.local",
-            "httpPort": 8123,
-            "nativePort": 9000,
+            "host": client.HTTP.host,
+            "httpPort": client.HTTP.port.number,
+            "nativePort": client.NATIVE.port.number,
             "database": "langfuse",
             "auth": {
                 "username": "langfuse",
@@ -241,7 +249,7 @@ def _values() -> dict[str, object]:
                 "existingSecretKey": "password",
             },
             "migration": {
-                "url": "clickhouse://clickhouse.clickhouse.svc.cluster.local:9000",
+                "url": f"clickhouse://{client.NATIVE.host}:{client.NATIVE.port.number}",
                 "ssl": False,
                 "autoMigrate": True,
             },
@@ -264,8 +272,8 @@ def _values() -> dict[str, object]:
             "region": "auto",
             "endpoint": "http://seaweedfs-s3.seaweedfs.svc:8333",
             "forcePathStyle": True,
-            "accessKeyId": _secret_key_ref(_S3_CREDENTIALS_SECRET, "s3-access-key-id"),
-            "secretAccessKey": _secret_key_ref(_S3_CREDENTIALS_SECRET, "s3-secret-access-key"),
+            "accessKeyId": _S3_CREDENTIALS.key("s3-access-key-id").value_from(),
+            "secretAccessKey": _S3_CREDENTIALS.key("s3-secret-access-key").value_from(),
             "eventUpload": {"prefix": "events/"},
             "batchExport": {"prefix": "exports/"},
             "mediaUpload": {"prefix": "media/"},
@@ -305,8 +313,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["langfuse.allegedly.works"],
-        backend="langfuse-web",
-        port=3000,
+        backend=_WEB,
         hsts=False,
         listener=None,
     )

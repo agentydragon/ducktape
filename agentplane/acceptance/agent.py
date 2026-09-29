@@ -75,6 +75,8 @@ class Turn:
     # Every line the harness wrote during the turn, as the runner recorded it.
     native: list[str] = field(default_factory=list)
     status: event_pb2.TurnStatus | None = None
+    input_confirmed: bool = False
+    resumed: bool = False
 
     @property
     def answer(self) -> str:
@@ -154,6 +156,10 @@ class Agent:
             self._cursor = entry.cursor
             event = entry.event
             match event.WhichOneof("observation"):
+                case "harness_started":
+                    turn.resumed = event.harness_started.resumed
+                case "harness_user_message_confirmed":
+                    turn.input_confirmed = True
                 case "item_completed":
                     _completed(event.item_completed, turn)
                 case "native" if event.native.direction == event_pb2.DIRECTION_FROM_HARNESS:
@@ -170,6 +176,12 @@ class Agent:
                 case _:
                     continue
         raise AssertionError(f"the session's stream ended before the turn completed:\n{turn.transcript}")
+
+    async def resume(self) -> None:
+        """Reopen this Thread's existing runner session without changing its identity or cursor."""
+        async for attempt in runner_startup_retries():
+            with attempt:
+                await self._client.resume_thread(self._thread_id)
 
 
 def _completed(item: event_pb2.ItemCompleted, turn: Turn) -> None:

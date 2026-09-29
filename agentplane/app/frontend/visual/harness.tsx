@@ -15,7 +15,7 @@ import { sampleConnection } from "../connections_fixture";
 import type { BindingView, Decision, McpLinkageView, PolicyView, SandboxView, ThreadView } from "../client";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
-import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
+import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
 import { CommandSchema } from "../../../protocol/command_pb";
 import { EventEntrySchema } from "../../../protocol/event_log_pb";
 import {
@@ -853,6 +853,8 @@ function item(
     arguments?: string;
     output?: string;
     failed?: boolean;
+    recovery?: RecoveryDisposition;
+    recoveryReason?: string;
     complete?: boolean;
     turn?: string;
     threadId?: string;
@@ -867,6 +869,8 @@ function item(
       tool_name: extra.tool ?? "",
       completion: extra.complete === false ? null : kind === ItemKind.TOOL_CALL ? "tool" : "text",
       tool_succeeded: extra.output === undefined ? null : !extra.failed,
+      recovery: extra.recovery ?? null,
+      recovery_reason: extra.recoveryReason ?? "",
     },
     {
       thread_id: extra.threadId,
@@ -883,14 +887,15 @@ function command(
   id: string,
   operation: string,
   outcome: "pending" | "effected" | "failed" | "noop",
-  reason: string | null = null
+  reason: string | null = null,
+  text: string | null = null
 ): Record<string, unknown> {
   return entity(
     "command",
     id,
     cursor,
     { operation, outcome, outcome_cursor: outcome === "pending" ? null : String(cursor), outcome_reason: reason },
-    { pending: outcome === "pending" }
+    { pending: outcome === "pending", input_ref: text === null ? null : payload(cursor, id, "command_input", text) }
   );
 }
 
@@ -1024,6 +1029,15 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
+  return interleavedRows(threadId).map((row) => {
+    if (row.entity_kind !== "view_state") return row;
+    const state = row.state as Record<string, unknown>;
+    const operational = state.operational as Record<string, unknown>;
+    return { ...row, state: { ...state, operational: { ...operational, status: "ended" } } };
+  });
+}
+
 function statesRows(threadId: string): Record<string, unknown>[] {
   const rows = [
     viewState(23, "t2"),
@@ -1061,7 +1075,84 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       scenario.pendingCommands === "outcomes" ? "noop" : "pending",
       "Target turn already ended"
     ),
+    // Admitted and still pending, so it renders inline as a pending message bubble rather than in
+    // the pending-commands box below -- see projected_session.tsx's pendingSentMessage.
+    command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
   ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
+/** Mirror the screenshot's order: assistant text, a folded run, then an unfinished assistant-text
+ * item whose streaming badge renders before its body. Copy is synthetic; only the row states matter. */
+function streamingInterleavedRows(threadId: string): Record<string, unknown>[] {
+  const activeTurn = "streaming-turn";
+  let cursor = 1;
+  const rows: Record<string, unknown>[] = [];
+
+  const appendAssistantText = (id: string, text: string, streaming: boolean): void => {
+    rows.push(
+      item(cursor++, id, ItemKind.ASSISTANT_TEXT, text, {
+        threadId,
+        complete: !streaming,
+        turn: activeTurn,
+      })
+    );
+  };
+
+  const appendRun = (prefix: string, toolCalls: number, reasoningSteps: number, failedTool?: number): void => {
+    for (let index = 0; index < Math.max(toolCalls, reasoningSteps); index++) {
+      if (index < toolCalls) {
+        const failed = index === failedTool;
+        rows.push(
+          item(cursor++, `${prefix}-tool-${index}`, ItemKind.TOOL_CALL, null, {
+            threadId,
+            tool: "Search",
+            output: failed ? "The fixture marks this tool call as failed." : undefined,
+            failed,
+            turn: activeTurn,
+          })
+        );
+      }
+      if (index < reasoningSteps)
+        rows.push(
+          item(cursor++, `${prefix}-reasoning-${index}`, ItemKind.REASONING, "Evaluating the latest results.", {
+            threadId,
+            turn: activeTurn,
+          })
+        );
+    }
+  };
+
+  appendAssistantText(
+    "previous-response",
+    "Understood — fold it into basic itself, not into default_policies alongside it. That's the better shape: basic is \"what every agent can do\", and the API server is part of that. Let me look at basic's construction and every reference to KUBERNETES_POLICY, because folding it in makes the separate policy a lie unless I delete it too.",
+    false
+  );
+  appendRun("large-run", 32, 17);
+  appendAssistantText(
+    "streaming-response-1",
+    "Understood — folding it into basic rather than defaulting a separate policy. Let me check what asserts on the policy set before I move the rule.",
+    true
+  );
+  appendRun("small-run-1", 2, 1);
+  appendAssistantText(
+    "streaming-response-2",
+    'Understood — that\'s a different and better shape: basic is "the self-identity plumbing every agent needs", and the API server belongs in it. Let me check what merging it would touch, then do it.',
+    true
+  );
+  appendRun("failed-run", 2, 1, 0);
+  appendAssistantText(
+    "streaming-response-3",
+    "Understood — that's a different and better shape: basic is the floor, and Kubernetes reach is part of the floor. Let me check what that implies before editing.",
+    true
+  );
+  appendRun("small-run-2", 3, 2);
+  appendAssistantText(
+    "streaming-response-4",
+    "Understood — the rule belongs in basic, and the separate Kubernetes policy should be removed with it. I'll make the change and verify the result.",
+    true
+  );
+  rows.unshift(viewState(cursor - 1, activeTurn));
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
@@ -1138,11 +1229,85 @@ function standaloneReasoningRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+function recoveryRows(threadId: string): Record<string, unknown>[] {
+  const rows =
+    scenario.recovery === "tools"
+      ? [
+          item(10, "revised-tool", ItemKind.TOOL_CALL, null, {
+            threadId,
+            tool: "Bash",
+            complete: false,
+            recovery: RecoveryDisposition.REVISED,
+            arguments: '{"command":"write-report"}',
+          }),
+          item(20, "discarded-tool", ItemKind.TOOL_CALL, null, {
+            threadId,
+            tool: "Bash",
+            output: "Created report.txt",
+            recovery: RecoveryDisposition.ABSENT,
+          }),
+          item(30, "failed-tool", ItemKind.TOOL_CALL, null, {
+            threadId,
+            tool: "Read",
+            output: "Permission denied",
+            failed: true,
+            recovery: RecoveryDisposition.RETAINED,
+          }),
+          item(40, "unknown-tool", ItemKind.TOOL_CALL, null, {
+            threadId,
+            tool: "Bash",
+            complete: false,
+            recovery: RecoveryDisposition.UNKNOWN,
+            recoveryReason: "The harness history could not be inspected.",
+          }),
+        ]
+      : [
+          item(
+            10,
+            "retained-text",
+            ItemKind.ASSISTANT_TEXT,
+            "The sound was delicate, almost sweet. The seam widened.",
+            {
+              threadId,
+              complete: false,
+              recovery: RecoveryDisposition.RETAINED,
+            }
+          ),
+          item(20, "discarded-text", ItemKind.ASSISTANT_TEXT, "Remember the name in the margin", {
+            threadId,
+            complete: false,
+            recovery: RecoveryDisposition.ABSENT,
+          }),
+          item(30, "revised-text", ItemKind.ASSISTANT_TEXT, "This is the text retained for the next turn.", {
+            threadId,
+            complete: false,
+            recovery: RecoveryDisposition.REVISED,
+          }),
+          item(
+            40,
+            "unknown-text",
+            ItemKind.ASSISTANT_TEXT,
+            "Then she heard the bells of her city, ringing under the floor.",
+            {
+              threadId,
+              complete: false,
+              recovery: RecoveryDisposition.UNKNOWN,
+              recoveryReason: "The harness history could not be inspected.",
+            }
+          ),
+        ];
+  if (scenario.recovery === "tools") rows[0].output_ref = payload(10, "revised-tool", "output", "aborted");
+  return [{ ...viewState(40, null), thread_id: threadId }, ...rows];
+}
+
 function threadEntityRows(threadId: string): Record<string, unknown>[] {
+  if (scenario.recovery) return recoveryRows(threadId);
+  if (scenario.endedAttachment) return endedAttachmentRows(threadId);
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
   if (scenario.lifecycleGroup) return lifecycleGroupRows(threadId);
   if (scenario.markdownCodeFence) return codeFenceRows(threadId);
+  if (scenario.streamingInterleaved) return streamingInterleavedRows(threadId);
   if (scenario.standaloneReasoning) return standaloneReasoningRows(threadId);
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
   return standardRows(threadId);
@@ -1855,6 +2020,25 @@ if (scenario.openToolPayloads) {
     if (unopened.size === 0) openToolPayloads.disconnect();
   });
   openToolPayloads.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openRecoveryDetails) {
+  const openRecovery = new MutationObserver(() => {
+    const summaries = [...document.querySelectorAll("summary")];
+    openRun(summaries);
+    for (const summary of summaries) {
+      const text = summary.textContent ?? "";
+      const details = summary.parentElement;
+      if (
+        details instanceof HTMLDetailsElement &&
+        !details.open &&
+        (text.includes("not retained in model context") || text === "Continuation output" || text === "Output")
+      ) {
+        summary.click();
+      }
+    }
+  });
+  openRecovery.observe(document, { childList: true, subtree: true });
 }
 
 if (scenario.openEvidence) {

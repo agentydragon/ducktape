@@ -21,23 +21,27 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cnpg, external_creds, forgejo_images, namespaces, node_scheduling
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "attic"
 NAMESPACE = "nix-cache"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/nix-cache"
-_PORT = 8080
-_SELECTOR = {"app.kubernetes.io/name": NAME}
-_DB = "attic-db"
+SERVICE = ServiceRef(
+    name=NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+)
+DATABASE = cnpg.PostgresRef.generated(name="attic-db", namespace=NAMESPACE)
 # The operator mints the S3 key pair straight into this namespace (`_storage` below).
-_S3_SECRET = "attic-s3-credentials"
-_GITHUB_PAT_SECRET = "github-secrets-sync-pat"
+_S3 = SecretRef(namespace=NAMESPACE, name="attic-s3-credentials")
+_GITHUB_PAT = SecretRef(namespace=NAMESPACE, name="github-secrets-sync-pat")
 _ROTATOR = "attic-jwt-rotator"
 # Placeholder tag; image-pins/kustomization.yaml sets the real one.
 _ROTATOR_IMAGE = "git.allegedly.works/ducktape-ci/attic-jwt-rotation:unset"
@@ -50,14 +54,13 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "db",
-        name=_DB,
-        namespace=NAMESPACE,
+        ref=DATABASE,
         image_name=None,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="2Gi",
-        # CNPG generates the credentials in Secret attic-db-app.
         initdb=cnpg.same_owner_initdb("attic"),
+        wal_archive=False,
     )
 
 
@@ -76,7 +79,7 @@ def _storage(scope: Construct) -> None:
     )
     identity = s3.Identity(scope, "identity", name=NAME, namespace=NAMESPACE)
     bucket.grant_read_write(identity)
-    identity.credentials(namespace=NAMESPACE, secret=_S3_SECRET, key_fields=s3.AWS_ENV_KEY_FIELDS)
+    identity.credentials(namespace=NAMESPACE, secret=_S3.name, key_fields=s3.AWS_ENV_KEY_FIELDS)
 
 
 def _server(scope: Construct) -> None:
@@ -86,9 +89,9 @@ def _server(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_SELECTOR),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_SELECTOR),
+                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     # Co-located with SeaweedFS and attic-db on OVH kimsufi workers.
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
@@ -109,27 +112,31 @@ def _server(scope: Construct) -> None:
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
                             env=[
-                                secret_env_var("ATTIC_SERVER_DATABASE_URL", f"{_DB}-app", "uri"),
-                                secret_env_var(
-                                    "ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64", "attic-jwt-token", "jwt-token"
-                                ),
-                                secret_env_var("AWS_ACCESS_KEY_ID", _S3_SECRET, "AWS_ACCESS_KEY_ID"),
-                                secret_env_var("AWS_SECRET_ACCESS_KEY", _S3_SECRET, "AWS_SECRET_ACCESS_KEY"),
+                                DATABASE.app_secret.key("uri").env_var("ATTIC_SERVER_DATABASE_URL"),
+                                SecretRef(namespace=NAMESPACE, name="attic-jwt-token")
+                                .key("jwt-token")
+                                .env_var("ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64"),
+                                _S3.key("AWS_ACCESS_KEY_ID").env_var("AWS_ACCESS_KEY_ID"),
+                                _S3.key("AWS_SECRET_ACCESS_KEY").env_var("AWS_SECRET_ACCESS_KEY"),
                             ],
                             args=["-f", "/config/server.toml", "--mode", "monolithic"],
-                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            ports=[SERVICE.port.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/config", read_only=True),
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                             ],
                             liveness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("http")),
+                                http_get=k8s.HttpGetAction(
+                                    path="/", port=k8s.IntOrString.from_string(SERVICE.port.name)
+                                ),
                                 initial_delay_seconds=10,
                                 period_seconds=30,
                                 timeout_seconds=5,
                             ),
                             readiness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("http")),
+                                http_get=k8s.HttpGetAction(
+                                    path="/", port=k8s.IntOrString.from_string(SERVICE.port.name)
+                                ),
                                 initial_delay_seconds=5,
                                 period_seconds=10,
                                 timeout_seconds=3,
@@ -147,24 +154,15 @@ def _server(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            ports=[
-                k8s.ServicePort(
-                    port=_PORT, target_port=k8s.IntOrString.from_string("http"), protocol="TCP", name="http"
-                )
-            ],
-            selector=_SELECTOR,
-        ),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.port.k8s_service_port()], selector=SERVICE.pods.selector),
     )
     https_route(
         scope,
         "route",
         metadata=ApiObjectMetadata(name=NAMESPACE, namespace=NAMESPACE),
         hostnames=["cache.allegedly.works"],
-        backend=NAME,
-        port=_PORT,
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )
@@ -179,7 +177,7 @@ def _rotation(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "github-pat",
-        metadata=ApiObjectMetadata(name=_GITHUB_PAT_SECRET, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=_GITHUB_PAT.name, namespace=NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
         data=[remote_data("github-agentydragon-2", "token")],
@@ -270,7 +268,7 @@ def _rotation(scope: Construct) -> None:
                                     name="rotate",
                                     image=_ROTATOR_IMAGE,
                                     args=["rotate", "--config", "/config/rotators.yaml"],
-                                    env=[secret_env_var("GIT_TOKEN", _GITHUB_PAT_SECRET, "token")],
+                                    env=[_GITHUB_PAT.key("token").env_var("GIT_TOKEN")],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),

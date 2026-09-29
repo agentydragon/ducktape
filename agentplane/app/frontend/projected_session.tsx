@@ -37,7 +37,7 @@ import {
 } from "react";
 
 import { CommandSchema, type Command } from "../../protocol/command_pb";
-import { ItemKind } from "../../protocol/event_pb";
+import { ItemKind, RecoveryDisposition } from "../../protocol/event_pb";
 import {
   command,
   threadEvidence,
@@ -46,6 +46,7 @@ import {
   getThread,
   models,
   modelsForHarness,
+  resumeThread,
   type EvidencePage,
   type ModelOption,
   type NativeFramePage,
@@ -90,12 +91,28 @@ export function pruneCommandErrors(errors: Map<string, string>, commandIds: Read
  * output as code (highlighted when it is JSON), and the operator's own input verbatim, as typed. */
 type BodyFormat = "markdown" | "code" | "text";
 
-function Body({ reference, format }: { reference: PayloadRef | null; format: BodyFormat }): JSX.Element {
+function Body({
+  reference,
+  format,
+  streaming = false,
+}: {
+  reference: PayloadRef | null;
+  format: BodyFormat;
+  streaming?: boolean;
+}): JSX.Element {
   if (!reference) return <Text c="dimmed">Body not observed</Text>;
-  return <PayloadText reference={reference} format={format} />;
+  return <PayloadText reference={reference} format={format} streaming={streaming} />;
 }
 
-function PayloadText({ reference, format }: { reference: PayloadRef; format: BodyFormat }): JSX.Element {
+function PayloadText({
+  reference,
+  format,
+  streaming,
+}: {
+  reference: PayloadRef;
+  format: BodyFormat;
+  streaming: boolean;
+}): JSX.Element {
   const { body, error, retry } = useThreadSync().usePayload(reference);
   return (
     <>
@@ -107,16 +124,24 @@ function PayloadText({ reference, format }: { reference: PayloadRef; format: Bod
       {body === null ? (
         <Text c="dimmed">Loading complete revision…</Text>
       ) : (
-        <FormattedBody body={body} format={format} />
+        <FormattedBody body={body} format={format} streaming={streaming} />
       )}
     </>
   );
 }
 
-function FormattedBody({ body, format }: { body: string; format: BodyFormat }): JSX.Element {
+function FormattedBody({
+  body,
+  format,
+  streaming,
+}: {
+  body: string;
+  format: BodyFormat;
+  streaming: boolean;
+}): JSX.Element {
   switch (format) {
     case "markdown":
-      return <Markdown source={body} />;
+      return <Markdown source={body} streaming={streaming} />;
     case "code":
       return <HighlightedText text={body} />;
     case "text":
@@ -345,6 +370,19 @@ function EvidencePanel({ threadId, entity }: { threadId: string; entity: ThreadE
   return open ? <EvidencePageView key={id} threadId={threadId} entity={entity} /> : <></>;
 }
 
+/** A sent message once the server has accepted it and is working on it, but before the harness's
+ * own confirmed_input entity lands -- the moment the message is fully ordered in history (it has a
+ * cursor) and no longer needs the composer's Retry/Dismiss affordances, so it can read as the
+ * eventual bubble rather than as a command awaiting an outcome. */
+function pendingSentMessage(entity: ThreadEntity): boolean {
+  return (
+    entity.entityKind === "command" &&
+    "outcome" in entity.state &&
+    entity.state.operation === "submit_input" &&
+    entity.state.outcome === "pending"
+  );
+}
+
 export function EntityCard({
   threadId,
   entity,
@@ -358,13 +396,23 @@ export function EntityCard({
   // always closed, for anything but a reasoning step with a body to disclose.
   const reasoningTextRef = "kind" in entity.state && entity.state.kind === ItemKind.REASONING ? entity.textRef : null;
   const [reasoningOpen] = useRetainedDisclosure(reasoningTextRef && payloadDisclosureId(reasoningTextRef));
-  if (entity.entityKind === "confirmed_input") {
+  const discardedId =
+    "kind" in entity.state && entity.state.recovery === RecoveryDisposition.ABSENT
+      ? `${entity.projectionEpoch}:${entity.entityId}:discarded`
+      : null;
+  const [discardedOpen] = useRetainedDisclosure(discardedId);
+  if (entity.entityKind === "confirmed_input" || pendingSentMessage(entity)) {
+    const pending = entity.entityKind !== "confirmed_input";
     return (
       <Group justify="flex-end" align="flex-start" gap="xs" wrap="nowrap">
         {/* The bubble has no header row: beside its top corner, in the width it leaves free, the
             icon neither grows the bubble nor covers its text. */}
         <EvidenceToggle entity={entity} />
-        <Paper className="agentplane-user-bubble" p="sm">
+        <Paper
+          className="agentplane-user-bubble"
+          p="sm"
+          style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
+        >
           <Body reference={entity.inputRef} format="text" />
           <EvidencePanel threadId={threadId} entity={entity} />
         </Paper>
@@ -404,9 +452,14 @@ export function EntityCard({
   if (!("kind" in entity.state)) return <></>;
   const tool = entity.state.kind === ItemKind.TOOL_CALL;
   const reasoning = entity.state.kind === ItemKind.REASONING;
+  const streamingText =
+    entity.state.kind === ItemKind.ASSISTANT_TEXT &&
+    entity.state.completion === null &&
+    entity.state.recovery === null &&
+    live;
   const body = (
     <>
-      {tool || entity.state.completion === null ? (
+      {tool || (entity.state.completion === null && !streamingText) || entity.state.recovery !== null ? (
         <Group justify="space-between" mb="xs" wrap="nowrap">
           <Group gap="xs">
             {tool && <Badge variant="light">{entity.state.tool_name || "tool"}</Badge>}
@@ -417,6 +470,18 @@ export function EntityCard({
       ) : (
         <EvidenceToggle entity={entity} style={{ position: "absolute", top: 4, right: 4 }} />
       )}
+      {entity.state.recovery === RecoveryDisposition.UNKNOWN && (
+        <Text size="sm" c="dimmed" mb="xs" style={{ overflowWrap: "anywhere" }}>
+          Whether this content remains in the model's context could not be determined.
+          {entity.state.recovery_reason && ` ${entity.state.recovery_reason}`}
+        </Text>
+      )}
+      {entity.state.recovery === RecoveryDisposition.REVISED && (
+        <Text size="sm" c="dimmed" mb="xs">
+          Showing the content retained for continuation. Earlier observations are available in Evidence.
+          {tool && " Recovery content does not establish a tool execution outcome."}
+        </Text>
+      )}
       {reasoning ? (
         entity.textRef ? (
           <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
@@ -424,13 +489,43 @@ export function EntityCard({
           <Text c="dimmed">Reasoning</Text>
         )
       ) : (
-        entity.textRef && <Body reference={entity.textRef} format="markdown" />
+        entity.textRef && <Body reference={entity.textRef} format="markdown" streaming={streamingText} />
       )}
       {entity.argumentsRef && <LazyBody label="Arguments" reference={entity.argumentsRef} format="code" />}
-      {entity.outputRef && <LazyBody label="Output" reference={entity.outputRef} format="code" />}
+      {entity.outputRef && (
+        <LazyBody
+          label={entity.state.recovery === RecoveryDisposition.REVISED ? "Continuation output" : "Output"}
+          reference={entity.outputRef}
+          format="code"
+        />
+      )}
       <EvidencePanel threadId={threadId} entity={entity} />
     </>
   );
+  if (discardedId !== null) {
+    return (
+      <CollapsibleCard open={discardedOpen}>
+        <RetainedDisclosure
+          id={discardedId}
+          summary={
+            <Text component="span" size="sm" c="dimmed">
+              {tool ? `${entity.state.tool_name || "Tool"}: discarded context` : "Discarded output"}
+              {" (not retained in model context)"}
+            </Text>
+          }
+        >
+          <Stack gap="xs" mt="xs">
+            {tool && (
+              <Text size="sm" c="dimmed">
+                Discarded context does not undo tool side effects or change its recorded execution outcome.
+              </Text>
+            )}
+            {body}
+          </Stack>
+        </RetainedDisclosure>
+      </CollapsibleCard>
+    );
+  }
   // Assistant text carries no role label and no card: it reads as the reply by position, across
   // from the user's right-aligned bubble. A tool call is boxed unconditionally, labelled by its
   // tool; a standalone reasoning step is boxed only once its own disclosure opens, like a
@@ -450,12 +545,32 @@ export function EntityCard({
  * the retained history -- and whether any tool call among them failed. */
 function ItemStatus({ items, live }: { items: ThreadEntity[]; live: boolean }): JSX.Element {
   const states = items.flatMap((item) => ("kind" in item.state ? [item.state] : []));
-  const unfinished = states.some((state) => state.completion === null);
+  const unfinished = states.some((state) => state.completion === null && state.recovery === null);
+  const interrupted = states.some((state) => state.completion === null && state.recovery !== null);
+  const recoveries = [...new Set(states.flatMap((state) => (state.recovery === null ? [] : [state.recovery])))];
   return (
     <>
       {unfinished && (
         <Badge role="img" aria-label={live ? "Streaming" : "Incomplete"}>
           {live ? "Streaming" : "Incomplete"}
+        </Badge>
+      )}
+      {interrupted && (
+        <Badge role="img" aria-label="Interrupted">
+          Interrupted
+        </Badge>
+      )}
+      {recoveries.map((recovery) => {
+        const { label, color } = recoveryPresentation(recovery);
+        return (
+          <Badge key={recovery} color={color} role="img" aria-label={label}>
+            {label}
+          </Badge>
+        );
+      })}
+      {states.some((state) => state.recovery !== null && state.tool_succeeded === true) && (
+        <Badge color="green" role="img" aria-label="Succeeded">
+          Succeeded
         </Badge>
       )}
       {states.some((state) => state.tool_succeeded === false) && (
@@ -465,6 +580,19 @@ function ItemStatus({ items, live }: { items: ThreadEntity[]; live: boolean }): 
       )}
     </>
   );
+}
+
+function recoveryPresentation(recovery: number): { label: string; color: string } {
+  switch (recovery) {
+    case RecoveryDisposition.RETAINED:
+      return { label: "Retained in context", color: "gray" };
+    case RecoveryDisposition.ABSENT:
+      return { label: "Not retained in context", color: "gray" };
+    case RecoveryDisposition.REVISED:
+      return { label: "Revised for continuation", color: "blue" };
+    default:
+      return { label: "Retention unknown", color: "yellow" };
+  }
 }
 
 /** The collapsible shell a run, a lifecycle group, or a standalone reasoning step shares: collapsed,
@@ -521,7 +649,7 @@ function RunView({
     <CollapsibleRows
       id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:run`}
       summary={
-        <Flex component="span" display="inline-flex" gap="xs" align="center">
+        <Flex component="span" display="inline-flex" gap="xs" align="center" wrap="wrap">
           <Text size="xs" c="dimmed">
             {summarizeRun(entities)}
           </Text>
@@ -695,6 +823,10 @@ function SelectedCommandRows({
     <Stack role="region" aria-label="Pending commands" gap="xs">
       {commands.map((value) => {
         const row = byId.get(value.command.commandId);
+        // Once the server has admitted the command and is still working on it, it has a cursor and
+        // renders inline in history as a pending message bubble instead -- same as any other
+        // pending submitInput command, whether or not this browser is the one tracking it locally.
+        if (row && pendingSentMessage(row)) return null;
         const admitted = row !== undefined || value.admission !== null;
         const terminal = row && "outcome" in row.state && ["failed", "noop"].includes(row.state.outcome);
         return (
@@ -750,6 +882,14 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
 // How close the top of the loaded rows comes to the viewport's before the page before them loads:
 // a full screen, so the load lands before the reader can actually see the top -- reading up
 // through a long thread feels like an ordinary lazy-loaded scroll, not a stop-and-wait at the edge.
+//
+// This makes eager pagination genuinely viewport-height-relative: shrinking chrome elsewhere on the
+// page (the topbar, the composer) makes this taller, so the same thread settles one page further
+// into its backlog. PR #8308's topbar change tripped this on two E2E tests that assumed a fixed
+// fetch count -- not a flake, just this threshold moving. A test asserting an exact older-page fetch
+// count, or relying on a fixed-size synthetic backlog outlasting a fixed number of scroll-to-top
+// cycles, is coupled to this and needs headroom (see test_thread_window_browser.py's two tests fixed
+// there) rather than an assumption pinned to today's chrome height.
 const loadOlderWithin = (element: HTMLDivElement): number => element.clientHeight;
 
 // Traces VirtualizedHistory's scroll-anchor bookkeeping to the console: off by default (this ran
@@ -1109,10 +1249,15 @@ function VirtualizedHistory({
           previousScrollTop.current = element.scrollTop;
           return;
         }
-        if (!restoringScroll() && element.scrollHeight - element.scrollTop - element.clientHeight < 24) {
+        const movedUp = element.scrollTop < previousScrollTop.current;
+        const movedDown = element.scrollTop > previousScrollTop.current;
+        const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+        if (movedUp) {
+          atBottom.current = false;
+        } else if (!restoringScroll() && nearBottom && (atBottom.current || movedDown)) {
           atBottom.current = true;
           cancelRestoration();
-        } else if (pointerScrolling.current && element.scrollTop < previousScrollTop.current) atBottom.current = false;
+        }
         previousScrollTop.current = element.scrollTop;
         if (restoringAnchor.current !== null) return;
         if (!captureNextScroll.current && !pointerScrolling.current && touchY.current === null) return;
@@ -1267,7 +1412,14 @@ function ProjectedSessionBody({
   const controls = view && "controls" in view.state ? view.state.controls : null;
   const operational = view && "controls" in view.state ? view.state.operational : null;
   const running =
-    available && !thread.archived && operational?.status !== "failed" && controls?.harness_state === "running";
+    available && !thread.archived && operational?.status === "active" && controls?.harness_state === "running";
+  const canResume =
+    available &&
+    !thread.archived &&
+    operational?.status !== "failed" &&
+    (operational?.status !== "active" || controls?.harness_state !== "running");
+  const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const activeTurn = controls?.active_turn_id ?? null;
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
@@ -1287,7 +1439,7 @@ function ProjectedSessionBody({
   }, [thread.harness]);
   const rows = historyRows(
     entities
-      .filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind))
+      .filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind) || pendingSentMessage(row))
       .sort((left, right) =>
         decimalBigInt(left.cursor) < decimalBigInt(right.cursor)
           ? -1
@@ -1299,7 +1451,10 @@ function ProjectedSessionBody({
   const localCommandIds = new Set(commands.local.commands.map((value) => value.command.commandId));
   const projectedCommands = entities.filter(
     (row): row is ThreadEntity & { state: Extract<ThreadEntity["state"], { outcome: string }> } =>
-      row.entityKind === "command" && "outcome" in row.state && !localCommandIds.has(row.entityId)
+      row.entityKind === "command" &&
+      "outcome" in row.state &&
+      !localCommandIds.has(row.entityId) &&
+      !pendingSentMessage(row)
   );
   const hasPendingCommands = projectedCommands.length > 0;
   const selectedCommandIds = commands.local.commands.slice(0, 128);
@@ -1320,6 +1475,19 @@ function ProjectedSessionBody({
     });
     if (commands.submit(value)) setDraft("");
     else submitting.current = false;
+  }
+
+  async function resume(): Promise<void> {
+    if (!canResume || resuming) return;
+    setResuming(true);
+    setResumeError(null);
+    try {
+      await resumeThread(threadId);
+    } catch (reason: unknown) {
+      setResumeError(displayableError(reason));
+    } finally {
+      setResuming(false);
+    }
   }
 
   function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -1399,6 +1567,11 @@ function ProjectedSessionBody({
             {commands.submissionError}
           </Text>
         )}
+        {resumeError && (
+          <Text role="alert" c="red">
+            Could not resume harness: {resumeError}
+          </Text>
+        )}
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
@@ -1409,7 +1582,7 @@ function ProjectedSessionBody({
           disabled={!running}
           onKeyDown={composerKey}
         />
-        <Group justify="space-between" wrap="nowrap">
+        <Group justify="space-between" wrap="nowrap" pb="xs">
           <Group gap="xs" wrap="nowrap">
             <StatusDot
               {...threadStatus({
@@ -1421,6 +1594,11 @@ function ProjectedSessionBody({
                 harness: controls?.harness_state ?? null,
               })}
             />
+            {canResume && (
+              <Button size="xs" aria-label="Resume harness" loading={resuming} onClick={() => void resume()}>
+                Resume harness
+              </Button>
+            )}
             <Select
               aria-label="Model"
               data={modelOptions.map((option) => ({ value: option.model, label: option.display_name }))}
@@ -1564,6 +1742,17 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
   return `Last observed Sandbox state: ${sandbox.state}. Showing retained Thread history; controls are disabled.`;
 }
 
+function harnessLabel(harness: ThreadView["harness"]): string {
+  switch (harness) {
+    case "HARNESS_CLAUDE":
+      return "Claude";
+    case "HARNESS_CODEX":
+      return "Codex";
+    default:
+      return "Unknown harness";
+  }
+}
+
 export function ProjectedSession({ threadId }: { threadId: string }): JSX.Element {
   const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
@@ -1584,7 +1773,7 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
           </Box>
           {thread && (
             <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-              {thread.sandbox}
+              {thread.sandbox} · {harnessLabel(thread.harness)}
             </Text>
           )}
         </Group>

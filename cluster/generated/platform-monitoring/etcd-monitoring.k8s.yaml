@@ -73,3 +73,4 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: talos-etcd-metrics
+      app.kubernetes.io/part-of: monitoring

@@ -5,13 +5,15 @@ Status: **implemented; acceptance incomplete.** The server-side fold in
 transactional writer. The integration uses Electric through its published TypeScript client:
 one shape per thread and per payload field, with the browser's window loaded as subsets of them.
 See [app implementation notes](../app/README.md) for endpoints and storage details.
-The acceptance requirements below remain gates, including browser behavior and server
-memory; implementation presence is not evidence that they have passed.
+The [conversation acceptance matrix](../debug/conversation_acceptance.md) records the evidence and
+remaining gates. Bounded browser-cache retention is the deferred D6 desire, not a gate; the current
+store retains loaded rows and bodies until the Thread closes. Server-memory acceptance remains a
+separate gate.
 
 [Thread layering](thread_layering.md) owns command admission, runner identities and
-execution durability. This document owns the materialized conversation and partial
-browser state. Record names below describe domain concepts; concrete schemas and wire
-representations remain implementation decisions to validate with the sync integration.
+execution durability. This document owns the materialized conversation and browser state. The
+records and wire representations are implemented in the app; see [app implementation notes](../app/README.md)
+for their concrete schemas and endpoints.
 
 ## Requirements
 
@@ -22,11 +24,12 @@ owes the browser, with IDs; the list below is the whole view's.
   parallel tools completing out of order. Editing earlier user input, forks and branches
   are outside this contract.
 - Opening a Thread reads its tail and current controls without replaying its history.
-  Earlier items load only on demand. A tab left open for months retains a limited tail
-  and reading window, with eviction and virtualization.
-- Neither browser nor server processes may require a complete conversation in memory. Resident state
-  scales with selected windows/content, active execution state and bounded processing
-  batches, not total conversation length or the number of raw frames.
+  Earlier items load only on demand. Rendering is virtualized; loaded rows and bodies remain
+  in the browser store until the Thread closes under the accepted D6 cache tradeoff.
+- Server processes may not require a complete conversation in memory. Server resident state scales
+  with selected windows/content, active execution state and bounded processing batches, not total
+  conversation length or the number of raw frames. Browser cache growth after loading is the
+  deferred D6 desire, not a current acceptance gate.
 - Text and tool arguments stream when the harness exposes deltas. Completion may replace
   the accumulated value. Tool results update the invocation they identify.
 - Reads cost the requested items and selected content, independent of total conversation
@@ -172,11 +175,10 @@ SSE responses in a row have ended within a second. Electric answers a reader beh
 rather than holding the connection, so a shape that changes faster than the client reconnects can
 drop to long polling. Both read the same log.
 
-Against the [requirements](thread_sync_requirements.md), it falls short in three places:
+Against the [requirements](thread_sync_requirements.md), it falls short in two places:
 
 - **E5:** the live log re-sends nothing a reader holds, but it carries rows the reader discards.
 - **O2:** Electric runs one active instance per replication slot, with shape logs on local disk.
-- **P10:** nothing evicts ([§ Retained browser state](#retained-browser-state)).
 
 Shapes per thread, shared by every reader of it: one entity shape, plus one per payload field in use.
 What Electric itself cannot do for following an agent, and where this design therefore stops:
@@ -420,31 +422,24 @@ store. Payloads are immutable caches
 keyed by reference. Drafts, local unconfirmed commands and viewport/disclosure state retain
 their distinct local provenance. Logout clears subscriptions and user-scoped caches.
 
-Keep a limited tail and reading window; evict the middle. Virtualization limits mounted DOM
-independently of network/cache limits. Unloaded bodies, fetch failures, empty bodies and
-incomplete harness output must look different. New output follows the bottom only while
-the reader is already there.
+Virtualization limits mounted DOM independently of network/cache limits. Unloaded bodies, fetch
+failures, empty bodies and incomplete harness output must look different. New output follows the
+bottom only while the reader is already there.
 
-### Retained browser state
+### Accepted browser cache state (D6)
 
-Keep the tail and the current reading window independently; opening an old page does not
-load the intervening history. Explicitly selected bodies and a small prefetch margin may
-remain resident. Moving the reading window releases obsolete page interests and evicts
-unneeded entities, body chunks/manifests and assembled values from the collection caches.
-Closing a body or retiring a selection releases its subscriptions and outstanding request
-references. Late callbacks must neither change the active selection nor repopulate retired
-caches. Shared data stays resident only while another active interest or bounded cache
-policy needs it. Persistent browser caches, if enabled later, also need eviction policies.
+Long content such as reasoning and tool arguments/output is loaded on demand. Once rows or bodies
+are loaded, the current store retains them until the Thread closes, including rows received at the
+tail while the reader is elsewhere. The owner accepts this cache growth for now; it is not an
+acceptance gate. This state is also recorded as deferred desire D6 in
+[Thread sync requirements](thread_sync_requirements.md).
 
-**Not met:** the current store evicts nothing. It holds every row it has loaded and every row
-added at the tail since, and every body it has shown, until the thread is closed.
-
-Eviction is local, not a deletion from durable history. Retain only the necessary lightweight
-viewport anchors, drafts and local command state; rereading an evicted page obtains a fresh
-subset and reconciles with live changes through the engine. A failed historical read stays
-explicit rather than silently restoring an obsolete copy. Retained memory may scale with
-large selected bodies: this requirement does not introduce query byte budgets or truncate
-content at a reported revision.
+If D6 is prioritized later, keep the tail and current reading window independently, evict
+unneeded entities and body chunks/manifests from collection caches, and ensure late callbacks
+cannot repopulate retired caches. Eviction remains local to the browser, not a deletion from
+durable history. Rereading an evicted page must obtain a fresh subset and reconcile with live
+changes. Any future acceptance should check that collection rows, subscriptions and retained heap
+stabilize for fixed interests as history grows, while drafts and the visible scroll anchor survive.
 
 ### Acceptance evidence
 
@@ -458,19 +453,22 @@ Required evidence before accepting the integrated implementation:
 - Real sync-engine/browser tests for history/live races, content selection, expired handles,
   large individual bodies, unsubscribe/refetch, auth and old subscription callbacks.
 - Scale comparisons over orders of magnitude of history: initial queries and reconnect fetch
-  only requested windows; per-batch projection and memory do not scan/retain full history.
+  only requested windows; per-batch projection and server memory do not scan/retain full history.
   Measure transfer, storage writes and browser paint separately. Large selected content may
   cost proportionally to its size; a fixed item count is not a fixed number of bytes.
-- Repeated scroll/load/evict/revisit and open/close body cycles, with background updates to
-  evicted items: collection row counts, subscriptions and retained heap must stabilize for a
-  fixed set of interests as total history grows. Verify release in the thread store and Electric's client,
-  not only disappearance from the DOM. Revisit must show current revisions; drafts and the
-  visible scroll anchor survive eviction and reconnect.
 - Measure live traffic for updates outside selected windows separately from fetched snapshot
   size. Record any unavoidable metadata traffic; omitted bodies must stay off the wire.
 - Long-running ingestion and slow-reader experiments must bound worker/proxy buffers; runner
   execution and recovery use bounded journal buffers and checkpoint plus paged suffix.
   Native harness memory/context and resume cost are measured separately.
+
+### Deferred D6 evidence
+
+If bounded browser-cache retention is prioritized, test repeated scroll/load/evict/revisit and
+open/close body cycles with background updates to evicted items. Collection row counts,
+subscriptions and retained heap should stabilize for fixed interests as total history grows.
+Verify release in the thread store and Electric's client, not only disappearance from the DOM;
+revisit must show current revisions, and drafts and the visible scroll anchor must survive.
 
 ## Implementation boundaries
 

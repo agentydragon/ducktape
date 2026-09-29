@@ -12,10 +12,11 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 NAME = "local-path-provisioner"
 NAMESPACE = "local-path-storage"
@@ -91,18 +92,17 @@ def _storage_classes(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=AgentReadable.LOGS,
+        labels={
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+        },
     )
     helm_release(
         chart,
