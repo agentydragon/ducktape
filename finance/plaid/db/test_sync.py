@@ -262,10 +262,10 @@ async def test_sync_link_updates_existing_item_webhook() -> None:
         secrets=_FakeSecrets(),
         link=link,
         trigger="test",
-        webhook_url="https://plaid-webhook.test/webhooks/plaid",
+        webhook_url="https://plaid-mcp.test/webhooks/plaid",
     )
 
-    assert api.item_webhooks == ["https://plaid-webhook.test/webhooks/plaid"]
+    assert api.item_webhooks == ["https://plaid-mcp.test/webhooks/plaid"]
 
 
 async def test_sync_link_reraises_other_liability_errors() -> None:

@@ -78,8 +78,9 @@ in the typeahead; the UI looks up what that institution supports and offers exac
 products this app can mirror, so Link is never opened requesting a product the bank
 lacks — which would fail the whole session.
 
-Plaid posts signed webhooks to `https://plaid-webhook.allegedly.works/webhooks/plaid`.
-The app verifies Plaid's JWT signature and request-body hash, durably queues
+Plaid posts signed webhooks to `https://plaid-mcp.allegedly.works/webhooks/plaid`,
+on the same Gateway route as the Link UI. The app verifies Plaid's JWT signature
+and request-body hash, durably queues
 `TRANSACTIONS / SYNC_UPDATES_AVAILABLE`, then applies the `/transactions/sync`
 delta and cursor in the background. New Items receive the webhook URL through
 Link token creation; the next daily/manual sync updates existing Items.

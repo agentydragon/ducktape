@@ -430,7 +430,7 @@ def test_link_token_never_pins_an_institution() -> None:
     assert response.status_code == 200
     assert "institution_id" not in api.link_token_requests[0]
     assert api.link_token_requests[0]["products"] == ["transactions"]
-    assert api.link_token_requests[0]["webhook"] == "https://plaid-webhook.test/webhooks/plaid"
+    assert api.link_token_requests[0]["webhook"] == "https://plaid-mcp.test/webhooks/plaid"
 
 
 def test_signed_transactions_webhook_is_queued_and_body_tampering_is_rejected() -> None:

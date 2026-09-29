@@ -98,8 +98,10 @@ All new-link and update-mode flows use the same Plaid OAuth redirect URI:
 `https://plaid-mcp.allegedly.works/link/callback`. Keep that allowlisted in the
 Plaid developer dashboard.
 
-The webhook host is `https://plaid-webhook.allegedly.works/webhooks/plaid`.
-The generated Gateway route and ingress policy expose that path to Plaid. Keep
+Plaid posts signed webhooks to
+`https://plaid-mcp.allegedly.works/webhooks/plaid`, on the same Gateway route as
+the Link UI. The app exempts only this endpoint from browser OIDC and verifies
+Plaid's signature and raw-body hash before accepting events. Keep
 `PLAID_MCP_WEBHOOK_URL` aligned with the route before deploying. Transactions
 webhooks are configured per Item; other Plaid products may have different
 webhook configuration requirements.
