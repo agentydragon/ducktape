@@ -258,7 +258,7 @@ spec:
     - name: http
       port: 8080
       protocol: TCP
-      targetPort: http
+      targetPort: 8080
   selector:
     app.kubernetes.io/name: plaid-mcp
   type: ClusterIP
@@ -277,6 +277,7 @@ spec:
   ingress:
     - fromEndpoints:
         - matchLabels:
+            app.kubernetes.io/component: server
             app.kubernetes.io/name: authentik
             k8s:io.kubernetes.pod.namespace: authentik
       toPorts:

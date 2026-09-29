@@ -46,8 +46,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/mcp-oauth-state"
 NAMESPACE = "mcp-oauth-state"
-CLUSTER_NAME = "mcp-oauth-state-db"
-POSTGRES_PORT = 5432
+DATABASE = cnpg.PostgresRef.generated(name="mcp-oauth-state-db", namespace=NAMESPACE)
 CONSUMER_SECRET = "mcp-oauth-db-credentials"
 
 
@@ -140,7 +139,7 @@ def _consumer_secret_access(chart: Chart, store: OAuthStateStore) -> None:
 
 
 def _db_chart(app: App) -> Chart:
-    chart = Chart(app, CLUSTER_NAME, disable_resource_name_hashes=True)
+    chart = Chart(app, DATABASE.name, disable_resource_name_hashes=True)
     for store in STORES:
         mint_db_role_secret(
             chart,
@@ -148,8 +147,8 @@ def _db_chart(app: App) -> Chart:
             name=store.source_secret,
             namespace=NAMESPACE,
             role=store.role,
-            host=f"{CLUSTER_NAME}-rw.{NAMESPACE}.svc",
-            port=POSTGRES_PORT,
+            host=DATABASE.rw.host,
+            port=DATABASE.rw.port.number,
             database=store.database,
             url_key="uri",
         )
@@ -157,13 +156,13 @@ def _db_chart(app: App) -> Chart:
     cnpg.cluster(
         chart,
         "cluster",
-        name=CLUSTER_NAME,
-        namespace=NAMESPACE,
+        ref=DATABASE,
         annotations={"description": "Shared OVH-HA CNPG cluster for MCP OAuth state."},
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-hdd",
         size="5Gi",
         initdb=cnpg.same_owner_initdb("app"),
+        wal_archive=False,
         managed=ClusterSpecManaged(
             roles=[
                 ClusterSpecManagedRoles(
@@ -184,7 +183,7 @@ def _db_chart(app: App) -> Chart:
             # CNPG's Database CR metadata.name is a Kubernetes DNS name; the
             # PostgreSQL database name in spec may still contain underscores.
             metadata=ApiObjectMetadata(name=f"mcp-oauth-{store.id}-database", namespace=NAMESPACE),
-            cluster=DatabaseSpecCluster(name=CLUSTER_NAME),
+            cluster=DatabaseSpecCluster(name=DATABASE.name),
             name=store.database,
             owner=store.role,
             # OAuth associations may be recreated after a deliberate reset, but pruning this
@@ -217,7 +216,8 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, _namespace_chart)
     write_charts(root, f"{OUTPUT_DIR}/db", _db_chart)
     write_yaml(
-        root / OUTPUT_DIR / "db" / "kustomization.yaml", kustomize_kustomization(resources=[f"{CLUSTER_NAME}.k8s.yaml"])
+        root / OUTPUT_DIR / "db" / "kustomization.yaml",
+        kustomize_kustomization(resources=[f"{DATABASE.name}.k8s.yaml"]),
     )
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=["namespace.k8s.yaml", "db"])

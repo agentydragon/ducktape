@@ -5,8 +5,14 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "app",
     srcs = ["app.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/agentplane_index:__pkg__",
+    ],
     deps = [
+        ":cache",
+        ":db",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
@@ -46,9 +52,11 @@ py_library(
     srcs = ["cache.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":namespace",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:valkey",
         "//cluster/cdk8s/providers/redis_operator:redisreplication",
         "@pypi//cdk8s",
@@ -66,7 +74,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
-        "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s:secret_ref",
         "@pypi//cdk8s",
     ],
 )

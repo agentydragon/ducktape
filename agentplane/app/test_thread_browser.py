@@ -821,7 +821,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
 
 
 async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_browser: ThreadBrowser) -> None:
-    """A deliberate upward move smaller than the bottom slack must still disengage following."""
+    """A streamed update during a slow, sub-slack mouse scroll must not reattach following."""
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -852,39 +852,85 @@ async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_brows
     await expect_history_bottom(page)
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
     initial_scroll_top = await history.evaluate("area => area.scrollTop")
-    await history.hover()
-    await page.mouse.wheel(0, -8)
-    await page.wait_for_function(
-        """initial => {
-            const area = document.querySelector('[aria-label="Thread history"]');
-            const gap = area.scrollHeight - area.scrollTop - area.clientHeight;
-            return area.scrollTop < initial && gap > 0 && gap < 24;
-        }""",
-        arg=initial_scroll_top,
+    gesture = await history.evaluate_handle(
+        """area => {
+            const state = { events: [], ended: new Promise(resolve => {
+                area.addEventListener("scrollend", () => {
+                    state.events.push("scrollend");
+                    resolve();
+                }, { once: true });
+            }) };
+            const observer = new MutationObserver(() => {
+                if (area.textContent.includes("Small-scroll stream update")) {
+                    observer.disconnect();
+                    requestAnimationFrame(() => state.events.push("stream-rendered"));
+                }
+            });
+            observer.observe(area, { subtree: true, childList: true, characterData: true });
+            return state;
+        }"""
     )
-
-    tail_markdown = history.locator(".agentplane-markdown").last
-    previous_height = await tail_markdown.evaluate("message => message.getBoundingClientRect().height")
-    updated = source.append(
-        event_pb2.Event(
-            text_delta=event_pb2.TextDelta(
-                item_id="slow-scroll-tail", text="\n\nSmall-scroll stream update\n\n" + "Streaming continuation. " * 240
-            )
+    bounds = await history.bounding_box()
+    assert bounds is not None
+    # Keep one native mouse gesture open while streaming updates, within the 24px follow slack.
+    cdp = await page.context.new_cdp_session(page)
+    scroll_gesture = asyncio.create_task(
+        cdp.send(
+            "Input.synthesizeScrollGesture",
+            {
+                "x": bounds["x"] + bounds["width"] / 2,
+                "y": bounds["y"] + bounds["height"] / 2,
+                "gestureSourceType": "mouse",
+                "preventFling": True,
+                "speed": 10,
+                "yDistance": 20,
+            },
         )
     )
-    await expect_projected_cursor(page, updated.cursor)
-    await expect(page.get_by_text("Small-scroll stream update", exact=True)).to_have_count(1)
-    await page.wait_for_function(
-        """previous => {
-            const messages = document.querySelectorAll('[aria-label="Thread history"] .agentplane-markdown');
-            return messages.length > 0 && messages[messages.length - 1].getBoundingClientRect().height > previous + 24;
-        }""",
-        arg=previous_height,
+    try:
+        await page.wait_for_function(
+            """initial => {
+                const area = document.querySelector('[aria-label="Thread history"]');
+                const gap = area.scrollHeight - area.scrollTop - area.clientHeight;
+                return area.scrollTop < initial && gap > 0 && gap < 24;
+            }""",
+            arg=initial_scroll_top,
+        )
+
+        tail_markdown = history.locator(".agentplane-markdown").last
+        previous_height = await tail_markdown.evaluate("message => message.getBoundingClientRect().height")
+        updated = source.append(
+            event_pb2.Event(
+                text_delta=event_pb2.TextDelta(
+                    item_id="slow-scroll-tail",
+                    text="\n\nSmall-scroll stream update\n\n" + "Streaming continuation. " * 240,
+                )
+            )
+        )
+        await expect_projected_cursor(page, updated.cursor)
+        await expect(page.get_by_text("Small-scroll stream update", exact=True)).to_have_count(1)
+        await page.wait_for_function(
+            """previous => {
+                const messages = document.querySelectorAll('[aria-label="Thread history"] .agentplane-markdown');
+                return messages.length > 0 && messages[messages.length - 1].getBoundingClientRect().height > previous + 24;
+            }""",
+            arg=previous_height,
+        )
+        await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    finally:
+        await scroll_gesture
+        await cdp.detach()
+
+    async with asyncio.timeout(5):
+        await gesture.evaluate("state => state.ended")
+    events_after_scrollend = await gesture.evaluate("state => state.events")
+    assert events_after_scrollend.index("stream-rendered") < events_after_scrollend.index("scrollend"), (
+        f"expected the streamed update to render before scrollend: {events_after_scrollend}"
     )
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-
     bottom_gap = await history.evaluate("area => area.scrollHeight - area.scrollTop - area.clientHeight")
     assert bottom_gap > 24, f"streaming growth pulled the reader back to the bottom (gap={bottom_gap:.1f}px)"
+    await gesture.dispose()
 
 
 async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:

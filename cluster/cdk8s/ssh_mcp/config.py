@@ -14,14 +14,18 @@ from cdk8s import ApiObject
 from cdk8s_plus_34 import Service
 
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from x.ssh_mcp_server.server import SshSettings
 
 NAME = "ssh-mcp"
 NAMESPACE = NAME
-SERVICE_NAME = NAME
-HTTP_PORT = 8080
-MCP_URL = f"http://{SERVICE_NAME}.{NAMESPACE}.svc.cluster.local:{HTTP_PORT}/mcp"
+SERVICE = ServiceRef(
+    name=NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+)
+MCP_URL = f"{SERVICE.url}/mcp"
 BEARER_SECRET_NAME = "ssh-mcp-bearer"
 BEARER_SECRET_KEY = "bearer-token"
 CONFIG_MAP_NAME = "ssh-mcp-config"

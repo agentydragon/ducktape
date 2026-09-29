@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives import serialization
 from py_vapid import Vapid02
 from pydantic import BaseModel, Field, SecretStr
 from pywebpush import WebPusher
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
@@ -140,10 +140,6 @@ class PushSubscriptionStore:
                 return False
             await session.delete(row)
             return True
-
-    async def drop_dead(self, endpoint: str) -> None:
-        async with self._sessions.begin() as session:
-            await session.execute(delete(PushSubscriptionRow).where(PushSubscriptionRow.endpoint == endpoint))
 
 
 class ActionPushNotifier:

@@ -226,7 +226,7 @@ spec:
     - name: proxy-tls
       port: 443
       protocol: TCP
-      targetPort: proxy
+      targetPort: 8080
   selector:
     app.kubernetes.io/name: github-api-proxy
 ---

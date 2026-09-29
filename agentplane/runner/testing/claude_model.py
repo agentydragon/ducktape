@@ -9,6 +9,7 @@ from agentplane.harness_tests.claude.harness import MODEL
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.claude.requests import MessagesRequest
 from agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent
+from agentplane.native.claude.blocks import ToolResultBlock
 from agentplane.runner.testing.scripted_model import (
     Item,
     ModelRequest,
@@ -41,7 +42,13 @@ class ClaudeModel(ScriptedModel[MessagesRequest]):
             user_texts=[text for text in request.texts("user") if not text.startswith("<system-reminder>")],
             assistant_texts=request.texts("assistant"),
             reasoning_texts=[block.thinking for block in request.thinking_blocks],
-            tool_outputs=[ToolOutput(result.tool_use_id, result.text) for result in request.tool_results],
+            tool_outputs=[
+                ToolOutput(block.tool_use_id, block.text)
+                for message in request.messages
+                for block in message.blocks
+                if isinstance(block, ToolResultBlock)
+            ],
+            tool_calls=[call.id for call in request.tool_uses],
             streaming=request.stream,
         )
 

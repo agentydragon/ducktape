@@ -370,6 +370,14 @@ partially started adapter. Drain fences claims and reconnects but retains publis
 through execution completion persistence. Shutdown joins supervisors and bounded connection cleanup
 after draining service tasks, then closes Kubernetes and database resources.
 
+Each linked MCP server is configured with either a fixed `client_id` or `use_shared_cimd`. The
+Action Service has one `mcp_client_metadata` setting for its public CIMD identity, served without
+authentication at `/oauth/client-metadata.json` on its origin; that exact path is added to its
+public HTTPRoute. The document uses its own URL as `client_id`, lists the callbacks of every
+configured MCP linkage using it, and declares public token authentication. Link start uses the
+shared CIMD only when authorization-server discovery advertises
+`client_id_metadata_document_supported`; it fails closed otherwise.
+
 Requests, execution payloads and durable rows use `action: {"group": "everything", "name": "echo"}`.
 The fields remain separate throughout discovery, validation and dispatch; no concatenated identity
 or legacy name is accepted. Migration `0005_structured_action` removes the unused string column

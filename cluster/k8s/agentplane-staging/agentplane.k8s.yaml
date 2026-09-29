@@ -1054,7 +1054,8 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            k8s:app.kubernetes.io/name: forgejo
+            app.kubernetes.io/instance: forgejo
+            app.kubernetes.io/name: forgejo
             k8s:io.kubernetes.pod.namespace: forgejo
       toPorts:
         - ports:
@@ -1650,6 +1651,7 @@ data:
           - aiquota-read
           - haku-mailbox
           - coinbase
+          - plaid-pgweb
           - github-clone
           - github-agentydragon-agent
           - github-actions-logs
@@ -1667,7 +1669,7 @@ data:
     egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081
     action_federation:
       mode: exchange
-      service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
+      service_url: http://agentplane-actions.agentplane-staging.svc:8080
       token_endpoint: https://auth.allegedly.works/application/o/token/
       login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/
       target:
@@ -1743,7 +1745,7 @@ spec:
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
             - name: AGENTPLANE_ELECTRIC_URL
-              value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
+              value: http://agentplane-electric.agentplane-staging.svc:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://auth.allegedly.works/application/o/agentplane-staging/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -1842,7 +1844,7 @@ spec:
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
             - name: AGENTPLANE_ELECTRIC_URL
-              value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
+              value: http://agentplane-electric.agentplane-staging.svc:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://auth.allegedly.works/application/o/agentplane-staging/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -2428,6 +2430,9 @@ data:
       allowed_push_hosts:
         - fcm.googleapis.com
         - updates.push.services.mozilla.com
+    mcp_client_metadata:
+      url: https://agentplane-actions-staging.allegedly.works/oauth/client-metadata.json
+      client_name: Agentplane staging
     mcp_servers:
       github:
         server_id: github
@@ -2443,7 +2448,7 @@ data:
       grocy_sf:
         server_id: grocy_sf
         server_url: https://grocy-mcp-sf.allegedly.works/mcp
-        client_id: cb57e244-c13c-4eac-a299-e052698b774e
+        use_shared_cimd: true
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
     action_groups:
       github:
@@ -2507,7 +2512,7 @@ data:
           description: SSH MCP backend (ssh-mcp); Agentplane retains approval and execution authority.
           config:
             transport: streamable-http
-            url: http://ssh-mcp.ssh-mcp.svc.cluster.local:8080/mcp
+            url: http://ssh-mcp.ssh-mcp.svc:8080/mcp
             auth: static_bearer
             bearer_file: /run/secrets/ssh-mcp/bearer-token
       home_assistant:
@@ -2518,7 +2523,7 @@ data:
           description: Home Assistant MCP backend (ha-mcp).
           config:
             transport: streamable-http
-            url: http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp
+            url: http://ha-mcp.ha-mcp.svc:8765/mcp
             auth: static_bearer
             bearer_file: /run/secrets/ha-mcp/bearer-token
       tana:
@@ -2888,6 +2893,9 @@ spec:
         - path:
             type: Exact
             value: /auth/callback
+        - path:
+            type: Exact
+            value: /oauth/client-metadata.json
       timeouts:
         backendRequest: 3600s
         request: 3600s
@@ -4131,6 +4139,7 @@ spec:
     - aiquota-read
     - haku-mailbox
     - coinbase
+    - plaid-pgweb
     - agentplane-testing
     - github-downloads
     - github-clone
@@ -4160,6 +4169,7 @@ spec:
     - aiquota-read
     - haku-mailbox
     - coinbase
+    - plaid-pgweb
     - agentplane-testing
     - github-downloads
     - github-clone
@@ -5117,3 +5127,139 @@ spec:
         - remote.buildbuddy.io
       credentialRef:
         name: buildbuddy
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-plaid-pgweb-reader
+  namespace: plaid-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-pgweb-auth
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-plaid-pgweb-reader
+  namespace: plaid-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-plaid-pgweb-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-plaid-pgweb-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: plaid-mcp
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-pgweb-auth
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: plaid-pgweb-auth
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-plaid-pgweb-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: plaid-pgweb-auth
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: plaid-pgweb
+  namespace: agentplane-staging
+spec:
+  description: The HTTP Basic password of pgweb's `plaid` user (cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres role that can only SELECT from the Plaid mirror -- every linked account's balances, transactions and holdings -- and `plaid-pgweb`'s rules present the password only on pgweb's query API.
+  source:
+    secretRef:
+      name: plaid-pgweb-auth
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: plaid-pgweb
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/connection
+        - /api/info
+        - /api/objects
+        - /api/query
+        - /api/schemas
+        - /api/tables/**
+      clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+    - hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /api/query
+      clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-plaid-pgweb
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: plaid-pgweb
+            k8s:io.kubernetes.pod.namespace: plaid-mcp
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress

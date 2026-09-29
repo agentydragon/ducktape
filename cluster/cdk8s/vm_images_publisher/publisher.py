@@ -19,6 +19,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "vm-images-publisher"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/vm-images-publisher"
@@ -27,15 +28,16 @@ _WRITER = "vm-images-ci-writer"
 _READER = "vm-images-cdi-reader"
 
 
-def _credentials_secret(identity: str) -> str:
-    return f"{identity}-s3-credentials"
+def _credentials(identity: str) -> SecretRef:
+    """The Secret the operator mints `identity`'s key pair into."""
+    return SecretRef(namespace=NAME, name=f"{identity}-s3-credentials")
 
 
 def _identity(scope: Construct, name: str) -> s3.Identity:
     """A publisher-local S3Identity plus the S3Credentials the operator mints its key pair
-    into (Secret `<name>-s3-credentials` in this namespace)."""
+    into (`_credentials(name)`)."""
     identity = s3.Identity(scope, name, name=name, namespace=NAME)
-    identity.credentials(namespace=NAME, secret=_credentials_secret(name), key_fields=None)
+    identity.credentials(namespace=NAME, secret=_credentials(name).name, key_fields=None)
     return identity
 
 
@@ -51,13 +53,6 @@ def _storage(scope: Construct) -> None:
     )
     bucket.grant_read_write(_identity(scope, _WRITER))
     bucket.grant_read(_identity(scope, _READER))
-
-
-def _writer_env(name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name,
-        value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=_credentials_secret(_WRITER), key=key)),
-    )
 
 
 def _cron_job(scope: Construct) -> None:
@@ -145,8 +140,8 @@ def _cron_job(scope: Construct) -> None:
                                                 "accept-flake-config = true\n"
                                             ),
                                         ),
-                                        _writer_env("AWS_ACCESS_KEY_ID", "accessKey"),
-                                        _writer_env("AWS_SECRET_ACCESS_KEY", "secretKey"),
+                                        _credentials(_WRITER).key("accessKey").env_var("AWS_ACCESS_KEY_ID"),
+                                        _credentials(_WRITER).key("secretKey").env_var("AWS_SECRET_ACCESS_KEY"),
                                     ],
                                     # nixos/nix has no /bin/sh and only a minimal profile (no git,
                                     # awscli2, gawk). Drop into a `nix shell` that provides the

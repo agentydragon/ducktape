@@ -115,10 +115,13 @@ spec:
           ports:
             - containerPort: 2525
               name: smtp
+              protocol: TCP
             - containerPort: 8080
               name: http
+              protocol: TCP
             - containerPort: 1143
               name: imap
+              protocol: TCP
           readinessProbe:
             exec:
               command:
@@ -232,7 +235,8 @@ spec:
   ports:
     - name: smtp
       port: 2525
-      targetPort: smtp
+      protocol: TCP
+      targetPort: 2525
   selector:
     app.kubernetes.io/name: haku-mailbox
 ---
@@ -247,10 +251,12 @@ spec:
   ports:
     - name: http
       port: 8080
-      targetPort: http
+      protocol: TCP
+      targetPort: 8080
     - name: imap
       port: 1143
-      targetPort: imap
+      protocol: TCP
+      targetPort: 1143
   selector:
     app.kubernetes.io/name: haku-mailbox
 ---

@@ -169,11 +169,11 @@ spec:
     - name: http
       port: 8765
       protocol: TCP
-      targetPort: http
+      targetPort: 8765
     - name: metrics
       port: 9090
       protocol: TCP
-      targetPort: metrics
+      targetPort: 9090
   selector:
     app.kubernetes.io/name: plaid-db-mcp
   type: ClusterIP
