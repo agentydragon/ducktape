@@ -10,6 +10,10 @@ terraform {
       source  = "ncecere/litellm"
       version = "~> 2.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.9.0"
+    }
     sops = {
       source  = "carlpett/sops"
       version = "~> 1.0"
@@ -83,15 +87,24 @@ resource "kubernetes_secret" "cheap_experiments" {
   }
 }
 
+resource "random_password" "agentplane_staging" {
+  length  = 64
+  special = false
+}
+
 resource "litellm_key" "agentplane_staging" {
   key_alias = "agentplane-staging"
   # Staging Codex and key access both use the GPT-6 subscription routes.
-  models          = concat(var.model_allowlists.gpt6_oai_lane_models, var.model_allowlists.claude_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.ollama_chat_client_models)
-  max_budget      = 50
-  budget_duration = "30d"
+  models         = concat(var.model_allowlists.gpt6_oai_lane_models, var.model_allowlists.claude_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.ollama_chat_client_models)
+  key_wo         = random_password.agentplane_staging.result
+  key_wo_version = nonsensitive(sha256(random_password.agentplane_staging.result))
   metadata = {
     consumer = "agentplane-staging"
   }
+
+  # LiteLLM's key-update API cannot clear an existing max_budget by omitting it.
+  # Its key_alias must also be unique, so Terraform revokes the old key before
+  # creating this uncapped replacement with the same alias.
 }
 
 moved {
@@ -110,8 +123,10 @@ resource "kubernetes_secret" "agentplane_staging" {
   }
 
   data = {
-    api-key = litellm_key.agentplane_staging.key
+    api-key = random_password.agentplane_staging.result
   }
+
+  depends_on = [litellm_key.agentplane_staging]
 }
 
 # ============================================================================
