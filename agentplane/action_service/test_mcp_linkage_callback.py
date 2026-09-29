@@ -100,6 +100,7 @@ async def callback_client(
         catalog,
         callers=admitted_callers(),
         updates=ActionUpdates(db_url),
+        direct_wait_seconds=30,
         max_wait_seconds=30,
         mcp_linkage=linkage,
     )

@@ -271,7 +271,9 @@ Submission, receipt and result reads take one shared `wait` object (`wait_second
 instance's `max_wait_seconds` setting, default 0; the setting defaults to 30 seconds;
 `wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
 Set `max_wait_seconds` in the Action Service settings file or with
-`AGENTPLANE_ACTIONS_MAX_WAIT_SECONDS`.
+`AGENTPLANE_ACTIONS_MAX_WAIT_SECONDS`. Direct tool calls initially wait for
+`direct_wait_seconds` (30 seconds by default), capped by `max_wait_seconds`; configure it in the
+settings file or with `AGENTPLANE_ACTIONS_DIRECT_WAIT_SECONDS`.
 Waits use commit notifications rather than periodic queries. A deadline returns a receipt, not a
 cancellation. On an ambiguous response, reuse the original request/key; transport or notification
 failure must not prompt a new Action. Workload authorization is revalidated after a bounded wait,
@@ -296,9 +298,9 @@ must be in its roster at startup.
 A call submits through `ActionService.submit_decided` with a server-minted idempotency key and the
 title `Direct tool call`. If no provider decides it, nothing is persisted and the call answers an
 error naming each policy's reason (`UndecidedRequestError`) and pointing at `request_action`. A
-decided call waits up to this instance's `max_wait_seconds` setting and answers through
-`tool_results.py`, as `get_action_result` does, so an unfinished one names its request to keep
-waiting on. A configured name the caller's
+decided call waits up to this instance's `direct_wait_seconds` setting, capped by
+`max_wait_seconds`, and answers through `tool_results.py`, as `get_action_result` does, so an
+unfinished one names its request to keep waiting on. A configured name the caller's
 policy does not cover still resolves, so it is refused with a reason rather than unknown. Listing
 is per request with no `tools/list_changed`: a client holding an older list only meets refusals,
 and `request_action` reaches any Action whatever the list says.

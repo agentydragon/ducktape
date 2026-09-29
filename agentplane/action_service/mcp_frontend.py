@@ -31,7 +31,7 @@ from agentplane.action_service.catalog import (
     UnknownActionError,
 )
 from agentplane.action_service.db import ActionConflictError, ActionNotFoundError
-from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE, DIRECT_WAIT_SECONDS, DirectToolProvider, refusal
+from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE, DirectToolProvider, refusal
 from agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -334,7 +334,7 @@ def create_server(
     updates: ActionUpdates,
     verifier: CallerTokenVerifier,
     *,
-    direct_wait_seconds: float = DIRECT_WAIT_SECONDS,
+    direct_wait_seconds: float,
     max_wait_seconds: float,
 ) -> FastMCP:
     direct_wait_seconds = min(direct_wait_seconds, max_wait_seconds)

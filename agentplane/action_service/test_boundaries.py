@@ -173,6 +173,7 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
         ActionCatalog(),
         callers=admitted_callers(ServiceAccountRef(namespace=NAMESPACE, name=PRINCIPAL_A.service_account_name)),
         updates=ActionUpdates("postgresql://unused-test-listener"),
+        direct_wait_seconds=30,
         max_wait_seconds=30,
     )
     body = ActionRequestInput(
@@ -235,6 +236,7 @@ async def test_an_unlabelled_account_authenticates_and_reaches_no_route(caplog: 
         ActionCatalog(),
         callers=admitted_callers(),
         updates=ActionUpdates("postgresql://unused-test-listener"),
+        direct_wait_seconds=30,
         max_wait_seconds=30,
     )
     body = ActionRequestInput(

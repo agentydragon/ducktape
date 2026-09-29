@@ -191,6 +191,7 @@ async def review(
             connections=connections,
             enrollments=enrollments,
             updates=ActionUpdates(db_url),
+            direct_wait_seconds=30.0,
             max_wait_seconds=30.0,
         )
         downstream_http = await stack.enter_async_context(

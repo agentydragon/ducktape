@@ -53,6 +53,7 @@ from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
 DEFAULT_MAX_WAIT_SECONDS = 30.0
+DEFAULT_DIRECT_WAIT_SECONDS = 30.0
 
 
 def _validate_shared_mcp_client_metadata(
@@ -110,6 +111,11 @@ class ActionServiceDeploymentSettings(BaseModel):
 
     operator_oidc: OperatorOidcSettings
     allowed_service_account_namespaces: frozenset[str]
+    direct_wait_seconds: float = Field(
+        ge=0,
+        allow_inf_nan=False,
+        description="How long a direct tool call waits before returning its Action request ID.",
+    )
     max_wait_seconds: float = Field(
         ge=0, allow_inf_nan=False, description="Maximum caller-requested wait on an Action receipt or result."
     )
@@ -153,6 +159,12 @@ class Settings(BaseSettings):
         description="Kubernetes namespaces whose ServiceAccounts may authenticate sandbox callers and whose "
         "ActionPolicySets, ActionPolicyBindings and labeled caller ServiceAccounts the service watches; "
         "does not grant Action approval.",
+    )
+    direct_wait_seconds: float = Field(
+        default=DEFAULT_DIRECT_WAIT_SECONDS,
+        ge=0,
+        allow_inf_nan=False,
+        description="How long a direct tool call waits before returning its Action request ID.",
     )
     policy_resync_seconds: int = Field(
         default=300, gt=0, description="Policy watch lifetime; every watched kind is relisted this often."
@@ -318,6 +330,7 @@ async def async_main(settings: Settings) -> None:
             if settings.web_push is not None
             else None,
             mcp_linkage=mcp_linkage,
+            direct_wait_seconds=settings.direct_wait_seconds,
             max_wait_seconds=settings.max_wait_seconds,
         )
         await ActionServer(

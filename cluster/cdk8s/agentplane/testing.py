@@ -71,6 +71,7 @@ _ACTION_FEDERATION = DirectFederationSettings(
 _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
     operator_oidc=_FEDERATION_TARGET,
     allowed_service_account_namespaces=frozenset({_NAMESPACE}),
+    direct_wait_seconds=30,
     max_wait_seconds=180,
     mcp_servers={
         "example": McpOAuthServer(

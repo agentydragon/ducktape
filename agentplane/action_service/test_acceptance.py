@@ -112,6 +112,7 @@ async def _client(service: ActionService, *, catalog: ActionCatalog | None = Non
         catalog or ActionCatalog(),
         callers=admitted_callers(ACCOUNT_A, ACCOUNT_B),
         updates=ActionUpdates("postgresql://unused-test-listener"),
+        direct_wait_seconds=30,
         max_wait_seconds=30,
     )
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://actions.test")
