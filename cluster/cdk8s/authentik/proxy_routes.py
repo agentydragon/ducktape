@@ -37,8 +37,6 @@ _ROUTES = {
     "agents-mitmproxy": "agents-mitmproxy.allegedly.works",
     # proxmox-proxy nginx -> atlas:8006.
     "proxmox": "atlas.allegedly.works",
-    # The plaid-mcp web UI for Plaid Link.
-    "plaid-mcp": "plaid-mcp.allegedly.works",
     "goldilocks-dashboard": "goldilocks.allegedly.works",
     # OpenWebRX+.
     "sdr": "sdr.allegedly.works",

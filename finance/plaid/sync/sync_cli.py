@@ -7,13 +7,13 @@ import logging
 import sys
 
 from finance.plaid.db.client import PlaidClient, PlaidCreds
-from finance.plaid.db.config import PlaidWebSettings
+from finance.plaid.db.config import PlaidSettings
 from finance.plaid.db.link_store import PlaidLinkStorage
 from finance.plaid.db.secret_store import K8sSecretStore
 from finance.plaid.db.sync import sync_all
 
 
-async def run_sync(settings: PlaidWebSettings) -> list[str]:
+async def run_sync(settings: PlaidSettings) -> list[str]:
     storage = await PlaidLinkStorage.initialize(settings.database_url)
     secrets = await K8sSecretStore.from_incluster(settings.namespace, settings.managed_by)
     try:
@@ -31,7 +31,7 @@ async def run_sync(settings: PlaidWebSettings) -> list[str]:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
-    run_ids = asyncio.run(run_sync(PlaidWebSettings()))
+    run_ids = asyncio.run(run_sync(PlaidSettings()))
     for run_id in run_ids:
         print(run_id)
 

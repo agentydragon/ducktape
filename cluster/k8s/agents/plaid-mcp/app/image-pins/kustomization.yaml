@@ -2,6 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/plaid-mcp-server
-    newTag: devel-20260928231659-90d1c97 # {"$imagepolicy": "flux-system:plaid-mcp-server:tag"}
+    newTag: devel-20260929015656-117edc0 # {"$imagepolicy": "flux-system:plaid-mcp-server:tag"}
   - name: git.allegedly.works/ducktape-ci/plaid-mcp-sync
-    newTag: devel-20260928231702-90d1c97 # {"$imagepolicy": "flux-system:plaid-mcp-sync:tag"}
+    newTag: devel-20260929015655-117edc0 # {"$imagepolicy": "flux-system:plaid-mcp-sync:tag"}

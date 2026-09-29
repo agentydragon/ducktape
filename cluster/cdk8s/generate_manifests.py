@@ -692,7 +692,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, atuin_artifact, atuin_server.chart), cnpg_kustomization
     )
     authentik_artifact = artifact("authentik", f"{HAND_WRITTEN_ROOT}/authentik")
-    authentik_flux_kustomizations.authentik(
+    authentik_kustomization = authentik_flux_kustomizations.authentik(
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
     )
     gaffer_private_source_flux_kustomizations.gaffer_private_bridge(
@@ -759,7 +759,7 @@ def generate_manifests(root: Path) -> None:
         user_agentydragon_kustomization,
     )
     authentik_tf_artifact = artifact(authentik_tf.NAME, authentik_tf.OUTPUT_DIR)
-    authentik_tf.authentik_tf(
+    authentik_tf_kustomization = authentik_tf.authentik_tf(
         flux_chart,
         write_directory(
             root,
@@ -1061,6 +1061,8 @@ def generate_manifests(root: Path) -> None:
         plaid_mcp_artifact,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
+        authentik_kustomization,
+        authentik_tf_kustomization,
         mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,
     )

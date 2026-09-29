@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from finance.plaid.db.sync import SyncWindows
@@ -14,7 +14,13 @@ _NS_PATH = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 MAX_TRANSACTION_DAYS = 730
 
 
-class PlaidWebSettings(BaseSettings):
+class PlaidSettings(BaseSettings):
+    """Plaid and database settings shared by the Link app and sync process.
+
+    OIDC credentials are deliberately absent so the scheduled sync never needs
+    access to the web app's Authentik client secret or session key.
+    """
+
     model_config = SettingsConfigDict(env_prefix="PLAID_MCP_")
 
     plaid_env: str = Field(description="Plaid environment: sandbox or production.")
@@ -51,3 +57,13 @@ class PlaidWebSettings(BaseSettings):
         return SyncWindows(
             transaction_days=self.transaction_days, investment_transaction_days=self.investment_transaction_days
         )
+
+
+class PlaidWebSettings(PlaidSettings):
+    """All Link app settings, including its confidential Authentik OIDC client."""
+
+    oidc_issuer: str
+    oidc_client_id: str
+    oidc_client_secret: SecretStr
+    oidc_session_secret: SecretStr
+    oidc_session_seconds: int = Field(default=28_800, gt=0)

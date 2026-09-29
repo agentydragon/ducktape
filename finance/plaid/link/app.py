@@ -31,6 +31,7 @@ from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlread
 from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import PlaidApiLike, sync_link
+from finance.plaid.link.auth import install_oidc_auth
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +214,7 @@ def create_app(
                 owned_client.close()
 
     app = FastAPI(title="Plaid Link Service", docs_url=None, redoc_url=None, lifespan=lifespan)
+    install_oidc_auth(app, settings)
 
     def require_client() -> PlaidWebClient:
         if state.client is None:

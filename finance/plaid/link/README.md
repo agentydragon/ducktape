@@ -25,6 +25,14 @@ The web and sync entrypoints use `PlaidWebSettings`:
 - `PLAID_MCP_TRANSACTION_DAYS` / `PLAID_MCP_INVESTMENT_TRANSACTION_DAYS` —
   full-refresh windows.
 
+The web process additionally uses `PLAID_MCP_OIDC_ISSUER`,
+`PLAID_MCP_OIDC_CLIENT_ID`, `PLAID_MCP_OIDC_CLIENT_SECRET`, and
+`PLAID_MCP_OIDC_SESSION_SECRET` for its Authentik login and signed browser
+session. Terraform stores those credentials in the `authentik` namespace;
+the app's ExternalSecret reads only that named Secret into `plaid-mcp`. The
+sync process does not receive the OIDC values. Access to the Authentik
+application remains restricted to the `authentik Admins` group.
+
 Access tokens are one Kubernetes Secret per Plaid Item and are never stored in
 Postgres. The web UI writes those Secrets; the sync job reads them.
 
@@ -81,6 +89,7 @@ Plaid developer dashboard.
 
 GitOps manifests live under
 [`cluster/k8s/agents/plaid-mcp/`](../../cluster/k8s/agents/plaid-mcp/README.md).
-The human UI is `https://plaid-mcp.allegedly.works/link`; the read-only SQL MCP
+The human UI is `https://plaid-mcp.allegedly.works/link`; the app performs
+Authentik OIDC login and owns its browser session. The read-only SQL MCP
 is `https://plaid-db.allegedly.works/mcp`. The domain root
 `https://plaid-mcp.allegedly.works/` serves the same UI for convenience.
