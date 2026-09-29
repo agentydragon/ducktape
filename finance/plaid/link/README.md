@@ -3,7 +3,7 @@
 Plaid link-management runtime package.
 
 The deployed image now runs [`app.py`](app.py): a FastAPI web UI for Plaid Link
-management plus a shared synchronous full-refresh sync engine. The agent-facing
+management, a signed webhook receiver, and a queued transaction sync worker. The agent-facing
 read path is not this package; it is EnterpriseDB Pg Airman MCP pointed at the
 synced Postgres database with a read-only role.
 
@@ -22,8 +22,12 @@ The web and sync entrypoints use `PlaidWebSettings`:
 - `DATABASE_URL` — writer Postgres URL, usually CNPG secret `plaid-mcp-db-app`.
 - `PLAID_MCP_PUBLIC_BASE_URL` — public UI origin; defaults to
   `https://plaid-mcp.allegedly.works`.
-- `PLAID_MCP_TRANSACTION_DAYS` / `PLAID_MCP_INVESTMENT_TRANSACTION_DAYS` —
-  full-refresh windows.
+- `PLAID_MCP_WEBHOOK_URL` — public HTTPS URL for Plaid webhook delivery. The
+  app sets it on new Link tokens and updates existing Items during sync.
+- `PLAID_MCP_TRANSACTION_DAYS` — history depth requested when Transactions is
+  first linked.
+- `PLAID_MCP_INVESTMENT_TRANSACTION_DAYS` — date window for investment
+  transaction snapshots during the daily sync.
 
 The web process additionally uses `PLAID_MCP_OIDC_ISSUER`,
 `PLAID_MCP_OIDC_CLIENT_ID`, `PLAID_MCP_OIDC_CLIENT_SECRET`, and
@@ -75,15 +79,32 @@ Item. Existing Items cannot be expanded by sending a larger value later; the UI
 therefore records the value for new links and shows an observed synced range for
 inherited links whose original Link request was not logged.
 
-The production sync path still uses date-window full refreshes:
-`/transactions/get`, `/investments/transactions/get`, `/accounts/get`,
-`/investments/holdings/get`, and `/liabilities/get`. The `links` table has
-reserved cursor/status columns for future Plaid `/transactions/sync` work, but
-the current CronJob leaves them null.
+The app sets the webhook URL when creating a new Item. For existing Items, the
+next daily or manual sync calls `/item/webhook/update` if needed. The public
+`/webhooks/plaid` endpoint verifies Plaid's ES256 JWT and raw-body hash, then
+durably queues `TRANSACTIONS / SYNC_UPDATES_AVAILABLE` events; the background
+worker coalesces duplicate notifications and runs `/transactions/sync`.
+Other webhook event types are acknowledged and ignored. The cursor and all
+added, modified, and removed transactions commit together after pagination
+completes. If Plaid reports a mutation during pagination, the sync restarts
+from the saved cursor.
+
+The daily CronJob is the missed-webhook backstop. It also refreshes accounts,
+holdings, investment transactions, and liabilities; only investment
+transactions remain date-window reads. The mirror uses `/transactions/sync`
+for transaction history instead of full-refresh `/transactions/get` calls.
 
 All new-link and update-mode flows use the same Plaid OAuth redirect URI:
 `https://plaid-mcp.allegedly.works/link/callback`. Keep that allowlisted in the
 Plaid developer dashboard.
+
+Plaid posts signed webhooks to
+`https://plaid-mcp.allegedly.works/webhooks/plaid`, on the same Gateway route as
+the Link UI. The app exempts only this endpoint from browser OIDC and verifies
+Plaid's signature and raw-body hash before accepting events. Keep
+`PLAID_MCP_WEBHOOK_URL` aligned with the route before deploying. Transactions
+webhooks are configured per Item; other Plaid products may have different
+webhook configuration requirements.
 
 ## Deployment
 

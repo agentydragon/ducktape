@@ -59,7 +59,7 @@ export function useActionRequests(service: ActionService): {
       void refresh();
       return;
     }
-    return followStream("/actions/stream", {
+    return followStream("/actions/stream?state=decision_pending", {
       events: {
         snapshot: (message) => {
           try {

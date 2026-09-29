@@ -40,6 +40,7 @@ def chart(app: App) -> Chart:
             ttl_seconds_after_finished=3600,
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     restart_policy="OnFailure",
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     containers=[

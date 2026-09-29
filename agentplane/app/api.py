@@ -23,7 +23,13 @@ from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
-from agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
+from agentplane.action_service.models import (
+    ActionEventView,
+    ActionHistoryPage,
+    ActionRequestView,
+    ActionState,
+    DecisionInput,
+)
 from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
@@ -449,6 +455,13 @@ async def unbind_connection(connection_id: UUID, body: ConnectionVersion, client
     return await client.unbind_connection(connection_id, body)
 
 
+@actions_router.get("/history")
+async def action_history(
+    client: OperatorActions, limit: Annotated[int, Query(ge=1, le=100)] = 50, cursor: str | None = None
+) -> ActionHistoryPage:
+    return await client.history(limit=limit, cursor=cursor)
+
+
 @actions_router.get("")
 async def list_actions(
     client: OperatorActions,
@@ -467,17 +480,25 @@ def _operator_sessions(request: Request) -> OperatorSessionStore:
 OperatorSessions = Annotated[OperatorSessionStore, Depends(_operator_sessions)]
 
 
-async def _action_chunks(client: OperatorActions) -> AsyncIterator[AsyncIterator[bytes]]:
+async def _action_chunks(
+    client: OperatorActions, state: Annotated[ActionState | None, Query()] = None
+) -> AsyncIterator[AsyncIterator[bytes]]:
     async with AsyncExitStack() as stack:
         try:
             async with asyncio.timeout(30):
-                chunks = await stack.enter_async_context(client.stream_requests())
+                upstream = client.stream_requests(state=state) if state else client.stream_requests()
+                chunks = await stack.enter_async_context(upstream)
         except TimeoutError as error:
             raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "Action stream startup timed out") from error
-        yield _without_repeated_snapshots(_renewed(client, chunks))
+        renewed = _renewed(client, chunks, state=state)
+        # A filtered snapshot is small and also the resync signal on reconnect. Do not suppress
+        # it when it happens to be identical: history may have changed while we were offline.
+        yield renewed if state else _without_repeated_snapshots(renewed)
 
 
-async def _renewed(client: OperatorActionServiceClient, opened: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+async def _renewed(
+    client: OperatorActionServiceClient, opened: AsyncIterator[bytes], *, state: ActionState | None = None
+) -> AsyncIterator[bytes]:
     """`opened`, then the upstream opened again under a freshly exchanged token each time one ends, as
     one does when the minute-long token it was opened with expires. One that ends before its first
     chunk refused the token at the door; it is not opened again, so a refusal cannot loop."""
@@ -490,7 +511,7 @@ async def _renewed(client: OperatorActionServiceClient, opened: AsyncIterator[by
                 yield chunk
         if not delivered:
             return
-        upstream = client.stream_requests()
+        upstream = client.stream_requests(state=state) if state else client.stream_requests()
 
 
 async def _without_repeated_snapshots(chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:

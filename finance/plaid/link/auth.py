@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 _CLIENT_NAME = "authentik"
 _SESSION_COOKIE = "__Host-plaid-link-session"
 _INSECURE_SESSION_COOKIE = "plaid-link-session"
-_PUBLIC_PATHS = {"/healthz", "/auth/login", "/auth/callback", "/auth/signed-out"}
+# Plaid authenticates its webhook requests with Plaid-Verification; the route verifies the
+# signature and raw-body hash before accepting an event.
+_PUBLIC_PATHS = {"/healthz", "/auth/login", "/auth/callback", "/auth/signed-out", "/webhooks/plaid"}
 
 
 class PlaidLinkSession(BaseModel):

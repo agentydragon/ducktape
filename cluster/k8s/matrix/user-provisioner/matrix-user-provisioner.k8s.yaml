@@ -28,6 +28,7 @@ spec:
   backoffLimit: 5
   template:
     spec:
+      automountServiceAccountToken: false
       containers:
         - env:
             - name: REGISTRATION_SECRET

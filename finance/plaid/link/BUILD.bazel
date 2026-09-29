@@ -16,6 +16,7 @@ py_library(
     ],
     deps = [
         ":auth",
+        ":webhooks",
         "//finance/plaid/db:client",
         "//finance/plaid/db:config",
         "//finance/plaid/db:link_store",
@@ -89,10 +90,12 @@ py_test(
         "//finance/plaid/db:client",
         "//finance/plaid/db:config",
         "//finance/plaid/db:link_store",
+        "@pypi//cryptography",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//plaid_python",
+        "@pypi//pyjwt",
         "@pypi//pytest_bazel",
     ],
 )
@@ -105,5 +108,18 @@ py_test(
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "webhooks",
+    srcs = ["webhooks.py"],
+    deps = [
+        "//finance/plaid/db:client",
+        "//finance/plaid/db:models",
+        "@pypi//cryptography",
+        "@pypi//plaid_python",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
     ],
 )

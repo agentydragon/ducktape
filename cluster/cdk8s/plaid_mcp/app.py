@@ -1,5 +1,5 @@
-"""plaid-mcp's `app/`: the Plaid link web UI Deployment, the full-refresh sync CronJob, their
-shared config, the Secret-managing RBAC, the Service and the ingress policy.
+"""plaid-mcp's `app/`: the Plaid link web UI Deployment, webhook receiver and daily sync CronJob,
+their shared config, the Secret-managing RBAC, the Service and ingress policy.
 
 The images' tags are the placeholder "unset"; the hand-written `app/image-pins/kustomization.yaml`
 overrides them at `kustomize build` time via Flux's image-automation markers
@@ -43,12 +43,15 @@ _WEB = ServiceRef(
     port=Port(name="http", number=8080),
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
-_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-link-oidc/"
+_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-link/"
 _OIDC_CREDENTIALS_NAME = "plaid-link-oidc-config"
 _OIDC_READER = "plaid-link-oidc-reader"
+_WEBHOOK_HOST = "plaid-mcp.allegedly.works"
+_WEBHOOK_URL = f"https://{_WEBHOOK_HOST}/webhooks/plaid"
 _CONFIG = {
     "PLAID_MCP_PLAID_ENV": "production",
     "PLAID_MCP_PUBLIC_BASE_URL": "https://plaid-mcp.allegedly.works",
+    "PLAID_MCP_WEBHOOK_URL": _WEBHOOK_URL,
     "PLAID_MCP_TRANSACTION_DAYS": "730",
     "PLAID_MCP_INVESTMENT_TRANSACTION_DAYS": "730",
 }
@@ -152,8 +155,8 @@ def _deployment(chart: Chart) -> None:
             labels=_WEB.pods.selector,
             annotations={
                 "description": (
-                    "Plaid Link UI authenticates users with Authentik OIDC. The app writes access-token Secrets"
-                    " and syncs linked Items into the plaid-mcp Postgres database."
+                    "Plaid Link UI authenticates users with Authentik OIDC; verified webhooks queue transaction"
+                    " syncs, with the daily Cron catching up the mirror."
                 )
             },
         ),
@@ -200,13 +203,13 @@ def _sync_cronjob(chart: Chart) -> None:
             namespace=NAMESPACE,
             annotations={
                 "description": (
-                    "v0 synchronous full-refresh Plaid sync. Keeps Postgres fresh within 12 hours; no real-time"
-                    " balance endpoint calls."
+                    "Daily catch-up sync for transactions, accounts, holdings and liabilities. Transaction history"
+                    " uses Plaid cursors; no real-time balance endpoint calls."
                 )
             },
         ),
         spec=k8s.CronJobSpec(
-            schedule="17 */12 * * *",
+            schedule="17 0 * * *",
             concurrency_policy="Forbid",
             successful_jobs_history_limit=3,
             failed_jobs_history_limit=3,
@@ -274,7 +277,7 @@ def chart(app: App) -> Chart:
             annotations={
                 "description": (
                     "Default-deny ingress for plaid-mcp pods. Only the cluster Gateway can reach the public"
-                    " Link UI route."
+                    " Link UI and Plaid webhook routes."
                 )
             },
         ),
@@ -288,7 +291,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            namespace=NAMESPACE, resources=[f"{_NAME}.k8s.yaml", _CREDENTIALS_FILE], components=["./image-pins"]
-        ),
+        # No `namespace:` override: the OIDC reader's Role and RoleBinding live in authentik,
+        # and every other object here, including the SOPS Secret, already names plaid-mcp.
+        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", _CREDENTIALS_FILE], components=["./image-pins"]),
     )

@@ -69,6 +69,7 @@ spec:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
               weight: 100
+      automountServiceAccountToken: false
       containers:
         - env:
             - name: GROCY_MCP_AUTH__OIDC_CLIENT_ID

@@ -78,6 +78,7 @@ def _server(scope: Construct, household: str) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=http.pods.selector),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     # Both this workload and its shared CNPG OAuth-state database are pinned to
                     # hil-ovh, avoiding cross-site database traffic.

@@ -1525,6 +1525,16 @@ routes.push(
   ["GET", /^\/actions$/, () => ACTIONS],
   [
     "GET",
+    /^\/actions\/history$/,
+    (_match, query) => {
+      const past = ACTIONS.filter((request) => request.state !== "decision_pending");
+      return scenario.historyPaged && !query.has("cursor")
+        ? { items: past.slice(0, 2), next_cursor: "second-page" }
+        : { items: scenario.historyPaged ? past.slice(2) : past, next_cursor: null };
+    },
+  ],
+  [
+    "GET",
     /^\/connections$/,
     () => [
       sampleConnection(),
@@ -1895,7 +1905,8 @@ class HarnessEventSource extends EventTarget {
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
     if (url.pathname === "/actions/stream") {
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(ACTIONS) }));
+      const pending = ACTIONS.filter((request) => request.state === "decision_pending");
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
       return;
     }
     if (sandbox !== null) {

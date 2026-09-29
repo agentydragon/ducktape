@@ -1,9 +1,10 @@
-import { type JSX, type ReactNode, useEffect, useState } from "react";
-import { Alert, Badge, Code, Paper, Stack, Text } from "@mantine/core";
+import { type JSX, type ReactNode, useEffect, useRef, useState } from "react";
+import { Alert, Badge, Button, Code, Paper, Stack, Text } from "@mantine/core";
 
 import { displayableError } from "../client";
 import { JsonView } from "../json_view";
-import { StaleNotice } from "../stream_status";
+import { StaleNotice, useStreamStatus } from "../stream_status";
+import { followStream, type StreamConnection } from "../live_stream";
 import { TopbarTitle } from "../topbar";
 import { ActionCall } from "./call";
 import { parseCallToolResult } from "./call_tool_result";
@@ -15,7 +16,7 @@ import {
   type ActionService,
 } from "./client";
 import { renderMcpResult } from "./rendering/index";
-import { stateLabel, useActionRequests } from "./requests";
+import { stateLabel } from "./requests";
 
 /** The stored result: its pretty rendering unless it has none or the action is switched to Raw, and
  * otherwise its stored JSON. */
@@ -117,7 +118,68 @@ export function ActionHistory({
   service?: ActionService;
   groupService?: ActionGroupService;
 }): JSX.Element {
-  const { requests, error, loading, stream } = useActionRequests(service);
+  const [requests, setRequests] = useState<ActionRequestView[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadedMore = useRef(false);
+  const [connection, setConnection] = useState<StreamConnection | null>(null);
+  const stream = useStreamStatus("Actions", connection);
+  useEffect(() => {
+    let active = true;
+    let generation = 0;
+    async function refresh(): Promise<void> {
+      const current = ++generation;
+      try {
+        // Test services keep their existing list() contract; production never loads the full history.
+        const page = service.history ? await service.history() : { items: await service.list(), next_cursor: null };
+        if (!active || current !== generation) return;
+        setRequests((previous) => {
+          if (!loadedMore.current) return page.items;
+          const older = previous.filter((item) => !page.items.some((newer) => newer.id === item.id));
+          return [...page.items, ...older];
+        });
+        if (!loadedMore.current) setCursor(page.next_cursor);
+        setError(null);
+      } catch (failure) {
+        if (active && current === generation) setError(displayableError(failure));
+      } finally {
+        if (active && current === generation) setLoading(false);
+      }
+    }
+    const stop =
+      service === actionService
+        ? followStream("/actions/stream?state=decision_pending", {
+            // The small pending snapshot also marks a successful resync after a renewed
+            // upstream token or browser reconnect; changed hints alone are not replayable.
+            events: { snapshot: () => void refresh() },
+            onConnection: setConnection,
+          })
+        : undefined;
+    void refresh();
+    return () => {
+      active = false;
+      stop?.();
+    };
+  }, [service]);
+  async function loadMore(): Promise<void> {
+    if (!cursor || !service.history || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await service.history(cursor);
+      loadedMore.current = true;
+      setRequests((previous) => [
+        ...previous,
+        ...page.items.filter((item) => !previous.some((old) => old.id === item.id)),
+      ]);
+      setCursor(page.next_cursor);
+    } catch (failure) {
+      setError(displayableError(failure));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
   const executors = useExecutorKinds(groupService);
   const decided = requests.filter((request) => request.state !== "decision_pending");
 
@@ -141,6 +203,11 @@ export function ActionHistory({
       {decided.map((request) => (
         <HistoryCard key={request.id} request={request} mcp={executors.kinds?.get(request.action.group) === "mcp"} />
       ))}
+      {cursor && (
+        <Button data-testid="action-history-load-more" loading={loadingMore} onClick={() => void loadMore()}>
+          Load more
+        </Button>
+      )}
     </Stack>
   );
 }

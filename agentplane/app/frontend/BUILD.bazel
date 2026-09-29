@@ -169,6 +169,7 @@ ts_library(
         ":actions_requests",
         ":client",
         ":json_view",
+        ":live_stream",
         ":stream_status",
         ":topbar",
         "//:node_modules/@mantine/core",

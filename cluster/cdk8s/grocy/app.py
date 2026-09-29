@@ -92,6 +92,7 @@ def base_chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     node_selector={"topology.kubernetes.io/region": "hil"},
                     containers=[
                         k8s.Container(
@@ -274,6 +275,9 @@ def household_chart(app: App, *, household: str) -> Chart:
         spec=k8s.JobSpec(
             backoff_limit=0,
             template=k8s.PodTemplateSpec(
+                # TODO: state automount_service_account_token=False once this Job is renamed or
+                # removed; a Job's pod template is immutable, and without Flux's force annotation
+                # changing it in place fails the apply.
                 spec=k8s.PodSpec(
                     restart_policy="Never",
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,

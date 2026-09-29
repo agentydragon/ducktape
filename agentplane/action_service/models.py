@@ -293,6 +293,11 @@ class ActionRequestView(BaseModel):
     execution: ExecutionView | None
 
 
+class ActionHistoryPage(BaseModel):
+    items: list[ActionRequestView]
+    next_cursor: str | None
+
+
 class ActionEventView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

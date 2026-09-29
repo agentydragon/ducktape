@@ -24,6 +24,8 @@ export interface Scenario extends ScenarioOptions {
   openSettings?: boolean;
   /** Flip every Raw switch as it mounts: no URL param toggles one. */
   openRaw?: boolean;
+  /** Render a bounded first history page with a Load more control. */
+  historyPaged?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
   openActionPolicySets?: boolean;
   /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own. */
@@ -358,6 +360,13 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: "/actions/history",
     viewport: { width: 1200, height: 2560 },
     readySelectors: ["details", 'img[src^="data:image/"]'],
+  },
+  actions_history_more: {
+    element: "#app",
+    route: "/actions/history",
+    viewport: { width: 1200, height: 1100 },
+    historyPaged: true,
+    readySelectors: ["details", '[data-testid="action-history-load-more"]'],
   },
   actions_history_phone: {
     element: "#app",

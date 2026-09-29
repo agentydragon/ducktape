@@ -214,6 +214,7 @@ def _deployment(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_PODS.selector),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     runtime_class_name="nvidia",
                     node_selector={"feature.node.kubernetes.io/pci-10de.present": "true"},
                     tolerations=[k8s.Toleration(key="nvidia.com/gpu", operator="Exists", effect="PreferNoSchedule")],
@@ -322,6 +323,8 @@ def _setup_job(scope: Construct) -> None:
         ),
         spec=k8s.JobSpec(
             template=k8s.PodTemplateSpec(
+                # TODO: state automount_service_account_token=False with the next version bump;
+                # the live Job's pod template is immutable.
                 spec=k8s.PodSpec(
                     restart_policy="OnFailure",
                     node_selector={"kubernetes.io/hostname": "wyrm2"},
