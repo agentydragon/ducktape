@@ -20,6 +20,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -238,9 +239,9 @@ def _values() -> dict[str, object]:
         # ClickHouse is managed centrally in the clickhouse namespace.
         "clickhouse": {
             "deploy": False,
-            "host": "clickhouse.clickhouse.svc.cluster.local",
-            "httpPort": 8123,
-            "nativePort": 9000,
+            "host": client.HTTP.host,
+            "httpPort": client.HTTP.port.number,
+            "nativePort": client.NATIVE.port.number,
             "database": "langfuse",
             "auth": {
                 "username": "langfuse",
@@ -248,7 +249,7 @@ def _values() -> dict[str, object]:
                 "existingSecretKey": "password",
             },
             "migration": {
-                "url": "clickhouse://clickhouse.clickhouse.svc.cluster.local:9000",
+                "url": f"clickhouse://{client.NATIVE.host}:{client.NATIVE.port.number}",
                 "ssl": False,
                 "autoMigrate": True,
             },

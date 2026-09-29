@@ -30,7 +30,6 @@ from cdk8s_plus_34 import (
     LabelSelector,
     MemoryResources,
     PodSecurityContextProps,
-    Secret,
     Service,
     Volume,
     VolumeMount,
@@ -203,7 +202,6 @@ class Aiquota(Construct):
         )
 
     def _add_deployment(self) -> Deployment:
-        clickhouse_credentials = Secret.from_secret_name(self, "clickhouse-credentials-ref", _CLICKHOUSE.name)
         deployment = Deployment(
             self,
             "deployment",
@@ -232,7 +230,7 @@ class Aiquota(Construct):
                     self,
                     "migrate",
                     schema=ConfigMap.from_config_map_name(self, "schema-ref", SCHEMA_CONFIG_MAP.name),
-                    credentials=clickhouse_credentials,
+                    credentials=_CLICKHOUSE,
                 )
             ],
         )
@@ -248,7 +246,7 @@ class Aiquota(Construct):
                 env_name(Settings, "cli_proxy_api_key"): cli_proxy_api_app.MANAGEMENT_PASSWORD.env_value(
                     self, "cli-proxy-api-management-ref"
                 ),
-                env_name(Settings, "clickhouse_url"): EnvValue.from_value(f"http://{client.HOST}:{client.HTTP_PORT}"),
+                env_name(Settings, "clickhouse_url"): EnvValue.from_value(client.HTTP.url),
                 env_name(Settings, "clickhouse_database"): EnvValue.from_value("aiquota"),
                 env_name(Settings, "clickhouse_username"): _CLICKHOUSE.key("username").env_value(
                     self, "clickhouse-username-ref"

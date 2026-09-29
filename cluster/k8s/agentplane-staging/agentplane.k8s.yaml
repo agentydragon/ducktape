@@ -1054,7 +1054,8 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            k8s:app.kubernetes.io/name: forgejo
+            app.kubernetes.io/instance: forgejo
+            app.kubernetes.io/name: forgejo
             k8s:io.kubernetes.pod.namespace: forgejo
       toPorts:
         - ports:
@@ -1668,7 +1669,7 @@ data:
     egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081
     action_federation:
       mode: exchange
-      service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
+      service_url: http://agentplane-actions.agentplane-staging.svc:8080
       token_endpoint: https://auth.allegedly.works/application/o/token/
       login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/
       target:
@@ -1744,7 +1745,7 @@ spec:
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
             - name: AGENTPLANE_ELECTRIC_URL
-              value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
+              value: http://agentplane-electric.agentplane-staging.svc:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://auth.allegedly.works/application/o/agentplane-staging/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -1843,7 +1844,7 @@ spec:
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
             - name: AGENTPLANE_ELECTRIC_URL
-              value: http://agentplane-electric.agentplane-staging.svc.cluster.local:3000
+              value: http://agentplane-electric.agentplane-staging.svc:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://auth.allegedly.works/application/o/agentplane-staging/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -2522,7 +2523,7 @@ data:
           description: Home Assistant MCP backend (ha-mcp).
           config:
             transport: streamable-http
-            url: http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp
+            url: http://ha-mcp.ha-mcp.svc:8765/mcp
             auth: static_bearer
             bearer_file: /run/secrets/ha-mcp/bearer-token
       tana:

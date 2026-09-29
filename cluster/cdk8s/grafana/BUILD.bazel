@@ -21,6 +21,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",
         "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",

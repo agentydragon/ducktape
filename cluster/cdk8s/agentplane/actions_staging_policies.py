@@ -28,7 +28,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s import external_creds
 from cluster.cdk8s.agentplane import app as app_component, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
@@ -56,7 +56,7 @@ from cluster.cdk8s.agentplane.staging_config import (
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
 from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 _NAMESPACE = "agentplane-staging"
@@ -477,26 +477,21 @@ def add_staging_action_policies(scope: Construct) -> None:
     # hairpin out through the Gateway and back. Plain HTTP, so the proxy reads the request without
     # bumping TLS. Nothing is substituted: the suite presents the app token it mints in
     # agentplane-testing (rbac.AcceptanceToken), so any method may pass.
+    testing_app = app_component.service(testing.ENV.namespace)
     EgressPolicy(
         scope,
         "egresspolicy-agentplane-testing",
         metadata=ApiObjectMetadata(name=_AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
-        rules=[
-            EgressPolicySpecRules(
-                hosts=[f"{app_component.NAME}.{testing.ENV.namespace}.svc.cluster.local"], cluster_internal=True
-            )
-        ],
+        # The proxy matches a request's host on the exact string, and clients spell the full name.
+        rules=[EgressPolicySpecRules(hosts=[testing_app.fqdn], cluster_internal=True)],
     )
+    proxy = egress.proxy(_NAMESPACE)
     NetworkPolicy(
         scope,
         "networkpolicy-egress-to-testing-app",
-        metadata=ApiObjectMetadata(name=f"{egress.NAME}-to-testing-app", namespace=_NAMESPACE),
-        endpoint_selector={"app.kubernetes.io/name": egress.NAME},
-        egress=[
-            EgressRule.to_endpoints(
-                cilium.endpoint_labels(testing.ENV.namespace, app_component.NAME), app_component.CONTAINER_PORT
-            )
-        ],
+        metadata=ApiObjectMetadata(name=f"{proxy.name}-to-testing-app", namespace=_NAMESPACE),
+        endpoint_selector=proxy.pods.selector,
+        egress=[testing_app.egress()],
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
     # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.

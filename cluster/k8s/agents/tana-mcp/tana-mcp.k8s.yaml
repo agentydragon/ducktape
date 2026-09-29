@@ -259,6 +259,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  labels:
+    app.kubernetes.io/name: tana-mcp
   name: tana-mcp
   namespace: tana-mcp
 spec:
@@ -266,11 +268,11 @@ spec:
     - name: mcp-proxy
       port: 8263
       protocol: TCP
-      targetPort: mcp-proxy
+      targetPort: 8263
     - name: novnc
       port: 6080
       protocol: TCP
-      targetPort: novnc
+      targetPort: 6080
   selector:
     app.kubernetes.io/name: tana-mcp
   type: ClusterIP
@@ -292,7 +294,7 @@ data:
   MCP_FACADE_LOGGING__MCP_PAYLOAD_LENGTH: "true"
   MCP_FACADE_PERSISTENCE__KIND: postgres
   MCP_FACADE_UPSTREAM__KIND: http
-  MCP_FACADE_UPSTREAM__URL: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
+  MCP_FACADE_UPSTREAM__URL: http://tana-mcp.tana-mcp.svc:8263/mcp
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -412,7 +414,7 @@ spec:
     - name: metrics
       port: 9090
       protocol: TCP
-      targetPort: metrics
+      targetPort: 9090
   selector:
     app.kubernetes.io/name: tana-mcp-facade
   type: ClusterIP

@@ -639,6 +639,7 @@ py_library(
         ":namespaces",
         ":pod_policy",
         ":probes",
+        ":secret_ref",
         ":service_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
@@ -1118,6 +1119,7 @@ py_library(
     srcs = ["etcd.py"],
     deps = [
         ":fleet_rules",
+        ":service_ref",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "//cluster/scripts:nebula_mesh",
@@ -1396,6 +1398,7 @@ py_library(
         ":flux",
         ":manifest_roots",
         ":namespaces",
+        ":service_ref",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

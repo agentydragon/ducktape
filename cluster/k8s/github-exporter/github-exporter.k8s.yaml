@@ -151,7 +151,7 @@ spec:
     - name: http
       port: 9171
       protocol: TCP
-      targetPort: http
+      targetPort: 9171
   selector:
     app.kubernetes.io/component: quota
     app.kubernetes.io/name: github-exporter
@@ -285,7 +285,7 @@ spec:
     - name: http
       port: 9171
       protocol: TCP
-      targetPort: http
+      targetPort: 9171
   selector:
     app.kubernetes.io/component: quota
     app.kubernetes.io/name: github-exporter
@@ -394,7 +394,7 @@ spec:
     - name: http
       port: 9172
       protocol: TCP
-      targetPort: http
+      targetPort: 9172
   selector:
     app.kubernetes.io/component: quota
     app.kubernetes.io/name: github-graphql-rate-exporter
@@ -503,7 +503,7 @@ spec:
     - name: http
       port: 9172
       protocol: TCP
-      targetPort: http
+      targetPort: 9172
   selector:
     app.kubernetes.io/component: quota
     app.kubernetes.io/name: github-graphql-rate-exporter

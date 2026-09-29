@@ -90,7 +90,7 @@ spec:
         cache:
           ADAPTER: redis
           ENABLED: true
-          HOST: redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0
+          HOST: redis://forgejo-valkey-ovh-master.forgejo.svc:6379/0
         database:
           DB_TYPE: postgres
           HOST: forgejo-db-ssd-rw.forgejo.svc:5432
@@ -107,7 +107,7 @@ spec:
           UPDATE_AVATAR: true
           USERNAME: nickname
         queue:
-          CONN_STR: redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0
+          CONN_STR: redis://forgejo-valkey-ovh-master.forgejo.svc:6379/0
           TYPE: redis
         security:
           INSTALL_LOCK: true
@@ -317,6 +317,7 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/instance: forgejo
+      app.kubernetes.io/name: forgejo
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
