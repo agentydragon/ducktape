@@ -14,8 +14,7 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.updates import ActionUpdates
 
 WaitSeconds = Annotated[
-    float,
-    Field(ge=0, allow_inf_nan=False, description="Capped by this instance's max_wait_seconds setting."),
+    float, Field(ge=0, allow_inf_nan=False, description="Capped by this instance's max_wait_seconds setting.")
 ]
 
 
@@ -50,12 +49,7 @@ def satisfied(view: ActionRequestView, until: WaitUntil) -> bool:
 
 
 class ActionWaiter:
-    def __init__(
-        self,
-        service: ActionService,
-        updates: ActionUpdates,
-        max_wait_seconds: float,
-    ) -> None:
+    def __init__(self, service: ActionService, updates: ActionUpdates, max_wait_seconds: float) -> None:
         self._service = service
         self._updates = updates
         self._max_wait_seconds = max_wait_seconds

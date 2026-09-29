@@ -111,9 +111,7 @@ class ActionServiceDeploymentSettings(BaseModel):
     operator_oidc: OperatorOidcSettings
     allowed_service_account_namespaces: frozenset[str]
     max_wait_seconds: float = Field(
-        ge=0,
-        allow_inf_nan=False,
-        description="Maximum caller-requested wait on an Action receipt or result.",
+        ge=0, allow_inf_nan=False, description="Maximum caller-requested wait on an Action receipt or result."
     )
     web_push: WebPushDeploymentSettings | None = None
     mcp_client_metadata: McpClientMetadataSettings | None = None

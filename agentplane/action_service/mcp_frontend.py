@@ -421,9 +421,7 @@ def create_server(
         await revalidate(principal)
         return tool_result(view, catalog.groups[action.group].executor, max_wait_seconds=max_wait_seconds)
 
-    server.add_provider(
-        DirectToolProvider(catalog, service, external_caller, call_direct, max_wait_seconds)
-    )
+    server.add_provider(DirectToolProvider(catalog, service, external_caller, call_direct, max_wait_seconds))
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
