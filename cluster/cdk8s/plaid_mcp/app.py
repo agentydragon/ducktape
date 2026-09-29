@@ -14,23 +14,28 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.plaid_mcp.db import NAMESPACE, POSTGRES
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/app"
-NAMESPACE = "plaid-mcp"
 _NAME = "plaid-mcp"
-_LABELS = {"app.kubernetes.io/name": _NAME}
 _CONFIG_MAP = "plaid-mcp-config"
 _SECRET_MANAGER = "plaid-mcp-secret-manager"
 _CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-client-credentials")
 _CREDENTIALS_FILE = "plaid-client-credentials.sops.yaml"
-_HTTP_PORT = 8080
+# The link web UI, behind Authentik's embedded proxy outpost.
+_WEB = ServiceRef(
+    name=_NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+)
 _CONFIG = {
     "PLAID_MCP_PLAID_ENV": "production",
     "PLAID_MCP_PUBLIC_BASE_URL": "https://plaid-mcp.allegedly.works",
@@ -49,8 +54,7 @@ def _env() -> list[k8s.EnvVar]:
             )
             for key in _CONFIG
         ),
-        # CNPG generates this Secret for the plaid-mcp-db Cluster (db.py).
-        SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-app").key("uri").env_var("DATABASE_URL"),
+        POSTGRES.app_secret.key("uri").env_var("DATABASE_URL"),
         _CREDENTIALS.key("client_id").env_var("PLAID_MCP_CLIENT_ID"),
         _CREDENTIALS.key("client_secret").env_var("PLAID_MCP_CLIENT_SECRET"),
     ]
@@ -100,14 +104,14 @@ def _rbac(chart: Chart) -> None:
 
 
 def _deployment(chart: Chart) -> None:
-    health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_HTTP_PORT))
+    health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_WEB.pod_port))
     k8s.KubeDeployment(
         chart,
         "deployment",
         metadata=k8s.ObjectMeta(
             name=_NAME,
             namespace=NAMESPACE,
-            labels=_LABELS,
+            labels=_WEB.pods.selector,
             annotations={
                 "description": (
                     "Plaid self-contained link web UI. Authentik proxy outpost protects browser access; no"
@@ -118,9 +122,9 @@ def _deployment(chart: Chart) -> None:
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_WEB.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_WEB.pods.selector),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     service_account_name=_NAME,
@@ -131,7 +135,7 @@ def _deployment(chart: Chart) -> None:
                             image="git.allegedly.works/ducktape-ci/plaid-mcp-server:unset",
                             image_pull_policy="Always",
                             security_context=_container_security_context(),
-                            ports=[k8s.ContainerPort(name="http", container_port=_HTTP_PORT, protocol="TCP")],
+                            ports=[_WEB.port.k8s_container_port()],
                             env=_env(),
                             resources=_resources(),
                             readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=10),
@@ -202,16 +206,8 @@ def chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name="http", port=_HTTP_PORT, target_port=k8s.IntOrString.from_string("http"), protocol="TCP"
-                )
-            ],
-            type="ClusterIP",
-        ),
+        metadata=k8s.ObjectMeta(name=_WEB.name, namespace=NAMESPACE, labels=_WEB.labels),
+        spec=k8s.ServiceSpec(selector=_WEB.pods.selector, ports=[_WEB.port.k8s_service_port()], type="ClusterIP"),
     )
     NetworkPolicy(
         chart,
@@ -226,8 +222,8 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        endpoint_selector=_LABELS,
-        ingress=[IngressRule.from_endpoints(cilium.endpoint_labels("authentik", "authentik"), ports=[_HTTP_PORT])],
+        endpoint_selector=_WEB.pods.selector,
+        ingress=[authentik.SERVER.pods.admit(_WEB.pod_port)],
     )
     return chart
 

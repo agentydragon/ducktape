@@ -160,6 +160,16 @@ def _ollama_variant_entries(
             api_key=api_key,
             supports_function_calling=True,
             extra_body=_context_extra_body(context),
+            extra_litellm_params=(
+                {
+                    # Ollama's Responses endpoint can omit item completion events;
+                    # bridge Responses requests through Chat Completions instead.
+                    "use_chat_completions_api": True,
+                    "allowed_openai_params": ["reasoning_effort"],
+                }
+                if upstream_prefix == "openai"
+                else None
+            ),
         )
         for context in contexts
     ]

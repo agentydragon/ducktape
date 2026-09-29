@@ -13,24 +13,16 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.seaweedfs import namespace
 
 SECRET_NAME = "seaweedfs-s3-config"
 SECRET_KEY = "seaweedfs_s3_config.json"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/secrets"
 _CHART = "s3-config"
 _READER = "eso-reader"
 _SECRET_STORE = "seaweedfs-identities"
-# Per-tenant credentials. Legacy entries also contain an ExternalSecret that renders static
-# gateway JSON. Migrated entries contain only the SOPS Secret; their S3Identity/S3Credentials
-# CRs live with the corresponding Bucket CR.
-IDENTITY_FILES = ("identities/admin.sops.yaml",)
 
 
 def chart(app: App) -> Chart:
@@ -101,26 +93,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def seaweedfs_secrets(
-    chart: Chart,
-    directory: RenderedDirectory,
-    seaweedfs_namespace: Kustomization,
-    external_secrets_operator: Kustomization,
-) -> Kustomization:
-    name = "seaweedfs-secrets"
-    return flux_kustomization(
-        chart,
-        name,
-        directory,
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        retry_interval=None,
-        wait=None,
-        suspend=False,
-        depends_on=flux_kustomization_depends_on_many(
-            seaweedfs_namespace,
-            # ExternalSecret + SecretStore CRDs + ESO controller
-            external_secrets_operator,
-        ),
-    )

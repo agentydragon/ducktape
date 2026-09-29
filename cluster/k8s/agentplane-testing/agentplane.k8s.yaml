@@ -1048,7 +1048,8 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            k8s:app.kubernetes.io/name: forgejo
+            app.kubernetes.io/instance: forgejo
+            app.kubernetes.io/name: forgejo
             k8s:io.kubernetes.pod.namespace: forgejo
       toPorts:
         - ports:
@@ -1191,14 +1192,6 @@ spec:
       clusterInternal: true
       credentialRef:
         name: agentplane-workload
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: kubernetes
-  namespace: agentplane-testing
-spec:
-  rules:
     - hosts:
         - kubernetes.default.svc.cluster.local
       clusterInternal: true
@@ -1583,7 +1576,7 @@ data:
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081
     action_federation:
       mode: direct
-      service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
+      service_url: http://agentplane-actions.agentplane-testing.svc:8080
       login_jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
       login_token_profile: dex
       target:
@@ -1657,7 +1650,7 @@ spec:
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
             - name: AGENTPLANE_ELECTRIC_URL
-              value: http://agentplane-electric.agentplane-testing.svc.cluster.local:3000
+              value: http://agentplane-electric.agentplane-testing.svc:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://agentplane-dex-testing.allegedly.works/dex
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -1756,7 +1749,7 @@ spec:
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
             - name: AGENTPLANE_ELECTRIC_URL
-              value: http://agentplane-electric.agentplane-testing.svc.cluster.local:3000
+              value: http://agentplane-electric.agentplane-testing.svc:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://agentplane-dex-testing.allegedly.works/dex
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL

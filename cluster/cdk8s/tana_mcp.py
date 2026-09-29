@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, Size
-from cdk8s_plus_34 import Cpu, k8s
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -26,20 +26,18 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.mcp_oauth_state import CONSUMER_SECRET, TANA, add_consumer_credentials
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/tana-mcp"
 _NAMESPACE = "tana-mcp"
 _NAME = "tana-mcp"
-_LABELS = {"app.kubernetes.io/name": _NAME}
 _FACADE = "tana-mcp-facade"
-_FACADE_LABELS = {"app.kubernetes.io/name": _FACADE}
 _RESIGNER = "tana-firebase-resigner"
 _RESIGNER_CONFIG = "tana-firebase-resigner-config"
 # The Secret the resigner rewrites: its Role and its config both read this one reference.
@@ -47,19 +45,23 @@ _REFRESH_TOKEN = SecretRef(namespace=_NAMESPACE, name="tana-firebase-refresh-tok
 # The ESO copy of the external-creds Secret of the same name.
 _PAT = SecretRef(namespace=_NAMESPACE, name="tana-agentydragon-gmail-com-account-pat").key("token")
 _FACADE_OIDC = SecretRef(namespace=_NAMESPACE, name="tana-mcp-facade-oidc")
-_VALKEY = "mcp-valkey-ovh"
-_TANA_PORT = 8262
-_PROXY_PORT = 8263
-_NOVNC_PORT = 6080
-_FACADE_PORT = 8765
-_METRICS_PORT = 9090
+# Tana Desktop's own MCP server; it answers only on loopback inside the container.
+_TANA = Port(name="mcp", number=8262)
+# Tana's MCP through the nginx sidecar, which rewrites Host/Origin so Tana accepts cluster
+# clients: the facade's upstream, and agentplane-staging's Action Service calls it too.
+MCP_PROXY = ServiceRef(
+    name=_NAME,
+    port=Port(name="mcp-proxy", number=8263),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+)
+_NOVNC = ServiceRef(name=MCP_PROXY.name, port=Port(name="novnc", number=6080), pods=MCP_PROXY.pods)
 _FACADE_HTTP = ServiceRef(
     name=_FACADE,
-    port=Port(name="http", number=_FACADE_PORT),
-    pods=Pods(namespace=_NAMESPACE, labels=tuple(_FACADE_LABELS.items())),
+    port=Port(name="http", number=8765),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _FACADE),)),
 )
-# Tana only serves /health on loopback inside the container.
-_TANA_HEALTH = f"http://127.0.0.1:{_TANA_PORT}/health"
+_FACADE_METRICS = ServiceRef(name=_FACADE_HTTP.name, port=Port(name="metrics", number=9090), pods=_FACADE_HTTP.pods)
+_TANA_HEALTH = f"http://127.0.0.1:{_TANA.number}/health"
 
 
 def _tana_health_check() -> k8s.ExecAction:
@@ -67,20 +69,20 @@ def _tana_health_check() -> k8s.ExecAction:
 
 
 def _proxy_health_check() -> k8s.HttpGetAction:
-    return k8s.HttpGetAction(path="/health", port=k8s.IntOrString.from_number(_PROXY_PORT))
+    return k8s.HttpGetAction(path="/health", port=k8s.IntOrString.from_number(MCP_PROXY.pod_port))
 
 
 def _tana_deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "tana-deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=MCP_PROXY.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=MCP_PROXY.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=MCP_PROXY.pods.selector),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
@@ -90,10 +92,7 @@ def _tana_deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="tana-desktop",
                             image="git.allegedly.works/ducktape-ci/tana-desktop:unset",
-                            ports=[
-                                k8s.ContainerPort(name="mcp", container_port=_TANA_PORT, protocol="TCP"),
-                                k8s.ContainerPort(name="novnc", container_port=_NOVNC_PORT, protocol="TCP"),
-                            ],
+                            ports=[_TANA.k8s_container_port(), _NOVNC.port.k8s_container_port()],
                             env=[k8s.EnvVar(name="RESOLUTION", value="1280x800x24")],
                             volume_mounts=[k8s.VolumeMount(name="tana-config", mount_path="/home/tana/.config/tana")],
                             resources=k8s.ResourceRequirements(
@@ -120,7 +119,7 @@ def _tana_deployment(chart: Chart) -> None:
                         k8s.Container(
                             name="proxy",
                             image="nginx:alpine",
-                            ports=[k8s.ContainerPort(name="mcp-proxy", container_port=_PROXY_PORT, protocol="TCP")],
+                            ports=[MCP_PROXY.port.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(name="nginx-config", mount_path="/etc/nginx/conf.d", read_only=True)
                             ],
@@ -193,7 +192,7 @@ def _resigner(chart: Chart) -> None:
             "SECRET_KEY": _REFRESH_TOKEN.key,
             "FETCH_CUSTOM_TOKEN_URL": "https://app.tana.inc/functions/fetchCustomToken",
             "TANA_HEALTH_URL": _TANA_HEALTH,
-            "TANA_MCP_URL": f"http://127.0.0.1:{_TANA_PORT}/mcp",
+            "TANA_MCP_URL": f"http://127.0.0.1:{_TANA.number}/mcp",
             "RESEED_URL": "http://127.0.0.1:9090/reseed",
             "HEALTHY_POLL_SECONDS": "60.0",
             "UNHEALTHY_POLL_SECONDS": "5.0",
@@ -236,11 +235,8 @@ def _facade(chart: Chart) -> None:
             "MCP_FACADE_AUTH__PUBLIC_BASE_URL": "https://tana-mcp-facade.allegedly.works",
             "MCP_FACADE_FACADE_NAME": "Tana MCP Facade",
             "MCP_FACADE_UPSTREAM__KIND": "http",
-            "MCP_FACADE_UPSTREAM__URL": f"http://{_NAME}.{_NAMESPACE}.svc.cluster.local:{_PROXY_PORT}/mcp",
-            "MCP_FACADE_PERSISTENCE__KIND": "valkey",
-            # The RedisReplication's primary Service.
-            "MCP_FACADE_PERSISTENCE__HOST": f"{_VALKEY}-master.{_NAMESPACE}.svc.cluster.local",
-            "MCP_FACADE_PERSISTENCE__DB": "0",
+            "MCP_FACADE_UPSTREAM__URL": f"{MCP_PROXY.url}/mcp",
+            "MCP_FACADE_PERSISTENCE__KIND": "postgres",
             # Let Uvicorn's existing access log report the original client when requests
             # arrive through trusted in-cluster Gateway/Envoy paths.
             "FORWARDED_ALLOW_IPS": "10.42.0.0/16,10.244.0.0/16,127.0.0.1",
@@ -251,14 +247,14 @@ def _facade(chart: Chart) -> None:
             "MCP_FACADE_LOGGING__MCP_PAYLOAD_LENGTH": "true",
         },
     )
-    healthz = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_FACADE_PORT))
+    healthz = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_FACADE_HTTP.pod_port))
     k8s.KubeDeployment(
         chart,
         "facade-deployment",
         metadata=k8s.ObjectMeta(
             name=_FACADE,
             namespace=_NAMESPACE,
-            labels=_FACADE_LABELS,
+            labels=_FACADE_HTTP.pods.selector,
             annotations={
                 "description": (
                     "Public Authentik-backed MCP facade for Tana, running the shared mcp-oauth-facade image."
@@ -281,9 +277,9 @@ def _facade(chart: Chart) -> None:
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_FACADE_LABELS),
+            selector=k8s.LabelSelector(match_labels=_FACADE_HTTP.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_FACADE_LABELS),
+                metadata=k8s.ObjectMeta(labels=_FACADE_HTTP.pods.selector),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     containers=[
@@ -292,9 +288,9 @@ def _facade(chart: Chart) -> None:
                             image="git.allegedly.works/ducktape-ci/mcp-oauth-facade:unset",
                             image_pull_policy="Always",
                             ports=[
-                                k8s.ContainerPort(name="http", container_port=_FACADE_PORT, protocol="TCP"),
+                                _FACADE_HTTP.port.k8s_container_port(),
                                 # Prometheus metrics, cluster-internal only (not on the HTTPRoute).
-                                k8s.ContainerPort(name="metrics", container_port=_METRICS_PORT, protocol="TCP"),
+                                _FACADE_METRICS.port.k8s_container_port(),
                             ],
                             env_from=[
                                 k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name="tana-mcp-facade-config"))
@@ -303,6 +299,9 @@ def _facade(chart: Chart) -> None:
                                 _FACADE_OIDC.key("client_id").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID"),
                                 _FACADE_OIDC.key("client_secret").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET"),
                                 _PAT.env_var("MCP_FACADE_UPSTREAM__BEARER_TOKEN"),
+                                SecretRef(namespace=_NAMESPACE, name=CONSUMER_SECRET)
+                                .key("uri")
+                                .env_var("MCP_FACADE_PERSISTENCE__URL"),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -324,7 +323,7 @@ def _facade(chart: Chart) -> None:
                             # probe blip; the /readyz staleness window debounces flapping.
                             readiness_probe=k8s.Probe(
                                 http_get=k8s.HttpGetAction(
-                                    path="/readyz", port=k8s.IntOrString.from_number(_FACADE_PORT)
+                                    path="/readyz", port=k8s.IntOrString.from_number(_FACADE_HTTP.pod_port)
                                 ),
                                 period_seconds=15,
                                 failure_threshold=4,
@@ -349,23 +348,10 @@ def _facade(chart: Chart) -> None:
     k8s.KubeService(
         chart,
         "facade-service",
-        metadata=k8s.ObjectMeta(name=_FACADE, namespace=_NAMESPACE, labels=_FACADE_LABELS),
+        metadata=k8s.ObjectMeta(name=_FACADE_HTTP.name, namespace=_NAMESPACE, labels=_FACADE_HTTP.labels),
         spec=k8s.ServiceSpec(
-            selector=_FACADE_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name="http",
-                    port=_FACADE_PORT,
-                    target_port=k8s.IntOrString.from_number(_FACADE_PORT),
-                    protocol="TCP",
-                ),
-                k8s.ServicePort(
-                    name="metrics",
-                    port=_METRICS_PORT,
-                    target_port=k8s.IntOrString.from_string("metrics"),
-                    protocol="TCP",
-                ),
-            ],
+            selector=_FACADE_HTTP.pods.selector,
+            ports=[_FACADE_HTTP.port.k8s_service_port(), _FACADE_METRICS.port.k8s_service_port()],
             type="ClusterIP",
         ),
     )
@@ -373,8 +359,8 @@ def _facade(chart: Chart) -> None:
         chart,
         "facade-servicemonitor",
         metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
-        selector=ServiceMonitorSpecSelector(match_labels=_FACADE_LABELS),
-        endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
+        selector=ServiceMonitorSpecSelector(match_labels=_FACADE_HTTP.labels),
+        endpoints=[Endpoint.plain(port=_FACADE_METRICS.port.name, scrape_timeout="10s")],
     )
     PrometheusRule(
         chart,
@@ -431,6 +417,7 @@ def _facade(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
+    add_consumer_credentials(chart, TANA)
     k8s.KubeServiceAccount(
         chart,
         "external-creds-reader",
@@ -461,36 +448,14 @@ def chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "tana-service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=MCP_PROXY.name, namespace=_NAMESPACE, labels=MCP_PROXY.labels),
         spec=k8s.ServiceSpec(
             type="ClusterIP",
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name="mcp-proxy",
-                    port=_PROXY_PORT,
-                    target_port=k8s.IntOrString.from_string("mcp-proxy"),
-                    protocol="TCP",
-                ),
-                k8s.ServicePort(
-                    name="novnc", port=_NOVNC_PORT, target_port=k8s.IntOrString.from_string("novnc"), protocol="TCP"
-                ),
-            ],
+            selector=MCP_PROXY.pods.selector,
+            ports=[MCP_PROXY.port.k8s_service_port(), _NOVNC.port.k8s_service_port()],
         ),
     )
     _facade(chart)
-    valkey_instance(
-        chart,
-        name=_VALKEY,
-        namespace=_NAMESPACE,
-        description="Replacement OVH Valkey for Tana MCP facade OAuth state",
-        memory_request=Size.mebibytes(64),
-        cpu_limit=Cpu.millis(200),
-        memory_limit=Size.mebibytes(128),
-        max_memory_percent_of_limit=None,
-        storage_class="local-path-ovh",
-        storage_size=Size.gibibytes(1),
-    )
     return chart
 
 

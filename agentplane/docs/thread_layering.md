@@ -1,9 +1,12 @@
 # Thread, runner, and harness layering
 
-Status: **design under review.** This is the cross-layer source of truth for
-identities, durability, command handling, and Thread presentation. It distinguishes
-required guarantees from the open decision about accepting commands before a runner
-is available. [The runner specification](../runner/SPEC.md) describes the implemented
+Status: **cross-layer design under review.** The materialized Thread projection and
+Electric-backed conversation sync described in [Thread view synchronization](thread_view_sync.md)
+are implemented; remaining acceptance gates and the accepted browser-cache tradeoff are recorded
+in [conversation acceptance](../debug/conversation_acceptance.md). This document remains the
+cross-layer source of truth for identities, durability, command handling, and Thread presentation.
+It distinguishes required guarantees from the open decision about accepting commands before a
+runner is available. [The runner specification](../runner/SPEC.md) describes the implemented
 runner contract; the target below is not a claim that every recovery case works today.
 Protocol changes are atomic monorepo cutovers, with no old-runner/data compatibility.
 
@@ -44,9 +47,9 @@ flowchart LR
     R -->|admission and recovery Events| E
     E -->|copy exact entries| P[App PostgreSQL history]
     P -->|exact replay / Raw evidence| F
-    P -. proposed deterministic projection .-> V[App conversation read model]
+    P -->|deterministic materialized projection| V[App conversation read model]
     V -->|assembled, plus what an operator sets| T[Thread]
-    V -. proposed snapshot and changes .-> F
+    V -->|Electric snapshot and changes| F
     K[Kubernetes Sandbox state] -->|operational snapshot| A
     A -->|operational snapshot| F
 ```
@@ -64,9 +67,9 @@ exact LLM API conversation. The runner also cannot preserve a native frame it ne
 received. Mocked-LLM tests observe a further boundary and establish what native receipts
 actually prove. See [native harness evidence](harness_evidence.md).
 
-The implemented frontend replays the exact archive. The proposed
-[conversation-view sync](#planned-conversation-view-synchronization) adds a derived
-read interface; it does not change runner Events or command admission.
+The normal conversation view reads the materialized Thread projection through the implemented
+[conversation-view sync](thread_view_sync.md). The exact archive remains available for replay and
+Raw evidence; the projection does not change runner Events or command admission.
 
 | Representation                       | Authority and identity                                                                                                                                             | Ordering                                                                                            |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
@@ -83,6 +86,12 @@ processes on that Sandbox. Current runner storage calls its durable, resumable c
 a “session”; it already spans process restarts. That existing name does not establish
 the target product Thread/incarnation relationship. The identity cutover must make the
 mapping explicit without duplicating the log's static Sandbox on each association.
+
+TODO: consider unifying the durable runner session and product Thread identity. Resume already
+reuses the same session and native conversation; a new process is an incarnation, not a new
+session. Two names currently suggest a lifecycle distinction that does not exist. Resolve the
+identity/ownership boundary consistently rather than implying conversations transfer between
+harness types.
 
 A runner's Event sequence goes into a Thread but is not itself the Thread. The app mints
 the Event log when it first sees a runner session and copies the runner's Events into it, along
@@ -489,24 +498,24 @@ order, not harness execution order. Multiplexing kinds on one connection cannot 
 their independent orders a total causal order. A new activity log is optional and
 should earn its persistence/replay machinery from an actual audit requirement.
 
-The current UI uses one runner Event feed and the existing operational snapshot
-mechanism. The planned read interface below changes normal conversation loading, not
-the exact archive or command path. Component-local state remains for drafts and
+The current UI uses the materialized Thread view for normal conversation loading, and the existing
+operational snapshot mechanism for Sandbox state. Component-local state remains for drafts and
 presentation, not server delivery orchestration.
 
-## Planned conversation-view synchronization
+## Implemented conversation-view synchronization
 
-The [Thread view synchronization design](thread_view_sync.md) owns the proposed
+The [Thread view synchronization design](thread_view_sync.md) documents the implemented
 conversation records, sync-engine integration, materialization, snapshot/live handoff, long-gap
 catch-up, history/payload hydration, on-demand Raw, frontend ownership and validation.
 It is an explicitly derived read API, not a filtered version of the runner Event
 stream. The HTTP/SSE sequence diagrams above describe the current implementation.
 
-The normal view will load selected assembled state and follow it through the chosen sync engine.
-Commands keep their runner-first admission semantics. Operational snapshots keep
-their own provenance. No second command queue or authoritative Event sequence is
-introduced. The initial implementation retains the complete exact runner archive;
-optional retention changes require a separate, explicit contract.
+The normal view loads selected assembled state and follows it through Electric. Long content is
+loaded on demand, while the browser store retains loaded rows and bodies until the Thread closes;
+bounded browser-cache retention is a deferred desire (D6), not an acceptance gate. Commands keep
+their runner-first admission semantics. Operational snapshots keep their own provenance. No second
+command queue or authoritative Event sequence is introduced. The exact runner archive remains
+available; optional archive-retention changes require a separate, explicit contract.
 
 ## Required harness-loss and Sandbox lifecycle cross-check
 

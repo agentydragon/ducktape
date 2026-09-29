@@ -26,6 +26,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/cert_manager:config",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",

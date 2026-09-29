@@ -37,6 +37,7 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+              protocol: TCP
           readinessProbe:
             initialDelaySeconds: 2
             periodSeconds: 5

@@ -74,11 +74,12 @@ Its stated reproducer is Chrome WebGL. The Xe portion of the repair landed as
 `drm/xe: Set TTM device beneficial_order to 9 (2M)`, after Linux 7.1. The
 booted 7.1.2 kernel lacks it.
 
-`nix/nixos/hosts/rugged/default.nix` temporarily selects the existing
-Nixpkgs-master `linuxPackages_testing` set. It evaluates to Linux 7.2-rc2 and
-contains that exact Xe allocation-policy change. The host override has a
-cleanup condition: remove it after a released `linuxPackages_latest` kernel
-contains the repair and this test proves the storm remains gone.
+`nix/nixos/hosts/rugged/default.nix` temporarily selected the existing
+Nixpkgs-master `linuxPackages_testing` set. It evaluated to Linux 7.2-rc2 and
+contained that exact Xe allocation-policy change. The 2026-08-26 follow-up below
+records its removal after the Xe fix was confirmed in released Linux 7.1.8. The
+no-trigger acceptance criterion in this runbook remains for the Xe/TTM incident;
+it is independent of the later Cilium regression on Linux 7.2.
 
 ### A/B runbook and acceptance criteria
 
@@ -448,8 +449,14 @@ local patch confirmed it via `patch`'s own "reversed (or previously applied)
 patch detected" — the fix is already in stable 7.1.8. `./ipu7-camera.nix` now
 carries the kernel choice with no override and no local patch.
 
-That file pins `linuxPackages_7_1`, not `linuxPackages_latest`: the alias was used
-here first and floated to 7.2 on 2026-09-04, which re-broke `cilium-agent` (see
+### Later kernel and Cilium follow-up (2026-09-28)
+
+During the September 5–16, 2026 interim, that file pinned `linuxPackages_7_1`, not
+`linuxPackages_latest`: the alias was used here first and floated to 7.2 on
+2026-09-04, which re-broke `cilium-agent` (see
 `cluster/docs/lessons_learned/2026_07_16_cilium_set_retval_probe_kernel_7_2.md`).
-The Xe fix is what sets this host's kernel floor, so any future change to that pin
-has to keep `ba7fd1634228` — verify with the same reverse-patch test used above.
+PR #7078 later moved the pin to the 7.2 series. After Cilium 1.19.8 was validated
+on `rugged` running 7.2.7, the active config moved to `linuxPackages_latest`, which
+currently resolves to that same kernel derivation. The Xe fix still sets this host's
+kernel floor, so any future kernel-series change has to keep `ba7fd1634228` — verify
+with the same reverse-patch test used above.

@@ -11,7 +11,7 @@ Job or its schema.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart, Duration
-from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy, Secret
+from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.clickhouse import client
@@ -29,7 +29,7 @@ NAME = "clickhouse-schema"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/schema"
 NAMESPACE = "clickhouse"
 SCHEMA_CONFIG_MAP = ConfigMapArgs(name="clickhouse-aiquota-schema", namespace=NAMESPACE, files=[client.SCHEMA_FILE])
-_JOB_NAME = "clickhouse-aiquota-schema-v10"
+_JOB_NAME = "clickhouse-aiquota-schema-v11"
 _LABELS = {
     "app.kubernetes.io/name": NAME,
     "app.kubernetes.io/instance": "clickhouse",
@@ -66,7 +66,7 @@ def chart(app: App) -> Chart:
                 chart,
                 "schema",
                 schema=ConfigMap.from_config_map_name(chart, "schema-ref", SCHEMA_CONFIG_MAP.name),
-                credentials=Secret.from_secret_name(chart, "admin-credentials-ref", "clickhouse-admin-credentials"),
+                credentials=client.ADMIN_CREDENTIALS,
             )
         ],
     )

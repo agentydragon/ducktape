@@ -124,15 +124,15 @@ spec:
             - name: NODE_USE_ENV_PROXY
               value: "1"
             - name: HTTP_PROXY
-              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
+              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc:8181
             - name: HTTPS_PROXY
-              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
+              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc:8181
             - name: NO_PROXY
               value: 127.0.0.1,localhost
             - name: http_proxy
-              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
+              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc:8181
             - name: https_proxy
-              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
+              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc:8181
             - name: no_proxy
               value: 127.0.0.1,localhost
             - name: NODE_EXTRA_CA_CERTS
@@ -148,6 +148,7 @@ spec:
           ports:
             - containerPort: 18789
               name: gateway
+              protocol: TCP
           readinessProbe:
             failureThreshold: 3
             httpGet:
@@ -319,7 +320,8 @@ spec:
   ports:
     - name: gateway
       port: 18789
-      targetPort: gateway
+      protocol: TCP
+      targetPort: 18789
   selector:
     app.kubernetes.io/name: haku-openclaw-spike
 ---

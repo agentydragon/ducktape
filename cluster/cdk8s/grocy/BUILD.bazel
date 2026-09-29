@@ -9,7 +9,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
@@ -42,18 +41,19 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":app",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:mcp_oauth_state",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s:valkey",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
     ],
 )
 

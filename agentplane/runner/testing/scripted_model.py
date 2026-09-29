@@ -52,6 +52,7 @@ class ModelRequest[RequestT: StreamableRequest]:
     assistant_texts: list[str]
     reasoning_texts: list[str]
     tool_outputs: list[ToolOutput]
+    tool_calls: list[str]
     streaming: bool
 
 
@@ -73,6 +74,16 @@ class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
     async def hold(self, request: ModelRequest[RequestT]) -> None:
         """Begin an answer and never finish it, so the turn stays in flight until interrupted."""
         await request._exchange.send(*self.opened_stream())
+        self._hold_until_client_closes(request)
+
+    async def hold_after_first_delta(self, request: ModelRequest[RequestT], item: Item) -> None:
+        """Send one streamed fragment, then leave the model response open until the client closes."""
+        events = self.stream([item])
+        delta = next(index for index, event in enumerate(events) if event.kind.endswith("delta"))
+        await request._exchange.send(*events[: delta + 1])
+        self._hold_until_client_closes(request)
+
+    def _hold_until_client_closes(self, request: ModelRequest[RequestT]) -> None:
         # The endpoint remains strict at fixture teardown: the runner must close this held stream
         # when it stops its harness, and this task records that explicit client-side closure.
         self._held_client_closures.append(asyncio.create_task(request._exchange.wait_client_closed()))

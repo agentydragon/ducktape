@@ -205,6 +205,12 @@ Discovery exposes replica-local, credential-safe lifecycle diagnostics, never st
 The same diagnostics are also available to operators, for every mcp-kind group regardless of
 whether it uses OAuth linkage or a mounted credential.
 
+Configured remote OAuth linkages identify their client with either a fixed client ID or the Action
+Service's one shared public Client ID Metadata Document. CIMD uses that URL as the client ID and
+lists the redirect URIs for every linkage that uses it. Linking with the shared CIMD is offered only
+when the remote authorization server advertises CIMD support. Both modes retain the configured
+redirect URI and PKCE flow.
+
 Approved work remains durably unclaimed during temporary backend outages. Revoked authority
 still becomes terminal; removed Actions and incompatible schemas are not treated as outages.
 Execution pins one connection generation and never automatically replays an ambiguous call.
