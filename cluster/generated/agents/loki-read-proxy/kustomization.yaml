@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - loki-read-proxy.k8s.yaml
 components:
-  - ./image-pins
+  - ../../../k8s/agents/loki-read-proxy-image-pins

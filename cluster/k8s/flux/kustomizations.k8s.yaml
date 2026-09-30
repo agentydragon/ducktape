@@ -2754,7 +2754,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/loki-read-proxy
+  path: ./cluster/generated/agents/loki-read-proxy
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3333,7 +3333,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/ha-mcp/app
+  path: ./cluster/generated/agents/ha-mcp/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3653,7 +3653,7 @@ spec:
     - name: kyverno-policies
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/agent-sandbox/workspaces
+  path: ./cluster/generated/agents/agent-sandbox/workspaces
   prune: true
   retryInterval: 1m
   sourceRef:

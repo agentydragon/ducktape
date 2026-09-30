@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - agent-workspaces.k8s.yaml
 components:
-  - ./image-pins
+  - ../../../../k8s/agents/agent-sandbox/workspaces-image-pins

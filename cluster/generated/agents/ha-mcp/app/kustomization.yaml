@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - ha-mcp.k8s.yaml
 components:
-  - ./image-pins
+  - ../../../../k8s/agents/ha-mcp/app-image-pins
