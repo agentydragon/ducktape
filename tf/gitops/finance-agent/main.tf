@@ -4,10 +4,8 @@
 # trust reasoning behind giving OpenAI finance data).
 #
 # Provisions a private `finance-agent/finance-agent` repo owned by a dedicated `finance-agent`
-# service user (full read/write on its own repo). Deliberately isolated from `haku` and `claude`:
-# no collaborator grants here, unlike augur-evidence/budget-ledger/haku-state — this is Rai's own
-# project, kept separate from Haku's own data plane by design, not an oversight. Add a
-# `forgejo_collaborator` block later if he wants an agent account to help maintain it.
+# service user (full read/write on its own repo), plus a write collaborator grant for `haku`
+# (operator, 2026-09-30) so Haku can help maintain it. No `claude` grant — not asked for.
 #
 # No data lives in this repo — the agent queries Plaid live rather than committing transaction
 # data to git history, which can't be un-committed later. The repo holds code/config only. Mirrors
@@ -53,6 +51,14 @@ resource "forgejo_repository" "finance_agent" {
   default_branch = "main"
   # Initial commit so `main` exists to clone/push against. No content seed.
   auto_init = true
+}
+
+# Write access for the haku agent account (user provisioned by tf/gitops/haku-state), so Haku
+# can help build/maintain this repo directly (operator, 2026-09-30).
+resource "forgejo_collaborator" "haku" {
+  repository_id = forgejo_repository.finance_agent.id
+  user          = "haku"
+  permission    = "write"
 }
 
 # Git credentials for Rai's own local clone. Not copied anywhere in-cluster — retrieved
