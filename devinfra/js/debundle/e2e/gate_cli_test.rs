@@ -84,6 +84,7 @@ fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() 
     assert_eq!(cause["binding_names"][0], "B");
     let reason = &cause["purity"]["reasons"][0];
     assert_eq!(reason["rule"], "unknown_call");
+    assert_eq!(reason["detail"], "wrap");
     assert_eq!(reason["source_location"]["source_path"], "static/app.js");
     assert_eq!(reason["source_location"]["start_line"], 3);
     assert_eq!(reason["source_location"]["start_column"], 11);
@@ -103,7 +104,7 @@ fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() 
     ]);
     let text = String::from_utf8_lossy(&text.stdout);
     assert!(text.contains("`B` at static/app.js:3:11"), "{text}");
-    assert!(text.contains("unknown_call"), "{text}");
+    assert!(text.contains("unknown_call (wrap)"), "{text}");
 }
 
 #[test]
