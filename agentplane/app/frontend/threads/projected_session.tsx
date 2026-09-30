@@ -12,7 +12,6 @@ import {
   Stack,
   Text,
   Textarea,
-  Tooltip,
 } from "@mantine/core";
 import { create } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -44,6 +43,7 @@ import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./t
 import { ProjectedCommandRows, SelectedCommandOutcomes, useProjectedCommands } from "./thread_commands";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
+import { ThreadStatusDot } from "../thread_status_dot";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import "./projected_session.css";
 
@@ -608,34 +608,7 @@ function VirtualizedHistory({
 interface ThreadStatus {
   color: string;
   label: string;
-  breathing?: boolean;
-  activeTurn?: boolean;
-}
-
-/** A state shown as a small colored dot rather than a labeled badge: the label is still there for a
- * screen reader, and for anyone hovering or (on a touch/keyboard device) focusing it. `breathing`
- * pulses the dot, for a state that is still settling rather than settled. */
-function StatusDot({ color, label, breathing, activeTurn }: ThreadStatus): JSX.Element {
-  const className = [
-    "agentplane-status-dot",
-    breathing && "agentplane-breathing-dot",
-    activeTurn && "agentplane-active-turn-dot",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return (
-    <Tooltip label={label} events={{ hover: true, focus: true, touch: true }}>
-      <Box
-        component="span"
-        role="img"
-        aria-label={label}
-        title={label}
-        tabIndex={0}
-        className={className}
-        style={{ backgroundColor: `var(--mantine-color-${color}-6)` }}
-      />
-    </Tooltip>
-  );
+  pulse?: boolean;
 }
 
 type Operational = Extract<ThreadEntity["state"], { operational: unknown }>["operational"];
@@ -663,9 +636,9 @@ function threadStatus({
   activeTurn: boolean;
 }): ThreadStatus {
   if (sync.window?.error) return { color: "red", label: `Thread sync stopped: ${sync.window.error}` };
-  if (!sync.window) return { color: "yellow", breathing: true, label: "Connecting…" };
-  if (sync.error || degraded) return { color: "yellow", breathing: true, label: "Reconnecting…" };
-  if (!sync.window.caughtUp) return { color: "yellow", breathing: true, label: "Catching up…" };
+  if (!sync.window) return { color: "yellow", pulse: true, label: "Connecting…" };
+  if (sync.error || degraded) return { color: "yellow", pulse: true, label: "Reconnecting…" };
+  if (!sync.window.caughtUp) return { color: "yellow", pulse: true, label: "Catching up…" };
   if (archived) return { color: "gray", label: "Thread archived" };
   if (!available) return { color: "gray", label: "Sandbox unavailable" };
   if (operational?.status === "failed") return { color: "red", label: "Runner feed failed" };
@@ -680,7 +653,7 @@ function threadStatus({
     label: activeTurn
       ? `Turn running · Runner feed active · harness ${harness}`
       : `Runner feed active · harness ${harness}`,
-    activeTurn,
+    pulse: activeTurn,
   };
 }
 
@@ -848,7 +821,7 @@ function ProjectedSessionBody({
         />
         <Group justify="space-between" wrap="nowrap" pb="xs">
           <Group gap="xs" wrap="nowrap">
-            <StatusDot
+            <ThreadStatusDot
               {...threadStatus({
                 sync,
                 degraded,

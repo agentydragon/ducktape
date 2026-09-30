@@ -150,7 +150,7 @@ cluster/
 ├── k8s/                    # Flux-managed manifests with a hand-written file (config only — source lives in rotators/, provisioners/, proxies/)
 │   ├── agents/             # Agent infra (public-coder-agent, airlock, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
-│   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)
+│   ├── monitoring/         # kube-prometheus-stack + Grafana admin Secret (loki, alloy, ...: generated/monitoring/)
 │   ├── <service>/          # Grouped: subdirs per flux-kustomization (namespace, secrets, app, db)
 │   ├── <service>/          # Flat: single flux-kustomization, all manifests at root
 │   └── flux-system/        # Flux controllers (auto-generated)

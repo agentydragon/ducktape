@@ -104,6 +104,15 @@ class SessionCookie(BaseModel, frozen=True):
         return cls(session_key=SecretStr(session_key.group(1)), org_uuid=org_uuid.group(1))
 
 
+def _raise_for_status(response: httpx.Response) -> None:
+    """`raise_for_status`, with the start of the body attached: it says why (missing header, expired key)."""
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        e.add_note(response.text[:300])
+        raise
+
+
 def _is_transient(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in _RETRY_STATUSES
@@ -186,11 +195,7 @@ class SessionsApi:
 
     async def _get_once(self, path: str, params: dict[str, str | int]) -> httpx.Response:
         response = await self._client.get(path, params=params)
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            e.add_note(response.text[:300])  # the API's error body says why (missing header, expired key)
-            raise
+        _raise_for_status(response)
         return response
 
     async def _get(self, path: str, **params: str | int | None) -> httpx.Response:
@@ -215,7 +220,12 @@ class SessionsApi:
         return (await self._sessions_page(limit=min(count, SESSIONS_PAGE_LIMIT))).data
 
     async def iter_event_pages(self, session_id: str, *, after: int = 0) -> AsyncIterator[list[Event]]:
-        """Pages of events with `sequence_num` above `after` (0: from the start), oldest first."""
+        """Pages of events with `sequence_num` above `after` (0: from the start), oldest first.
+
+        Raises `ValueError` on a page that skips a `sequence_num`, before yielding it: a caller that stores pages
+        as they come would leave an event past the gap that a resume from the newest stored never fetches.
+        """
+        position = after
         cursor = str(after) if after else None
         while True:
             response = await self._get(
@@ -225,6 +235,10 @@ class SessionsApi:
                 cursor=cursor,
             )
             page = EventsPage.model_validate_json(response.content)
+            for expected, event in enumerate(page.data, position + 1):
+                if event.seq != expected:
+                    raise ValueError(f"{session_id=}: expected sequence_num {expected}, got {event.sequence_num}")
+            position += len(page.data)
             yield page.data
             if page.next_cursor is None:
                 return
@@ -251,11 +265,7 @@ class SessionsApi:
                 raise ResumePointLostError(f"{path}: {response.status_code}")
             if response.is_error:
                 await response.aread()
-                try:
-                    response.raise_for_status()
-                except httpx.HTTPStatusError as e:
-                    e.add_note(response.text[:300])
-                    raise
+                _raise_for_status(response)
             yield source
 
     def _note_unknown_frame(self, frame: ServerSentEvent) -> None:

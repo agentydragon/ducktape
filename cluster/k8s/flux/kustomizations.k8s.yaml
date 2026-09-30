@@ -1194,7 +1194,7 @@ spec:
     - name: clickhouse
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/clickhouse/schema
+  path: ./cluster/generated/clickhouse/schema
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1781,7 +1781,7 @@ spec:
       name: kube-prometheus-stack
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/stack
+  path: ./cluster/k8s/monitoring
   prune: true
   retryInterval: 1m
   sourceRef:

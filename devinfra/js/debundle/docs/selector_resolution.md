@@ -59,13 +59,49 @@ The resolve is two halves, so `run` can do the first per chunk in parallel:
    `all_different` keeps it distinct from. A group that is exactly one
    `source_match` or anonymous-statement entity is decided from its own
    candidates, and a lone name pin with one place is a constant. Every other
-   group is one request to the OR-Tools CP-SAT sidecar
-   (`solver_backends/ortools_cpsat`), a required tool of the
-   `debundle_pipeline` rule and a runfile of the `debundle` binary, over the
-   program sliced to the group; requests run in parallel.
+   group is one CP-SAT problem over the program sliced to the group, solved
+   inside the `debundle` process (§ The solver); groups solve in parallel.
 
 No constraint relates two chunks' entities, so every group lies in one chunk,
 and a place is always one chunk's: two chunks never compete for it.
+
+## The solver
+
+`selector_ortools_cpsat_backend.rs` implements `SelectorProblemBackend` over
+OR-Tools' CP-SAT, linked into the `debundle` binary: a released `debundle` is one
+file that needs nothing beside it. `selector_ortools_cpsat_model.rs` builds
+OR-Tools' own `CpModelProto` (prost bindings of its `cp_model.proto`) from the
+compiled problem, and `ortools_cpsat_ffi.rs` — the only `unsafe` in the crate —
+calls CP-SAT's C API. The support search solves the model repeatedly, each time
+forbidding what it has found, until every projected variable is proven fixed or
+lists its alternatives (`MAX_ALTERNATIVES_PER_VARIABLE`).
+
+| Variable                                             | Meaning                                                                                                                              |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_NUM_SEARCH_WORKERS` | Search threads of one CP-SAT solve, default 1. Groups solve concurrently, so the process runs up to that many times the group count. |
+| `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS`   | CP-SAT's `max_time_in_seconds` for each solve of the support search (not for a whole group), default none.                           |
+
+CP-SAT built without `NDEBUG` is about an order of magnitude slower and logs
+`CP-SAT is running in debug mode` to stderr. The library is linked only through
+`//devinfra/js/debundle:ortools_cp_solver`, which builds OR-Tools, protobuf and
+Abseil with `--compilation_mode=opt` whatever the consumer's mode is
+(<bazel_integration.md> § Solver build). That warning means a target links
+`@or-tools//ortools/sat/c_api:cp_solver_c` around it.
+
+Solving in process means a solve's failures are the process's:
+
+- An OR-Tools `CHECK` failure, or a group that exhausts memory, ends the whole
+  `debundle` process; `settle_references` keeping groups small is also what keeps
+  a solve's memory down.
+- CP-SAT checks `max_time_in_seconds` between presolve steps, so a step in
+  progress runs past it: on synthetic 400,000-tuple table models a 0.5 s limit
+  returned after 7.4 s and 7.9 s, and limits of 10 s to 60 s returned within 2 s
+  of the limit (2026-09-30). `SolveCpStopSearch` from a watchdog thread is
+  checked at the same points and returned no sooner, so none is used.
+- CP-SAT's default SIGINT handler replaces the process's own for good, so the
+  solver runs with `catch_sigint_signal` off and `^C` still ends `debundle`.
+- A solve runs on a thread with an 8 MiB stack, not on the caller's (a rayon
+  worker's is 2 MiB).
 
 ## Order
 
@@ -89,10 +125,10 @@ its constants live in `selector_outcome.rs`. `MAX_LISTED_CANDIDATES` also bounds
 the solver's alternative search (`MAX_ALTERNATIVES_PER_VARIABLE`), so an
 `ambiguous` target lists what the solver found, not every place.
 
-`undecided` means the sidecar stopped (its
-`DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS` limit, per request) before
-deciding the entity. The sidecar reports which projected variables it had proven fixed by
-then; an entity all of whose variables are among them still resolves.
+`undecided` means CP-SAT stopped (at its `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS`
+limit) before deciding the entity. The solver reports which projected variables
+it had proven fixed by then; an entity all of whose variables are among them
+still resolves.
 
 ## Template references
 
@@ -109,8 +145,8 @@ directly. Only a reference to an entity still open reaches the solver, as a
 column of the referencer's candidate table over the referenced entity's binding
 variable (`projected_binding_variable`), so equality comes from the shared
 variable. Settling first keeps groups small: with a column for every reference,
-the largest downstream spec chained 9,055 targets into one request and the sidecar was
-killed for memory (2026-09-24). An entity whose rows all disagree with a
+the largest downstream spec chained 9,055 targets into one group and the solver
+ran out of memory (2026-09-24). An entity whose rows all disagree with a
 reference is `conflict` with the entities referenced.
 
 After the solve, an entity that had several rows before its references narrowed
@@ -156,11 +192,11 @@ place might share the anchor, so none is given.
 
 ## Unsatisfiable programs
 
-A contradiction stays inside its group, since each group is its own request.
+A contradiction stays inside its group, since each group is its own solve.
 A group's program is unsatisfiable when compile-time presolve proves it
 (`all_different` propagates fixed values and a relation table narrows both of
-its variables until a domain or table is empty) or the sidecar answers
-`UNSATISFIABLE` (`selector_backend_solver::solve_with_backend`). Every target of
+its variables until a domain or table is empty) or CP-SAT proves it
+infeasible (`selector_backend_solver::solve_with_backend`). Every target of
 the group then comes out `no_match` with one fixed `reason`: two or more of the
 group's selectors claim the same place or contradict a relation, and which ones
 is not determined. Other groups resolve as usual.
@@ -178,7 +214,7 @@ resolved. It was dropped because each round is a full CP-SAT solve of a model
 that presolve across targets no longer shrinks, and CP-SAT returns one core per
 solve: the cost is (conflicts + 1) × the model's load time, not search.
 
-Measured with the optimized sidecar on one real 96 KB request, 216 targets in
+Measured with an optimized CP-SAT on one real 96 KB problem, 216 targets in
 one group, infeasible because two pairs of entities claimed the same
 declaration: proving the plain across-targets program infeasible took 22 ms.
 Localization ran three full solves, about 28 s each with presolve on (86 s in
@@ -186,7 +222,7 @@ all, finding the same two size-2 cores) and about 3 s each with
 `cp_model_presolve:false` (9.4 s in all). Stack samples put the time in model
 expansion and loading (`ExpandCpModel`, `FullyCompressTuples`, `LoadBaseModel`,
 probing), not in search, and the `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS`
-limit is not honoured inside presolve. Duplicate claims are not a rare path:
+limit does not interrupt a presolve step (§ The solver). Duplicate claims are not a rare path:
 authoring specs in parallel produces several at once.
 
 ## Landing a new relation
