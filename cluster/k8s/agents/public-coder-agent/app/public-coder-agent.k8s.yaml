@@ -229,6 +229,133 @@ spec:
               name: cfg
             - mountPath: /state
               name: data
+        - command:
+            - sh
+            - -c
+            - |
+              set -eu
+              cd "$HOME/.openclaw"
+              version=$(openclaw --version)
+              if [ -f .doctor-fix-version ] && [ "$(cat .doctor-fix-version)" = "$version" ]; then
+                echo "openclaw doctor --fix already completed for $version"
+                exit 0
+              fi
+              mkdir -p doctor-backups
+              backup=$(find doctor-backups -mindepth 1 -maxdepth 1 -name '*.pending')
+              if [ -z "$backup" ]; then
+                rm -rf doctor-backups/*.partial
+                set -- agents/*/agent/*.sqlite* state/*.sqlite*
+                need_kib=$(du -ck "$@" | tail -n 1 | cut -f 1)
+                free_kib=$(df -Pk . | awk 'NR == 2 { print $4 }')
+                if [ "$free_kib" -lt $((2 * need_kib)) ]; then
+                  echo "state volume has $free_kib KiB free; backup and migration need 2 x $need_kib KiB" >&2
+                  exit 1
+                fi
+                stamp=$(date -u +%Y%m%dT%H%M%SZ)
+                for db in "$@"; do
+                  mkdir -p "doctor-backups/$stamp.partial/${db%/*}"
+                  cp -p "$db" "doctor-backups/$stamp.partial/$db"
+                done
+                mv "doctor-backups/$stamp.partial" "doctor-backups/$stamp.pending"
+                backup="doctor-backups/$stamp.pending"
+              fi
+              openclaw doctor --fix --non-interactive
+              find doctor-backups -mindepth 1 -maxdepth 1 ! -path "$backup" -exec rm -rf {} +
+              mv "$backup" "${backup%.pending}"
+              echo "$version" > .doctor-fix-version
+          env:
+            - name: HOME
+              value: /home/openclaw
+            - name: OPENCLAW_CONFIG_PATH
+              value: /home/openclaw/.openclaw/openclaw.json5
+            - name: NPM_CONFIG_PREFIX
+              value: /home/openclaw/.local
+            - name: NPM_CONFIG_CACHE
+              value: /home/openclaw/.cache/npm
+            - name: OPENCLAW_MEMORY_INDEX_CONCURRENCY
+              value: "1"
+            - name: OPENCLAW_MEMORY_RETRY_BASE_DELAY_MS
+              value: "30000"
+            - name: OPENCLAW_MEMORY_RETRY_MAX_DELAY_MS
+              value: "120000"
+            - name: OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK
+              value: none
+            - name: OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS
+              value: "86400000"
+            - name: OPENCLAW_DATABASE_VERIFY
+              value: "off"
+            - name: OPENCLAW_LOG_LEVEL
+              value: debug
+            - name: GITHUB_TOKEN
+              value: proxy-github-placeholder
+            - name: GH_PAT
+              value: proxy-github-placeholder
+            - name: HAKU_CONSOLE_TOKEN
+              value: proxy-haku-console-placeholder
+            - name: CLICKHOUSE_PUBLIC_CODER_USER
+              value: public_coder_analytics
+            - name: CLICKHOUSE_PUBLIC_CODER_PASSWORD
+              value: proxy-clickhouse-public-coder-password
+            - name: AIQUOTA_API_BEARER_TOKEN
+              value: proxy-aiquota-api-bearer-placeholder
+            - name: BRAVE_API_KEY
+              value: proxy-brave-search-api-key-placeholder
+            - name: OPENCLAW_LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api-key
+                  name: litellm-key-public-coder-agent
+            - name: OPENCLAW_GATEWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: public-coder-agent-gateway-password
+            - name: MATRIX_PASSWORD
+              value: proxy-matrix-password-placeholder
+            - name: NODE_USE_ENV_PROXY
+              value: "1"
+            - name: HTTP_PROXY
+              value: http://public-coder-agent-proxy.public-coder-agent.svc:8080
+            - name: HTTPS_PROXY
+              value: http://public-coder-agent-proxy.public-coder-agent.svc:8080
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: PIP_CERT
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: OPENCLAW_NIX_MODE
+              value: "0"
+          image: git.allegedly.works/ducktape-ci/public-coder-agent:unset
+          name: doctor-fix
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+            requests:
+              cpu: 250m
+              memory: 768Mi
+          volumeMounts:
+            - mountPath: /home/openclaw/.openclaw
+              name: data
+            - mountPath: /home/openclaw/.kube
+              name: kubeconfig
+              readOnly: true
+            - mountPath: /etc/ssl/certs/ca-certificates.crt
+              name: trust
+              readOnly: true
+              subPath: ca-certificates.crt
+            - mountPath: /home/openclaw/.ssh
+              name: ssh
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /diag
+              name: diagnostics
       securityContext:
         fsGroup: 1000
       volumes:

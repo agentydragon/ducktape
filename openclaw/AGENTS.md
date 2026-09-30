@@ -20,7 +20,8 @@ state predates the release.
   a release adds a state migration, the gateway refuses to start until it runs and
   the only tool that runs it refuses to start too. Recovery is a one-off Job with
   `OPENCLAW_NIX_MODE=0` — and `""` will not do, because `--set-default` expands to
-  `${OPENCLAW_NIX_MODE:-1}`.
+  `${OPENCLAW_NIX_MODE:-1}`. Public-coder's `doctor-fix` init container runs that
+  repair on the first boot of each release; the Haku spike has none.
 - **Retired config keys are ignored silently.** They keep reading as if they still
   apply while the behaviour they suppressed comes back — this is how the Control UI
   started demanding device pairing. Run `openclaw doctor` after a bump and act on
