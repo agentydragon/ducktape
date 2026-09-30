@@ -84,18 +84,6 @@ py_library(
 )
 
 py_library(
-    name = "registry_cache_bucket",
-    srcs = ["registry_cache_bucket.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":s3",
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_library(
     name = "pr_visuals_bucket",
     srcs = ["pr_visuals_bucket.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
