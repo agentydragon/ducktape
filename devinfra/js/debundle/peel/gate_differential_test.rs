@@ -1,4 +1,4 @@
-//! Differential harness for the gate-ladder unification.
+//! Differential harness for the gate ladder.
 //!
 //! Compares the kernel's hot boolean merge gate
 //! (`QuotientGraph::merge_preserves_invariants`) against the
@@ -8,15 +8,15 @@
 //! `post_partition` is built by an independent reference projection
 //! over the kernel's public class-membership surface.
 //!
-//! Since the §8 PR 4 cutover, `check_merge_boolean` routes through
-//! the index's tier ladder, so the harness asserts **strict
-//! equality** on every precondition-passing query — the pre-cutover
-//! known-divergence catalog is gone. Every comparison also asserts
-//! per-tier skip soundness (§7.1) against the ladder's decision so a
-//! ladder bug localizes to its tier. The deterministic fixtures pin
-//! the three semantic fixes the cutover landed (the atomic-unit /
-//! residual-pile over-rejection, Pass-2 blindness, module-granularity
-//! Pass 1) plus the clause-2 cross-rebind caveat.
+//! `check_merge_boolean` routes through the index's tier ladder, so
+//! the harness asserts **strict equality** on every
+//! precondition-passing query. Every comparison also asserts per-tier
+//! skip soundness against the ladder's decision so a ladder bug
+//! localizes to its tier. The deterministic fixtures pin the
+//! module-level gate's decisions where a class-level or
+//! constraining-only gate would differ (residual-pile merges, Pass-2
+//! TDZ, module-granularity Pass 1) plus the clause-2 cross-rebind
+//! case.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -46,7 +46,7 @@ fn module_id(index: usize) -> ModuleId {
 // Rebuilds the module-level partition from the kernel's *public*
 // class-membership surface plus the report's own residual flags, so
 // it shares no projection code with the kernel. Projection rules
-// (docs/design.md / plan §2):
+// (docs/design.md "Peel planner unification"):
 //   * a class maps to the residual module `logical(0)` iff it is the
 //     marked residual catch-all, or it is not anchored to a
 //     pre-existing module and every member owner is residual-destined
@@ -186,8 +186,8 @@ fn preconditions_pass(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
 
 /// The tier ladder must equal the reference predicate on EVERY query,
 /// and each deciding tier must be certified by the reference shape its
-/// skip-condition theorem names (plan §7.1 tier-skip soundness), so a
-/// ladder bug localizes to its tier.
+/// skip-condition theorem names (tier-skip soundness), so a ladder
+/// bug localizes to its tier.
 fn assert_ladder_matches_reference(
     c1: ClassId,
     c2: ClassId,
@@ -270,10 +270,9 @@ fn compare_gate_to_reference(
 }
 
 // ---------------------------------------------------------------------
-// Deterministic fixtures pinning the semantic fixes the §8 PR 4
-// cutover landed. Pre-cutover, each was a cataloged divergence of the
-// class-level gate; post-cutover the gate equals the reference and
-// each fixture pins the decision's direction.
+// Deterministic fixtures pinning the direction of the gate's decision
+// on shapes where a class-level or constraining-only gate would
+// differ from the reference.
 // ---------------------------------------------------------------------
 
 /// Sanity anchor: on a clean acyclic shape the gate and the reference
@@ -314,10 +313,9 @@ fn gate_matches_reference_on_clean_chain() {
     }
 }
 
-/// Plan §2's atomic-unit anomaly, fixed: merging two members of a
-/// residual-pile constraining 3-cycle is a delta-free no-op for the
-/// module-level predicate and must be accepted. The deleted
-/// class-level gate over-rejected it.
+/// Merging two members of a residual-pile constraining 3-cycle is a
+/// delta-free no-op for the module-level predicate and must be
+/// accepted (a class-level cycle check would reject it).
 #[test]
 fn gate_accepts_residual_pile_cycle_merge() {
     let a = residual_owner("owner:a", 1, &["BindingA"], 5);
@@ -349,9 +347,9 @@ fn gate_accepts_residual_pile_cycle_merge() {
     );
 }
 
-/// Plan §1 item 1, fixed: a merge that closes an asymmetric I-SCC
-/// whose constraining pair TDZs is rejected at the merge (tier 3,
-/// `EsmEvaluationTdz`). The deleted hot gate was Pass-2-blind here.
+/// A merge that closes an asymmetric I-SCC whose constraining pair
+/// TDZs is rejected at the merge (tier 3, `EsmEvaluationTdz`); a
+/// Pass-1-only gate is blind to it.
 #[test]
 fn gate_rejects_pass2_tdz_merge() {
     let x = active_owner("owner:x", 1, &["BindingX"], 10, "ui/x");
@@ -383,11 +381,11 @@ fn gate_rejects_pass2_tdz_merge() {
     );
 }
 
-/// Plan §1 item 2, fixed: the class graph is finer than the module
-/// projection. `a → r1` and `r2 → b` involve two distinct residual
-/// classes, so promoting `b` into `ui/a` closes the module-level
-/// mutual cycle `M ↔ R` without any class-level cycle — invisible to
-/// the deleted class-granularity gate, rejected by tier 1.
+/// The class graph is finer than the module projection. `a → r1`
+/// and `r2 → b` involve two distinct residual classes, so promoting
+/// `b` into `ui/a` closes the module-level mutual cycle `M ↔ R`
+/// without any class-level cycle — invisible to a class-granularity
+/// gate, rejected by tier 1.
 #[test]
 fn gate_rejects_module_granularity_pass1_cycle() {
     let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
@@ -421,10 +419,9 @@ fn gate_rejects_module_granularity_pass1_cycle() {
     );
 }
 
-/// Clause-2 caveat to plan §3, fixed: a rebind between two
-/// residual-pile owners is intra-module pre-merge; promoting the
-/// writer's class into `ui/a` makes it a cross-module rebind, which
-/// tier 1 rejects. The deleted hot gate never checked rebinds.
+/// Clause 2: a rebind between two residual-pile owners is
+/// intra-module pre-merge; promoting the writer's class into `ui/a`
+/// makes it a cross-module rebind, which tier 1 rejects.
 #[test]
 fn gate_rejects_promotion_created_cross_rebind() {
     let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");

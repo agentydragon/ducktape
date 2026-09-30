@@ -22,7 +22,7 @@
 //! deciding whether a merge can be rendered as an extension or
 //! existing-module merge.
 //!
-//! ## The unified realizability gate (Track A)
+//! ## The realizability gate
 //!
 //! The kernel's cycle gate is the realizability primitive itself
 //! (`gate::check_realizability(&OwnerGraph, &Partition)` — the same
@@ -39,14 +39,15 @@
 //! kernel, and keeps a persistent `gate::RealizabilityIndex` in sync
 //! with its class projection.
 //!
-//! ## Cost of the unified gate
+//! ## Cost of the gate
 //!
 //! `check_realizability` is `O(|V| + |E|)` per call. The kernel's
 //! merge-candidate queries run per (c1, c2) pair, so a from-scratch
 //! implementation would cost `O(|V|² · |E|)` per planner round.
 //!
 //! Instead, every query routes through the index's tier ladder
-//! (`ladder_decision_after_moving_owners_touching`, plan §3): tier 0
+//! (`ladder_decision_after_moving_owners_touching`; docs/design.md
+//! "Cost and the tier ladder"): tier 0
 //! short-circuits delta-free moves, tiers 1–2 answer Pass 1 /
 //! Pass-2-vacuity from maintained `CondensationOrder` structures in
 //! `O(α)`–`O(|Δ|)`, and tier 3 runs the shared scoped
@@ -129,9 +130,8 @@ impl ContractRejected {
     }
 }
 
-/// Per-contraction rejection diagnostic emitted by `build_seed_quotient`.
-/// Stable JSON shape — `reports/tree/<chunk>/seed_rejections.json`
-/// consumers depend on field order.
+/// Per-contraction rejection diagnostic emitted by `build_seed_quotient`;
+/// serialized as the `seed_rejections` key of `modules propose` output.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SeedContractionRejected {
@@ -166,7 +166,7 @@ pub enum SeedContractionRejected {
         /// for non-cycle rejections (cap, residual stickiness).
         cycle: CycleEvidence,
     },
-    /// Track A: unrealizable SCC surfaced by the unified gate
+    /// Unrealizable SCC surfaced by the realizability gate
     /// (`gate::check_realizability`) on the **final** seed
     /// quotient. Catches asymmetric `(eager forward, lazy back)`
     /// I-cycles plus mutual constraining SCCs assembled across
@@ -217,9 +217,8 @@ struct ClassData {
 #[derive(Debug, Clone)]
 pub struct QuotientGraph {
     /// Typed IR reconstructed from the source report. Used by the
-    /// unified realizability gate
-    /// (`gate::check_realizability`). Stored once at
-    /// construction; never mutated.
+    /// realizability gate (`gate::check_realizability`). Stored once
+    /// at construction; never mutated.
     owner_graph: OwnerGraph,
     /// Owners whose `OwnerGraphNodeReport.destination.residual` is
     /// `true`. Set by `from_report` from the JSON wire flag (the
@@ -257,23 +256,19 @@ pub struct QuotientGraph {
     /// Cap on per-class combined lines. Exceeding this is a rejected
     /// merge.
     cap_lines: usize,
-    /// Unified class-level out-edge adjacency. Indexed by `ClassId.0`
+    /// Class-level out-edge adjacency. Indexed by `ClassId.0`
     /// (dense; dead classes have an empty map). For each source class
     /// `s`, `out_edges[s.0]` is a map from target class `t` to an
     /// `EdgeState` aggregating all underlying owner edges from members
     /// of `s` to members of `t`. Self-loops are filtered out at insert
-    /// time. Replaces the prior 7-way lockstep maintenance of
-    /// `class_out`, `class_edge_multiplicity`, `class_edge_weight`,
-    /// `class_weighted_out`, `class_weighted_edge_count`, and
-    /// `class_out_edge_count`.
+    /// time.
     out_edges: Vec<FxHashMap<ClassId, EdgeState>>,
     /// Back-pointer index for maintenance only. `in_neighbors[c.0]`
     /// holds every source class `s` such that
     /// `out_edges[s.0].contains_key(&c)`. Maintained in lockstep with
-    /// `out_edges` on every insert/relabel/remove. Replaces the prior
-    /// `class_in` + `class_weighted_in` pair (the constraining-only
-    /// `class_in` is recovered by filtering for sources with
-    /// `out_edges[s.0][&c].constraining_count > 0`).
+    /// `out_edges` on every insert/relabel/remove. The constraining-only
+    /// predecessors are the sources with
+    /// `out_edges[s.0][&c].constraining_count > 0`.
     in_neighbors: Vec<FxHashSet<ClassId>>,
     /// Persistent-state realizability index over `owner_graph`.
     /// Synced to the kernel's current class projection after every
@@ -282,7 +277,7 @@ pub struct QuotientGraph {
     /// `would_be_cycles_after_contract`) read it non-mutatingly via
     /// `verdict_after_moving_owners_touching` (all speculative moves
     /// are single-target). See the module-level docstring's "Cost of
-    /// the unified gate" section.
+    /// the gate" section.
     realizability_index: RealizabilityIndex,
     /// Cached `class_id -> module_id` mapping: the class projection
     /// the realizability index's partition holds. Maintained alongside
@@ -402,8 +397,8 @@ impl QuotientGraph {
     /// `merge_preserves_invariants`.
     ///
     /// The kernel also reconstructs the typed `OwnerGraph` IR via
-    /// `OwnerGraph::from_report` and stashes it for the unified
-    /// realizability gate. The reconstructed IR carries every edge
+    /// `OwnerGraph::from_report` and stashes it for the realizability
+    /// gate. The reconstructed IR carries every edge
     /// the report listed — constraining and non-constraining alike —
     /// so the gate sees the same I-graph the materializer does.
     ///
@@ -594,10 +589,6 @@ impl QuotientGraph {
     /// materialize owner-level evidence through the index's
     /// non-mutating overlay verdict — one entry point, two output
     /// shapes.
-    ///
-    /// The evidence shape (class IDs + owner ID strings) is
-    /// preserved from the pre-Track-A kernel for compatibility with
-    /// existing `SeedContractionRejected` JSON consumers.
     pub fn would_be_cycles_after_contract(
         &self,
         c1: ClassId,
@@ -751,8 +742,8 @@ impl QuotientGraph {
     /// `verdict_after_moving_owners_touching` overlay path: every
     /// delta moves owners into the single post-merge `ModuleId`, so
     /// the index's graphs are never mutated and only SCCs touching
-    /// the target module are read — the key cost saving on
-    /// gaffer-scale inputs.
+    /// the target module are read — the key cost saving on large
+    /// inputs.
     fn realizability_cycles_after_contract(&self, c1: ClassId, c2: ClassId) -> CycleEvidence {
         let (winner, loser) = if c1 < c2 { (c1, c2) } else { (c2, c1) };
         let (post_module, deltas) = self.compute_merge_deltas(winner, loser);
@@ -883,10 +874,6 @@ impl QuotientGraph {
         cycles.dedup();
         CycleEvidence { cycles }
     }
-
-    // ---------------------------------------------------------------
-    // Incremental class adjacency + cycle-cache maintenance.
-    // ---------------------------------------------------------------
 
     /// Rebuild class-level edge adjacency from scratch.
     /// O(|owner edges|). Called in `from_report`; merges use
@@ -1070,9 +1057,7 @@ impl QuotientGraph {
     /// `in_neighbors[loser.0]` and relabels each `(predecessor, loser)`
     /// to `(predecessor, winner)`. `EdgeState` carries the constraining
     /// and weighted counts together, so a single relabel pass updates
-    /// all bookkeeping atomically (the prior implementation split this
-    /// into `update_class_adjacency_after_merge` +
-    /// `relabel_weighted_edges_after_merge`).
+    /// all bookkeeping atomically.
     fn update_class_adjacency_after_merge(&mut self, winner: ClassId, loser: ClassId) {
         // Drain loser's outgoing edges. The slot is left empty so the
         // dead-class invariant holds.
@@ -1205,11 +1190,10 @@ impl QuotientGraph {
     }
 
     fn class_out_count(&self, c: ClassId) -> u64 {
-        // Sum of `weighted_count` across all out-edges. Matches the
-        // prior `class_out_edge_count[c]` invariant
-        // (= total owner edges originating in c's members and crossing
-        // class boundaries). Computed on demand; the per-class
-        // out-degree is small in practice.
+        // Sum of `weighted_count` across all out-edges: total owner
+        // edges originating in c's members and crossing class
+        // boundaries. Computed on demand; the per-class out-degree is
+        // small in practice.
         self.out_edges[c.0]
             .values()
             .map(|e| e.weighted_count as u64)
@@ -1226,14 +1210,11 @@ impl QuotientGraph {
     /// entries that are not already on the out-side are yielded.
     /// Per-element dedup is O(1) average via `FxHashMap::contains_key`.
     ///
-    /// **Constraining-only:** the unified `EdgeState` carries both
-    /// counts; this method filters by `constraining_count > 0` on the
-    /// out side and looks up the source's outbound `EdgeState` on the
-    /// in side. The prior 7-field implementation used
-    /// `class_out` + `class_in` (both constraining-only). Byte-
-    /// identical output depends on preserving this semantic — e.g.,
-    /// `mergeable_preconditions`' `module_neighbors` count
-    /// would otherwise pick up weighted-only neighbors and shift the
+    /// **Constraining-only:** `EdgeState` carries both counts; this
+    /// method filters by `constraining_count > 0` on the out side and
+    /// looks up the source's outbound `EdgeState` on the in side.
+    /// `mergeable_preconditions`' `module_neighbors` count would
+    /// otherwise pick up weighted-only neighbors and shift the
     /// "unambiguous extension target" verdict.
     fn class_neighbors(&self, c: ClassId) -> impl Iterator<Item = ClassId> + '_ {
         let out_map = &self.out_edges[c.0];
@@ -1271,12 +1252,10 @@ impl QuotientGraph {
 ///   2. One pre-existing-module class + one orphan residual class
 ///      (extend module A with an orphan); requires the orphan's
 ///      cross-edges to pre-existing modules to target exactly one
-///      module — the merge partner. The "unambiguous extension"
-///      check matches the
-///      `promote_anonymous_only_cell_to_extension` post-pass.
+///      module — the merge partner.
 ///
-/// Orphan↔orphan merges are NOT permitted by this gate: today's
-/// cell-discovery pass already closes residual atomic-DAG
+/// Orphan↔orphan merges are NOT permitted by this gate: seeding
+/// (`build_seed_quotient`, Pass 3) already closes residual atomic-DAG
 /// reachability into single classes, so any orphan↔orphan grouping
 /// that should happen is already represented as a single class
 /// pre-greedy. Allowing orphan↔orphan here would let greedy fuse
@@ -1576,11 +1555,7 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> [u8; 33] {
     // multi-module SCC of the maintained constraining condensation —
     // 1 otherwise. On realizable committed states (the normal
     // greedy regime) Pass 1 is clean, so no multi-module constraining
-    // SCC exists and the key is 1 for every pair — matching the
-    // deleted `cached_cycles` probe, which was empty on healthy
-    // corpora. On unrealizable seeds the ranking may drift from the
-    // (deliberately stale) cache the old probe read; accepted per the
-    // plan's open question 5.
+    // SCC exists and the key is 1 for every pair.
     let reduces = match (q.class_module_id.get(&low), q.class_module_id.get(&high)) {
         (Some(&m_low), Some(&m_high)) => q
             .realizability_index
@@ -1615,10 +1590,10 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> [u8; 33] {
 /// `SeedContractionRejected` diagnostic into the returned vec and the
 /// kernel continues with the remaining contractions.
 ///
-/// `canonical_order` matches the plan: atomic units by lowest
-/// `OwnerIdx` member (then unit id for ties); spec modules by module
-/// path lex (then module id for ties). Within a group, members merge
-/// into the lowest-`OwnerIdx` pivot in `OwnerIdx` order.
+/// Canonical order: atomic units by lowest `OwnerIdx` member (then
+/// unit id for ties); spec modules by module id lex. Within a group,
+/// members merge into the lowest-`OwnerIdx` pivot in `OwnerIdx`
+/// order.
 pub fn build_seed_quotient(
     report: &OwnerGraphReport,
     atomic_units: &[analysis::AtomicUnitReport],
@@ -1682,18 +1657,13 @@ pub fn build_seed_quotient(
     // ---- Pass 3: atomic-DAG reachability. For each atomic-DAG
     //      edge `u → v` whose target unit has any residual member,
     //      contract `class(rep(u))` with `class(rep(v))` through
-    //      the gated protocol. This replaces the old
-    //      cell-discovery path (atomic-DAG transitive closure +
-    //      overlap coalesce) by reading the same edge set, but
-    //      rejections fire at the per-edge
-    //      granularity instead of silently forming cyclic cells.
+    //      the gated protocol; rejections fire at the per-edge
+    //      granularity.
     //
     //      Overlap coalesce: when two edges `u₁ → v` and `u₂ → v`
     //      both contract into the same target class, the second
     //      contraction sees the merged class (because the kernel's
-    //      `class_of` is read after the first contract). The
-    //      effect equivalent to today's `coalesce_overlapping_sets`
-    //      falls out for free.
+    //      `class_of` is read after the first contract).
     //
     //      Iteration to fixed point: a single linear scan over
     //      atomic edges is enough for the success case (contractions
@@ -1800,7 +1770,7 @@ pub fn build_seed_quotient(
         }
     }
 
-    // ---- Post-seed: run the unified realizability gate once on the
+    // ---- Post-seed: run the realizability gate once on the
     //      assembled partition. Catches asymmetric I-cycles and mutual
     //      constraining cycles that no individual contraction created
     //      on its own, so `modules propose` and the materializer's
@@ -1874,18 +1844,6 @@ fn lowest_owner_idx<'a>(
 ) -> Option<OwnerIdx> {
     owner_ids.filter_map(|id| q.owner_idx_of(id)).min()
 }
-
-// ---------- Compile-time guarantee: no public refinement op exists ----------
-//
-// The kernel API exposes `contract`, `merge_preserves_invariants`,
-// `would_be_cycles_after_contract`, and accessor methods only. There
-// is no `split`, no `un_contract`, no `set_class`, no method that
-// takes `&mut self` other than `contract`. Adding one would have to be
-// done deliberately by editing this file, at which point the
-// reviewer's eye would catch it. This is the "easiest as a
-// compile-time guarantee (no public method exists)" approach the
-// plan calls for; the test `contract_never_un_contracts` in
-// `quotient_integration_test.rs` exercises the post-condition.
 
 /// Constructors and reference drivers the production pipeline never
 /// calls; the kernel's unit tests (`quotient_integration_test`,

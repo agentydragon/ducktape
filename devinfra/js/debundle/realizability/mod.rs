@@ -122,9 +122,7 @@ impl RealizabilityVerdict {
         self.unrealizable_sccs.is_empty() && self.cross_rebinds.is_empty()
     }
 
-    /// Modules participating in any unrealizable SCC. Convenience for
-    /// the proposer, which decodes the verdict against the candidate's
-    /// hypothetical destination.
+    /// Modules participating in any unrealizable SCC.
     pub fn modules_in_unrealizable_sccs(&self) -> BTreeSet<ModuleId> {
         let mut out = BTreeSet::new();
         for scc in &self.unrealizable_sccs {
@@ -175,22 +173,16 @@ pub fn check_realizability(
     // also satisfies `constrains_init_order()` (lazy_use edges are
     // dropped at the helper); the gate's Pass-1 constraining SCC
     // search and Pass-2 simulator therefore run over the SAME
-    // adjacency, eliminating the historical drift between the two
-    // views.
+    // adjacency.
     let canonical = chunk_constraining_module_edges(owner_graph, partition);
     if canonical.edges.is_empty() {
         return verdict;
     }
 
-    // Pass 1: Tarjan over the constraining-edge subgraph — the
-    // historical relaxed clause-3 rule. Catches **mutual**
-    // constraining cycles (both sides eager-read each other; no
-    // source order can satisfy both).
-    //
-    // Under the unification, the canonical edge set IS the
-    // constraining set, so Pass 1's SCC search is also the
-    // I-graph SCC search. Pass 2 below applies the simulator only
-    // when an SCC hasn't already been flagged here.
+    // Pass 1: Tarjan over the constraining-edge subgraph. Catches
+    // **mutual** constraining cycles (both sides eager-read each
+    // other; no source order can satisfy both). Pass 2 below applies
+    // the simulator only to SCCs not already flagged here.
     let mut con_graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
     for (from, to) in canonical.pairs() {
         con_graph.add_edge(from, to, ());
@@ -411,7 +403,7 @@ impl RealizabilityIndex {
     /// Verdict filtered to SCCs and cross-rebinds touching `module`.
     /// Candidate evaluation uses this for the fresh hypothetical
     /// destination: unrelated pre-existing bad SCCs are intentionally
-    /// ignored, matching the previous full-verdict-then-filter logic.
+    /// ignored.
     pub fn verdict_touching(&self, module: ModuleId) -> RealizabilityVerdict {
         self.quotient.verdict_touching(module)
     }
@@ -432,9 +424,9 @@ impl RealizabilityIndex {
             .overlay_for_move(owner_graph, &self.partition, owners, to);
         let verdict = self.quotient.verdict_with_overlay_touching(to, &overlay);
         if gate_oracle_enabled() {
-            // Oracle mode (plan §7.2): the boolean tier ladder must
-            // agree with the evidence-producing verdict on every
-            // diagnostic-path query.
+            // Oracle mode: the boolean tier ladder must agree with
+            // the evidence-producing verdict on every diagnostic-path
+            // query.
             let decision = self.quotient.ladder_decide(to, &overlay);
             assert_eq!(
                 decision.accepts(),
@@ -481,9 +473,7 @@ impl RealizabilityIndex {
     }
 
     /// Boolean form of
-    /// [`Self::ladder_decision_after_moving_owners_touching`] — the
-    /// gate-ladder entry point the kernel's `check_merge_boolean`
-    /// routes through (via `QuotientGraph::ladder_decision_for_merge`).
+    /// [`Self::ladder_decision_after_moving_owners_touching`].
     pub fn would_remain_realizable_after_moving_owners_touching(
         &self,
         owner_graph: &OwnerGraph,
@@ -503,8 +493,8 @@ impl RealizabilityIndex {
     }
 }
 
-/// One-time cached `DEBUNDLE_GATE_ORACLE` probe (plan §7.2): when set,
-/// every ladder query cross-checks against the reference predicate and
+/// One-time cached `DEBUNDLE_GATE_ORACLE` probe: when set, every
+/// ladder query cross-checks against the reference predicate and
 /// panics on divergence. Off by default — the reference is
 /// `O(V + E)` per query.
 fn gate_oracle_enabled() -> bool {

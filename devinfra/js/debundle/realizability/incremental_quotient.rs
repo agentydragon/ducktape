@@ -1,6 +1,6 @@
 //! Incremental quotient maintenance: `PartitionDelta`, the
 //! `QuotientOverlay` scratch layer, and the `IncrementalQuotient` the
-//! `RealizabilityIndex` queries. Split from `realizability/mod.rs`.
+//! `RealizabilityIndex` queries.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -314,11 +314,8 @@ impl<'a> OverlayGraphView<'a> {
     ) -> BTreeSet<ModuleId> {
         let mut seen = BTreeSet::new();
         let mut stack = vec![start];
-        // Hoist these match arms out of the inner loop to avoid the
-        // O(|stack|) dispatch and the per-call BTreeSet allocation in
-        // the previous `neighbors()` helper. The `seen` set provides
-        // dedup between base/overlay edges, so we can iterate both
-        // streams directly without a scratch set.
+        // The `seen` set provides dedup between base/overlay edges, so
+        // both streams are iterated directly without a scratch set.
         while let Some(node) = stack.pop() {
             if !seen.insert(node) {
                 continue;
@@ -438,8 +435,8 @@ pub(super) struct IncrementalQuotient {
     /// Lazily-computed snapshot of the constraining pairs set
     /// (`constraining_buckets.keys()`). See `ConstrainingPairs`.
     pub(super) cached_base_constraining_pairs: RefCell<Option<ConstrainingPairs>>,
-    /// Tier-1 structure of the gate ladder (plan §3/§4): SCC
-    /// condensation order maintained over `constraining_graph`.
+    /// Tier-1 structure of the gate ladder: SCC condensation order
+    /// maintained over `constraining_graph`.
     /// Updated in the same `add_current_edge` / `remove_current_edge`
     /// funnel that maintains the graph. `RefCell` because queries need
     /// `&mut` (path halving, lazy rebuild) while the verdict/ladder
@@ -928,8 +925,7 @@ impl IncrementalQuotient {
 
         // Tier 2: Pass-2 vacuity on the I-condensation. Overlay
         // removals inside a multi-module I-SCC route through the
-        // exact bidirectional fallback inside `would_join_multi_scc`
-        // (plan §3, tier-2 exactness caveat).
+        // exact bidirectional fallback inside `would_join_multi_scc`.
         if !self
             .i_order
             .borrow_mut()
@@ -1028,8 +1024,7 @@ impl IncrementalQuotient {
     /// `base_i_successors()` / `base_constraining_pairs()` — the
     /// shared caches refreshed on the next mutation. The overlay
     /// case applies the overlay's small `i_delta` / constraining
-    /// edits to a cloned base, which is `O(|overlay|)` instead of the
-    /// previous `O(|base_edges|)` per call.
+    /// edits to a cloned base, which is `O(|overlay|)` per call.
     pub(super) fn effective_simulator_inputs(
         &self,
         overlay: Option<&QuotientOverlay>,

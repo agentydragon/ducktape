@@ -19,9 +19,9 @@
 //! ## Renderer over `QuotientGraph`
 //!
 //! The quotient-contraction proposer (documented in
-//! `devinfra/js/debundle/docs/peel_proposer.md`) unifies cell
-//! discovery and seed-quotient construction into a single, gated
-//! contraction protocol. The factorize pipeline is:
+//! `devinfra/js/debundle/docs/peel_proposer.md`) builds every proposal
+//! through a single, gated contraction protocol. The factorize
+//! pipeline is:
 //!
 //!   1. `build_seed_quotient` — atomic-unit + spec-module +
 //!      atomic-DAG-reachability contractions, each gated by
@@ -34,9 +34,8 @@
 //!   3. `emit_proposals` — walks the surviving classes and
 //!      materializes each as a `FactorizeProposal`.
 //!
-//! The historical renderer used a parallel cell IR. That IR is gone;
-//! the quotient is now the single source of truth for "which owners
-//! are in which proposed class."
+//! The quotient is the single source of truth for "which owners are
+//! in which proposed class."
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -219,10 +218,8 @@ pub enum FactorizeDiagnosticReason {
 }
 
 /// A class the factorizer cannot turn into a proposal. `reason` is
-/// the discriminator; there is deliberately no `status` field — the
-/// old one was a write-only constant that paired
-/// `BlockedResidualDependency` with every reason, including
-/// `ExceedsSizeCap`, and nothing read it.
+/// the discriminator; there is deliberately no `status` field, which
+/// would be a write-only constant no reader consults.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FactorizeDiagnosticReport {
     pub diagnostic_id: String,
@@ -339,10 +336,9 @@ fn factorize_with_context(
     // - internal (same class, residual-only)
     // - inter-residual (different non-pre-existing-module classes)
     // - residual → pre-existing-module class
-    // Edges originating from non-residual owners are skipped (the
-    // edge-accounting surface mirrors today's cell-edge-accounting
-    // semantics; non-residual edges are part of the spec module's
-    // internal initialization, not relevant to peel proposals).
+    // Edges originating from non-residual owners are skipped: they are
+    // part of the spec module's internal initialization, not relevant
+    // to peel proposals.
     let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
     let mut edges_to_active: Vec<(usize, ModulePath)> = Vec::new();
     for edge in &graph.edges {
@@ -578,9 +574,7 @@ fn emit_proposals(
     }
 
     // Bucket every residual / active edge by source candidate in ONE
-    // pass. The previous shape re-scanned the full edge lists once per
-    // candidate (`O(candidates × edges)`), which dominated on large
-    // graphs.
+    // pass (`O(edges)`, not `O(candidates × edges)`).
     let mut edge_stats: Vec<CandidateEdgeStats> = candidate_classes
         .iter()
         .map(|_| CandidateEdgeStats::default())
@@ -1417,11 +1411,9 @@ mod tests {
         // `a` resolves its identity via an active claim
         // (`domains/system/ids`); owner `b` has no claim and resolves
         // via the module table. Both routes yield the one canonical
-        // `ModulePath`, so the class collapses to a single label and
-        // emits NO `merge_into` self-merge. (The former two-spelling
-        // bug — a chunk-prefixed `<chunk>::path` vs the clean path —
-        // is now unrepresentable: the wire carries one interned key
-        // and the table holds one canonical path.)
+        // `ModulePath` (the wire carries one interned key and the table
+        // holds one canonical path), so the class collapses to a single
+        // label and emits NO `merge_into` self-merge.
         let dest = module_ref("domains/system/ids");
         let a = owner("a", 1, &["a"], 10, dest.clone());
         let b = owner("b", 2, &["b"], 10, dest.clone());
@@ -1451,10 +1443,9 @@ mod tests {
         // version-skewed `owner_graph.json` deserialized from disk by
         // `analyze_peel_factorize`. `is_residual` returns false for an
         // unknown key, so the owner survives the residual filter and
-        // reaches `active_module_label` — which used to `panic!`. The
-        // proposer must instead surface a clean `Err` so the CLI
-        // (`debundle modules propose`) reports it through `anyhow`
-        // rather than aborting.
+        // reaches `active_module_label`. The proposer must surface a
+        // clean `Err` (not panic) so the CLI (`debundle modules
+        // propose`) reports it through `anyhow` rather than aborting.
         let a = owner("a", 1, &["a"], 10, module_ref("features/foo"));
         let mut graph = graph_of(
             vec![a.clone()],

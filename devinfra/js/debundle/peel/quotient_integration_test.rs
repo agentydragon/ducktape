@@ -183,18 +183,15 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
 // ---------- Gate-ladder pinning tests. ----------
 //
 // These pin the module-level gate predicate that `check_merge_boolean`
-// routes through. The third historical case — preservation of
-// `seed_skips_unrealizable_spec_module_contraction_and_reports` —
-// is the existing test above.
+// routes through.
 
-/// §2's atomic-unit anomaly: a 3-owner atomic unit whose members form
-/// a constraining cycle `a → b → c → a` exists precisely because its
-/// members MUST co-locate, and the module-level predicate accepts the
-/// contractions (all three owners project to the residual module, so
-/// every merge is a delta-free no-op). The deleted class-level gate
-/// rejected them: the class graph was cyclic from construction, the
-/// cone-DFS fallback found the pre-existing (transient) path
-/// `b → c → a`, and the unit could not seed.
+/// A 3-owner atomic unit whose members form a constraining cycle
+/// `a → b → c → a` exists precisely because its members MUST
+/// co-locate, and the module-level predicate accepts the contractions
+/// (all three owners project to the residual module, so every merge
+/// is a delta-free no-op). A class-level cycle check would reject
+/// them — the class graph is cyclic from construction — and the unit
+/// could not seed.
 #[test]
 fn seed_co_locates_constraining_cycle_atomic_unit() {
     let a = residual_owner("owner:a", 1, &["BindingA"], 5);
@@ -227,13 +224,11 @@ fn seed_co_locates_constraining_cycle_atomic_unit() {
     assert_eq!(q.class_of(b_idx), q.class_of(c_idx));
 }
 
-/// §1's Pass-2 blindness: a merge that closes an asymmetric I-SCC
-/// (eager forward, lazy back) where the `EsmEvaluationSimulator`
-/// proves TDZ must be rejected AT THE MERGE, with
-/// `EsmEvaluationTdz`-backed evidence. The deleted hot gate saw only
-/// constraining class edges, accepted, and committed; the only
-/// backstop was `build_seed_quotient`'s post-seed
-/// `PostSeedUnrealizableScc` report, which does not undo the merge.
+/// A merge that closes an asymmetric I-SCC (eager forward, lazy
+/// back) where the `EsmEvaluationSimulator` proves TDZ must be
+/// rejected AT THE MERGE, with `EsmEvaluationTdz`-backed evidence;
+/// `build_seed_quotient`'s post-seed `PostSeedUnrealizableScc` report
+/// is only a backstop and does not undo the merge.
 ///
 /// Shape: pre-existing module `ui/x` = {x}; residual-pile owners `r`
 /// (stays) and `h` (the merge candidate). `x` eager-reads `r`'s
@@ -642,8 +637,7 @@ fn factorize_golden_output_unchanged() {
     //   - `closed_residual_unit`: two residual units coupled by
     //     a constraining edge.
     //   - `extend_active_via_anon`: an anonymous statement whose
-    //     unique constraining edge points at an active module
-    //     (promote_anonymous_only_cell_to_extension path).
+    //     unique constraining edge points at an active module.
     //
     // Snapshots live at `devinfra/js/debundle/peel/golden/`. To
     // regenerate (only after a deliberate, justified change), set
@@ -741,7 +735,7 @@ fn golden_extend_active_via_anon() -> OwnerGraphReport {
 //
 // The greedy operates over a quotient whose initial partition the
 // caller has chosen — typically the seed quotient (atomic units +
-// spec modules pre-contracted) augmented with whatever cells the
+// spec modules pre-contracted) augmented with whatever classes the
 // renderer has marked as pre-existing active modules. The kernel
 // distinguishes "pre-existing module" classes from "residual orphan"
 // classes via the `is_pre_existing_module` bit on each class; the
@@ -795,8 +789,8 @@ fn greedy_extends_existing_module_with_only_consumer() {
 fn greedy_absorbs_tiny_named_helper_into_unique_consumer() {
     // Pre-existing module M = {owner:a (BindingA)}. Residual
     // owner:helper (BindingHelper) is read only by owner:a via an
-    // EagerUse edge. Today's line-605 gate rejects this; greedy
-    // should absorb it.
+    // EagerUse edge. Its unique consumer is the only module
+    // neighbor, so greedy should absorb it.
     let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
     let helper = residual_owner("owner:helper", 2, &["BindingHelper"], 5);
     let report = graph_of(
@@ -1269,14 +1263,13 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
     );
 }
 
-// ---------- Cell discovery through seeding. ----------
+// ---------- Atomic-DAG reachability seeding. ----------
 //
-// The historical parallel cell IR is gone; the equivalent partition is
-// now produced by a third gated contraction pass in
-// `build_seed_quotient`. Well-formed input stays stable (locked down
-// by `factorize_golden_output_unchanged` above). Input whose
-// atomic-DAG reachability closure would form a cycle now gets a
-// `SeedContractionRejected::AtomicReachability` diagnostic
+// The third gated contraction pass in `build_seed_quotient` groups
+// residual owners by atomic-DAG reachability. Well-formed input stays
+// stable (locked down by `factorize_golden_output_unchanged` above).
+// Input whose atomic-DAG reachability closure would form a cycle gets
+// a `SeedContractionRejected::AtomicReachability` diagnostic
 // pinpointing the rejected pair.
 
 #[test]
@@ -1313,63 +1306,15 @@ fn unification_byte_identical_on_well_formed_inputs() {
 
 #[test]
 fn unification_rejects_cyclic_atomic_reachability_with_diagnostic() {
-    // Fixture: two residual atomic units mod_alpha = {Foo} and
-    // mod_beta = {Bar} with constraining edges in both directions
-    // (Foo reads Bar; Bar reads Foo). Atomic-DAG edges
-    // atomic:alpha → atomic:beta and atomic:beta → atomic:alpha.
-    // Today's cell discovery's transitive closure would coalesce
-    // {Foo, Bar} into a single residual cell (and the downstream
-    // realizability gate would then report the cycle as a generic
-    // SCC); the gated seeding's pass 3 contracts these one edge
-    // at a time. The first edge's contraction succeeds (singletons
-    // → one residual class). The second edge would re-encounter
-    // the already-contracted class (same-class) and skip silently
-    // — no diagnostic, no cycle. To create a *rejected* contraction
-    // diagnostic, we use three units with directional edges:
-    //   atomic:alpha (Foo, residual) → atomic:gamma (Helper, residual)
-    //   atomic:beta  (Bar, residual) → atomic:gamma (Helper, residual)
-    // and additionally
-    //   atomic:gamma → atomic:alpha (closing the cycle in atomic
-    //   graph through a third residual class).
-    // Pass 3 walks edges in id-lex order. After contracting
-    // alpha→gamma and beta→gamma, all three are one class. Then
-    // gamma→alpha is same-class. To force a *cyclic* rejection
-    // we need three classes where the third edge's contraction
-    // would create a multi-class SCC that wasn't there before.
+    // Pass 3 contracts atomic-DAG edges one at a time. A constraining
+    // cycle among residual owners alone yields no rejection: the
+    // contractions collapse it into one residual class and same-class
+    // edges are skipped silently.
     //
-    // Simpler fixture: three singleton residual units linked
-    // alpha → beta → gamma → alpha as atomic-DAG edges, and the
-    // underlying owner-graph constraining edges form a directed
-    // 3-cycle. Pass 3 walks edges by id; the first two merges
-    // collapse {alpha, beta, gamma} into one residual class, so
-    // the third edge is same-class and not rejected. The cyclic-
-    // rejection diagnostic only fires when the merge candidate's
-    // *post-merge* cycle set includes the merged endpoints — i.e.,
-    // when there's a path from `c_target` back to `c_source` that
-    // does NOT pass through `c_target` or `c_source`'s eventual
-    // partners.
-    //
-    // Concrete fixture used here: residual owners Foo, Bar, Helper.
-    //   - Foo reads Bar (constraining; Foo → Bar)
-    //   - Bar reads Helper (constraining; Bar → Helper)
-    //   - Helper reads Foo (constraining; Helper → Foo)
-    // Each owner is its own atomic unit. Atomic-DAG edges:
-    //   atomic:foo → atomic:bar
-    //   atomic:bar → atomic:helper
-    //   atomic:helper → atomic:foo
-    // Pass 3 walks edges in id-lex order (alphabetical on edge id).
-    // We name the edges so the first-to-process one creates a
-    // singleton-class merge between Bar and Helper (closing two of
-    // the three classes), then the second-to-process edge attempts
-    // foo↔(bar+helper) — which would create a self-loop on the
-    // merged class (not a multi-class SCC) and is therefore
-    // accepted. So a 3-cycle of three residual singletons just
-    // collapses into one class.
-    //
-    // The cyclic-rejection diagnostic fires when a *fourth*
-    // class — a pre-existing spec module — closes the cycle. So the
-    // fixture pins one binding to a pre-existing module, leaving
-    // two residuals that would close a cycle through the module:
+    // The cyclic-rejection diagnostic fires when a pre-existing spec
+    // module closes the cycle. So the fixture pins one binding to a
+    // spec module, leaving two residuals that would close a cycle
+    // through it:
     //   - Foo lives in spec module mod_alpha.
     //   - Bar, Helper are residual.
     //   - Bar reads Foo (Bar → Foo, constraining).
@@ -1531,11 +1476,11 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
     // We pin the externally-observable consequence: for every
     // `AtomicReachability`-rejected pair, the two pivot owners remain
     // in DISTINCT classes in the returned quotient. If the diagnostic
-    // walk had committed the rejected merge (the pre-fix `contract` in
-    // the diagnostics phase's stray `Ok(_)` arm), the pair's owners
-    // would share a class — exactly the corruption the read-only
-    // predicates (`check_merge_preconditions` /
-    // `would_be_cycles_after_contract`) prevent.
+    // walk had committed the rejected merge (a stray `contract` in the
+    // diagnostics phase), the pair's owners would share a class —
+    // exactly the corruption the read-only predicates
+    // (`check_merge_preconditions` / `would_be_cycles_after_contract`)
+    // prevent.
     //
     // Fixture mirrors the cycle in
     // `unification_rejects_cyclic_atomic_reachability_with_diagnostic`:
@@ -1617,16 +1562,16 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
     }
 }
 
-// ---------- Track A unification: planner gate ≡ materializer gate. ----------
+// ---------- Planner gate ≡ materializer gate. ----------
 //
 // The peel planner's seed-quotient cycle gate must produce the same
 // realizability verdict as the materializer's `check_realizability`
-// run on the projected partition. Before unification (pre-Track-A),
-// the planner reimplemented Tarjan over only constraining edges in
-// the JSON report, missing asymmetric I-cycles the materializer
-// catches via its `EsmEvaluationSimulator` pass. The tests below pin
-// the unified behavior: every planner verdict must match the
-// materializer verdict on the same input.
+// run on the projected partition. A planner that reimplemented
+// Tarjan over only constraining edges in the JSON report would miss
+// asymmetric I-cycles the materializer catches via its
+// `EsmEvaluationSimulator` pass. The tests below pin the agreement:
+// every planner verdict must match the materializer verdict on the
+// same input.
 
 /// Build an `OwnerGraph` + `Partition` from a report + spec module
 /// list. The partition assigns each owner to the module derived from
@@ -1693,9 +1638,9 @@ fn planner_seed_rejection_matches_materializer_verdict_on_asymmetric_cycle() {
     // mod_dependent is entered → `cross_value`'s eager read of
     // `dep_value` TDZs while mod_dep is mid-evaluation.
     //
-    // Materializer flags the SCC as unrealizable; the buggy
-    // planner sees no constraining-only cycle and reports zero
-    // rejections.
+    // Materializer flags the SCC as unrealizable; a planner that
+    // looked only at constraining edges would see no cycle and
+    // report zero rejections.
     let entry = residual_owner("owner:entry", 0, &[], 1);
     let dep_value = active_owner("owner:dep_value", 1, &["BindingDepValue"], 5, "mod_dep");
     let lazy_reader = active_owner("owner:lazy_reader", 2, &["BindingLazyReader"], 5, "mod_dep");
@@ -1831,9 +1776,6 @@ fn planner_seed_rejection_matches_materializer_verdict_on_asymmetric_cycle() {
     // surfaces only if the planner *also* walks the post-seed
     // partition and reports cycles, OR if the kernel's contract gate
     // refuses some upstream merge. Either is acceptable evidence.
-    //
-    // Until Track A lands, the planner sees no `LazyUse` back-edge
-    // (it filters non-constraining edges) and the verdicts diverge.
     assert_eq!(
         materializer_unrealizable, planner_has_rejection,
         "planner and materializer disagree on asymmetric I-cycle fixture:\n\
@@ -1855,8 +1797,7 @@ fn planner_and_materializer_agree_on_corpus() {
     //   - a single asymmetric I-cycle (unrealizable);
     //   - a mutual constraining cycle (unrealizable);
     //   - a pair of modules with only lazy edges between them
-    //     (realizable; planner used to over-reject when treated
-    //     differently from materializer).
+    //     (realizable).
 
     struct Case {
         label: &'static str,

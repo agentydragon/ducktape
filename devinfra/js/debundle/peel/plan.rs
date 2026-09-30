@@ -1145,12 +1145,12 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
 /// Map each declared (minified) binding name to its owner id.
 ///
 /// A binding name declared by two distinct owners would make every
-/// binding-keyed claim ambiguous; the previous shape silently kept
-/// the last writer. Owner graphs are built from per-chunk top-level
-/// scopes, where binding ids are unique — a duplicate means a
-/// malformed/merged report, so it surfaces as an error (mirroring
+/// binding-keyed claim ambiguous. Owner graphs are built from
+/// per-chunk top-level scopes, where binding ids are unique — a
+/// duplicate means a malformed/merged report, so it surfaces as an
+/// error rather than silently keeping the last writer. This mirrors
 /// `resolve_binding_owners`, which returns all matches so callers can
-/// see the ambiguity).
+/// see the ambiguity.
 fn binding_to_owner(graph: &OwnerGraphReport) -> Result<BTreeMap<String, String>> {
     let mut out = BTreeMap::new();
     for node in &graph.nodes {

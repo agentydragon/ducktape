@@ -1,13 +1,12 @@
 //! Incremental SCC-condensation order: the tier-1/2 structure of the
-//! incremental-gate unification design.
+//! gate ladder (docs/design.md "Cost and the tier ladder", "Why not
+//! Pearce–Kelly verbatim").
 //!
-//! Generalizes Pearce–Kelly `TopoOrder` from "topological order over a
-//! DAG, degrade to `!is_dag` when cycles appear" to "topological order over the
-//! **condensation** of an arbitrary directed graph": a union-find
-//! tracks SCC membership, a PK rank order is maintained over the
-//! condensation DAG, and cycles are **unioned** instead of degrading
-//! the order — condensations are DAGs by construction, so the kernel's
-//! `is_dag` escape hatch and cone-DFS fallback have no analogue here.
+//! A Pearce–Kelly topological order over the **condensation** of an
+//! arbitrary directed graph: a union-find tracks SCC membership, a PK
+//! rank order is maintained over the condensation DAG, and cycles are
+//! **unioned** rather than degrading the order — condensations are
+//! DAGs by construction.
 //!
 //! ## Node model
 //!
@@ -355,7 +354,7 @@ where
         let window_set: BTreeSet<u32> = window.iter().copied().collect();
         // Window-internal condensation edges, derived by mapping
         // member-level base edges through the SCC union-find — no
-        // separate condensation edge store exists (plan §4).
+        // separate condensation edge store exists.
         let mut edges: BTreeSet<(u32, u32)> = BTreeSet::new();
         for &r in &window {
             for member_pos in 0..self.scc_members[r as usize].len() {

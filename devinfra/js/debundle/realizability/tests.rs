@@ -233,13 +233,11 @@ fn mediator_only_entrant_into_asymmetric_cycle_is_rescued_by_entry_imports() {
     );
 }
 
-/// Regression test for the gaffer over-rejection. Asymmetric
-/// I-cycle where residual's own statements reach the SCC only
-/// via the constraining edge's **target** (the dependency), not
-/// the source (the dependent).
+/// Asymmetric I-cycle where residual's own statements reach the
+/// SCC only via the constraining edge's **target** (the
+/// dependency), not the source (the dependent).
 ///
-/// Shape (gaffer's `domains/system/ids` ↔ `domains/system/schemas`
-/// minimal repro):
+/// Shape:
 ///   - `mod_schemas` owns `schemas_target` (the eager-read target)
 ///     and `lazy_back` (whose body lazily references `ids_val`).
 ///   - `mod_ids` owns `ids_val`, whose initializer eager-reads
@@ -255,17 +253,15 @@ fn mediator_only_entrant_into_asymmetric_cycle_is_rescued_by_entry_imports() {
 /// I-graph SCC: `{mod_ids, mod_schemas}`. Residual is NOT in the
 /// SCC; residual's statements only reference `mod_schemas`.
 ///
-/// The historical over-rejection: the simulator modeled residual's
-/// DFS fan-out as only the modules residual's statements
-/// reference, entered the SCC at `mod_schemas`, followed the
-/// emitted lazy-read import back to `mod_ids`, and flagged
+/// A simulator that fanned residual out only to the modules its
+/// statements reference would enter the SCC at `mod_schemas`,
+/// follow the emitted lazy-read import back to `mod_ids`, and flag
 /// `post_order[mod_schemas] > post_order[mod_ids]` as TDZ. The
-/// emitted entry, however, has always imported every plan —
-/// `mod_ids` included — in Lemma 2's source-import order, which
-/// puts the dependent `mod_ids` first; the runtime DFS unwinds
-/// through `mod_schemas` and evaluates it before `mod_ids`. The
-/// simulator now models the entry's universal imports and
-/// accepts.
+/// emitted entry imports every plan — `mod_ids` included — in
+/// Lemma 2's source-import order, which puts the dependent
+/// `mod_ids` first; the runtime DFS unwinds through `mod_schemas`
+/// and evaluates it before `mod_ids`. The simulator models the
+/// entry's universal imports and accepts.
 #[test]
 fn pass_two_simulator_models_entry_universal_imports_for_runtime_dfs() {
     // owner_0: const schemas_target = "v"     (mod_schemas)
@@ -286,7 +282,7 @@ fn pass_two_simulator_models_entry_universal_imports_for_runtime_dfs() {
     let verdict = check_realizability(&owner_graph, &partition);
     assert!(
         verdict.is_realizable(),
-        "gaffer-shape asymmetric cycle must accept: entry imports \
+        "asymmetric cycle must accept: entry imports \
          every plan in Lemma 2's source-import order, so the runtime \
          DFS enters the SCC at mod_ids (the dependent) and evaluates \
          mod_schemas first. verdict: {verdict:#?}",
@@ -294,7 +290,7 @@ fn pass_two_simulator_models_entry_universal_imports_for_runtime_dfs() {
 }
 
 /// Differential pin: the simulator's predicted Phase-2 post-order
-/// for the gaffer shape equals the evaluation order Node produces
+/// for the same shape equals the evaluation order Node produces
 /// for the emitted tree. The Node side is pinned by
 /// `e2e/asymmetric_non_residual_cycle_test::`
 /// `dependency_only_residual_reference_into_asymmetric_cycle_runs_under_node`

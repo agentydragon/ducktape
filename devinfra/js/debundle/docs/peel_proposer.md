@@ -19,8 +19,8 @@ The proposer is a renderer over `peel::quotient::QuotientGraph`:
 3. `emit_proposals` walks the surviving quotient classes and renders
    `FactorizeProposal` rows plus diagnostics.
 
-The old parallel cell IR is gone. `QuotientGraph` is the single source
-of truth for which owners are in each proposed class.
+`QuotientGraph` is the single source of truth for which owners are in
+each proposed class.
 
 ## Seed Rejections
 
@@ -47,7 +47,7 @@ landed directly.
 
 Production greedy uses a lazy priority queue. The queue is initialized
 once with cross-class candidate pairs, ordered by the same deterministic
-sort key as the former full-scan driver. Pop-time checks discard stale
+sort key as the full-scan reference driver. Pop-time checks discard stale
 classes, re-evaluate mergeability, and re-rank candidates whose coupling
 score has drifted. After a successful contraction, the winner's current
 neighborhood is pushed back into the queue.
