@@ -635,21 +635,14 @@ fn overlay_is_simulator_noop(overlay: Option<&QuotientOverlay>) -> bool {
         && overlay.constraining_removed.is_empty()
 }
 
+/// Edges whose gate-view contribution can change when `owners` move:
+/// those incident to a moved owner. The gate view reads only the
+/// endpoints' modules and the residual, never a promoted edge's callee.
 fn impacted_owner_edges(owner_graph: &OwnerGraph, owners: &[OwnerId]) -> Vec<OwnerEdgeId> {
     let mut impacted = BTreeSet::<OwnerEdgeId>::new();
     for owner in owners {
         impacted.extend(owner_graph.out_edges_of(*owner).iter().copied());
         impacted.extend(owner_graph.in_edges_of(*owner).iter().copied());
-        // Edges whose [`EdgeRole::PromotedAtInit`] callee_owner is in
-        // the move set — `EdgeRole::is_cross_module_promotion`'s
-        // verdict depends on `partition.of(callee_owner)`, so moving
-        // a callee owner can flip an edge's contribution between
-        // "skipped (intra-callee-module)" and "counted
-        // (cross-callee-module)" without the callee owner appearing
-        // on `from`/`to`.
-        // Resolved via the precomputed `callee_edges` CSR instead of
-        // a per-call full-edge-list scan.
-        impacted.extend(owner_graph.callee_edges_of(*owner).iter().copied());
     }
     impacted.into_iter().collect()
 }
