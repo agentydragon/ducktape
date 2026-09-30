@@ -3,15 +3,8 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
-    name = "flux_kustomizations",
-    srcs = ["flux_kustomizations.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "@pypi//cdk8s",
-    ],
+    name = "counters",
+    srcs = ["counters.py"],
 )
 
 py_library(
@@ -19,7 +12,8 @@ py_library(
     srcs = ["exporter.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:generation",
+        ":counters",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",

@@ -1,20 +1,10 @@
-"""AIQuota's ClickHouse datasource and history dashboard in the monitoring Grafana.
-
-Hand-written beside the generated output: `dashboard.json` (rendered into the
-`aiquota-history-dashboard` ConfigMap by the directory's `configMapGenerator`),
-`kustomizeconfig` (which points the dashboard's `configMapRef` at the generated,
-hash-suffixed ConfigMap name) and the `kustomization.yaml` that wires both.
-"""
+"""AIQuota's ClickHouse datasource and history dashboard (`dashboard.json` beside this
+module) in the monitoring Grafana."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
-from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboardSpecConfigMapRef,
-    GrafanaDashboardSpecInstanceSelector,
-)
+from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecInstanceSelector
 from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecDatasource,
     GrafanaDatasourceSpecInstanceSelector,
@@ -24,14 +14,18 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
 )
 
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.grafana_dashboards import DashboardFile
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/grafana"
+OUTPUT_DIR = f"{GENERATED_ROOT}/grafana"
 _NAMESPACE = "monitoring"
 _INSTANCE_LABELS = {"dashboards": "grafana"}
+DASHBOARD = DashboardFile(
+    source="cluster/cdk8s/grafana/dashboard.json", config_map="aiquota-history-dashboard", namespace=_NAMESPACE
+)
 
 
 def chart(app: App) -> Chart:
@@ -77,10 +71,19 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="aiquota-history", namespace=_NAMESPACE),
         instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
         folder="Analytics",
-        config_map_ref=GrafanaDashboardSpecConfigMapRef(name="aiquota-history-dashboard", key="dashboard.json"),
+        config_map_ref=DASHBOARD.config_map_ref(),
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+def clickhouse_grafana(
+    flux_chart: Chart, directory: RenderedDirectory, grafana_operator: Kustomization
+) -> Kustomization:
+    return flux_kustomization(
+        flux_chart,
+        "clickhouse-grafana",
+        directory,
+        timeout="5m",
+        # The GrafanaDashboard and GrafanaDatasource CRDs.
+        depends_on=flux_kustomization_depends_on_many(grafana_operator),
+    )

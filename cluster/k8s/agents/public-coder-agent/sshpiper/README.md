@@ -2,7 +2,8 @@
 
 A terminating SSH bastion between the OpenClaw Agent Pod and its devbox VM
 (<../devbox/>), running [sshpiper](https://github.com/tg123/sshpiper) with the `kubernetes`
-plugin. Routes are `Pipe` resources; the CRD lives in <../../../sshpiper-crds/>.
+plugin. Routes are `Pipe` resources; the `sshpiper-crds` Kustomization applies the CRD
+(<../../../../cdk8s/sshpiper_crds/flux_kustomizations.py>).
 
 Same credential split as <../proxy/>, applied to SSH: the Agent authenticates here with a key
 that is worthless anywhere else, and this Pod holds the key that opens `coder@public-coder-devbox`.
@@ -80,5 +81,6 @@ container in the proxy Pod that holds the GitHub PAT and Console bearer.
 
 ## Bumping the image
 
-The image tag in `cluster/cdk8s/public_coder_sshpiper.py`, <../../../sshpiper-crds/gitrepository.yaml>'s upstream tag, and the
-`sshpiper_pipe_crd` `http_file` pin in the root `MODULE.bazel` must move together.
+The image tag in `cluster/cdk8s/public_coder_sshpiper.py`, the `sshpiper-source` tag in
+`cluster/cdk8s/flux_sources.py`, and the `sshpiper_pipe_crd` `http_file` URL and digest in the root
+`MODULE.bazel` must move together.

@@ -1,18 +1,12 @@
 """GitHub API rate-limit exporters for the human and agent accounts: the upstream REST
 exporter and our GraphQL one, their Services, ServiceMonitors, token ExternalSecrets and
-the Grafana dashboard.
+the Grafana dashboard (`dashboard.json` beside this module).
 
-Hand-written beside the generated output: `dashboard.json` (rendered into the
-`github-exporter-dashboard` ConfigMap by the directory's `configMapGenerator`),
-`kustomizeconfig` (which points the dashboard's `configMapRef` at the generated,
-hash-suffixed ConfigMap name), the `kustomization.yaml` that wires both, and
-`image-pins/`, whose Flux image-automation marker sets the GraphQL exporter's tag over
-the placeholder below.
+Hand-written beside the generated output: `image-pins/`, whose Flux image-automation marker
+sets the GraphQL exporter's tag over the placeholder below.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -21,10 +15,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboardSpecConfigMapRef,
-    GrafanaDashboardSpecInstanceSelector,
-)
+from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecInstanceSelector
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
@@ -33,7 +24,8 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s import external_creds, forgejo_images
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
@@ -52,6 +44,9 @@ _GRAPHQL_HTTP = Port(name="http", number=9172)
 # The tag is a placeholder: image-pins/kustomization.yaml sets the real one.
 _GRAPHQL_IMAGE = "git.allegedly.works/ducktape-ci/github-graphql-rate-exporter:unset"
 _TOKEN_DIR = "/var/run/secrets/github"
+DASHBOARD = DashboardFile(
+    source="cluster/cdk8s/github_exporter/dashboard.json", config_map="github-exporter-dashboard", namespace=_NAMESPACE
+)
 
 
 def _token_secret(account: str) -> str:
@@ -293,10 +288,31 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="github-exporter", namespace=_NAMESPACE),
         instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
         folder="GitHub",
-        config_map_ref=GrafanaDashboardSpecConfigMapRef(name="github-exporter-dashboard", key="dashboard.json"),
+        config_map_ref=DASHBOARD.config_map_ref(),
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+def github_exporter(
+    flux_chart: Chart,
+    directory: RenderedDirectory,
+    monitoring_namespace: Kustomization,
+    monitoring_crds: Kustomization,
+    external_secrets_operator: Kustomization,
+    grafana_operator: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        flux_chart,
+        "github-exporter",
+        directory,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(
+            monitoring_namespace,
+            # ServiceMonitor
+            monitoring_crds,
+            external_secrets_operator,
+            # GrafanaDashboard
+            grafana_operator,
+        ),
+        description="GitHub API rate-limit metrics for the human and agent accounts.",
+    )

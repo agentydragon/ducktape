@@ -17,6 +17,7 @@ from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFilters
 from cluster.cdk8s.authentik.app import SERVER
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 
@@ -29,8 +30,8 @@ _ROUTES = {
     "hubble-ui": "hubble.allegedly.works",
     # Alloy OTLP: external clients authenticate with a Bearer token at the outpost.
     "alloy-otlp": "alloy-otlp.allegedly.works",
-    "grocy-sf": "grocy-sf.allegedly.works",
-    "grocy-vallejo": "grocy-vallejo.allegedly.works",
+    "grocy-sf": grocy.hostname("sf"),
+    "grocy-vallejo": grocy.hostname("vallejo"),
     # ActivityWatch's read-only proxy.
     "activitywatch": "activitywatch.allegedly.works",
     # The OpenClaw mitmproxy traffic viewer (admin-only).

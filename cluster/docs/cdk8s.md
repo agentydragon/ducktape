@@ -5,9 +5,12 @@ Python cdk8s (`cluster/cdk8s/`) generates resources under two roots
 directory every file of which is generated lives under `cluster/generated`, a closed
 world: the parity test fails on any file there the generator does not write. A directory
 holding any hand-written file lives under `cluster/k8s`, its generated files beside the
-hand-written ones. A directory is never split across the roots, and never nested inside
-another Kustomization's path or artifact copy in the other root. The Flux
-Kustomization graph is one generated chart at `cluster/k8s/flux/kustomizations.k8s.yaml`;
+hand-written ones; the exception is an `image-pins` Component, which may be a
+`cluster/k8s` directory of its own that a generated directory includes across the roots
+([the mixed-directory rule](cdk8s_remainder.md#mixed-directory-layout)). A directory is
+never split across the roots, and never nested inside another Kustomization's path or
+artifact copy in the other root. The Flux Kustomization graph is one generated chart at
+`cluster/k8s/flux/kustomizations.k8s.yaml`;
 the neighboring `flux/kustomization.yaml` keeps bootstrap and source objects hand-written.
 Flux reads `devel` as it always has. Regenerate with `bb run //cluster/cdk8s:generate_manifests`
 (the binary writes into the checkout, so `bb run`, not `bbr run`);
@@ -60,8 +63,8 @@ Kustomization that owns it through `generation.write_namespace`.
 - Vendored and externally generated manifests: `flux/flux-system`, the agentplane CRDs
   (`bb run //agentplane/crds:generate_bin`), and the kustomizations that patch a remote
   release (`kubevirt/{operator,cdi-operator}`, `agents/agent-sandbox/controller`).
-- `configMapGenerator` inputs (Iron and app configs, SQL, blueprints, dashboard JSON),
-  and the `kustomization.yaml` that carries the generator where it is hand-written.
+- `configMapGenerator` inputs (Iron and app configs, SQL, blueprints), and the
+  `kustomization.yaml` that carries the generator where it is hand-written.
 - `image-pins/` Components and the ConfigMaps whose data carries a `$imagepolicy` marker
   (§ Live image automation).
 
@@ -102,8 +105,13 @@ A `configMapGenerator` input (`clickhouse/schema/schema.sql`)
 stays hand-written the same way: the generated `kustomization.yaml` carries the
 generator entry (`flux.ConfigMapArgs`), keeping kustomize's content-hash
 name suffix and reference rewriting, and the construct mounting it references the
-entry's `name`. Content rendered in Python goes into the same entry as `literals`
-(aiquota's `config.toml`).
+entry's `name`. The input may instead sit beside its generator module, which copies it
+into the output directory (`generation.copy_source_file`), so the directory can live
+under `cluster/generated` (the Grafana dashboards, `grafana_dashboards.py`). Content
+rendered in Python goes into the same entry as `literals` (aiquota's `config.toml`).
+Kustomize rewrites a generated name only into fields it knows; a custom resource's
+reference (`GrafanaDashboard.spec.configMapRef.name`) needs a `nameReference` transformer
+configuration listed under `configurations:`.
 
 ### `dependsOn` rationale
 

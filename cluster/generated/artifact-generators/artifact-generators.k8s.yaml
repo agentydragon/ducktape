@@ -121,8 +121,8 @@ spec:
       name: tofu-state-db
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/mcp-oauth-state/**"
-          to: "@artifact/cluster/k8s/mcp-oauth-state/"
+        - from: "@repo/cluster/generated/mcp-oauth-state/**"
+          to: "@artifact/cluster/generated/mcp-oauth-state/"
       name: mcp-oauth-state
       originRevision: "@repo"
     - copy:
@@ -191,8 +191,8 @@ spec:
       name: github-secrets-sync-secrets
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/monitoring/grafana-instance/**"
-          to: "@artifact/cluster/k8s/monitoring/grafana-instance/"
+        - from: "@repo/cluster/generated/monitoring/grafana-instance/**"
+          to: "@artifact/cluster/generated/monitoring/grafana-instance/"
       name: grafana-instance
       originRevision: "@repo"
     - copy:
@@ -236,8 +236,8 @@ spec:
       name: cdi
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/flux-image-automation-ghcr/**"
-          to: "@artifact/cluster/k8s/flux-image-automation-ghcr/"
+        - from: "@repo/cluster/generated/flux-image-automation-ghcr/**"
+          to: "@artifact/cluster/generated/flux-image-automation-ghcr/"
       name: flux-image-automation-ghcr
       originRevision: "@repo"
     - copy:
@@ -246,21 +246,21 @@ spec:
       name: grafana-operator
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/grocy/sf/app/**"
-          to: "@artifact/cluster/k8s/grocy/sf/app/"
-        - from: "@repo/cluster/k8s/grocy/sf/mcp/**"
-          to: "@artifact/cluster/k8s/grocy/sf/mcp/"
-        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
-          to: "@artifact/cluster/k8s/grocy/mcp-base/"
+        - from: "@repo/cluster/generated/grocy/sf/app/**"
+          to: "@artifact/cluster/generated/grocy/sf/app/"
+        - from: "@repo/cluster/generated/grocy/sf/mcp/**"
+          to: "@artifact/cluster/generated/grocy/sf/mcp/"
+        - from: "@repo/cluster/k8s/grocy/mcp-image-pins/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-image-pins/"
       name: grocy-sf
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/grocy/vallejo/app/**"
-          to: "@artifact/cluster/k8s/grocy/vallejo/app/"
-        - from: "@repo/cluster/k8s/grocy/vallejo/mcp/**"
-          to: "@artifact/cluster/k8s/grocy/vallejo/mcp/"
-        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
-          to: "@artifact/cluster/k8s/grocy/mcp-base/"
+        - from: "@repo/cluster/generated/grocy/vallejo/app/**"
+          to: "@artifact/cluster/generated/grocy/vallejo/app/"
+        - from: "@repo/cluster/generated/grocy/vallejo/mcp/**"
+          to: "@artifact/cluster/generated/grocy/vallejo/mcp/"
+        - from: "@repo/cluster/k8s/grocy/mcp-image-pins/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-image-pins/"
       name: grocy-vallejo
       originRevision: "@repo"
     - copy:
@@ -388,8 +388,8 @@ spec:
       name: aiquota
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/grafana/**"
-          to: "@artifact/cluster/k8s/grafana/"
+        - from: "@repo/cluster/generated/grafana/**"
+          to: "@artifact/cluster/generated/grafana/"
       name: clickhouse-grafana
       originRevision: "@repo"
     - copy:
@@ -428,8 +428,8 @@ spec:
       name: cpap-sync
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/dcgm-exporter/**"
-          to: "@artifact/cluster/k8s/dcgm-exporter/"
+        - from: "@repo/cluster/generated/dcgm-exporter/**"
+          to: "@artifact/cluster/generated/dcgm-exporter/"
       name: dcgm-exporter
       originRevision: "@repo"
     - copy:
@@ -468,8 +468,13 @@ spec:
       name: budget-namespace
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/gatus/**"
-          to: "@artifact/cluster/k8s/gatus/"
+        - from: "@repo/cluster/generated/gaffer-private-source/**"
+          to: "@artifact/cluster/generated/gaffer-private-source/"
+      name: gaffer-private-source
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gatus/**"
+          to: "@artifact/cluster/generated/gatus/"
       name: gatus
       originRevision: "@repo"
     - copy:
@@ -498,17 +503,21 @@ spec:
       name: google-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/grocy/sf/user-perms/**"
-          to: "@artifact/cluster/k8s/grocy/sf/user-perms/"
-        - from: "@repo/cluster/k8s/grocy/user-perms-base/**"
-          to: "@artifact/cluster/k8s/grocy/user-perms-base/"
+        - from: "@repo/cluster/generated/grocy/sf/user-perms/**"
+          to: "@artifact/cluster/generated/grocy/sf/user-perms/"
+        - from: "@repo/cluster/generated/grocy/user-perms-base/**"
+          to: "@artifact/cluster/generated/grocy/user-perms-base/"
+        - from: "@repo/cluster/k8s/grocy/user-perms-image-pins/**"
+          to: "@artifact/cluster/k8s/grocy/user-perms-image-pins/"
       name: grocy-sf-user-perms
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/grocy/vallejo/user-perms/**"
-          to: "@artifact/cluster/k8s/grocy/vallejo/user-perms/"
-        - from: "@repo/cluster/k8s/grocy/user-perms-base/**"
-          to: "@artifact/cluster/k8s/grocy/user-perms-base/"
+        - from: "@repo/cluster/generated/grocy/vallejo/user-perms/**"
+          to: "@artifact/cluster/generated/grocy/vallejo/user-perms/"
+        - from: "@repo/cluster/generated/grocy/user-perms-base/**"
+          to: "@artifact/cluster/generated/grocy/user-perms-base/"
+        - from: "@repo/cluster/k8s/grocy/user-perms-image-pins/**"
+          to: "@artifact/cluster/k8s/grocy/user-perms-image-pins/"
       name: grocy-vallejo-user-perms
       originRevision: "@repo"
     - copy:

@@ -10,15 +10,16 @@ description: >-
 # Grafana dashboards
 
 Use this skill for every new or changed dashboard under
-`cluster/k8s/monitoring/grafana-instance/`. The deliverable is a
+`cluster/cdk8s/monitoring/dashboards/`. The deliverable is a
 dashboard that renders real data in Grafana, not merely valid JSON or a query
 that works after an agent manually edits it.
 
-A new dashboard is three edits: the `<name>.json` file, its `configMapGenerator`
-entry in that directory's `kustomization.yaml`, and a `_dashboard(chart, "<name>",
-config_map=True, ...)` line in `_dashboards` of
-`cluster/cdk8s/monitoring/grafana_instance.py`, which renders the `GrafanaDashboard`;
-then `bb run //cluster/cdk8s:generate_manifests`.
+A new dashboard is two edits: the `<name>.json` file in that directory, and its line in
+`_FILE_DASHBOARDS` of `cluster/cdk8s/monitoring/grafana_instance.py`, mapping each of its
+datasource inputs to a datasource name. `bb run //cluster/cdk8s:generate_manifests` then
+writes its `GrafanaDashboard` and `configMapGenerator` entry. A component's own dashboard
+sits beside the generator module that deploys it, declared as that module's `DASHBOARD`
+(`cluster/cdk8s/grafana/dashboard.json`, `cluster/cdk8s/github_exporter/dashboard.json`).
 
 ## Credential consent
 
@@ -41,7 +42,7 @@ Run the packaged verifier from the repository root:
 
 ```bash
 bb run //cluster/skills/grafana:verify_dashboard -- \
-  --dashboard cluster/k8s/monitoring/grafana-instance/<dashboard>.json \
+  --dashboard cluster/cdk8s/monitoring/dashboards/<dashboard>.json \
   --screenshot-dir /tmp/grafana-<dashboard>-verify
 ```
 

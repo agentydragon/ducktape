@@ -79,7 +79,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/flux-image-automation-ghcr
+  path: ./cluster/generated/flux-image-automation-ghcr
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -463,12 +463,13 @@ spec:
     - name: flux-image-automation-ghcr
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/gaffer-private-source
+  path: ./cluster/generated/gaffer-private-source
   prune: true
   retryInterval: 1m
   sourceRef:
-    kind: GitRepository
-    name: flux-system
+    kind: ExternalArtifact
+    name: gaffer-private-source
+    namespace: ducktape-flux
   timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -926,7 +927,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/dcgm-exporter
+  path: ./cluster/generated/dcgm-exporter
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1279,7 +1280,7 @@ spec:
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
       kind: Database
   interval: 10m
-  path: ./cluster/k8s/mcp-oauth-state
+  path: ./cluster/generated/mcp-oauth-state
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2237,7 +2238,7 @@ spec:
       name: grafana-deployment
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/grafana-instance
+  path: ./cluster/generated/monitoring/grafana-instance
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2259,7 +2260,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/gatus
+  path: ./cluster/generated/gatus
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2554,7 +2555,7 @@ spec:
     - name: grafana-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grafana
+  path: ./cluster/generated/grafana
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2970,7 +2971,7 @@ spec:
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/sf/app
+  path: ./cluster/generated/grocy/sf/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2998,7 +2999,7 @@ spec:
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/vallejo/app
+  path: ./cluster/generated/grocy/vallejo/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3290,7 +3291,7 @@ spec:
     - name: grocy-sf
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/sf/user-perms
+  path: ./cluster/generated/grocy/sf/user-perms
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3310,7 +3311,7 @@ spec:
     - name: grocy-vallejo
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/vallejo/user-perms
+  path: ./cluster/generated/grocy/vallejo/user-perms
   prune: true
   retryInterval: 1m
   sourceRef:

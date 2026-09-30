@@ -1,6 +1,7 @@
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -9,8 +10,20 @@ from pydantic import SecretStr
 from tenacity import wait_none
 
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
+from devinfra.claude.session_export.oauth import OAuthCredential
 
 TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid="test-org-uuid")
+TEST_ACCESS_TOKEN = "test-access-token"
+
+
+def make_credential(*, expires_in: timedelta = timedelta(hours=1)) -> OAuthCredential:
+    return OAuthCredential(
+        access_token=SecretStr(TEST_ACCESS_TOKEN),
+        refresh_token=SecretStr("test-refresh-1"),
+        expires_at=datetime.now(UTC) + expires_in,
+        scopes=frozenset({"user:profile"}),
+        organization_uuid=TEST_COOKIE.org_uuid,
+    )
 
 
 def make_events(count: int) -> list[dict[str, Any]]:
@@ -37,10 +50,9 @@ class FakeSessionsService:
         self.requests.append(request)
         if self.fail_next:
             return httpx.Response(self.fail_next.pop(0))
-        if (
-            request.headers["x-organization-uuid"] != TEST_COOKIE.org_uuid
-            or "sessionKey=test-session-key" not in request.headers["cookie"]
-        ):
+        cookie_ok = "sessionKey=test-session-key" in request.headers.get("cookie", "")
+        bearer_ok = request.headers.get("authorization") == f"Bearer {TEST_ACCESS_TOKEN}"
+        if not (cookie_ok or bearer_ok) or request.headers["x-organization-uuid"] != TEST_COOKIE.org_uuid:
             return httpx.Response(401, json={"error": {"type": "authentication_error"}})
         params = request.url.params
         limit = int(params["limit"])
@@ -76,5 +88,6 @@ def service() -> FakeSessionsService:
 
 @pytest.fixture
 async def api(service: FakeSessionsService) -> AsyncIterator[SessionsApi]:
-    async with SessionsApi(TEST_COOKIE, transport=httpx.MockTransport(service.handle), retry_wait=wait_none()) as api:
+    transport = httpx.MockTransport(service.handle)
+    async with SessionsApi.for_cookie(TEST_COOKIE, transport=transport, retry_wait=wait_none()) as api:
         yield api

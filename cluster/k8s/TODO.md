@@ -288,13 +288,14 @@ re-registration). Done for wyrm2 + rugged; iguana needs it whenever it's next on
 
 ## GPU metrics (DCGM) — follow-ups
 
-DCGM exporter is live on wyrm2 (`cluster/k8s/dcgm-exporter/`) and feeding Mimir:
+DCGM exporter is live on wyrm2 (`cluster/cdk8s/dcgm_exporter/`) and feeding Mimir:
 power/temp/clocks, **PCIe replay counters** (`DCGM_FI_DEV_PCIE_REPLAY_COUNTER` — gpu1
 already shows replays, the marginal-link canary), ECC, thermal/power violations. Remaining:
 
 - [ ] **`DCGM_FI_DEV_XID_ERRORS` is not exported** on these consumer GeForce RTX 5090s.
-      It's in the custom `counters.csv`, but DCGM silently drops field 230 on these cards
-      (no value / unsupported). So there is **no XID-as-a-metric** despite the plan's intent.
+      It's in the custom counter set (`cluster/cdk8s/dcgm_exporter/counters.py`), but DCGM
+      silently drops field 230 on these cards (no value / unsupported). So there is **no
+      XID-as-a-metric** despite the plan's intent.
       Mitigation already in place: the authoritative Xid-79 signal is captured via the
       **journal → Loki** path (`{job="systemd-journal"} |~ "Xid|fallen off the bus"` on
       wyrm2). Optional improvement: try DCGM 4.x's experimental
