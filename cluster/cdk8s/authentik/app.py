@@ -308,14 +308,13 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
     # The data dep packages exactly Bazel's glob of the directory, so a new blueprint is listed
     # by regenerating.
     blueprints = get_required_path(own_repo_rlocation(f"{OUTPUT_DIR}/blueprints"))
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
         kustomize_kustomization(
-            resources=[f"{NAME}.k8s.yaml", *(f"{secret}.sops.yaml" for secret in _SOPS_SECRETS)],
+            resources=[write_charts(root, OUTPUT_DIR, chart), *(f"{secret}.sops.yaml" for secret in _SOPS_SECRETS)],
             config_map_generator=[
                 ConfigMapArgs(
                     name=_BLUEPRINTS_CONFIG_MAP,

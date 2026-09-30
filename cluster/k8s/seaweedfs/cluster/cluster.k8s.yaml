@@ -229,3 +229,142 @@ spec:
     matchLabels:
       app.kubernetes.io/component: filer
       app.kubernetes.io/name: seaweedfs
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eso-reader
+  namespace: seaweedfs
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eso-reader
+  namespace: seaweedfs
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eso-reader
+  namespace: seaweedfs
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eso-reader
+subjects:
+  - kind: ServiceAccount
+    name: eso-reader
+    namespace: seaweedfs
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  annotations:
+    description: Reads per-tenant s3-identity-* Secrets and the per-tenant intermediate Secrets that the assembly ExternalSecrets produce.
+  name: seaweedfs-identities
+  namespace: seaweedfs
+spec:
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: eso-reader
+          namespace: seaweedfs
+      remoteNamespace: seaweedfs
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: Assembles the s3 gateway config Secret from per-tenant identity Secrets.
+  name: seaweedfs-s3-config
+  namespace: seaweedfs
+spec:
+  dataFrom:
+    - find:
+        name:
+          regexp: ^s3-identity-.+-json$
+  refreshInterval: 1m
+  secretStoreRef:
+    kind: SecretStore
+    name: seaweedfs-identities
+  target:
+    creationPolicy: Owner
+    name: seaweedfs-s3-config
+    template:
+      data:
+        seaweedfs_s3_config.json: |
+          {"identities":[
+            {{- $first := true -}}
+            {{- range $sName, $sJson := . -}}
+            {{- $sData := $sJson | fromJson -}}
+            {{- if not $first }},{{ end -}}{{ $sData.identity }}{{- $first = false -}}
+            {{- end -}}
+          ]}
+      type: Opaque
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    description: SeaweedFS filer metadata DB on the SSD tier (physically cloned from the retired seaweedfs-filer-db, Case B git-latency migration)
+  name: seaweedfs-filer-db-ssd
+  namespace: seaweedfs
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: seaweedfs
+      owner: seaweedfs
+      secret:
+        name: seaweedfs-filer-db-ssd-creds
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  resources:
+    limits:
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 512Mi
+  storage:
+    size: 2Gi
+    storageClass: local-path-ovh-ssd
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  annotations:
+    description: Stateful infrastructure (databases, object storage, quorum members). Deprioritizes these pods for descheduler eviction and scheduler preemption without making them system-critical.
+  name: stateful-infra
+description: "Stateful infrastructure: defer eviction/preemption, not system-critical."
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+value: 1000000

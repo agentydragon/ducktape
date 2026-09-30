@@ -3,7 +3,7 @@ kind: Kustomization
 resources:
   - https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml
 patches:
-  - path: namespace-patch.k8s.yaml
+  - path: patches.k8s.yaml
   - patch: |
       - op: add
         path: /spec/template/spec/nodeSelector

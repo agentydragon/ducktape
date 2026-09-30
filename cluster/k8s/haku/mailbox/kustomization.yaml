@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - haku-mailbox.k8s.yaml
+  - mailbox.k8s.yaml
   - haku-mailbox-admin.sops.yaml
   - haku-mail-token.sops.yaml
 components:

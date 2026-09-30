@@ -20,7 +20,6 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/db"
 DATABASE = cnpg.PostgresRef.generated(name="litellm-db", namespace="litellm")
-MANIFEST = f"{DATABASE.name}.k8s.yaml"
 
 
 def _chart(app: App) -> Chart:

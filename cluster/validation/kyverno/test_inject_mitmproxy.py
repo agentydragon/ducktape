@@ -20,8 +20,8 @@ from cluster.validation.kyverno.paths import manifest, policy
 
 
 @pytest.fixture
-def mitmproxy_policy() -> Path:
-    return policy("inject-mitmproxy.k8s.yaml")
+def mitmproxy_policy(tmp_path: Path) -> Path:
+    return policy("inject-mitmproxy", tmp_path)
 
 
 def _mutated_yaml(result: KyvernoApplyResult) -> str:

@@ -1,3 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: clickhouse
+spec: {}
+---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:

@@ -133,7 +133,7 @@ def _chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, _chart)
     write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[*_SOPS_FILES, f"{_NAME}.k8s.yaml"])
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(resources=[*_SOPS_FILES, write_charts(root, OUTPUT_DIR, _chart)]),
     )
