@@ -36,7 +36,7 @@ prometheus.operator.podmonitors "cluster" {
 // Push scraped metrics to Mimir.
 prometheus.remote_write "mimir" {
   endpoint {
-    url = "@{mimir_push_url}"
+    url = sys.env("MIMIR_PUSH_URL")
   }
 }
 
@@ -204,14 +204,14 @@ prometheus.scrape "apiserver" {
 
 // Sync PrometheusRule CRDs to Mimir Ruler for evaluation.
 mimir.rules.kubernetes "rules" {
-  address = "@{mimir_gateway_url}"
+  address = sys.env("MIMIR_GATEWAY_URL")
 }
 
 // --- OTLP ingestion (OpenClaw traces, logs, metrics) ---
 
 otelcol.receiver.otlp "openclaw" {
   http {
-    endpoint = "0.0.0.0:@{otlp_http_port}"
+    endpoint = sys.env("OTLP_HTTP_LISTEN_ADDRESS")
   }
   output {
     metrics = [otelcol.processor.batch.default.input]
@@ -241,14 +241,14 @@ otelcol.exporter.loki "default" {
 
 loki.write "monitoring" {
   endpoint {
-    url = "@{loki_push_url}"
+    url = sys.env("LOKI_PUSH_URL")
   }
 }
 
 // Forward traces to Tempo via OTLP/gRPC.
 otelcol.exporter.otlp "tempo" {
   client {
-    endpoint = "@{tempo_otlp_grpc_endpoint}"
+    endpoint = sys.env("TEMPO_OTLP_GRPC_ENDPOINT")
     tls {
       insecure = true
     }
