@@ -79,9 +79,9 @@ Model with constructs, deploy with one props object per environment.
 - **A cluster-wide behavior is configured once, where it runs; objects carry only the
   exceptions.** Restating the default on each object adds nothing when it matches, and
   looks like it works where the mechanism never reads it. Reloader runs with
-  `autoReloadAll` (`reloader.py`) and reads only a workload's own metadata, never its
-  pod template: a workload that must not restart says `"false"` there, and the rest say
-  nothing. Alloy discovers every ServiceMonitor, PodMonitor and PrometheusRule without a
+  `autoReloadAll` and ignores Jobs and CronJobs (`reloader.py`); it reads only a
+  workload's own metadata, never its pod template: a workload that must not restart says
+  `"false"` there, and the rest say nothing. Alloy discovers every ServiceMonitor, PodMonitor and PrometheusRule without a
   selector, so none carries a label for it.
 - **One shape per job.** Each job this layer does (build a kind, build one variant of a
   field, amend a pod spec, declare a Flux node) has one mechanism. Before writing a

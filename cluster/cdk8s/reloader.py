@@ -39,6 +39,13 @@ def _values() -> dict[str, object]:
             # manual restart (the 2026-06-08 attic `InvalidAccessKeyId` incident). Opt a
             # workload out with `reloader.stakater.com/auto: "false"`.
             "autoReloadAll": True,
+            # Jobs and CronJobs are never reloaded. Reloader "reloads" a Job by deleting and
+            # recreating it, which kills a running one (a CNPG initdb Job mid-bootstrap) and
+            # reruns a finished one; when a CronJob's hash-suffixed ConfigMap is renamed, every
+            # finished Job still kept is recreated against the pruned name and never mounts. A
+            # CronJob reads its current ConfigMaps and Secrets at its next scheduled run.
+            "ignoreJobs": True,
+            "ignoreCronJobs": True,
             # The Altinity operator hot-reloads its generated ClickHouse user config. Watching
             # clickhouse causes a feedback loop: each generated users ConfigMap update restarts
             # ClickHouse, the new Pod IP changes the next generated config, and Reloader
