@@ -81,6 +81,7 @@ IMAGES = (
     "osm-mcp",
     "plaid-mcp-server",
     "plaid-mcp-sync",
+    "plaid-spend",
     "props-backend",
     "props-llm-proxy",
     "props-registry-proxy",

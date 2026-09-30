@@ -7,3 +7,10 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO plaid_ro;
 GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO plaid_ro;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO plaid_ro;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO plaid_ro;
+
+-- plaid-spend reads Plaid source rows and owns only its private config schema.
+GRANT CONNECT ON DATABASE plaidmcp TO plaid_spend;
+GRANT USAGE ON SCHEMA public TO plaid_spend;
+GRANT SELECT ON TABLE links, accounts, transactions, liability_credit_snapshots TO plaid_spend;
+CREATE SCHEMA IF NOT EXISTS plaid_spend;
+GRANT USAGE, CREATE ON SCHEMA plaid_spend TO plaid_spend;
