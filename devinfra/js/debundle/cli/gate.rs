@@ -352,45 +352,45 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
         tm = edge.to,
         ord = edge.statement_ordinal.0,
     ));
-    if let Some(cause) = &edge.sequenced_owner {
-        if let Purity::NotPure { reasons } = &cause.purity {
-            for reason in reasons {
-                let binding = if cause.binding_names.is_empty() {
-                    cause.owner_id.clone()
-                } else {
-                    cause
-                        .binding_names
-                        .iter()
-                        .map(Atom::as_ref)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                };
-                let location = reason
-                    .source_location
-                    .as_ref()
-                    .or(cause.source_location.as_ref())
-                    .map(|loc| {
-                        format!(
-                            "{}:{}:{}",
-                            loc.source_path,
-                            loc.start_line,
-                            loc.start_column
-                                .map_or_else(|| "?".to_string(), |column| column.to_string())
-                        )
-                    })
-                    .unwrap_or_else(|| "<location unavailable>".to_string());
-                out.push_str(&format!(
-                    "      impure initializer `{binding}` at {location}: {}{}\n",
-                    reason.rule.as_str(),
-                    reason
-                        .detail
-                        .as_deref()
-                        .map(|detail| format!(" ({detail})"))
-                        .unwrap_or_default()
-                ));
-                if let Some(guidance) = &reason.author_guidance {
-                    out.push_str(&format!("        {guidance}\n"));
-                }
+    if let Some(cause) = &edge.sequenced_owner
+        && let Purity::NotPure { reasons } = &cause.purity
+    {
+        for reason in reasons {
+            let binding = if cause.binding_names.is_empty() {
+                cause.owner_id.clone()
+            } else {
+                cause
+                    .binding_names
+                    .iter()
+                    .map(Atom::as_ref)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let location = reason
+                .source_location
+                .as_ref()
+                .or(cause.source_location.as_ref())
+                .map(|loc| {
+                    format!(
+                        "{}:{}:{}",
+                        loc.source_path,
+                        loc.start_line,
+                        loc.start_column
+                            .map_or_else(|| "?".to_string(), |column| column.to_string())
+                    )
+                })
+                .unwrap_or_else(|| "<location unavailable>".to_string());
+            out.push_str(&format!(
+                "      impure initializer `{binding}` at {location}: {}{}\n",
+                reason.rule.as_str(),
+                reason
+                    .detail
+                    .as_deref()
+                    .map(|detail| format!(" ({detail})"))
+                    .unwrap_or_default()
+            ));
+            if let Some(guidance) = &reason.author_guidance {
+                out.push_str(&format!("        {guidance}\n"));
             }
         }
     }
