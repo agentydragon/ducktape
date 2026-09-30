@@ -236,6 +236,7 @@ async def test_watch_yields_session_changes_and_advances_its_cursor(
     assert connected == ["yes"]
     [opened] = service.watches()
     assert dict(opened.request.url.params) == {"exclude_tags": "-", "resume_token": RESUME_TOKEN}
+    assert opened.request.headers["anthropic-client-platform"] == "web_claude_ai"
 
 
 async def test_watch_says_when_the_server_no_longer_holds_the_cursor(

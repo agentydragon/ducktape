@@ -29,9 +29,8 @@ async def test_the_probe_reports_each_variant_with_its_status_and_reveals_no_sec
     service: FakeSessionsService, tmp_path: Path
 ) -> None:
     service.events = {ONE: make_events(3)}
-    service.stream_refusals = [404, 404, 404, 404, 400]  # the first five variants; later ones open
 
-    def script(stream: SseConnection) -> None:
+    def script(stream: SseConnection) -> None:  # the first stream to open is the first variant that is let in
         stream.send(None, {"keepalive": True})
         stream.send("added", {"id": "cse_x", "title": "a private title"})
 
@@ -47,9 +46,10 @@ async def test_the_probe_reports_each_variant_with_its_status_and_reveals_no_sec
 
     assert lines[0] == "200 list of one session"
     statuses = [line.split()[0] for line in lines[1 : 1 + len(VARIANTS)]]
-    assert statuses[:5] == ["404", "404", "404", "404", "400"]
-    assert all(status == "200" for status in statuses[5:])
+    # The gate is the platform header: only the variants that send it, and the routes that have no gate, open.
+    assert statuses == ["404", "404", "200", "200", "404", "404", "200", "200"]
     assert lines[1].startswith("404 watch as the sync sends it: ")
+    assert "endpoint not enabled" in lines[1]
     assert any("[added: keys ['id', 'title']]" in line for line in lines)
     assert lines[-1].startswith("200 event stream of session_test0001 from sequence_num 3: ")
     output = "\n".join(lines)

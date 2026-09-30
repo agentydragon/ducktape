@@ -11,14 +11,15 @@ rewrite; deployed databases are disposable.
 
 ## Observe live following against the real API
 
-Observed so far: the bearer token opens the event stream, which sends a frame with no `event:` name as it opens
-([docs/api.md](docs/api.md) § Event stream). Still to check on a running session:
+Observed so far ([docs/api.md](docs/api.md) § Event stream, § Session watch): the bearer token opens the event stream and
+the session watch (with its platform header). Still to check on a running session:
 
-- `client_event` frames arrive and store cleanly (the page's "last event" moves and no page read follows the connect);
+- `client_event` frames arrive and store cleanly (the page's "last event" moves and no page read follows the connect):
+  10 s of `export_sessions_bin probe --session ID` on a session in use showed only a `session_update`, so run it for
+  longer (`--listen-seconds 60`) while sending a message;
 - a quiet stream stays open past `STREAM_IDLE_TIMEOUT` (35 s, the web client's own limit) instead of reconnecting
   each time, which says how often the keepalive comes;
 - the worker stamps (`received_at`, `processing_at`, `processed_at`) reach a stream event unset or complete, and a
-  frame is re-sent when they change;
-- why the session watch answers 404, and what makes it work: [debug/session_watch.md](debug/session_watch.md).
+  frame is re-sent when they change.
 
 Delete this entry once each is confirmed, correcting the docs where it is not.

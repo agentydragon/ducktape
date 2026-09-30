@@ -2,8 +2,8 @@
 
 A polling cycle reads what is behind every few minutes. Between cycles this keeps an event stream open per recently
 active session, so a running session reaches the mirror as it happens. New sessions are found two ways: the session
-watch pushes each change, and a list of the newest sessions every `DISCOVERY_INTERVAL` catches whatever the watch does
-not (it is optional: see docs/api.md § Session watch). The streams only add to what a cycle would read, and every
+watch pushes each change, and a list of the newest sessions every `DISCOVERY_INTERVAL` catches whatever the watch
+missed. The streams only add to what a cycle would read, and every
 stream event goes through the same contiguity rule: an event past a gap is never stored, the session is paged instead.
 """
 

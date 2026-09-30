@@ -42,6 +42,9 @@ _MAX_ATTEMPTS = 6
 # The web client restarts an event stream that has been silent this long, so the server sends something at
 # least that often.
 STREAM_IDLE_TIMEOUT = 35.0
+# The server answers the watch `404 endpoint not enabled` unless the request names the web client's platform, as the
+# web client's own does (docs/api.md § Session watch).
+WATCH_CLIENT_PLATFORM = "web_claude_ai"
 # The client sets no limit on the session watch. A connection that died without a close would leave the follower
 # deaf until discovery next lists, so a silence this long reconnects.
 WATCH_IDLE_TIMEOUT = 300.0
@@ -332,7 +335,7 @@ class SessionsApi:
             async with self._open_stream(
                 "/v1/code/sessions/watch",
                 params={"exclude_tags": "-", "resume_token": cursor.token},
-                headers={},
+                headers={"anthropic-client-platform": WATCH_CLIENT_PLATFORM},
                 idle_timeout=WATCH_IDLE_TIMEOUT,
             ) as source:
                 if on_connected:

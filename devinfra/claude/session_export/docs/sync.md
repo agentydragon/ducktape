@@ -62,10 +62,10 @@ of truth and the streams only shorten the delay.
   set is re-derived from the store: a new session is followed within about 30 s, and one that was archived or has
   aged out of the window is dropped. A finished cycle triggers the same pass at once. This is the floor: it needs
   nothing but the list route, and it is what the web client does itself when its watch is off.
-- **Session watch.** One `sessions/watch` stream, when the server serves it, pushes each session change: the change is
-  upserted and the followed set re-derived at once, so a new session is followed from its first event. It answers 404
-  to the OAuth bearer so far ([api.md](api.md) § Session watch), which the page shows as "watch not connected" with
-  the reason; discovery covers meanwhile. A watch the server no longer holds takes a fresh resume token.
+- **Session watch.** One `sessions/watch` stream pushes each session change: the change is upserted and the followed
+  set re-derived at once, so a new session is followed from its first event ([api.md](api.md) § Session watch: the
+  request needs a platform header). The page shows "watch connected", or "not connected" with the reason; discovery
+  covers meanwhile and after a gap. A watch the server no longer holds takes a fresh resume token.
 
 Rules that keep the mirror exact:
 

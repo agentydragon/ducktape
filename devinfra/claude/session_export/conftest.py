@@ -174,6 +174,8 @@ class FakeSessionsService:
         bearer_ok = request.headers.get("authorization") == f"Bearer {TEST_ACCESS_TOKEN}"
         if not (cookie_ok or bearer_ok) or request.headers["x-organization-uuid"] != TEST_COOKIE.org_uuid:
             return httpx.Response(401, json={"error": {"type": "authentication_error"}})
+        if request.url.path == "/v1/code/sessions/watch" and "anthropic-client-platform" not in request.headers:
+            return httpx.Response(404, text="endpoint not enabled\n")  # what the server says without the header
         if request.url.path.endswith(("/events/stream", "/sessions/watch")):
             return self._open_stream(request)
         if self.list_status and request.url.path == "/v1/code/sessions":

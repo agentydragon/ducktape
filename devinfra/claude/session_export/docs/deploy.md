@@ -31,6 +31,20 @@ kubectl -n claude-session-sync exec -it \
 `SELECT session_id, last_event_at - synced_last_event_at AS lag FROM sessions` lists the sessions the sync is behind
 on ([sync.md](sync.md) § A cycle).
 
+## Probe the API with the deployed credential
+
+`probe` tries the session watch and, with `--session`, one session's event stream against the real API. It only reads
+and never refreshes the token, so it is safe beside the running sync (a refresh rotates the token the sync owns); it
+stops if the access token has lapsed. It prints the status of each request and the shape of any frames, never their
+values. Findings so far: [api.md](api.md) § Session watch.
+
+```bash
+kubectl -n claude-session-sync exec deploy/claude-session-sync -- cat /data/credentials.json > /tmp/claude-credential.json
+bb run //devinfra/claude/session_export:export_sessions_bin -- probe --credentials-file /tmp/claude-credential.json \
+  --session session_<id> --listen-seconds 60
+rm /tmp/claude-credential.json
+```
+
 ## Not covered
 
 The database replicates across two nodes but has no WAL archive or base backups, and nothing alerts when the sync

@@ -122,21 +122,31 @@ An open answered 410 means the position is gone: the client restarts from nothin
 it; 429 honors `Retry-After`. It restarts a stream that delivered nothing for 35 s, backs off 1 s doubling to 30 s
 with jitter, and after two connections that delivered no frame polls `GET .../events?sort_order=asc&cursor=<n>`.
 
-Observed on 2026-09-30, with the OAuth bearer against `api.anthropic.com`: the stream opens and sends a frame with
-no `event:` name. No `client_event` frame has been seen yet.
+Observed on 2026-09-30, with the OAuth bearer against `api.anthropic.com`: the stream opens, and sends a frame with
+no `event:` name and, for a session that was running, a `session_update` carrying `connection_status`. No
+`client_event` frame has been seen yet, in 10 s of a session in use.
 
 ## Session watch
 
-The web client watches the account's sessions with `GET /v1/code/sessions/watch?exclude_tags=-&resume_token=<token>`
-(the token is the list route's `resume_token`; frames `added`, `changed`, `removed`, `sync`; 410 means the token
-expired, 400 that none was sent). It also sends `anthropic-client-platform: web_claude_ai` on it.
+`GET /v1/code/sessions/watch?exclude_tags=-&resume_token=<token>` streams changes to the account's sessions; the token
+is the list route's `resume_token`. Observed 2026-09-30 with the OAuth bearer against `api.anthropic.com`, using
+`export_sessions_bin probe`:
 
-Observed on 2026-09-30, with the OAuth bearer against `api.anthropic.com`: **404** on every attempt, for a token the
-list route had just issued. Why is open, and [debug/session_watch.md](../debug/session_watch.md) says how to find out.
-The web client's own code narrows the candidates: it uses the watch only while the server-side gate
-`amber_harbor_beacon` is on for the account. With the gate off it polls the list instead, every 30 s, doubling to 10 min
-while nothing changes. So the 404 may be that gate, or the first-party host not serving the route, or a header the sync
-does not send.
+- **It needs `anthropic-client-platform: web_claude_ai`.** Without it the answer is `404`, `text/plain`,
+  `endpoint not enabled`, whatever else is sent: with or without `anthropic-beta`, with or without a resume token,
+  with `anthropic-client-feature: ccr`. With it the answer is 200, and adding `anthropic-client-feature: ccr` changes
+  nothing. The web client sends the header on this request. `claude.ai` with the bearer answers the same way.
+- **Frames**, `event:` names and JSON data: `added` for each live session on connect, then `sync` (data `{}`, and
+  the `id` is the next resume token), then `changed` as sessions change. `added` and `changed` carry a session as the
+  list route sends it (`id`, `title`, `status`, `created_at`, `updated_at`, `last_event_at`, `config`,
+  `worker_status`, …); `removed` carries `{id}` (from the web client's code, not seen).
+- 410 means the token expired and 400 that none was sent (both from the web client's code, not seen).
+
+`GET /v1/sessions/watch`, the older route family, needs no such header and streams `session_updated` frames of a
+different session shape (`session_status`, no `last_event_at`), 200 of them on connect. The sync does not use it.
+
+The web client itself uses the watch only while the server-side gate `amber_harbor_beacon` is on for the account, and
+otherwise polls the list every 30 s, doubling to 10 min while nothing changes.
 
 ## Event
 

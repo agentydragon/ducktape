@@ -1,5 +1,5 @@
 """Read-only probe of the live routes against the real API, for finding out why one answers as it does
-(design: debug/session_watch.md).
+(what it found: docs/api.md § Session watch).
 
 Never refreshes the credential: a refresh rotates the refresh token, which the running sync owns. It reads the access
 token from the file and stops if that has lapsed. Nothing secret is printed, and frame data only by its JSON keys.
@@ -16,13 +16,13 @@ from itertools import islice
 import httpx
 from httpx_sse import EventSource
 
-from devinfra.claude.session_export.api import CCR_BETA, FIRST_PARTY_API_URL, USER_AGENT
+from devinfra.claude.session_export.api import CCR_BETA, FIRST_PARTY_API_URL, USER_AGENT, WATCH_CLIENT_PLATFORM
 from devinfra.claude.session_export.models import cse_id
 from devinfra.claude.session_export.oauth import CredentialStore
 
-# What the web client sends on its CCR calls and on the watch, beyond what the sync sends.
+# What the web client sends on its CCR calls and on the watch, beyond what the sync sends on its list and events calls.
 CLIENT_FEATURE = {"anthropic-client-feature": "ccr"}
-CLIENT_PLATFORM = {"anthropic-client-platform": "web_claude_ai"}
+CLIENT_PLATFORM = {"anthropic-client-platform": WATCH_CLIENT_PLATFORM}
 _MAX_FRAMES_SHOWN = 5
 _BODY_CHARS = 200
 
