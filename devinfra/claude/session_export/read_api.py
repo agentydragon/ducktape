@@ -93,8 +93,7 @@ def create_read_api(store: SessionStore) -> APIRouter:
         )
         next_cursor = _encode_session_cursor(*next_position) if has_more and next_position is not None else None
         return SessionListPage(
-            data=[SessionSummary.model_validate(session) for session in data],
-            next_cursor=next_cursor,
+            data=[SessionSummary.model_validate(session) for session in data], next_cursor=next_cursor
         )
 
     @router.get("/sessions/{session_id}", response_model=SessionDetail)
