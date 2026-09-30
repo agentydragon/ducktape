@@ -47,10 +47,9 @@ fn module_id(index: usize) -> ModuleId {
 // class-membership surface plus the report's own residual flags, so
 // it shares no projection code with the kernel. Projection rules
 // (docs/design.md / plan §2):
-//   * a class maps to the residual module `logical(0)` iff it is the
-//     marked residual catch-all, or it is not anchored to a
-//     pre-existing module and every member owner is residual-destined
-//     per the report;
+//   * a class maps to the residual module `logical(0)` iff it is not
+//     anchored to a pre-existing module and every member owner is
+//     residual-destined per the report;
 //   * every other class gets a distinct module id, assigned in
 //     ascending `ClassId` order starting at 1.
 // ---------------------------------------------------------------------
@@ -71,10 +70,9 @@ fn class_maps_to_residual(
     residual_ids: &BTreeSet<String>,
     class: ClassId,
 ) -> bool {
-    q.class_is_residual(class)
-        || (!q.class_is_pre_existing_module(class)
-            && q.class_members(class)
-                .all(|owner| residual_ids.contains(q.owner_id(owner))))
+    !q.class_is_pre_existing_module(class)
+        && q.class_members(class)
+            .all(|owner| residual_ids.contains(q.owner_id(owner)))
 }
 
 /// Pre-state class → module map plus the next free module index.
@@ -109,9 +107,6 @@ fn reference_post_module(
     c2: ClassId,
 ) -> ModuleId {
     let (winner, loser) = (c1.min(c2), c1.max(c2));
-    if q.class_is_residual(winner) || q.class_is_residual(loser) {
-        return module_id(0);
-    }
     let pre_existing =
         q.class_is_pre_existing_module(winner) || q.class_is_pre_existing_module(loser);
     if !pre_existing
@@ -173,14 +168,13 @@ fn assert_committed_verdict_matches_reference(report: &OwnerGraphReport, q: &Quo
 // ---------------------------------------------------------------------
 
 /// Public replica of the kernel's non-cycle merge preconditions
-/// (same class / emptiness / residual stickiness / line cap). The
-/// reference predicate covers only the realizability clause, so the
-/// harness compares only when these pass.
+/// (same class / emptiness / line cap). The reference predicate covers
+/// only the realizability clause, so the harness compares only when
+/// these pass.
 fn preconditions_pass(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
     c1 != c2
         && q.class_members(c1).next().is_some()
         && q.class_members(c2).next().is_some()
-        && q.class_is_residual(c1) == q.class_is_residual(c2)
         && q.class_lines(c1).saturating_add(q.class_lines(c2)) <= CAP_LINES
 }
 

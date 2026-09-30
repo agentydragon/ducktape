@@ -498,8 +498,7 @@ fn class_has_labels(class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>, c
     class_to_labels.get(&c).is_some_and(|s| !s.is_empty())
 }
 
-/// Render the quotient's surviving (non-empty, non-residual-only)
-/// classes into proposals.
+/// Render the quotient's surviving (non-empty) classes into proposals.
 ///
 /// Each surviving class becomes at most one proposal. The shape is
 /// driven by `class_to_labels`:
@@ -514,10 +513,9 @@ fn class_has_labels(class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>, c
 /// - ≥2 labels: module↔module merge proposal (`merge:M1+M2+…`).
 ///   Residual-origin owners ride as `extension_owner_ids`.
 ///
-/// The catch-all residual class (`destination.id == "residual"`) is
-/// excluded — it's never a proposal target. Classes that fail the
-/// post-greedy size cap appear as `FactorizeDiagnosticReport`s
-/// (computed separately in `collect_size_cap_diagnostics`).
+/// Classes that fail the post-greedy size cap appear as
+/// `FactorizeDiagnosticReport`s (computed separately in
+/// `collect_size_cap_diagnostics`).
 fn emit_proposals(
     quotient: &QuotientGraph,
     class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>,
@@ -527,16 +525,13 @@ fn emit_proposals(
     size_cap_lines: usize,
     context: &FactorizeContext,
 ) -> Vec<FactorizeProposal> {
-    // Candidate classes: every live class that isn't the residual
-    // catch-all and either has owners or carries module labels. We
-    // skip classes whose only members are spec-module owners with
-    // no residual extensions (= pre-existing modules unchanged by
-    // the peel) — those don't represent a spec edit.
+    // Candidate classes: every live class that either has owners or
+    // carries module labels. We skip classes whose only members are
+    // spec-module owners with no residual extensions (= pre-existing
+    // modules unchanged by the peel) — those don't represent a spec
+    // edit.
     let mut candidate_classes: Vec<ClassId> = Vec::new();
     for c in quotient.iter_classes() {
-        if quotient.class_is_residual(c) {
-            continue;
-        }
         let labels = class_to_labels.get(&c);
         let n_labels = labels.map(|s| s.len()).unwrap_or(0);
         let has_residual_origin = quotient
@@ -724,9 +719,6 @@ fn collect_size_cap_diagnostics(
 ) -> Vec<FactorizeDiagnosticReport> {
     let mut diagnostics = Vec::new();
     for c in quotient.iter_classes() {
-        if quotient.class_is_residual(c) {
-            continue;
-        }
         if class_proposal_lines(quotient, graph, c, class_has_labels(class_to_labels, c))
             <= size_cap_lines
         {

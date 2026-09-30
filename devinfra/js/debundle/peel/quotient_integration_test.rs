@@ -2,13 +2,10 @@
 //! renderer-over-quotient. Fixtures seed quotients through the
 //! test-only constructors in `quotient::testing`.
 
-use analysis::{
-    AtomicUnitEdgeReport, DepKind, OwnerGraphNodeReport, OwnerGraphReport, Purity, SourceLocation,
-    StatementKind, StatementOrdinal,
-};
+use analysis::{AtomicUnitEdgeReport, DepKind, OwnerGraphReport};
 use report_fixtures::{
-    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, module_ref, no_claims,
-    owner_edge, residual_owner,
+    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, no_claims, owner_edge,
+    residual_owner,
 };
 
 use crate::factorize::{FactorizeProposal, factorize};
@@ -900,70 +897,6 @@ fn greedy_never_splits_existing_spec_module() {
         q.class_of(a2_idx),
         "spec-module owners must stay co-located",
     );
-}
-
-#[test]
-fn greedy_never_merges_into_residual() {
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-    let residual = OwnerGraphNodeReport {
-        id: "owner:residual_catchall".to_string(),
-        statement_ordinal: StatementOrdinal(2),
-        source_location: Some(SourceLocation {
-            source_path: "x.js".to_string(),
-            start_line: 200,
-            end_line: 204,
-        }),
-        declared_bindings: vec![],
-        statement_kind: StatementKind::VarDecl,
-        purity: Purity::Pure,
-        destination: module_ref("residual"),
-    };
-    let h = residual_owner("owner:h", 3, &["BindingH"], 5);
-    let report = graph_of(
-        vec![a.clone(), residual.clone(), h.clone()],
-        vec![
-            owner_edge(
-                "edge:0",
-                "owner:residual_catchall",
-                "owner:a",
-                DepKind::EagerUse,
-                true,
-            ),
-            owner_edge("edge:1", "owner:h", "owner:a", DepKind::EagerUse, true),
-        ],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&residual]),
-            atomic_unit_for("atomic:2", &[&h]),
-        ],
-        vec![],
-    );
-
-    let groups = vec![module_group(vec![0])];
-    let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
-    let residual_idx = q.owner_idx_of("owner:residual_catchall").unwrap();
-    let residual_class = q.class_of(residual_idx);
-    // Designate the catch-all class as the sticky residual sink; the
-    // kernel leaves classes non-residual at seed time (residual-destined
-    // owners are otherwise peelable), so this test marks the sink it
-    // wants the greedy to refuse to merge into.
-    q.mark_class_residual(residual_class);
-    let contractions = greedy_merge_to_convergence(&mut q);
-    for (c1, c2) in &contractions {
-        assert!(
-            !(*c1 == residual_class || *c2 == residual_class),
-            "no merge should involve residual class {residual_class:?}: {contractions:?}",
-        );
-    }
-    // owner:h should be merged into ui/x; residual stays alone.
-    let h_idx = q.owner_idx_of("owner:h").unwrap();
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    assert_eq!(q.class_of(h_idx), q.class_of(a_idx));
-    assert_eq!(q.class_of(a_idx), group_ids[0]);
-    // The residual catch-all class still has only its original
-    // member.
-    assert_eq!(q.class_members(residual_class).count(), 1);
 }
 
 #[test]

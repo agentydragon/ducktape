@@ -112,19 +112,16 @@ impl CycleEvidence {
 pub enum ContractRejected {
     WouldCreateCycle { cycle: CycleEvidence },
     ExceedsCap { combined_lines: usize, cap: usize },
-    ResidualSticky,
     SameClass,
 }
 
 impl ContractRejected {
     /// The evidence a seed diagnostic reports: empty for a rejection
-    /// that is not cycle-driven (cap, residual stickiness).
+    /// that is not cycle-driven (cap).
     fn into_cycle_evidence(self) -> CycleEvidence {
         match self {
             Self::WouldCreateCycle { cycle } => cycle,
-            Self::ExceedsCap { .. } | Self::ResidualSticky | Self::SameClass => {
-                CycleEvidence::default()
-            }
+            Self::ExceedsCap { .. } | Self::SameClass => CycleEvidence::default(),
         }
     }
 }
@@ -163,7 +160,7 @@ pub enum SeedContractionRejected {
         /// the gate.
         rejected_pair: (String, String),
         /// Cycle evidence when the rejection is cycle-driven. Empty
-        /// for non-cycle rejections (cap, residual stickiness).
+        /// for non-cycle rejections (cap).
         cycle: CycleEvidence,
     },
     /// Track A: unrealizable SCC surfaced by the unified gate
@@ -203,8 +200,6 @@ struct ClassData {
     members: BTreeSet<OwnerIdx>,
     /// Summed source-line count across members.
     lines: usize,
-    /// `true` if this class contains the residual catch-all.
-    is_residual: bool,
     /// `true` if this class anchors a spec module
     /// (`set_class_pre_existing_module`). Sticky across merges (a
     /// merge of two pre-existing-module classes produces a class
@@ -225,10 +220,7 @@ pub struct QuotientGraph {
     /// `true`. Set by `from_report` from the JSON wire flag (the
     /// same residual identification `factorize.rs` uses). A class made
     /// only of these, and not anchored to a module, projects to the
-    /// partition's residual `ModuleId` for the realizability gate;
-    /// distinct from the `ClassData::is_residual` field
-    /// which the rest of the kernel keys off of for residual
-    /// stickiness.
+    /// partition's residual `ModuleId` for the realizability gate.
     gate_residual_owners: BTreeSet<OwnerIdx>,
     /// Stable owner IDs in `OwnerIdx.0` order. Inherited from the
     /// source `OwnerGraphReport.nodes`.
@@ -306,16 +298,14 @@ struct WeightedOwnerEdge {
     weight: u32,
 }
 
-/// `true` if a class projects to the residual `ModuleId`: the residual
-/// catch-all, or a class made only of gate-residual owners and not
-/// anchored to a module.
+/// `true` if a class projects to the residual `ModuleId`: a class made
+/// only of gate-residual owners and not anchored to a module.
 fn projects_to_residual<'a>(
-    is_residual: bool,
     is_pre_existing_module: bool,
     mut members: impl Iterator<Item = &'a OwnerIdx>,
     gate_residual_owners: &BTreeSet<OwnerIdx>,
 ) -> bool {
-    is_residual || (!is_pre_existing_module && members.all(|m| gate_residual_owners.contains(m)))
+    !is_pre_existing_module && members.all(|m| gate_residual_owners.contains(m))
 }
 
 /// Project every live class onto a `ModuleId` — the residual
@@ -339,7 +329,6 @@ fn project_classes(
         .filter(|(_, data)| !data.members.is_empty())
     {
         let module = if projects_to_residual(
-            data.is_residual,
             data.is_pre_existing_module,
             data.members.iter(),
             gate_residual_owners,
@@ -428,22 +417,9 @@ impl QuotientGraph {
         for (i, node) in report.nodes.iter().enumerate() {
             let mut members = BTreeSet::new();
             members.insert(OwnerIdx(i));
-            // `ClassData::is_residual` marks the single residual
-            // catch-all CLASS that the greedy refuses to merge into —
-            // a distinct concept from "this owner is destined for
-            // residual" (which is the whole peelable pile). At seed
-            // time no class is the catch-all: every owner is its own
-            // singleton and the factorizer peels residual-destined
-            // owners OUT into fresh-module proposals. So this starts
-            // `false`; the residual class is established later. The
-            // authoritative "destined for residual" signal lives in
-            // the module table (`OwnerGraphReport::is_residual`) and is
-            // consumed via `gate_residual_owners` below + the
-            // projection in `realizability_index`.
             classes.push(ClassData {
                 members,
                 lines: node.line_count(),
-                is_residual: false,
                 is_pre_existing_module: false,
             });
             owner_to_class.push(ClassId(i));
@@ -536,11 +512,6 @@ impl QuotientGraph {
         self.classes[c.0].lines
     }
 
-    /// `true` if a class contains the residual catch-all owner.
-    pub fn class_is_residual(&self, c: ClassId) -> bool {
-        self.classes[c.0].is_residual
-    }
-
     /// Iterator over all live (non-empty) class IDs.
     pub fn iter_classes(&self) -> impl Iterator<Item = ClassId> + '_ {
         self.classes
@@ -567,11 +538,8 @@ impl QuotientGraph {
     /// kernel's invariants? Specifically:
     ///
     /// 1. `c1 != c2`.
-    /// 2. Not both classes are residual; if one is residual, the
-    ///    other must be too (residual is sticky — never absorb a
-    ///    non-residual class into the residual catch-all).
-    /// 3. `class_lines(c1) + class_lines(c2) <= cap_lines`.
-    /// 4. The post-merge partition, under the kernel's module
+    /// 2. `class_lines(c1) + class_lines(c2) <= cap_lines`.
+    /// 3. The post-merge partition, under the kernel's module
     ///    projection, has no clause-2 or clause-3 violation touching
     ///    the post-merge module (the tier-laddered realizability
     ///    predicate).
@@ -640,7 +608,7 @@ impl QuotientGraph {
     }
 
     /// Merge two classes without consulting the realizability /
-    /// residual / cap gates. The lower of the two `ClassId`s
+    /// cap gates. The lower of the two `ClassId`s
     /// survives; the higher is emptied. Returns the survivor.
     ///
     /// `SameClass` is still rejected (caller error). All other gate
@@ -663,19 +631,14 @@ impl QuotientGraph {
         // Move members from loser to winner.
         let loser_members = std::mem::take(&mut self.classes[loser.0].members);
         let loser_lines = self.classes[loser.0].lines;
-        let loser_residual = self.classes[loser.0].is_residual;
         let loser_pre_existing = self.classes[loser.0].is_pre_existing_module;
         self.classes[loser.0].lines = 0;
-        self.classes[loser.0].is_residual = false;
         self.classes[loser.0].is_pre_existing_module = false;
         for member in &loser_members {
             self.owner_to_class[member.0] = winner;
         }
         self.classes[winner.0].members.extend(loser_members);
         self.classes[winner.0].lines = self.classes[winner.0].lines.saturating_add(loser_lines);
-        if loser_residual {
-            self.classes[winner.0].is_residual = true;
-        }
         if loser_pre_existing {
             self.classes[winner.0].is_pre_existing_module = true;
         }
@@ -727,13 +690,6 @@ impl QuotientGraph {
         let cls2 = &self.classes[c2.0];
         if cls1.members.is_empty() || cls2.members.is_empty() {
             return Err(ContractRejected::SameClass);
-        }
-        // Residual stickiness: if exactly one is residual, reject.
-        // (Two residual classes never coexist with the canonical
-        // construction since only one owner is residual today; the
-        // check is defensive.)
-        if cls1.is_residual != cls2.is_residual {
-            return Err(ContractRejected::ResidualSticky);
         }
         let combined = cls1.lines.saturating_add(cls2.lines);
         if combined > self.cap_lines {
@@ -981,11 +937,7 @@ impl QuotientGraph {
         let residual_module = ModuleId::logical(0);
         let winner_data = &self.classes[winner.0];
         let loser_data = &self.classes[loser.0];
-        // Evaluated symmetrically: `check_merge` only allows a merge
-        // when residual matches on both sides, but this is also called
-        // speculatively.
         if projects_to_residual(
-            winner_data.is_residual || loser_data.is_residual,
             winner_data.is_pre_existing_module || loser_data.is_pre_existing_module,
             winner_data.members.iter().chain(&loser_data.members),
             &self.gate_residual_owners,
@@ -1154,15 +1106,14 @@ impl QuotientGraph {
         }
         self.classes[c.0].is_pre_existing_module = true;
         // Promotion shifts the class's ModuleId from residual to a
-        // fresh non-residual idx iff it was previously residual-mapped
-        // AND the class is not the literal residual catchall.
+        // fresh non-residual idx iff it was previously residual-mapped.
         let residual_module = ModuleId::logical(0);
         let current = self
             .class_module_id
             .get(&c)
             .copied()
             .unwrap_or(residual_module);
-        if current != residual_module || self.classes[c.0].is_residual {
+        if current != residual_module {
             return;
         }
         let new_module = ModuleId::logical(self.next_module_idx);
@@ -1283,14 +1234,10 @@ impl QuotientGraph {
 /// unrelated residuals based purely on cross-edge presence, which
 /// is over-aggressive on real inputs.
 ///
-/// Common preconditions: distinct classes, neither is the residual
-/// catchall, and at least one cross-edge connects the two.
+/// Common preconditions: distinct classes and at least one cross-edge
+/// connects the two.
 fn mergeable_preconditions(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
     if c1 == c2 {
-        return false;
-    }
-    // Residual is sticky.
-    if q.class_is_residual(c1) || q.class_is_residual(c2) {
         return false;
     }
     // Connected by at least one cross-edge.
@@ -1313,7 +1260,7 @@ fn mergeable_preconditions(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool 
             if n == orphan {
                 continue;
             }
-            if q.class_is_pre_existing_module(n) && !q.class_is_residual(n) {
+            if q.class_is_pre_existing_module(n) {
                 module_neighbors += 1;
             }
         }
@@ -1405,12 +1352,12 @@ fn classes_alive(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
 fn initialize_candidate_queue(q: &QuotientGraph) -> BinaryHeap<CandidateEntry> {
     let mut heap: BinaryHeap<CandidateEntry> = BinaryHeap::new();
     // Pre-existing-module classes are the iteration anchor. A pair
-    // (a, b) is anchored iff at least one side is pre-existing-module
-    // non-residual; we iterate from the pre-existing side to avoid
-    // double-pushing symmetric pairs.
+    // (a, b) is anchored iff at least one side is pre-existing-module;
+    // we iterate from the pre-existing side to avoid double-pushing
+    // symmetric pairs.
     let anchors: Vec<ClassId> = q
         .iter_classes()
-        .filter(|c| q.class_is_pre_existing_module(*c) && !q.class_is_residual(*c))
+        .filter(|c| q.class_is_pre_existing_module(*c))
         .collect();
     let mut seen: BTreeSet<(ClassId, ClassId)> = BTreeSet::new();
     for c in anchors {
@@ -1473,14 +1420,13 @@ fn greedy_merge_to_convergence_lazy_pq(q: &mut QuotientGraph) -> Vec<(ClassId, C
             }
 
             // 2. Cheap mergeability preconditions (non-monotone).
-            //    Residual stickiness, cross-edge presence, the
-            //    pre-existing-module-anchor rule, and the
-            //    unambiguous-extension rule. The unambiguous-extension
-            //    clause especially can flip from false to true after
-            //    an unrelated contract (when an orphan's competing
-            //    module neighbor merges away), so we stash on the
-            //    discard pile rather than dropping the entry
-            //    permanently.
+            //    Cross-edge presence, the pre-existing-module-anchor
+            //    rule, and the unambiguous-extension rule. The
+            //    unambiguous-extension clause especially can flip from
+            //    false to true after an unrelated contract (when an
+            //    orphan's competing module neighbor merges away), so
+            //    we stash on the discard pile rather than dropping the
+            //    entry permanently.
             if !mergeable_preconditions(q, entry.c1, entry.c2) {
                 discard_pile.push(entry);
                 continue;
@@ -1965,15 +1911,6 @@ pub(crate) mod testing {
             Ok((q, group_class_ids))
         }
 
-        /// Designate `c` as the residual catch-all class, which greedy
-        /// refuses to merge into. Seed-time construction leaves every
-        /// class non-residual (the factorizer peels residual-destined
-        /// owners OUT into fresh modules); tests that model a sticky
-        /// residual sink mark it explicitly.
-        pub fn mark_class_residual(&mut self, c: ClassId) {
-            self.classes[c.0].is_residual = true;
-        }
-
         /// The typed `OwnerGraph` IR reconstructed at construction
         /// time, for comparing the kernel's verdicts against
         /// `check_realizability` over an independently projected
@@ -1994,7 +1931,7 @@ pub(crate) mod testing {
     /// pairs are not evaluated twice.
     fn pick_best_candidate(q: &QuotientGraph) -> Option<(ClassId, ClassId)> {
         q.iter_classes()
-            .filter(|c| q.class_is_pre_existing_module(*c) && !q.class_is_residual(*c))
+            .filter(|c| q.class_is_pre_existing_module(*c))
             .flat_map(|c| q.class_neighbors(c).map(move |n| (c, n)))
             .filter(|&(c, n)| n != c && mergeable(q, c, n))
             .map(|(c, n)| (rank_candidate(q, c, n), (c.min(n), c.max(n))))
