@@ -71,7 +71,9 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
                 "the object exists, before the box can run anything, so poll "
                 f'{SandboxAction.GET} until its {READY_CONDITION!r} condition has status "True". '
                 f"Idempotent on the name, so polling with {SandboxAction.CREATE} would also work but "
-                f"tells you nothing more. Templates: {offered}. {SandboxAction.GET_TEMPLATE} shows one whole."
+                f"tells you nothing more. Templates: {offered}. {SandboxAction.GET_TEMPLATE} shows one whole. "
+                "The box and everything in it is deleted at its `expires_at`, "
+                f"{binding.initial_ttl_seconds}s after creation unless an {SandboxAction.EXEC} keeps it longer."
             ),
             input_schema=_schema(CreateArgs),
             title="Create sandbox",
@@ -91,7 +93,9 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
         SandboxAction.EXEC: ActionDefinition(
             description=(
                 "Run one bounded Bash script in a ready sandbox of yours. A nonzero exit is a normal "
-                "result, not a failure."
+                "result, not a failure. Each run first keeps the box at least "
+                f"{binding.exec_ttl_extension_seconds}s past its start; a box already past its `expires_at` "
+                "is refused."
             ),
             input_schema=_exec_schema(binding),
             title="Run script in sandbox",

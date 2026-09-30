@@ -9,8 +9,9 @@ have. What is shared is the CRD, not the code.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from kubernetes_asyncio import client as k8s_client
@@ -60,6 +61,18 @@ def _object_name(caller: ServiceAccountRef, name: str) -> str:
     return f"{caller.name}-{name}"[:63].rstrip("-")
 
 
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _expires_at(sandbox: dict[str, Any]) -> datetime:
+    raw = sandbox["spec"].get("shutdownTime")
+    if raw is None:
+        name = sandbox["metadata"]["labels"][NAME_LABEL]
+        raise SandboxActionError(f"sandbox {name!r} has no shutdownTime; dispose it and create it again")
+    return datetime.fromisoformat(raw)
+
+
 def _workload_container(sandbox: dict[str, Any]) -> str:
     """The container commands run in, by the rule `kubectl exec` follows: the one the box's Pod
     template names as its default, else its first."""
@@ -89,11 +102,13 @@ class SandboxInventory:
         custom_objects: CustomObjectsClient,
         core_v1: CoreV1Api,
         exec_runner: ExecRunner,
+        now: Callable[[], datetime] = _utc_now,
     ) -> None:
         self._binding = binding
         self._custom_objects = custom_objects
         self._core_v1 = core_v1
         self._exec_runner = exec_runner
+        self._now = now
 
     def _require_offered(self, template: str) -> None:
         if template not in self._binding.templates:
@@ -183,6 +198,7 @@ class SandboxInventory:
             template=metadata["labels"][TEMPLATE_LABEL],
             conditions=cast(list[Any], status.get("conditions") or []),
             created_at=metadata.get("creationTimestamp"),
+            expires_at=_expires_at(sandbox),
             # Only for the name to exec into; whether the box is usable is the conditions' answer.
             pod_name=await self._pod_name(sandbox) if _ready(sandbox) is not None else None,
             node_name=status.get("nodeName"),
@@ -219,19 +235,19 @@ class SandboxInventory:
             "apiVersion": SANDBOX_API.api_version,
             "kind": "Sandbox",
             "metadata": {"name": _object_name(caller, name), "labels": _labels(caller, name, template_name)},
-            # Retain: this surface owns deletion, and a box whose caller is still working in it must
-            # not be collected out from under them on a schedule nobody set.
-            # TODO(sandbox-lifetime): so a forgotten box keeps its 2500m of the namespace's
-            # `limits.cpu` quota until someone disposes it. Expire idle boxes instead:
-            # `shutdownPolicy: Delete` with a `shutdownTime` each `exec` pushes forward, as
-            # haku-console's claims do (`haku/sandbox/kubernetes_client.py`).
             "spec": {
                 "podTemplate": {**pod_template, "spec": spec},
                 # Carried from the template, not dropped: a Pod whose container mounts a volume the
                 # Sandbox never declares is refused admission, so a template with claims cannot
                 # produce a box without them.
                 "volumeClaimTemplates": template["spec"].get("volumeClaimTemplates", []),
-                "shutdownPolicy": "Retain",
+                # The controller deletes the box at shutdownTime, so one its caller forgot gives its
+                # share of the namespace's `limits.cpu` quota back. `exec` pushes the time forward,
+                # so a box in use is not collected out from under its caller.
+                "shutdownPolicy": "Delete",
+                "shutdownTime": (self._now() + timedelta(seconds=self._binding.initial_ttl_seconds)).isoformat(
+                    timespec="seconds"
+                ),
             },
         }
         try:
@@ -303,6 +319,7 @@ class SandboxInventory:
             # published is gone. Distinct from not-ready, and a caller that conflates them polls
             # a box whose own controller says it is fine.
             raise SandboxActionError(f"sandbox {name!r} is ready but has no running Pod to exec into")
+        await self._keep_for_exec(sandbox, info)
         return await self._exec_runner.run(
             pod_name=info.pod_name,
             namespace=self._binding.namespace,
@@ -313,6 +330,29 @@ class SandboxInventory:
             # different caps, across a settings roll, is still held to this one's.
             max_output_bytes=min(max_output_bytes, self._binding.max_output_bytes),
             timeout_seconds=min(timeout_seconds, self._binding.max_timeout_seconds),
+        )
+
+    async def _keep_for_exec(self, sandbox: dict[str, Any], info: SandboxInfo) -> None:
+        """Push the box's shutdownTime to at least `exec_ttl_extension_seconds` from now, which the
+        binding keeps above any exec's timeout.
+
+        Concurrent execs race this read-then-write, but their targets differ by one request's
+        latency, so whichever lands last still outlasts both commands.
+        """
+        now = self._now()
+        if info.expires_at <= now:
+            # Pushing it forward now would revive a box the controller is already tearing down.
+            raise SandboxActionError(f"sandbox {info.name!r} has expired; create it again")
+        target = now + timedelta(seconds=self._binding.exec_ttl_extension_seconds)
+        if target <= info.expires_at:
+            return
+        await self._custom_objects.patch_namespaced_custom_object(
+            *SANDBOX_API,
+            self._binding.namespace,
+            SANDBOXES_PLURAL,
+            sandbox["metadata"]["name"],
+            {"spec": {"shutdownTime": target.isoformat(timespec="seconds")}},
+            _content_type="application/merge-patch+json",
         )
 
 

@@ -65,6 +65,10 @@ class SandboxInfo(BaseModel):
         '"Suspended" condition means a box that is stopped rather than still coming up.'
     )
     created_at: datetime | None = None
+    expires_at: datetime = Field(
+        description="When the controller deletes this box and everything in it, unless an `exec` before then "
+        "pushes it later."
+    )
     pod_name: str | None = Field(
         default=None, description="Absent until the sandbox has a Pod, and again if that Pod goes away."
     )
