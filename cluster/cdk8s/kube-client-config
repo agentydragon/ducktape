@@ -3,16 +3,16 @@
 # (templating .netrc from env, generating the PKCS12 truststore with keytool) or
 # that OpenClaw rewrites in place (openclaw.json). A kubeconfig is neither: the
 # token below is a non-secret placeholder, matching the proxy_value declared in
-# haku-egress-proxy/openclaw-spike-iron.yaml, and kubectl never writes to a
-# static-bearer config.
+# cluster/cdk8s/haku_egress_proxy.py, and kubectl never writes to a static-bearer
+# config.
 #
 # Read-only is deliberate. The agent cannot repoint `server` at a host outside
 # the iron-proxy allowlist, and the file cannot drift from what is in git.
 #
 # The filename dodges `kubeconfig*`, which cluster/.gitignore ignores to keep
 # terraform-generated cluster credentials out of git; that guard silently
-# swallowed this file on the first attempt. kustomization.yaml maps it back to
-# the `kubeconfig` ConfigMap key, so the mount is still /cfg/kubeconfig.
+# swallowed this file on the first attempt. The generator packages it under the
+# ConfigMap key `config`, mounted at ~/.kube/config (haku_openclaw_spike_config.py).
 apiVersion: v1
 kind: Config
 current-context: allegedly
