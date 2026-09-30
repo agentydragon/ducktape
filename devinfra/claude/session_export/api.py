@@ -5,7 +5,6 @@ import logging
 import re
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from types import TracebackType
@@ -68,6 +67,8 @@ class EventStreamFrame(StrEnum):
 
 
 class WatchFrame(StrEnum):
+    # A frame with no `event:` line and no data, seen in the deployed sync's log as it connected: a keepalive.
+    UNNAMED = "message"
     ADDED = "added"
     CHANGED = "changed"
     REMOVED = "removed"
@@ -80,13 +81,6 @@ class ResumePointLostError(Exception):
 
 class StreamClosedEarlyError(Exception):
     """The server ended a stream without sending a frame."""
-
-
-@dataclass
-class WatchCursor:
-    """Where the session watch stands: the id of the last frame it delivered."""
-
-    token: str
 
 
 class SessionCookie(BaseModel, frozen=True):
@@ -102,6 +96,15 @@ class SessionCookie(BaseModel, frozen=True):
         if not (session_key and org_uuid):
             raise ValueError(f"{path} must contain sessionKey= and lastActiveOrg= cookies")
         return cls(session_key=SecretStr(session_key.group(1)), org_uuid=org_uuid.group(1))
+
+
+def _raise_for_status(response: httpx.Response) -> None:
+    """`raise_for_status`, with the start of the body attached: it says why (missing header, expired key)."""
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        e.add_note(response.text[:300])
+        raise
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -186,11 +189,7 @@ class SessionsApi:
 
     async def _get_once(self, path: str, params: dict[str, str | int]) -> httpx.Response:
         response = await self._client.get(path, params=params)
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            e.add_note(response.text[:300])  # the API's error body says why (missing header, expired key)
-            raise
+        _raise_for_status(response)
         return response
 
     async def _get(self, path: str, **params: str | int | None) -> httpx.Response:
@@ -215,7 +214,12 @@ class SessionsApi:
         return (await self._sessions_page(limit=min(count, SESSIONS_PAGE_LIMIT))).data
 
     async def iter_event_pages(self, session_id: str, *, after: int = 0) -> AsyncIterator[list[Event]]:
-        """Pages of events with `sequence_num` above `after` (0: from the start), oldest first."""
+        """Pages of events with `sequence_num` above `after` (0: from the start), oldest first.
+
+        Raises `ValueError` on a page that skips a `sequence_num`, before yielding it: a caller that stores pages
+        as they come would leave an event past the gap that a resume from the newest stored never fetches.
+        """
+        position = after
         cursor = str(after) if after else None
         while True:
             response = await self._get(
@@ -225,6 +229,10 @@ class SessionsApi:
                 cursor=cursor,
             )
             page = EventsPage.model_validate_json(response.content)
+            for expected, event in enumerate(page.data, position + 1):
+                if event.seq != expected:
+                    raise ValueError(f"{session_id=}: expected sequence_num {expected}, got {event.sequence_num}")
+            position += len(page.data)
             yield page.data
             if page.next_cursor is None:
                 return
@@ -251,11 +259,7 @@ class SessionsApi:
                 raise ResumePointLostError(f"{path}: {response.status_code}")
             if response.is_error:
                 await response.aread()
-                try:
-                    response.raise_for_status()
-                except httpx.HTTPStatusError as e:
-                    e.add_note(response.text[:300])
-                    raise
+                _raise_for_status(response)
             yield source
 
     def _note_unknown_frame(self, frame: ServerSentEvent) -> None:
@@ -322,19 +326,20 @@ class SessionsApi:
             raise StreamClosedEarlyError(f"{session_id=}: the server closed the stream without a frame")
 
     async def watch_sessions(
-        self, cursor: WatchCursor, *, on_connected: Callable[[], None] | None = None
+        self, resume_token: str, *, on_connected: Callable[[], None] | None = None
     ) -> AsyncGenerator[SessionSummary | SessionRemoved]:
-        """Changes to the account's sessions since `cursor`, as the server pushes them; advances `cursor`.
+        """Changes to the account's sessions since `resume_token`, as the server pushes them.
 
-        `on_connected` is called once the server has accepted the stream. Ends when the server closes the stream or it falls silent for `WATCH_IDLE_TIMEOUT`. Raises
-        `ResumePointLostError` when the server no longer holds `cursor`, and `StreamClosedEarlyError` when it
-        closes without a frame.
+        The token must be fresh: the server accepts an old one and then delivers nothing (docs/api.md § Session
+        watch). `on_connected` is called once the server has accepted the stream. Ends when the server closes the
+        stream or it falls silent for `WATCH_IDLE_TIMEOUT`. Raises `ResumePointLostError` when the server no longer
+        holds `resume_token`, and `StreamClosedEarlyError` when it closes without a frame.
         """
         delivered = False
         try:
             async with self._open_stream(
                 "/v1/code/sessions/watch",
-                params={"exclude_tags": "-", "resume_token": cursor.token},
+                params={"exclude_tags": "-", "resume_token": resume_token},
                 headers={"anthropic-client-platform": WATCH_CLIENT_PLATFORM},
                 idle_timeout=WATCH_IDLE_TIMEOUT,
             ) as source:
@@ -342,8 +347,6 @@ class SessionsApi:
                     on_connected()
                 async for frame in source.aiter_sse():
                     delivered = True
-                    if frame.id:
-                        cursor.token = frame.id
                     match frame.event:
                         case WatchFrame.ADDED | WatchFrame.CHANGED:
                             if frame.data:
@@ -353,6 +356,8 @@ class SessionsApi:
                                 yield SessionRemoved.model_validate_json(frame.data)
                         case WatchFrame.SYNC:
                             pass  # the feed has delivered everything up to the token the watch opened with
+                        case WatchFrame.UNNAMED if not frame.data:
+                            pass  # a keepalive
                         case _:
                             self._note_unknown_frame(frame)
         except httpx.ReadTimeout:

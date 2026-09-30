@@ -2,7 +2,8 @@
 //! and every chunk's selectors resolve as one program.
 
 use debundle_e2e_support::{
-    TreeFixture, TreeRun, assert_module_source, read_chunk_selector_outcomes, run_tree_fixture,
+    TreeFixture, TreeRun, assert_module_exports, assert_module_source,
+    read_chunk_selector_outcomes, run_tree_fixture,
 };
 use serde_json::{Value, json};
 
@@ -293,4 +294,60 @@ fn multi_chunk_fail_fast_stops_at_the_error() {
         "{}",
         run.result.stderr
     );
+}
+
+/// Each chunk's broad selector is unique only by elimination, so each chunk is
+/// its own solver group; the groups of independent chunks solve in parallel.
+#[test]
+fn solver_groups_of_many_chunks_resolve_together() {
+    let chunks = (0..12).map(|n| format!("chunk{n}")).collect::<Vec<_>>();
+    let sources = chunks
+        .iter()
+        .map(|chunk| {
+            format!(
+                "function {chunk}Broad() {{ return 'common-{chunk}'; }}\nfunction {chunk}Specific() {{ return 'specific-{chunk}'; }}\nconsole.log({chunk}Broad(), {chunk}Specific());\n"
+            )
+        })
+        .collect::<Vec<_>>();
+    let roots = chunks
+        .iter()
+        .map(|chunk| (format!("chunks/{chunk}"), chunk.as_str()))
+        .collect::<Vec<_>>();
+    let modules = chunks
+        .iter()
+        .map(|chunk| routes_module(chunk))
+        .collect::<Vec<_>>();
+    let run = run_tree_fixture(
+        &TreeFixture {
+            chunks: &chunks
+                .iter()
+                .zip(&sources)
+                .map(|(chunk, source)| (chunk.as_str(), source.as_str()))
+                .collect::<Vec<_>>(),
+            module_roots: &roots
+                .iter()
+                .map(|(root, chunk)| (root.as_str(), *chunk))
+                .collect::<Vec<_>>(),
+            modules: &modules
+                .iter()
+                .map(|(path, body)| (path.as_str(), body.as_str()))
+                .collect::<Vec<_>>(),
+        },
+        &[],
+    );
+    assert_succeeded(&run);
+    for chunk in &chunks {
+        assert_module_exports(
+            &run.out_root,
+            &format!("app/{chunk}/routes.js"),
+            &[&format!("Broad{chunk}"), &format!("Specific{chunk}")],
+            &[],
+        );
+        assert_module_source(
+            &run.out_root,
+            &format!("app/{chunk}/routes.js"),
+            &[&format!("common-{chunk}"), &format!("specific-{chunk}")],
+            &[],
+        );
+    }
 }

@@ -16,6 +16,7 @@ from devinfra.claude.session_export.conftest import (
     RESUME_TOKEN,
     TEST_EPOCH,
     FakeSessionsService,
+    SseConnection,
     eventually,
     make_event,
     make_events,
@@ -236,6 +237,24 @@ async def test_a_lost_watch_position_takes_a_fresh_resume_token(
     await eventually(lambda: watch_opened(service))
     token_probes = [r for r in service.requests if r.url.path == "/v1/code/sessions" and r.url.params["limit"] == "1"]
     assert len(token_probes) == 2  # the first token, then the fresh one after the 410
+
+
+async def test_each_watch_connection_takes_a_fresh_resume_token(
+    service: FakeSessionsService, follow: Callable[[], Following]
+) -> None:
+    def ended_by_the_server(stream: SseConnection) -> None:
+        stream.send("sync", frame_id="cursor-1")
+        stream.close()
+
+    service.on_open = [ended_by_the_server]
+    follow()
+
+    async def watched_twice() -> bool:
+        return len(service.watches()) == 2
+
+    await eventually(watched_twice)
+    token_probes = [r for r in service.requests if r.url.path == "/v1/code/sessions" and r.url.params["limit"] == "1"]
+    assert len(token_probes) == 2  # the server answers an old token with a watch that delivers nothing
 
 
 async def test_a_refused_watch_is_reported_with_its_reason_while_discovery_carries_on(

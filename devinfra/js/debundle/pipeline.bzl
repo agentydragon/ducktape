@@ -15,15 +15,9 @@ def _debundle_pipeline_impl(ctx):
     plan = _debundle_pipeline_plan(ctx, out_dir.short_path)
     ctx.actions.run_shell(
         inputs = plan.inputs,
-        tools = [
-            ctx.executable.debundler,
-            ctx.executable.ortools_cpsat_solver,
-        ],
+        tools = [ctx.executable.debundler],
         outputs = [out_dir],
-        command = "cd \"${{BAZEL_BINDIR}}\" && DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER={solver} exec {command}".format(
-            solver = _shell_execroot_path(ctx.executable.ortools_cpsat_solver.path),
-            command = plan.command,
-        ),
+        command = "cd \"${{BAZEL_BINDIR}}\" && exec {command}".format(command = plan.command),
         env = {"BAZEL_BINDIR": ctx.bin_dir.path},
         use_default_shell_env = True,
         # The debundler asserts that each vendor package's resolved subpath
@@ -173,12 +167,6 @@ _DEBUNDLE_PIPELINE_ATTRS = {
         cfg = "exec",
         default = Label("//devinfra/js/debundle:debundler"),
         doc = "Debundler binary; must support `run` with flat transform spec or tree-shaped spec args.",
-    ),
-    "ortools_cpsat_solver": attr.label(
-        executable = True,
-        cfg = "exec",
-        default = Label("//devinfra/js/debundle:ortools_cpsat_solver"),
-        doc = "OR-Tools CP-SAT selector solver used for global selector assignment.",
     ),
     "input_data": attr.label_list(
         allow_files = True,

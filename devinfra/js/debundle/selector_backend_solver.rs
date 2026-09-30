@@ -107,7 +107,6 @@ fn singleton_no_constraint_backend_result(
         assignment_coverage: BackendAssignmentCoverage::TargetSupportComplete,
         assignments: vec![BackendAssignment { values }],
         diagnostic: None,
-        solver_response_stats: None,
         fixed_variables: BTreeSet::new(),
     })
 }
@@ -533,7 +532,6 @@ mod tests {
                 assignment_coverage: self.coverage,
                 assignments,
                 diagnostic: None,
-                solver_response_stats: None,
                 fixed_variables: BTreeSet::new(),
             })
         }
@@ -1009,7 +1007,6 @@ mod tests {
                 // Both rows agree on `unproven`, but nothing proved it fixed.
                 assignments: vec![row.clone(), row],
                 diagnostic: Some(reason.to_string()),
-                solver_response_stats: None,
                 fixed_variables: BTreeSet::from([owner_variable(fixed)]),
             },
         )

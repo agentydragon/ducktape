@@ -205,9 +205,8 @@ enum SpecNsCommand {
     /// binary. `--fail-fast` stops at the first problem. The source-only
     /// preflight mode (`--modules` plus `--source-file` or
     /// `--source-root --chunk`) instead resolves the module files jointly
-    /// against one chunk, with the same resolve as `run` (and its CP-SAT
-    /// sidecar), but without the pipeline build — a fast preflight for
-    /// sharding selector repairs.
+    /// against one chunk, with the same resolve as `run`, but without the
+    /// pipeline build — a fast preflight for sharding selector repairs.
     Validate(ValidateArgs),
 }
 

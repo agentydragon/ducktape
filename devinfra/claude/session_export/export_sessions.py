@@ -21,6 +21,7 @@ import statistics
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from enum import StrEnum
+from typing import assert_never
 
 import httpx
 import uvicorn
@@ -31,7 +32,12 @@ from devinfra.claude.session_export.database_migrate import RUNNER
 from devinfra.claude.session_export.models import SessionSummary, canonical_id
 from devinfra.claude.session_export.oauth import CALLBACK_PORT, DEFAULT_SCOPES, CredentialStore, OAuthTokenSource, pair
 from devinfra.claude.session_export.probe import probe
-from devinfra.claude.session_export.settings import ServeSettings, SyncSettings
+from devinfra.claude.session_export.settings import (
+    DEFAULT_SYNC_INTERVAL_SECONDS,
+    DEFAULT_SYNC_WORKERS,
+    ServeSettings,
+    SyncSettings,
+)
 from devinfra.claude.session_export.store import SessionStore, make_engine
 from devinfra.claude.session_export.supervisor import SyncSupervisor
 from devinfra.claude.session_export.sync import sync_once
@@ -137,37 +143,43 @@ async def run_serve() -> None:
         await engine.dispose()
 
 
+async def run_pair(args: argparse.Namespace) -> None:
+    store = CredentialStore(get_build_working_directory() / args.credentials_file)
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            async with asyncio.timeout(args.timeout):
+                await pair(client, store, scopes=args.scope or DEFAULT_SCOPES, port=args.port, announce=announce)
+        except TimeoutError as e:
+            raise TimeoutError(f"no authorization callback on port {args.port} within {args.timeout:.0f}s") from e
+
+
 async def async_main(command: Command, args: argparse.Namespace) -> None:
-    if command is Command.PAIR:
-        store = CredentialStore(get_build_working_directory() / args.credentials_file)
-        async with httpx.AsyncClient(timeout=30) as client:
-            try:
-                async with asyncio.timeout(args.timeout):
-                    await pair(client, store, scopes=args.scope or DEFAULT_SCOPES, port=args.port, announce=announce)
-            except TimeoutError as e:
-                raise TimeoutError(f"no authorization callback on port {args.port} within {args.timeout:.0f}s") from e
-        return
-    if command is Command.SYNC:
-        await run_sync(args)
-        return
-    if command is Command.SERVE:
-        await run_serve()
-        return
-    if command is Command.PROBE:
-        store = CredentialStore(get_build_working_directory() / args.credentials_file)
-        await probe(store, session_id=args.session, listen_seconds=args.listen_seconds)
-        return
-    async with open_api(args) as api:
-        if command is Command.EXPORT:
-            await export_all(
-                api,
-                get_build_working_directory() / args.out,
-                workers=args.workers,
-                session_ids=args.ids.split(",") if args.ids else None,
-                limit=args.limit_sessions,
-            )
-        else:
-            await count_events(api, args.workers)
+    match command:
+        case Command.PAIR:
+            await run_pair(args)
+        case Command.EXPORT:
+            async with open_api(args) as api:
+                await export_all(
+                    api,
+                    get_build_working_directory() / args.out,
+                    workers=args.workers,
+                    session_ids=args.ids.split(",") if args.ids else None,
+                    limit=args.limit_sessions,
+                )
+        case Command.COUNT:
+            async with open_api(args) as api:
+                await count_events(api, args.workers)
+        case Command.VERIFY:
+            verify_archive(get_build_working_directory() / args.out)
+        case Command.SYNC:
+            await run_sync(args)
+        case Command.SERVE:
+            await run_serve()
+        case Command.PROBE:
+            store = CredentialStore(get_build_working_directory() / args.credentials_file)
+            await probe(store, session_id=args.session, listen_seconds=args.listen_seconds)
+        case _:
+            assert_never(command)
 
 
 def main() -> None:
@@ -205,8 +217,8 @@ def main() -> None:
     )
     sync.add_argument("--credentials-file", required=True, help="OAuth credential written by `pair`")
     sync.set_defaults(cookie_file=None)
-    sync.add_argument("--workers", type=int, default=3, help="sessions fetched concurrently")
-    sync.add_argument("--interval", type=float, default=300, help="seconds between cycles")
+    sync.add_argument("--workers", type=int, default=DEFAULT_SYNC_WORKERS, help="sessions fetched concurrently")
+    sync.add_argument("--interval", type=float, default=DEFAULT_SYNC_INTERVAL_SECONDS, help="seconds between cycles")
     sync.add_argument("--once", action="store_true", help="run one cycle and exit")
     for network_command, default_workers in ((export, 3), (count, 4)):
         credential = network_command.add_mutually_exclusive_group(required=True)
@@ -219,11 +231,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)  # otherwise one line per 500-event page
 
-    command = Command(args.command)
-    if command is Command.VERIFY:
-        verify_archive(get_build_working_directory() / args.out)
-    else:
-        asyncio.run(async_main(command, args))
+    asyncio.run(async_main(Command(args.command), args))
 
 
 if __name__ == "__main__":

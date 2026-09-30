@@ -396,27 +396,27 @@ it.each([
   [{ rows: [viewState({ harness: "stopped" })] }, "gray", false, "Runner feed active · harness stopped"],
   [{ rows: [viewState()] }, "green", false, "Runner feed active · harness running"],
 ])("collapses %o into a %s dot (breathing: %s): %s", async (state, color, breathing, label) => {
-  const dot = (await render(threadState(state))).querySelector(".agentplane-status-dot");
+  const dot = (await render(threadState(state))).querySelector(".agentplane-thread-status-dot");
   expect(dot?.getAttribute("aria-label")).toBe(label);
   expect(dot?.getAttribute("style")).toContain(`--mantine-color-${color}-6`);
-  expect(dot?.classList.contains("agentplane-breathing-dot")).toBe(breathing);
+  expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(breathing);
 });
 
 it("pulses and labels the healthy status dot while a turn is active", async () => {
   const dot = (await render(threadState({ rows: [viewState({ activeTurn: "turn-1" })] }))).querySelector(
-    ".agentplane-status-dot"
+    ".agentplane-thread-status-dot"
   );
   expect(dot?.getAttribute("aria-label")).toBe("Turn running · Runner feed active · harness running");
   expect(dot?.getAttribute("style")).toContain("--mantine-color-green-6");
-  expect(dot?.classList.contains("agentplane-active-turn-dot")).toBe(true);
+  expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(true);
 });
 
 it("does not show active-turn status when the runner is not active", async () => {
   const dot = (
     await render(threadState({ rows: [viewState({ status: "ended", activeTurn: "turn-1" })] }))
-  ).querySelector(".agentplane-status-dot");
+  ).querySelector(".agentplane-thread-status-dot");
   expect(dot?.getAttribute("aria-label")).toBe("Runner feed ended · harness running");
-  expect(dot?.classList.contains("agentplane-active-turn-dot")).toBe(false);
+  expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(false);
 });
 
 // Retained history still says the harness runs and the feed failed; neither is live any more.
@@ -428,7 +428,7 @@ it.each([
   vi.mocked(getThread).mockResolvedValue({ ...THREAD, ...overrides });
   sandboxes = inventory;
   const dot = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
-    ".agentplane-status-dot"
+    ".agentplane-thread-status-dot"
   );
   expect(dot?.getAttribute("aria-label")).toBe(label);
   expect(dot?.getAttribute("style")).toContain("--mantine-color-gray-6");
