@@ -21,6 +21,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer
 
 from devinfra.claude.claude_api.oauth_client import AUTHORIZE_URL, CLIENT_ID, TOKEN_URL
+from devinfra.claude.session_export.failures import raise_for_status_with_body
 
 logger = logging.getLogger(__name__)
 
@@ -89,11 +90,7 @@ class CredentialStore:
 
 async def _post_token(client: httpx.AsyncClient, body: dict[str, str]) -> httpx.Response:
     response = await client.post(TOKEN_URL, json=body)
-    try:
-        response.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        e.add_note(response.text[:300])  # the error body names the OAuth error, e.g. invalid_grant
-        raise
+    raise_for_status_with_body(response)
     return response
 
 
