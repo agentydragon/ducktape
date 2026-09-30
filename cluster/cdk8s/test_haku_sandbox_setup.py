@@ -19,7 +19,7 @@ from util.bazel.runfiles import get_required_path
 
 @pytest.fixture(scope="module")
 def script() -> str:
-    return get_required_path("_main/cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh").read_text()
+    return get_required_path("_main/haku/sandbox/image/haku-sandbox-setup.sh").read_text()
 
 
 def test_haku_sandbox_sets_what_the_setup_requires(script: str) -> None:

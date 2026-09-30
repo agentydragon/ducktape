@@ -8,7 +8,7 @@
 # `python3-minimal` whose absent `json`/`shutil` broke both `tools/ci_wait.sh` and the
 # agent's own heredoc editing motion, then a missing `jq`/`tea`. As a Nix attribute set the
 # tool list is one reviewable list, and it shares a substrate with the other agent pod image
-# (<../../../../../x/codex_pod_image/default.nix>) instead of re-deriving it in apt.
+# (<../../../x/codex_pod_image/default.nix>) instead of re-deriving it in apt.
 # `tini` as PID 1 also reaps the exec zombies a long-lived claim accumulates (a run driven
 # through many backgrounded `exec_sandbox` calls left 5 in one session).
 #
@@ -21,19 +21,19 @@
 # ruleset-fetched toolchain — can't find their interpreter or `libstdc++`. Three bindings
 # below fix that, each carrying its own rationale:
 #   `bazelPkg`        nixpkgs' Bazel, so its helpers are patched at build time
-#   `substrate`       nix-ld's filesystem fallback and FHS shims (<../../../../../nix/lib/nix-ld-image.nix>)
+#   `substrate`       nix-ld's filesystem fallback and FHS shims (<../../../nix/lib/nix-ld-image.nix>)
 #   `bazelShell`      restores an FHS PATH fallback for empty-env actions
 #
 # The general rule behind the last two (Bazel renders actions as `exec env - …`, so port
 # FILESYSTEM defaults, not environment variables) and every measured dead end are recorded
-# once, in <../../../../../devinfra/debug/nixos_bazel_bash/README.md> "Issue 4". Don't restate them
+# once, in <../../../devinfra/debug/nixos_bazel_bash/README.md> "Issue 4". Don't restate them
 # here.
 #
 # Build:  nix build .#haku-sandbox-image
 # Load:   docker load < result
 { pkgs }:
 let
-  substrate = import ../../../../../nix/lib/nix-ld-image.nix { inherit pkgs; };
+  substrate = import ../../../nix/lib/nix-ld-image.nix { inherit pkgs; };
 
   # nixpkgs' Bazel, NOT bazelisk. This is the crux of making Bazel work here at all.
   #

@@ -1,5 +1,5 @@
 # Agent workspace image: interactive disposable dev workspaces, shared by all
-# LLM-lane templates (../workspaces/app/). Deliberately its own
+# LLM-lane templates (cluster/cdk8s/agent_workspaces.py). Deliberately its own
 # image, not haku-zone-worker — workspaces are operator-facing and evolve
 # independently of the haku dispatch plane. Built by
 # .github/workflows/agent-workspace-image.yml (Dockerfile, not Bazel oci_image:

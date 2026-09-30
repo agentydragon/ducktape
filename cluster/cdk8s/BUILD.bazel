@@ -824,7 +824,7 @@ py_test(
     name = "test_haku_sandbox_setup",
     srcs = ["test_haku_sandbox_setup.py"],
     data = [
-        "//cluster/k8s:haku/workspaces/image/haku-sandbox-setup.sh",
+        "//haku/sandbox:image/haku-sandbox-setup.sh",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
