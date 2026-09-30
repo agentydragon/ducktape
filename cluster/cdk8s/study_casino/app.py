@@ -1,10 +1,10 @@
-"""study-casino: Namespace, CNPG Postgres, the read-only role provisioner Job, Deployment,
-Service, route and the agents' secrets-reader binding.
+"""study-casino: Namespace, CNPG Postgres, the ESO-minted read-only role credentials and the
+Job granting that role read access, Deployment, Service, route and the agents' secrets-reader
+binding.
 
 Hand-written beside the generated output: `readonly-role.sql` (a `configMapGenerator` input),
-the read-only role's SOPS Secret, the `kustomization.yaml` that generates the SQL ConfigMap, and
-`image-pins/kustomization.yaml`, which pins the image tag and copies it into
-`STUDY_CASINO_IMAGE_TAG`.
+the `kustomization.yaml` that generates the SQL ConfigMap, and `image-pins/kustomization.yaml`,
+which pins the image tag and copies it into `STUDY_CASINO_IMAGE_TAG`.
 """
 
 from __future__ import annotations
@@ -28,12 +28,14 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 )
 
 from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
+from cluster.cdk8s.reflector import mirror_annotations
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -48,6 +50,8 @@ _SERVICE = ServiceRef(
 POSTGRES = cnpg.PostgresRef.generated(name="study-casino-db", namespace=_NAMESPACE)
 _OIDC = SecretRef(namespace=_NAMESPACE, name="study-casino-oidc")
 _DATABASE = "studycasino"
+_READONLY_ROLE = "study_casino_ro"
+_READONLY = SecretRef(namespace=_NAMESPACE, name="study-casino-db-ro")
 _REGION = "hil"
 _IMMUTABLE = "public, max-age=31536000, immutable"
 # image-pins/ overrides the tag and copies it into STUDY_CASINO_IMAGE_TAG.
@@ -92,24 +96,51 @@ def _database(scope: Construct) -> None:
         placement=node_scheduling.Placement(node_selector={"topology.kubernetes.io/region": _REGION}),
         storage_class="local-path-ovh-ssd",
         size="1Gi",
-        # Declaratively-managed roles. CNPG creates `study_casino_ro` on first
-        # reconcile and keeps the password in sync with study-casino-db-readonly.
-        # Object-level GRANTs (CONNECT/USAGE/SELECT + ALTER DEFAULT PRIVILEGES)
-        # are applied by the provisioner Job running as the `studycasino` owner —
-        # `managed.roles` only covers role attributes, not object permissions.
+        # CNPG creates the read-only role on first reconcile and sets its password from
+        # the `passwordSecret`. Object-level GRANTs (CONNECT/USAGE/SELECT + ALTER DEFAULT
+        # PRIVILEGES) are applied by the provisioner Job running as the `studycasino`
+        # owner — `managed.roles` only covers role attributes, not object permissions.
         managed=ClusterSpecManaged(
             roles=[
                 ClusterSpecManagedRoles(
-                    name="study_casino_ro",
+                    name=_READONLY_ROLE,
                     ensure=ClusterSpecManagedRolesEnsure.PRESENT,
                     login=True,
-                    password_secret=ClusterSpecManagedRolesPasswordSecret(name="study-casino-db-readonly"),
-                    comment="Read-only access for sandbox agents (see cluster/k8s/study-casino/readonly-role.sql)",
+                    password_secret=ClusterSpecManagedRolesPasswordSecret(name=_READONLY.name),
+                    comment=(
+                        "Read-only access for sandbox agents; object GRANTs come from the"
+                        " study-casino-db-readonly-provisioner Job."
+                    ),
                 )
             ]
         ),
         initdb=cnpg.same_owner_initdb(_DATABASE),
         wal_archive=False,
+    )
+
+
+def _readonly_credentials(scope: Construct) -> None:
+    """ESO mints the read-only password and replaces it at `mint_db_role_secret`'s refresh
+    interval. `cnpg.io/reload` makes the CNPG operator watch the Secret, so a new password
+    reaches the role when ESO writes it, not at the operator's next unrelated reconcile.
+    Reflector mirrors the Secret into claude-sandbox."""
+    mint_db_role_secret(
+        scope,
+        "readonly-credentials",
+        name=_READONLY.name,
+        namespace=_NAMESPACE,
+        role=_READONLY_ROLE,
+        host=POSTGRES.rw.host,
+        port=POSTGRES.rw.port.number,
+        database=_DATABASE,
+        target_labels={"cnpg.io/reload": "true"},
+        target_annotations={
+            "description": (
+                "Read-only Postgres credentials for sandbox agents. CNPG sets the study_casino_ro password from"
+                " this Secret; Reflector mirrors it into claude-sandbox."
+            ),
+            **mirror_annotations(["claude-sandbox"]),
+        },
     )
 
 
@@ -309,6 +340,7 @@ def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _namespace(chart)
     _database(chart)
+    _readonly_credentials(chart)
     _readonly_provisioner(chart)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     _deployment(chart)

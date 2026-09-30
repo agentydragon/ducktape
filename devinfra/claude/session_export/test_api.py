@@ -6,13 +6,7 @@ import pytest_bazel
 from pydantic import SecretStr
 from tenacity import wait_none
 
-from devinfra.claude.session_export.api import (
-    ResumePointLostError,
-    SessionCookie,
-    SessionsApi,
-    StreamClosedEarlyError,
-    WatchCursor,
-)
+from devinfra.claude.session_export.api import ResumePointLostError, SessionCookie, SessionsApi, StreamClosedEarlyError
 from devinfra.claude.session_export.conftest import (
     RESUME_TOKEN,
     TEST_COOKIE,
@@ -230,13 +224,14 @@ async def test_resume_token_comes_from_a_one_item_list(service: FakeSessionsServ
     assert service.requests[0].url.params["limit"] == "1"
 
 
-async def test_watch_yields_session_changes_and_advances_its_cursor(
-    service: FakeSessionsService, api: SessionsApi
+async def test_watch_yields_session_changes(
+    service: FakeSessionsService, api: SessionsApi, caplog: pytest.LogCaptureFixture
 ) -> None:
     service.events = {SESSION_ID: make_events(1)}
     item = service.list_item(SESSION_ID)
 
     def script(stream: SseConnection) -> None:
+        stream.send(None, frame_id="cursor-0")  # a keepalive: no name, no data
         stream.send("sync", frame_id="cursor-1")
         stream.send("added", item, frame_id="cursor-2")
         stream.send("changed", {**item, "title": "Renamed"}, frame_id="cursor-3")
@@ -244,33 +239,34 @@ async def test_watch_yields_session_changes_and_advances_its_cursor(
         stream.close()
 
     service.on_open = [script]
-    cursor = WatchCursor(RESUME_TOKEN)
     connected: list[str] = []
-    changes = [change async for change in api.watch_sessions(cursor, on_connected=lambda: connected.append("yes"))]
+    changes = [
+        change async for change in api.watch_sessions(RESUME_TOKEN, on_connected=lambda: connected.append("yes"))
+    ]
     assert changes == [
         SessionSummary(**item),
         SessionSummary(**{**item, "title": "Renamed"}),
         SessionRemoved(id=item["id"]),
     ]
-    assert cursor.token == "cursor-4"
     assert connected == ["yes"]
+    assert not caplog.records  # the keepalive is not an unknown frame
     [opened] = service.watches()
     assert dict(opened.request.url.params) == {"exclude_tags": "-", "resume_token": RESUME_TOKEN}
     assert opened.request.headers["anthropic-client-platform"] == "web_claude_ai"
 
 
-async def test_watch_says_when_the_server_no_longer_holds_the_cursor(
+async def test_watch_says_when_the_server_no_longer_holds_the_token(
     service: FakeSessionsService, api: SessionsApi
 ) -> None:
     service.stream_refusals = [410]
     with pytest.raises(ResumePointLostError):
-        [change async for change in api.watch_sessions(WatchCursor("expired"))]
+        [change async for change in api.watch_sessions("expired")]
 
 
 async def test_a_watch_closed_without_a_frame_is_an_error(service: FakeSessionsService, api: SessionsApi) -> None:
     service.on_open = [SseConnection.close]
     with pytest.raises(StreamClosedEarlyError):
-        [change async for change in api.watch_sessions(WatchCursor(RESUME_TOKEN))]
+        [change async for change in api.watch_sessions(RESUME_TOKEN)]
 
 
 if __name__ == "__main__":

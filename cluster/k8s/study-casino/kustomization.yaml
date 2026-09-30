@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   # cdk8s-generated (cluster/cdk8s/study_casino/app.py).
   - study-casino.k8s.yaml
-  - readonly-secret.sops.yaml
 components:
   - ./image-pins
 configMapGenerator:

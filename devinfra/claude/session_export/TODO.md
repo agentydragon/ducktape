@@ -9,21 +9,17 @@ queries) and decide whether byte-exact payloads outweigh containment queries and
 Switching is one column type in `store.py` and `migrations/versions/0001_sessions.py`, and dropping `dumps_jsonb`'s
 rewrite; deployed databases are disposable.
 
-## Observe live following against the real API
+## Streamed client events keep NULL worker stamps
 
-Observed so far ([docs/api.md](docs/api.md) § Event stream, § Session watch): the bearer token opens the event stream
-and the session watch (with its platform header), and a running session's stream sends `client_event` frames. Still to
-check, with `export_sessions_bin probe --session ID --listen-seconds 60` (it counts every frame by name and data
-shape):
+A live `client_event` frame carries no stamps: they follow as `delivery_update` frames ([docs/api.md](docs/api.md)
+§ Event stream), which the sync ignores. An event stored from a stream frame therefore has NULL stamps, is not "in
+flight" for `resume_after` (that needs `received_at`), and nothing re-reads it: for every client event first seen on a
+stream (a user's message, a queued notification) the mirror differs from a page read.
 
-- on the deployed sync, the page's "last event" moves while a session runs and no page read follows the connect;
-- a quiet stream stays open past `STREAM_IDLE_TIMEOUT` (35 s, the web client's own limit) instead of reconnecting
-  each time: the probe says "closed by the server" or "open at the end", and the count of unnamed frames is the
-  keepalive cadence;
-- the worker stamps (`received_at`, `processing_at`, `processed_at`): the first four `client_event` frames observed
-  carry none, and an event stored from such a frame keeps NULL stamps, because `resume_after` re-reads only events
-  with `received_at` set and `processed_at` unset. Whether the server sends a frame again when the stamps change
-  shows as "id(s) sent again" while a message is sent; if it never does, decide whether the cycle should re-read
-  recent events.
+Two ways to close it. Apply `delivery_update` by re-reading the event by `event_id` (the frame's `timestamp` is not
+the stored stamp, so it cannot be copied). Or treat a stored client event without `processed_at` as in flight, which
+a `queued_notification` that is never processed would pin at its `sequence_num`, re-paging everything after it.
 
-Delete this entry once each is confirmed, correcting the docs where it is not.
+## Confirm live following on the deployed sync
+
+The page's "last event" moves while a session runs and no page read follows the connect.
