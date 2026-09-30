@@ -9,6 +9,8 @@
 //! both the gate's simulator and the emitter lives in
 //! `esm_import_order`.
 
+// The standalone composer crate has a same-named directory beside this crate root.
+#[path = "chunk_analysis.rs"]
 mod chunk_analysis;
 mod chunk_factorization;
 mod counted_digraph;
