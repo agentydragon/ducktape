@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import secrets
+import socket
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,7 +18,6 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import pytest
 import pytest_bazel
-import uvicorn
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from fastmcp.server.auth.cimd import CIMDDocument
@@ -29,7 +29,6 @@ from pydantic import AnyHttpUrl
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.applications import Starlette
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.dcr import register_client
 from agentplane.action_service.api import create_app
@@ -53,8 +52,8 @@ from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, adm
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
-from util.net import bind_free_port, pick_free_port
-from util.testing.asgi import serve_app
+from util.net import bind_free_port
+from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 CALLBACK = "https://client.example.test/callback"
@@ -72,6 +71,7 @@ class OAuthFixture:
     base_url: str
     metadata: dict[str, str]
     settings: OAuthSettings
+    service_sock: socket.socket  # `base_url`'s port, bound and listening, for a test that serves the app over HTTP
 
     async def register(self) -> str:
         response = await self.browser.post(
@@ -161,9 +161,9 @@ class OAuthFixture:
 @pytest.fixture
 async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterator[OAuthFixture]:
     private_key, public_key = generate_rsa_keypair()
-    oidc_sock, service_port = bind_free_port(), pick_free_port()
+    oidc_sock, service_sock = bind_free_port(), bind_free_port()
     issuer = f"http://127.0.0.1:{oidc_sock.getsockname()[1]}/application/o/actions/"
-    base_url = f"http://127.0.0.1:{service_port}"
+    base_url = f"http://127.0.0.1:{service_sock.getsockname()[1]}"
     secret, signing, encryption = (tmp_path / name for name in ("upstream-secret", "jwt-key", "encryption-key"))
     secret.write_text("test-only-upstream-secret")
     signing.write_text(secrets.token_urlsafe(48))
@@ -186,14 +186,17 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
     idp = build_mock_oidc_app(
         issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
     )
-    async with serve_app(idp, sock=oidc_sock), running_oauth(settings, db_url, enrollments, connections) as proxy:
-        app = Starlette(routes=proxy.get_routes(mcp_path="/mcp"))
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app), base_url=base_url, follow_redirects=False
-        ) as browser:
-            response = await browser.get(f"{base_url}/.well-known/oauth-authorization-server")
-            response.raise_for_status()
-            yield OAuthFixture(proxy, callers, connections, enrollments, browser, base_url, response.json(), settings)
+    with service_sock:  # uvicorn closes it only in a test that serves on it
+        async with serve_app(idp, sock=oidc_sock), running_oauth(settings, db_url, enrollments, connections) as proxy:
+            app = Starlette(routes=proxy.get_routes(mcp_path="/mcp"))
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app), base_url=base_url, follow_redirects=False
+            ) as browser:
+                response = await browser.get(f"{base_url}/.well-known/oauth-authorization-server")
+                response.raise_for_status()
+                yield OAuthFixture(
+                    proxy, callers, connections, enrollments, browser, base_url, response.json(), settings, service_sock
+                )
 
 
 async def test_cimd_reaches_canonical_consent_and_grants(oauth: OAuthFixture, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -274,37 +277,25 @@ async def test_real_sdk_dcr_over_http_persists_client_metadata(
         enrollments=oauth.enrollments,
         oauth=oauth.proxy,
     )
-    port = urlsplit(oauth.base_url).port
-    assert port is not None
-    # PostgreSQL pools belong to the fixture event loop, not serve_app's thread.
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", access_log=False))
-    serving = asyncio.create_task(server.serve())
     try:
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(OSError)
-        ):
-            with attempt:
-                _, writer = await asyncio.open_connection("127.0.0.1", port)
-                writer.close()
-                await writer.wait_closed()
-        registered = await register_client(f"{oauth.base_url}/mcp", redirect_uri)
-        assert registered.client.client_id is not None
-        # A separately constructed provider reads durable server metadata, not the
-        # client's cache or the registering provider's in-process objects.
-        async with running_oauth(oauth.settings, db_url, oauth.enrollments, oauth.connections) as replacement:
-            restored = await replacement.get_client(registered.client.client_id)
-            assert restored is not None
-            assert restored.client_name == registered.client.client_name
-            assert restored.redirect_uris == registered.client.redirect_uris
-            assert restored.scope == registered.client.scope
-            assert restored.token_endpoint_auth_method == registered.client.token_endpoint_auth_method
-        consent = await oauth.browser.get(registered.authorization_url)
-        assert consent.status_code == 302
-        assert consent.headers["location"].startswith("https://integration.example.test/#/connection-enrollments/")
-        assert await oauth.connections.list() == []
+        # PostgreSQL pools belong to the fixture event loop, not serve_app's thread.
+        async with serve_app_in_loop(app, sock=oauth.service_sock):
+            registered = await register_client(f"{oauth.base_url}/mcp", redirect_uri)
+            assert registered.client.client_id is not None
+            # A separately constructed provider reads durable server metadata, not the
+            # client's cache or the registering provider's in-process objects.
+            async with running_oauth(oauth.settings, db_url, oauth.enrollments, oauth.connections) as replacement:
+                restored = await replacement.get_client(registered.client.client_id)
+                assert restored is not None
+                assert restored.client_name == registered.client.client_name
+                assert restored.redirect_uris == registered.client.redirect_uris
+                assert restored.scope == registered.client.scope
+                assert restored.token_endpoint_auth_method == registered.client.token_endpoint_auth_method
+            consent = await oauth.browser.get(registered.authorization_url)
+            assert consent.status_code == 302
+            assert consent.headers["location"].startswith("https://integration.example.test/#/connection-enrollments/")
+            assert await oauth.connections.list() == []
     finally:
-        server.should_exit = True
-        await asyncio.wait_for(serving, timeout=10)
         await service.close()
 
 

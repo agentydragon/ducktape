@@ -23,10 +23,10 @@ use std::process::Command;
 
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, assert_module_exports, debundler_path, logical_module,
-    logical_module_with_binding_groups, parse_stdout_json, read_selector_outcomes,
-    run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture, run_match_selector,
-    run_source_only_validate, run_spec_validate, run_synthesize_selectors,
-    write_validate_fixture_spec,
+    logical_module_with_binding_groups, outcomes, owner_graph, parse_stdout_json,
+    read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture,
+    run_match_selector, run_source_only_validate, run_spec_validate, run_synthesize_selectors,
+    write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -139,13 +139,6 @@ export { actual };
     subject: "actual",
 };
 
-fn write(path: &Path, body: &str) {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
-
 fn source_matches_yaml(case: &Case) -> String {
     let indented = case
         .selector
@@ -177,19 +170,13 @@ fn fixture(case: &Case) -> FixtureOpts<'_> {
     )
 }
 
-fn outcomes(report: &Value) -> &[Value] {
-    report["outcomes"]
-        .as_array()
-        .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
-}
-
 /// `spec validate --modules --source-file`: the case's record, if listed.
 fn source_only_validate(case: &Case) -> Option<Value> {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("chunk.js");
-    write(&source, case.chunk);
+    write_text_file(&source, case.chunk);
     let modules = dir.path().join("modules");
-    write(
+    write_text_file(
         &modules.join(format!("{MODULE}.yaml")),
         &source_matches_yaml(case),
     );
@@ -212,7 +199,7 @@ fn spec_validate(case: &Case) -> Option<Value> {
 fn match_selector(case: &Case) -> Value {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("chunk.js");
-    write(&source, case.chunk);
+    write_text_file(&source, case.chunk);
     let report = run_match_selector(
         &source,
         case.selector,
@@ -613,7 +600,7 @@ fn elimination_fixture() -> FixtureOpts<'static> {
 /// `root/owner_graph.json` for the graph-backed commands.
 fn write_elimination_tree(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
     let source = root.join("chunk.js");
-    write(&source, ELIMINATION_CHUNK);
+    write_text_file(&source, ELIMINATION_CHUNK);
     let modules = root.join("modules");
     for (path, name, local, selector) in [
         ("elimination/either", "Either", "f", EITHER),
@@ -624,14 +611,14 @@ fn write_elimination_tree(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
             .map(|line| format!("      {line}"))
             .collect::<Vec<_>>()
             .join("\n");
-        write(
+        write_text_file(
             &modules.join(format!("{path}.yaml")),
             &format!(
                 "source_matches:\n  - match: |\n{indented}\n    bindings:\n      - local: {local}\n        name: {name}\n"
             ),
         );
     }
-    write(
+    write_text_file(
         &modules.join("elimination/third.yaml"),
         "members:\n  - name: Third\n    selector: { binding: { name: third } }\n",
     );
@@ -703,16 +690,9 @@ fn write_owner_graph(root: &Path, statements: &[GraphStatement]) -> PathBuf {
         })
         .collect::<Vec<_>>();
     let graph = root.join("owner_graph.json");
-    write(
+    write_text_file(
         &graph,
-        &json!({
-            "chunk_id": "static/app",
-            "nodes": nodes,
-            "edges": [],
-            "module_graph": {"nodes": [], "edges": [], "sccs": []},
-            "atomic_graph": {"nodes": [], "edges": []},
-        })
-        .to_string(),
+        &owner_graph("static/app", nodes, vec![]).to_string(),
     );
     graph
 }
@@ -864,24 +844,24 @@ fn relational_claims_eliminate_only_in_spec_wide_commands() {
 
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("chunk.js");
-    write(&source, RELATIONAL_ELIMINATION_CHUNK);
+    write_text_file(&source, RELATIONAL_ELIMINATION_CHUNK);
     let modules = dir.path().join("modules");
     let indented = EITHER
         .lines()
         .map(|line| format!("      {line}"))
         .collect::<Vec<_>>()
         .join("\n");
-    write(
+    write_text_file(
         &modules.join("elimination/either.yaml"),
         &format!(
             "source_matches:\n  - match: |\n{indented}\n    bindings:\n      - local: f\n        name: Either\n"
         ),
     );
-    write(
+    write_text_file(
         &modules.join("elimination/other.yaml"),
         "members:\n  - name: Other\n    selector: { reads_member: { member: other, kind: function_declaration } }\n",
     );
-    write(
+    write_text_file(
         &modules.join("elimination/marker.yaml"),
         "members:\n  - name: Marker\n    selector: { binding: { name: marker } }\n",
     );
@@ -957,7 +937,7 @@ fn export_record(outcomes: &[Value], export_name: &str) -> Option<Value> {
 fn synthesized_selector_resolves_in_every_command() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("chunk.js");
-    write(
+    write_text_file(
         &source,
         r#"function actual(input) {
   return input.trim() + "-suffix";
@@ -970,7 +950,7 @@ export { actual, other };
     );
     let modules = dir.path().join("modules");
     let module_file = modules.join(format!("{MODULE}.yaml"));
-    write(
+    write_text_file(
         &module_file,
         &format!("members:\n  - name: {EXPORT}\n    selector: {{ binding: {{ name: actual }} }}\n"),
     );
@@ -1084,14 +1064,14 @@ function f() { return key + 1; }"#;
 
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("chunk.js");
-    write(&source, CHUNK);
+    write_text_file(&source, CHUNK);
     let modules = dir.path().join("modules");
     let indented = TEMPLATE
         .lines()
         .map(|line| format!("      {line}"))
         .collect::<Vec<_>>()
         .join("\n");
-    write(
+    write_text_file(
         &modules.join(format!("{MODULE}.yaml")),
         &format!(
             "source_matches:\n  - match: |\n{indented}\n    bindings:\n      - local: key\n        name: anchorKey\n      - local: f\n        name: reader\n"

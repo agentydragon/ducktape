@@ -91,14 +91,10 @@ export { X, Existing };
     );
 }
 
-// Regression test (originally RED) for the anonymous-only-module
-// side-effect drop: a logical module whose only member is an
-// anonymous statement owns no bindings, so the entry used to emit no
-// import for it at all — the emitted file existed but was never
-// loaded, and its side effects silently vanished while the gate
-// accepted the spec. The entry must emit a side-effect-only
-// `import "./<module>.js";` for binding-less modules, placed by the
-// same shared import ordering as every other entry import.
+// A logical module whose only member is an anonymous statement owns no
+// bindings, so the entry must emit a side-effect-only
+// `import "./<module>.js";` for it — placed by the same shared import
+// ordering as every other entry import — or its side effects never run.
 #[test]
 fn anonymous_only_module_side_effects_still_run() {
     let fixture = run_fixture(FixtureOpts::new(

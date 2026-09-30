@@ -20,116 +20,12 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-use debundle_e2e_support::{debundler_path, parse_stdout_json, write_text_file};
+use debundle_e2e_support::{
+    graph_with_acyclic_cross_module_read, graph_with_atomic_unit, graph_with_merge_cycle_potential,
+    parse_stdout_json, run_debundle, write_text_file,
+};
 use serde_json::Value;
-
-fn run_debundle(args: &[&str]) -> std::process::Output {
-    Command::new(debundler_path())
-        .args(args)
-        .output()
-        .expect("spawn debundle")
-}
-
-fn owner_node(id: &str, ordinal: usize, binding: &str, destination: &str) -> Value {
-    serde_json::json!({
-        "id": id,
-        "statement_ordinal": ordinal,
-        "declared_bindings": [ { "binding": binding, "export_name": binding } ],
-        "statement_kind": "var_decl",
-        "purity": { "kind": "pure" },
-        "destination": destination
-    })
-}
-
-fn eager_edge(id: &str, source: &str, target: &str, binding: &str, ordinal: usize) -> Value {
-    serde_json::json!({
-        "id": id,
-        "source": source,
-        "target": target,
-        "edge_kind": "eager_use",
-        "binding": binding,
-        "statement_ordinal": ordinal,
-        "constrains_init_order": true
-    })
-}
-
-fn graph(nodes: Vec<Value>, edges: Vec<Value>) -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": nodes,
-        "edges": edges,
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
-    .to_string()
-}
-
-/// alpha (module `a`) eager-reads beta (module `b`) — an acyclic
-/// cross-module read, so single-binding moves between the modules
-/// stay realizable. Positive-control graph.
-fn acyclic_graph() -> String {
-    graph(
-        vec![
-            owner_node("owner:0", 0, "alpha", "a"),
-            owner_node("owner:1", 1, "beta", "b"),
-        ],
-        vec![eager_edge("owner_edge:0", "owner:0", "owner:1", "beta", 0)],
-    )
-}
-
-/// alpha (owner:0) and beta (owner:1) form an atomic unit via mutual
-/// `eager_rebind` edges; both pre-claimed by `home/atom`. Moving one
-/// of them out splits the atom.
-fn atomic_unit_graph() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            owner_node("owner:0", 0, "alpha", "home/atom"),
-            owner_node("owner:1", 1, "beta", "home/atom"),
-        ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_rebind",
-                "binding": "beta",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            },
-            {
-                "id": "owner_edge:1",
-                "source": "owner:1",
-                "target": "owner:0",
-                "edge_kind": "eager_rebind",
-                "binding": "alpha",
-                "statement_ordinal": 1,
-                "constrains_init_order": true
-            }
-        ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
-    .to_string()
-}
-
-/// alpha (`a`) → gamma (`c`) → beta (`b`): a DAG quotient `a → c → b`
-/// that closes into the 2-cycle `m ↔ c` when `a` and `b` merge.
-fn merge_cycle_graph() -> String {
-    graph(
-        vec![
-            owner_node("owner:0", 0, "alpha", "a"),
-            owner_node("owner:1", 1, "beta", "b"),
-            owner_node("owner:2", 2, "gamma", "c"),
-        ],
-        vec![
-            eager_edge("owner_edge:0", "owner:0", "owner:2", "gamma", 0),
-            eager_edge("owner_edge:1", "owner:2", "owner:1", "beta", 2),
-        ],
-    )
-}
 
 fn one_member_module(binding: &str) -> String {
     format!("members:\n  - selector: {{ binding: {{ name: {binding} }} }}\n")
@@ -138,7 +34,7 @@ fn one_member_module(binding: &str) -> String {
 fn write_acyclic_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let modules = root.join("modules");
     let graph_path = root.join("owner_graph.json");
-    write_text_file(&graph_path, &acyclic_graph());
+    write_text_file(&graph_path, &graph_with_acyclic_cross_module_read());
     write_text_file(&modules.join("a.yaml"), &one_member_module("alpha"));
     write_text_file(&modules.join("b.yaml"), &one_member_module("beta"));
     (modules, graph_path)
@@ -365,7 +261,7 @@ fn assign_atom_split_rejection_emits_structured_json_and_artifact() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
     let graph_path = dir.path().join("owner_graph.json");
-    write_text_file(&graph_path, &atomic_unit_graph());
+    write_text_file(&graph_path, &graph_with_atomic_unit());
     write_text_file(
         &modules.join("home/atom.yaml"),
         &format!(
@@ -422,7 +318,7 @@ fn merge_cycle_rejection_emits_structured_json_and_gate_list_works() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
     let graph_path = dir.path().join("owner_graph.json");
-    write_text_file(&graph_path, &merge_cycle_graph());
+    write_text_file(&graph_path, &graph_with_merge_cycle_potential());
     write_text_file(&modules.join("a.yaml"), &one_member_module("alpha"));
     write_text_file(&modules.join("b.yaml"), &one_member_module("beta"));
     write_text_file(&modules.join("c.yaml"), &one_member_module("gamma"));
@@ -495,7 +391,7 @@ fn passing_edit_gate_clears_stale_rejection_artifacts() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
     let graph_path = dir.path().join("owner_graph.json");
-    write_text_file(&graph_path, &merge_cycle_graph());
+    write_text_file(&graph_path, &graph_with_merge_cycle_potential());
     write_text_file(&modules.join("a.yaml"), &one_member_module("alpha"));
     write_text_file(&modules.join("b.yaml"), &one_member_module("beta"));
     write_text_file(&modules.join("c.yaml"), &one_member_module("gamma"));
@@ -544,7 +440,7 @@ fn rejection_without_json_format_keeps_stdout_text_free_of_json() {
     let dir = tempfile::tempdir().unwrap();
     let modules = dir.path().join("modules");
     let graph_path = dir.path().join("owner_graph.json");
-    write_text_file(&graph_path, &merge_cycle_graph());
+    write_text_file(&graph_path, &graph_with_merge_cycle_potential());
     write_text_file(&modules.join("a.yaml"), &one_member_module("alpha"));
     write_text_file(&modules.join("b.yaml"), &one_member_module("beta"));
     write_text_file(&modules.join("c.yaml"), &one_member_module("gamma"));

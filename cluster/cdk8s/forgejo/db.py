@@ -54,8 +54,7 @@ def _chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, _chart)
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{POSTGRES.name}.k8s.yaml", _CREDENTIALS_FILE]),
+        kustomize_kustomization(resources=[write_charts(root, OUTPUT_DIR, _chart), _CREDENTIALS_FILE]),
     )

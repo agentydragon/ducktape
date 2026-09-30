@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ago, liveSummary, sentence, untilExpiry } from "./status";
+import { ago, every, lastEvent, nextPoll, plural, sentence, untilExpiry } from "./status";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
 
@@ -28,23 +28,40 @@ describe("ago", () => {
   });
 });
 
-describe("liveSummary", () => {
-  const following = { following: true, watching: true, streams: 2, last_event_at: "2026-01-01T11:45:00Z" };
+describe("plural", () => {
+  it("keeps the noun singular for exactly one", () => {
+    expect(plural(1, "session")).toBe("1 session");
+    expect(plural(0, "session")).toBe("0 sessions");
+    expect(plural(308, "event")).toBe("308 events");
+  });
+});
 
-  it("says polling is all there is when following is off", () => {
-    expect(liveSummary({ ...following, following: false, watching: false, streams: 0 }, NOW)).toBe(
-      "Off; the sync polls only"
-    );
+describe("every", () => {
+  it("names the largest whole unit", () => {
+    expect(every(45)).toBe("45 seconds");
+    expect(every(300)).toBe("5 minutes");
+    expect(every(60)).toBe("1 minute");
+    expect(every(7200)).toBe("2 hours");
+  });
+});
+
+describe("nextPoll", () => {
+  it("counts down from when the last poll finished", () => {
+    expect(nextPoll("2026-01-01T11:57:00Z", 300, NOW)).toBe("in 2m");
   });
 
-  it("reports the watch, the open streams and the last event", () => {
-    expect(liveSummary(following, NOW)).toBe("watch connected, 2 sessions streaming, last event 15m ago");
+  it("says a poll is due once the pause has passed", () => {
+    expect(nextPoll("2026-01-01T11:50:00Z", 300, NOW)).toBe("due now");
+  });
+});
+
+describe("lastEvent", () => {
+  it("says none yet before any event arrived", () => {
+    expect(lastEvent(null, NOW)).toBe("none yet");
   });
 
-  it("says so when the watch is down and no event has arrived", () => {
-    expect(liveSummary({ ...following, watching: false, streams: 1, last_event_at: null }, NOW)).toBe(
-      "watch not connected, 1 session streaming, no event yet"
-    );
+  it("counts back from the last event", () => {
+    expect(lastEvent("2026-01-01T11:45:00Z", NOW)).toBe("15m ago");
   });
 });
 

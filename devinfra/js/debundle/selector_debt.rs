@@ -79,7 +79,6 @@ pub fn minified_score(name: &str) -> u8 {
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectorSite {
-    Member,
     SourceMatch,
     AnonymousStatement,
 }
@@ -115,7 +114,6 @@ pub struct NameOnlyModuleGroup {
 pub struct SourceMatchOccurrence {
     pub module: String,
     pub site: SelectorSite,
-    /// Readable export `name:` for `Member`-site occurrences.
     pub export_name: Option<String>,
     /// The original (un-normalized) `match` body, for display.
     pub match_source: String,
@@ -142,7 +140,6 @@ pub struct SourceAwareRepeatedExactSourceMatch {
 pub struct SourceAwareStructuralSelector {
     pub module: String,
     pub site: SelectorSite,
-    /// Readable export `name:` for `Member`-site occurrences.
     pub export_name: Option<String>,
     /// The exact top-level body indices matched by this selector today.
     pub exact_body_indices: Vec<usize>,
@@ -408,46 +405,6 @@ fn compute_selector_debt_impl(
                         binding_name: binding.name,
                         export_name: member.name.clone(),
                     });
-                }
-                MemberSelectorSpec::SourceMatch(selector) => {
-                    source_match_total += 1;
-                    let exact_body_indices = collect_source_aware_debt(
-                        &mut source_aware_checked,
-                        &mut source_aware_unique,
-                        &mut source_aware_near_ambiguous,
-                        source_aware,
-                        runtime_module.as_ref(),
-                        &module_path,
-                        SelectorSite::Member,
-                        member.name.clone(),
-                        &selector,
-                    )?;
-                    if let Some(candidate) = collect_binding_group_suggestion_candidate(
-                        runtime_module.as_ref(),
-                        &module_path,
-                        member.name.clone(),
-                        &selector,
-                        exact_body_indices.as_deref(),
-                    )? {
-                        binding_group_suggestion_candidates.push(candidate);
-                    }
-                    let normalized = normalize_match(&selector.match_source);
-                    let occurrence = SourceMatchOccurrence {
-                        module: module_path.clone(),
-                        site: SelectorSite::Member,
-                        export_name: member.name.clone(),
-                        match_source: selector.match_source,
-                    };
-                    if let Some(exact_body_indices) = exact_body_indices {
-                        source_aware_exact_by_key
-                            .entry((normalized.clone(), exact_body_indices))
-                            .or_default()
-                            .push(occurrence.clone());
-                    }
-                    by_normalized
-                        .entry(normalized)
-                        .or_default()
-                        .push(occurrence);
                 }
                 MemberSelectorSpec::CrossRef(_)
                 | MemberSelectorSpec::ReadsMember(_)

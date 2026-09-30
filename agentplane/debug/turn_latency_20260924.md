@@ -192,7 +192,7 @@ harness ─▶ agentplane-egress ─▶ agentplane-llm-ingress ─▶ LiteLLM �
             workload token)       LiteLLM's key)                           (CLIProxyAPI, own OAuth session)
 ```
 
-`chatgpt/oai-responses/*` routes to CLIProxyAPI (<../../cluster/k8s/litellm/app/litellm.k8s.yaml>),
+`chatgpt/oai-responses/*` routes to CLIProxyAPI (<../../cluster/k8s/litellm/app/app.k8s.yaml>),
 which calls the ChatGPT Codex backend, not the OpenAI platform API
 (<../../cluster/k8s/cli-proxy-api/README.md>). Every hop streams: the egress proxy logs "Streaming
 response", and llm-ingress forwards raw chunks. Three Codex PING requests, from the harness

@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use super::*;
 use analysis::OwnerId;
 use analysis::facts::analyze_chunk;
-use analysis::graph::build_owner_graph;
+use analysis::graph::build_owner_graph_with;
 use analysis::ids::{LogicalModuleIndex, ModuleId};
 use analysis::partition::Partition;
 use analysis::{AnalysisHints, OwnerGraph};
@@ -30,7 +30,7 @@ fn parse_and_build(source: &str) -> OwnerGraph {
         .parse_module()
         .expect("parse module");
     let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
-    build_owner_graph(&facts).unwrap()
+    build_owner_graph_with(&facts, Default::default()).unwrap()
 }
 
 /// Two top-level constants in different modules, with one reading

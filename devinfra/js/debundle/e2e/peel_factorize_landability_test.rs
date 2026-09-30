@@ -6,7 +6,6 @@
 //! graph on demand. Blocked or size-capped frontier states are
 //! diagnostics, not proposals.
 
-use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
 use peel::factorize::{PeelCandidateStatus, PeelFactorizeReport, factorize};
 use spec::{MemberEffect, ModulePath};
@@ -18,17 +17,21 @@ fn no_claims() -> BTreeMap<String, ModulePath> {
     BTreeMap::new()
 }
 
-/// The owner graph `debundle run` emits for `source` with `modules`
-/// claimed and every other binding inlined in the residual entry.
-fn owner_graph_of(source: &str, modules: Vec<LogicalModuleEntry>) -> OwnerGraphReport {
+/// Run `debundle` on `source` with `modules` claimed and every other
+/// binding inlined in the residual entry.
+fn residual_fixture(source: &str, modules: Vec<LogicalModuleEntry>) -> Fixture {
     let mut opts = FixtureOpts::new(source, modules);
     opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    read_json(&fixture.report_root.join("static/app/owner_graph.json"))
+    run_fixture(opts)
 }
 
 fn factorize_residual(source: &str, modules: Vec<LogicalModuleEntry>) -> PeelFactorizeReport {
-    factorize(&owner_graph_of(source, modules), &no_claims(), 10_000).unwrap()
+    factorize(
+        &residual_fixture(source, modules).owner_graph(),
+        &no_claims(),
+        10_000,
+    )
+    .unwrap()
 }
 
 fn proposal_has_bindings(proposal: &peel::factorize::FactorizeProposal, bindings: &[&str]) -> bool {
@@ -252,10 +255,11 @@ const consumer = dep + "/x";
 export { anchor, dep, consumer };
 "#;
 
-    let graph = owner_graph_of(
+    let graph = residual_fixture(
         chunk_source,
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
-    );
+    )
+    .owner_graph();
     let report = factorize(&graph, &no_claims(), 1).unwrap();
 
     let blocked = report

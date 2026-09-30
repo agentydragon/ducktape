@@ -428,8 +428,7 @@ authoring `comment:` fields". The CLI surface is `bindings comment` /
 - **No cross-process materializer reader.** `debundle run` reads the spec
   and emits JS in one process — see `wire_format.md` § "Why pre-filter
   facts (`StatementFacts`) aren't on the wire" and
-  `lessons_learned/cross_process_stage_b.md`. `facts.json` is an
-  in-process debug artifact, not a CLI input (`facts/wire.rs`).
+  `lessons_learned/cross_process_stage_b.md`.
 - **Shell tab completion.**
 
 ## See also

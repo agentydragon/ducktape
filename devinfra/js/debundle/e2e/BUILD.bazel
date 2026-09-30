@@ -468,12 +468,8 @@ rust_test(
     ],
 )
 
-rust_test(
+debundle_e2e_test(
     name = "match_selector_cli_test",
-    srcs = ["match_selector_cli_test.rs"],
-    crate_root = "match_selector_cli_test.rs",
-    data = ["//devinfra/js/debundle"],
-    edition = "2024",
     deps = [
         "@crates//:serde_json",
         "@crates//:tempfile",

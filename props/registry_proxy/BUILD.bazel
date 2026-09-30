@@ -72,12 +72,13 @@ py_test(
         "//props:conftest",
         "//props/core:agent_types",
         "//props/core:oci_utils",
+        "//util:net",
+        "//util/testing:asgi",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
-        "@pypi//uvicorn",
     ],
 )
 

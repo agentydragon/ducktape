@@ -31,7 +31,7 @@ use peel::{
     run_graph_summary_report, run_patch_plan_report, run_plan_work_report, run_source_slice_report,
     run_units_report,
 };
-use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
+use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
 use selector_codemod::match_selector::{
     MatchSelectorConfig, render_match_selector_text, run_match_selector,
 };
@@ -745,7 +745,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
             let dry_run = args.dry_run;
             let keep_going = !args.fail_fast;
             let cli = args.resolve()?;
-            run_transform_cli_with_options(
+            run_transform_cli(
                 &cli,
                 TransformRunOptions {
                     dry_run,
@@ -1134,9 +1134,8 @@ fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()>
 }
 
 fn run_modules_list(args: ModulesListArgs) -> Result<()> {
-    use spec_modules::{
-        collect_module_files, is_residual_module_path, module_path_from_file, read_module_file,
-    };
+    use spec::is_residual_module_path;
+    use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
     let files = collect_module_files(&args.modules_root)
         .with_context(|| format!("walking {}", args.modules_root.display()))?;
     let mut entries: Vec<ModuleListEntry> = Vec::new();

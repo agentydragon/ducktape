@@ -176,6 +176,7 @@ rust_library(
     srcs = ["output_layout.rs"],
     crate_root = "output_layout.rs",
     edition = "2024",
+    deps = ["@crates//:anyhow"],
 )
 
 rust_library(
@@ -404,7 +405,6 @@ rust_library(
         "facts/mod.rs",
         "facts/purity_classification.rs",
         "facts/statement_facts.rs",
-        "facts/wire.rs",
         "graph/build.rs",
         "graph/edge.rs",
         "graph/linker_order.rs",
@@ -543,7 +543,6 @@ rust_library(
         ":analysis",
         ":peel",
         ":spec",
-        "@crates//:swc_atoms",
     ],
 )
 
@@ -573,6 +572,7 @@ rust_library(
     crate_root = "spec_stats.rs",
     edition = "2024",
     deps = [
+        ":spec",
         ":spec_modules",
         "@crates//:anyhow",
         "@crates//:serde",
@@ -889,13 +889,6 @@ rust_library(
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
-)
-
-rust_test(
-    name = "identifier_rename_queue_test",
-    crate = ":identifier_rename_queue",
-    edition = "2024",
-    deps = [":binding_targets"],
 )
 
 rust_library(
@@ -1219,7 +1212,6 @@ rust_binary(
     deps = [
         ":cli",
         ":gate",
-        "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:swc_common",
     ],

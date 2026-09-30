@@ -8,14 +8,9 @@ The class exempts its pods from eviction only because the threshold is this same
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "stateful-infra"
 # Above ordinary workloads (default 0) so scheduler preemption defers these pods; far below
@@ -53,7 +48,3 @@ def priority_class_chart(app: App) -> Chart:
     chart = Chart(app, "priorityclass", disable_resource_name_hashes=True)
     priority_class(chart)
     return chart
-
-
-def write_seaweedfs_manifests(root: Path) -> None:
-    write_charts(root, f"{HAND_WRITTEN_ROOT}/seaweedfs/cluster", priority_class_chart)

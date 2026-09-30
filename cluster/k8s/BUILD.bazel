@@ -56,7 +56,6 @@ filegroup(
 # Focused validation targets inline these direct-file inputs in their data lists.
 exports_files(
     [
-        "clickhouse/cluster/clickhouse.k8s.yaml",
         "clickhouse/cluster/public-coder-credentials.sops.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "kustomization.yaml",

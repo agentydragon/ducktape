@@ -1,4 +1,8 @@
-"""Authentik login and the browser's short-lived Airlock session."""
+"""Authentik login and the browser's short-lived Airlock session.
+
+Shares only the claims check and client registration with `util/oidc_login.py`; its docstring says why the routes and
+guard stay here.
+"""
 
 from __future__ import annotations
 
