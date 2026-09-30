@@ -1,10 +1,10 @@
 diff -u a/dist/extensions/memory-core/manager-runtime.js b/dist/extensions/memory-core/manager-runtime.js
 --- a/dist/extensions/memory-core/manager-runtime.js
 +++ b/dist/extensions/memory-core/manager-runtime.js
-@@ -326,10 +326,13 @@
+@@ -672,10 +672,13 @@
  const RETRYABLE_MEMORY_EMBEDDING_SERVICE_ERROR_RE = /\b5\d\d\b|cloudflare/i;
  const RETRYABLE_MEMORY_EMBEDDING_TRANSPORT_ERROR_RE = /(fetch failed|other side closed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|UND_ERR_|socket hang up|socket terminated|network error|read ECONN|timed out|connection (?:reset|refused|aborted|timed out)|EHOSTUNREACH|ENETUNREACH|ECONNABORTED|EAI_AGAIN)/i;
- const SPLITTABLE_MEMORY_EMBEDDING_BATCH_ERROR_RE = /(request_headers_too_large|request header fields too large|other side closed|ECONNRESET|EPIPE|UND_ERR_SOCKET|socket hang up|socket terminated|read ECONN|connection (?:reset|aborted)|\bembeddings (?:api input limit exceeded:\s*max\s+\d+\s*,\s*got\s+\d+|max input length is\s+\d+)\b|\bbatch size is invalid,?\s+it should not be larger than\s+\d+\b)/i;
+ const SPLITTABLE_MEMORY_EMBEDDING_BATCH_ERROR_RE = /(request_headers_too_large|request header fields too large|other side closed|ECONNRESET|EPIPE|UND_ERR_SOCKET|socket hang up|socket terminated|read ECONN|connection (?:reset|aborted)|\bembeddings (?:api input limit exceeded:\s*max\s+\d+\s*,\s*got\s+\d+|max input length is\s+\d+)\b|\bbatch size is invalid,?\s+it should not be larger than\s+\d+\b|\binput array max\s+\d+(?=\s*(?:["'}]|$)))/i;
 +const OPENCLAW_MEMORY_RETRY_BASE_DELAY_MS = resolvePositiveIntegerEnvironmentVariable("OPENCLAW_MEMORY_RETRY_BASE_DELAY_MS", 500);
 +const OPENCLAW_MEMORY_RETRY_MAX_DELAY_MS = resolvePositiveIntegerEnvironmentVariable("OPENCLAW_MEMORY_RETRY_MAX_DELAY_MS", 8e3);
 +if (OPENCLAW_MEMORY_RETRY_MAX_DELAY_MS < OPENCLAW_MEMORY_RETRY_BASE_DELAY_MS) throw new Error("OPENCLAW_MEMORY_RETRY_MAX_DELAY_MS must be at least OPENCLAW_MEMORY_RETRY_BASE_DELAY_MS");
@@ -17,7 +17,7 @@ diff -u a/dist/extensions/memory-core/manager-runtime.js b/dist/extensions/memor
  };
  const MEMORY_EMBEDDING_RETRY_PROFILES = {
  	index: {
-@@ -2673,7 +2676,14 @@
+@@ -2983,7 +2986,14 @@
  const EMBEDDING_CACHE_TABLE = MEMORY_EMBEDDING_CACHE_TABLE;
  const EMBEDDING_CACHE_PRUNE_BATCH_SIZE = 100;
  const EMBEDDING_BATCH_MAX_TOKENS = 8e3;
@@ -33,10 +33,10 @@ diff -u a/dist/extensions/memory-core/manager-runtime.js b/dist/extensions/memor
  const EMBEDDING_QUERY_TIMEOUT_REMOTE_MS = 6e4;
  const EMBEDDING_QUERY_TIMEOUT_LOCAL_MS = 3e5;
  const EMBEDDING_BATCH_TIMEOUT_REMOTE_MS = 12e4;
-diff -u a/dist/missing-configured-plugin-install-FlzguTw_.mjs b/dist/missing-configured-plugin-install-FlzguTw_.mjs
---- a/dist/missing-configured-plugin-install-FlzguTw_.mjs
-+++ b/dist/missing-configured-plugin-install-FlzguTw_.mjs
-@@ -333,7 +333,7 @@
+diff -u a/dist/missing-configured-plugin-install-DILg445J.mjs b/dist/missing-configured-plugin-install-DILg445J.mjs
+--- a/dist/missing-configured-plugin-install-DILg445J.mjs
++++ b/dist/missing-configured-plugin-install-DILg445J.mjs
+@@ -343,7 +343,7 @@
  		return !knownIds.has(pluginId) && !hasRecord && !bundledPluginsById.has(pluginId) || hasRecord && !bundledPluginsById.has(pluginId) && isPayloadMissing(env, records[pluginId]?.installPath);
  	}));
  	const installCandidatePluginIds = /* @__PURE__ */ new Set([...missingPluginIds, ...officialReplacementPluginIds]);
@@ -45,7 +45,7 @@ diff -u a/dist/missing-configured-plugin-install-FlzguTw_.mjs b/dist/missing-con
  		cfg: params.cfg,
  		env,
  		missingPluginIds: installCandidatePluginIds,
-@@ -608,7 +608,7 @@
+@@ -620,7 +620,7 @@
  		return !knownIds.has(pluginId) && !hasRecord && !bundledPluginsById.has(pluginId) || hasRecord && !bundledPluginsById.has(pluginId) && isPayloadMissing(env, nextRecords[pluginId]?.installPath);
  	}));
  	const installCandidatePluginIds = /* @__PURE__ */ new Set([...missingPluginIds, ...officialReplacementPluginIds]);
@@ -54,23 +54,23 @@ diff -u a/dist/missing-configured-plugin-install-FlzguTw_.mjs b/dist/missing-con
  		cfg: params.cfg,
  		env,
  		missingPluginIds: installCandidatePluginIds,
-diff -u a/dist/openclaw-agent-db-fItexY2B.mjs b/dist/openclaw-agent-db-fItexY2B.mjs
---- a/dist/openclaw-agent-db-fItexY2B.mjs
-+++ b/dist/openclaw-agent-db-fItexY2B.mjs
-@@ -14,7 +14,7 @@
- import { n as enableNodeSqliteKyselyStatementCache, t as clearNodeSqliteKyselyCacheForDatabase } from "./kysely-sync-cache-state-Z6YwXUsn.mjs";
- import { i as getNodeSqliteKysely, n as executeSqliteQuerySync } from "./kysely-sync-CrjZjQJR.mjs";
- import { c as supportsNodeSqliteExtensionLoading, t as openNodeSqliteDatabase } from "./node-sqlite-B7YCpTW3.mjs";
--import { a as runSqliteIntegrityOperationSync, i as isTerminalSqliteIntegrityError, o as sqliteIntegrityCheckSteps, r as confirmSqliteFileIntegrity, t as assertSqliteIntegrity } from "./sqlite-integrity-CmJEy1JT.mjs";
-+import { a as runSqliteIntegrityOperationSync, i as isTerminalSqliteIntegrityError, o as sqliteIntegrityCheckSteps, r as confirmSqliteFileIntegrity, v as assertSqliteQuickIntegrity, t as assertSqliteIntegrity } from "./sqlite-integrity-CmJEy1JT.mjs";
- import { d as clearOpenClawDatabaseQuarantine, f as createOpenClawDatabaseVerificationError, h as createSqliteTerminalOpenLatch, p as readOpenClawDatabaseQuarantine } from "./openclaw-state-db-cache-BXmHZWzx.mjs";
- import { o as OPENCLAW_SQLITE_BUSY_TIMEOUT_MS } from "./openclaw-state-db-contract-C8vwd-Ud.mjs";
- import { t as VERSION } from "./version-DXOj91SV.mjs";
-@@ -2083,14 +2083,26 @@
- 	});
- 	const hasPendingCurrentVersionMigration = userVersion === 19 && (hasPendingMemoryChunkMetadataMigration(database) || hasPendingSessionKeyContractSchemaMigration(database) || hasRetiredAgentStateLeaseSchema(database) || hasPendingSessionConversationRouteContextColumn(database) || hasPendingSessionTranscriptContextEligibilityColumn(database) || hasPendingInputConsumptionColumnMigration(database) || hasPendingSessionProjectColumn(database));
- 	if (userVersion === 19 && !hasPendingCurrentVersionMigration) {
--		yield* verifyAndRepairCanonicalSqliteIndexSteps(database, pathname, OPENCLAW_AGENT_SCHEMA_SQL, {
+diff -u a/dist/openclaw-agent-db-maintenance-1vQHkfS-.mjs b/dist/openclaw-agent-db-maintenance-1vQHkfS-.mjs
+--- a/dist/openclaw-agent-db-maintenance-1vQHkfS-.mjs
++++ b/dist/openclaw-agent-db-maintenance-1vQHkfS-.mjs
+@@ -18,7 +18,7 @@
+ import { a as readSqliteUserVersion, n as createNewerSqliteSchemaVersionError } from "./sqlite-user-version-BePfTCeT.mjs";
+ import { n as configureSqlitePreSchemaPragmas } from "./sqlite-wal-JabKtM7k.mjs";
+ import { a as resolveSqliteInspectionSignal, c as sqliteInspectionTimeoutError, n as readSqliteInspectionBudget, t as isSqliteInspectionDeadlineOwnedByCaller } from "./sqlite-readonly-worker-C3Uy-vsz.mjs";
+-import { c as sqliteIntegrityCheckSteps, n as assertSqliteIntegrity, s as runSqliteIntegrityOperationSync, u as readSqliteIntegrityFileIdentity } from "./sqlite-integrity-zIAaknj5.mjs";
++import { c as sqliteIntegrityCheckSteps, n as assertSqliteIntegrity, s as runSqliteIntegrityOperationSync, u as readSqliteIntegrityFileIdentity, v as assertSqliteQuickIntegrity } from "./sqlite-integrity-zIAaknj5.mjs";
+ import { i as resolveOpenClawAgentSqlitePath } from "./openclaw-agent-db.paths-DTmCK-QU.mjs";
+ import { Lt as repairCanonicalSqliteIndexes, Rt as verifyAndRepairCanonicalSqliteIndexSteps, zt as verifyAndRepairCanonicalSqliteIndexes } from "./openclaw-state-db-DS2iNFy4.mjs";
+ import { n as migrateSqliteSchemaToStrictInTransaction } from "./sqlite-strict-CSp1ndVj.mjs";
+@@ -849,15 +849,28 @@
+ 	const hasPendingCurrentVersionMigration = userVersion === 21 && (hasPendingMemoryChunkMetadataMigration(database) || hasPendingSessionKeyContractSchemaMigration(database) || hasRetiredAgentStateLeaseSchema(database) || hasPendingSessionConversationRouteContextColumn(database) || hasPendingSessionTranscriptContextEligibilityColumn(database) || hasPendingInputConsumptionColumnMigration(database) || hasPendingSessionProjectColumn(database));
+ 	if (userVersion === 21 && !hasPendingCurrentVersionMigration) {
+ 		const startedAt = performance.now();
+-		const rebuiltIndexes = yield* verifyAndRepairCanonicalSqliteIndexSteps(database, pathname, OPENCLAW_AGENT_SCHEMA_SQL, {
 +		const configuredIntegrityCheck = process.env.OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK?.trim().toLowerCase() || "full";
 +		if (configuredIntegrityCheck !== "full" && configuredIntegrityCheck !== "quick" && configuredIntegrityCheck !== "none") throw new Error("OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK must be full, quick, or none");
 +		const indexRepairOptions = {
@@ -81,33 +81,48 @@ diff -u a/dist/openclaw-agent-db-fItexY2B.mjs b/dist/openclaw-agent-db-fItexY2B.
 -			}),
 +			})
 +		};
-+		if (configuredIntegrityCheck === "full") yield* verifyAndRepairCanonicalSqliteIndexSteps(database, pathname, OPENCLAW_AGENT_SCHEMA_SQL, {
++		let rebuiltIndexes;
++		if (configuredIntegrityCheck === "full") rebuiltIndexes = yield* verifyAndRepairCanonicalSqliteIndexSteps(database, pathname, OPENCLAW_AGENT_SCHEMA_SQL, {
 +			...indexRepairOptions,
- 			diagnostics
+ 			diagnostics,
+ 			reuseIntegrity
  		});
 +		else {
-+			if (configuredIntegrityCheck === "quick") assertSqliteQuickIntegrity(database, pathname);
-+			repairCanonicalSqliteIndexes(database, pathname, OPENCLAW_AGENT_SCHEMA_SQL, {
++			if (configuredIntegrityCheck === "quick" && !reuseIntegrity) assertSqliteQuickIntegrity(database, pathname);
++			rebuiltIndexes = repairCanonicalSqliteIndexes(database, pathname, OPENCLAW_AGENT_SCHEMA_SQL, {
 +				...indexRepairOptions,
 +				verifyPhysicalIntegrity: false
 +			});
 +		}
- 		assertOpenClawAgentCurrentRuntimeSchema(database, {
+ 		if (rebuiltIndexes.length > 0) agentDbLog.warn(`Rebuilt canonical agent SQLite indexes for ${agentId} (${pathname}): ${rebuiltIndexes.join(", ")}`, {
  			agentId,
- 			pathname
-@@ -2423,1 +2435,4 @@
--	}
-+	}
+ 			path: pathname,
+diff -u a/dist/openclaw-agent-db-DGf5izBC.mjs b/dist/openclaw-agent-db-DGf5izBC.mjs
+--- a/dist/openclaw-agent-db-DGf5izBC.mjs
++++ b/dist/openclaw-agent-db-DGf5izBC.mjs
+@@ -366,6 +366,9 @@
+ 		admitted.catch(() => void 0);
+ 		return admitted;
+ 	}
 +	const configuredLeaseMs = (options.env ?? process.env).OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS?.trim();
 +	const defaultLeaseMs = configuredLeaseMs ? Number(configuredLeaseMs) : 6e4;
 +	if (!Number.isSafeInteger(defaultLeaseMs) || defaultLeaseMs <= 0) throw new Error("OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS must be a positive safe integer");
-@@ -2431,1 +2446,1 @@
+ 	return withOpenClawStateLease({
+ 		...AGENT_DATABASE_MAINTENANCE_LEASE,
+ 		database: {
+@@ -373,7 +376,7 @@
+ 			options,
+ 			schemaPolicy: options.schemaPolicy
+ 		},
 -		leaseMs: options.leaseMs ?? 6e4,
 +		leaseMs: options.leaseMs ?? defaultLeaseMs,
-diff -u a/dist/openclaw-database-verify-CVkK3KtV.mjs b/dist/openclaw-database-verify-CVkK3KtV.mjs
---- a/dist/openclaw-database-verify-CVkK3KtV.mjs
-+++ b/dist/openclaw-database-verify-CVkK3KtV.mjs
-@@ -13,7 +13,19 @@
+ 		waitMs: 5e3,
+ 		prepareDatabase: true,
+ 		heartbeat: "worker",
+diff -u a/dist/openclaw-database-verify-C-0xnCYT.mjs b/dist/openclaw-database-verify-C-0xnCYT.mjs
+--- a/dist/openclaw-database-verify-C-0xnCYT.mjs
++++ b/dist/openclaw-database-verify-C-0xnCYT.mjs
+@@ -14,7 +14,19 @@
  import { fork } from "node:child_process";
  //#region src/state/openclaw-database-verify.impl.ts
  const OPENCLAW_DATABASE_VERIFY_INITIAL_DELAY_MS = 3e5;
@@ -128,7 +143,7 @@ diff -u a/dist/openclaw-database-verify-CVkK3KtV.mjs b/dist/openclaw-database-ve
  const log$1 = createSubsystemLogger("state/database-verify");
  const DATABASE_VERIFY_CHILD_ARG = "--openclaw-database-verify-child";
  function isVerifyResult(value) {
-@@ -223,7 +235,8 @@
+@@ -276,7 +288,8 @@
  			if (!stopped) schedule(OPENCLAW_DATABASE_VERIFY_INTERVAL_MS);
  		}
  	};
@@ -138,10 +153,10 @@ diff -u a/dist/openclaw-database-verify-CVkK3KtV.mjs b/dist/openclaw-database-ve
  	return { stop: async () => {
  		stopped = true;
  		if (timer) {
-diff -u a/dist/sqlite-integrity-CmJEy1JT.mjs b/dist/sqlite-integrity-CmJEy1JT.mjs
---- a/dist/sqlite-integrity-CmJEy1JT.mjs
-+++ b/dist/sqlite-integrity-CmJEy1JT.mjs
-@@ -201,6 +201,11 @@
+diff -u a/dist/sqlite-integrity-zIAaknj5.mjs b/dist/sqlite-integrity-zIAaknj5.mjs
+--- a/dist/sqlite-integrity-zIAaknj5.mjs
++++ b/dist/sqlite-integrity-zIAaknj5.mjs
+@@ -213,6 +213,11 @@
  	runSqliteForeignKeyCheck(database, databaseLabel);
  	return { integrityCheck };
  }
@@ -153,9 +168,9 @@ diff -u a/dist/sqlite-integrity-CmJEy1JT.mjs b/dist/sqlite-integrity-CmJEy1JT.mj
  /** Run integrity checks and preserve whether a failure proves persistent damage. */
  function confirmSqliteIntegrity(database, databaseLabel) {
  	try {
-@@ -350,4 +355,4 @@
+@@ -378,4 +383,4 @@
  	return `${violation.table} ${row} references ${violation.parent} (foreign key ${violation.fkid.toString()})`;
  }
  //#endregion
--export { runSqliteIntegrityOperationSync as a, readStableSqliteFileGeneration as c, copyFileHandle as d, hashFileDescriptorSync as f, isTerminalSqliteIntegrityError as i, sameSqliteFileGeneration as l, assertSqliteTableIntegrity as n, sqliteIntegrityCheckSteps as o, sameFileMutationFingerprint as p, confirmSqliteFileIntegrity as r, parseSqliteFileGeneration as s, assertSqliteIntegrity as t, serializeSqliteFileGeneration as u };
-+export { runSqliteIntegrityOperationSync as a, readStableSqliteFileGeneration as c, copyFileHandle as d, hashFileDescriptorSync as f, isTerminalSqliteIntegrityError as i, sameSqliteFileGeneration as l, assertSqliteTableIntegrity as n, sqliteIntegrityCheckSteps as o, sameFileMutationFingerprint as p, confirmSqliteFileIntegrity as r, parseSqliteFileGeneration as s, assertSqliteQuickIntegrity as v, assertSqliteIntegrity as t, serializeSqliteFileGeneration as u };
+-export { isTerminalSqliteIntegrityError as a, sqliteIntegrityCheckSteps as c, readStableSqliteFileGeneration as d, sameSqliteFileGeneration as f, confirmSqliteFileIntegrity as i, parseSqliteFileGeneration as l, assertSqliteIntegrity as n, runSqliteIntegrityCheckSync as o, serializeSqliteFileGeneration as p, assertSqliteTableIntegrity as r, runSqliteIntegrityOperationSync as s, SqliteRepairableForeignKeyError as t, readSqliteIntegrityFileIdentity as u };
++export { isTerminalSqliteIntegrityError as a, sqliteIntegrityCheckSteps as c, readStableSqliteFileGeneration as d, sameSqliteFileGeneration as f, confirmSqliteFileIntegrity as i, parseSqliteFileGeneration as l, assertSqliteIntegrity as n, runSqliteIntegrityCheckSync as o, serializeSqliteFileGeneration as p, assertSqliteTableIntegrity as r, runSqliteIntegrityOperationSync as s, SqliteRepairableForeignKeyError as t, readSqliteIntegrityFileIdentity as u, assertSqliteQuickIntegrity as v };

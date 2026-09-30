@@ -17,16 +17,16 @@
 
 let
   # Keep the tested npm-package build path and explicitly align its wrapper and
-  # source metadata with the 2026.9.4 release used by both images.
+  # source metadata with the 2026.9.5 release used by both images.
   ocPkgs = import nix-openclaw.inputs.nixpkgs {
     inherit (pkgs.stdenv.hostPlatform) system;
     overlays = [ nix-openclaw.overlays.default ];
   };
 
-  # Mirrors nix/sources/openclaw-source.nix but pinned to 2026.9.4. Setting
+  # Mirrors nix/sources/openclaw-source.nix but pinned to 2026.9.5. Setting
   # `gatewayNpmDepsHash` (not `pnpmDepsHash`) selects the prebuilt-npm gateway
   # path -- the one stable uses. `runtimePluginVersion` tracks nix-openclaw's
-  # generated acpx runtime plugin (2026.9.4), which requires the matching
+  # generated acpx runtime plugin (2026.9.5), which requires the matching
   # OpenClaw host version.
   stableSourceInfo = {
     owner = "openclaw";
@@ -38,16 +38,16 @@ let
     # nix-openclaw ownership patch no longer applies. Runtime plugins are
     # copied into the gateway's bundled extension tree by the consumer instead.
     applyNixStorePluginOwnershipPatch = false;
-    releaseTag = "v2026.9.4";
-    releaseVersion = "2026.9.4";
-    runtimePluginVersion = "2026.9.4";
+    releaseTag = "v2026.9.5";
+    releaseVersion = "2026.9.5";
+    runtimePluginVersion = "2026.9.5";
     # The npm path does not fetch the git source, but these mirror the stable
     # sourceInfo shape for checks and future source builds.
-    rev = "3a9d69db306cd7f081e06254cb89c4bcc14a7107";
-    hash = "sha256-xeUf0Emyhen4hnxjhbTI59d02QfB3YWTxhlqNkKuiUA=";
+    rev = "ec9c1a13db8938e5a3eaa51fca2e981cde2395a9";
+    hash = "sha256-M0nfeZDy6MafWCfqefwDRdL1MFLs8l1YZJmB6sV9IyU=";
     # Filled from the Nix build's fixed-output error after the wrapper lock is
     # regenerated.
-    gatewayNpmDepsHash = "sha256-L6Y69xvZFrwG3Hb2iKG2FLraQqLtxtupImFR4KLTs9Q=";
+    gatewayNpmDepsHash = pkgs.lib.fakeHash;
   };
 
   # nix-openclaw's npm wrapper (nix/npm/openclaw/) pins openclaw to an older
@@ -68,7 +68,7 @@ let
     chmod -R u+w "$out"
     cp ${./npm_wrapper/package.json} "$out/nix/npm/openclaw/package.json"
     cp ${./npm_wrapper/package-lock.json} "$out/nix/npm/openclaw/package-lock.json"
-    cp ${./patches/openclaw-2026.9.4-dist.patch} "$out/nix/scripts/openclaw-npm-dist.patch"
+    cp ${./patches/openclaw-2026.9.5-dist.patch} "$out/nix/scripts/openclaw-npm-dist.patch"
     substituteInPlace "$out/nix/packages/openclaw-gateway-npm.nix" \
       --replace-fail 'patch-openclaw-npm-dist.mjs' 'openclaw-npm-dist.patch'
     # Apply the release-specific repairs as a conventional, fail-closed patch.
