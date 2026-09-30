@@ -1,6 +1,7 @@
 """Dispatch manifest generation to each component's local cdk8s helpers."""
 
 import functools
+import posixpath
 from pathlib import Path
 
 from cdk8s import App
@@ -1185,11 +1186,16 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
     )
-    matrix_user_provisioner_artifact = artifact("matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR)
+    matrix_user_provisioner_artifact = artifact(
+        "matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR, matrix_user_provisioner.PINS_DIR
+    )
     matrix_user_provisioner.matrix_user_provisioner(
         flux_chart,
         write_directory(
-            root, matrix_user_provisioner_artifact, matrix_user_provisioner.chart, components=["./image-pins"]
+            root,
+            matrix_user_provisioner_artifact,
+            matrix_user_provisioner.chart,
+            components=[posixpath.relpath(matrix_user_provisioner.PINS_DIR, matrix_user_provisioner.OUTPUT_DIR)],
         ),
         external_secrets_operator_kustomization,
         matrix_kustomization,
@@ -1217,10 +1223,15 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
     )
-    google_mcp_artifact = artifact("google-mcp", google_mcp.OUTPUT_DIR)
+    google_mcp_artifact = artifact("google-mcp", google_mcp.OUTPUT_DIR, google_mcp.PINS_DIR)
     google_mcp.google_mcp(
         flux_chart,
-        write_directory(root, google_mcp_artifact, google_mcp.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            google_mcp_artifact,
+            google_mcp.chart,
+            components=[posixpath.relpath(google_mcp.PINS_DIR, google_mcp.OUTPUT_DIR)],
+        ),
         external_secrets_operator_kustomization,
     )
     study_casino_artifact = artifact("study-casino", study_casino_app.OUTPUT_DIR)
@@ -1306,10 +1317,15 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
     )
-    haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
+    haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR, haku_workspaces.PINS_DIR)
     haku_workspaces.haku_workspaces(
         flux_chart,
-        write_directory(root, haku_workspaces_app_artifact, haku_workspaces.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            haku_workspaces_app_artifact,
+            haku_workspaces.chart,
+            components=[posixpath.relpath(haku_workspaces.PINS_DIR, haku_workspaces.OUTPUT_DIR)],
+        ),
         agent_sandbox_controller_kustomization,
         haku_rbac_kustomization,
         haku_egress_proxy_kustomization,
