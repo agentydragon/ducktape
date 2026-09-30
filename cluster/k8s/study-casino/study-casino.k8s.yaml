@@ -6,6 +6,7 @@ metadata:
     name: study-casino
     rbac.ducktape.io/agent-readable-logs: "true"
   name: study-casino
+spec: {}
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -62,6 +63,7 @@ spec:
       labels:
         app: study-casino-db-readonly-provisioner
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -154,6 +156,7 @@ spec:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
               weight: 100
+      automountServiceAccountToken: false
       containers:
         - env:
             - name: STUDY_CASINO_IMAGE_TAG

@@ -165,7 +165,7 @@ creation_rules:
   # ExternalSecret templates; operator-managed identities keep policy in the
   # Bucket/S3Identity resources instead. More specific than the generic
   # cluster/k8s/* rule below, so this match wins.
-  - path_regex: cluster/k8s/seaweedfs/secrets/identities/.*\.sops\.yaml$
+  - path_regex: cluster/k8s/seaweedfs/cluster/identities/.*\.sops\.yaml$
     encrypted_regex: ^(accessKey|secretKey)$
     key_groups:
       - age:

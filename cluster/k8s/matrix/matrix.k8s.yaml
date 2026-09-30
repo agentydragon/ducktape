@@ -2,9 +2,9 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: auto
   name: matrix
+spec: {}
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -127,8 +127,6 @@ spec:
       job:
         enabled: false
     synapse:
-      annotations:
-        reloader.stakater.com/auto: "true"
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
     workers:
@@ -239,11 +237,10 @@ spec:
       app.kubernetes.io/name: element-web
   template:
     metadata:
-      annotations:
-        reloader.stakater.com/auto: "true"
       labels:
         app.kubernetes.io/name: element-web
     spec:
+      automountServiceAccountToken: false
       containers:
         - image: vectorim/element-web:v1.12.27
           livenessProbe:
@@ -294,7 +291,7 @@ spec:
     - name: http
       port: 80
       protocol: TCP
-      targetPort: http
+      targetPort: 80
   selector:
     app.kubernetes.io/name: element-web
   type: ClusterIP

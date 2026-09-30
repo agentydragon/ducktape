@@ -37,10 +37,10 @@ from finance.augur.product.wire import (
     TaxPaymentEvent,
     TlhFinancialEffectEvent,
 )
+from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.events import EventLog, TlhOperation
 from finance.augur.sim.holdings import asset_key
 from finance.augur.sim.ids import AgentId, AssetId
-from finance.augur.sim.scenario import ObligationType
 
 _TAX_PAYMENT_OBLIGATION_TYPES = frozenset((ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP))
 _EVENT_PRIORITY = {kind: priority for priority, kind in enumerate(ROLLOUT_EVENT_KIND_ORDER)}

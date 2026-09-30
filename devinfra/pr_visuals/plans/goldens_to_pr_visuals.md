@@ -28,20 +28,7 @@ of the repo on that model.
 
 ## Phased execution
 
-### PRs 1–3 — done
-
-The publisher became trustworthy enough to replace a gate (#3278: baseline-chain
-fix with mutable `baselines/<slug>.json` pointers bridging cache-hit gaps in
-devel bundles, the `PR visual diffs` check-run, retention decision), study
-casino piloted the conversion (#3289), and the fleet followed. Verified at HEAD:
-every golden directory the plan inventoried is gone
-(`study_casino/frontend/__screenshots__`, `finance/augur/frontend/__screenshots__`,
-`aiquota/gnome/__snapshots__`, `study_casino/frontend/tests/baselines`,
-`props/frontend/src/**/baselines`, `airlock/frontend/baselines`), and both
-comparators — `util/testing/png_diff.py::assert_png_matches_golden` and
-`visual-test-lib.mjs::compareBaseline` — no longer exist anywhere in the tree.
-
-### PR 4 — policy + guardrail (outstanding)
+### Remaining: policy + guardrail
 
 - Document the model in testing docs: no checked-in render PNGs; pixels are
   reviewed via PR visuals; behavior is asserted in DOM.

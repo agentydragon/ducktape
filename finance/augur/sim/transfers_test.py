@@ -7,38 +7,35 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import PreparedAccount, PreparedRecurringTransfer, PreparedTransfer
-from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME
+from finance.augur.sim.money import USD
+from finance.augur.sim.results import Rollout
+from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
-
-QUANTUM = Decimal("0.01")
 
 
 def checking(agent_id: AgentId) -> AccountRef:
     return AccountRef(agent_id=agent_id, account_id=AccountId("checking"))
 
 
-def quanta(amount: Decimal) -> int:
-    return int(currency_amount_to_quanta(amount, quantum=QUANTUM))
+@dataclass(frozen=True)
+class Payment:
+    """A payment between checking accounts on a schedule, in dollars."""
+
+    cause_id: str
+    payer: AgentId
+    payee: AgentId
+    amount: Decimal
+    schedule: Schedule
 
 
-def one_off(month: int, cause_id: str, payer: AgentId, payee: AgentId, amount: Decimal) -> PreparedTransfer:
-    return PreparedTransfer(
-        month=month,
-        cause_id=cause_id,
-        from_account=checking(payer),
-        to_account=checking(payee),
-        amount=quanta(amount),
-        income_category=None,
-        deduction_category=None,
-    )
+def one_off(month: int, cause_id: str, payer: AgentId, payee: AgentId, amount: Decimal) -> Payment:
+    return Payment(cause_id, payer, payee, amount, Once(month=month))
 
 
 def monthly(
@@ -49,17 +46,8 @@ def monthly(
     *,
     start_month: int = 0,
     end_month: int | None = None,
-) -> PreparedRecurringTransfer:
-    return PreparedRecurringTransfer(
-        start_month=start_month,
-        end_month=end_month,
-        cause_id=cause_id,
-        from_account=checking(payer),
-        to_account=checking(payee),
-        amount=quanta(amount),
-        income_category=None,
-        deduction_category=None,
-    )
+) -> Payment:
+    return Payment(cause_id, payer, payee, amount, Recurring(start_month=start_month, end_month=end_month))
 
 
 @dataclass(frozen=True)
@@ -68,8 +56,7 @@ class Situation:
 
     horizon_months: int
     balances: Sequence[tuple[AgentId, Decimal]]
-    scheduled: tuple[PreparedTransfer, ...] = ()
-    recurring: tuple[PreparedRecurringTransfer, ...] = ()
+    payments: tuple[Payment, ...] = ()
 
 
 def compose(case: Situation, rollout_id: int, *, rollout_count: int) -> World:
@@ -80,11 +67,17 @@ def compose(case: Situation, rollout_id: int, *, rollout_count: int) -> World:
         income_sources=(ORDINARY_INCOME,),
     )
     for agent_id, balance in case.balances:
-        world.declare_account(PreparedAccount(account=checking(agent_id), opening_balance=quanta(balance)))
-    for scheduled in case.scheduled:
-        world.declare_flow(scheduled)
-    for recurring in case.recurring:
-        world.declare_flow(recurring)
+        world.declare_account(account=checking(agent_id), opening_balance=USD.quanta(balance))
+    for flow in case.payments:
+        world.declare_flow(
+            schedule=flow.schedule,
+            cause_id=flow.cause_id,
+            from_account=checking(flow.payer),
+            to_account=checking(flow.payee),
+            amount=USD.quanta(flow.amount),
+            income_category=None,
+            deduction_category=None,
+        )
     return world
 
 
@@ -94,16 +87,9 @@ def _run(case: Situation, *, rollout_count: int = 1) -> list[Rollout]:
         AgentId("alice"),
         capture="forensic",
     )
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [DecisionActions(decision.rollout_id, decision.observation.month, []) for decision in batch]
-            )
-        assert all(result.stop is None for result in batch.rollouts)
-        return batch.rollouts
-    finally:
-        session.close()
+    rollouts = finish(session, each(lambda _: [])).rollouts
+    assert all(result.stop is None for result in rollouts)
+    return rollouts
 
 
 def _cash(book: Book, agent_id: AgentId) -> int:
@@ -118,7 +104,7 @@ def alice_bob() -> Situation:
     return Situation(
         horizon_months=1,
         balances=((AgentId("alice"), Decimal(10)), (AgentId("bob"), Decimal(20))),
-        scheduled=(one_off(0, "bob_gives_alice_5", AgentId("bob"), AgentId("alice"), Decimal(5)),),
+        payments=(one_off(0, "bob_gives_alice_5", AgentId("bob"), AgentId("alice"), Decimal(5)),),
     )
 
 
@@ -155,7 +141,7 @@ def test_recurring_paycheck_accrues_monthly() -> None:
     case = Situation(
         horizon_months=12,
         balances=((AgentId("alice"), Decimal(1000)), (AgentId("payroll"), Decimal(0))),
-        recurring=(monthly("alice_paycheck", AgentId("payroll"), AgentId("alice"), Decimal(3000)),),
+        payments=(monthly("alice_paycheck", AgentId("payroll"), AgentId("alice"), Decimal(3000)),),
     )
     [result] = _run(case)
     assert _cash(result.summary.ending_book, AgentId("alice")) == 3700000
@@ -173,7 +159,7 @@ def test_recurring_transfer_bounded_by_end_month() -> None:
     case = Situation(
         horizon_months=10,
         balances=((AgentId("alice"), Decimal(0)), (AgentId("sink"), Decimal(0))),
-        recurring=(monthly("bounded_pay", AgentId("sink"), AgentId("alice"), Decimal(100), end_month=4),),
+        payments=(monthly("bounded_pay", AgentId("sink"), AgentId("alice"), Decimal(100), end_month=4),),
     )
     [result] = _run(case)
     assert result.trace is not None
@@ -198,7 +184,7 @@ def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
     case = Situation(
         horizon_months=24,
         balances=((AgentId("alice"), Decimal(1000)), (AgentId("employer"), Decimal(0))),
-        recurring=(monthly("alice_paycheck", AgentId("employer"), AgentId("alice"), Decimal(2000)),),
+        payments=(monthly("alice_paycheck", AgentId("employer"), AgentId("alice"), Decimal(2000)),),
     )
     results = _run(case, rollout_count=1000)
     assert [result.rollout_id for result in results] == list(range(1000))
@@ -216,8 +202,10 @@ def test_combined_one_off_and_recurring() -> None:
     case = Situation(
         horizon_months=10,
         balances=((AgentId("alice"), Decimal(0)), (AgentId("employer"), Decimal(0))),
-        scheduled=(one_off(5, "alice_bonus", AgentId("employer"), AgentId("alice"), Decimal(5000)),),
-        recurring=(monthly("alice_paycheck", AgentId("employer"), AgentId("alice"), Decimal(1000)),),
+        payments=(
+            one_off(5, "alice_bonus", AgentId("employer"), AgentId("alice"), Decimal(5000)),
+            monthly("alice_paycheck", AgentId("employer"), AgentId("alice"), Decimal(1000)),
+        ),
     )
     [result] = _run(case)
     assert _cash(result.summary.ending_book, AgentId("alice")) == 1500000

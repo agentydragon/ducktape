@@ -1,0 +1,191 @@
+{
+  "task": "terminal-bench/interleaved-vigenere",
+  "task_checksum": "d20753b2349cb9f03eb638c5c9d1faeec91c73d7a06cc70cb3beee7663b719a7",
+  "trial_name": "238a75a32aad5e60b33a22ac53087790__rKeSmew",
+  "source_revision": "e6235501337533658a33e89319b1f8813d458965",
+  "artifact_root": "/tmp/wyrm2-qwen38-q4-20260926",
+  "result": {
+    "reward": 1.0,
+    "exception": null,
+    "verifier_tests_passed": 6,
+    "agent_episodes": 154
+  },
+  "timings": {
+    "started_at": "2026-09-26T10:46:24.493693Z",
+    "finished_at": "2026-09-26T18:27:02.494786Z",
+    "agent_execution": {
+      "started_at": "2026-09-26T10:46:29.032903Z",
+      "finished_at": "2026-09-26T18:26:09.401188Z"
+    },
+    "verifier": {
+      "started_at": "2026-09-26T18:26:20.715796Z",
+      "finished_at": "2026-09-26T18:27:02.494775Z"
+    }
+  },
+  "agent_execution_seconds": 27580.368285,
+  "harbor_tokens": {
+    "n_input_tokens": 6208823,
+    "n_cache_tokens": 5833621,
+    "n_output_tokens": 450774
+  },
+  "native_llama_timings": {
+    "completed_requests": 161,
+    "totals": {
+      "prompt eval time": {
+        "seconds": 3017.20311,
+        "tokens": 377374
+      },
+      "eval time": {
+        "seconds": 19547.75727,
+        "tokens": 483542
+      },
+      "total time": {
+        "seconds": 22564.96041,
+        "tokens": 860916
+      }
+    },
+    "max_prompt_tokens": 81541,
+    "decode_tokens_per_second": 24.736443844741892,
+    "agent_wall_seconds_outside_native_timing": 5015.407875000001
+  },
+  "bash_commands": {
+    "count": 246,
+    "sum_requested_wait_seconds": 4967.8
+  },
+  "compactions": [
+    {
+      "step_id": 48,
+      "timestamp": "2026-09-26T14:32:20.866115+00:00",
+      "previous_action_prompt_tokens": 72765,
+      "resumed_action_prompt_tokens": 10676,
+      "subagent_files": [
+        "trajectory.summarization-1-summary.json",
+        "trajectory.summarization-1-questions.json",
+        "trajectory.summarization-1-answers.json"
+      ]
+    },
+    {
+      "step_id": 86,
+      "timestamp": "2026-09-26T16:12:08.226554+00:00",
+      "previous_action_prompt_tokens": 70880,
+      "resumed_action_prompt_tokens": 8110,
+      "subagent_files": [
+        "trajectory.summarization-2-summary.json",
+        "trajectory.summarization-2-questions.json",
+        "trajectory.summarization-2-answers.json"
+      ]
+    }
+  ],
+  "wrapper_termination": {
+    "marker": "resource_or_service_guard",
+    "timestamp_pacific": "2026-09-26T11:27:28-07:00",
+    "cause": "Kubernetes API connectivity check failed after the completed passing result"
+  },
+  "source_artifacts": [
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/result.json",
+      "bytes": 203432,
+      "sha256": "4385b49be93a5488994ad8eeb89d7022f83b98431dbcbfb813b98059573742fc"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/server.log",
+      "bytes": 1427657,
+      "sha256": "c09e0905885ee2b5e25fd74e3fe81e96cfd2f6cf97c1b2bba943f8f8eaf100d9"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/agent/trajectory.json",
+      "bytes": 1870879,
+      "sha256": "bff54328175483061bb251ec3095117e554693c5529e9e57fd6f0440e326fca5"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/trial.log",
+      "bytes": 25785,
+      "sha256": "62bae0089ef1a7d1d505101b505c0d1a9b0a95d1f0c48817a00caeb9b305d121"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/job.json",
+      "bytes": 1568,
+      "sha256": "5b8d6f25b5628088a0d77c3f5c6b1273b0742892eb76f09ff25fe5c31f8634f4"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/harbor-source-sha256.txt",
+      "bytes": 520,
+      "sha256": "afbe20053cbe9b775de86ed31ba800f349c9a952c89ce39b6768857399a4e8f2"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/startup.log",
+      "bytes": 36587,
+      "sha256": "d8da3b2ef73077f757f55f258a68ea0047ca4a8ef9b032990c6d53443ab911d8"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/server-inspect.json",
+      "bytes": 19751,
+      "sha256": "2bc14aa784e619120a3a6e53a1647518e17c1aec476261d708b06ffd4c75b6b9"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/termination.txt",
+      "bytes": 26,
+      "sha256": "fac56cd1e5c15f791a94071a8c2997f0a49c8fa374dac9adc99b1b8252dd2421"
+    },
+    {
+      "path": "queue.log",
+      "bytes": 2863,
+      "sha256": "ee4945cf81bbaeb0199528de97afe71386838d7c7dd10356b9c624a9c7efd06c"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/agent/trajectory.summarization-1-answers.json",
+      "bytes": 1048298,
+      "sha256": "4b8fc9aa260210977fd3e37543f35e0c3218f78d764e64d0ef8e1c6c388cb75d"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/agent/trajectory.summarization-1-questions.json",
+      "bytes": 25109,
+      "sha256": "780216603246a6c7f41ea922562df7b494b311ada41b627591e4da35a9aa7adf"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/agent/trajectory.summarization-1-summary.json",
+      "bytes": 1004223,
+      "sha256": "b6c1a152c956de71688e2e1adc0230cd7880972b3424980e87d3efd24b6a2c3f"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/agent/trajectory.summarization-2-answers.json",
+      "bytes": 798501,
+      "sha256": "569e1a065563384cb22939c91aea10f04bbbb12f03310cfd44f120587e6361d0"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/agent/trajectory.summarization-2-questions.json",
+      "bytes": 41255,
+      "sha256": "87e315affb5f85b6404e6e7c6fe52ffaf08f82d7bba28adc99561503af02f7b9"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/agent/trajectory.summarization-2-summary.json",
+      "bytes": 789945,
+      "sha256": "70810ff37282dc8942d95777b59f0dfc0e91e5f5ca94d63560469deef33020e3"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/artifacts/app/cracker.py",
+      "bytes": 35596,
+      "sha256": "80e400185ea4116dd6492b42d63a3f8b0fd4eeb0cb789cfd2798c81f5af25dff"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/artifacts/app/requirements.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/verifier/ctrf.json",
+      "bytes": 2641,
+      "sha256": "0747ff9ad17d4b0b441c937f44f4ef2057261814e3486982520822f4bd18f2a5"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/verifier/reward.txt",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "path": "q4-128k-q8_0-terminus/harbor/jobs/attempt/238a75a32aad5e60b33a22ac53087790__rKeSmew/verifier/test-stdout.txt",
+      "bytes": 364,
+      "sha256": "5fc46483fd22e0149afdb11672aaaf85e964807998a2bca6ce59265f34e90185"
+    }
+  ]
+}

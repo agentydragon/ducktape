@@ -4,41 +4,36 @@ from, its StorageClasses, and the directory's Flux Kustomization.
 
 from __future__ import annotations
 
-from pathlib import Path
+import textwrap
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitRepositorySpec, GitRepositorySpecRef
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmRelease,
-    HelmReleaseSpec,
-    HelmReleaseSpecChart,
-    HelmReleaseSpecChartSpec,
-    HelmReleaseSpecChartSpecSourceRef,
-    HelmReleaseSpecChartSpecSourceRefKind,
-    HelmReleaseSpecInstall,
-    HelmReleaseSpecInstallRemediation,
-    HelmReleaseSpecUpgrade,
-    HelmReleaseSpecUpgradeRemediation,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
+from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmReleaseSpecUpgradeRemediation
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 NAME = "seaweedfs-csi"
 NAMESPACE = "seaweedfs-csi-system"
 RELEASE = "seaweedfs-csi-driver"
 OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs-csi"
 _VERSION = "v1.4.30"
-_ZONE = "topology.kubernetes.io/zone"
 _OVH_AFFINITY = {
     "nodeAffinity": {
         "requiredDuringSchedulingIgnoredDuringExecution": {
-            "nodeSelectorTerms": [{"matchExpressions": [{"key": _ZONE, "operator": "In", "values": ["hil-ovh"]}]}]
+            "nodeSelectorTerms": [
+                {
+                    "matchExpressions": [
+                        {"key": node_scheduling.ZONE_LABEL, "operator": "In", "values": [node_scheduling.HIL_OVH_ZONE]}
+                    ]
+                }
+            ]
         }
     }
 }
@@ -52,9 +47,7 @@ _OVH_AFFINITY = {
 # SeaweedFS on /dev/sdb and pinned only ephemeral-write batch jobs off the control planes.
 # Measured on ovh-ns103656: the mount pod writes ~0.8 KiB/s to the install disk (6.0 GiB over
 # 85 days, logs + FUSE metadata) against the 490-988 KiB/s writers that RCA actually pinned off.
-_CONTROL_PLANE_TOLERATIONS = [
-    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-]
+_CONTROL_PLANE_TOLERATIONS = [node_scheduling.CONTROL_PLANE_TOLERATION]
 
 
 def _values() -> dict[str, object]:
@@ -79,7 +72,7 @@ def _values() -> dict[str, object]:
         # `topology.kubernetes.io/zone` matches the node label OVH nodes actually carry
         # (cluster/terraform/main/ovh-nodes.tf nodeLabels, value "hil-ovh") and what the
         # StorageClasses' allowedTopologies match on.
-        "topologyKeys": [_ZONE],
+        "topologyKeys": [node_scheduling.ZONE_LABEL],
         # Bound the per-mount in-memory write buffer. `weed mount` accumulates dirty pages as
         # chunks of -chunkSizeLimitMB (2MB) and allocates a new in-memory one only while
         # `memChunkCounter < 4*writableChunkLimit` (weed/mount/page_writer/upload_pipeline.go),
@@ -184,7 +177,11 @@ def _storage_class(scope: Construct, name: str, *, description: str, parameters:
         # (cluster/terraform/main/ovh-nodes.tf nodeLabels).
         allowed_topologies=[
             k8s.TopologySelectorTerm(
-                match_label_expressions=[k8s.TopologySelectorLabelRequirement(key=_ZONE, values=["hil-ovh"])]
+                match_label_expressions=[
+                    k8s.TopologySelectorLabelRequirement(
+                        key=node_scheduling.ZONE_LABEL, values=[node_scheduling.HIL_OVH_ZONE]
+                    )
+                ]
             )
         ],
         # SeaweedFS CSI expansion is a collection-quota bump, so a growing PVC (e.g. Forgejo
@@ -196,66 +193,59 @@ def _storage_class(scope: Construct, name: str, *, description: str, parameters:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            # CSI driver needs hostPath, hostPID, SYS_ADMIN, and privileged containers.
-            labels={
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-            },
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=None,
+        # CSI driver needs hostPath, hostPID, SYS_ADMIN, and privileged containers.
+        labels={
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+        },
     )
     source = GitRepository(
         chart,
         "source",
-        metadata=metadata("seaweedfs-csi-driver", "flux-system"),
-        spec=GitRepositorySpec(
-            interval="24h",
-            url="https://github.com/seaweedfs/seaweedfs-csi-driver",
-            ref=GitRepositorySpecRef(tag="v1.4.31"),
-            ignore="/*\n!/deploy/helm/seaweedfs-csi-driver\n",
+        metadata=ApiObjectMetadata(name="seaweedfs-csi-driver", namespace="flux-system"),
+        interval="24h",
+        url="https://github.com/seaweedfs/seaweedfs-csi-driver",
+        ref=GitRepositorySpecRef(tag="v1.4.31"),
+        ignore=textwrap.dedent(
+            """\
+            /*
+            !/deploy/helm/seaweedfs-csi-driver
+            """
         ),
     )
-    HelmRelease(
+    helm_release(
         chart,
-        "release",
-        metadata=metadata(RELEASE, NAMESPACE),
-        spec=HelmReleaseSpec(
-            interval="30m",
-            install=HelmReleaseSpecInstall(remediation=HelmReleaseSpecInstallRemediation(retries=3)),
-            upgrade=HelmReleaseSpecUpgrade(
-                # Deviation: upgrades do not wait for resource health. The mount DaemonSet is
-                # `updateStrategy: OnDelete` (chart default, and deliberate -- rolling it kills
-                # the node's FUSE mounts and consumers do not self-heal, #4616). Flux assesses
-                # health with kstatus, which reports a DaemonSet InProgress while
-                # updatedNumberScheduled < desiredNumberScheduled and has no OnDelete
-                # exemption, so any values change here hangs until the timeout and then Stalls
-                # the release -- which also wedges the Kustomization that health-checks it.
-                # (Helm's own readiness checker does exempt OnDelete; Flux does not use it.)
-                # Adding resource requests in #4626 triggered exactly this.
-                #
-                # The cost is that a genuinely broken upgrade of the controller or node
-                # DaemonSet is no longer caught by the release going NotReady. Reverting this
-                # requires either dropping OnDelete or a per-resource wait exemption.
-                disable_wait=True,
-                remediation=HelmReleaseSpecUpgradeRemediation(retries=3),
-            ),
-            chart=HelmReleaseSpecChart(
-                spec=HelmReleaseSpecChartSpec(
-                    chart="deploy/helm/seaweedfs-csi-driver",
-                    source_ref=HelmReleaseSpecChartSpecSourceRef(
-                        kind=HelmReleaseSpecChartSpecSourceRefKind.GIT_REPOSITORY,
-                        name=source.name,
-                        namespace=source.metadata.namespace,
-                    ),
-                )
-            ),
-            values=_values(),
+        RELEASE,
+        NAMESPACE,
+        repository=source,
+        chart="deploy/helm/seaweedfs-csi-driver",
+        interval="30m",
+        install=RETRY_FAILED_INSTALL,
+        upgrade=HelmReleaseSpecUpgrade(
+            # Deviation: upgrades do not wait for resource health. The mount DaemonSet is
+            # `updateStrategy: OnDelete` (chart default, and deliberate -- rolling it kills
+            # the node's FUSE mounts and consumers do not self-heal, #4616). Flux assesses
+            # health with kstatus, which reports a DaemonSet InProgress while
+            # updatedNumberScheduled < desiredNumberScheduled and has no OnDelete
+            # exemption, so any values change here hangs until the timeout and then Stalls
+            # the release -- which also wedges the Kustomization that health-checks it.
+            # (Helm's own readiness checker does exempt OnDelete; Flux does not use it.)
+            # Adding resource requests in #4626 triggered exactly this.
+            #
+            # The cost is that a genuinely broken upgrade of the controller or node
+            # DaemonSet is no longer caught by the release going NotReady. Reverting this
+            # requires either dropping OnDelete or a per-resource wait exemption.
+            disable_wait=True,
+            remediation=HelmReleaseSpecUpgradeRemediation(retries=3),
         ),
+        values=_values(),
     )
     _storage_class(
         chart,
@@ -281,13 +271,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def seaweedfs_csi(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, seaweedfs_cluster: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart, NAME, artifact, timeout="10m", depends_on=[flux_kustomization_depends_on(seaweedfs_cluster)]
-    )
+def seaweedfs_csi(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(chart, NAME, directory, timeout="10m")

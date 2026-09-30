@@ -8,29 +8,20 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
     ClusterSpecPostgresql,
 )
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-)
+from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecCluster, DatabaseSpecDatabaseReclaimPolicy
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetTemplate
 
-from cluster.cdk8s import cnpg
-from cluster.cdk8s.agentplane import node_scheduling
+from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
+from cluster.cdk8s.providers.cnpg.database import Database
 
-_CLUSTER_NAME = "postgres"
 _STORAGE_CLASS = "local-path-ovh-ssd"
 _STORAGE_SIZE = "5Gi"
 # CNPG's fixed Postgres port -- egress/actions/app's CiliumNetworkPolicy rules allowing
@@ -43,40 +34,28 @@ _ROLE_NAMES = ["actions", "egress"]
 _ELECTRIC_ROLE = "electric"
 
 
+def postgres(env: Environment) -> cnpg.PostgresRef:
+    """The environment's shared Cluster."""
+    return cnpg.PostgresRef.generated(name="postgres", namespace=env.namespace)
+
+
 def _role_credentials(
-    scope: Construct, id: str, *, role: str, namespace: str, database_name: str | None = None
+    scope: Construct, id: str, *, cluster: cnpg.PostgresRef, role: str, database_name: str | None = None
 ) -> None:
     """The ESO Password generator + ExternalSecret pair minting one managed role's
     login credentials, in the shape the Cluster's `managed.roles[].passwordSecret` and
     the role's own consumers (litellm, the actions/egress services) expect.
     """
-    secret_name = f"postgres-{role}"
-    host = f"{_CLUSTER_NAME}-rw.{namespace}.svc"
-    database = database_name or role
-    Password(
-        scope,
-        f"{id}-generator",
-        metadata=ApiObjectMetadata(name=f"{secret_name}-generator", namespace=namespace),
-        spec=PasswordSpec(length=40, digits=8, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_db_role_secret(
         scope,
         id,
-        name=secret_name,
-        namespace=namespace,
-        refresh="8760h",
-        data_from=[DataFrom.from_password_generator(f"{secret_name}-generator")],
-        template=ExternalSecretSpecTargetTemplate(
-            type="kubernetes.io/basic-auth",
-            data={
-                "username": role,
-                "password": "{{ .password }}",
-                "host": host,
-                "port": str(POSTGRES_PORT),
-                "dbname": database,
-                "uri": f"postgresql://{role}:{{{{ .password }}}}@{host}:{POSTGRES_PORT}/{database}",
-            },
-        ),
+        name=f"postgres-{role}",
+        namespace=cluster.namespace,
+        role=role,
+        host=cluster.rw.host,
+        port=cluster.rw.port.number,
+        database=database_name or role,
+        url_key="uri",
     )
 
 
@@ -87,27 +66,26 @@ class Db(Construct):
 
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
+        cluster = postgres(env)
 
         for role in _ROLE_NAMES:
-            _role_credentials(self, f"role-credentials-{role}", role=role, namespace=env.namespace)
-        _role_credentials(
-            self, "role-credentials-electric", role=_ELECTRIC_ROLE, namespace=env.namespace, database_name="app"
-        )
+            _role_credentials(self, f"role-credentials-{role}", cluster=cluster, role=role)
+        _role_credentials(self, "role-credentials-electric", cluster=cluster, role=_ELECTRIC_ROLE, database_name="app")
 
         cnpg.cluster(
             self,
             "cluster",
-            name=_CLUSTER_NAME,
-            namespace=env.namespace,
+            ref=cluster,
             instances=env.db.instances,
-            node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
+            placement=node_scheduling.HIL_OVH,
             storage_class=_STORAGE_CLASS,
             size=_STORAGE_SIZE,
             # Electric's WAL-loss recovery purges every shape, then stays unready while
             # rebuilding its replication pipeline. Keep a bounded outage budget below the
             # 5Gi volume instead of silently recycling the logical slot's WAL.
             postgresql=ClusterSpecPostgresql(parameters={"max_slot_wal_keep_size": "512MB"}),
-            initdb=ClusterSpecBootstrapInitdb(database="app", owner="app"),
+            initdb=cnpg.same_owner_initdb("app"),
+            wal_archive=False,
             managed=ClusterSpecManaged(
                 roles=[
                     ClusterSpecManagedRoles(
@@ -135,10 +113,8 @@ class Db(Construct):
                 self,
                 f"database-{role}",
                 metadata=ApiObjectMetadata(name=role, namespace=env.namespace),
-                spec=DatabaseSpec(
-                    cluster=DatabaseSpecCluster(name=_CLUSTER_NAME),
-                    name=role,
-                    owner=role,
-                    database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.DELETE,
-                ),
+                cluster=DatabaseSpecCluster(name=cluster.name),
+                name=role,
+                owner=role,
+                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.DELETE,
             )

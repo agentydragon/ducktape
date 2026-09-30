@@ -8,13 +8,22 @@ py_library(
 )
 
 py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//finance/plaid:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "client",
     srcs = ["client.py"],
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
+        ":models",
         ":products",
         "@pypi//certifi",
         "@pypi//plaid_python",
+        "@pypi//pydantic",
     ],
 )
 
@@ -46,6 +55,7 @@ py_library(
     visibility = [
         "//finance/augur:__subpackages__",
         "//finance/beancount_export:__pkg__",
+        "//finance/budget:__pkg__",
         "//finance/plaid:__subpackages__",
     ],
     deps = [
@@ -67,7 +77,7 @@ py_library(
 filegroup(
     name = "migrations",
     srcs = glob(["migrations/**"]),
-    visibility = ["//finance/augur:__subpackages__"],
+    visibility = ["//finance/budget:__pkg__"],
 )
 
 py_test(
@@ -135,8 +145,10 @@ py_library(
     data = glob(["migrations/**"]),
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
+        ":models",
         ":schema",
         "@pypi//alembic",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -154,6 +166,7 @@ py_library(
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
         ":link_store",
+        ":models",
         ":products",
         ":secret_store",
         "@pypi//plaid_python",

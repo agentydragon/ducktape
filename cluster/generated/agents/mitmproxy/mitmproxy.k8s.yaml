@@ -51,8 +51,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: mitmproxy
   name: mitmproxy
@@ -85,8 +83,10 @@ spec:
           ports:
             - containerPort: 8080
               name: proxy
+              protocol: TCP
             - containerPort: 8081
               name: web
+              protocol: TCP
           resources:
             limits:
               cpu: 500m
@@ -128,9 +128,11 @@ spec:
   ports:
     - name: proxy
       port: 8080
+      protocol: TCP
       targetPort: 8080
     - name: web
       port: 8081
+      protocol: TCP
       targetPort: 8081
   selector:
     app.kubernetes.io/name: mitmproxy

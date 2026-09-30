@@ -3,7 +3,7 @@
 # (git.allegedly.works/ducktape-ci/agent-workspace) — not GHCR, so the pull
 # credential is provisioned in code (tf/gitops/forgejo-images) rather than a
 # manual "make public" GHCR click. Consumed by the workspace SandboxTemplate
-# in cluster/k8s/agents/agent-sandbox/workspaces/.
+# in cluster/generated/agents/agent-sandbox/workspaces/.
 name: Agent Workspace Image
 
 on:

@@ -15,9 +15,10 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.api.config import Config
+from finance.augur.api.portfolio import TlhCohort, TlhPortfolioSpec
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.series import SecurityKey, SecuritySymbol
-from finance.augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
+from finance.augur.product.scenarios import locations_by_id, resolve_primary_agent_id
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import (
     FundingPolicy,
@@ -33,7 +34,6 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.ids import AccountId, PortfolioId
-from finance.augur.sim.scenario import TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.tlh import TlhAssumptions
 
 VOO = SecuritySymbol("VOO")
@@ -68,7 +68,7 @@ def _product(augur_config: Config, catalog: CatalogResponse, *, index: str, acco
             ),
         ),
         known_location_ids=catalog.location_ids,
-        locations=sim_locations_from_config(augur_config.locations),
+        locations=locations_by_id(augur_config.locations),
         properties_by_id=catalog.properties_by_id,
         models={"current_model": augur_config.models[augur_config.default_model_id].realize_model()},
         max_rollout_samples=augur_config.max_rollout_samples,

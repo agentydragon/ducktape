@@ -19,6 +19,7 @@ from agentplane.runner.config import RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.journal import Journal
 from agentplane.runner.observation import Observation
+from agentplane.runner.recovery import observed_items, unknown_report
 from agentplane.runner.store import SessionRecord, SessionStore
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -167,6 +168,9 @@ class Session:
                 self.record.native_session_id = native_session_id
                 self.store.write(self.session_id, self.record)
             await self.emit(event_pb2.HarnessStarted(resumed=resumed, pid=process.native_pid), sources=[])
+            if resumed:
+                for turn_id in await self.journal.recovery_turns():
+                    await self.emit(await adapter.reconcile(turn_id, resumed=True), sources=[])
             await self._reconcile_commands(recovering=True)
 
     async def command(self, command: command_pb2.Command) -> None:
@@ -247,6 +251,16 @@ class Session:
                 return
             if model == self.record.model:
                 await self._noop(command_id, "the requested model is already active", sources=[])
+                return
+            current_window = self.config.model_context_windows.get(self.record.model)
+            requested_window = self.config.model_context_windows.get(model)
+            if current_window != requested_window:
+                await self._fail(
+                    command_id,
+                    "changing to a model with a different configured context window requires a new thread; "
+                    "start a new session with the requested model",
+                    sources=[],
+                )
                 return
             await self.journal.dispatch_planned(command_id)
             self._dispatched_commands.add(command_id)
@@ -354,6 +368,8 @@ class Session:
         await self._commit_batch()
         async with self._lock:
             await self._record_turn_completed(turn_id, status, error, sources=sources)
+            if status == event_pb2.TURN_STATUS_INTERRUPTED and self.adapter is not None:
+                await self.emit(await self.adapter.reconcile(turn_id, resumed=False), sources=sources)
             await self._reconcile_commands()
 
     async def _record_turn_completed(
@@ -374,6 +390,15 @@ class Session:
             else [],
             native_correlation={"turn_id": turn_id},
         )
+        if status == event_pb2.TURN_STATUS_PROCESS_LOST:
+            await self.emit(
+                unknown_report(
+                    turn_id,
+                    await observed_items(self.journal, turn_id),
+                    "the harness exited before continuation could be inspected",
+                ),
+                sources=[],
+            )
         if interrupt_command_id and status != event_pb2.TURN_STATUS_INTERRUPTED:
             await self._noop(
                 interrupt_command_id, "the turn completed before interruption took effect", sources=sources

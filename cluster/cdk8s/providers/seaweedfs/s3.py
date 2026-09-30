@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from seaweed_bucket_crds.com.seaweedfs.seaweed import (
     Bucket as _Bucket,
@@ -33,8 +34,6 @@ from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
     S3IdentitySpecReclaimPolicy,
     S3IdentitySpecSeaweedRef,
 )
-
-from cluster.cdk8s.metadata import metadata
 
 
 @dataclass(frozen=True)
@@ -77,7 +76,7 @@ class Identity(Construct):
         self._resource = S3Identity(
             self,
             "Resource",
-            metadata=metadata(name, namespace, annotations=_description(description)),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=_description(description)),
             spec=S3IdentitySpec(
                 seaweed_ref=S3IdentitySpecSeaweedRef(
                     name=cluster_name, namespace=_seaweed_ref_namespace(namespace, cluster_namespace)
@@ -111,7 +110,7 @@ class Bucket(Construct):
         self._resource = _Bucket(
             self,
             "Resource",
-            metadata=metadata(name, namespace, annotations=_description(description)),
+            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=_description(description)),
             spec=BucketSpec(
                 name=name,
                 adopt_existing=adopt_existing or None,

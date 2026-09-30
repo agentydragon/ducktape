@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   labels:
     app.kubernetes.io/name: ntfy
-    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
   name: ntfy
 spec: {}
 ---
@@ -135,7 +135,6 @@ kind: Deployment
 metadata:
   annotations:
     description: Single ntfy server backed by the two-instance ntfy PostgreSQL cluster.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: ntfy
   name: ntfy
@@ -292,7 +291,6 @@ kind: ServiceMonitor
 metadata:
   labels:
     app.kubernetes.io/name: ntfy
-    release: kube-prometheus-stack
   name: ntfy
   namespace: ntfy
 spec:

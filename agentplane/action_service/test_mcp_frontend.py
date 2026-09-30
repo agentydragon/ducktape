@@ -257,6 +257,8 @@ async def _serve(
         catalog,
         callers=policies,
         updates=updates,
+        direct_wait_seconds=30,
+        max_wait_seconds=30,
     )
     try:
         async with lifespan_in_own_task(app):

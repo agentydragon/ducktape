@@ -8,8 +8,8 @@ from dataclasses import dataclass, replace
 from finance.augur.sim.books import TaxAccrual
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AgentId
+from finance.augur.sim.income import TransferIncomeCategory
 from finance.augur.sim.money import checked_count, mul_div
-from finance.augur.sim.scenario import TransferIncomeCategory
 from finance.augur.sim.tax import IncomeLedger
 
 
@@ -58,9 +58,11 @@ class TaxBook:
         else:
             year.short_term_gain = checked_count(year.short_term_gain + amount, "money addition")
 
-    def property_tax(self, agent: AgentId, amount: int, rented_fraction: int) -> None:
+    def ad_valorem_tax(self, agent: AgentId, amount: int, rented_fraction: int) -> None:
+        """Ad-valorem real property tax paid: the rented share a rental expense (IRS Publication 527,
+        "Renting Part of Property"), the rest the owner's real property tax."""
         rental = mul_div(amount, rented_fraction, MONEY_FACTOR_SCALE, "rental property tax deduction")
-        owner = mul_div(amount, MONEY_FACTOR_SCALE - rented_fraction, MONEY_FACTOR_SCALE, "owner property tax")
+        owner = checked_count(amount - rental, "owner property tax")
         self.income.deduct_from_ordinary(agent, rental)
         if agent in self.years:
             year = self.years[agent]

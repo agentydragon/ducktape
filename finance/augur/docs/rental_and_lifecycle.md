@@ -11,7 +11,7 @@ If it is unset, the property has no tenant rent stream; a later
 scenario has no rent/vacancy terms to resize.
 
 `RentalIncomePlan.full_property_monthly_rent_usd` is full-property market rent before
-vacancy and management fees. If it is `None`, product lowering uses the selected
+vacancy and management fees. If it is `None`, the app's preparation uses the selected
 property's `rent_estimate_usd`. Collected tenant rent is:
 
 ```text
@@ -29,7 +29,7 @@ before vacancy:
 full_property_monthly_rent * fraction_rented * leasing_fee_months
 ```
 
-Both tenant rent and agency fees index annually by the property's `rent:<location_id>`
+Both tenant rent and agency fees index annually by the property's `rent:<market>`
 series.
 
 `PropertyPurchase.is_primary_residence` does two separate things at purchase time:
@@ -45,7 +45,7 @@ Mid-horizon lifecycle events are scoped to the purchased property in product wir
 - `property_sale`: sells the property, pays off mortgage debt, and freezes later
   property activity.
 
-Product lowering turns the effective rented-fraction timeline into tenant-rent and
+The app's preparation turns the effective rented-fraction timeline into tenant-rent and
 agency-fee property cashflows. `set_rented_fraction` events resize, stop, or
 restart those cashflows at the start of their event month. Sale stops rental
 cashflows in the sale month.
@@ -55,7 +55,7 @@ cashflows in the sale month.
 `sim/mortgage.py` owns mortgage terms, the fixed installment, servicing eligibility
 and year-to-date paid-interest totals. Outstanding principal is read from the
 canonical liability ledger, not copied into another mutable loan balance.
-Native accounting accepts immutable installment and year-end interest facts;
+Accounting accepts immutable installment and year-end interest facts;
 captured mortgage records are read-only statements, not a second servicing model.
 Only settled payments update paid-interest totals. Year-end tax assessment consumes
 those facts before Python resets them; paying off a loan does not erase that year's
@@ -67,27 +67,27 @@ ledger principal before that month's servicing, so the sold property creates no
 later mortgage installment. This timing does not provide a household purchase
 action.
 
-The sim's authored records separate property use from property ownership:
+The sim's housing records (`Housing` in `sim/property.py`) separate property use
+from property ownership:
 
-- `ScheduledPropertyPurchase.rented_fraction` is the initial rented share.
-- `PrimaryResidenceAssignment` is agent-scoped, one initial main home per agent.
-- `SetPrimaryResidenceEvent` assigns or clears an agent's main home over time.
-- `PropertyLifecycleEvent` handles rented-fraction changes, improvements,
-  and sales.
-- `ScheduledPropertyCashflow` and
-  `RecurringPropertyCashflow` model property-linked rent,
+- `ScheduledPurchase.rented_fraction_ppb` is the initial rented share.
+- `PrimaryResidence` is agent-scoped, one initial main home per agent.
+- `PrimaryResidenceEvent` assigns or clears an agent's main home over time.
+- `RentedFraction`, `CapitalImprovement` and `ScheduledSale` handle rented-fraction
+  changes, improvements, and sales.
+- `World.declare_flow` with a `property_id` models property-linked rent,
   management, and leasing cashflows. The engine gates them by property
   ownership lifecycle, then decodes fired rows into the generic transfer event
   frame without adding `property_id` to transfer events.
 
-Native property state retains mutable `rented_fraction` and building basis.
+Property state retains mutable `rented_fraction` and building basis.
 Within each configured month, primary-residence events fire first, then property
 lifecycle events, then generic transfers, property purchases, property cashflows,
 asset sales, obligations, owner-occupied-month accrual, depreciation, and tax
 accrual. This means a same-month primary-residence event can fire before a sale,
 but the sale clears the assignment and the sold property does not accrue an
-owner-occupied month. Same-property `PropertySaleEvent` cannot share a month with
-`SetRentedFractionEvent` or `CapitalImprovementEvent`; those combinations are
+owner-occupied month. A same-property sale cannot share a month with a
+rented-fraction change or a capital improvement; those combinations are
 rejected because sale basis, depreciation, and rental routing would otherwise be
 ambiguous.
 
@@ -98,7 +98,7 @@ Schedule E and owner-use splits read the runtime rented fraction:
   mortgage-interest rented share, and depreciation can deduct against ordinary income;
 - Python records the owner/rental split of each settled mortgage installment;
   owner-share interest flows through MID;
-- owner-share property tax flows through federal SALT.
+- owner-share ad-valorem property tax flows through federal SALT and California itemized deductions.
 
 Section 121 qualifying-use months accrue only when all are true:
 
@@ -107,10 +107,10 @@ Section 121 qualifying-use months accrue only when all are true:
 - the property is not fully rented.
 
 On sale, the engine looks back 60 months and applies the profile's Section 121 cap when
-there are at least 24 qualifying months. Only single-filer $250k is wired today; adding
-other filing statuses is intentionally loud in the tax compiler.
+there are at least 24 qualifying months. Only single-filer $250k is wired today;
+other filing statuses raise in `sim/tax_profile.py`.
 
-Property sale computes market value from the property's `home_value:<location_id>`
+Property sale computes market value from the property's `home_value:<market>`
 series, pays off attached mortgage principal, computes realized gain, separates Section
 1250 recapture, applies Section 121 to post-recapture gain, then routes the remainder to
 long-term capital gain. Federal-style Section 1250 uses the lesser of the implied ordinary

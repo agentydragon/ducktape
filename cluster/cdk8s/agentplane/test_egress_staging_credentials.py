@@ -37,6 +37,8 @@ def test_forgejo_password_has_one_reader_and_exact_source_access() -> None:
         "home-assistant-readonly",
         "activitywatch-read-token",
         "haku-mail-token",
+        "buildbuddy-api-key",
+        "plaid-pgweb-auth",
     }
     assert secrets["haku-forgejo-git"]["spec"]["data"] == [
         {"secretKey": "password", "remoteRef": {"key": "haku-forgejo-git", "property": "password"}}

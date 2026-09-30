@@ -3,27 +3,17 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
-    name = "flux_kustomizations",
-    srcs = ["flux_kustomizations.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_library(
     name = "app",
     srcs = ["app.py"],
+    data = ["dashboard.json"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
-        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:grafana_dashboards",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",

@@ -1,0 +1,1111 @@
+// @vitest-environment happy-dom
+
+import { create, equals, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { MantineProvider } from "@mantine/core";
+import { act, type JSX } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { CommandSchema, type Command } from "../../../protocol/command_pb";
+import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_pb";
+import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
+import { command, getThread, models, resumeThread, type ThreadView } from "../client";
+import { historyRows, rowKey } from "./history_rows";
+import { LocalCommands } from "./local_commands";
+import { STREAMING_CURSOR } from "../markdown";
+import { HistoryRowView, ProjectedSession } from "./projected_session";
+import { pruneCommandErrors } from "./thread_commands";
+import { EntityCard } from "./thread_cards";
+import { RetainedDisclosureProvider } from "./retained_disclosures";
+import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
+import { testItem } from "./thread_entity_fixture";
+import {
+  ThreadSyncContext,
+  type PayloadRef,
+  type ThreadEntity,
+  type ThreadState,
+  type ThreadSync,
+} from "./thread_sync";
+import { TopbarContext } from "../topbar";
+
+vi.mock("../client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../client")>()),
+  command: vi.fn(),
+  getThread: vi.fn(),
+  models: vi.fn(),
+  resumeThread: vi.fn(),
+}));
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const mounted: Array<{
+  root: ReturnType<typeof createRoot>;
+  container: HTMLDivElement;
+  topbarTitle?: HTMLDivElement;
+  topbarActions?: HTMLDivElement;
+}> = [];
+const THREAD: ThreadView = {
+  id: "10000000-0000-4000-8000-000000000001",
+  sandbox: "composer-test",
+  session_id: "session-test",
+  harness: "HARNESS_CLAUDE",
+  model: "test-model",
+  cwd: "/test-workspace",
+  created_at: "2026-01-01T00:00:00Z",
+  name: "Test thread",
+  archived: false,
+  last_cursor: 1,
+  last_event_at: null,
+  harness_state: "HARNESS_STATE_RUNNING",
+};
+
+// What the sandbox inventory stream reports -- nothing at all while `sandboxes` is null -- and
+// whether it then drops. By default the thread's sandbox is running on a current inventory, so its
+// controls are live.
+type Inventory = Array<{ name: string; state: string }> | null;
+let sandboxes: Inventory = [];
+let inventoryFresh = true;
+let inventoryDrops = false;
+
+beforeEach(() => {
+  localStorage.clear();
+  sandboxes = [{ name: THREAD.sandbox, state: "running" }];
+  inventoryFresh = true;
+  inventoryDrops = false;
+  vi.mocked(getThread).mockResolvedValue(THREAD);
+  vi.mocked(models).mockResolvedValue({
+    models: [{ model: "test-model", display_name: "Test Model" }],
+    harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
+  });
+  vi.mocked(command).mockReturnValue(new Promise(() => {}));
+  vi.mocked(resumeThread).mockResolvedValue({} as never);
+  vi.stubGlobal(
+    "EventSource",
+    class extends EventTarget {
+      // A drop is the network's, which the browser retries: the source stays CONNECTING.
+      readyState = 0;
+      constructor() {
+        super();
+        queueMicrotask(() => {
+          if (sandboxes === null) return;
+          this.dispatchEvent(
+            new MessageEvent("snapshot", {
+              data: JSON.stringify({
+                sandboxes,
+                watch: {
+                  fresh: inventoryFresh,
+                  stale_after_seconds: 90,
+                  refreshed_seconds_ago: { sandboxes: inventoryFresh ? 0 : 2400 },
+                },
+              }),
+            })
+          );
+          if (inventoryDrops) this.dispatchEvent(new Event("error"));
+        });
+      }
+      close(): void {}
+    }
+  );
+});
+
+afterEach(async () => {
+  for (const { root, container } of mounted.splice(0)) {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.resetAllMocks();
+});
+
+function viewState({
+  harness = "running",
+  status = "active",
+  model = "test-model",
+}: {
+  harness?: string | null;
+  status?: "active" | "ended" | "failed";
+  model?: string | null;
+} = {}): ThreadEntity {
+  return {
+    threadId: THREAD.id,
+    projectionEpoch: "test-epoch",
+    entityKind: "view_state",
+    entityId: "current",
+    entityIndex: "0",
+    cursor: "1",
+    revisionCursor: "1",
+    pending: false,
+    turnId: null,
+    state: {
+      controls: { applied_model: model, active_turn_id: null, harness_state: harness },
+      operational: { status, last_verified_cursor: "1", feed_error: null },
+    },
+    textRef: null,
+    argumentsRef: null,
+    outputRef: null,
+    inputRef: null,
+  };
+}
+
+function threadState({
+  rows = [viewState()],
+  caughtUp = true,
+  reconnectingFor = null,
+  windowError = null,
+  error = null,
+}: {
+  rows?: ThreadEntity[];
+  caughtUp?: boolean;
+  /** How long the thread's reads have been failing, if they are. */
+  reconnectingFor?: number | null;
+  windowError?: string | null;
+  error?: string | null;
+} = {}): ThreadState {
+  return {
+    window: {
+      rows,
+      caughtUp,
+      olderAvailable: false,
+      loadingOlder: false,
+      loadOlder: () => {},
+      connection:
+        reconnectingFor === null
+          ? { phase: "live", since: Date.now() }
+          : { phase: "reconnecting", since: Date.now() - reconnectingFor, attempt: 1, lastError: "HTTP 503" },
+      error: windowError,
+      refresh: () => {},
+    },
+    error,
+  };
+}
+
+async function render(state: ThreadState = threadState()): Promise<HTMLDivElement> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  // The real shell topbar (app.tsx) isn't mounted here, so ProjectedSession's title/menu need
+  // somewhere to portal into. Left unattached until after the initial render: createRoot's first
+  // commit clears container's pre-existing children, which would tear these back out.
+  const topbarTitle = document.createElement("div");
+  const topbarActions = document.createElement("div");
+  const root = createRoot(container);
+  mounted.push({ root, container, topbarTitle, topbarActions });
+  await act(async () => {
+    root.render(page(state, topbarTitle, topbarActions));
+  });
+  container.append(topbarTitle, topbarActions);
+  return container;
+}
+
+function page(state: ThreadState, topbarTitle: HTMLDivElement, topbarActions: HTMLDivElement): JSX.Element {
+  const sync: ThreadSync = {
+    Thread: ({ children }) => <>{children}</>,
+    useThread: () => state,
+    useCommandRows: () => [],
+    usePayload: () => ({ body: null, error: null, retry: () => {} }),
+  };
+  return (
+    <MantineProvider env="test">
+      <ThreadSyncContext.Provider value={sync}>
+        <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
+          <ProjectedSession threadId={THREAD.id} />
+        </TopbarContext.Provider>
+      </ThreadSyncContext.Provider>
+    </MantineProvider>
+  );
+}
+
+async function rerender(container: HTMLDivElement, state: ThreadState): Promise<void> {
+  const current = mounted.find((entry) => entry.container === container);
+  const topbarTitle = current?.topbarTitle;
+  const topbarActions = current?.topbarActions;
+  if (!current || !topbarTitle || !topbarActions) throw new Error("Missing mounted thread page");
+  await act(async () => current.root.render(page(state, topbarTitle, topbarActions)));
+  container.append(topbarTitle, topbarActions);
+}
+
+function composer(container: HTMLDivElement): HTMLTextAreaElement {
+  const field = container.querySelector("textarea");
+  if (!field) throw new Error("Missing composer");
+  return field;
+}
+
+async function type(field: HTMLTextAreaElement, text: string): Promise<void> {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(field, text);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function press(field: HTMLTextAreaElement, init: KeyboardEventInit): Promise<void> {
+  await act(async () => {
+    field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, ...init }));
+  });
+}
+
+function button(container: HTMLDivElement, label: string): HTMLButtonElement {
+  const found = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+  if (!found) throw new Error(`Missing ${label}`);
+  return found;
+}
+
+async function openMenuItem(container: HTMLDivElement, text: string): Promise<HTMLButtonElement> {
+  await act(async () => button(container, "More").click());
+  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (candidate) => candidate.textContent === text
+  );
+  if (!item) throw new Error(`Missing menu item ${text}`);
+  return item;
+}
+
+function sentOperations(): unknown[] {
+  return vi.mocked(command).mock.calls.map(([, value]) => value.operation);
+}
+
+it("drops request errors after their local commands are dismissed", () => {
+  const errors = new Map([
+    ["dismissed", "connection lost"],
+    ["pending", "request timed out"],
+  ]);
+
+  expect(pruneCommandErrors(errors, new Set(["pending"]))).toEqual(new Map([["pending", "request timed out"]]));
+  expect(pruneCommandErrors(errors, new Set(errors.keys()))).toBe(errors);
+});
+
+it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }])(
+  "inserts a newline at the caret on Enter with %o, without sending",
+  async (modifier) => {
+    const field = composer(await render());
+    await type(field, "helloworld");
+    field.setSelectionRange(5, 5);
+    await press(field, modifier);
+    // The caret is put back on the frame after the controlled value lands.
+    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(field.value).toBe("hello\nworld");
+    expect([field.selectionStart, field.selectionEnd]).toEqual([6, 6]);
+    expect(command).not.toHaveBeenCalled();
+  }
+);
+
+it("sends the draft on Enter and clears it", async () => {
+  const field = composer(await render());
+  await type(field, "hello");
+  await press(field, {});
+  expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
+  expect(field.value).toBe("");
+});
+
+it("submits once for two Enters before the cleared draft renders, then takes the next draft", async () => {
+  const field = composer(await render());
+  await type(field, "hello");
+  await act(async () => {
+    const enter = () => field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    enter();
+    enter();
+  });
+  expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
+  await type(field, "second");
+  await press(field, {});
+  expect(sentOperations()).toMatchObject([
+    { case: "submitInput", value: { text: "hello" } },
+    { case: "submitInput", value: { text: "second" } },
+  ]);
+});
+
+it("sends the draft from the Send button, which an empty draft disables", async () => {
+  const container = await render();
+  expect(button(container, "Send").disabled).toBe(true);
+  await type(composer(container), "hello");
+  await act(async () => button(container, "Send").click());
+  expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
+});
+
+it("resumes the existing Thread and restores sending on the open and reloaded pages", async () => {
+  const ended = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+  const original = await render(ended);
+  expect(composer(original).disabled).toBe(true);
+  await act(async () => button(original, "Resume harness").click());
+  expect(resumeThread).toHaveBeenCalledWith(THREAD.id);
+
+  const running = threadState();
+  await rerender(original, running);
+  expect(composer(original).disabled).toBe(false);
+  await type(composer(original), "from the open page");
+  await press(composer(original), {});
+
+  const reloaded = await render(running);
+  expect(composer(reloaded).disabled).toBe(false);
+  await type(composer(reloaded), "from the reloaded page");
+  await press(composer(reloaded), {});
+  expect(sentOperations()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ case: "submitInput", value: expect.objectContaining({ text: "from the open page" }) }),
+      expect.objectContaining({
+        case: "submitInput",
+        value: expect.objectContaining({ text: "from the reloaded page" }),
+      }),
+    ])
+  );
+  expect(new Set(vi.mocked(command).mock.calls.map(([, value]) => value.commandId)).size).toBe(2);
+  expect(vi.mocked(command).mock.calls.every(([threadId]) => threadId === THREAD.id)).toBe(true);
+});
+
+it("shows the thread id in the More menu, not inline once a name is set", async () => {
+  const container = await render();
+  expect(document.body.textContent).not.toContain(THREAD.id);
+  await act(async () => button(container, "More").click());
+  expect(document.body.textContent).toContain(THREAD.id);
+});
+
+it("shuts the harness down from the More menu, not a control on the row", async () => {
+  const container = await render();
+  expect(document.body.textContent).not.toContain("Shut down harness");
+  await act(async () => (await openMenuItem(container, "Shut down harness")).click());
+  expect(sentOperations()).toMatchObject([{ case: "stopRunnerSession" }]);
+});
+
+it("disables shutdown while the harness is not running", async () => {
+  const container = await render(threadState({ rows: [viewState({ harness: "stopped" })] }));
+  expect((await openMenuItem(container, "Shut down harness")).disabled).toBe(true);
+});
+
+// Each row's lower-severity axes disagree with the one that decides the dot. Only a sync that is
+// still settling breathes.
+it.each([
+  [
+    { windowError: "test shape gone", error: "test fetch failed", reconnectingFor: DEGRADED_AFTER_MS },
+    "red",
+    false,
+    "Thread sync stopped: test shape gone",
+  ],
+  [{ error: "test fetch failed", rows: [viewState({ harness: "lost" })] }, "yellow", true, "Reconnecting…"],
+  [
+    { reconnectingFor: DEGRADED_AFTER_MS, caughtUp: false, rows: [viewState({ harness: "lost" })] },
+    "yellow",
+    true,
+    "Reconnecting…",
+  ],
+  // Reads failing for less than the grace are a blip, not a state.
+  [{ reconnectingFor: 1_000, rows: [viewState()] }, "green", false, "Runner feed active · harness running"],
+  [{ caughtUp: false, rows: [viewState({ status: "failed" })] }, "yellow", true, "Catching up…"],
+  [{ rows: [viewState({ status: "failed", harness: "lost" })] }, "red", false, "Runner feed failed"],
+  [{ rows: [viewState({ status: "ended", harness: "lost" })] }, "red", false, "Harness lost"],
+  [{ rows: [viewState({ status: "ended" })] }, "gray", false, "Runner feed ended · harness running"],
+  [{ rows: [viewState({ harness: null })] }, "yellow", false, "No harness observed"],
+  [{ rows: [viewState({ harness: "stopped" })] }, "gray", false, "Runner feed active · harness stopped"],
+  [{ rows: [viewState()] }, "green", false, "Runner feed active · harness running"],
+])("collapses %o into a %s dot (breathing: %s): %s", async (state, color, breathing, label) => {
+  const dot = (await render(threadState(state))).querySelector(".agentplane-status-dot");
+  expect(dot?.getAttribute("aria-label")).toBe(label);
+  expect(dot?.getAttribute("style")).toContain(`--mantine-color-${color}-6`);
+  expect(dot?.classList.contains("agentplane-breathing-dot")).toBe(breathing);
+});
+
+// Retained history still says the harness runs and the feed failed; neither is live any more.
+it.each([
+  [{ archived: true }, [{ name: THREAD.sandbox, state: "running" }], "Thread archived"],
+  [{ archived: false }, [], "Sandbox unavailable"],
+  [{ archived: false }, [{ name: THREAD.sandbox, state: "suspended" }], "Sandbox unavailable"],
+])("shows a gray dot for thread %o with sandboxes %o: %s", async (overrides, inventory, label) => {
+  vi.mocked(getThread).mockResolvedValue({ ...THREAD, ...overrides });
+  sandboxes = inventory;
+  const dot = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
+    ".agentplane-status-dot"
+  );
+  expect(dot?.getAttribute("aria-label")).toBe(label);
+  expect(dot?.getAttribute("style")).toContain("--mantine-color-gray-6");
+});
+
+const RUNNING = { name: THREAD.sandbox, state: "running" };
+const SUSPENDED = { name: THREAD.sandbox, state: "suspended" };
+const STALE = "sandboxes last updated 40 minutes ago";
+const ABSENT = "Sandbox absent from last inventory snapshot. Current availability unknown";
+const OUT_OF_DATE = /^What's on screen may be out of date; last update \d{2}:\d{2}:\d{2}$/;
+
+function matching(text: string | RegExp): unknown {
+  return typeof text === "string" ? expect.stringContaining(text) : expect.stringMatching(text);
+}
+
+// Each of these but the first disables the controls, which the composer's dot reports only as
+// "Sandbox unavailable"; the header says why: the state the inventory last reported, or that the
+// watch behind it has stalled or the stream been down a minute. A drop within the grace is a blip,
+// on which the last inventory still stands.
+it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | null, string | RegExp | null]>([
+  ["a running sandbox", [RUNNING], {}, null, null],
+  ["an inventory not yet heard from", null, {}, null, null],
+  ["a suspended sandbox", [SUSPENDED], {}, "Last observed Sandbox state: suspended.", null],
+  ["a deleted sandbox", [], {}, "Sandbox no longer exists.", null],
+  ["a running sandbox on a stale inventory", [RUNNING], { fresh: false }, null, STALE],
+  ["an absence from a stale inventory", [], { fresh: false }, ABSENT, STALE],
+  ["a running sandbox on a stream that just dropped", [RUNNING], { droppedFor: 0 }, null, null],
+  ["an absence from a stream that just dropped", [], { droppedFor: 0 }, "Sandbox no longer exists.", null],
+  ["an absence from a stream down past the grace", [], { droppedFor: DEGRADED_AFTER_MS }, ABSENT, null],
+  ["a running sandbox on a stream down a minute", [RUNNING], { droppedFor: STALE_AFTER_MS }, null, OUT_OF_DATE],
+  [
+    "a suspended sandbox on a stream down a minute",
+    [SUSPENDED],
+    { droppedFor: STALE_AFTER_MS },
+    "state: suspended.",
+    OUT_OF_DATE,
+  ],
+])("explains %s in the header", async (_, inventory, { fresh = true, droppedFor }, status, alert) => {
+  vi.useFakeTimers();
+  sandboxes = inventory;
+  inventoryFresh = fresh;
+  inventoryDrops = droppedFor !== undefined;
+  const container = await render();
+  await act(async () => vi.advanceTimersByTime(droppedFor ?? 0));
+  const texts = (role: string) => [...container.querySelectorAll(`[role="${role}"]`)].map((node) => node.textContent);
+  expect(texts("status")).toEqual(status === null ? [] : [expect.stringContaining(status)]);
+  expect(texts("alert")).toEqual(alert === null ? [] : [matching(alert)]);
+});
+
+it.each([
+  [{ caughtUp: false }, "Catching up…"],
+  [{ windowError: "test shape gone" }, "Model unavailable"],
+  [{ rows: [viewState({ status: "failed", model: null })] }, "Model unavailable"],
+  [{ rows: [viewState({ model: null })] }, "Model"],
+])("names why %o shows no model: %s", async (state, placeholder) => {
+  const picker = (await render(threadState(state))).querySelector<HTMLInputElement>('input[aria-label="Model"]');
+  expect(picker?.placeholder).toBe(placeholder);
+});
+
+// A stopped window says so in its own alert, and is not following the thread to be out of date.
+it.each<[{ reconnectingFor: number; windowError?: string }, (string | RegExp)[]]>([
+  [{ reconnectingFor: DEGRADED_AFTER_MS }, []],
+  [{ reconnectingFor: STALE_AFTER_MS }, [OUT_OF_DATE]],
+  [{ reconnectingFor: STALE_AFTER_MS, windowError: "test shape gone" }, ["Thread synchronization stopped"]],
+])(
+  "tells the reader the thread may be out of date only once its reads have failed a minute: %o",
+  async (state, alerts) => {
+    const container = await render(threadState(state));
+    const shown = [...container.querySelectorAll('[role="alert"]')].map((node) => node.textContent);
+    expect(shown).toEqual(alerts.map(matching));
+  }
+);
+
+function message(commandId: string): Command {
+  return create(CommandSchema, {
+    commandId,
+    operation: { case: "submitInput", value: { text: `Test input ${commandId}` } },
+  });
+}
+
+function admission(value: Command): EventEntry {
+  return create(EventEntrySchema, {
+    cursor: 7n,
+    origin: { sourceId: "test-runner", sequence: 7n },
+    event: { observation: { case: "commandAdmitted", value: { command: value } } },
+  });
+}
+
+async function admit(_threadId: string, value: Command): Promise<EventEntry> {
+  return admission(value);
+}
+
+function sentIds(): string[] {
+  return vi.mocked(command).mock.calls.map(([, value]) => value.commandId);
+}
+
+function pendingRow(container: HTMLDivElement, commandId: string): HTMLElement {
+  const row = container.querySelector<HTMLElement>(`[data-command-id="${commandId}"]`);
+  if (!row) throw new Error(`Missing pending command ${commandId}`);
+  return row;
+}
+
+function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement {
+  const found = [...pendingRow(container, commandId).querySelectorAll("button")].find(
+    (candidate) => candidate.textContent === "Retry"
+  );
+  if (!found) throw new Error(`Missing Retry for ${commandId}`);
+  return found;
+}
+
+it("delivers a command an earlier page retained without the operator acting, and keeps its admission", async () => {
+  new LocalCommands(THREAD.id).remember(message("retained-unadmitted"));
+  vi.mocked(command).mockImplementation(admit);
+  const container = await render();
+  expect(sentIds()).toEqual(["retained-unadmitted"]);
+  expect(pendingRow(container, "retained-unadmitted").textContent).toContain("Saved · awaiting effect");
+  const [retained] = new LocalCommands(THREAD.id).getSnapshot().commands;
+  expect(equals(EventEntrySchema, retained.admission!, admission(message("retained-unadmitted")))).toBe(true);
+});
+
+it("does not send a retained command whose admission it already holds", async () => {
+  const store = new LocalCommands(THREAD.id);
+  store.remember(message("retained-admitted"));
+  store.acknowledge(message("retained-admitted"), admission(message("retained-admitted")));
+  // Its unadmitted sibling being sent shows the mount's delivery ran.
+  store.remember(message("retained-unadmitted"));
+  vi.mocked(command).mockImplementation(admit);
+  const container = await render();
+  expect(sentIds()).toEqual(["retained-unadmitted"]);
+  expect(pendingRow(container, "retained-admitted").textContent).toContain("Saved · awaiting effect");
+});
+
+it("shows a delivery that outlives its deadline as a failed attempt the operator can retry", async () => {
+  new LocalCommands(THREAD.id).remember(message("hung"));
+  let expire!: (reason: unknown) => void;
+  vi.mocked(command)
+    .mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        expire = reject;
+      })
+    )
+    .mockImplementationOnce(admit);
+  const container = await render();
+  expect(pendingRow(container, "hung").textContent).toContain("Saved locally · awaiting admission");
+
+  await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
+  expect(pendingRow(container, "hung").textContent).toContain("signal timed out");
+  expect(sentIds()).toEqual(["hung"]);
+
+  await act(async () => retry(container, "hung").click());
+  expect(sentIds()).toEqual(["hung", "hung"]);
+  expect(pendingRow(container, "hung").textContent).toContain("Saved · awaiting effect");
+  expect(pendingRow(container, "hung").textContent).not.toContain("signal timed out");
+});
+
+it("delivers a failed command again when the browser comes back online", async () => {
+  new LocalCommands(THREAD.id).remember(message("offline"));
+  vi.mocked(command)
+    .mockRejectedValueOnce(new Error("the sandbox's runner is not answering"))
+    .mockImplementationOnce(admit);
+  const container = await render();
+  expect(pendingRow(container, "offline").textContent).toContain("the sandbox's runner is not answering");
+  expect(sentIds()).toEqual(["offline"]);
+
+  await act(async () => window.dispatchEvent(new Event("online")));
+  expect(sentIds()).toEqual(["offline", "offline"]);
+  expect(pendingRow(container, "offline").textContent).toContain("Saved · awaiting effect");
+});
+
+function reference(ownerId: string, field: PayloadRef["field"]): PayloadRef {
+  return {
+    projection_epoch: "test-epoch",
+    owner_cursor: "1",
+    owner_id: ownerId,
+    field,
+    revision_cursor: "1",
+    generation: "1",
+    chunk_count: "1",
+  };
+}
+
+function entity(
+  entityKind: ThreadEntity["entityKind"],
+  state: ThreadEntity["state"],
+  refs: Partial<Pick<ThreadEntity, "textRef" | "argumentsRef" | "outputRef" | "inputRef">>
+): ThreadEntity {
+  return {
+    threadId: "test-thread",
+    projectionEpoch: "test-epoch",
+    entityKind,
+    entityId: "test-entity",
+    entityIndex: "1",
+    cursor: "1",
+    revisionCursor: "1",
+    pending: false,
+    turnId: null,
+    state,
+    textRef: null,
+    argumentsRef: null,
+    outputRef: null,
+    inputRef: null,
+    ...refs,
+  };
+}
+
+it("shows a server-only pending command as saved, not as a local delivery", async () => {
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          { operation: "change_model", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+          {}
+        ),
+      ],
+    })
+  );
+  const pending = container.querySelector('[aria-label="Pending commands"]');
+  expect(pending?.textContent).toContain("Saved · awaiting effect");
+  expect(pending?.textContent).not.toContain("Saved locally");
+  expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
+});
+
+it("shows the failure and reason for a server-only command", async () => {
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          { operation: "change_model", outcome: "failed", outcome_cursor: "1", outcome_reason: "model unavailable" },
+          {}
+        ),
+      ],
+    })
+  );
+  const pending = container.querySelector('[aria-label="Pending commands"]');
+  expect(pending?.textContent).toContain("Model change failed: model unavailable");
+});
+
+it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          { operation: "submit_input", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+          { inputRef: reference("test-message", "command_input") }
+        ),
+      ],
+    })
+  );
+  expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
+});
+
+/** Serves every body at once; a card reads nothing else from the thread. */
+function serving(bodies: ReadonlyMap<string, string>): ThreadSync {
+  const unread = (): never => {
+    throw new Error("an entity card reads only payloads");
+  };
+  return {
+    Thread: unread,
+    useThread: unread,
+    useCommandRows: unread,
+    usePayload: ({ owner_id, field }) => {
+      const body = bodies.get(`${owner_id}:${field}`);
+      if (body === undefined) throw new Error(`test fixture has no ${field} body for ${owner_id}`);
+      return { body, error: null, retry: () => {} };
+    },
+  };
+}
+
+async function renderCard(card: ThreadEntity, bodies: Record<string, string>): Promise<HTMLDivElement> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  mounted.push({ root, container });
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)))}>
+          <RetainedDisclosureProvider>
+            {/* The history's row carries the anchor; a card renders inside it. */}
+            <div data-thread-anchor={card.cursor.toString()}>
+              <EntityCard threadId="test-thread" entity={card} live={false} />
+            </div>
+          </RetainedDisclosureProvider>
+        </ThreadSyncContext.Provider>
+      </MantineProvider>
+    )
+  );
+  return container;
+}
+
+type Observation = MessageInitShape<typeof EventSchema>["observation"];
+
+function renderLifecycle(observation: string, event: Observation): Promise<HTMLDivElement> {
+  const state = { observation, event: toJson(EventSchema, create(EventSchema, { observation: event })) };
+  return renderCard(entity("lifecycle", state, {}), {});
+}
+
+async function disclose(container: HTMLElement, summary: string): Promise<HTMLDetailsElement> {
+  const control = [...container.querySelectorAll("summary")].find((element) => element.textContent === summary);
+  if (!control) throw new Error(`no ${summary} disclosure`);
+  const details = control.parentElement as HTMLDetailsElement;
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  return details;
+}
+
+/** One element per history row, each holding what the thread view renders for it. */
+async function renderHistory(
+  segments: ThreadEntity[],
+  live: boolean,
+  bodies: Record<string, string> = {}
+): Promise<HTMLElement[]> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  mounted.push({ root, container });
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)))}>
+          <RetainedDisclosureProvider>
+            {historyRows(segments).map((row) => (
+              <section key={rowKey(row)}>
+                <HistoryRowView threadId="test-thread" row={row} live={() => live} />
+              </section>
+            ))}
+          </RetainedDisclosureProvider>
+        </ThreadSyncContext.Provider>
+      </MantineProvider>
+    )
+  );
+  return [...container.querySelectorAll("section")];
+}
+
+function summaries(element: Element): (string | null)[] {
+  return [...element.querySelectorAll("summary")].map((summary) => summary.textContent);
+}
+
+async function toggle(summary: Element): Promise<void> {
+  const details = summary.parentElement as HTMLDetailsElement;
+  await act(async () => {
+    details.open = !details.open;
+    details.dispatchEvent(new Event("toggle"));
+  });
+}
+
+it("folds a run of tool calls and reasoning behind its summary until it is opened", async () => {
+  const [run] = await renderHistory(
+    [
+      testItem(1, ItemKind.TOOL_CALL, { tool_name: "test-read", completion: "tool", tool_succeeded: true }),
+      testItem(2, ItemKind.REASONING, {}, { textRef: reference("test-entity-2", "text") }),
+      testItem(3, ItemKind.TOOL_CALL, { tool_name: "test-shell", completion: "tool", tool_succeeded: false }),
+    ],
+    false
+  );
+  const summary = run.querySelector("summary")!;
+  expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
+  expect(summary.querySelector('[role="img"][aria-label="Failed"]')).not.toBeNull();
+  expect(run.textContent).not.toContain("test-read");
+
+  await toggle(summary);
+  expect(run.textContent).toContain("test-read");
+  expect(run.textContent).toContain("test-shell");
+  expect(summaries(run)).toContain("Reasoning");
+  // Each step keeps its own evidence; the run is not an entity and has none.
+  expect(run.querySelectorAll('button[aria-label="Evidence"]')).toHaveLength(3);
+});
+
+it("marks an unfinished run as streaming in the live turn, and as incomplete once that is over", async () => {
+  const segments = [testItem(1, ItemKind.REASONING, { completion: null }), testItem(2, ItemKind.TOOL_CALL)];
+  const [live] = await renderHistory(segments, true);
+  expect(live.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Streaming");
+  const [retained] = await renderHistory(segments, false);
+  expect(retained.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Incomplete");
+});
+
+it("puts a live assistant-text cursor inline after its Markdown body", async () => {
+  const body = "The answer is still being written.";
+  const [row] = await renderHistory(
+    [testItem(1, ItemKind.ASSISTANT_TEXT, { completion: null }, { textRef: reference("streaming-reply", "text") })],
+    true,
+    { "streaming-reply:text": body }
+  );
+  const cursor = row.querySelector<HTMLElement>(".agentplane-streaming-cursor");
+
+  expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
+  expect(cursor?.getAttribute("data-character")).toBe(STREAMING_CURSOR);
+  expect(cursor?.closest(".agentplane-markdown")).not.toBeNull();
+  expect(cursor?.parentElement?.textContent?.trimEnd()).toBe(body);
+  expect(row.querySelector(".mantine-Badge-root")).toBeNull();
+});
+
+it("shows a lone reasoning step as its own reasoning block, and assistant text without a role label", async () => {
+  const [reasoning, answer] = await renderHistory(
+    [
+      testItem(1, ItemKind.REASONING, {}, { textRef: reference("test-entity-1", "text") }),
+      testItem(2, ItemKind.ASSISTANT_TEXT, {}, { textRef: reference("test-entity-2", "text") }),
+    ],
+    false,
+    { "test-entity-2:text": "Test body of test-entity-2" }
+  );
+  expect(summaries(reasoning)).toEqual(["Reasoning"]);
+  expect(answer.textContent).toContain("Test body of test-entity-2");
+  for (const row of [reasoning, answer]) expect(row.textContent).not.toMatch(/assistant/i);
+});
+
+const PROSE = "Run **every** test\n- first";
+
+describe("recovery presentation", () => {
+  it.each([RecoveryDisposition.RETAINED, RecoveryDisposition.REVISED, RecoveryDisposition.UNKNOWN])(
+    "does not revive an interrupted reply's streaming cursor for recovery %s",
+    async (recovery) => {
+      const [row] = await renderHistory(
+        [
+          testItem(
+            1,
+            ItemKind.ASSISTANT_TEXT,
+            { completion: null, recovery },
+            { textRef: reference("recovered-reply", "text") }
+          ),
+        ],
+        true,
+        { "recovered-reply:text": "Interrupted reply" }
+      );
+      expect(row.querySelector(".agentplane-streaming-cursor")).toBeNull();
+      expect(row.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+    }
+  );
+
+  it.each([null, "text"])("labels retained text with completion %s", async (completion) => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.ASSISTANT_TEXT,
+        { completion, recovery: RecoveryDisposition.RETAINED },
+        { textRef: reference("test-entity-1", "text") }
+      ),
+      { "test-entity-1:text": "Remember the name in the margin" }
+    );
+    expect(container.textContent).toContain("Remember the name in the margin");
+    expect(container.querySelector('[aria-label="Retained in context"]')).not.toBeNull();
+  });
+
+  it("collapses discarded text and preserves it behind a disclosure", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.ASSISTANT_TEXT,
+        { completion: null, recovery: RecoveryDisposition.ABSENT },
+        { textRef: reference("test-entity-1", "text") }
+      ),
+      { "test-entity-1:text": "The seam widened." }
+    );
+    expect(container.textContent).not.toContain("The seam widened.");
+    await disclose(container, "Discarded output (not retained in model context)");
+    expect(container.textContent).toContain("The seam widened.");
+    expect(container.querySelector('[aria-label="Not retained in context"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+  });
+
+  it("shows unknown retention and its reason without hiding the observed text", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.ASSISTANT_TEXT,
+        {
+          completion: null,
+          recovery: RecoveryDisposition.UNKNOWN,
+          recovery_reason: "The harness history could not be inspected.",
+        },
+        { textRef: reference("test-entity-1", "text") }
+      ),
+      { "test-entity-1:text": "The bells were ringing." }
+    );
+    expect(container.textContent).toContain("The bells were ringing.");
+    expect(container.textContent).toContain("The harness history could not be inspected.");
+    expect(container.querySelector('[aria-label="Retention unknown"]')).not.toBeNull();
+  });
+
+  it("labels revised content as continuation, without inventing a tool outcome", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.TOOL_CALL,
+        {
+          tool_name: "Bash",
+          completion: null,
+          tool_succeeded: null,
+          recovery: RecoveryDisposition.REVISED,
+        },
+        { outputRef: reference("test-entity-1", "output") }
+      ),
+      { "test-entity-1:output": "aborted" }
+    );
+    expect(container.querySelector('[aria-label="Revised for continuation"]')).not.toBeNull();
+    expect(container.textContent).toContain("Recovery content does not establish a tool execution outcome.");
+    await disclose(container, "Continuation output");
+    expect(container.textContent).toContain("aborted");
+    expect(container.querySelector('[aria-label="Succeeded"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Failed"]')).toBeNull();
+  });
+
+  it("preserves a successful execution result when its context was discarded", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.TOOL_CALL,
+        {
+          tool_name: "Bash",
+          completion: "tool",
+          tool_succeeded: true,
+          recovery: RecoveryDisposition.ABSENT,
+        },
+        { outputRef: reference("test-entity-1", "output") }
+      ),
+      { "test-entity-1:output": "Created report.txt" }
+    );
+    await disclose(container, "Bash: discarded context (not retained in model context)");
+    expect(container.textContent).toContain("does not undo tool side effects");
+    expect(container.querySelector('[aria-label="Succeeded"]')).not.toBeNull();
+    await disclose(container, "Output");
+    expect(container.textContent).toContain("Created report.txt");
+  });
+
+  it("summarizes recovery in a collapsed tool run without marking recovered items streaming", async () => {
+    const [run] = await renderHistory(
+      [
+        testItem(1, ItemKind.TOOL_CALL, { completion: null, recovery: RecoveryDisposition.UNKNOWN }),
+        testItem(2, ItemKind.TOOL_CALL, {
+          completion: "tool",
+          tool_succeeded: false,
+          recovery: RecoveryDisposition.RETAINED,
+        }),
+      ],
+      true
+    );
+    expect(run.querySelector('[aria-label="Retention unknown"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Retained in context"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Failed"]')).not.toBeNull();
+    expect(run.querySelector('[aria-label="Streaming"]')).toBeNull();
+  });
+});
+
+describe("EntityCard", () => {
+  it("renders a tool call's JSON arguments highlighted and its plain output verbatim, both as code", async () => {
+    const container = await renderCard(
+      entity(
+        "item",
+        {
+          kind: ItemKind.TOOL_CALL,
+          tool_name: "Bash",
+          completion: "",
+          tool_succeeded: true,
+          recovery: null,
+          recovery_reason: "",
+        },
+        { argumentsRef: reference("test-tool", "arguments"), outputRef: reference("test-tool", "output") }
+      ),
+      { "test-tool:arguments": '{"command": "ls", "timeout": 30}', "test-tool:output": PROSE }
+    );
+
+    const args = (await disclose(container, "Arguments")).querySelector(".agentplane-hljs");
+    expect(args?.querySelector(".hljs-attr")?.textContent).toBe('"command"');
+    expect(args?.querySelector(".hljs-string")?.textContent).toBe('"ls"');
+    expect(args?.querySelector(".hljs-number")?.textContent).toBe("30");
+
+    const output = (await disclose(container, "Output")).querySelector(".agentplane-hljs");
+    expect(output?.textContent).toBe(PROSE);
+    expect(output?.querySelector("[class^='hljs-'], strong, li")).toBeNull();
+  });
+
+  it("renders the assistant's text as Markdown", async () => {
+    const container = await renderCard(
+      entity(
+        "item",
+        {
+          kind: ItemKind.ASSISTANT_TEXT,
+          tool_name: "",
+          completion: PROSE,
+          tool_succeeded: null,
+          recovery: null,
+          recovery_reason: "",
+        },
+        { textRef: reference("test-reply", "text") }
+      ),
+      { "test-reply:text": PROSE }
+    );
+    expect(container.querySelector(".agentplane-markdown strong")?.textContent).toBe("every");
+    expect(container.querySelector(".agentplane-markdown li")?.textContent).toBe("first");
+  });
+
+  it("renders the operator's input as typed, not as Markdown", async () => {
+    const container = await renderCard(
+      entity(
+        "confirmed_input",
+        { harness_message_id: "test-message", origin_command_ids: [] },
+        { inputRef: reference("test-message", "confirmed_input") }
+      ),
+      { "test-message:confirmed_input": PROSE }
+    );
+    expect(container.querySelector(".agentplane-user-bubble .agentplane-verbatim")?.textContent).toBe(PROSE);
+    expect(container.querySelector(".agentplane-markdown, strong, li")).toBeNull();
+  });
+
+  it("renders a still-pending sent message as the same bubble, marked pending", async () => {
+    const container = await renderCard(
+      entity(
+        "command",
+        { operation: "submit_input", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+        { inputRef: reference("test-message", "command_input") }
+      ),
+      { "test-message:command_input": PROSE }
+    );
+    const bubble = container.querySelector<HTMLElement>(".agentplane-user-bubble");
+    expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe(PROSE);
+    expect(bubble?.style.fontStyle).toBe("italic");
+  });
+
+  it.each<[string, Observation, string]>([
+    [
+      "turn_completed",
+      { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.COMPLETED } },
+      "Turn completed",
+    ],
+    [
+      "turn_completed",
+      { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.INTERRUPTED } },
+      "Turn interrupted",
+    ],
+    ["turn_started", { case: "turnStarted", value: { turnId: "test-turn", model: "test-model" } }, "Turn started"],
+    [
+      "model_changed",
+      { case: "modelChanged", value: { previousModel: "test-model", model: "test-model-next" } },
+      "Model changed to test-model-next",
+    ],
+    ["harness_exited", { case: "harnessExited", value: { exitCode: 3 } }, "Harness exited with code 3"],
+  ])("shows an ordinary %s as one line with no disclosure of its own", async (observation, event, line) => {
+    const container = await renderLifecycle(observation, event);
+    const row = container.querySelector('[data-thread-anchor="1"]')!;
+    // No disclosure of its own: the raw event is reached through the row's Evidence.
+    expect(row.querySelector("details, summary")).toBeNull();
+    expect(row.querySelector('button[aria-label="Evidence"]')).not.toBeNull();
+    expect(row.textContent).toBe(line);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it.each(['Test API failure: HTTP 429\n<img src="x" onerror="throw new Error()">', ""])(
+    "shows a failed turn's error as a plain-text alert: %j",
+    async (error) => {
+      const container = await renderLifecycle("turn_completed", {
+        case: "turnCompleted",
+        value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error },
+      });
+      const alert = container.querySelector('[data-thread-anchor="1"] [role="alert"]')!;
+      expect(alert.textContent).toBe(`Turn failed${error || "The harness reported no error details."}`);
+      expect(alert.querySelector("img")).toBeNull();
+    }
+  );
+
+  it("shows an interrupted turn's error dimmed beneath its line, not as an alert", async () => {
+    const container = await renderLifecycle("turn_completed", {
+      case: "turnCompleted",
+      value: { turnId: "test-turn", status: TurnStatus.INTERRUPTED, error: "test interrupt detail" },
+    });
+    expect(container.querySelector('[data-thread-anchor="1"]')?.textContent).toBe(
+      "Turn interruptedtest interrupt detail"
+    );
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it.each<[string, string, Observation]>([
+    [
+      "Turn losttest harness exited during the turn",
+      "turn_completed",
+      {
+        case: "turnCompleted",
+        value: { turnId: "test-turn", status: TurnStatus.PROCESS_LOST, error: "test harness exited during the turn" },
+      },
+    ],
+    [
+      "Turn ended without a status",
+      "turn_completed",
+      { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.UNSPECIFIED } },
+    ],
+    ["Harness lost", "harness_lost", { case: "harnessLost", value: {} }],
+  ])("keeps an abnormal ending prominent: %s", async (text, observation, event) => {
+    const container = await renderLifecycle(observation, event);
+    expect(container.querySelector('[data-thread-anchor="1"] [role="alert"]')?.textContent).toBe(text);
+  });
+});

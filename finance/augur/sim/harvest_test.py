@@ -4,36 +4,28 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
-import numpy as np
 import pytest
 import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey, SecuritySymbol
-from finance.augur.sim.actions import Action, DecisionActions, Liquidate, LotSale, PayClaim, Sell, Withdraw
+from finance.augur.policy.funding import full_payments
+from finance.augur.sim.actions import Action, Liquidate, LotSale, Sell, Withdraw
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PortfolioId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import position_value
+from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.money import USD, position_value
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedJurisdiction,
-    PreparedLot,
-    PreparedSeries,
-    PreparedTlhPortfolio,
-)
-from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -57,31 +49,41 @@ PARAMS = TlhAssumptions(
 type Intent = Callable[[Observation], Action]
 
 
+@dataclass(frozen=True, kw_only=True)
+class Lot:
+    """A lot Alice opens holding in her brokerage account."""
+
+    lot_id: LotId
+    asset_id: AssetId
+    purchase_month: int
+    quantity_scale: int
+    units: int
+    basis: int
+
+
 @dataclass(frozen=True)
 class Situation:
     """Alice's SP500 sleeve, held as a managed TLH portfolio or as a plain lot, and any other lot she holds."""
 
-    series: tuple[PreparedSeries, ...]
+    series: tuple[Series, ...]
     rollout_count: int
     horizon_months: int
-    sleeve: PreparedLot
+    sleeve: Lot
     with_harvest: bool
     assumptions: TlhAssumptions
-    extra_lots: tuple[PreparedLot, ...] = ()
+    extra_lots: tuple[Lot, ...] = ()
 
 
 def _lot(
-    lot_id: LotId, asset: SecurityKey, *, quantity: float, cost_basis: Decimal, purchase_month: int
-) -> PreparedLot:
+    lot_id: LotId, asset: SecurityKey, *, quantity: Decimal | int, cost_basis: Decimal, purchase_month: int
+) -> Lot:
     scale = quantity_scale_for_asset(asset)
-    return PreparedLot(
+    return Lot(
         lot_id=lot_id,
-        agent_id=ALICE,
-        account_id=BROKERAGE,
         asset_id=AssetId(asset.symbol),
         purchase_month=purchase_month,
         quantity_scale=scale,
-        units=int(quantity_to_quanta(quantity, scale=scale)),
+        units=quantity_to_quanta(quantity, scale=scale),
         basis=int(currency_amount_to_quanta(cost_basis, quantum=QUANTUM)),
     )
 
@@ -90,29 +92,25 @@ def situation(
     levels: Mapping[SecurityKey, Sequence[Sequence[float]]],
     *,
     with_harvest: bool,
-    quantity: float = 1000.0,
+    quantity: Decimal | int = 1000,
     cost_basis_per_unit: int = 1,
     purchase_month: int = 0,
     short_term_fraction: float = 1.0,
-    extra_lots: tuple[PreparedLot, ...] = (),
+    extra_lots: tuple[Lot, ...] = (),
 ) -> Situation:
     """The sleeve is 1000 units at $1 cost basis by default, so its market value is easy to reason about."""
     rollouts = len(next(iter(levels.values())))
     horizon = len(next(iter(levels.values()))[0]) - 1
-    paths = ExternalSeriesContext.from_level_blocks(
-        [(asset, np.asarray(path, dtype=np.float64)) for asset, path in levels.items()],
-        rollout_count=rollouts,
-        horizon_months=horizon,
-    )
     return Situation(
-        series=compile_series(paths, rollout_count=rollouts, horizon_months=horizon, currency_quantum=QUANTUM),
+        # A fresh dict takes `level_series`'s key union; the `SecurityKey` mapping would not (keys are invariant).
+        series=level_series(dict(levels.items()), rollout_count=rollouts, horizon_months=horizon),
         rollout_count=rollouts,
         horizon_months=horizon,
         sleeve=_lot(
             LotId("alice_sp500"),
             SP500,
             quantity=quantity,
-            cost_basis=Decimal(str(quantity)) * cost_basis_per_unit,
+            cost_basis=Decimal(quantity) * cost_basis_per_unit,
             purchase_month=purchase_month,
         ),
         with_harvest=with_harvest,
@@ -127,12 +125,9 @@ def compose(case: Situation, rollout_id: int) -> World:
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
         income_sources=(ORDINARY_INCOME,),
-        jurisdictions=(PreparedJurisdiction(jurisdiction_id=FEDERAL, level=jurisdictions[FEDERAL].level),),
     )
     for agent_id, account_id in ((ALICE, BROKERAGE), (ALICE, CHECKING), (IRS, CHECKING)):
-        world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=0)
-        )
+        world.declare_account(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=0)
     world.track(
         TaxAuthority(
             compile_profile(
@@ -143,81 +138,64 @@ def compose(case: Situation, rollout_id: int) -> World:
                     tax_authority_agent_id=IRS,
                 ),
                 jurisdictions,
-                quantum=QUANTUM,
+                currency=USD,
             ),
             indexation=FixedNominalLaw(),
         )
     )
     lots = case.extra_lots if case.with_harvest else (case.sleeve, *case.extra_lots)
-    for pool in {
-        lot.asset_id: PreparedHoldingPool(
-            agent_id=ALICE, account_id=BROKERAGE, asset_id=lot.asset_id, quantity_scale=lot.quantity_scale
-        )
-        for lot in lots
-    }.values():
-        world.declare_pool(pool)
+    for asset_id, quantity_scale in {lot.asset_id: lot.quantity_scale for lot in lots}.items():
+        world.declare_pool(agent_id=ALICE, account_id=BROKERAGE, asset_id=asset_id, quantity_scale=quantity_scale)
     for lot in lots:
-        world.hold(lot)
+        world.hold_lot(
+            lot_id=lot.lot_id,
+            agent_id=ALICE,
+            account_id=BROKERAGE,
+            asset_id=lot.asset_id,
+            purchase_month=lot.purchase_month,
+            quantity_scale=lot.quantity_scale,
+            units=lot.units,
+            basis=lot.basis,
+        )
     if case.with_harvest:
         # The statement values the sleeve's lot at the opening mark, as the plain lot would be.
         opening_price = world.market.value(f"security:{case.sleeve.asset_id}", 0)
         world.declare_portfolio(
-            PreparedTlhPortfolio(
-                portfolio_id=PortfolioId("alice-sp500"),
-                owner_agent_id=ALICE,
-                account_id=BROKERAGE,
-                asset_id=case.sleeve.asset_id,
-                initial_cohorts=(
-                    TlhOpeningCohort(
-                        value=position_value(opening_price, case.sleeve.units, case.sleeve.quantity_scale),
-                        cost_basis=case.sleeve.basis,
-                        purchase_month_index=case.sleeve.purchase_month,
-                    ),
+            portfolio_id=PortfolioId("alice-sp500"),
+            owner_agent_id=ALICE,
+            account_id=BROKERAGE,
+            asset_id=case.sleeve.asset_id,
+            initial_cohorts=(
+                TlhOpeningCohort(
+                    value=position_value(opening_price, case.sleeve.units, case.sleeve.quantity_scale),
+                    cost_basis=case.sleeve.basis,
+                    purchase_month_index=case.sleeve.purchase_month,
                 ),
-                assumptions=case.assumptions,
-            )
+            ),
+            assumptions=case.assumptions,
         )
     return world
 
 
-def pay_claims(observation: Observation) -> list[Action]:
-    """Alice pays whatever she is billed: the tax assessment is the only claim these situations raise."""
-    return [
-        PayClaim(
-            request_id=index + 1,
-            cause_id=claim.cause_id,
-            claim=claim,
-            from_account=claim.from_account,
-            amount=claim.amount_due,
-        )
-        for index, claim in enumerate(observation.claims)
-    ]
-
-
 def run(case: Situation, intents: Mapping[int, Sequence[Intent]] = {}) -> list[Rollout]:
-    """Every path to the horizon; the month's intents, then every claim, become alice's ordered actions."""
-    session = ActionSession({rollout_id: compose(case, rollout_id) for rollout_id in range(case.rollout_count)}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id,
-                        decision.observation.month,
-                        [
-                            *(intent(decision.observation) for intent in intents.get(decision.observation.month, ())),
-                            *pay_claims(decision.observation),
-                        ],
-                    )
-                    for decision in batch
-                ]
-            )
-    finally:
-        session.close()
-    for rollout in batch.rollouts:
+    """Every path to the horizon; the month's intents, then every claim, become alice's ordered actions.
+
+    The tax assessment is the only claim these situations raise.
+    """
+
+    def decide(observation: Observation) -> list[Action]:
+        return [
+            *(intent(observation) for intent in intents.get(observation.month, ())),
+            *full_payments(observation.claims),
+        ]
+
+    rollouts = finish(
+        ActionSession({rollout_id: compose(case, rollout_id) for rollout_id in range(case.rollout_count)}, ALICE),
+        each(decide),
+    ).rollouts
+    for rollout in rollouts:
         assert rollout.stop is None
-    return batch.rollouts
+    return rollouts
 
 
 def sell_lots(cause_id: str, asset: SecurityKey) -> Intent:
@@ -304,7 +282,7 @@ def test_harvest_index_validation_rejects_negative_or_nonfinite_prices(bad_level
 def test_a_security_price_is_required_at_the_terminal_snapshot_too() -> None:
     """The managed portfolio's supplied price is checked at every snapshot, the terminal one included."""
     with pytest.raises(ValueError, match=r"(?i)price must be nonnegative"):
-        run(situation({SP500: [[1.0, 1.0, -1.0]]}, with_harvest=True, quantity=100.0))
+        run(situation({SP500: [[1.0, 1.0, -1.0]]}, with_harvest=True, quantity=100))
 
 
 def test_down_month_harvests_strictly_more_than_flat_month() -> None:
@@ -336,7 +314,7 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
     # Alice realizes a real short-term capital GAIN (a separate crypto-like lot sold at a profit) in
     # the same year she harvests SP500 losses. With harvesting on, the harvested ST loss nets against
     # that gain (§1211/§1212), lowering the year's tax vs the no-harvest baseline.
-    gain_lot = _lot(LotId("alice_gain"), GAINCO, quantity=100.0, cost_basis=Decimal(10_000), purchase_month=-3)
+    gain_lot = _lot(LotId("alice_gain"), GAINCO, quantity=100, cost_basis=Decimal(10_000), purchase_month=-3)
     # SP500 sleeve drops then recovers so harvesting books meaningful losses through the year.
     levels = {
         SP500: [[1.0, 0.85, 0.85, 0.9, 0.9, 0.9, 0.95] + [0.95] * 7],

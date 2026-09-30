@@ -11,10 +11,9 @@ to an https server -- against plain HTTP kubectl sends every request unauthentic
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     Capability,
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     ContainerSecutiryContextCapabilities,
@@ -29,41 +28,36 @@ from cdk8s_plus_34 import (
     PercentOrAbsolute,
     Pods,
     PodSecurityContextProps,
-    Protocol,
     Secret,
     Service,
     ServiceAccount,
-    ServicePort,
     Volume,
 )
-from cert_manager_crds.io.cert_manager import (
-    CertificateSpecIssuerRef,
-    CertificateSpecPrivateKey,
-    CertificateSpecPrivateKeyAlgorithm,
-)
+from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef
 from constructs import Construct
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, pod_policy, service_ref
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 
 NAME = "haku-kube-api-proxy"
 HOSTNAME = "haku-kubeapi.allegedly.works"
 _IMAGE = "git.allegedly.works/ducktape-ci/haku-kube-api-proxy"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-_HTTP_PORT = 8080
-_TLS_PORT = 8443
 _TLS_SECRET = "haku-kube-api-proxy-tls"
 _TLS_DIR = "/etc/haku-kube-api-proxy-tls"
-LABELS = {"app.kubernetes.io/name": NAME}
-_SERVICE_FQDN = f"{NAME}.{console.NAMESPACE}.svc.cluster.local"
-URL = f"https://{_SERVICE_FQDN}:{_TLS_PORT}"
+_HTTP = service_ref.ServiceRef(
+    name=NAME,
+    port=service_ref.Port(name="http", number=8080),
+    pods=service_ref.Pods(namespace=console.NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+)
+_TLS = service_ref.ServiceRef(name=_HTTP.name, port=service_ref.Port(name="https", number=8443), pods=_HTTP.pods)
+# The FQDN: haku-sandbox's NO_PROXY exempts the proxy by this exact name.
+URL = f"https://{_TLS.fqdn}:{_TLS.port.number}"
 
 
 class KubeApiProxy(Construct):
@@ -75,14 +69,13 @@ class KubeApiProxy(Construct):
         Certificate(
             self,
             "certificate",
-            name=_TLS_SECRET,
-            namespace=namespace,
+            metadata=ApiObjectMetadata(name=_TLS_SECRET, namespace=namespace),
             secret_name=_TLS_SECRET,
             duration="2160h",
             renew_before="720h",
-            private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
-            common_name=_SERVICE_FQDN,
-            dns_names=[_SERVICE_FQDN, f"{NAME}.{namespace}.svc"],
+            private_key=CertificatePrivateKey.ecdsa_p256(),
+            common_name=_TLS.fqdn,
+            dns_names=[_TLS.fqdn, _TLS.host],
             # Every sandbox trust bundle already carries cluster-root-ca, so kubeconfigs
             # verify this leaf via their existing bundle.
             issuer_ref=CertificateSpecIssuerRef(name="cluster-internal-ca", kind="ClusterIssuer"),
@@ -92,9 +85,9 @@ class KubeApiProxy(Construct):
         service_account = ServiceAccount(
             self,
             "serviceaccount",
-            metadata=metadata(
-                NAME,
-                namespace,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=namespace,
                 annotations={
                     "description": "Executes only Kubernetes requests authorized synchronously by Haku Console."
                 },
@@ -105,12 +98,9 @@ class KubeApiProxy(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, namespace, labels=LABELS),
-            selector=Pods.select(self, "pods", labels=LABELS),
-            ports=[
-                ServicePort(name="http", port=_HTTP_PORT, target_port=_HTTP_PORT, protocol=Protocol.TCP),
-                ServicePort(name="https", port=_TLS_PORT, target_port=_TLS_PORT, protocol=Protocol.TCP),
-            ],
+            metadata=ApiObjectMetadata(name=_HTTP.name, namespace=namespace, labels=_HTTP.labels),
+            selector=Pods.select(self, "pods", labels=_HTTP.pods.selector),
+            ports=[_HTTP.port.service_port(), _TLS.port.service_port()],
         )
         # The proxy bounds ordinary requests to 30s itself and continuously reauthorizes
         # streams; the route stays alive long enough for practical exec and port-forward
@@ -118,16 +108,15 @@ class KubeApiProxy(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(
-                "haku-kubeapi-allegedly-works",
-                namespace,
+            metadata=ApiObjectMetadata(
+                name="haku-kubeapi-allegedly-works",
+                namespace=namespace,
                 annotations={
                     "description": "Dedicated TLS-terminated Kubernetes API route for Haku-authorized Agent traffic."
                 },
             ),
-            hostname=HOSTNAME,
-            backend=NAME,
-            port=_HTTP_PORT,
+            hostnames=[HOSTNAME],
+            backend=_HTTP,
             timeout="3600s",
             hsts=False,
         )
@@ -137,17 +126,13 @@ class KubeApiProxy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                console.NAMESPACE,
-                labels=LABELS,
-                annotations={
-                    "description": "Fail-closed Haku Agent Kubernetes authorization boundary.",
-                    # cert-manager rotates the TLS Secret; the listener loads it once at start.
-                    "reloader.stakater.com/auto": "true",
-                },
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=console.NAMESPACE,
+                labels=_HTTP.pods.selector,
+                annotations={"description": "Fail-closed Haku Agent Kubernetes authorization boundary."},
             ),
-            pod_metadata=ApiObjectMetadata(labels=LABELS),
+            pod_metadata=ApiObjectMetadata(labels=_HTTP.pods.selector),
             select=False,
             replicas=2,
             strategy=DeploymentStrategy.rolling_update(
@@ -160,7 +145,7 @@ class KubeApiProxy(Construct):
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
         )
-        deployment.select(LabelSelector.of(labels=LABELS))
+        deployment.select(LabelSelector.of(labels=_HTTP.pods.selector))
         container = deployment.add_container(
             name="proxy",
             image=f"{_IMAGE}:{_PLACEHOLDER_TAG}",
@@ -181,13 +166,10 @@ class KubeApiProxy(Construct):
                 "HAKU_KUBE_TLS_CERT_FILE": EnvValue.from_value(f"{_TLS_DIR}/tls.crt"),
                 "HAKU_KUBE_TLS_KEY_FILE": EnvValue.from_value(f"{_TLS_DIR}/tls.key"),
             },
-            ports=[
-                ContainerPort(name="http", number=_HTTP_PORT, protocol=Protocol.TCP),
-                ContainerPort(name="https", number=_TLS_PORT, protocol=Protocol.TCP),
-            ],
+            ports=[_HTTP.port.container_port(), _TLS.port.container_port()],
             readiness=http_probe(
                 "/healthz",
-                port=_HTTP_PORT,
+                port=_HTTP.pod_port,
                 initial_delay_seconds=0,
                 period_seconds=5,
                 timeout_seconds=2,
@@ -195,7 +177,7 @@ class KubeApiProxy(Construct):
             ),
             liveness=http_probe(
                 "/healthz",
-                port=_HTTP_PORT,
+                port=_HTTP.pod_port,
                 initial_delay_seconds=0,
                 period_seconds=10,
                 timeout_seconds=2,
@@ -206,14 +188,14 @@ class KubeApiProxy(Construct):
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
             ),
             security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                read_only_root_filesystem=True,
+                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), read_only_root_filesystem=True
             ),
         )
+        # cert-manager rotates the TLS Secret; the listener loads it once at start, so Reloader's
+        # `autoReloadAll` rolls the pods on rotation.
         tls = Secret.from_secret_name(self, "tls-secret", _TLS_SECRET)
         container.mount(_TLS_DIR, Volume.from_secret(self, "tls-volume", tls), read_only=True)
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
+        pod_policy.harden(deployment)
 
     def _add_network_policy(self) -> None:
         # Selecting the proxy makes both directions default-deny: ingress from the Gateway on
@@ -224,13 +206,13 @@ class KubeApiProxy(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(NAME, console.NAMESPACE),
-            selector=LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=console.NAMESPACE),
+            endpoint_selector=_HTTP.pods.selector,
             ingress=[
-                IngressRule.from_gateway(_HTTP_PORT),
+                IngressRule.from_gateway(_HTTP.pod_port),
                 IngressRule.from_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": "haku-sandbox", "k8s:app.kubernetes.io/name": "haku-sandbox"},
-                    ports=[_TLS_PORT],
+                    ports=[_TLS.pod_port],
                 ),
             ],
             egress=[

@@ -6,8 +6,7 @@ The proxy image tag is the placeholder "unset"; the hand-written
 cluster/k8s/github-api-proxy/app/image-pins/kustomization.yaml overrides it at `kustomize build`
 time via Flux's image-automation marker. Also hand-written in `app/`: the client credential
 SOPS Secrets, `config.json` (rendered by the `configMapGenerator`) and that
-`kustomization.yaml`. The Flux Kustomization substitutes `${LETSENCRYPT_ISSUER}`
-(`cert-manager-issuer-config`) into the server Certificate.
+`kustomization.yaml`.
 """
 
 from __future__ import annotations
@@ -15,12 +14,10 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import (
     CertificateSpecIssuerRef,
-    CertificateSpecPrivateKey,
-    CertificateSpecPrivateKeyAlgorithm,
     CertificateSpecPrivateKeyRotationPolicy,
     CertificateSpecUsages,
 )
@@ -32,8 +29,6 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 from gateway_api_gateway_crds.io.k8s.networking.gateway import (
-    Gateway,
-    GatewaySpec,
     GatewaySpecListeners,
     GatewaySpecListenersAllowedRoutes,
     GatewaySpecListenersAllowedRoutesNamespaces,
@@ -48,29 +43,42 @@ from gateway_api_tlsroute_crds.io.k8s.networking.gateway import (
     TlsRouteSpecRules,
     TlsRouteSpecRulesBackendRefs,
 )
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.gateway import GATEWAY_CLASS
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.cert_manager.certificate import Certificate
+from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.gateway_api.gateway import Gateway
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
 _APP_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/app"
 _NAME = "github-api-proxy"
 _NAMESPACE = "github-api-proxy"
-_LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/github-api-proxy:unset"
 _HOSTNAME = "github-proxy.allegedly.works"
 _SERVER_TLS_SECRET = "github-api-proxy-server-tls"
 _INTERCEPTION_CA = "github-api-proxy-interception-ca"
 _CAPTURE_CLAIM = "github-api-proxy-capture"
-_PROXY_PORT = 8080
-_METRICS_PORT = 9090
+_PROXY = Port(name="proxy", number=8080)
+# Scraped from the Pods by the PodMonitor; the Service does not carry it.
+_METRICS = Port(name="metrics", number=9090)
+# The TLS passthrough route's backend; the proxy terminates the clients' TLS on `_PROXY`.
+_SERVICE = ServiceRef(
+    name=_NAME,
+    port=Port(name="proxy-tls", number=443),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+    target_port=_PROXY.number,
+)
 _RUN_DIR = "/run/github-api-proxy"
 _CLIENTS = ("wyrm2", "rugged")
 _TLS_LISTENER = "proxy-tls"
@@ -175,20 +183,18 @@ _RULES = [
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
+    namespaces.namespace(
         scope,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "off",
-                "pod-security.kubernetes.io/enforce": "restricted",
-                "pod-security.kubernetes.io/enforce-version": "latest",
-                "pod-security.kubernetes.io/audit": "restricted",
-                "pod-security.kubernetes.io/warn": "restricted",
-            },
-        ),
+        name=_NAMESPACE,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=None,
+        labels={
+            "pod-security.kubernetes.io/enforce": "restricted",
+            "pod-security.kubernetes.io/enforce-version": "latest",
+            "pod-security.kubernetes.io/audit": "restricted",
+            "pod-security.kubernetes.io/warn": "restricted",
+        },
     )
 
 
@@ -196,40 +202,32 @@ def _certificates(scope: Construct) -> None:
     Certificate(
         scope,
         "server",
-        name="github-api-proxy-server",
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(name="github-api-proxy-server", namespace=_NAMESPACE),
         secret_name=_SERVER_TLS_SECRET,
         dns_names=[_HOSTNAME],
-        private_key=CertificateSpecPrivateKey(
-            algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA,
-            size=256,
-            rotation_policy=CertificateSpecPrivateKeyRotationPolicy.ALWAYS,
-        ),
+        private_key=CertificatePrivateKey.ecdsa_p256(rotation_policy=CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
         usages=[CertificateSpecUsages.SERVER_AUTH],
-        issuer_ref=CertificateSpecIssuerRef(name="${LETSENCRYPT_ISSUER}", kind="ClusterIssuer"),
+        issuer_ref=CertificateSpecIssuerRef(name=LETSENCRYPT_ISSUER, kind="ClusterIssuer"),
     )
     Certificate(
         scope,
         "interception-ca",
-        name=_INTERCEPTION_CA,
-        namespace=_NAMESPACE,
-        annotations={
-            "description": (
-                "Dedicated workstation proxy interception root. Only its public certificate may be "
-                "distributed to clients; the signing key stays in this namespace."
-            )
-        },
+        metadata=ApiObjectMetadata(
+            name=_INTERCEPTION_CA,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": (
+                    "Dedicated workstation proxy interception root. Only its public certificate may be "
+                    "distributed to clients; the signing key stays in this namespace."
+                )
+            },
+        ),
         is_ca=True,
         common_name="ducktape-github-api-proxy-interception-ca",
         secret_name=_INTERCEPTION_CA,
-        duration="87600h",
-        renew_before="8760h",
-        private_key=CertificateSpecPrivateKey(
-            algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA,
-            size=256,
-            # A signing-key rotation requires an explicit client trust migration.
-            rotation_policy=CertificateSpecPrivateKeyRotationPolicy.NEVER,
-        ),
+        **LONG_LIVED_CA,
+        # A signing-key rotation requires an explicit client trust migration.
+        private_key=CertificatePrivateKey.ecdsa_p256(rotation_policy=CertificateSpecPrivateKeyRotationPolicy.NEVER),
         usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
         issuer_ref=CertificateSpecIssuerRef(name="cluster-ca-bootstrap", kind="ClusterIssuer"),
     )
@@ -271,10 +269,7 @@ def _proxy_container() -> k8s.Container:
         image=_IMAGE,
         image_pull_policy="IfNotPresent",
         args=["--config", f"{_RUN_DIR}/config/config.json"],
-        ports=[
-            k8s.ContainerPort(name="proxy", container_port=_PROXY_PORT, protocol="TCP"),
-            k8s.ContainerPort(name="metrics", container_port=_METRICS_PORT, protocol="TCP"),
-        ],
+        ports=[_PROXY.k8s_container_port(), _METRICS.k8s_container_port()],
         security_context=k8s.SecurityContext(
             allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
         ),
@@ -283,7 +278,7 @@ def _proxy_container() -> k8s.Container:
             limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("2Gi")},
         ),
         readiness_probe=k8s.Probe(
-            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string("metrics")),
+            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(_METRICS.name)),
             initial_delay_seconds=3,
             period_seconds=5,
             timeout_seconds=2,
@@ -303,15 +298,13 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     # No explicit zone nodeSelector: github-api-proxy-capture's seaweedfs-ovh
                     # StorageClass already pins scheduling to topology.kubernetes.io/zone=hil-ovh
@@ -380,12 +373,15 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=_NAMESPACE),
         spec=k8s.ServiceSpec(
-            selector=_LABELS,
+            selector=_SERVICE.pods.selector,
             ports=[
                 k8s.ServicePort(
-                    name="proxy-tls", port=443, target_port=k8s.IntOrString.from_string("proxy"), protocol="TCP"
+                    name=_SERVICE.port.name,
+                    port=_SERVICE.port.number,
+                    target_port=k8s.IntOrString.from_number(_SERVICE.pod_port),
+                    protocol="TCP",
                 )
             ],
         ),
@@ -396,11 +392,11 @@ def _network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "network-policy",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        endpoint_selector=_SERVICE.pods.selector,
         ingress=[
-            IngressRule.from_gateway(_PROXY_PORT),
-            IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy"), ports=[_METRICS_PORT]),
+            IngressRule.from_gateway(_SERVICE.pod_port),
+            IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy"), ports=[_METRICS.number]),
         ],
         egress=[*cilium.open_internet_egress(ports=[80, 443], entities=(Entity.WORLD,))],
         # These non-public ranges can be outside Cilium's cluster identity set.
@@ -442,41 +438,43 @@ def _gateway(scope: Construct) -> None:
     Gateway(
         scope,
         "gateway",
-        metadata=metadata(
-            _NAME,
-            _NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=_NAMESPACE,
             annotations={
                 "description": (
                     "Dedicated TLS-only listener; avoids overlapping the shared wildcard HTTPS listener on port 443."
                 )
             },
         ),
-        spec=GatewaySpec(
-            gateway_class_name="cilium",
-            listeners=[
-                GatewaySpecListeners(
-                    name=_TLS_LISTENER,
-                    hostname=_HOSTNAME,
-                    port=8443,
-                    protocol="TLS",
-                    tls=GatewaySpecListenersTls(mode=GatewaySpecListenersTlsMode.PASSTHROUGH),
-                    allowed_routes=GatewaySpecListenersAllowedRoutes(
-                        namespaces=GatewaySpecListenersAllowedRoutesNamespaces(
-                            from_=GatewaySpecListenersAllowedRoutesNamespacesFrom.SAME
-                        )
-                    ),
-                )
-            ],
-        ),
+        gateway_class_name=GATEWAY_CLASS,
+        listeners=[
+            GatewaySpecListeners(
+                name=_TLS_LISTENER,
+                hostname=_HOSTNAME,
+                port=8443,
+                protocol="TLS",
+                tls=GatewaySpecListenersTls(mode=GatewaySpecListenersTlsMode.PASSTHROUGH),
+                allowed_routes=GatewaySpecListenersAllowedRoutes(
+                    namespaces=GatewaySpecListenersAllowedRoutesNamespaces(
+                        from_=GatewaySpecListenersAllowedRoutesNamespacesFrom.SAME
+                    )
+                ),
+            )
+        ],
     )
     TlsRoute(
         scope,
         "tls-route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         spec=TlsRouteSpec(
             parent_refs=[TlsRouteSpecParentRefs(name=_NAME, section_name=_TLS_LISTENER)],
             hostnames=[_HOSTNAME],
-            rules=[TlsRouteSpecRules(backend_refs=[TlsRouteSpecRulesBackendRefs(name=_NAME, port=443)])],
+            rules=[
+                TlsRouteSpecRules(
+                    backend_refs=[TlsRouteSpecRulesBackendRefs(name=_SERVICE.name, port=_SERVICE.port.number)]
+                )
+            ],
         ),
     )
 
@@ -485,14 +483,14 @@ def _monitoring(scope: Construct) -> None:
     PodMonitor(
         scope,
         "pod-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=_LABELS,
-        pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        selector=PodMonitorSpecSelector(match_labels=_SERVICE.pods.selector),
+        pod_metrics_endpoints=[Endpoint.plain(port=_METRICS.name, scrape_timeout="10s")],
     )
     PrometheusRule(
         scope,
         "prometheus-rule",
-        metadata=metadata(_NAME, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         groups=[group(_NAME, _RULES)],
     )
 

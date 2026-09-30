@@ -1,4 +1,4 @@
-"""Langfuse: its namespace, Postgres, S3 bucket and credentials, route, log-reader RBAC,
+"""Langfuse: its namespace, Postgres, S3 bucket, identity and credentials, route, log-reader RBAC,
 queue/cache Valkey and Helm release, and the `langfuse` Flux Kustomization owning them.
 
 Hand-written beside the generated output: `langfuse-secrets.sops.yaml`.
@@ -6,11 +6,8 @@ Hand-written beside the generated output: `langfuse-secrets.sops.yaml`.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -21,55 +18,53 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategyName,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/langfuse"
 _NAME = "langfuse"
 _NAMESPACE = "langfuse"
-_ZONE = "hil-ovh"
-_S3_CREDENTIALS_SECRET = "langfuse-seaweedfs-credentials"
+# The chart's web Service (`langfuse.selectorLabels` plus `app: web`), for release `_NAME`.
+WEB = ServiceRef(
+    name="langfuse-web",
+    port=Port(name="http", number=3000),
+    pods=Pods(
+        namespace=_NAMESPACE,
+        labels=(("app.kubernetes.io/name", _NAME), ("app.kubernetes.io/instance", _NAME), ("app", "web")),
+    ),
+)
+_S3_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="langfuse-seaweedfs-credentials")
+# The SOPS sibling.
+_SECRETS = SecretRef(namespace=_NAMESPACE, name="langfuse-secrets")
+_OIDC = SecretRef(namespace=_NAMESPACE, name="langfuse-oidc-config")
 _VALKEY = "langfuse-valkey-ovh"
+DATABASE = cnpg.PostgresRef.generated(name="langfuse-db", namespace=_NAMESPACE)
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
-        scope,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={"goldilocks.fairwinds.com/enabled": "true", "goldilocks.fairwinds.com/vpa-update-mode": "auto"},
-        ),
-    )
+    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=None)
 
 
 def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name="langfuse-db",
-        namespace=_NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",
         size="10Gi",
-        # CNPG auto-generates credentials in secret langfuse-db-app
-        initdb=ClusterSpecBootstrapInitdb(database="langfuse", owner="langfuse"),
+        initdb=cnpg.same_owner_initdb("langfuse"),
+        wal_archive=False,
     )
 
 
@@ -95,13 +90,13 @@ def _storage(scope: Construct) -> None:
         adopt_existing=True,
         description="Langfuse event, export, and media objects.",
     )
-    identity = s3.Identity(scope, "identity", name=_NAME)
+    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(
         namespace=_NAMESPACE,
         # A new Secret during the staged handoff: the existing one is populated by the old
         # cross-namespace S3Credentials object and cannot be adopted here.
-        secret=_S3_CREDENTIALS_SECRET,
+        secret=_S3_CREDENTIALS.name,
         key_fields=s3.SecretKeyFields(access_key="s3-access-key-id", secret_key="s3-secret-access-key"),
         description="Langfuse's tenant-local SeaweedFS credentials.",
     )
@@ -134,12 +129,7 @@ def _log_reader(scope: Construct) -> None:
     )
 
 
-def _secret_key_ref(name: str, key: str) -> dict[str, object]:
-    return {"secretKeyRef": {"name": name, "key": key}}
-
-
 def _values() -> dict[str, object]:
-    control_plane = "node-role.kubernetes.io/control-plane"
     resources = {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "1", "memory": "2Gi"}}
     return {
         "langfuse": {
@@ -154,28 +144,18 @@ def _values() -> dict[str, object]:
                 # binding in Authentik (tf/gitops/sso-providers/provider_langfuse.tf).
                 "signUpDisabled": False
             },
-            "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # Langfuse is stateless at the pod level and uses external storage. Allow
             # control-plane nodes as overflow capacity, while the affinity below keeps
             # ordinary placement on workers.
-            "tolerations": [{"key": control_plane, "operator": "Exists", "effect": "NoSchedule"}],
-            # Prefer ordinary workers when this workload tolerates control planes.
-            "affinity": {
-                "nodeAffinity": {
-                    "preferredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "weight": 100,
-                            "preference": {"matchExpressions": [{"key": control_plane, "operator": "DoesNotExist"}]},
-                        }
-                    ]
-                }
-            },
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+            "affinity": node_scheduling.PREFER_WORKERS,
             "nextauth": {
                 "url": "https://langfuse.allegedly.works",
-                "secret": _secret_key_ref("langfuse-secrets", "nextauth-secret"),
+                "secret": _SECRETS.key("nextauth-secret").value_from(),
             },
-            "salt": _secret_key_ref("langfuse-secrets", "salt"),
-            "encryptionKey": _secret_key_ref("langfuse-secrets", "encryption-key"),
+            "salt": _SECRETS.key("salt").value_from(),
+            "encryptionKey": _SECRETS.key("encryption-key").value_from(),
             "web": {
                 "resources": resources,
                 # The image runs initialization before its health endpoints are
@@ -216,11 +196,8 @@ def _values() -> dict[str, object]:
                     "value": "https://auth.allegedly.works/application/o/langfuse",
                 },
                 {"name": "AUTH_CUSTOM_SCOPE", "value": "openid email profile"},
-                {"name": "AUTH_CUSTOM_CLIENT_ID", "valueFrom": _secret_key_ref("langfuse-oidc-config", "client-id")},
-                {
-                    "name": "AUTH_CUSTOM_CLIENT_SECRET",
-                    "valueFrom": _secret_key_ref("langfuse-oidc-config", "client-secret"),
-                },
+                {"name": "AUTH_CUSTOM_CLIENT_ID", "valueFrom": _OIDC.key("client-id").value_from()},
+                {"name": "AUTH_CUSTOM_CLIENT_SECRET", "valueFrom": _OIDC.key("client-secret").value_from()},
                 # Link the SSO identity to the headless-init admin user (same email)
                 # so login lands on the existing org/project instead of an empty one.
                 {"name": "AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING", "value": "true"},
@@ -232,11 +209,11 @@ def _values() -> dict[str, object]:
                 {"name": "LANGFUSE_INIT_PROJECT_NAME", "value": "litellm"},
                 {
                     "name": "LANGFUSE_INIT_PROJECT_PUBLIC_KEY",
-                    "valueFrom": _secret_key_ref("langfuse-secrets", "LANGFUSE_INIT_PROJECT_PUBLIC_KEY"),
+                    "valueFrom": _SECRETS.key("LANGFUSE_INIT_PROJECT_PUBLIC_KEY").value_from(),
                 },
                 {
                     "name": "LANGFUSE_INIT_PROJECT_SECRET_KEY",
-                    "valueFrom": _secret_key_ref("langfuse-secrets", "LANGFUSE_INIT_PROJECT_SECRET_KEY"),
+                    "valueFrom": _SECRETS.key("LANGFUSE_INIT_PROJECT_SECRET_KEY").value_from(),
                 },
                 # Email matches the Authentik identity (agentydragon@gmail.com) so the
                 # SSO account links to this org owner. Headless init adds this user as
@@ -245,26 +222,26 @@ def _values() -> dict[str, object]:
                 {"name": "LANGFUSE_INIT_USER_NAME", "value": "Rai"},
                 {
                     "name": "LANGFUSE_INIT_USER_PASSWORD",
-                    "valueFrom": _secret_key_ref("langfuse-secrets", "LANGFUSE_INIT_USER_PASSWORD"),
+                    "valueFrom": _SECRETS.key("LANGFUSE_INIT_USER_PASSWORD").value_from(),
                 },
             ],
         },
         "postgresql": {
             "deploy": False,
-            "host": "langfuse-db-rw",
+            "host": DATABASE.rw.name,
             "auth": {
                 "username": "langfuse",
                 "database": "langfuse",
-                "existingSecret": "langfuse-db-app",
+                "existingSecret": DATABASE.app_secret.name,
                 "secretKeys": {"userPasswordKey": "password"},
             },
         },
         # ClickHouse is managed centrally in the clickhouse namespace.
         "clickhouse": {
             "deploy": False,
-            "host": "clickhouse.clickhouse.svc.cluster.local",
-            "httpPort": 8123,
-            "nativePort": 9000,
+            "host": client.HTTP.host,
+            "httpPort": client.HTTP.port.number,
+            "nativePort": client.NATIVE.port.number,
             "database": "langfuse",
             "auth": {
                 "username": "langfuse",
@@ -272,7 +249,7 @@ def _values() -> dict[str, object]:
                 "existingSecretKey": "password",
             },
             "migration": {
-                "url": "clickhouse://clickhouse.clickhouse.svc.cluster.local:9000",
+                "url": f"clickhouse://{client.NATIVE.host}:{client.NATIVE.port.number}",
                 "ssl": False,
                 "autoMigrate": True,
             },
@@ -295,8 +272,8 @@ def _values() -> dict[str, object]:
             "region": "auto",
             "endpoint": "http://seaweedfs-s3.seaweedfs.svc:8333",
             "forcePathStyle": True,
-            "accessKeyId": _secret_key_ref(_S3_CREDENTIALS_SECRET, "s3-access-key-id"),
-            "secretAccessKey": _secret_key_ref(_S3_CREDENTIALS_SECRET, "s3-secret-access-key"),
+            "accessKeyId": _S3_CREDENTIALS.key("s3-access-key-id").value_from(),
+            "secretAccessKey": _S3_CREDENTIALS.key("s3-secret-access-key").value_from(),
             "eventUpload": {"prefix": "events/"},
             "batchExport": {"prefix": "exports/"},
             "mediaUpload": {"prefix": "media/"},
@@ -307,17 +284,11 @@ def _values() -> dict[str, object]:
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = HelmRepository(
-        scope,
-        "helm-repository",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://langfuse.github.io/langfuse-k8s"),
-    )
     helm_release(
         scope,
         _NAME,
         _NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(scope, _NAME, _NAMESPACE, url="https://langfuse.github.io/langfuse-k8s"),
         chart=_NAME,
         version="2.1.0",
         interval="15m",
@@ -340,10 +311,9 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        hostname="langfuse.allegedly.works",
-        backend="langfuse-web",
-        port=3000,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=["langfuse.allegedly.works"],
+        backend=WEB,
         hsts=False,
         listener=None,
     )
@@ -364,17 +334,9 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", "langfuse-secrets.sops.yaml"]),
-    )
-
-
 def langfuse(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     cnpg: Kustomization,
     valkey: Kustomization,
     seaweedfs_operator: Kustomization,
@@ -382,10 +344,9 @@ def langfuse(
     return flux_kustomization(
         chart,
         _NAME,
-        artifact,
+        directory,
         suspend=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        decryption=SOPS_DECRYPTION,
         timeout="20m",
         depends_on=flux_kustomization_depends_on_many(cnpg, valkey, seaweedfs_operator),
     )

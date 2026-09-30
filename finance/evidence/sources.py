@@ -89,6 +89,9 @@ def _yahoo(symbol: str, output_filename: str) -> EvidenceSource:
     )
 
 
+_FRENCH_FTP = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp"
+
+
 def _french(dataset: str, output_filename: str) -> EvidenceSource:
     """Ken French's data library — a ZIP of one CSV, monthly from 1926-07.
 
@@ -102,7 +105,7 @@ def _french(dataset: str, output_filename: str) -> EvidenceSource:
     return EvidenceSource(
         kind=EvidenceKind.FRENCH,
         series_id=dataset,
-        upstream_url=f"https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/{dataset}_CSV.zip",
+        upstream_url=f"{_FRENCH_FTP}/{dataset}_CSV.zip",
         output_filename=output_filename,
     )
 
@@ -171,6 +174,19 @@ ZILLOW_ZHVI = _zillow(
     "zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv",
 )
 FRENCH_FACTORS = _french("F-F_Research_Data_Factors", "french_research_data_factors.zip")
+# Ex-US equity: Ken French's international index portfolios, the `Mkt` column of `Ind_all.Dat` —
+# value-weighted within each country, countries weighted by their EAFE + Canada weights, USD,
+# dividends included; 2001-2025 it tracks MSCI EAFE gross (USD) at 0.996 monthly correlation.
+# Developed markets only. Chosen over French's `Developed_ex_US_3_Factors` (same universe, updated
+# monthly) for length: 1975-01 on, against 1990-07. The cost is that it is published once a year —
+# fetched 2026-09 it ended 2025-12, while `FRENCH_FACTORS` reached 2026-08.
+# No `_CSV` archive exists, so the URL is spelled out; the members are fixed-width `.Dat` text.
+FRENCH_INTERNATIONAL_INDICES = EvidenceSource(
+    kind=EvidenceKind.FRENCH,
+    series_id="F-F_International_Indices",
+    upstream_url=f"{_FRENCH_FTP}/F-F_International_Indices.zip",
+    output_filename="french_international_indices.zip",
+)
 ZILLOW_ZORI = _zillow("zori/City_zori_uc_sfrcondomfr_sm_sa_month", "zillow_city_zori_uc_sfrcondomfr_sm_sa_month.csv")
 
 EVIDENCE_SOURCES: tuple[EvidenceSource, ...] = (
@@ -191,6 +207,7 @@ EVIDENCE_SOURCES: tuple[EvidenceSource, ...] = (
     YAHOO_VFINX,
     YAHOO_MITTX,
     FRENCH_FACTORS,
+    FRENCH_INTERNATIONAL_INDICES,
     YAHOO_BTC,
     YAHOO_ETH,
     ZILLOW_ZHVI,

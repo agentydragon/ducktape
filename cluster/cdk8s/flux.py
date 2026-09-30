@@ -17,10 +17,11 @@ See cluster/docs/cdk8s.md.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import cast
 
 import jsii
-from cdk8s import ApiObject, App, Chart
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart
 from constructs import IValidation
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
@@ -33,8 +34,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecImages,
     KustomizationSpecPatches,
     KustomizationSpecPostBuild,
-    KustomizationSpecPostBuildSubstituteFrom,
-    KustomizationSpecPostBuildSubstituteFromKind,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
@@ -49,16 +48,47 @@ SOPS_DECRYPTION = KustomizationSpecDecryption(
     provider=KustomizationSpecDecryptionProvider.SOPS,
     secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
 )
-# `${LETSENCRYPT_ISSUER}` from cert_manager/issuer_config.py's ConfigMap, which is reflected
-# into NAMESPACE: Flux reads substitution sources from the Kustomization's own namespace.
-CERT_MANAGER_ISSUER_CONFIG = "cert-manager-issuer-config"
-CERT_MANAGER_ISSUER_SUBSTITUTION = KustomizationSpecPostBuild(
-    substitute_from=[
-        KustomizationSpecPostBuildSubstituteFrom(
-            kind=KustomizationSpecPostBuildSubstituteFromKind.CONFIG_MAP, name=CERT_MANAGER_ISSUER_CONFIG
-        )
-    ]
-)
+
+
+@dataclass(frozen=True)
+class RenderedDirectory:
+    """A directory `generation.write_directory` wrote, as its Flux Kustomization reads it:
+    `sourceRef` and `path` come from the artifact packaging it, and `decryption` is set when a
+    hand-written sibling is SOPS ciphertext."""
+
+    artifact: ArtifactGeneratorSpecArtifacts
+    decryption: KustomizationSpecDecryption | None
+
+
+def artifact_directories(artifact: ArtifactGeneratorSpecArtifacts) -> list[str]:
+    """The repo-relative directories `artifact` copies, in copy order. The first is its consumer's
+    Kustomization directory; later ones are shared bases and Components that Kustomization
+    references.
+
+    Raises on any shape `artifact_generators.artifact` does not build -- no copies, or a copy
+    that is not one whole directory copied to the same path -- since the Kustomization's `path`
+    would otherwise silently point at the wrong directory.
+    """
+    directories = []
+    for copy in artifact.copy:
+        directory = copy.to.removeprefix("@artifact/").removesuffix("/")
+        if (
+            not directory
+            or copy.to != f"@artifact/{directory}/"
+            or copy.from_ != f"@repo/{directory}/**"
+            or copy.exclude is not None
+            or copy.strategy is not None
+        ):
+            raise ValueError(f"{artifact.name=}: not a whole-directory copy: {copy.from_=} {copy.to=}")
+        directories.append(directory)
+    if not directories:
+        raise ValueError(f"{artifact.name=} copies nothing")
+    return directories
+
+
+def artifact_directory(artifact: ArtifactGeneratorSpecArtifacts) -> str:
+    """The directory `artifact` copies first: its consumer's Kustomization directory."""
+    return artifact_directories(artifact)[0]
 
 
 @jsii.implements(IValidation)
@@ -108,7 +138,7 @@ def health_checks(chart: Chart, kinds: Sequence[str]) -> list[KustomizationSpecH
 def flux_kustomization(
     chart: Chart,
     name: str,
-    source: ArtifactGeneratorSpecArtifacts | KustomizationSpecSourceRef,
+    source: RenderedDirectory | ArtifactGeneratorSpecArtifacts | KustomizationSpecSourceRef,
     *,
     path: str | None = None,
     interval: str = "10m",
@@ -133,10 +163,11 @@ def flux_kustomization(
 ) -> Kustomization:
     """Add and return a Flux `Kustomization` custom resource in `chart`.
 
-    `source` is the node's `ArtifactGenerator` artifact, from which `sourceRef` and `path`
-    (its first directory) derive, or a direct `sourceRef` -- a `GitRepository` -- which
-    takes an explicit `path`. The spec keywords are `KustomizationSpec` fields under the
-    same names and types. Our policy, which a node overrides only where it differs:
+    `source` is the node's `RenderedDirectory`, from which `sourceRef`, `path` and
+    `decryption` derive; or its `ArtifactGenerator` artifact, from which `sourceRef` and
+    `path` (its first directory) derive; or a direct `sourceRef` -- a `GitRepository` --
+    which takes an explicit `path`. The spec keywords are `KustomizationSpec` fields under
+    the same names and types. Our policy, which a node overrides only where it differs:
     `interval="10m"`, `retry_interval="1m"`, `prune=True`, `wait=True`. `None` leaves a
     field unset, so Flux's own default applies (which for `retry_interval` is `interval`
     and for `wait` is false). `health_checks` needs `wait` off: with `wait=True` Flux ignores
@@ -146,6 +177,11 @@ def flux_kustomization(
     """
     if wait and health_checks:
         raise ValueError(f"{name=}: wait=True health-checks every applied object and Flux ignores health_checks")
+    if isinstance(source, RenderedDirectory):
+        if decryption is not None:
+            raise ValueError(f"{name=}: a rendered directory derives its decryption; got {decryption=}")
+        decryption = source.decryption
+        source = source.artifact
     match source:
         case ArtifactGeneratorSpecArtifacts():
             if path is not None:
@@ -153,7 +189,7 @@ def flux_kustomization(
             source_ref = KustomizationSpecSourceRef(
                 kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=source.name, namespace=NAMESPACE
             )
-            path = "./" + source.copy[0].to.removeprefix("@artifact/").removesuffix("/")
+            path = f"./{artifact_directory(source)}"
         case KustomizationSpecSourceRef():
             if path is None:
                 raise ValueError(f"{name=}: a direct sourceRef needs an explicit path")
@@ -166,9 +202,7 @@ def flux_kustomization(
     return Kustomization(
         chart,
         name,
-        name=name,
-        namespace=namespace,
-        annotations=metadata_annotations or None,
+        metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=metadata_annotations or None),
         source_ref=source_ref,
         path=path,
         interval=interval,
@@ -216,7 +250,10 @@ class ConfigMapArgs(BaseModel):
     (`ConfigMap.from_config_map_name`)."""
 
     name: str
-    namespace: str
+    namespace: str | None = Field(
+        description="None only in a base whose overlays set the namespace, as on the objects that mount it: "
+        "kustomize rewrites a reference to the hashed name only within one namespace."
+    )
     options: GeneratorOptions | None = None
     files: list[str] | None = Field(
         default=None, description="File names relative to the directory; each becomes a key of that name."
@@ -237,6 +274,9 @@ class _KustomizeKustomization(BaseModel):
         default=None, description="Paths to Kustomize Component directories, per kustomize.config.k8s.io/v1beta1."
     )
     config_map_generator: list[ConfigMapArgs] | None = None
+    configurations: list[str] | None = Field(
+        default=None, description="Transformer configuration files, relative to the directory."
+    )
 
 
 def kustomize_kustomization(
@@ -245,6 +285,7 @@ def kustomize_kustomization(
     namespace: str | None = None,
     components: Sequence[str] = (),
     config_map_generator: Sequence[ConfigMapArgs] = (),
+    configurations: Sequence[str] = (),
 ) -> dict[str, object]:
     """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
 
@@ -258,5 +299,6 @@ def kustomize_kustomization(
         resources=resources,
         components=list(components) if components else None,
         config_map_generator=list(config_map_generator) if config_map_generator else None,
+        configurations=list(configurations) if configurations else None,
     )
     return manifest.model_dump(by_alias=True, exclude_none=True)

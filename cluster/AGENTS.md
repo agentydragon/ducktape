@@ -253,8 +253,9 @@ per-app reasons: <docs/decisions.md> § "Parked application manifests".
 ## Generated manifests
 
 Every file under `cluster/generated`, every `*.k8s.yaml` under `cluster/k8s`, and each
-`kustomization.yaml` there that `.gitattributes` marks `linguist-generated=true` (the list
-of record), is `bb run //cluster/cdk8s:generate_manifests` output. A directory lives under
+`kustomization.yaml` or copied payload there that `.gitattributes` marks
+`linguist-generated=true` (the list of record), is `bb run //cluster/cdk8s:generate_manifests`
+output. A directory lives under
 `cluster/generated` exactly when the generator writes all of it (<docs/cdk8s.md>). Change the generator under
 `cluster/cdk8s/` and regenerate; `//cluster/cdk8s:test_generate_manifests` fails on
 drift. What stays hand-written, and why: <docs/cdk8s.md> § What stays hand-written. The

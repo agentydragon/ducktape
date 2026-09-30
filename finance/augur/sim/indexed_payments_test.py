@@ -8,24 +8,20 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import LocationId, RentKey
-from finance.augur.sim.actions import DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.claims import ObligationType
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedIndexedAmount,
-    PreparedRecurringObligation,
-    PreparedRecurringTransfer,
-    PreparedSeries,
-)
-from finance.augur.sim.results import Finished, Paid, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType
+from finance.augur.sim.income import ORDINARY_INCOME
+from finance.augur.sim.market_path import IndexedAmount, MarketPath, Series
+from finance.augur.sim.money import USD
+from finance.augur.sim.results import Paid, Rollout
+from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 RENT = RentKey(location_id=LocationId("san_francisco_ca"))
@@ -33,17 +29,17 @@ QUANTUM = Decimal("0.01")
 CHECKING = AccountId("checking")
 
 
-def _series(levels: list[list[float]], *, horizon_months: int) -> tuple[PreparedSeries, ...]:
+def _series(levels: list[list[float]], *, horizon_months: int) -> tuple[Series, ...]:
     """The authored rent path as integer index levels, one path per rollout."""
 
     paths = ExternalSeriesContext.from_level_blocks(
         [(RENT, np.asarray(levels, dtype=np.float64))], rollout_count=len(levels), horizon_months=len(levels[0]) - 1
     )
-    return compile_series(paths, rollout_count=len(levels), horizon_months=horizon_months, currency_quantum=QUANTUM)
+    return compile_series(paths, rollout_count=len(levels), horizon_months=horizon_months, currency=USD)
 
 
-def _indexed(base_amount: Decimal, *, base_month_index: int, adjustment_period_months: int) -> PreparedIndexedAmount:
-    return PreparedIndexedAmount(
+def _indexed(base_amount: Decimal, *, base_month_index: int, adjustment_period_months: int) -> IndexedAmount:
+    return IndexedAmount(
         base_amount=int(currency_amount_to_quanta(base_amount, quantum=QUANTUM)),
         series_id=RENT.wire_id,
         base_month_index=base_month_index,
@@ -51,72 +47,59 @@ def _indexed(base_amount: Decimal, *, base_month_index: int, adjustment_period_m
     )
 
 
-def _account(agent_id: AgentId, balance: Decimal) -> PreparedAccount:
-    return PreparedAccount(
-        account=AccountRef(agent_id=agent_id, account_id=CHECKING),
-        opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
-    )
-
-
-def _rent_obligation(amount: PreparedIndexedAmount) -> PreparedRecurringObligation:
-    """Alice owes the landlord this amount every month of the horizon."""
-
-    return PreparedRecurringObligation(
-        start_month=0,
-        end_month=None,
-        obligation_id="outside_rent",
-        obligation_type=ObligationType.OUTSIDE_RENT,
-        from_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
-        to_account=AccountRef(agent_id=AgentId("landlord"), account_id=CHECKING),
-        amount_due=amount,
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=rate_to_ppb(1.0),
-    )
-
-
-def _tenant_rent(amount: PreparedIndexedAmount) -> PreparedRecurringTransfer:
-    """The tenant's monthly payment to alice; alice never decides it."""
-
-    return PreparedRecurringTransfer(
-        start_month=0,
-        end_month=None,
-        cause_id="tenant_rent",
-        from_account=AccountRef(agent_id=AgentId("tenant"), account_id=CHECKING),
-        to_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
-        amount=amount,
-        income_category=None,
-        deduction_category=None,
-    )
+def _account(agent_id: AgentId, balance: Decimal) -> tuple[AccountRef, int]:
+    """An account and its opening balance."""
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), int(currency_amount_to_quanta(balance, quantum=QUANTUM))
 
 
 def _compose(
-    series: tuple[PreparedSeries, ...],
+    series: tuple[Series, ...],
     rollout_id: int,
     *,
     rollout_count: int,
     horizon_months: int,
-    accounts: Sequence[PreparedAccount],
-    obligation: PreparedRecurringObligation | None = None,
-    transfer: PreparedRecurringTransfer | None = None,
+    accounts: Sequence[tuple[AccountRef, int]],
+    owed_rent: IndexedAmount | None = None,
+    tenant_rent: IndexedAmount | None = None,
 ) -> World:
+    """`owed_rent` is what Alice owes the landlord every month; `tenant_rent` is the tenant's monthly payment to her."""
     world = World(
         MarketPath(series, rollout_id, rollout_count=rollout_count),
         horizon_months=horizon_months,
         income_sources=(ORDINARY_INCOME,),
     )
-    for account in accounts:
-        world.declare_account(account)
-    if obligation is not None:
-        world.track(Biller(obligation))
-    if transfer is not None:
+    for opened, balance in accounts:
+        world.declare_account(account=opened, opening_balance=balance)
+    if owed_rent is not None:
+        world.track(
+            Biller(
+                schedule=Recurring(start_month=0, end_month=None),
+                obligation_id="outside_rent",
+                obligation_type=ObligationType.OUTSIDE_RENT,
+                from_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
+                to_account=AccountRef(agent_id=AgentId("landlord"), account_id=CHECKING),
+                amount_due=owed_rent,
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=rate_to_ppb(1),
+            )
+        )
+    if tenant_rent is not None:
         # A counterparty's cashflow table, not an action: the world moves it in `prepare_month`,
-        # before this month's claims are assembled.
-        world.declare_flow(transfer)
+        # before this month's claims are assembled. Alice never decides it.
+        world.declare_flow(
+            schedule=Recurring(start_month=0, end_month=None),
+            cause_id="tenant_rent",
+            from_account=AccountRef(agent_id=AgentId("tenant"), account_id=CHECKING),
+            to_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
+            amount=tenant_rent,
+            income_category=None,
+            deduction_category=None,
+        )
     return world
 
 
-def _rent_worlds(amount: PreparedIndexedAmount, levels: list[list[float]], *, horizon_months: int) -> dict[int, World]:
+def _rent_worlds(amount: IndexedAmount, levels: list[list[float]], *, horizon_months: int) -> dict[int, World]:
     series = _series(levels, horizon_months=horizon_months)
     accounts = (_account(AgentId("alice"), Decimal(20_000)), _account(AgentId("landlord"), Decimal(0)))
     return {
@@ -126,40 +109,18 @@ def _rent_worlds(amount: PreparedIndexedAmount, levels: list[list[float]], *, ho
             rollout_count=len(levels),
             horizon_months=horizon_months,
             accounts=accounts,
-            obligation=_rent_obligation(amount),
+            owed_rent=amount,
         )
         for rollout_id in range(len(levels))
     }
 
 
 def _run(worlds: dict[int, World]) -> list[Rollout]:
-    session = ActionSession(worlds, AgentId("alice"), capture="forensic")
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id,
-                        decision.observation.month,
-                        [
-                            PayClaim(
-                                request_id=index,
-                                cause_id=claim.cause_id,
-                                claim=claim,
-                                from_account=claim.from_account,
-                                amount=claim.amount_due,
-                            )
-                            for index, claim in enumerate(decision.observation.claims)
-                        ],
-                    )
-                    for decision in batch
-                ]
-            )
-        assert all(result.stop is None for result in batch.rollouts)
-        return batch.rollouts
-    finally:
-        session.close()
+    rollouts = finish(
+        ActionSession(worlds, AgentId("alice"), capture="forensic"), each(ClaimPayer(AgentId("alice")).decide)
+    ).rollouts
+    assert all(result.stop is None for result in rollouts)
+    return rollouts
 
 
 def _cash(book: Book, agent_id: AgentId) -> int:
@@ -222,7 +183,7 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
                 rollout_count=1,
                 horizon_months=13,
                 accounts=(_account(AgentId("tenant"), Decimal(20_000)), _account(AgentId("alice"), Decimal(0))),
-                transfer=_tenant_rent(amount),
+                tenant_rent=amount,
             )
         }
     )
@@ -251,8 +212,8 @@ def test_half_quantum_indexing_funds_same_month_claim_without_losing_cash() -> N
                     _account(AgentId("landlord"), Decimal(0)),
                     _account(AgentId("tenant"), Decimal(1)),
                 ),
-                obligation=_rent_obligation(amount),
-                transfer=_tenant_rent(amount),
+                owed_rent=amount,
+                tenant_rent=amount,
             )
         }
     )

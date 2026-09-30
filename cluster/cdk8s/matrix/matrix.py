@@ -9,11 +9,9 @@ Reflector copies into this namespace.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -26,44 +24,46 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFromKind,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesMatches,
-    HttpRouteSpecRulesMatchesPath,
-    HttpRouteSpecRulesMatchesPathType,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRules, HttpRouteSpecRulesBackendRefs
 
-from cluster.cdk8s import cnpg
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
+from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteMatch
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix"
 NAMESPACE = "matrix"
 SYNAPSE = "matrix-synapse"
+HOSTNAME = "matrix.allegedly.works"
+ELEMENT_HOSTNAME = "chat.allegedly.works"
 _NAME = "matrix"
-_DB_NAME = "matrix-db"
-_ZONE = "hil-ovh"
+DATABASE = cnpg.PostgresRef.generated(name="matrix-db", namespace=NAMESPACE)
 _HELM_REPOSITORY = "ananace-charts"
-_SYNAPSE_PORT = 8008
+# The chart's main Service: its selector is the chart name, the release and the component.
+SYNAPSE_HTTP = ServiceRef(
+    name=SYNAPSE,
+    port=Port(name="http", number=8008),
+    pods=Pods(
+        namespace=NAMESPACE,
+        labels=(
+            ("app.kubernetes.io/name", "matrix-synapse"),
+            ("app.kubernetes.io/instance", SYNAPSE),
+            ("app.kubernetes.io/component", "synapse"),
+        ),
+    ),
+)
 _ELEMENT = "element-web"
-_ELEMENT_LABELS = {"app.kubernetes.io/name": _ELEMENT}
+_ELEMENT_HTTP = ServiceRef(
+    name=_ELEMENT,
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _ELEMENT),)),
+)
 _ELEMENT_CONFIG_MAP = "element-web-config"
-_SOPS_FILES = (
+SOPS_FILES = (
     "synapse-signing-key.sops.yaml",
     "synapse-registration-secret.sops.yaml",
     "synapse-macaroon-secret.sops.yaml",
@@ -73,9 +73,7 @@ _SOPS_FILES = (
 )
 
 _ELEMENT_CONFIG = {
-    "default_server_config": {
-        "m.homeserver": {"base_url": "https://matrix.allegedly.works", "server_name": "allegedly.works"}
-    },
+    "default_server_config": {"m.homeserver": {"base_url": f"https://{HOSTNAME}", "server_name": "allegedly.works"}},
     "brand": "Element",
     "integrations_ui_url": "https://scalar.vector.im/",
     "integrations_rest_url": "https://scalar.vector.im/api",
@@ -97,47 +95,33 @@ _ELEMENT_CONFIG = {
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
-        scope,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={"goldilocks.fairwinds.com/enabled": "true", "goldilocks.fairwinds.com/vpa-update-mode": "auto"},
-        ),
-    )
+    namespaces.namespace(scope, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None)
 
 
 def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name=_DB_NAME,
-        namespace=NAMESPACE,
+        ref=DATABASE,
         image_name=None,
         # OVH-HA profile (docs/cnpg_conventions.md R2/R3), replacing the Proxmox-single
         # shape this had before the namespace was parked: Synapse's media store is on
         # SeaweedFS now, whose CSI node plugin only runs on the OVH nodes, so the app
         # moved there and R5 requires the database to follow it.
-        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="10Gi",
-        # CNPG auto-generates credentials in secret matrix-db-app
-        initdb=ClusterSpecBootstrapInitdb(database="synapse", owner="synapse", locale_c_type="C", locale_collate="C"),
+        initdb=cnpg.same_owner_initdb("synapse", locale_c_type="C", locale_collate="C"),
+        wal_archive=False,
     )
 
 
 def _synapse(scope: Construct) -> None:
-    repository = HelmRepository(
-        scope,
-        "helm-repository",
-        metadata=metadata(_HELM_REPOSITORY, NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://ananace.gitlab.io/charts"),
-    )
     helm_release(
         scope,
         SYNAPSE,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(scope, _HELM_REPOSITORY, NAMESPACE, url="https://ananace.gitlab.io/charts"),
         chart="matrix-synapse",
         version="3.12.37",
         interval="15m",
@@ -173,7 +157,7 @@ def _synapse(scope: Construct) -> None:
             "serverName": "allegedly.works",
             # Public server name - the hostname where Synapse is publicly accessible.
             # The chart derives public_baseurl as https://<publicServerName>.
-            "publicServerName": "matrix.allegedly.works",
+            "publicServerName": HOSTNAME,
             "resources": {"limits": {"cpu": "1000m", "memory": "2Gi"}, "requests": {"cpu": "200m", "memory": "512Mi"}},
             # Media store on distributed storage — the AGENTS.md default for app data
             # volumes, and RWX, so Synapse is not pinned to whichever node owns a local
@@ -194,9 +178,7 @@ def _synapse(scope: Construct) -> None:
                 # has no top-level key of that name, so a selector placed there is silently
                 # ignored (which is why the previous `region: proxmox` never pinned
                 # anything, and Synapse only landed on wyrm2 by chance).
-                "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
-                # Reloader: auto-restart pods when secrets change
-                "annotations": {"reloader.stakater.com/auto": "true"},
+                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR
             },
             # macaroonSecretKey and registrationSharedSecret injected via valuesFrom;
             # extraConfig with oidc_providers is injected via valuesFrom from the
@@ -208,15 +190,19 @@ def _synapse(scope: Construct) -> None:
                 "existingSecret": "synapse-signing-key",
                 "existingSecretKey": "signing.key",
             },
-            "service": {"type": "ClusterIP", "port": _SYNAPSE_PORT, "federation": {"enabled": True, "port": 8448}},
+            "service": {
+                "type": "ClusterIP",
+                "port": SYNAPSE_HTTP.port.number,
+                "federation": {"enabled": True, "port": 8448},
+            },
             # PostgreSQL via external CNPG cluster (matrix-db)
             "postgresql": {"enabled": False},
             "externalPostgresql": {
-                "host": f"{_DB_NAME}-rw",
-                "port": 5432,
+                "host": DATABASE.rw.name,
+                "port": DATABASE.rw.port.number,
                 "username": "synapse",
                 "database": "synapse",
-                "existingSecret": f"{_DB_NAME}-app",
+                "existingSecret": DATABASE.app_secret.name,
                 "existingSecretPasswordKey": "password",
             },
             # Redis (required by chart even for single-instance setup)
@@ -231,7 +217,7 @@ def _synapse(scope: Construct) -> None:
                     # Keep Synapse's Redis in the same zone as Synapse; it is a subchart, so
                     # this key is separate from synapse.nodeSelector above. Without it the
                     # placement is luck, and a cross-site hop for every pub/sub round trip.
-                    "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
+                    "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
                     "persistence": {"enabled": False},
                     "resources": {
                         "requests": {"cpu": "50m", "memory": "64Mi"},
@@ -250,36 +236,29 @@ def _synapse_routes(scope: Construct) -> None:
     https_route(
         scope,
         "synapse-route",
-        metadata=metadata(SYNAPSE, NAMESPACE),
-        hostname="matrix.allegedly.works",
-        backend=SYNAPSE,
-        port=_SYNAPSE_PORT,
+        metadata=ApiObjectMetadata(name=SYNAPSE, namespace=NAMESPACE),
+        hostnames=[HOSTNAME],
+        backend=SYNAPSE_HTTP,
         hsts=False,
         listener=None,
     )
     # Federation and well-known endpoints on the apex domain. More specific path matches
-    # take priority over the website catch-all route.
+    # take priority over the website catch-all route. Two independent rules, not one
+    # https_route() call: each needs its own single-prefix match (Gateway API's own
+    # per-rule structure), and both happen to share this backend.
     HttpRoute(
         scope,
         "federation-route",
-        metadata=metadata("matrix-federation", NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["allegedly.works"],
-            rules=[
-                HttpRouteSpecRules(
-                    matches=[
-                        HttpRouteSpecRulesMatches(
-                            path=HttpRouteSpecRulesMatchesPath(
-                                type=HttpRouteSpecRulesMatchesPathType.PATH_PREFIX, value=prefix
-                            )
-                        )
-                    ],
-                    backend_refs=[HttpRouteSpecRulesBackendRefs(name=SYNAPSE, port=_SYNAPSE_PORT)],
-                )
-                for prefix in ("/_matrix", "/.well-known/matrix")
-            ],
-        ),
+        metadata=ApiObjectMetadata(name="matrix-federation", namespace=NAMESPACE),
+        parent_refs=[cluster_gateway_parent_ref()],
+        hostnames=["allegedly.works"],
+        rules=[
+            HttpRouteSpecRules(
+                matches=[RouteMatch.path_prefix(prefix)],
+                backend_refs=[HttpRouteSpecRulesBackendRefs(name=SYNAPSE_HTTP.name, port=SYNAPSE_HTTP.port.number)],
+            )
+            for prefix in ("/_matrix", "/.well-known/matrix")
+        ],
     )
 
 
@@ -290,22 +269,23 @@ def _element(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(name=_ELEMENT_CONFIG_MAP, namespace=NAMESPACE),
         data={"config.json": json.dumps(_ELEMENT_CONFIG, indent=2) + "\n"},
     )
-    probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("http"))
+    probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string(_ELEMENT_HTTP.port.name))
     k8s.KubeDeployment(
         scope,
         "element-deployment",
-        metadata=k8s.ObjectMeta(name=_ELEMENT, namespace=NAMESPACE, labels=_ELEMENT_LABELS),
+        metadata=k8s.ObjectMeta(name=_ELEMENT, namespace=NAMESPACE, labels=_ELEMENT_HTTP.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_ELEMENT_LABELS),
+            selector=k8s.LabelSelector(match_labels=_ELEMENT_HTTP.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_ELEMENT_LABELS, annotations={"reloader.stakater.com/auto": "true"}),
+                metadata=k8s.ObjectMeta(labels=_ELEMENT_HTTP.pods.selector),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     containers=[
                         k8s.Container(
                             name=_ELEMENT,
                             image="vectorim/element-web:v1.12.27",
-                            ports=[k8s.ContainerPort(container_port=80, name="http", protocol="TCP")],
+                            ports=[_ELEMENT_HTTP.port.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="config", mount_path="/app/config.json", sub_path="config.json", read_only=True
@@ -338,22 +318,17 @@ def _element(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "element-service",
-        metadata=k8s.ObjectMeta(name=_ELEMENT, namespace=NAMESPACE, labels=_ELEMENT_LABELS),
+        metadata=k8s.ObjectMeta(name=_ELEMENT_HTTP.name, namespace=NAMESPACE, labels=_ELEMENT_HTTP.labels),
         spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            ports=[
-                k8s.ServicePort(port=80, target_port=k8s.IntOrString.from_string("http"), protocol="TCP", name="http")
-            ],
-            selector=_ELEMENT_LABELS,
+            type="ClusterIP", ports=[_ELEMENT_HTTP.port.k8s_service_port()], selector=_ELEMENT_HTTP.pods.selector
         ),
     )
     https_route(
         scope,
         "element-route",
-        metadata=metadata(_ELEMENT, NAMESPACE),
-        hostname="chat.allegedly.works",
-        backend=_ELEMENT,
-        port=80,
+        metadata=ApiObjectMetadata(name=_ELEMENT, namespace=NAMESPACE),
+        hostnames=[ELEMENT_HOSTNAME],
+        backend=_ELEMENT_HTTP,
         hsts=False,
         listener=None,
     )
@@ -369,21 +344,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", *_SOPS_FILES])
-    )
-
-
-def matrix(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization) -> Kustomization:
+def matrix(chart: Chart, directory: RenderedDirectory, cnpg: Kustomization) -> Kustomization:
     name = "matrix"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(cnpg),
     )

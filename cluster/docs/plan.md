@@ -27,22 +27,6 @@ editing a route.
 
 ## Next Actions
 
-- [x] **etcd lease-PUT latency / historical control-plane HDD I/O contention.** The
-      structural fix landed on 2026-09-18: etcd now runs on the three NVMe-backed
-      control planes (`ovh-ns104952`, `ovh-ns104963`, `ovh-ns1001419`), and the former
-      KS-5 HDD control plane (`ovh-ns103656`) is a worker. The 2026-06-28 outage and
-      its mitigations remain documented in
-      <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>. Worker-first workload
-      placement, control-plane I/O alerting, and the remaining tofu-runner/augur pins
-      are defense in depth; they are no longer blockers for the etcd-on-NVMe move.
-- [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
-      Forgejo's namespace is Goldilocks-enabled and has a generated
-      `goldilocks-forgejo` VPA, but the VPA control-plane deployments in
-      `kube-system` (`vpa-recommender`, `vpa-updater`,
-      `vpa-admission-controller`) are currently scaled to 0, so no
-      recommendations or automatic updates are happening. Find when/why VPA
-      was disabled, decide whether Goldilocks should be active again, and
-      document the intended mode if it should stay off.
 - [ ] **Wire gecko's bootstrap image to autoprovision (stable `latest` key).**
       gecko's `gecko-root` DataVolume hardcodes a specific
       `bootstrap/<sha>.qcow2` URL, so when that object's SeaweedFS chunks were
@@ -101,48 +85,6 @@ editing a route.
       supposed to survive node-rotation incidents, they should live on
       off-cluster object storage (B2 / R2 / OVH Object Storage / etc.)
       rather than home-hardware SeaweedFS.
-- [ ] **Bring SeaweedFS up properly on every OVH node, or stop claiming we
-      do.** Convention is that every OVH server (workers and CPs) runs a
-      SeaweedFS volume server. As of 2026-06-03 only 3 of 5 do: volume-0 on
-      ovh-ns104952, volume-1 on ovh-ns103656, volume-2 on ovh-ns102453.
-      Gaps: - **ovh-ns103711** (KS-5 CP, ex-kimsufi-worker-1): no volume server
-      AND its `/var/mnt/seaweedfs-data` mount is read-only. Talos
-      `UserVolumeConfig` for `/dev/sdb`+xfs IS in
-      `cluster/terraform/main/ovh-nodes.tf:273-291`, but the volume
-      either never came up post-rename or `/dev/sdb` doesn't exist on
-      this physical server. Currently cordoned (2026-06-03) so the
-      broken local-path-ovh entry stops biting study-casino-db's
-      rebuild. Lying-by-omission: `cluster/cdk8s/local_path_provisioner.py`
-      lists it in `nodePathMap` as if the disk were mounted. - **ovh-ns104963** (KS-GAME worker): disk is fine
-      (`/var/mnt/seaweedfs-data` works — study-casino-db-5 just
-      provisioned there), but no SeaweedFS volume server runs on it.
-
-  Either fix it (diagnose 103711's disk via
-  `talosctl --nodes 10.42.0.14 get uservolumeconfig` / `talosctl ls /var/mnt`,
-  fix the Talos config if needed, then bump Seaweed CR `spec.volume.replicas: 3 → 5` and
-  verify replication converges across all 5 nodes; uncordon
-  ovh-ns103711) or stop claiming the broken state is fine (remove
-  103711 from `nodePathMap` and the topology entirely until it's
-  actually brought up). Pick one. The current half-state is the
-  worst of both — directly caused the study-casino-db migration to
-  stall on a broken-disk node selected by the scheduler. Also fixes
-  `defaultReplication: 001` durability headroom (4-5 volume servers
-  → tolerates 2-node loss instead of just 1).
-
-- [ ] **Diagnose tana-mcp crash-loop** — used to work before the renames.
-      `tana-desktop` container restarts every ~3 min (43+ restarts as of
-      2026-06-02 evening) with exit code 137 on a Chromium renderer
-      subprocess. The `Permission denied (OOM score adjust)` and
-      `Failed to connect to dbus` errors visible in current logs ALSO appear
-      in the previous-pod logs from before today (i.e. they are normal
-      noise, not the cause). The actual regression vs pre-rename must be
-      elsewhere. Possibilities to investigate: (1) the restored profile from
-      volsync backup is corrupted/incomplete — verify against backup file
-      counts, consider a fresh init; (2) startup-ordering bug — tana-desktop
-      may now be racing against `mcp-valkey-ovh` readiness; (3) something
-      about the new node's resource set (CPU model, hugepages, sysctls)
-      differs from the old one. Diff `tana-desktop` logs from a previously
-      working pod against current.
 - [ ] **Eliminate per-node hostname references** in repo files
       (`cluster/cdk8s/local_path_provisioner.py`'s `nodePathMap`,
       `nebula-mesh.json` keys, etc.). Every node rename today requires editing
@@ -208,17 +150,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       domain as the DB, not actually offsite). Set up a real offsite backup of the
       `tfstate` DB — e.g. CNPG `barmanObjectStore` → SeaweedFS S3, or an
       always-on OVH-node CronJob streaming dumps to S3.
-- [ ] **Evaluate lighter registry to replace Harbor** — Harbor (parked 2026-06-02, manifests
-      deleted 2026-08-27 after #4856) was only used for (a) pull-through proxy cache (Docker Hub,
-      GHCR, GCR, Quay, k8s.io) configured as Talos containerd mirrors, and (b) props agent image
-      storage (props now pull from the Forgejo registry). Update 2026-07: phase 1 landed —
-      `oci-cache` (Zot on SeaweedFS S3 + Valkey dedupe, no PVC, unpinned) covers the pull-through
-      role, see <../k8s/oci-cache/README.md>. The authenticated public endpoint is live too
-      (`https://oci-cache.allegedly.works`: HTTPRoute → htpasswd nginx sidecar). Remaining: the
-      Talos containerd mirrors (`machine.registries.mirrors` in `terraform/main/infrastructure.tf`)
-      still name the retired Harbor endpoints (containerd falls back to upstream) and need
-      re-pointing at `oci-cache` — deliberately deferred because machine-config changes reboot
-      nodes — see the oci-cache README § Node-level pull-through.
+- [ ] Repoint Talos containerd mirrors (`machine.registries.mirrors` in
+      `terraform/main/infrastructure.tf`) at `oci-cache`; machine-config changes reboot nodes,
+      so use the maintenance procedure in <../k8s/oci-cache/README.md> § Node-level pull-through.
 
 - [ ] Verify dmeventd thin pool monitoring after wyrm2 reboot: NixOS config changed
       `pkgs.lvm2` → `pkgs.lvm2_dmeventd` so `lvchange --monitor y` actually registers
@@ -233,10 +167,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       itself should decrypt the new token and inject it into the local environment so
       Claude Code sessions work immediately without waiting for the git push + re-source
       cycle.
-- [ ] Require every workload to declare Stakater Reloader explicitly as enabled or
-      intentionally disabled. No implicit default. Enforce via review/docs and
-      add missing `reloader.stakater.com/auto: "true"` or an explicit opt-out
-      comment/setting on existing Deployments, StatefulSets, and Helm releases.
 - [ ] Autopopulate `tf/gitops/dns-records` IP lists from cluster state instead of a
       hand-edited literal. After every `talos-* → ovh-ns*` rename the comments rot
       (none of those rename commits touched the DNS TF) and IPs of nodes whose Cilium
@@ -286,7 +216,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
       wyrm2 VM config purely via NixOS/Proxmox API (no terraform). See postmortem
       `cluster/docs/lessons_learned/2026_04_01_cluster_nuke_postmortem.md`.
-- [ ] Move Flux to Talos inline/extra manifest (CCM already done via `talos-ccm.tf`).
+- [ ] Move Flux to a Talos inline/extra manifest.
       Cilium stays as `null_resource.cilium_bootstrap` (helm CLI) because it is large
       and easier to manage after the k8s API is reachable. Gateway API CRDs could move
       to `extraManifests` (URL fetch) but currently also use `null_resource` for
@@ -323,15 +253,11 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       restarts are boring.
 - [ ] Enable systemd watchdog for kubelet on NixOS workers (`WatchdogSec=` in kubelet
       service unit) — restarts kubelet if it deadlocks
-- [x] NVIDIA GPU monitoring: DCGM exporter DaemonSet + PodMonitor + Grafana dashboard
-      (gnetId 12239) landed in `cluster/k8s/dcgm-exporter/`. Gets power/temp/clocks, PCIe
-      replay counters, and XID-as-a-metric (`DCGM_FI_DEV_XID_ERRORS`) into Mimir (365 d) to
-      characterize the recurring RTX 5090 fall-off events. Alloy auto-scrapes the PodMonitor.
-      Follow-ups: retire the local-CSV `gpu-monitor.nix` poller once Mimir coverage is
-      confirmed; add a per-GPU PCIe AER correctable-error scrape (see
-      `debug/atlas/gpu_lockup_20260718_followups.md` #4). Context:
-      <../../debug/atlas/gpu_lockup_20260718_followups.md>.
-- [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver, now via Alloy)
+- [ ] Confirm DCGM/Mimir captures run-up telemetry over a full RTX 5090 fall-off cycle
+      before retiring the local-CSV `gpu-monitor.nix` poller. `DCGM_FI_DEV_XID_ERRORS` is
+      unsupported on these cards; Xid-79 events are captured through journal → Loki.
+      Optional DCGM experimental-XID and per-GPU PCIe AER work are tracked in
+      `cluster/k8s/TODO.md` (see `debug/atlas/gpu_lockup_20260718_followups.md` #4).
 - [ ] **Roaming node DaemonSet problem** (high priority; recurs for any DaemonSet):
       Offline roaming nodes (iguana/rugged) leave DaemonSet pods Pending, which
       makes Helm `--wait` time out and blocks Flux reconciliation. Current
@@ -388,14 +314,15 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       reachability, and noVNC/xterm.js WebSockets unless Gateway API is separately proven
       to replace all three safely.
 - [ ] Proxmox SPICE proxy routing via cluster ingress
-- [ ] OpenClaw: retain the Authentik identity-aware proxy, but adopt OpenClaw's native
-      `trusted-proxy` auth mode with a narrow proxy source and user allowlist.
+- [ ] OpenClaw: narrow the `trustedProxies` source from `10.0.0.0/8` to the
+      Authentik outpost source(s); the shared gateway config already uses native
+      `trusted-proxy` auth and an `agentydragon` user allowlist.
 - [ ] Ollama: per-user auth (Authentik JWTs or LiteLLM proxy)
 - [ ] LiteLLM: `ollama/` provider drops `tool_calls` — use `openai-chat` variants for now
 - [ ] Verify ntfy.sh notifications
-- [ ] ActivityWatch: replace reflected persistent agent OAuth credentials with
-      short-lived auto-rotated read tokens. The current egress-substituted bearer
-      remains intentionally static until a rotator handoff is designed.
+- [ ] ActivityWatch: replace the static egress-substituted read bearer with a
+      rotator-issued short-lived token. Keep the current static bearer until the
+      rotator handoff is designed.
 
 ## Production Cutover (`agentydragon.com`)
 
@@ -490,9 +417,6 @@ Proxmox-only gap.)
       OVH-hosted PVC or object storage. No such CronJob exists today — the one
       precedent (tofu-state's) was deleted 2026-06-02; see "Set up offsite tofu-state
       backup" in Next Actions.
-- [x] Authentik's OVH-HA cluster uses CNPG-I Barman Cloud with daily base backups,
-      continuous WAL archiving, and 30-day retention in its dedicated SeaweedFS S3
-      bucket (`k8s/authentik/db/`).
 - [ ] Extend CNPG `ScheduledBackup` + Barman to the remaining clusters for continuous
       WAL archiving and point-in-time recovery.
 - [ ] Verify Proxmox ZFS auto-snapshot schedule covers CNPG data directories
@@ -505,15 +429,13 @@ Scheduled backups of PVCs (Forgejo, Loki, Postgres). No backup strategy currentl
 
 Most services lack network policies. Goal: default-deny per namespace.
 
-**Done**: PowerDNS API, Authentik API, Prometheus, plus all proxy-backed services.
-
 **Priority 2 -- Application services**:
 
 - [ ] Ollama, Grafana, Alertmanager, Forgejo, Tempo, Langfuse, Headlamp
 
 **Priority 3 -- Remaining**:
 
-- [ ] Cert-Manager, Metrics Server, ESO webhook, OpenClaw sandbox egress, Props, Nix cache
+- [ ] Cert-Manager, Metrics Server, ESO webhook, Props, Nix cache
 
 ### Scoped Historical Logs for `claude-sandbox`
 

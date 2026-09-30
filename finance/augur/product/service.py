@@ -14,8 +14,8 @@ from typing import Any, overload
 
 import numpy as np
 
-from finance.augur.api.config import SecurityDistributionConfig
-from finance.augur.api.portfolio import PortfolioConfig
+from finance.augur.api.config import LocationConfig, SecurityDistributionConfig
+from finance.augur.api.portfolio import PortfolioConfig, TlhPortfolioSpec
 from finance.augur.api.schemas import ApiModel, Frame
 from finance.augur.api.wire import Property
 from finance.augur.model.exogenous import (
@@ -26,6 +26,7 @@ from finance.augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from finance.augur.model.series import LocationId
+from finance.augur.product.holdings import opening_holdings
 from finance.augur.product.metrics import (
     OutcomeBasis,
     ProductMetricFanSummary,
@@ -36,16 +37,7 @@ from finance.augur.product.metrics import (
     terminal_summary,
 )
 from finance.augur.product.projection import project_product_rollout
-from finance.augur.product.scenarios import (
-    Situation,
-    asset_labels,
-    build_situation,
-    compose,
-    initial_bonds_from_portfolio,
-    initial_lots_from_portfolio,
-    paths,
-    security_distributions_from_portfolio,
-)
+from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, Situation, asset_labels, build_situation, compose, paths
 from finance.augur.product.simulation import execute, project_events, project_product_metrics, simulate_product_metrics
 from finance.augur.product.wire import (
     EndingMetrics,
@@ -62,10 +54,8 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.ids import AgentId, PropertyId
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.quantiles import currency_quantiles
-from finance.augur.sim.scenario import TlhPortfolioSpec
 from finance.augur.sim.world import World
 
 
@@ -79,7 +69,7 @@ class ProductService:
         security_distributions: tuple[SecurityDistributionConfig, ...] = (),
         tlh_portfolios: tuple[TlhPortfolioSpec, ...] = (),
         known_location_ids: Collection[LocationId],
-        locations: dict[LocationId, Location],
+        locations: dict[LocationId, LocationConfig],
         properties_by_id: dict[PropertyId, Property],
         models: dict[str, Sampler],
         max_rollout_samples: int,
@@ -92,7 +82,6 @@ class ProductService:
             raise ValueError(f"result_cache_entries must not be negative; got {result_cache_entries=}")
         if not models:
             raise ValueError("models must contain at least one preset")
-        self._portfolio = portfolio
         self._initial_cash = initial_cash if isinstance(initial_cash, Decimal) else Decimal(str(initial_cash))
         self._primary_agent_id = primary_agent_id
         self._known_location_ids = known_location_ids
@@ -101,12 +90,13 @@ class ProductService:
         self._models = models
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_horizon_months = int(max_horizon_months)
-        self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
-        self._initial_bonds = initial_bonds_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
-        self._security_distributions = security_distributions_from_portfolio(
-            portfolio, security_distributions, tlh_portfolios=tlh_portfolios, primary_agent_id=primary_agent_id
+        self._holdings = opening_holdings(
+            portfolio,
+            security_distributions,
+            tlh_portfolios=tlh_portfolios,
+            primary_agent_id=primary_agent_id,
+            payout_account_id=PRIMARY_ACCOUNT_ID,
         )
-        self._tlh_portfolios = tlh_portfolios
         self._asset_labels = asset_labels(portfolio)
         # Keep one product projection in flight per API process. A dense rollout batch is
         # memory-heavy enough that overlapping fan + terminal requests can exceed the pod limit.
@@ -127,21 +117,21 @@ class ProductService:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
         percentiles = tuple(float(pct) for pct in request.percentiles)
         with self._projection_lock:
-            summary, model_id = self._simulate_product_summary(
+            summary = self._simulate_product_summary(
                 request.scenario, request.rollout_seeds, metric=request.metric, percentiles=percentiles
             )
-            return _metric_fan_response(summary, model_id=model_id, metric=request.metric)
+            return _metric_fan_response(summary, metric=request.metric)
 
     def terminal_distribution(self, request: ProjectionSamplingRequest) -> TerminalDistributionResponse:
         if request.rollout_count > self._max_rollout_samples:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
         percentiles = tuple(float(pct) for pct in request.percentiles)
         with self._projection_lock:
-            summary, model_id = self._simulate_product_summary(
+            summary = self._simulate_product_summary(
                 request.scenario, request.rollout_seeds, metric=request.metric, percentiles=None
             )
             return _terminal_distribution_response(
-                summary, model_id=model_id, metric=request.metric, percentiles=percentiles, seeds=request.rollout_seeds
+                summary, metric=request.metric, percentiles=percentiles, seeds=request.rollout_seeds
             )
 
     def projection_summary(self, request: ProductProjectionRequest) -> ProductProjectionResponse:
@@ -154,14 +144,13 @@ class ProductService:
     def _simulate_projection_summary(self, request: ProductProjectionRequest) -> ProductProjectionResponse:
         fan_percentiles = tuple(float(pct) for pct in request.fan_percentiles)
         terminal_percentiles = tuple(float(pct) for pct in request.terminal_percentiles)
-        summaries, model_id = self._simulate_product_summaries(
+        summaries = self._simulate_product_summaries(
             request.scenario, request.rollout_seeds, metric=request.metric, percentiles=fan_percentiles
         )
         return ProductProjectionResponse(
-            metric_fan=_metric_fan_response(summaries.metric_fan, model_id=model_id, metric=request.metric),
+            metric_fan=_metric_fan_response(summaries.metric_fan, metric=request.metric),
             terminal_distribution=_terminal_distribution_response(
                 summaries.terminal_distribution,
-                model_id=model_id,
                 metric=request.metric,
                 percentiles=terminal_percentiles,
                 seeds=request.rollout_seeds,
@@ -174,7 +163,7 @@ class ProductService:
 
     def _simulate_rollout(self, request: RolloutRequest) -> RolloutResponse:
         seed = int(request.seed)
-        situation, worlds, model_id = self._worlds(request.scenario, (seed,))
+        situation, worlds = self._worlds(request.scenario, (seed,))
         completed = execute(worlds, "dense", self._primary_agent_id)
         projection = project_product_rollout(
             project_events(completed),
@@ -192,7 +181,6 @@ class ProductService:
             for name, arr in monthly_arrays.items()
         }
         return RolloutResponse(
-            model_id=model_id,
             currency_code=projection.currency_code,
             currency_quantum=projection.currency_quantum,
             rollout=RolloutOutput(
@@ -221,19 +209,16 @@ class ProductService:
         if horizon_months > self._max_horizon_months:
             raise ValueError(f"requested horizon {horizon_months} exceeds server max {self._max_horizon_months}")
 
-    def _worlds(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[Situation, Iterator[World], str]:
+    def _worlds(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[Situation, Iterator[World]]:
         """The request's situation, sampled once for every seed; each path's world is composed as it is run."""
         self._validate_scenario_key(scenario_key)
         situation = build_situation(
             scenario_key,
             primary_agent_id=self._primary_agent_id,
             initial_cash=self._initial_cash,
-            initial_lots=self._initial_lots,
+            holdings=self._holdings,
             properties_by_id=self._properties_by_id,
             locations=self._locations,
-            initial_bonds=self._initial_bonds,
-            security_distributions=self._security_distributions,
-            tlh_portfolios=self._tlh_portfolios,
         )
         sampling_request = ExogenousSamplingRequest(
             horizon_months=situation.horizon_months,
@@ -245,7 +230,7 @@ class ProductService:
         )
         sampled = self._models[scenario_key.model_id].sample(sampling_request)
         validate_sample_satisfies_request(sampling_request, sampled)
-        anchors = self._portfolio.level_anchors
+        anchors = self._holdings.portfolio.level_anchors
         sampled = anchor_sampled_series_levels(
             sampled,
             level_series_anchors=anchors.level_series_anchors,
@@ -256,22 +241,22 @@ class ProductService:
             compose(situation, MarketPath(series, rollout_id, rollout_count=len(seeds)))
             for rollout_id in range(len(seeds))
         )
-        return situation, worlds, sampled.model_id or scenario_key.model_id
+        return situation, worlds
 
     @overload
     def _simulate_product_summary(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...]
-    ) -> tuple[ProductMetricFanSummary, str]: ...
+    ) -> ProductMetricFanSummary: ...
 
     @overload
     def _simulate_product_summary(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: None
-    ) -> tuple[ProductTerminalSummary, str]: ...
+    ) -> ProductTerminalSummary: ...
 
     def _simulate_product_summary(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
-    ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
-        situation, worlds, model_id = self._worlds(scenario_key, seeds)
+    ) -> ProductMetricFanSummary | ProductTerminalSummary:
+        situation, worlds = self._worlds(scenario_key, seeds)
         metric_name = _quanta_metric(metric)
         arrays = simulate_product_metrics(
             worlds,
@@ -279,18 +264,15 @@ class ProductService:
             currency=situation.currency,
             primary_agent_id=self._primary_agent_id,
         )
-        summary: ProductMetricFanSummary | ProductTerminalSummary = (
-            terminal_summary(arrays, metric=metric_name)
-            if percentiles is None
-            else metric_fan(arrays, metric=metric_name, percentiles=percentiles)
-        )
-        return summary, model_id
+        if percentiles is None:
+            return terminal_summary(arrays, metric=metric_name)
+        return metric_fan(arrays, metric=metric_name, percentiles=percentiles)
 
     def _simulate_product_summaries(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...]
-    ) -> tuple[ProductProjectionSummaries, str]:
-        situation, worlds, model_id = self._worlds(scenario_key, seeds)
-        summaries = projection_summaries(
+    ) -> ProductProjectionSummaries:
+        situation, worlds = self._worlds(scenario_key, seeds)
+        return projection_summaries(
             simulate_product_metrics(
                 worlds,
                 horizon_months=situation.horizon_months,
@@ -300,7 +282,6 @@ class ProductService:
             metric=_quanta_metric(metric),
             percentiles=percentiles,
         )
-        return summaries, model_id
 
 
 def _detached_copy[ResponseT: ApiModel](response: ResponseT) -> ResponseT:
@@ -334,10 +315,9 @@ def _monthly_fan_frame(summary: ProductMetricFanSummary) -> Frame:
     }
 
 
-def _metric_fan_response(summary: ProductMetricFanSummary, *, model_id: str, metric: MetricName) -> MetricFanResponse:
+def _metric_fan_response(summary: ProductMetricFanSummary, *, metric: MetricName) -> MetricFanResponse:
     return MetricFanResponse(
         basis=summary.basis,
-        model_id=model_id,
         currency_code=summary.currency_code,
         currency_quantum=summary.currency_quantum,
         metric=metric,
@@ -351,16 +331,10 @@ def _metric_fan_response(summary: ProductMetricFanSummary, *, model_id: str, met
 
 
 def _terminal_distribution_response(
-    summary: ProductTerminalSummary,
-    *,
-    model_id: str,
-    metric: MetricName,
-    percentiles: tuple[float, ...],
-    seeds: tuple[int, ...],
+    summary: ProductTerminalSummary, *, metric: MetricName, percentiles: tuple[float, ...], seeds: tuple[int, ...]
 ) -> TerminalDistributionResponse:
     return TerminalDistributionResponse(
         basis=summary.basis,
-        model_id=model_id,
         currency_code=summary.currency_code,
         currency_quantum=summary.currency_quantum,
         metric=metric,

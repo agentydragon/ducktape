@@ -12,11 +12,17 @@ from more_itertools import one
 
 from finance.augur.api.config import Config
 from finance.augur.api.finance import FinanceSnapshot
+from finance.augur.api.portfolio import (
+    HoldingTaxLotConfig,
+    PortfolioAccountConfig,
+    PortfolioConfig,
+    SecurityHoldingConfig,
+    TlhCohort,
+    TlhPortfolioSpec,
+)
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler
-from finance.augur.model.independent import IndependentProviderConfig
-from finance.augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig
 from finance.augur.model.series import (
     HomeValueKey,
     InflationKey,
@@ -42,13 +48,15 @@ from finance.augur.policy.cash_band_household import CashBandHousehold, ManagedS
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product import service
 from finance.augur.product.conftest import MakeProductService
+from finance.augur.product.holdings import Holdings, opening_holdings
 from finance.augur.product.metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.product.scenarios import (
+    PRIMARY_ACCOUNT_ID,
     Home,
     Situation,
     build_situation,
+    locations_by_id,
     resolve_primary_agent_id,
-    sim_locations_from_config,
 )
 from finance.augur.product.simulation import simulate_product_metrics
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
@@ -87,18 +95,13 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId, PropertyId
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedIndexedAmount,
-    PreparedPropertyCashflow,
-    PreparedRecurringPropertyCashflow,
-)
+from finance.augur.sim.market_path import IndexedAmount, MarketPath
 from finance.augur.sim.quantiles import currency_quantiles
-from finance.augur.sim.scenario import InitialLot, TlhCohort, TlhPortfolioSpec
+from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.sim.world import World
+from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig
 
 LOCATION_A = LocationId("location_a")
 TEST_MANAGED = PortfolioId("test-managed")
@@ -171,6 +174,16 @@ def _quanta_int(value: object) -> int:
 
     assert isinstance(value, str)
     return int(value)
+
+
+def _no_holdings(primary_agent_id: AgentId) -> Holdings:
+    return opening_holdings(
+        PortfolioConfig(),
+        (),
+        tlh_portfolios=(),
+        primary_agent_id=primary_agent_id,
+        payout_account_id=PRIMARY_ACCOUNT_ID,
+    )
 
 
 def _home(situation: Situation) -> Home:
@@ -314,18 +327,14 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
 def test_a_holding_no_series_prices_is_refused_where_its_pool_is_declared() -> None:
     world = World(MarketPath((), 0, rollout_count=1), horizon_months=1)
     world.declare_account(
-        PreparedAccount(
-            account=AccountRef(agent_id=AgentId("agent_a"), account_id=AccountId("checking")), opening_balance=0
-        )
+        account=AccountRef(agent_id=AgentId("agent_a"), account_id=AccountId("checking")), opening_balance=0
     )
     with pytest.raises(ValueError, match="missing public security series for 'missing'"):
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=AgentId("agent_a"),
-                account_id=AccountId("checking"),
-                asset_id=AssetId("missing"),
-                quantity_scale=1_000_000,
-            )
+            agent_id=AgentId("agent_a"),
+            account_id=AccountId("checking"),
+            asset_id=AssetId("missing"),
+            quantity_scale=1_000_000,
         )
 
 
@@ -349,7 +358,6 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
         }
     )
     assert counting_model.sample_requests[0].required_private_equity_issuers == frozenset({"private_holding_a"})
-    assert fan.model_id == "composite"
     assert fan.currency_code == "USD"
     assert fan.currency_quantum == "0.01"
     assert fan.metric == "cash"
@@ -387,7 +395,6 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8)]
-    assert terminal_distribution.model_id == "composite"
     assert terminal_distribution.currency_code == "USD"
     assert terminal_distribution.currency_quantum == "0.01"
     assert terminal_distribution.metric == "cash"
@@ -406,7 +413,6 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     detail = product.rollout(_rollout_request(scenario_key))
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,)]
-    assert detail.model_id == "composite"
     assert detail.rollout.seed == 7
     assert detail.currency_code == "USD"
     assert detail.currency_quantum == "0.01"
@@ -451,7 +457,7 @@ def test_fan_and_selected_rollout_metrics_share_one_reducer(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
     seeds = (7, 8)
-    situation, worlds, _model_id = product._worlds(scenario_key, seeds)
+    situation, worlds = product._worlds(scenario_key, seeds)
     metrics = simulate_product_metrics(
         worlds,
         horizon_months=situation.horizon_months,
@@ -468,9 +474,7 @@ def test_fan_and_selected_rollout_metrics_share_one_reducer(
     for name, expected_series in expected_metrics.items():
         if name == "month_index":
             continue
-        summary, _model_id = product._simulate_product_summary(
-            scenario_key, seeds, metric=name, percentiles=percentiles
-        )
+        summary = product._simulate_product_summary(scenario_key, seeds, metric=name, percentiles=percentiles)
         assert summary.failed_count == int((expected_failed >= 0).sum())
         expected_monthly_percentiles = np.asarray(
             [currency_quantiles(month, percentiles) for month in expected_series], dtype=np.int64
@@ -498,7 +502,7 @@ def test_concurrent_fan_and_terminal_requests_run_serially(
 
     def slow_simulate_product_summary(
         scenario: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
-    ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
+    ) -> ProductMetricFanSummary | ProductTerminalSummary:
         nonlocal active_simulations, max_active_simulations
         with active_lock:
             active_simulations += 1
@@ -543,7 +547,6 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     model = ConstantFrameModel(
         levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
         private_equity={issuer_id: PrivateEquityChannels(mark_usd_per_unit=mark_by_rollout)},
-        model_id="pe_mark_by_rollout_fixture",
     )
     product = make_product_service(model)
     scenario = ScenarioKey(
@@ -561,7 +564,6 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     )
 
     assert [request.rollout_seeds for request in model.sample_requests] == [(101, 102, 103)]
-    assert distribution.model_id == "pe_mark_by_rollout_fixture"
     assert distribution.terminal_metric_percentiles == {
         "percentile": [0.0, 50.0, 100.0],
         "value_quanta": [_usd_quanta(value) for value in [10_000.0, 20_000.0, 30_000.0]],
@@ -582,7 +584,6 @@ def test_selected_detail_executes_financially_once(
         ConstantFrameModel(
             levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
             private_equity={IssuerId("private_holding_a"): PrivateEquityChannels(mark_usd_per_unit=25.0)},
-            model_id="flat_selected_detail",
         )
     )
     original = service.execute
@@ -991,7 +992,6 @@ def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_se
                     liquidity_blocked=event_matrix_with_step(default=False, override=True, month=1),
                 )
             },
-            model_id="collapsed_pe_fixture",
         )
     )
 
@@ -1040,7 +1040,6 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
                     ),
                 )
             },
-            model_id="tender_opportunity_fixture",
         )
     )
 
@@ -1143,14 +1142,33 @@ def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_accoun
     """
 
     owner = resolve_primary_agent_id(augur_config)
-    ordinary = InitialLot(
-        lot_id=LotId("test-ordinary"),
-        agent_id=owner,
+    ordinary = SecurityHoldingConfig(
+        position_id="test-ordinary",
         account_id=AccountId("test_ordinary_brokerage"),
-        asset=SecurityKey(symbol=SecuritySymbol("test-other")),
-        purchase_month_index=-12,
-        quantity=10.0,
-        cost_basis=Decimal(1_000),
+        symbol=SecuritySymbol("test-other"),
+        unit_value=Decimal(100),
+        lots=(
+            HoldingTaxLotConfig(
+                lot_id=LotId("test-ordinary"),
+                holding_period_months_at_start=12,
+                quantity=10.0,
+                cost_basis=Decimal(1_000),
+            ),
+        ),
+    )
+    managed = TlhPortfolioSpec(
+        portfolio_id=TEST_MANAGED,
+        owner_agent_id=owner,
+        account_id=AccountId("test_managed_brokerage"),
+        asset=SecurityKey(symbol=SecuritySymbol("test-index")),
+        initial_cohorts=[TlhCohort(value=Decimal(3_000), cost_basis=Decimal(3_000), purchase_month_index=-24)],
+        assumptions=TlhAssumptions(
+            peak_annual_yield=0,
+            floor_annual_yield=0,
+            maturity_decay_exponent=1,
+            drawdown_sensitivity=0,
+            short_term_fraction=1,
+        ),
     )
 
     def lowered(*sleeves: SleeveWeight) -> Situation:
@@ -1164,27 +1182,18 @@ def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_accoun
             ),
             primary_agent_id=owner,
             initial_cash=Decimal(1_000),
-            initial_lots=(ordinary,),
-            properties_by_id=catalog.properties_by_id,
-            locations=sim_locations_from_config(augur_config.locations),
-            tlh_portfolios=(
-                TlhPortfolioSpec(
-                    portfolio_id=TEST_MANAGED,
-                    owner_agent_id=owner,
-                    account_id=AccountId("test_managed_brokerage"),
-                    asset=SecurityKey(symbol=SecuritySymbol("test-index")),
-                    initial_cohorts=[
-                        TlhCohort(value=Decimal(3_000), cost_basis=Decimal(3_000), purchase_month_index=-24)
-                    ],
-                    assumptions=TlhAssumptions(
-                        peak_annual_yield=0,
-                        floor_annual_yield=0,
-                        maturity_decay_exponent=1,
-                        drawdown_sensitivity=0,
-                        short_term_fraction=1,
-                    ),
+            holdings=opening_holdings(
+                PortfolioConfig(
+                    accounts=(PortfolioAccountConfig(account_id=ordinary.account_id, owner_agent_id=owner),),
+                    holdings=(ordinary,),
                 ),
+                (),
+                tlh_portfolios=(managed,),
+                primary_agent_id=owner,
+                payout_account_id=PRIMARY_ACCOUNT_ID,
             ),
+            properties_by_id=catalog.properties_by_id,
+            locations=locations_by_id(augur_config.locations),
         )
 
     situation = lowered(
@@ -1193,7 +1202,7 @@ def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_accoun
     )
     household = situation.household()
     lot = one(situation.lots)
-    assert lot.lot_id == ordinary.lot_id
+    assert lot.lot_id == "test-ordinary"
     assert isinstance(household, CashBandHousehold)
     assert household.sleeves == (
         ManagedSleeve(portfolio_id=TEST_MANAGED, weight=3),
@@ -1404,14 +1413,16 @@ def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
         assert _usd_from_quanta(event.amount_quanta) == pytest.approx(monthly_payment)
         assert int(event.interest_quanta) + int(event.principal_quanta) == int(event.amount_quanta)
 
-    property_taxes = [event for event in detail.rollout.events if event.kind == "property_tax_payment"]
-    monthly_property_tax = 900_000.0 * 0.01 / 12.0
-    assert property_taxes
-    for tax_event in property_taxes:
-        assert isinstance(tax_event, PropertyTaxPaymentEvent)
-        assert _usd_from_quanta(tax_event.amount_due_quanta) == pytest.approx(monthly_property_tax)
-        assert tax_event.amount_paid_quanta == tax_event.amount_due_quanta
-        assert tax_event.shortfall_quanta == _usd_quanta(0.0)
+    # Location A's situs is San Francisco, and the app's month 0 is January 2024. February is the
+    # eighth month of FY 2023-24, billed on the $900,000 price at 1.17769382% with no exemption (the
+    # owner was not there on its lien date): $10,599.24 a year, of which February pays the eighth
+    # cumulative twelfth, $7,066.16 - $6,182.89 = $883.27.
+    [tax_event] = [event for event in detail.rollout.events if event.kind == "property_tax_payment"]
+    assert isinstance(tax_event, PropertyTaxPaymentEvent)
+    assert tax_event.month_index == 1
+    assert tax_event.amount_due_quanta == _usd_quanta(883.27)
+    assert tax_event.amount_paid_quanta == tax_event.amount_due_quanta
+    assert tax_event.shortfall_quanta == _usd_quanta(0.0)
 
 
 def test_product_lowers_primary_residence_assignments_to_housing(
@@ -1440,9 +1451,9 @@ def test_product_lowers_primary_residence_assignments_to_housing(
             scenario,
             primary_agent_id=primary_agent_id,
             initial_cash=Decimal(1200000),
-            initial_lots=(),
+            holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
-            locations=sim_locations_from_config(augur_config.locations),
+            locations=locations_by_id(augur_config.locations),
         )
     )
 
@@ -1481,40 +1492,38 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
             scenario,
             primary_agent_id=primary_agent_id,
             initial_cash=Decimal(1200000),
-            initial_lots=(),
+            holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
-            locations=sim_locations_from_config(augur_config.locations),
+            locations=locations_by_id(augur_config.locations),
         )
     )
 
     rent_transfer = one(
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedRecurringPropertyCashflow)
-        and transfer.cause_id == "rental_income:location_a_property"
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
     )
     assert rent_transfer.property_id == "location_a_property"
-    assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
+    assert isinstance(rent_transfer.amount, IndexedAmount)
     assert rent_transfer.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5 * 0.90))
     assert rent_transfer.amount.series_id == RentKey(location_id=LOCATION_A).wire_id
 
     management_fee = one(
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedRecurringPropertyCashflow)
-        and transfer.cause_id == "management_fee:location_a_property"
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "management_fee:location_a_property"
     )
     assert management_fee.property_id == "location_a_property"
-    assert isinstance(management_fee.amount, PreparedIndexedAmount)
+    assert isinstance(management_fee.amount, IndexedAmount)
     assert management_fee.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5 * 0.90 * 0.08))
 
     leasing_fee = one(
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedPropertyCashflow) and transfer.cause_id == "leasing_fee:location_a_property:m0"
+        if isinstance(transfer.schedule, Once) and transfer.cause_id == "leasing_fee:location_a_property:m0"
     )
     assert leasing_fee.property_id == "location_a_property"
-    assert isinstance(leasing_fee.amount, PreparedIndexedAmount)
+    assert isinstance(leasing_fee.amount, IndexedAmount)
     assert leasing_fee.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5))
 
 
@@ -1549,23 +1558,24 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
             scenario,
             primary_agent_id=primary_agent_id,
             initial_cash=Decimal(1200000),
-            initial_lots=(),
+            holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
-            locations=sim_locations_from_config(augur_config.locations),
+            locations=locations_by_id(augur_config.locations),
         )
     )
 
     rent_transfers = [
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedRecurringPropertyCashflow)
-        and transfer.cause_id == "rental_income:location_a_property"
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
     ]
     assert {transfer.property_id for transfer in rent_transfers} == {"location_a_property"}
-    assert [(transfer.start_month, transfer.end_month) for transfer in rent_transfers] == [(0, 2), (3, 5), (8, 11)]
+    assert [transfer.schedule for transfer in rent_transfers] == [
+        Recurring(start_month=start, end_month=end) for start, end in ((0, 2), (3, 5), (8, 11))
+    ]
     rent_amounts = []
     for rent_transfer in rent_transfers:
-        assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
+        assert isinstance(rent_transfer.amount, IndexedAmount)
         rent_amounts.append(rent_transfer.amount.base_amount)
         assert rent_transfer.amount.series_id == RentKey(location_id=LOCATION_A).wire_id
     assert rent_amounts == [
@@ -1576,34 +1586,38 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
     management_fees = [
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedRecurringPropertyCashflow)
-        and transfer.cause_id == "management_fee:location_a_property"
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "management_fee:location_a_property"
     ]
     assert {transfer.property_id for transfer in management_fees} == {"location_a_property"}
-    assert [(transfer.start_month, transfer.end_month) for transfer in management_fees] == [(0, 2), (3, 5), (8, 11)]
+    assert [transfer.schedule for transfer in management_fees] == [
+        Recurring(start_month=start, end_month=end) for start, end in ((0, 2), (3, 5), (8, 11))
+    ]
     fee_amounts = []
     for management_fee in management_fees:
-        assert isinstance(management_fee.amount, PreparedIndexedAmount)
+        assert isinstance(management_fee.amount, IndexedAmount)
         fee_amounts.append(management_fee.amount.base_amount)
     assert fee_amounts == [
         _quanta_int(_usd_quanta(amount))
         for amount in (6_000.0 * 0.25 * 0.90 * 0.08, 6_000.0 * 0.75 * 0.90 * 0.08, 6_000.0 * 0.5 * 0.90 * 0.08)
     ]
 
-    leasing_fees = sorted(
-        (
-            transfer
-            for transfer in home.cashflows
-            if isinstance(transfer, PreparedPropertyCashflow)
-            and transfer.cause_id.startswith("leasing_fee:location_a_property:")
-        ),
-        key=lambda transfer: transfer.month,
-    )
+    leasing_fees = [
+        transfer
+        for _, transfer in sorted(
+            (
+                (transfer.schedule.month, transfer)
+                for transfer in home.cashflows
+                if isinstance(transfer.schedule, Once)
+                and transfer.cause_id.startswith("leasing_fee:location_a_property:")
+            ),
+            key=lambda fee: fee[0],
+        )
+    ]
     assert {transfer.property_id for transfer in leasing_fees} == {"location_a_property"}
-    assert [transfer.month for transfer in leasing_fees] == [0, 3, 8]
+    assert [transfer.schedule for transfer in leasing_fees] == [Once(month=month) for month in (0, 3, 8)]
     leasing_amounts = []
     for leasing_fee in leasing_fees:
-        assert isinstance(leasing_fee.amount, PreparedIndexedAmount)
+        assert isinstance(leasing_fee.amount, IndexedAmount)
         leasing_amounts.append(leasing_fee.amount.base_amount)
     assert leasing_amounts == [
         _quanta_int(_usd_quanta(amount)) for amount in (6_000.0 * 0.25, 6_000.0 * 0.75, 6_000.0 * 0.5)
@@ -1633,21 +1647,20 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
             scenario,
             primary_agent_id=primary_agent_id,
             initial_cash=Decimal(1200000),
-            initial_lots=(),
+            holdings=_no_holdings(primary_agent_id),
             properties_by_id=catalog.properties_by_id,
-            locations=sim_locations_from_config(augur_config.locations),
+            locations=locations_by_id(augur_config.locations),
         )
     )
 
     rent_transfer = one(
         transfer
         for transfer in home.cashflows
-        if isinstance(transfer, PreparedRecurringPropertyCashflow)
-        and transfer.cause_id == "rental_income:location_a_property"
+        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
     )
     assert rent_transfer.property_id == "location_a_property"
-    assert (rent_transfer.start_month, rent_transfer.end_month) == (3, 5)
-    assert isinstance(rent_transfer.amount, PreparedIndexedAmount)
+    assert rent_transfer.schedule == Recurring(start_month=3, end_month=5)
+    assert isinstance(rent_transfer.amount, IndexedAmount)
     assert rent_transfer.amount.base_amount == _quanta_int(_usd_quanta(4_200.0 * 0.5 * 0.95))
     assert rent_transfer.amount.series_id == RentKey(location_id=LOCATION_A).wire_id
 
@@ -1837,9 +1850,9 @@ def test_build_situation_wires_property_expenses_to_payees(augur_config: Config,
         scenario,
         primary_agent_id=primary_agent_id,
         initial_cash=Decimal(600_000),
-        initial_lots=(),
+        holdings=_no_holdings(primary_agent_id),
         properties_by_id=catalog.properties_by_id,
-        locations=sim_locations_from_config(augur_config.locations),
+        locations=locations_by_id(augur_config.locations),
     )
 
     expense_obligations = [
@@ -1860,10 +1873,10 @@ def test_build_situation_wires_property_expenses_to_payees(augur_config: Config,
     assert [obligation.deductible_fraction_ppb for obligation in expense_obligations] == [250_000_000] * 3
     expense_amounts: list[int] = []
     for obligation in expense_obligations:
-        assert isinstance(obligation.amount_due, PreparedIndexedAmount)
+        assert isinstance(obligation.amount_due, IndexedAmount)
         expense_amounts.append(obligation.amount_due.base_amount)
     assert expense_amounts == [_quanta_int(_usd_quanta(amount)) for amount in (150, 182, 487.50)]
-    assert {opening.account.agent_id for opening in situation.accounts} >= {"hoa", "insurer", "maintenance_vendor"}
+    assert {account.agent_id for account, _ in situation.accounts} >= {"hoa", "insurer", "maintenance_vendor"}
 
 
 def test_property_purchase_emits_homeowners_insurance_at_default_pct(product: service.ProductService) -> None:

@@ -187,8 +187,6 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: public-coder-agent-proxy
   name: public-coder-agent-proxy
@@ -244,8 +242,10 @@ spec:
           ports:
             - containerPort: 8080
               name: proxy
+              protocol: TCP
             - containerPort: 9090
               name: metrics
+              protocol: TCP
           resources:
             limits:
               cpu: 500m
@@ -290,9 +290,11 @@ spec:
   ports:
     - name: proxy
       port: 8080
+      protocol: TCP
       targetPort: 8080
     - name: metrics
       port: 9090
+      protocol: TCP
       targetPort: 9090
   selector:
     app.kubernetes.io/name: public-coder-agent-proxy

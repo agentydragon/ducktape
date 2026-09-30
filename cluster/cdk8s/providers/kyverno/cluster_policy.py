@@ -1,6 +1,7 @@
 """Ergonomic wrapper for Kyverno's `ClusterPolicy`, following cdk8s-plus's own
-construction pattern: a class named after the kind, and named `@classmethod` factories
-grouping a spec fragment's real variant shapes under one type.
+construction pattern: a class named after the kind, and named `@staticmethod` factories
+grouping a spec fragment's real variant shapes under one type, each returning the generated
+struct.
 
 Fields the CRD schema itself leaves untyped (`x-kubernetes-preserve-unknown-fields`) --
 `preconditions`, `validate.deny.conditions`, `mutate.patchStrategicMerge`,
@@ -47,30 +48,22 @@ class Validate:
     `manifests`/`assert` -- add a factory for one the day this repo builds it.
     """
 
-    def __init__(self, spec: ClusterPolicySpecRulesValidate) -> None:
-        self._spec = spec
-
-    def to_spec(self) -> ClusterPolicySpecRulesValidate:
-        return self._spec
-
-    @classmethod
-    def deny(cls, *, message: str, conditions: dict[str, object] | None = None) -> Validate:
+    @staticmethod
+    def deny(*, message: str, conditions: dict[str, object] | None = None) -> ClusterPolicySpecRulesValidate:
         """Denies the request when `conditions` evaluates true, or unconditionally when
         omitted. `conditions` is `deny.conditions`, which the CRD schema leaves untyped
         (`x-kubernetes-preserve-unknown-fields`) -- pass it as a raw dict."""
-        return cls(
-            ClusterPolicySpecRulesValidate(
-                message=message, deny=ClusterPolicySpecRulesValidateDeny(conditions=conditions)
-            )
+        return ClusterPolicySpecRulesValidate(
+            message=message, deny=ClusterPolicySpecRulesValidateDeny(conditions=conditions)
         )
 
-    @classmethod
-    def cel(cls, *, message: str, expressions: Sequence[ClusterPolicySpecRulesValidateCelExpressions]) -> Validate:
+    @staticmethod
+    def cel(
+        *, message: str, expressions: Sequence[ClusterPolicySpecRulesValidateCelExpressions]
+    ) -> ClusterPolicySpecRulesValidate:
         """Denies the request unless every CEL `expressions` entry evaluates true."""
-        return cls(
-            ClusterPolicySpecRulesValidate(
-                message=message, cel=ClusterPolicySpecRulesValidateCel(expressions=list(expressions))
-            )
+        return ClusterPolicySpecRulesValidate(
+            message=message, cel=ClusterPolicySpecRulesValidateCel(expressions=list(expressions))
         )
 
 

@@ -1,9 +1,14 @@
-# One real task with natural compaction after the downloads
+# One real task with natural compaction
 
 September 26, 2026. The user approved replacing the initial uncompacted Mini-SWE
 queue, then directed us to observe compaction during a real eval task rather than
 build a synthetic prerequisite. The initial queue source is retained in commit
-83f4894913; this revision runs Terminus-2. No model-quality result is claimed yet.
+83f4894913; this revision runs Terminus-2. The first Q4 attempt
+[passed with two compactions](../2026-09-26_qwen38_q4_terminus_result/README.md).
+Q5 and IQ4 downloads finished at 04:48 Pacific; the serial IQ4 comparison started
+at 12:10 and [passed the verifier at its eight-hour deadline](../2026-09-26_qwen38_iq4_terminus_result/README.md),
+with three compactions and an agent timeout. The protocol below records how those
+runs were launched.
 Ollama pause PR [8070](https://github.com/agentydragon/ducktape/pull/8070) is merged;
 live replicas were verified zero. No reboot or NixOS activation is involved.
 
@@ -51,6 +56,9 @@ compaction evidence. Do not require two events before accepting a real task resu
 
 ## Resource and stopping rules
 
+The [settings audit](SETTINGS_AUDIT.md) records effective sampling and reasoning-history
+behavior. Future comparisons should distinguish those settings from the original pair.
+
 Q4 server cap: 34 GiB RAM with no extra swap; admission requires 58 GiB available
 host RAM (server cap, two original 4 GiB task/verifier containers, 16 GiB desktop
 reserve). Optional later IQ4 mode uses 24 GiB and requires 48 GiB available. GPU fit targets reserve 8 GiB on the desktop GPU and 2 GiB on the second.
@@ -58,6 +66,16 @@ Every 15 seconds during the attempt, check at least 16 GiB available host RAM, 6
 free desktop VRAM, 1 GiB free second-GPU VRAM, and Ollama paused. A failed check stops
 owned work and records a resource/service interruption, not a model-quality failure.
 These guards reduce contention risk; they do not prove unaffected desktop latency.
+
+The whole Ollama API command is bounded to 10 seconds plus a 1-second kill grace;
+kubectl's own request timeout does not bound repeated discovery requests. After a
+failed check, recheck phase exit and Harbor's final job result before classifying an
+interruption. A finished result releases the server and allows 30 seconds for
+Harbor cleanup before the existing TERM/KILL escalation. A stuck cleanup records
+`cleanup_timeout_after_result`, preserving the result; a child exit status is never
+converted into a model reward. Unfinished work still stops on a failed guard.
+Regression coverage: `bbr test //cluster/docs/inference/runs/2026-09-26_qwen38_queue:guard_test`.
+Tests use isolated child processes and fake service responses, without GPU/cluster access.
 
 Admission has a 24-hour limit from queue start; the user service has a 48-hour overall
 ceiling, low CPU/I/O priority, and no automatic restart. Original real-task limits
@@ -136,4 +154,6 @@ was processing 2,403 tokens. This verifies a real agent/tool roundtrip, not comp
 of the task or compaction. At that check there were zero compaction events.
 Host MemAvailable was about 56 GiB, desktop GPU free memory about 8 GiB, second GPU
 about 2 GiB. Concurrent download hashing/SSD traffic makes these early latency numbers
-unsuitable for a controlled runtime comparison. The original task remains in progress.
+unsuitable for a controlled runtime comparison. This was an early snapshot; the
+[completed result](../2026-09-26_qwen38_q4_terminus_result/README.md) supersedes its
+pending status and records full-run metrics and the post-result wrapper failure.

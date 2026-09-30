@@ -1,0 +1,63 @@
+"""Ducktape's policy for the Namespace kind: the labels Goldilocks and `kyverno/policies.py` read."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from enum import StrEnum
+
+from cdk8s import ApiObjectMetadata
+from cdk8s_plus_34 import Namespace
+from constructs import Construct
+
+_GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
+VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
+
+
+class AgentReadable(StrEnum):
+    """What agents may read in the namespace (`cluster/docs/agent_rbac.md`): the label key
+    `kyverno/policies.py` generates the agent RoleBindings from. LOGS includes METADATA."""
+
+    METADATA = "rbac.ducktape.io/agent-readable-metadata"
+    LOGS = "rbac.ducktape.io/agent-readable-logs"
+
+
+class Vpa(StrEnum):
+    """The VPA Goldilocks keeps for the namespace's workloads. Every member but DISABLED is that
+    VPA's update mode (RECOMMEND only records recommendations), labeled alone: Goldilocks runs
+    on by default (`goldilocks.py`), so only DISABLED labels the namespace `enabled: "false"`."""
+
+    DISABLED = "disabled"
+    RECOMMEND = "off"
+    INITIAL = "initial"
+    AUTO = "auto"
+
+
+_POLICY_LABELS = frozenset({_GOLDILOCKS_ENABLED_LABEL, VPA_UPDATE_MODE_LABEL, *AgentReadable})
+
+
+def namespace(
+    scope: Construct,
+    id: str,
+    *,
+    name: str,
+    vpa: Vpa,
+    agent_readable: AgentReadable | None,
+    labels: Mapping[str, str] | None = None,
+    annotations: Mapping[str, str] | None = None,
+) -> Namespace:
+    """A Namespace labeled for `vpa` and `agent_readable`; `labels` carries any others."""
+    policy: dict[str, str] = (
+        {_GOLDILOCKS_ENABLED_LABEL: "false"} if vpa is Vpa.DISABLED else {VPA_UPDATE_MODE_LABEL: vpa}
+    )
+    if agent_readable is not None:
+        policy[agent_readable] = "true"
+    extra = labels or {}
+    if overlap := extra.keys() & _POLICY_LABELS:
+        raise ValueError(f"{name=}: {sorted(overlap)} are set by vpa and agent_readable, not labels")
+    return Namespace(
+        scope,
+        id,
+        metadata=ApiObjectMetadata(
+            name=name, labels={**extra, **policy}, annotations=None if annotations is None else dict(annotations)
+        ),
+    )

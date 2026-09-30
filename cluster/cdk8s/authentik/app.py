@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -19,32 +19,27 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategy,
     HelmReleaseSpecUpgradeStrategyName,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
-    HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-)
+from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
+from cluster.cdk8s import cilium
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "authentik"
 NAMESPACE = "authentik"
+HOSTNAME = "auth.allegedly.works"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/app"
+HOSTNAME = "auth.allegedly.works"
 _HOST_CONFIG_MAP = "authentik-host"
 _BLUEPRINTS_CONFIG_MAP = "authentik-sso-blueprints"
 _SOPS_SECRETS = (
@@ -58,6 +53,18 @@ _SOPS_SECRETS = (
 _SERVER_LABELS = {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": NAME}
 # Pod ports: 9000 (HTTP), 9443 (HTTPS), 9300 (metrics).
 _HTTP, _HTTPS, _METRICS = 9000, 9443, 9300
+# The chart's server Service, which also serves the embedded proxy outpost.
+SERVER = ServiceRef(
+    name="authentik-server",
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=NAMESPACE, labels=tuple(_SERVER_LABELS.items())),
+    target_port=_HTTP,
+)
+
+
+def oidc_issuer(application: str) -> str:
+    """The issuer of the OAuth2 provider behind the Authentik application with slug `application`."""
+    return f"https://{HOSTNAME}/application/o/{application}/"
 
 
 def _pod_env() -> dict[str, object]:
@@ -72,10 +79,7 @@ def _pod_env() -> dict[str, object]:
             {"secretRef": {"name": "authentik-user-password"}},
         ],
         "env": [
-            {
-                "name": "AUTHENTIK_POSTGRESQL__PASSWORD",
-                "valueFrom": {"secretKeyRef": {"name": db.CREDENTIALS_SECRET, "key": "password"}},
-            }
+            {"name": "AUTHENTIK_POSTGRESQL__PASSWORD", "valueFrom": db.POSTGRES.app_secret.key("password").value_from()}
         ],
     }
 
@@ -118,7 +122,7 @@ def _values() -> dict[str, object]:
     return {
         "global": {
             "deploymentAnnotations": {
-                "secret.reloader.stakater.com/reload": f"{db.CREDENTIALS_SECRET},authentik-user-password",
+                "secret.reloader.stakater.com/reload": f"{db.POSTGRES.app_secret.name},authentik-user-password",
                 "configmap.reloader.stakater.com/reload": _BLUEPRINTS_CONFIG_MAP,
             }
         },
@@ -128,7 +132,7 @@ def _values() -> dict[str, object]:
             # The empty secrets below arrive via envFrom (`_pod_env`) instead.
             "secret_key": "",
             "error_reporting": {"enabled": False},
-            "postgresql": {"host": f"{db.NAME}-rw", "name": db.DATABASE, "user": db.DATABASE, "password": ""},
+            "postgresql": {"host": db.POSTGRES.rw.name, "name": db.DATABASE, "user": db.DATABASE, "password": ""},
             "redis": {"host": ""},
             "bootstrap": {"password": "", "token": ""},
         },
@@ -139,7 +143,7 @@ def _values() -> dict[str, object]:
             # Beside the database: Django issues many serialized queries per request, and an
             # unpinned server once landed at home, 114ms from the OVH primary, where the static
             # OIDC discovery document took ~1.6s. It also made `Home down` take SSO with it.
-            "nodeSelector": dict(db.NODE_SELECTOR),
+            "nodeSelector": dict(db.PLACEMENT.node_selector),
             **_spread("server"),
             # 20 minutes for first-boot migrations: a startup kill mid-migration leaves the
             # connection idle-in-transaction and blocks the next attempt.
@@ -178,17 +182,11 @@ def _values() -> dict[str, object]:
 
 
 def _helm_release(chart: Chart) -> None:
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.goauthentik.io"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://charts.goauthentik.io"),
         chart="authentik",
         version="2026.8.2",
         interval="15m",
@@ -209,7 +207,7 @@ def _host_config_map(chart: Chart) -> None:
         "host",
         metadata=k8s.ObjectMeta(name=_HOST_CONFIG_MAP, namespace=NAMESPACE),
         data={
-            "AUTHENTIK_HOST": "https://auth.allegedly.works",
+            "AUTHENTIK_HOST": f"https://{HOSTNAME}",
             # Cilium Gateway API uses host-network TPROXY, so Gateway hairpins can reach Authentik
             # with the caller's cluster-pod source address instead of the Envoy node address.
             # Authentik 2026.8 otherwise ignores X-Forwarded-Proto and emits HTTP OIDC metadata for
@@ -221,41 +219,32 @@ def _host_config_map(chart: Chart) -> None:
 
 
 def _http_route(chart: Chart) -> None:
-    HttpRoute(
+    https_route(
         chart,
         "route",
-        metadata=metadata(NAME, NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["auth.allegedly.works"],
-            rules=[
-                # Let the operator-owned Haku console (haku.allegedly.works) frame Authentik's
-                # pages, so the agent-authored Haku UI iframe (haku-ui.allegedly.works, a separate
-                # Authentik proxy app) can complete its first-time auth in-frame off the existing
-                # SSO session instead of forcing a separate top-level login. Authentik defaults to
-                # `X-Frame-Options: DENY` and sets no CSP; we swap that for a `frame-ancestors`
-                # whitelist so ONLY the console (and Authentik itself) may frame it — every other
-                # origin still can't. This does not let the framed app act as the console: that is
-                # cross-origin isolation (separate origins/cookies), independent of framing headers.
-                HttpRouteSpecRules(
-                    filters=[
-                        HttpRouteSpecRulesFilters(
-                            type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                            response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                                remove=["X-Frame-Options"],
-                                set=[
-                                    HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
-                                        name="Content-Security-Policy",
-                                        value="frame-ancestors 'self' https://haku.allegedly.works",
-                                    )
-                                ],
-                            ),
-                        )
-                    ],
-                    backend_refs=[HttpRouteSpecRulesBackendRefs(name="authentik-server", port=80)],
-                )
-            ],
-        ),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        hostnames=[HOSTNAME],
+        backend=SERVER,
+        hsts=False,
+        listener=None,
+        # Let the operator-owned Haku console (haku.allegedly.works) frame Authentik's pages, so
+        # the agent-authored Haku UI iframe (haku-ui.allegedly.works, a separate Authentik proxy
+        # app) can complete its first-time auth in-frame off the existing SSO session instead of
+        # forcing a separate top-level login. Authentik defaults to `X-Frame-Options: DENY` and
+        # sets no CSP; we swap that for a `frame-ancestors` whitelist so ONLY the console (and
+        # Authentik itself) may frame it — every other origin still can't. This does not let the
+        # framed app act as the console: that is cross-origin isolation (separate origins/cookies),
+        # independent of framing headers.
+        extra_filters=[
+            RouteFilter.response_header_modifier(
+                remove=["X-Frame-Options"],
+                set=[
+                    HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
+                        name="Content-Security-Policy", value="frame-ancestors 'self' https://haku.allegedly.works"
+                    )
+                ],
+            )
+        ],
     )
 
 
@@ -270,8 +259,8 @@ def _network_policy(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "server-ingress",
-        metadata=metadata("authentik-server-ingress", NAMESPACE),
-        selector=_SERVER_LABELS,
+        metadata=ApiObjectMetadata(name="authentik-server-ingress", namespace=NAMESPACE),
+        endpoint_selector=_SERVER_LABELS,
         ingress=[
             IngressRule.from_gateway(_HTTP, _HTTPS),
             # Outposts sync their config from the server API.
@@ -281,7 +270,7 @@ def _network_policy(chart: Chart) -> None:
             # Grafana OIDC token exchange and Prometheus scraping.
             IngressRule.from_endpoints(_namespace_source("monitoring"), ports=[_HTTP, _METRICS]),
             # Gatus liveness probes.
-            IngressRule.from_endpoints(_namespace_source("gatus"), ports=[_HTTP]),
+            IngressRule.from_endpoints(_namespace_source(cilium.PROBER.namespace), ports=[_HTTP]),
             # The agentplane app and Action Service use the public issuer so discovery returns the
             # canonical external endpoints. When the public hostname resolves to the caller's own
             # node, hostNetwork Gateway hairpin traffic can arrive with the caller's namespace
@@ -301,8 +290,8 @@ def _pod_monitor(chart: Chart) -> None:
     PodMonitor(
         chart,
         "server-podmonitor",
-        metadata=metadata("authentik-server", NAMESPACE),
-        selector=_SERVER_LABELS,
+        metadata=ApiObjectMetadata(name="authentik-server", namespace=NAMESPACE),
+        selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
         # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
         pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
     )

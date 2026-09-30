@@ -103,6 +103,7 @@ spec:
       labels:
         app.kubernetes.io/name: home-assistant
     spec:
+      automountServiceAccountToken: false
       containers:
         - env:
             - name: TZ
@@ -121,6 +122,7 @@ spec:
           ports:
             - containerPort: 8124
               name: backend
+              protocol: TCP
           readinessProbe:
             httpGet:
               host: 127.0.0.1
@@ -152,6 +154,7 @@ spec:
           ports:
             - containerPort: 8123
               name: http
+              protocol: TCP
           readinessProbe:
             httpGet:
               path: /
@@ -214,7 +217,8 @@ spec:
   ports:
     - name: http
       port: 8123
-      targetPort: http
+      protocol: TCP
+      targetPort: 8123
   selector:
     app.kubernetes.io/name: home-assistant
 ---
@@ -235,6 +239,7 @@ spec:
       labels:
         app.kubernetes.io/name: home-assistant-onboarding
     spec:
+      automountServiceAccountToken: false
       containers:
         - command:
             - /homeassistant/provisioner/onboarding/onboard_bin
@@ -317,7 +322,7 @@ metadata:
 data:
   settings.yaml: |
     endpoint:
-      url: http://home-assistant.home-assistant.svc.cluster.local:8123
+      url: http://home-assistant.home-assistant.svc:8123
       client_id: https://home.allegedly.works/
       redirect_uri: https://home.allegedly.works/
     owner_username: ha-local-admin
@@ -528,8 +533,6 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  labels:
-    release: kube-prometheus-stack
   name: home-assistant
   namespace: home-assistant
 spec:

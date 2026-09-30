@@ -10,31 +10,26 @@ Job or its schema.
 
 from __future__ import annotations
 
-from pathlib import Path
+from cdk8s import ApiObjectMetadata, App, Chart, Duration
+from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration
-from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy, Secret
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
-
+from cluster.cdk8s import pod_policy
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
+    RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on,
-    kustomize_kustomization,
 )
-from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
 
 NAME = "clickhouse-schema"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/schema"
 NAMESPACE = "clickhouse"
 SCHEMA_CONFIG_MAP = ConfigMapArgs(name="clickhouse-aiquota-schema", namespace=NAMESPACE, files=[client.SCHEMA_FILE])
-_JOB_NAME = "clickhouse-aiquota-schema-v10"
+_JOB_NAME = "clickhouse-aiquota-schema-v11"
 _LABELS = {
     "app.kubernetes.io/name": NAME,
     "app.kubernetes.io/instance": "clickhouse",
@@ -48,9 +43,9 @@ def chart(app: App) -> Chart:
     job = Job(
         chart,
         "job",
-        metadata=metadata(
-            _JOB_NAME,
-            NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name=_JOB_NAME,
+            namespace=NAMESPACE,
             labels=_LABELS,
             annotations={
                 "description": (
@@ -71,32 +66,21 @@ def chart(app: App) -> Chart:
                 chart,
                 "schema",
                 schema=ConfigMap.from_config_map_name(chart, "schema-ref", SCHEMA_CONFIG_MAP.name),
-                credentials=Secret.from_secret_name(chart, "admin-credentials-ref", "clickhouse-admin-credentials"),
+                credentials=client.ADMIN_CREDENTIALS,
             )
         ],
     )
-    ApiObject.of(job).add_json_patch(runtime_default_seccomp_patch())
+    pod_policy.harden(job)
+    add_fleet_rules(chart)
     return chart
 
 
-def clickhouse_schema(
-    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, clickhouse: Kustomization
-) -> Kustomization:
-    name = NAME
-    out_dir = root / OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    rendered_chart = chart(app)
-    add_fleet_rules(rendered_chart)
-    app.synth()
-
-    kustomization = flux_kustomization(
-        flux_chart, name, artifact, timeout="20m", depends_on=[flux_kustomization_depends_on(clickhouse)]
+def clickhouse_schema(flux_chart: Chart, directory: RenderedDirectory, clickhouse: Kustomization) -> Kustomization:
+    return flux_kustomization(
+        flux_chart,
+        NAME,
+        directory,
+        timeout="20m",
+        # bootstrap-never-converges: the Job's 20m deadline runs from apply and Flux never recreates it.
+        depends_on=[flux_kustomization_depends_on(clickhouse)],
     )
-    write_yaml(
-        out_dir / "kustomization.yaml",
-        # schema.sql stays hand-written; the generator entry renders it into the ConfigMap the
-        # Job mounts. See cluster/docs/cdk8s.md.
-        kustomize_kustomization(resources=[f"{name}.k8s.yaml"], config_map_generator=[SCHEMA_CONFIG_MAP]),
-    )
-    return kustomization

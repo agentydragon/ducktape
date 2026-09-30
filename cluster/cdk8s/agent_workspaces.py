@@ -2,13 +2,11 @@
 namespace, its quota and limits, the codex-lane SandboxTemplate and warm pool, and the janitor.
 Usage: cluster/k8s/agents/agent-sandbox/README.md.
 
-Hand-written beside the output: `image-pins/kustomization.yaml`, which overrides the workspace
-image's `unset` tag.
+The workspace image's tag is the placeholder "unset"; the hand-written `PINS_DIR` Component,
+which the directory includes across the roots, overrides it.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecNetworkPolicyManagement,
@@ -35,42 +33,20 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecVolumeClaimTemplatesSpecResources,
     SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests,
 )
-from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
-    SandboxWarmPool,
-    SandboxWarmPoolSpec,
-    SandboxWarmPoolSpecSandboxTemplateRef,
-    SandboxWarmPoolSpecUpdateStrategy,
-    SandboxWarmPoolSpecUpdateStrategyType,
-)
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from kyverno_cleanuppolicy_crds.io.kyverno import (
-    CleanupPolicy,
-    CleanupPolicySpec,
-    CleanupPolicySpecConditions,
-    CleanupPolicySpecConditionsAll,
-    CleanupPolicySpecConditionsAllOperator,
-    CleanupPolicySpecMatch,
-    CleanupPolicySpecMatchAny,
-    CleanupPolicySpecMatchAnyResources,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import forgejo_images
-from cluster.cdk8s.flux import (
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s import agent_sandbox, forgejo_images, namespaces
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 
 NAME = "agent-workspaces"
 NAMESPACE = "agent-workspaces"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/agent-sandbox/workspaces"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/agent-sandbox/workspaces"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/agent-sandbox/workspaces-image-pins"
 
 
 def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
@@ -85,8 +61,7 @@ def _codex_template(chart: Chart) -> SandboxTemplate:
     return SandboxTemplate(
         chart,
         "codex",
-        name="codex",
-        namespace=NAMESPACE,
+        metadata=ApiObjectMetadata(name="codex", namespace=NAMESPACE),
         network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
         pod_template=SandboxTemplateSpecPodTemplate(
             metadata=SandboxTemplateSpecPodTemplateMetadata(labels={"app.kubernetes.io/name": "agent-workspace"}),
@@ -112,7 +87,7 @@ def _codex_template(chart: Chart) -> SandboxTemplate:
                 containers=[
                     SandboxTemplateSpecPodTemplateSpecContainers(
                         name="workspace",
-                        # image-pins/ sets the tag.
+                        # PINS_DIR sets the tag.
                         image="git.allegedly.works/ducktape-ci/agent-workspace:unset",
                         command=["sleep", "infinity"],
                         working_dir="/workspace",
@@ -181,7 +156,9 @@ def _codex_template(chart: Chart) -> SandboxTemplate:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=NAMESPACE, labels={"name": NAMESPACE}))
+    namespaces.namespace(
+        chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None, labels={"name": NAMESPACE}
+    )
     # Sized for ~a dozen concurrent workspaces (each requests 500m/1Gi + a 10Gi PVC per the
     # workspace SandboxTemplate) plus warm-pool idle capacity.
     k8s.KubeResourceQuota(
@@ -222,65 +199,16 @@ def chart(app: App) -> Chart:
         ),
     )
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
-    codex_template = _codex_template(chart)
     # One pre-warmed codex-lane workspace.
-    SandboxWarmPool(
-        chart,
-        "codex-warm-pool",
-        metadata=metadata("codex", NAMESPACE),
-        spec=SandboxWarmPoolSpec(
-            replicas=1,
-            update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
-            sandbox_template_ref=SandboxWarmPoolSpecSandboxTemplateRef(name=codex_template.name),
-        ),
-    )
-    # Workspaces are ephemeral by contract (same 7-day rule as claude-sandbox's sandbox-janitor):
-    # a Sandbox whose owner forgot shutdownTime (default shutdownPolicy is Retain) would otherwise
-    # pin quota forever. Reaping happens at the CR level, not the pod level -- the controller
-    # recreates a Sandbox's pod, so a pod-level janitor would just cause churn, not cleanup.
-    # Warm-pool sandboxes reaped at 7d are recreated by their pool; that periodic refresh is
-    # harmless. Delete RBAC: kyverno/policies/clusterrole-cleanup-controller-sandboxes.yaml.
-    CleanupPolicy(
-        chart,
-        "janitor",
-        metadata=metadata("workspace-janitor", NAMESPACE),
-        spec=CleanupPolicySpec(
-            schedule="40 * * * *",
-            match=CleanupPolicySpecMatch(
-                any=[
-                    CleanupPolicySpecMatchAny(
-                        resources=CleanupPolicySpecMatchAnyResources(
-                            kinds=["agents.x-k8s.io/v1beta1/Sandbox", "extensions.agents.x-k8s.io/v1beta1/SandboxClaim"]
-                        )
-                    )
-                ]
-            ),
-            conditions=CleanupPolicySpecConditions(
-                all=[
-                    CleanupPolicySpecConditionsAll(
-                        key="{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}",
-                        operator=CleanupPolicySpecConditionsAllOperator.GREATER_THAN,
-                        value="168h",
-                    )
-                ]
-            ),
-        ),
-    )
+    agent_sandbox.warm_pool(chart, "codex-warm-pool", template=_codex_template(chart))
+    janitor(chart, "janitor", name="workspace-janitor", namespace=NAMESPACE, schedule="40 * * * *", kinds=SANDBOX_KINDS)
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml"], components=["./image-pins"]),
-    )
 
 
 def agent_workspaces_app(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_config: Kustomization,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
     agent_sandbox_controller: Kustomization,
     kyverno_policies: Kustomization,
 ) -> Kustomization:
@@ -288,10 +216,10 @@ def agent_workspaces_app(
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            external_secrets_config,
+            external_secrets_operator,
             # CRDs + controller
             agent_sandbox_controller,
             # CleanupPolicy CRD and cleanup-controller permissions

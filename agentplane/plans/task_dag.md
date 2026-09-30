@@ -23,20 +23,20 @@ Proposed execution order for the Thread correctness/UI track:
   deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`), including the current
   model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one runner-owned
   command queue; no app outbox or combined-start expansion in this batch.
-- **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`) and bounded
-  browser state for the deployed thread sync (`THREAD_LAZY_HISTORY`). Compact activity mocks
-  (`THREAD_ACTIVITY_MOCKS`), Sandbox continuation (`THREAD_SUSPEND_RESUME`), and native
+- **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Compact activity
+  mocks (`THREAD_ACTIVITY_MOCKS`), Sandbox continuation (`THREAD_SUSPEND_RESUME`), and native
   resume/recovery remain on the board but are excluded from this dispatch batch.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
-- **Low priority:** adopting harness-native subagents as Threads (`NATIVE_SUBAGENT_THREADS`)
-  and optional app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`).
-  The first view-sync implementation keeps the archive lossless.
+- **Low priority / deferred:** bounded browser cache state (`THREAD_LAZY_HISTORY`, desire D6),
+  adopting harness-native subagents as Threads (`NATIVE_SUBAGENT_THREADS`), and optional
+  app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`). The current
+  view sync lazily loads long content and retains loaded rows/bodies until the Thread closes; it
+  keeps the archive lossless.
 
-The independent Action Service track still has credentialed-provider acceptance (`MCPAUTH`),
-console policy parity (`CONSOLE_POLICIES`), and Haku MCP/tool-approval retirement
-(`MCP_CONSOLE_INTERNAL`, `MCPAGG`, `RETIRE_TOOLS`). Transcript search/lookup (`T3`) remains
-deferred. Priority is not a dependency between these tracks.
+The independent Action Service track still has console policy parity (`CONSOLE_POLICIES`) and Haku
+MCP/tool-approval retirement (`MCP_CONSOLE_INTERNAL`, `MCPAGG`, `RETIRE_TOOLS`). Transcript
+search/lookup (`T3`) remains deferred. Priority is not a dependency between these tracks.
 
 ## DAG
 
@@ -54,7 +54,6 @@ flowchart TB
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
-    MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>refresh, rotation, Kubernetes provider"]:::active
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
     MCP_CONSOLE_INTERNAL["Deferred migration<br/>Console's in-process sandbox and grants servers<br/>sandbox needs Haku's identity; grants a surface"]:::future
     MCPAGG["Capstone<br/>every Console MCP server has an ActionGroup<br/>the aggregator can be retired"]:::milestone
@@ -94,7 +93,7 @@ flowchart TB
     SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    THREAD_LAZY_HISTORY["P1 bounded browser state<br/>evict Thread history outside the reading window<br/>the reader keeps its place"]:::future
+    THREAD_LAZY_HISTORY["Deferred desire D6<br/>bound browser cache after loading<br/>long content remains on demand"]:::future
     THREAD_EVIDENCE_RETENTION["Low-priority design<br/>optional app-wide / per-Thread raw retention<br/>lossless storage remains the default contract"]:::future
     THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
@@ -108,9 +107,7 @@ flowchart TB
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
     NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
-    ACTION_JSON_POLISH["Planned UI polish<br/>draw MCP Action results as the tool answered<br/>#7978 open"]:::future
 
-    MCPAUTH --> PROD
     ELEVATE --> CONSOLE_POLICIES
     ELEVATE -- grants half --> MCP_CONSOLE_INTERNAL
     MCP_CONSOLE_INTERNAL --> MCPAGG
@@ -145,9 +142,9 @@ flowchart TB
 ```
 
 Completed work is off this board: the credentialless MCP vertical, whose deployed Claude/Codex
-proof is the [acceptance suite](../acceptance/README.md), and the first external client, operator
-approval, and Web Push proofs below. Credentialed upstream access is `MCPAUTH`. Input delivery and
-proxy survivability proceed independently of the external-client track.
+proof is the [acceptance suite](../acceptance/README.md), credentialed provider acceptance, and the
+first external client, operator approval, and Web Push proofs below. Input delivery and proxy
+survivability proceed independently of the external-client track.
 
 ### Tested on staging
 
@@ -156,12 +153,17 @@ external harness rather than an Agentplane-hosted one, bound to a labeled Servic
 bindings auto-approved GitHub reads that executed through the operator-linked GitHub upstream; a
 repeated idempotency key was refused and recovered by key; a pending Action was approved by the
 operator through Authentik federation and executed; and a browser push arrived and was decided
-from its buttons. Not tested: upstream refresh, rotation, and the Kubernetes provider (`MCPAUTH`);
-that operator REST and enrollment-management routes are unreachable through the public MCP route;
-and, left to bug reports, the Deny control, grant retention across refresh and restart, negative
-isolation and revocation for an external client, duplicate Decision or Execution under retries or
-reconnect, push subscription revocation, unavailable-push and SSE fallbacks, and Web Push
-reconciliation after reconnect.
+from its buttons. Not tested: that operator REST and enrollment-management routes are unreachable
+through the public MCP route; and, left to bug reports, the Deny control, grant retention across
+refresh and restart, negative isolation and revocation for an external client, duplicate Decision or
+Execution under retries or reconnect, push subscription revocation, unavailable-push and SSE
+fallbacks, and Web Push reconciliation after reconnect.
+
+Credentialed provider acceptance -- upstream token refresh and refresh failure, rotation without
+rebuilding the executor, and the Kubernetes provider -- closed on 2026-09-28 on the operator's call
+rather than a recorded run, so what breaks there arrives as a bug report. The implemented contract is
+the [service README](../action_service/README.md); bringing the node back means restoring its edge
+to `PROD`, not inventing one.
 
 The external-client track is complete and single-operator: Identity (configured authority),
 Connection (runtime named client enrollment), and Thread (execution/conversation state), with no
@@ -169,8 +171,7 @@ multi-operator management or per-operator ownership model. A Connection binds to
 the principal policies bind to; backend credentials are the ActionGroup executor's auth modes
 ([MCP executor transports](../action_service/README.md#mcp-executor-transports)), shared by every
 caller of the group, and no linked token, static bearer, or kubeconfig reaches the MCP
-client, Sandbox, transcript, or Action prompt; outbound account OAuth remains `MCPAUTH`. Generic
-tool discovery stays compact; a client that needs more opts into a schema or description per
+client, Sandbox, transcript, or Action prompt. Generic tool discovery stays compact; a client that needs more opts into a schema or description per
 Action. What remains of the Haku Console cutover is Action Service counterparts for its
 in-process servers (`MCP_CONSOLE_INTERNAL`), policy parity (`CONSOLE_POLICIES`), and retiring the
 aggregator (`MCPAGG`, `RETIRE_TOOLS`).
@@ -291,10 +292,11 @@ identity of a shell somebody can run arbitrary commands in.
 
 What exists today (<../../cluster/cdk8s/agentplane/actions_staging_policies.py>, which lists each
 policy and set with why it is there): the labelled ServiceAccount with
-`automountServiceAccountToken: false`, an `EgressBinding` to the basic and Kubernetes policies plus
-read-only and credentialed ones, and an `ActionPolicyBinding` auto-approving reviewed reads plus the
-whole `sandbox-self` set. Its Kubernetes authority is the cluster-wide
-`cluster-diagnostics-reader` ClusterRoleBinding (`cluster/generated/agents/shared-rbac/`), reads of
+`automountServiceAccountToken: false`, an `EgressBinding` to the basic policy -- which carries the
+API server rule every sandbox is granted (egress.py) -- plus read-only and credentialed ones, and
+an `ActionPolicyBinding` auto-approving reviewed reads plus the whole `sandbox-self` set. Its
+Kubernetes authority is the cluster-wide `cluster-diagnostics-reader`
+ClusterRoleBinding (`cluster/generated/agents/shared-rbac/`), reads of
 non-sensitive cluster state, plus the metadata and pod-log readers Kyverno generates in namespaces
 labelled `agent-readable-*`, plus `get` on one Secret: the view-only Coinbase key its sandboxes
 sign with, since the proxy cannot. The verified Kubernetes evidence from a sandbox is still a
@@ -323,9 +325,7 @@ bearer for a group does not.
 Still to decide: the roles themselves; whether the Kubernetes egress rule should stay an
 all-verbs, all-paths admission once RBAC is what bounds it; and whether the GitHub reads a
 Connection may auto-approve should also be what a sandbox of this account reaches, since the
-`EgressBinding` and the `ActionPolicyBinding` are separate grants that nothing keeps consistent
-(there is a `TODO(github-egress)` at the binding site, with the two things that question has to
-settle).
+`EgressBinding` and the `ActionPolicyBinding` are separate grants that nothing keeps consistent.
 
 **Acceptance:** a stated, reviewed authority for the account, rendered by the generator rather than
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is
@@ -403,20 +403,21 @@ another route replaces it.
   `argument_schema` set over a `grants` ActionGroup; but the grant model itself is console-owned,
   so this waits on the Action Service having its own grant surface, not on a kind.
 
-  **Do not confuse this with policy introspection, which is already done.** An agent can read the
-  policy that applies to it today -- `get_action_policy(target=SELF)` on the MCP frontend, built
-  from the same `resolve_bindings` admission uses, so what it reports and what a Decision
-  auto-decides cannot drift. What the console's `grants` tools introspect is something else: grants,
-  meaning access that expires. `grants_whoami`, `grant_self_list`, `kubernetes_can_i`, `get_grant`
+  **Keep policy introspection separate from grant introspection.**
+  `get_action_policy(target=SELF)` reports the policy applied to the caller using the same
+  `resolve_bindings` source admission uses, so reported and enforced decisions cannot drift.
+  The console's `grants` tools inspect something else: expiring access. `grants_whoami`, `grant_self_list`, `kubernetes_can_i`, `get_grant`
   and `revoke_grants` are all that surface, and what they wait on is **temporary grants**, which is
   `ELEVATE` -- a caller asking for a set plus an `expiresAt`, approval writing the
   `ActionPolicyBinding` with that expiry. `BindingSpec.expires_at` already exists, so what is
   missing is the request-and-approve flow, not the storage.
 
-- **Schema auto-denial** (`autoDenyIf` equivalent): the console records a call whose arguments
+- **Schema auto-denial** (was: `autoDenyIf` equivalent): the console records a call whose arguments
   fail the registered tool schema as born-denied. The Action Service refuses such a request at
-  admission before persisting anything, so the audit row the console keeps does not exist here;
-  matching it needs `DENY_LISTS` and a recorded, denied Decision for the schema miss.
+  admission before persisting anything, so the audit row the console keeps does not exist here.
+  This is **not** a denial rule and does not wait on `DENY_LISTS`: the request never reached a
+  policy, so what is missing is a durable record of an admission rejection, not a policy kind that
+  denies it. Give it its own node when `CONSOLE_POLICIES` needs it.
 
 **The composition layer, which the list above omits.** What is actually bound to an agent is the
 `any_of` bundles `public_coder_v1` and `haku_v1`, and `manual_review`, which is `type: never`.
@@ -556,18 +557,6 @@ command receipts for a child. Read-only inspection may be the first useful slice
 independent input, interrupt, model control, and resume are separate evidence-gated
 capabilities. Nothing in the current delivery/UI batch depends on this.
 
-### `MCPAUTH` — credentialed MCP account and OAuth boundary
-
-Operator-linked OAuth upstreams are implemented ([service README](../action_service/README.md)),
-and staging's GitHub upstream has been linked, discovered, and executed against (§ Tested on
-staging).
-
-**Remaining acceptance:** on the staging GitHub provider, refresh without MCP calls, observe
-refresh failure and degraded/reconnect behavior, and prove token rotation is used without
-rebuilding the executor; then add Kubernetes provider acceptance; preserve negative isolation for
-an unbound or different account. This milestone is not folded into the credentialless fixture
-test.
-
 ### `ELEVATE` — agent-requested temporary permission
 
 **Planned behavior:** a caller that knows it will need an Action outside its current policy asks
@@ -596,7 +585,7 @@ reclassified as search implementation by this deferral.
 **Deferred design:** choose per-system whether an Action uses the Agent's delegated identity, a
 brokered operator credential, or a hybrid. Keep target-side RBAC and egress enforcement authoritative;
 use grants/revocation reconciliation where a broker mints delegated authority. This is the broader
-external-access policy behind `MCPAUTH` and the SSH MCP server, not a prerequisite for the completed credentialless MCP vertical.
+external-access policy behind the operator-linked providers and the SSH MCP server, not a prerequisite for the completed credentialless MCP vertical.
 The [external-access design](external_access.md) is the source of truth for these choices;
 its [Kubernetes decisions](external_access.md#kubernetes-sandbox-access-decisions) also
 cover `SANDBOX_RBAC`, separately from that task's Sandbox/preset UI and lifecycle wiring.
@@ -706,11 +695,13 @@ _Retire, once the production path is proven and rollback is available:_
 
 - `cluster/cdk8s/public_coder_proxy.py` and everything it renders into
   `cluster/k8s/agents/public-coder-agent/proxy/` — the dedicated iron-proxy for this agent, which is
-  an OpenClaw instance (`ghcr.io/agentydragon/openclaw`, configured by
+  an OpenClaw instance (`git.allegedly.works/ducktape-ci/public-coder-agent`, configured by
   `cluster/cdk8s/public_coder_agent_config.py`); the proxy is what lets it hold placeholders instead
   of real credentials. It renders the Deployment, Service, `iron.yaml` substitution rules, the
   `public-coder-agent-proxy-root-ca` Certificate and its trust Bundle, the ingress and egress
   CiliumNetworkPolicies and the ExternalSecrets; `proxy/image-pins/` beside them is hand-written.
+  One of those ExternalSecrets, `forgejo-images-creds`, is also the agent Deployment's and the
+  namespace `default` ServiceAccount's image pull secret: move it, don't delete it.
 - The placeholder contract in `cluster/cdk8s/public_coder_agent_config.py`: the agent is handed the
   placeholder of every credential the proxy substitutes (`public_coder_proxy`'s `*_PLACEHOLDER`
   constants) and told the contract, because only the sibling proxy performs the swap. Whatever
@@ -934,6 +925,9 @@ Do not merely enable the composer against a dead session, create a replacement T
 or treat a fresh harness without the original context as a successful resume. Missing
 recovery state must be explicit. This does not introduce offline command admission or
 automatic replay of unsettled predecessor commands (`THREAD_SUCCESSOR_DELIVERY`).
+For this first implementation, the acceptance scope starts from an idle harness after a
+completed turn. Recovery of an in-flight turn, including tool calls aborted by harness
+shutdown, is deferred for a later design and implementation pass.
 
 Add integration and deployed acceptance for both Claude and Codex: create at least two
 Threads in one fixture Sandbox, complete a turn in each, suspend until the old Pod is
@@ -942,8 +936,7 @@ and retained context with exact mocked-LLM request assertions; deployed acceptan
 observe new input confirmation and a completed reply, not just a Ready Pod. Verify
 monotonic replay without duplicate history and no cross-Thread routing/context mix-up.
 Add focused frontend coverage that the original page and a reloaded page both recover
-from the ended attachment and can send successfully. Cover in-flight suspension
-separately with explicit pending-command outcomes. Use owned test fixtures, not the
+from the ended attachment and can send successfully. Use owned test fixtures, not the
 operator's affected Thread. Archive-before-deletion work does not gate this regression.
 
 ### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
@@ -972,6 +965,14 @@ truthful failure reporting, and recovery without invented or duplicated command 
 This investigation does not block current container correctness work.
 
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
+
+**Deferred identity decision:** decide whether the app's `thread_id` and the runner's persistent
+`session_id` should share one stable identity. Carrying two IDs for one conversation across UI,
+HTTP, and resume paths can suggest that resuming creates a new session. A shared identity could make
+the conversation identity consistent end to end; separate IDs may still be right for the app's
+product identity versus the runner's storage/recovery ownership. Record the choice and its rationale
+in the identity cutover. This decision does not change the immediate rule: shutdown/resume reopens
+the same runner session under the same Thread.
 
 **Identity/storage cutover:** implement
 [one high-water mark per Event log](../docs/thread_layering.md#one-event-high-water-mark-per-log-across-harness-sessions):
@@ -1004,8 +1005,8 @@ app admission policy. No automatic cross-successor replay is implied.
 ### `PROD` — production-capable governed action execution
 
 **Milestone:** a production Agentplane instance, distinct from staging, governing Actions for real
-operator work; `PC_EGRESS` needs the same instance. Gated on `MCPAUTH`'s remaining upstream
-acceptance; `T3` is product work that lands on it, not a prerequisite. What "production-capable"
+operator work; `PC_EGRESS` needs the same instance. Its former gate on credentialed-provider
+acceptance has cleared; `T3` is product work that lands on it, not a prerequisite. What "production-capable"
 requires beyond the staging deployment is not defined.
 
 ### `THREAD_OUTLIVES_SANDBOX` — a Thread lifecycle beyond its Sandbox
@@ -1129,15 +1130,14 @@ Verify the relay-retention change from [#7035](https://github.com/agentydragon/d
 on its deployed image before removing this task; its gated service-consumer test
 demonstrates the cancellation mechanism, not the original staging attempt's packet order.
 
-### `THREAD_LAZY_HISTORY` — bounded history in a long-open tab
+### `THREAD_LAZY_HISTORY` — deferred browser-cache bound (D6)
 
-The thread store evicts nothing: a tab keeps every row and body it has loaded until the thread
-closes, which fails **P10** of the [thread sync requirements](../docs/thread_sync_requirements.md).
-Evict rows and bodies outside the reading window while the reader keeps its place, and hold the
-tail and the reading window independently so that moving between them loads none of the history in
-between ([§ Retained browser state](../docs/thread_view_sync.md#retained-browser-state)). The
-eviction rule and its done-when are in the [thread sync plan](thread_sync/README.md), with the rest
-of the open Electric work.
+The thread store retains every row and body it has loaded until the Thread closes. Long content is
+loaded on demand, and the owner accepts this cache growth for the current product slice; bounded
+browser state is not an acceptance gate. If resource pressure justifies revisiting D6, evict rows
+and bodies outside the reading window while preserving the reader's place. The proposed design and
+future evidence are in [Thread view synchronization](../docs/thread_view_sync.md#accepted-browser-cache-state-d6)
+and the [Thread sync plan](thread_sync/README.md).
 
 ### `THREAD_EVIDENCE_RETENTION` — optional raw capture
 
@@ -1183,16 +1183,6 @@ side rather than a third hand-rolled implementation.
 
 **No dependency** on the UI-shell cluster above; ships independently, one tab/page at a time.
 
-### `ACTION_JSON_POLISH` — parse the MCP content-block shape in Action results
-
-**Remaining, in #7978 (draft):** an MCP tool call's `execution.result` is its `CallToolResult`
-(`{"content": [{"type": "text", "text": <json-encoded string>}, ...], "structuredContent": ...,
-"isError": ...}`), and the history card dumps it through `JsonView` (`actions_history.tsx`). Parse
-a JSON string sitting in a text block's `text` rather than leaving it double-encoded, so it renders
-as structure instead of one escaped-quote wall of text, and render image blocks as images.
-
-**No dependency** on the UI-shell cluster; ships independently.
-
 ## Deferred work
 
 Real work items, parked. Most are here because they had no edge of any kind -- not a hard
@@ -1205,7 +1195,7 @@ own text instead, so bringing one back means restoring an edge rather than inven
 - **`SSHDURABLE`** — durable SSH-backed processes
 - **`PROFILES`** — cross-cutting capability profiles
 - **`BB`** — BuildBuddy hosted-run credential boundary
-- **`DENY_LISTS`** — `autoDenyIf` and `autoDenyUnless`
+- **`DENY_LISTS`** — denial rules for `ActionPolicySet`
 - **`THREAD_BROWSE_PAGINATE`** — paginated/searchable all-threads page
 - **`CONTROL_STATE`** — dynamic runtime control acceptance
 - **`LIVE_CLEAN`** — executor heartbeat retention cleanup
@@ -1253,16 +1243,41 @@ BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy creden
 gateway). The boundary, wire shape and required evidence are in
 [`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
 
-### `DENY_LISTS` — `autoDenyIf` and `autoDenyUnless`
+### `DENY_LISTS` — denial rules for an `ActionPolicySet`
 
-**Deferred behavior:** an `ActionPolicySet` carries three lists and only `autoApproveIf` decides
-today; the CRD accepts `autoDenyIf` and `autoDenyUnless` and evaluation ignores them. Their
-semantics are settled in the [action policies design](../docs/action_policies.md): a request matching any
-`autoDenyIf` policy is auto-denied, one matching none of the `autoDenyUnless` policies is
-auto-denied, deny wins over approve, and a request matching nothing takes the human path.
-`autoDenyIf` first, when an Action needs it; `autoDenyUnless` later. Nothing waits on this; the
-console policy that needs it (schema misses recorded as denied Decisions) is under
-`CONSOLE_POLICIES`.
+**Consider adding, do not add by reflex.** A set carries one list, `autoApproveIf`, and what it does
+not match waits for a human. It used to carry `autoDenyIf` and `autoDenyUnless` too: parsed,
+validated, reported to callers and to the Sandbox page, and evaluated by nothing. Those fields are
+removed; the reasoning is the [action policies design](../docs/action_policies.md) § Rejected. A set
+whose spec adds a deny list later is a non-breaking `v1alpha1` change, so nothing is reserved here.
+
+Two things a deny list would obviously be reached for are **not** deny lists, and should be built
+without one:
+
+- **Hiding an Action the operator will never approve** (Haku's old steering denial of the GitHub
+  Copilot delegation tools). A policy denial still advertises the tool, still costs a submit and a
+  round-trip, and teaches the agent that routing around is worth trying. That is a per-group tool
+  denylist over catalog discovery and admission -- already noted in
+  [`action_service/TODO.md`](../action_service/TODO.md) with the same example -- and the catalog
+  already carries `available` and per-group health to hang it on.
+- **A broad set minus one carve-out.** Because a policy set is the _shared_ unit and a carve-out is
+  about one subject, this belongs on the `ActionPolicyBinding`, not the set; and evaluation unions
+  across every set of every binding, so it cannot be expressed against the set today. If a real
+  case ever needs it, the deny field goes on the binding.
+
+`autoDenyUnless` should not come back as a policy field at all. "Deny me anything outside this
+list" is a caller saying how much operator attention it is willing to spend, which is a
+request-side flag -- the shape `submit_decided` already refuses with for direct tools -- not an
+operator-authored authorization rule.
+
+**Open question a re-add has to settle first:** whether a deny that wins over approve is even
+compatible with evaluate-once. `autoDenyIf` was specced to dominate `autoApproveIf`, so a set edit
+could deny what an earlier revision approved; that is fine, since each request decides from one
+snapshot. But a deny on a _binding_ joined to a subject that also holds an approved, unclaimed
+Execution is a different object's decision than the one that allowed it, and dispatch re-checks
+caller authority only. Say which of the two the deny is allowed to reach.
+
+Nothing waits on this.
 
 ### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
 

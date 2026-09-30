@@ -51,7 +51,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":certificate",
-        "//cluster/cdk8s:metadata",
+        "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )
@@ -62,6 +62,17 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":clusterissuer",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "cert_manager_bundle",
+    srcs = ["bundle.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":bundle",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],

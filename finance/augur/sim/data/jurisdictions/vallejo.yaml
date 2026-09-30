@@ -1,0 +1,15 @@
+# City of Vallejo, a charter city in Solano County.
+jurisdiction_id: vallejo
+parent: california
+
+# Vallejo Municipal Code section 3.10.020 (codified through Ordinance No. 1885 N.C. (2d), December
+# 16, 2025): a tax on each transfer of real property in the city "when the value of the
+# consideration exceeds one hundred dollars, the tax to be at the rate of one dollar and sixty-five
+# cents for each five hundred dollars, or fractional part of five hundred dollars, of the value of
+# the consideration", counting indebtedness the property remains subject to. Section 3.10.030 makes
+# the transferor and transferee jointly and severally liable.
+# https://library.municode.com/ca/vallejo/codes/municipal_code?nodeId=TIT3REFI_CH3.10REPRCOTA
+transfer_tax:
+  per: 500
+  brackets:
+    - { lower: 100, lower_included: false, rate: "1.65" }

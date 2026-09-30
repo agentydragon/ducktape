@@ -1,6 +1,6 @@
 """Derive empirical going-public CDF anchors from mirrored prediction-market prices.
 
-The PE realization-risk model (`augur.model.private_equity_risk`) accepts a
+The PE realization-risk model (`augur.x.models.private_equity_risk`) accepts a
 ``public_market_cdf_anchors`` vector: (month-from-sim-start, P(public by month)) pairs
 that pin down a front-loaded, saturating IPO-prior CDF. This module turns a curated
 catalog's ``ipo_by_date`` markets into exactly that vector, so the market term
@@ -28,7 +28,7 @@ from finance.augur.calibration.catalog import IpoByDateMapping, MarketCatalog
 from finance.augur.calibration.evidence_clients import EvidenceMarketReader
 from finance.augur.calibration.platform import PriceClient
 from finance.augur.calibration.resolvers import months_after
-from finance.augur.model.private_equity_risk import PublicMarketCdfAnchor
+from finance.augur.x.models.private_equity_risk import PublicMarketCdfAnchor
 from finance.evidence.checkout import ensure_checkout
 from finance.evidence.markets import Platform
 

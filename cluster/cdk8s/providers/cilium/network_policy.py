@@ -229,7 +229,7 @@ def fqdn_fence(
 class NetworkPolicy(_CiliumNetworkPolicy):
     """Cilium's `CiliumNetworkPolicy`, following cdk8s-plus's own construction pattern: a class
     named after the kind, constructed as `NetworkPolicy(scope, id, ...)`. A `dict[str, str]`
-    `selector` is a plain-labels shorthand for `CiliumNetworkPolicySpecEndpointSelector`.
+    `endpoint_selector` is a plain-labels shorthand for `CiliumNetworkPolicySpecEndpointSelector`.
     """
 
     def __init__(
@@ -238,13 +238,13 @@ class NetworkPolicy(_CiliumNetworkPolicy):
         id: str,
         *,
         metadata: ApiObjectMetadata,
-        selector: dict[str, str] | CiliumNetworkPolicySpecEndpointSelector,
+        endpoint_selector: dict[str, str] | CiliumNetworkPolicySpecEndpointSelector,
         ingress: Sequence[CiliumNetworkPolicySpecIngress] | None = None,
         egress: Sequence[CiliumNetworkPolicySpecEgress] | None = None,
         egress_deny: Sequence[CiliumNetworkPolicySpecEgressDeny] | None = None,
     ) -> None:
-        if isinstance(selector, dict):
-            selector = CiliumNetworkPolicySpecEndpointSelector(match_labels=selector)
+        if isinstance(endpoint_selector, dict):
+            endpoint_selector = CiliumNetworkPolicySpecEndpointSelector(match_labels=endpoint_selector)
         # Cilium matches toFQDNs only against answers its DNS proxy saw, and the proxy sees only the
         # queries a DNS rule covers. Without one, the toFQDNs rules admit nothing, and connections to
         # those hosts time out instead of failing.
@@ -255,7 +255,7 @@ class NetworkPolicy(_CiliumNetworkPolicy):
             id,
             metadata=metadata,
             spec=CiliumNetworkPolicySpec(
-                endpoint_selector=selector,
+                endpoint_selector=endpoint_selector,
                 ingress=list(ingress) if ingress is not None else None,
                 egress=list(egress) if egress is not None else None,
                 egress_deny=list(egress_deny) if egress_deny is not None else None,

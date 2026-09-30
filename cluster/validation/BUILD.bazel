@@ -124,6 +124,7 @@ py_library(
     deps = [
         ":cluster",
         ":k8s",
+        "//cluster/cdk8s:manifest_roots",
     ],
 )
 
@@ -307,8 +308,6 @@ py_test(
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_bootstrap_files",
         "//cluster/k8s:flux_system_files",
-        "//cluster/k8s/agents/ha-mcp/app:manifests",
-        "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
@@ -427,8 +426,6 @@ py_test(
         "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_system_files",
-        "//cluster/k8s/agents/ha-mcp/app:manifests",
-        "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",

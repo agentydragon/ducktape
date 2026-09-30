@@ -12,10 +12,9 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
@@ -23,37 +22,36 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-    HttpRouteSpecRulesMatches,
-    HttpRouteSpecRulesMatchesPath,
-    HttpRouteSpecRulesMatchesPathType,
 )
 
-from cluster.cdk8s import cnpg
+from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/study-casino"
 _NAME = "study-casino"
 _NAMESPACE = "study-casino"
-_PORT = 8080
-_DB_NAME = "study-casino-db"
+_SERVICE = ServiceRef(
+    name=_NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+)
+POSTGRES = cnpg.PostgresRef.generated(name="study-casino-db", namespace=_NAMESPACE)
+_OIDC = SecretRef(namespace=_NAMESPACE, name="study-casino-oidc")
 _DATABASE = "studycasino"
 _REGION = "hil"
 _IMMUTABLE = "public, max-age=31536000, immutable"
 # image-pins/ overrides the tag and copies it into STUDY_CASINO_IMAGE_TAG.
 _PLACEHOLDER_TAG = "unset"
-_LABELS = {"app.kubernetes.io/name": _NAME}
 
 _PROVISIONER_SCRIPT = textwrap.dedent(
     """\
@@ -70,18 +68,14 @@ _PROVISIONER_SCRIPT = textwrap.dedent(
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
+    namespaces.namespace(
         scope,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "name": _NAMESPACE,
-                # Single-pod personal app; opt out of Goldilocks/VPA recommendations.
-                "goldilocks.fairwinds.com/enabled": "false",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
+        name=_NAMESPACE,
+        # Single-pod personal app; opt out of Goldilocks/VPA recommendations.
+        vpa=Vpa.DISABLED,
+        agent_readable=AgentReadable.LOGS,
+        labels={"name": _NAMESPACE},
     )
 
 
@@ -89,14 +83,13 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name=_DB_NAME,
-        namespace=_NAMESPACE,
+        ref=POSTGRES,
         annotations={"description": "CNPG Postgres for study-casino state."},
         # 3 instances, one per OVH SSD (control-plane) node. Tolerates 1-node loss without read-quorum or
         # primary-availability impact.
         instances=3,
         image_name=None,
-        node_selector={"topology.kubernetes.io/region": _REGION},
+        placement=node_scheduling.Placement(node_selector={"topology.kubernetes.io/region": _REGION}),
         storage_class="local-path-ovh-ssd",
         size="1Gi",
         # Declaratively-managed roles. CNPG creates `study_casino_ro` on first
@@ -115,8 +108,8 @@ def _database(scope: Construct) -> None:
                 )
             ]
         ),
-        # CNPG auto-generates credentials in secret study-casino-db-app
-        initdb=ClusterSpecBootstrapInitdb(database=_DATABASE, owner=_DATABASE),
+        initdb=cnpg.same_owner_initdb(_DATABASE),
+        wal_archive=False,
     )
 
 
@@ -151,6 +144,7 @@ def _readonly_provisioner(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels={"app": "study-casino-db-readonly-provisioner"}),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     restart_policy="Never",
                     node_selector={"topology.kubernetes.io/region": _REGION},
                     containers=[
@@ -163,19 +157,9 @@ def _readonly_provisioner(scope: Construct) -> None:
                             env=[
                                 # Run as the database owner. Object-level GRANTs only need owner
                                 # privileges, not superuser; this lets us drop enableSuperuserAccess.
-                                k8s.EnvVar(
-                                    name="PGUSER",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(name=f"{_DB_NAME}-app", key="username")
-                                    ),
-                                ),
-                                k8s.EnvVar(
-                                    name="PGPASSWORD",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(name=f"{_DB_NAME}-app", key="password")
-                                    ),
-                                ),
-                                k8s.EnvVar(name="PGHOST", value=f"{_DB_NAME}-rw.{_NAMESPACE}.svc"),
+                                POSTGRES.app_secret.key("username").env_var("PGUSER"),
+                                POSTGRES.app_secret.key("password").env_var("PGPASSWORD"),
+                                k8s.EnvVar(name="PGHOST", value=POSTGRES.rw.host),
                                 k8s.EnvVar(name="PGDATABASE", value=_DATABASE),
                             ],
                             volume_mounts=[k8s.VolumeMount(name="sql", mount_path="/sql", read_only=True)],
@@ -194,21 +178,9 @@ def _readonly_provisioner(scope: Construct) -> None:
     )
 
 
-def _db_env(name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=f"{_DB_NAME}-app", key=key))
-    )
-
-
-def _oidc_env(name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name="study-casino-oidc", key=key))
-    )
-
-
 def _probe(initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
     return k8s.Probe(
-        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_PORT)),
+        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_SERVICE.pod_port)),
         initial_delay_seconds=initial_delay_seconds,
         period_seconds=period_seconds,
     )
@@ -221,7 +193,7 @@ def _deployment(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(
             name=_NAME,
             namespace=_NAMESPACE,
-            labels=_LABELS,
+            labels=_SERVICE.pods.selector,
             annotations={
                 "description": (
                     "Habit-tracking casino app. Serves PWA + /sync endpoint with OIDC auth (Authorization Code "
@@ -232,53 +204,35 @@ def _deployment(scope: Construct) -> None:
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="RollingUpdate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     node_selector={"topology.kubernetes.io/region": _REGION},
                     # Stateless: all state is in study-casino-db (CNPG), no local storage. Allow
                     # control-plane nodes as overflow capacity, but prefer workers to keep
                     # ordinary application I/O away from etcd disks.
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
-                    affinity=k8s.Affinity(
-                        node_affinity=k8s.NodeAffinity(
-                            preferred_during_scheduling_ignored_during_execution=[
-                                k8s.PreferredSchedulingTerm(
-                                    weight=100,
-                                    preference=k8s.NodeSelectorTerm(
-                                        match_expressions=[
-                                            k8s.NodeSelectorRequirement(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
-                                            )
-                                        ]
-                                    ),
-                                )
-                            ]
-                        )
-                    ),
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
+                    affinity=node_scheduling.PREFER_WORKERS,
                     containers=[
                         k8s.Container(
                             name="app",
                             image=f"git.allegedly.works/ducktape-ci/study-casino:{_PLACEHOLDER_TAG}",
                             image_pull_policy="Always",
-                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            ports=[_SERVICE.port.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="STUDY_CASINO_IMAGE_TAG", value=_PLACEHOLDER_TAG),
                                 # Compose the SQLAlchemy URL from the CNPG-generated secret. The
                                 # `$(VAR)` syntax in env values is resolved by the kubelet from
                                 # earlier-defined env vars in the same container. `+psycopg`
                                 # forces SQLAlchemy to pick the psycopg v3 driver.
-                                _db_env("PG_USER", "user"),
-                                _db_env("PG_PASSWORD", "password"),
-                                _db_env("PG_HOST", "host"),
-                                _db_env("PG_PORT", "port"),
-                                _db_env("PG_DBNAME", "dbname"),
+                                POSTGRES.app_secret.key("user").env_var("PG_USER"),
+                                POSTGRES.app_secret.key("password").env_var("PG_PASSWORD"),
+                                POSTGRES.app_secret.key("host").env_var("PG_HOST"),
+                                POSTGRES.app_secret.key("port").env_var("PG_PORT"),
+                                POSTGRES.app_secret.key("dbname").env_var("PG_DBNAME"),
                                 k8s.EnvVar(
                                     name="STUDY_CASINO_DATABASE_URL",
                                     value="postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DBNAME)",
@@ -291,9 +245,9 @@ def _deployment(scope: Construct) -> None:
                                     value="https://auth.allegedly.works/application/o/study-casino/",
                                 ),
                                 k8s.EnvVar(name="STUDY_CASINO_OIDC_CLIENT_ID", value="study-casino"),
-                                _oidc_env("STUDY_CASINO_OIDC_CLIENT_SECRET", "oidc_client_secret"),
-                                _oidc_env("STUDY_CASINO_SESSION_SECRET", "session_secret"),
-                                _oidc_env("STUDY_CASINO_RNG_SECRET", "rng_secret"),
+                                _OIDC.key("oidc_client_secret").env_var("STUDY_CASINO_OIDC_CLIENT_SECRET"),
+                                _OIDC.key("session_secret").env_var("STUDY_CASINO_SESSION_SECRET"),
+                                _OIDC.key("rng_secret").env_var("STUDY_CASINO_RNG_SECRET"),
                                 k8s.EnvVar(name="STUDY_CASINO_RNG_KEY_ID", value="study-casino-rng-v1"),
                             ],
                             resources=k8s.ResourceRequirements(
@@ -315,45 +269,39 @@ def _deployment(scope: Construct) -> None:
 
 def _cache_rule(prefix: str, cache_control: str) -> HttpRouteSpecRules:
     return HttpRouteSpecRules(
-        matches=[
-            HttpRouteSpecRulesMatches(
-                path=HttpRouteSpecRulesMatchesPath(type=HttpRouteSpecRulesMatchesPathType.PATH_PREFIX, value=prefix)
-            )
-        ],
+        matches=[RouteMatch.path_prefix(prefix)],
         filters=[
-            HttpRouteSpecRulesFilters(
-                type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                    set=[HttpRouteSpecRulesFiltersResponseHeaderModifierSet(name="Cache-Control", value=cache_control)]
-                ),
+            RouteFilter.response_header_modifier(
+                set=[HttpRouteSpecRulesFiltersResponseHeaderModifierSet(name="Cache-Control", value=cache_control)]
             )
         ],
-        backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=_PORT)],
+        backend_refs=[HttpRouteSpecRulesBackendRefs(name=_SERVICE.name, port=_SERVICE.port.number)],
     )
 
 
 def _route(scope: Construct) -> None:
+    # Three independent rules, not one https_route() call: each prefix needs its own
+    # Cache-Control value, and https_route()'s one-rule-per-route shape has a single
+    # shared filter list.
     HttpRoute(
         scope,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["casino.allegedly.works"],
-            rules=[
-                # Hermetic font files — content-stable; cache forever.
-                _cache_rule("/fonts/", _IMMUTABLE),
-                # Vite's content-hashed bundle output (after frontend migrates to Vite):
-                # /assets/<name>-<hash>.{js,css,…}. URL changes whenever bytes change,
-                # so safe to cache forever.
-                _cache_rule("/assets/", _IMMUTABLE),
-                # Everything else (index.html, sw.js, manifest, icon, current /main.js,
-                # API endpoints): do not store. Bazel-normalized mtimes can make app-shell
-                # validators lie across deploys, while hashed /assets/ remain immutable
-                # above.
-                _cache_rule("/", "no-store"),
-            ],
-        ),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        parent_refs=[cluster_gateway_parent_ref()],
+        hostnames=["casino.allegedly.works"],
+        rules=[
+            # Hermetic font files — content-stable; cache forever.
+            _cache_rule("/fonts/", _IMMUTABLE),
+            # Vite's content-hashed bundle output (after frontend migrates to Vite):
+            # /assets/<name>-<hash>.{js,css,…}. URL changes whenever bytes change,
+            # so safe to cache forever.
+            _cache_rule("/assets/", _IMMUTABLE),
+            # Everything else (index.html, sw.js, manifest, icon, current /main.js,
+            # API endpoints): do not store. Bazel-normalized mtimes can make app-shell
+            # validators lie across deploys, while hashed /assets/ remain immutable
+            # above.
+            _cache_rule("/", "no-store"),
+        ],
     )
 
 
@@ -367,13 +315,8 @@ def chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(name="http", port=_PORT, target_port=k8s.IntOrString.from_number(_PORT), protocol="TCP")
-            ],
-        ),
+        metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=_NAMESPACE),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.port.k8s_service_port()]),
     )
     _route(chart)
     k8s.KubeRoleBinding(

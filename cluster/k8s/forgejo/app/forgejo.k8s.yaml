@@ -4,7 +4,6 @@ metadata:
   name: forgejo
   namespace: forgejo
 spec:
-  interval: 24h
   type: oci
   url: oci://code.forgejo.org/forgejo-helm
 ---
@@ -47,8 +46,6 @@ spec:
                 app.kubernetes.io/name: forgejo
             topologyKey: kubernetes.io/hostname
     deployment:
-      annotations:
-        reloader.stakater.com/auto: "true"
       env:
         - name: SSL_CERT_FILE
           value: /etc/ssl/certs/cluster-ca/ca-certificates.crt
@@ -93,10 +90,10 @@ spec:
         cache:
           ADAPTER: redis
           ENABLED: true
-          HOST: redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0
+          HOST: redis://forgejo-valkey-ovh-master.forgejo.svc:6379/0
         database:
           DB_TYPE: postgres
-          HOST: forgejo-db-ssd-rw.forgejo:5432
+          HOST: forgejo-db-ssd-rw.forgejo.svc:5432
           NAME: forgejo
           USER: forgejo
         indexer:
@@ -110,7 +107,7 @@ spec:
           UPDATE_AVATAR: true
           USERNAME: nickname
         queue:
-          CONN_STR: redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0
+          CONN_STR: redis://forgejo-valkey-ovh-master.forgejo.svc:6379/0
           TYPE: redis
         security:
           INSTALL_LOCK: true
@@ -265,12 +262,26 @@ spec:
       kind: Bucket
       namespace: forgejo
     - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: forgejo
+    - group: seaweed.seaweedfs.com
       kind: S3Credentials
       namespace: forgejo
   to:
     - group: seaweed.seaweedfs.com
       kind: Seaweed
       name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
@@ -306,6 +317,7 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/instance: forgejo
+      app.kubernetes.io/name: forgejo
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password

@@ -2,11 +2,11 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: auto
     name: haku-mailbox
     pod-security.kubernetes.io/enforce: privileged
   name: haku-mailbox
+spec: {}
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -58,7 +58,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   annotations:
-    description: STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs (Gmail) use opportunistic TLS; the reloader annotation on the deployment restarts the receiver when cert-manager rotates this.
+    description: STARTTLS certificate for the inbound SMTP listener (mx.allegedly.works). Sending MTAs (Gmail) use opportunistic TLS; Reloader restarts the receiver when cert-manager rotates this.
   name: mx-allegedly-works
   namespace: haku-mailbox
 spec:
@@ -66,14 +66,12 @@ spec:
     - mx.allegedly.works
   issuerRef:
     kind: ClusterIssuer
-    name: ${LETSENCRYPT_ISSUER}
+    name: letsencrypt-prod
   secretName: mx-allegedly-works-tls
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: haku-mailbox
   name: haku-mailbox
@@ -117,10 +115,13 @@ spec:
           ports:
             - containerPort: 2525
               name: smtp
+              protocol: TCP
             - containerPort: 8080
               name: http
+              protocol: TCP
             - containerPort: 1143
               name: imap
+              protocol: TCP
           readinessProbe:
             exec:
               command:
@@ -234,7 +235,8 @@ spec:
   ports:
     - name: smtp
       port: 2525
-      targetPort: smtp
+      protocol: TCP
+      targetPort: 2525
   selector:
     app.kubernetes.io/name: haku-mailbox
 ---
@@ -249,10 +251,12 @@ spec:
   ports:
     - name: http
       port: 8080
-      targetPort: http
+      protocol: TCP
+      targetPort: 8080
     - name: imap
       port: 1143
-      targetPort: imap
+      protocol: TCP
+      targetPort: 1143
   selector:
     app.kubernetes.io/name: haku-mailbox
 ---
@@ -261,7 +265,6 @@ kind: DaemonSet
 metadata:
   annotations:
     description: Per-public-node port-25 TCP ingress. Preserves the sending MTA address through PROXY protocol so Stalwart's SPF gate remains meaningful.
-    reloader.stakater.com/auto: "true"
   name: haku-mailbox-smtp-ingress
   namespace: haku-mailbox
 spec:

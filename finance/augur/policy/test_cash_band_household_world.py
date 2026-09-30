@@ -26,15 +26,8 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
-from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.prepared import (
-    PreparedAccount,
-    PreparedHoldingPool,
-    PreparedLot,
-    PreparedObligation,
-    PreparedSeries,
-    PreparedTlhPortfolio,
-)
+from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.schedule import Once
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -58,16 +51,28 @@ STOCK_SLEEVE = SecuritySleeve(asset_id=STOCK, weight=1)
 REINVEST = Reinvest(rebalance_tolerance_ppb=None)
 
 
+@dataclass(frozen=True)
+class OpeningLot:
+    """Whole units of one of Alice's holdings, bought two years before the path starts."""
+
+    lot_id: LotId
+    asset_id: AssetId
+    units: int
+    basis: int
+
+
 @dataclass
 class Situation:
     """One household's books, the household and the claims raised on it."""
 
     prices: dict[str, int]
     household: CashBandHousehold
+    # What Alice owes the creditor in month 0.
+    upkeep: int
     opening_cash: int = 0
-    lots: tuple[PreparedLot, ...] = ()
-    portfolios: tuple[PreparedTlhPortfolio, ...] = ()
-    claims: tuple[PreparedObligation, ...] = ()
+    lots: tuple[OpeningLot, ...] = ()
+    # The opening cohort of Alice's managed index portfolio, when she has one.
+    managed: TlhOpeningCohort | None = None
     horizon_months: int = 1
 
 
@@ -84,39 +89,12 @@ def reinvesting(*sleeves: Sleeve, ceiling: int, tolerance: int | None) -> CashBa
     )
 
 
-def lot(lot_id: LotId, asset_id: AssetId, *, units: int, basis: int) -> PreparedLot:
-    return PreparedLot(
-        lot_id=lot_id,
-        agent_id=ALICE,
-        account_id=HOLDINGS,
-        asset_id=asset_id,
-        purchase_month=-24,
-        quantity_scale=1,
-        units=units,
-        basis=basis,
-    )
-
-
-def claim(amount: int) -> PreparedObligation:
-    return PreparedObligation(
-        month=0,
-        obligation_id="upkeep",
-        obligation_type="cash_spend",
-        from_account=AccountRef(agent_id=ALICE, account_id=CASH),
-        to_account=AccountRef(agent_id=CREDITOR, account_id=CASH),
-        amount_due=amount,
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
-    )
-
-
 def run(case: Situation) -> FinancialOutput:
     snapshots = case.horizon_months + 1
     world = World(
         MarketPath(
             [
-                PreparedSeries(series_id=f"security:{asset_id}", snapshots=snapshots, values=(price,) * snapshots)
+                Series(series_id=f"security:{asset_id}", snapshots=snapshots, values=(price,) * snapshots)
                 for asset_id, price in case.prices.items()
             ],
             0,
@@ -125,21 +103,44 @@ def run(case: Situation) -> FinancialOutput:
         horizon_months=case.horizon_months,
     )
     for agent_id, account_id, opening in ((ALICE, CASH, case.opening_cash), (ALICE, HOLDINGS, 0), (CREDITOR, CASH, 0)):
-        world.declare_account(
-            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=opening)
-        )
+        world.declare_account(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=opening)
     # Every security sleeve gets a pool: the household reads its quotes off the positions it observes.
     for target in case.household.sleeves:
         if isinstance(target, SecuritySleeve):
-            world.declare_pool(
-                PreparedHoldingPool(agent_id=ALICE, account_id=HOLDINGS, asset_id=target.asset_id, quantity_scale=1)
-            )
-    for holding in case.lots:
-        world.hold(holding)
-    for spec in case.portfolios:
-        world.declare_portfolio(spec)
-    for obligation in case.claims:
-        world.track(Biller(obligation))
+            world.declare_pool(agent_id=ALICE, account_id=HOLDINGS, asset_id=target.asset_id, quantity_scale=1)
+    for held in case.lots:
+        world.hold_lot(
+            lot_id=held.lot_id,
+            agent_id=ALICE,
+            account_id=HOLDINGS,
+            asset_id=held.asset_id,
+            purchase_month=-24,
+            quantity_scale=1,
+            units=held.units,
+            basis=held.basis,
+        )
+    if case.managed is not None:
+        world.declare_portfolio(
+            portfolio_id=PortfolioId("managed"),
+            owner_agent_id=ALICE,
+            account_id=HOLDINGS,
+            asset_id=AssetId("index"),
+            initial_cohorts=(case.managed,),
+            assumptions=QUIET,
+        )
+    world.track(
+        Biller(
+            schedule=Once(month=0),
+            obligation_id="upkeep",
+            obligation_type="cash_spend",
+            from_account=AccountRef(agent_id=ALICE, account_id=CASH),
+            to_account=AccountRef(agent_id=CREDITOR, account_id=CASH),
+            amount_due=case.upkeep,
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=1_000_000_000,
+        )
+    )
     case.household.check(world)
     world.track(case.household)
     recorder = FinancialCapture(world, capture="forensic")
@@ -183,10 +184,10 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
             ),
             opening_cash=50,
             lots=(
-                lot(LotId("opening-coarse"), AssetId("coarse"), units=5, basis=500),
-                lot(LotId("opening-fine"), AssetId("fine"), units=102, basis=102),
+                OpeningLot(LotId("opening-coarse"), AssetId("coarse"), units=5, basis=500),
+                OpeningLot(LotId("opening-fine"), AssetId("fine"), units=102, basis=102),
             ),
-            claims=(claim(50),),
+            upkeep=50,
         )
     )
     closed = output.months[1]
@@ -196,17 +197,6 @@ def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:
     assert (balance(closed, ALICE), balance(closed, CREDITOR)) == (0, 50)
     # Exactness is the point: nothing this batch requested was trimmed or refused.
     assert [disposition.units for disposition in output.dispositions] == [1]
-
-
-def managed_portfolio(opening: TlhOpeningCohort) -> PreparedTlhPortfolio:
-    return PreparedTlhPortfolio(
-        portfolio_id=PortfolioId("managed"),
-        owner_agent_id=ALICE,
-        account_id=HOLDINGS,
-        asset_id=AssetId("index"),
-        initial_cohorts=(opening,),
-        assumptions=QUIET,
-    )
 
 
 def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -> None:
@@ -223,8 +213,8 @@ def test_a_projected_purchase_into_a_managed_sleeve_contributes_what_is_left() -
                 ManagedSleeve(portfolio_id=PortfolioId("managed"), weight=1), ceiling=0, tolerance=None
             ),
             opening_cash=1_000,
-            portfolios=(managed_portfolio(TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24)),),
-            claims=(claim(400),),
+            managed=TlhOpeningCohort(value=100, cost_basis=100, purchase_month_index=-24),
+            upkeep=400,
         )
     )
     closed = output.months[1]
@@ -248,8 +238,8 @@ def test_a_portfolio_at_a_zero_index_mark_is_not_offered_the_surplus() -> None:
                 ManagedSleeve(portfolio_id=PortfolioId("managed"), weight=1), ceiling=0, tolerance=None
             ),
             opening_cash=1_000,
-            portfolios=(managed_portfolio(TlhOpeningCohort(value=0, cost_basis=100, purchase_month_index=-24)),),
-            claims=(claim(400),),
+            managed=TlhOpeningCohort(value=0, cost_basis=100, purchase_month_index=-24),
+            upkeep=400,
             horizon_months=2,
         )
     )
@@ -268,33 +258,25 @@ def stock_world(
 
     With `second_grid`, a second brokerage account declares a pool of the same stock on that grid.
     """
-    series = [PreparedSeries(series_id=f"security:{STOCK}", snapshots=HORIZON + 1, values=(1_000,) * (HORIZON + 1))]
+    series = [Series(series_id=f"security:{STOCK}", snapshots=HORIZON + 1, values=(1_000,) * (HORIZON + 1))]
     if inflation is not None:
-        series.append(PreparedSeries(series_id="inflation", snapshots=HORIZON + 1, values=inflation))
+        series.append(Series(series_id="inflation", snapshots=HORIZON + 1, values=inflation))
     world = World(MarketPath(series, 0, rollout_count=1), horizon_months=HORIZON)
-    world.declare_account(
-        PreparedAccount(account=AccountRef(agent_id=GUARDED, account_id=CHECKING), opening_balance=10_000)
-    )
-    world.declare_pool(
-        PreparedHoldingPool(agent_id=GUARDED, account_id=BROKERAGE, asset_id=STOCK, quantity_scale=SCALE)
-    )
+    world.declare_account(account=AccountRef(agent_id=GUARDED, account_id=CHECKING), opening_balance=10_000)
+    world.declare_pool(agent_id=GUARDED, account_id=BROKERAGE, asset_id=STOCK, quantity_scale=SCALE)
     if second_grid is not None:
         world.declare_pool(
-            PreparedHoldingPool(
-                agent_id=GUARDED, account_id=AccountId("brokerage-2"), asset_id=STOCK, quantity_scale=second_grid
-            )
+            agent_id=GUARDED, account_id=AccountId("brokerage-2"), asset_id=STOCK, quantity_scale=second_grid
         )
-    world.hold(
-        PreparedLot(
-            lot_id=lot_id,
-            agent_id=GUARDED,
-            account_id=BROKERAGE,
-            asset_id=STOCK,
-            purchase_month=-24,
-            quantity_scale=SCALE,
-            units=100 * SCALE,
-            basis=50_000,
-        )
+    world.hold_lot(
+        lot_id=lot_id,
+        agent_id=GUARDED,
+        account_id=BROKERAGE,
+        asset_id=STOCK,
+        purchase_month=-24,
+        quantity_scale=SCALE,
+        units=100 * SCALE,
+        basis=50_000,
     )
     return world
 

@@ -13,7 +13,8 @@ import jsii
 from cdk8s import ApiObject, Chart
 from constructs import IValidation
 
-_POD_TEMPLATE_KINDS = frozenset({"Deployment", "StatefulSet", "DaemonSet", "Job", "ReplicaSet"})
+from cluster.cdk8s.pod_policy import POD_SPEC_PATHS, pod_spec
+
 _OUTSIDE_ENTITIES = frozenset({"world", "remote-node", "host"})
 _HTTPS_PORT = "443"
 # Pod-spec keys that name a Secret or ConfigMap: env valueFrom, envFrom, volumes (plain,
@@ -24,13 +25,8 @@ _CONFIG_MAP_REF_KEYS = frozenset({"configMapKeyRef", "configMapRef"})
 
 def _pod_specs(objects: list[dict[str, Any]]) -> Iterator[tuple[str, dict[str, Any]]]:
     for obj in objects:
-        kind, name = obj["kind"], f"{obj['kind']}/{obj['metadata']['name']}"
-        if kind in _POD_TEMPLATE_KINDS:
-            yield name, obj["spec"]["template"]["spec"]
-        elif kind == "CronJob":
-            yield name, obj["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-        elif kind == "SandboxTemplate":
-            yield name, obj["spec"]["podTemplate"]["spec"]
+        if obj["kind"] in POD_SPEC_PATHS:
+            yield f"{obj['kind']}/{obj['metadata']['name']}", pod_spec(obj)
 
 
 def pod_hardening(objects: list[dict[str, Any]]) -> list[str]:

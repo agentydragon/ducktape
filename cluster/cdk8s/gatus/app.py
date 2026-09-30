@@ -1,18 +1,11 @@
-"""Gatus: the Helm release, its Postgres, network policies, route and ServiceMonitor.
-
-Hand-written beside the generated output: `config.yaml` (Gatus's own config, rendered into
-the `gatus-config` ConfigMap by the directory's `configMapGenerator`) and the
-`kustomization.yaml` that generates it.
-"""
+"""Gatus: the Helm release, its Postgres, network policies, route and ServiceMonitor, and its
+own configuration (`config.py`) in the `gatus-config` ConfigMap."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress, CiliumNetworkPolicySpecEgressToEntities
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -22,63 +15,66 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategy,
     HelmReleaseSpecUpgradeStrategyName,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cilium, cnpg
+from cluster.cdk8s import cilium, cnpg, namespaces, node_scheduling
+from cluster.cdk8s.flux import (
+    ConfigMapArgs,
+    GeneratorOptions,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.helm import helm_release
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.gatus import config
+from cluster.cdk8s.helm import helm_release, https_helm_repository
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Port, ServiceRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gatus"
+OUTPUT_DIR = f"{GENERATED_ROOT}/gatus"
 _NAME = "gatus"
 _NAMESPACE = "gatus"
-_LABELS = {"app.kubernetes.io/name": _NAME}
-_DB_NAME = "gatus-db"
-_ZONE = "hil-ovh"
+_HOSTNAME = "status.allegedly.works"
+DATABASE = cnpg.PostgresRef.generated(name="gatus-db", namespace=_NAMESPACE)
 _HELM_REPOSITORY = "twin"
-_PORT = 8080
+# The chart's Service: port 80 to the Pods' `http` (8080), selecting `app.kubernetes.io/name`.
+SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=80), pods=cilium.PROBER, target_port=8080)
+_LITELLM_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("api-key")
+CONFIG_MAP = ConfigMapArgs(
+    name="gatus-config",
+    namespace=_NAMESPACE,
+    # The Helm values name it, and kustomize cannot rewrite a reference inside a HelmRelease's values.
+    options=GeneratorOptions(disable_name_suffix_hash=True),
+    # The chart mounts the ConfigMap at /config; config/config.yaml is Gatus's default path.
+    literals=[f"config.yaml={config.render(hostname=_HOSTNAME)}"],
+)
 
 
 def _namespace(scope: Construct) -> None:
-    k8s.KubeNamespace(
-        scope,
-        "namespace",
-        metadata=k8s.ObjectMeta(
-            name=_NAMESPACE,
-            labels={
-                "goldilocks.fairwinds.com/enabled": "true",
-                "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
+    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
 
 
 def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name=_DB_NAME,
-        namespace=_NAMESPACE,
-        node_selector={"topology.kubernetes.io/zone": _ZONE},
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="1Gi",
-        # CNPG auto-generates credentials in secret gatus-db-app
-        initdb=ClusterSpecBootstrapInitdb(database="gatus", owner="gatus"),
+        initdb=cnpg.same_owner_initdb("gatus"),
+        wal_archive=False,
     )
 
 
 def _helm_release(scope: Construct) -> None:
-    repository = HelmRepository(
-        scope,
-        "helm-repository",
-        metadata=metadata(_HELM_REPOSITORY, _NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://twin.github.io/helm-charts"),
-    )
+    repository = https_helm_repository(scope, _HELM_REPOSITORY, _NAMESPACE, url="https://twin.github.io/helm-charts")
     # Empty ConfigMap required by the gatus Helm chart. The chart hardcodes
     # envFrom.configMapRef with the release name but skips creating it when
     # externalConfigMap is set (chart bug).
@@ -98,13 +94,12 @@ def _helm_release(scope: Construct) -> None:
             strategy=HelmReleaseSpecUpgradeStrategy(name=HelmReleaseSpecUpgradeStrategyName.RETRY_ON_FAILURE)
         ),
         values={
-            "externalConfigMap": "gatus-config",
+            "externalConfigMap": CONFIG_MAP.name,
             "env": {
-                "GATUS_DB_URI": {"valueFrom": {"secretKeyRef": {"name": f"{_DB_NAME}-app", "key": "uri"}}},
-                "LITELLM_API_KEY": {"valueFrom": {"secretKeyRef": {"name": "litellm-master-key", "key": "api-key"}}},
+                config.DB_URI_ENV: {"valueFrom": DATABASE.app_secret.key("uri").value_from()},
+                config.LITELLM_API_KEY_ENV: {"valueFrom": _LITELLM_KEY.value_from()},
             },
             "envFrom": [{"secretRef": {"name": "gatus-oidc-secret"}}],
-            "podAnnotations": {"reloader.stakater.com/auto": "true"},
             "ingress": {"enabled": False},
             # Storage moved off the local SQLite PVC onto the gatus-db CNPG
             # cluster on OVH-HA (the Cluster above).
@@ -112,28 +107,12 @@ def _helm_release(scope: Construct) -> None:
             # The ServiceMonitor is its own object below, to avoid blocking
             # Gatus deploys on monitoring-stack readiness.
             "serviceMonitor": {"enabled": False},
-            "nodeSelector": {"topology.kubernetes.io/zone": _ZONE},
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # Gatus is stateless at the pod level (state moved to gatus-db above). Allow
             # control-plane nodes as overflow capacity, while the affinity below keeps
             # ordinary placement on workers.
-            "tolerations": [
-                {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-            ],
-            # Prefer ordinary workers when this workload tolerates control planes.
-            "affinity": {
-                "nodeAffinity": {
-                    "preferredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "weight": 100,
-                            "preference": {
-                                "matchExpressions": [
-                                    {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                                ]
-                            },
-                        }
-                    ]
-                }
-            },
+            "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+            "affinity": node_scheduling.PREFER_WORKERS,
             "resources": {"requests": {"cpu": "20m", "memory": "64Mi"}, "limits": {"cpu": "200m", "memory": "128Mi"}},
         },
     )
@@ -148,13 +127,13 @@ def _network_policies(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "ingress",
-        metadata=metadata("gatus-ingress", _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name="gatus-ingress", namespace=_NAMESPACE),
+        endpoint_selector=SERVICE.pods.selector,
         ingress=[
             # Cilium Gateway API (reserved:ingress identity) → Gatus
-            IngressRule.from_gateway(_PORT),
+            IngressRule.from_gateway(SERVICE.pod_port),
             # Prometheus → Gatus (ServiceMonitor scraping)
-            IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "monitoring"}, ports=[_PORT]),
+            cilium.SCRAPERS.admit(SERVICE.pod_port),
         ],
     )
     # Route Gatus's DNS through Cilium's DNS proxy, so its queries are observable
@@ -169,8 +148,8 @@ def _network_policies(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "dns-visibility",
-        metadata=metadata("gatus-dns-visibility", _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name="gatus-dns-visibility", namespace=_NAMESPACE),
+        endpoint_selector=SERVICE.pods.selector,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # Everything else, deliberately unrestricted.
@@ -200,22 +179,30 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        hostname="status.allegedly.works",
-        backend=_NAME,
-        port=80,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=[_HOSTNAME],
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )
     ServiceMonitor(
         chart,
         "service-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=_LABELS,
-        endpoints=[Endpoint.plain(port="http")],
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        selector=ServiceMonitorSpecSelector(match_labels=SERVICE.labels),
+        endpoints=[Endpoint.plain(port=SERVICE.port.name)],
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+def gatus(
+    flux_chart: Chart, directory: RenderedDirectory, cnpg: Kustomization, monitoring_crds: Kustomization
+) -> Kustomization:
+    return flux_kustomization(
+        flux_chart,
+        _NAME,
+        directory,
+        timeout="10m",
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        depends_on=flux_kustomization_depends_on_many(cnpg, monitoring_crds),
+    )

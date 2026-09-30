@@ -6,32 +6,17 @@ forced through, its root CA and the trust bundle its clients read (trust model a
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_clusterwide_crds.io.cilium import (
-    CiliumClusterwideNetworkPolicy,
-    CiliumClusterwideNetworkPolicySpec,
-    CiliumClusterwideNetworkPolicySpecEgress,
-    CiliumClusterwideNetworkPolicySpecEgressToEndpoints,
-    CiliumClusterwideNetworkPolicySpecEgressToEntities,
-    CiliumClusterwideNetworkPolicySpecEgressToPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumClusterwideNetworkPolicySpecEndpointSelector,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
-)
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cilium, egress_fences
+from cluster.cdk8s import cilium, egress_fences, namespaces
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_namespace, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "mitmproxy"
 NAMESPACE = egress_fences.MITMPROXY_NAMESPACE
@@ -42,10 +27,15 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/agents/mitmproxy"
 # also needs the inject-mitmproxy Kyverno ClusterPolicy to cover it.
 SANDBOX_NAMESPACES = ("claude-sandbox",)
 
-_LABELS = {"app.kubernetes.io/name": NAME}
+# The proxy the sandboxes' external egress is forced through.
+PROXY = ServiceRef(
+    name=NAME,
+    port=Port(name="proxy", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+)
+# The mitmweb UI; the hand-written authentik blueprint agents-mitmproxy-sso.yaml proxies to it.
+_WEB = ServiceRef(name=PROXY.name, port=Port(name="web", number=8081), pods=PROXY.pods)
 _CA_SECRET_NAME = "mitmproxy-ca"
-_PROXY_PORT = 8080
-_WEB_PORT = 8081
 _NAMESPACE_NAME_LABEL = "kubernetes.io/metadata.name"
 
 
@@ -57,15 +47,9 @@ class Mitmproxy(Construct):
         k8s.KubeService(
             self,
             "service",
-            metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
+            metadata=k8s.ObjectMeta(name=PROXY.name, namespace=NAMESPACE),
             spec=k8s.ServiceSpec(
-                selector=_LABELS,
-                ports=[
-                    k8s.ServicePort(
-                        name="proxy", port=_PROXY_PORT, target_port=k8s.IntOrString.from_number(_PROXY_PORT)
-                    ),
-                    k8s.ServicePort(name="web", port=_WEB_PORT, target_port=k8s.IntOrString.from_number(_WEB_PORT)),
-                ],
+                selector=PROXY.pods.selector, ports=[PROXY.port.k8s_service_port(), _WEB.port.k8s_service_port()]
             ),
         )
         self._add_ingress_policy()
@@ -87,14 +71,12 @@ class Mitmproxy(Construct):
         k8s.KubeDeployment(
             self,
             "deployment",
-            metadata=k8s.ObjectMeta(
-                name=NAME, namespace=NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-            ),
+            metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=PROXY.pods.selector),
             spec=k8s.DeploymentSpec(
                 replicas=1,
-                selector=k8s.LabelSelector(match_labels=_LABELS),
+                selector=k8s.LabelSelector(match_labels=PROXY.pods.selector),
                 template=k8s.PodTemplateSpec(
-                    metadata=k8s.ObjectMeta(labels=_LABELS),
+                    metadata=k8s.ObjectMeta(labels=PROXY.pods.selector),
                     spec=k8s.PodSpec(
                         init_containers=[
                             k8s.Container(
@@ -127,18 +109,15 @@ class Mitmproxy(Construct):
                                     "--listen-host",
                                     "0.0.0.0",
                                     "--listen-port",
-                                    str(_PROXY_PORT),
+                                    str(PROXY.pod_port),
                                     "--web-host",
                                     "0.0.0.0",
                                     "--web-port",
-                                    str(_WEB_PORT),
+                                    str(_WEB.pod_port),
                                     "--set",
                                     "confdir=/mitmproxy-data",
                                 ],
-                                ports=[
-                                    k8s.ContainerPort(name="proxy", container_port=_PROXY_PORT),
-                                    k8s.ContainerPort(name="web", container_port=_WEB_PORT),
-                                ],
+                                ports=[PROXY.port.k8s_container_port(), _WEB.port.k8s_container_port()],
                                 volume_mounts=[data_mount],
                                 resources=k8s.ResourceRequirements(
                                     requests={
@@ -169,7 +148,7 @@ class Mitmproxy(Construct):
             "ingress",
             metadata=k8s.ObjectMeta(name="allow-authentik-mitmproxy-ingress", namespace=NAMESPACE),
             spec=k8s.NetworkPolicySpec(
-                pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+                pod_selector=k8s.LabelSelector(match_labels=PROXY.pods.selector),
                 ingress=[
                     k8s.NetworkPolicyIngressRule(
                         from_=[
@@ -183,7 +162,7 @@ class Mitmproxy(Construct):
                                 )
                             )
                         ],
-                        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_PROXY_PORT), protocol="TCP")],
+                        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(PROXY.pod_port), protocol="TCP")],
                     ),
                     k8s.NetworkPolicyIngressRule(
                         from_=[
@@ -191,7 +170,7 @@ class Mitmproxy(Construct):
                                 namespace_selector=k8s.LabelSelector(match_labels={_NAMESPACE_NAME_LABEL: "authentik"})
                             )
                         ],
-                        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_WEB_PORT), protocol="TCP")],
+                        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_WEB.pod_port), protocol="TCP")],
                     ),
                 ],
                 policy_types=["Ingress"],
@@ -212,66 +191,26 @@ class Mitmproxy(Construct):
         also loom/gym/TODO.md (the loom eval's per-sandbox archive clamp rests on the same
         assumption).
         """
-
-        def port(
-            number: int,
-            protocol: CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol = (
-                CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-            ),
-        ) -> CiliumClusterwideNetworkPolicySpecEgressToPortsPorts:
-            return CiliumClusterwideNetworkPolicySpecEgressToPortsPorts(port=str(number), protocol=protocol)
-
-        CiliumClusterwideNetworkPolicy(
+        cilium.force_proxy_egress(
             self,
             "sandbox-egress",
-            metadata=ApiObjectMetadata(name="sandbox-force-proxy-egress"),
-            spec=CiliumClusterwideNetworkPolicySpec(
-                endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
-                    match_expressions=[
-                        CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions(
-                            key="k8s:io.kubernetes.pod.namespace",
-                            operator=CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
-                            values=list(SANDBOX_NAMESPACES),
-                        )
-                    ]
-                ),
-                egress=[
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=cilium.KUBE_DNS_LABELS)
-                        ],
-                        to_ports=[
-                            CiliumClusterwideNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    port(53, CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.UDP),
-                                    port(53),
-                                ]
-                            )
-                        ],
-                    ),
-                    # Pod-to-service traffic, which bypasses the proxy via NO_PROXY.
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.CLUSTER]
-                    ),
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
-                        to_ports=[CiliumClusterwideNetworkPolicySpecEgressToPorts(ports=[port(6443)])],
-                    ),
-                    # All external internet traffic goes through here.
-                    CiliumClusterwideNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumClusterwideNetworkPolicySpecEgressToEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": NAMESPACE,
-                                    "k8s:app.kubernetes.io/name": NAME,
-                                }
-                            )
-                        ],
-                        to_ports=[CiliumClusterwideNetworkPolicySpecEgressToPorts(ports=[port(_PROXY_PORT)])],
-                    ),
-                ],
-            ),
+            name="sandbox-force-proxy-egress",
+            namespaces=SANDBOX_NAMESPACES,
+            proxy_namespace=PROXY.pods.namespace,
+            proxy_name=NAME,
+            proxy_port=PROXY.pod_port,
+            # Pod-to-service traffic, which bypasses the proxy via NO_PROXY.
+            cluster_ports=None,
+            kube_apiserver=True,
         )
+
+
+def namespace_chart(app: App) -> Chart:
+    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
+    namespaces.namespace(
+        chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None, labels={"name": NAMESPACE}
+    )
+    return chart
 
 
 def chart(app: App) -> Chart:
@@ -281,28 +220,12 @@ def chart(app: App) -> Chart:
 
 
 def agents_mitmproxy(
-    flux_chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, root: Path, cert_manager_trust: Kustomization
+    flux_chart: Chart, directory: RenderedDirectory, cert_manager_trust: Kustomization
 ) -> Kustomization:
-    """Write the directory and return its Flux node."""
-    write_namespace(
-        root,
-        OUTPUT_DIR,
-        name=NAMESPACE,
-        labels={
-            "goldilocks.fairwinds.com/enabled": "true",
-            "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-            "name": NAMESPACE,
-        },
-    )
-    write_charts(root, OUTPUT_DIR, egress_fences.mitmproxy_cloud_api, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["namespace.k8s.yaml", f"{NAME}.k8s.yaml", "cnp-cloud-api-egress.k8s.yaml"]),
-    )
     return flux_kustomization(
         flux_chart,
         "agents-mitmproxy",
-        artifact,
+        directory,
         retry_interval=None,
         wait=None,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

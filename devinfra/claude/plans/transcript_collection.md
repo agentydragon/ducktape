@@ -1,6 +1,6 @@
 # Claude session transcript collection
 
-Status: **plan; the OTel leg is implemented** (PR #2930). Goal: every Claude Code
+**Open scope: transcript collection and processing.** Goal: every Claude Code
 session's transcript (`~/.claude/projects/**/*.jsonl`) and derived metrics land in
 one operator-owned store **automatically** — web sessions, routines, and the
 operator's own machines — with no per-session manual step and no reliance on agent
@@ -9,10 +9,12 @@ itself is agent-agnostic.
 
 ## Facts this design rests on (probed live 2026-07-05/06)
 
-- **No export API exists.** Claude Code web session transcripts cannot be downloaded
-  after the fact: the enterprise Compliance API covers claude.ai chats/files/projects
-  only, and the account data export has no documented Code-session coverage. The
-  transcript exists only inside the container while it lives.
+- **No official export exists, but the history is retrievable (re-probed 2026-09-29).**
+  The Compliance API's session endpoints exclude Claude Code cloud sessions and the
+  account data export documents none. Anthropic stores each session's event log and
+  `claude.ai/code` reads it over a private API, which <../session_export/> archives
+  after the fact (contract: <../session_export/docs/api.md>). The shipping legs below
+  are therefore not the only way to keep web transcripts.
 - **Env-var delivery in hosted sessions splits by mechanism** (verified via
   `/proc/<claude-pid>/environ`, claude 2.1.42): the web UI "Environment Variables"
   knob reaches the `claude` process (12 `OTEL_*` vars confirmed); `startup_env_script`
@@ -32,12 +34,6 @@ itself is agent-agnostic.
   systematic gap. (A follow-up self-report is queued via Haku's intake for explicit
   confirmation; a synthetic probe session fired 2026-07-06 produced no output —
   inconclusive, superseded by the in-run self-report.)
-- **Claude Code's native OTel exporter runs in hosted sessions, but its direct
-  egress doesn't arrive.** With the endpoint set to `127.0.0.1`, an in-session
-  listener captured all three signals (metrics ~10 s, logs ~5 s, traces); with the
-  endpoint set to the public Alloy host, nothing ever reached Alloy's receiver,
-  while the same authenticated POST from a shell (via the egress proxy) returned 200. Exact network-layer cause not pinpointed — possibly only the environment's
-  domain allowlist (untested); the localhost relay sidesteps it either way.
 - Claude Code transcripts are **append-only JSONL** during a session — rsync's
   `--append-verify` happy path.
 
@@ -89,63 +85,6 @@ but receive, so exec access ≈ transcript-read access, nothing more. If tier-sp
 is ever wanted, run per-tier sink pods in separate namespaces — additive, no client
 redesign.
 
-## OTel leg (dashboards) — IMPLEMENTED (PR #2930)
-
-Hosted sessions export Claude Code's native telemetry through a **localhost
-forwarder** (the exporter can't egress directly; see Facts):
-
-- <../otlp_forwarder.py> — stdlib relay, `127.0.0.1:4318` →
-  `alloy-otlp.allegedly.works` via the egress proxy; bearer re-read per request from
-  `~/.cache/ducktape/otel-bearer` (rotation-safe); 503 until the token exists, 502 on
-  upstream failure; chunked bodies handled. Functionally verified in a live web
-  container.
-- <../ensure_otel_forwarder.sh> — idempotent starter, run as a profile background
-  command on **every claude launch** (fresh container and resume into a recycled one;
-  the init script only runs at container creation, so it is deliberately not used).
-  Wired into the web, home-manager, and haku profiles. Token sources:
-  `DUCKTAPE_OTEL_BEARER_TOKEN` env, else the mirrored `alloy-otlp-bearer` k8s Secret
-  (with retry — the kubeconfig materializes in a sibling background command). The
-  haku age key is a recipient of the bearer SOPS file, so both the web and haku
-  envs normally take the env path; the k8s mirror covers SOPS-outage/bootstrap
-  windows.
-- Cluster: the `authentik-jwt-rotation` job publishes the bearer as
-  `flux-system/alloy-otlp-bearer` (`k8s_secret` output); a `ClusterExternalSecret`
-  (<../../../cluster/k8s/agents/alloy-otlp-bearer/>) mirrors it into
-  `claude-sandbox` and `haku-sandbox`.
-- **Operator step — paste into each environment's UI env vars** (Haku env + default
-  web env; full logging to operator-only ingestion; inline OTel events truncate —
-  see _Raw API bodies_ below for the lossless option):
-
-  ```text
-  CLAUDE_CODE_ENABLE_TELEMETRY=1
-  OTEL_METRICS_EXPORTER=otlp
-  OTEL_LOGS_EXPORTER=otlp
-  OTEL_TRACES_EXPORTER=otlp
-  CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
-  OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-  OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
-  OTEL_LOG_USER_PROMPTS=1
-  OTEL_LOG_TOOL_DETAILS=1
-  OTEL_LOG_TOOL_CONTENT=1
-  OTEL_LOG_RAW_API_BODIES=1
-  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
-  ```
-
-  The temporality line is **load-bearing for the metrics leg**: Claude Code defaults
-  to delta, which Prometheus/Mimir cannot ingest, and Alloy's
-  `otelcol.exporter.prometheus` drops delta metrics silently — logs and traces still
-  arrive, so the pipeline looks healthy while `claude_code_*` never appears in Mimir.
-  Root cause and verification:
-  <../../../cluster/docs/lessons_learned/2026_07_31_claude_code_otel_delta_temporality.md>.
-
-- CLI / operator machines need no forwarder: direct export is wired in
-  <../../../nix/home/claude_code/default.nix> with `otelHeadersHelper` (a script
-  emitting headers JSON, re-run every ~29 min; HTTP protocols only) reading the
-  sops-nix materialized `secrets/alloy-otlp-bearer-token.yaml` bearer.
-- Possible later simplification (untested): if the hosted-egress block was only the
-  environment domain allowlist, allowlisting `alloy-otlp.allegedly.works` +
-  `otelHeadersHelper` would remove the forwarder. Test before assuming.
-
 ## Raw API bodies — inline vs file mode (probed live 2026-07-31)
 
 `OTEL_LOG_RAW_API_BODIES` has two modes, and the choice changes what the sink is
@@ -185,6 +124,5 @@ directory of JSON" rather than "parse transcripts".
 2. **Clients**: `kexec-rsh` + rsync loop in the web bootstrap
    (<../claude_hook/> profile or `web_setup.sh`); home-manager timer for machines.
 3. **Sink processor**: summary.json per session; wire Haku's run-manifest rows to it.
-4. **Grafana**: claude-code `GrafanaDashboard` CR once data flows; `web_selfcheck`
-   check for the forwarder (4318 bound, token file fresh).
-5. Grafana dashboard and alerting around native Claude Code telemetry.
+4. **Grafana**: claude-code dashboard and alerting once native telemetry and
+   transcript-derived metrics are available.

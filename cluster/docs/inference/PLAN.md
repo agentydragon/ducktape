@@ -188,8 +188,8 @@ Completed here:
   trajectories can explain hour-scale tasks without a broken timeout. These are
   recorded harness counters, not independently validated server accounting.
 
-Current state checked September 26: no host Docker experiment containers running;
-Ollama was re-enabled by #8000 and now runs image `ollama/ollama:0.34.4`, context
+Historical state checked September 26: no host Docker experiment containers running;
+Ollama was re-enabled by #8000 and ran image `ollama/ollama:0.34.4`, context
 default 131072, on a 350 GiB HDD PVC. The model SSD has about 384 GiB available;
 host RAM about 30 GiB available while Ollama is loaded. An initial GPU snapshot
 showed only about 1 GiB free on desktop GPU0. This is not evidence of a desktop
@@ -198,11 +198,11 @@ server. Pause Ollama by a focused GitOps PR immediately before exclusive experim
 the operator has authorized this again. No reboot or full NixOS activation.
 
 The reported ~1 token/s on HDD/Ollama versus ~30 on SSD/llama.cpp changes several
-variables at once: storage, runtime version, model representation, placement, context,
-and cache state. Treat it as an operational regression to isolate, not proof that
-HDD or the older runtime alone explains all of it. #8041 records earlier Ollama
-findings; those predate the currently deployed 0.34.4. Check current logs and the
-actual loaded model/context, rather than only the environment default.
+variables at once. The September 27 SSD-backed Ollama run measured 29.07 tok/s while
+continuing a cached 145K history, but also changed quant, prompt, context, placement,
+and cache state; it does not isolate the earlier slowdown's cause. #8041 records older
+Ollama findings. Check current logs and the actual loaded model/context, rather than
+only the environment default.
 
 ### What the Artificial Analysis comparison does and does not say
 
@@ -237,7 +237,16 @@ an experiment-allocation policy, not a claim that either model will win.
 
 ### 1. Measure usable context for one session
 
-Reuse the demonstrated SSD/llama.cpp/OpenCode configuration for these measurements.
+September 27: [cluster SSD serving acceptance](runs/2026-09-27_ollama_ssd/README.md)
+now passes 24/24 LiteLLM text/tool probes across both 128K/256K routes and all three
+API shapes. With 4/2 GiB fit targets, short 1,024-token generations measured 50.21 /
+60.01 tok/s at 128K and 44.39 / 49.48 tok/s at 256K (first / repeat); the 145K
+continuation measured 29.07 tok/s. A 145K input passes at 256K. The 2/0 GiB target
+passes short requests but OOMs during that long prefill. Full-window reasoning quality
+and parallel slots remain untested. The [updated tradeoff plan](runs/2026-09-27_ollama_ssd/tradeoffs.md)
+separates measured capacity from projections and records Ollama's native-context clamp.
+
+Reuse the demonstrated SSD configuration for these measurements.
 Capture effective settings and do only enough startup/tool checking to establish
 that the reference is running. Ollama deployment and a new coding harness are not
 prerequisites.
@@ -281,13 +290,18 @@ provider scores establish the quality retained by the local quantization.
 
 The [September 26 capacity calculation](runs/2026-09-26_qwen38_capacity/README.md)
 uses actual GGUF metadata and pinned runtime source, including indexer and recurrent
-state. The [immediate serial queue](runs/2026-09-26_qwen38_queue/README.md) now runs
-one frozen real task at 128K/Q8 with existing Q4 and Terminus-2 summarization, following
-the user's direction to observe compaction naturally and use the GPU while downloads
-continue. A separate download-only service cannot launch competing inference. The KV sweep, native 256K and Q4/Q5 comparisons follow evidence
-from that first trajectory. Q5 and IQ4_XS downloads are progressing. The transient
-user services run downloads alongside one inference job, with explicit desktop
-RAM/VRAM reserves and overlapping SSD traffic recorded as a latency confounder.
+state. The [serial queue](runs/2026-09-26_qwen38_queue/README.md) completed its first
+frozen task at 128K/Q8 with Q4 and Terminus-2:
+[reward 1.0, six verifier checks passed, two compactions](runs/2026-09-26_qwen38_q4_terminus_result/README.md)
+in 7h 40m total. Q5 and IQ4_XS downloads finished at 04:48 Pacific. The matched
+[IQ4_XS attempt](runs/2026-09-26_qwen38_iq4_terminus_result/README.md) also passed all
+six verifier tests after three compactions, but exhausted its eight-hour agent limit
+while still testing. Its wrapper exited cleanly; decode averaged 40.79 tokens/s
+versus Q4's 24.74, without earlier agent completion. The KV sweep, filled-window
+256K task quality and Q5 comparison remain follow-ups. Desktop RAM/VRAM reserves remain enforced; overlapping
+download traffic in Q4's first hour is a latency confounder. Its wrapper guard failed
+after the passing result because the Kubernetes API was unreachable; distinguish
+that cleanup outcome from the completed evaluation.
 Parallel-window numbers in that note are arithmetic only, not permission to run
 concurrent evaluations.
 
@@ -301,9 +315,9 @@ intuition.
 - Keep Q4 as control and try Q5 later to test quality retention, once safe placement
   is established. Its larger working set may cost speed or page-cache capacity;
   more bits do not guarantee a better completed task within the available budget.
-- IQ4_XS is the first smaller candidate to test whether reducing CPU/offload traffic could
-  free context or improve latency. Assess it on the same tasks; do not jump directly
-  to a very low-bit checkpoint.
+- IQ4_XS is now the deployed baseline. IQ3_XXS is the next substantial capacity
+  comparison (10.92 GiB fewer non-PLE weights); Q3_K_XL is a smaller 3.44 GiB step.
+  Assess matched tasks before adopting either; published fidelity is not agent success.
 - Set reasoning explicitly. The official default is xhigh; our initial probes used
   medium. Compare medium and xhigh under an adequate, explicit output allowance.
   Short-output protocol probes cannot establish the model's reasoning ceiling.
@@ -314,11 +328,15 @@ intuition.
 ### 4. Bounded local capability validation
 
 Terminal-Bench 4.0 is a substantial agent evaluation, worth a carefully controlled
-rerun. The immediate queue runs one predetermined CPU-only task with Terminus-2 at
-128K, preserving original task verifiers and deadlines, and observes natural context
-summarization. Review the first trajectory at the six-hour checkpoint; a task with
-an eight-hour deadline may still be running. Matched quant comparisons follow after
-this agent configuration is understood. Reserve up to 24–48 hours for a subsequent
+rerun. The first predetermined CPU-only task passed with Terminus-2 at 128K,
+preserving original task verifiers and deadlines and recovering after two natural
+compactions. IQ4 passed the same verifier after three compactions but timed out
+while testing. Audit late-run stopping behavior and deadline communication, then
+broaden to a different predetermined task serially. Follow the
+[settings audit](runs/2026-09-26_qwen38_queue/SETTINGS_AUDIT.md) for separate sampling
+and reasoning-history comparisons. Two passing solutions on one shared task establish
+feasibility, not a suite-level pass rate or equivalent quant quality.
+Reserve up to 24–48 hours for a subsequent
 bounded batch and analysis. This is a compute budget,
 not a promise to finish every selected task. Record unfinished work explicitly.
 

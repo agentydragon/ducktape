@@ -393,53 +393,20 @@ s3://loom-gym/harvest/
 
 Raw is immutable and append-only (sweep-dated); `norm/` and `tasks/` are
 versioned rebuilds from raw — re-mintable when filters change without
-re-scraping. The Manifold dump mirror is done and declarative: the
-`manifold-dump-mirror` Job in `cluster/k8s/loom-harvest/` re-verifies it on
-every apply (idempotent skip-if-present, sha256-pinned).
+re-scraping.
 
 ### Manifold mirroring via the live API (recent markets)
 
-**No newer dump exists** (verified 2026-06-10: the docs page says "Data dumps
-last updated: July 6, 2024", and the Firebase `trade-dumps/` listing holds
-only the 2023-04 and 2024-07 generations). Everything after 2024-07 — the
-window where modern contestants like glm-4.5 are admissible — therefore comes
-from the live API, which we mirror ourselves.
+Recent-market data is mirrored through the shared scraper in
+`finance/scraper/market_mirror.py`; shared platform records and loaders live in
+`finance/evidence/`. Loom should consume those packages rather than create a second
+set of source clients.
 
-The shared floor is implemented (2026-06):
+Remaining mirror work:
 
-- The scraper runs from a configured market roster under
-  `finance/scraper/market_mirror.py`, pulling `/v0/market/{id}`,
-  `/v0/bets?contractId=`, and `/v0/comments?contractId=`. Bets append
-  incrementally; comments rewrite deterministically because upstream comments
-  can be edited or deleted.
-- The roster is deployment config (a ConfigMap-mounted YAML, schema
-  `finance.evidence.markets.MarketRoster`), unioned with every market the
-  calibration catalogs reference (`--catalog`).
-- The shared platform record models and loaders live in
-  `finance/scraper/` (mirror sync in `market_mirror.py`), the platform record
-  models + loaders in `finance/evidence/{markets,manifold,kalshi,polymarket}.py`
-  — both importable by loom without touching augur. Augur's live per-platform
-  clients and the read-through valkey cache were deleted: calibration reads the
-  mirror via `finance/augur/calibration/evidence_clients.py`.
-- `test_market_seed_tasks` asserts the curated gym panel's markets stay covered
-  by the production roster.
-
-Storage split:
-
-- **augur-evidence git = the canonical mirror.** Same pattern as the FRED/Yahoo
-  scrapes: the scraper CronJob commits dated raw files; consumers
-  `ensure_checkout()`. Bets as append-only JSONL diff cleanly. Git history
-  timestamps every sync, so checking out an old commit is the as-of view for
-  still-unresolved markets.
-- **Bucket (`s3://loom-gym/harvest/raw/`)** = bulk one-shot archives (the 2024
-  dump lives there) and the overflow home if per-market mirrors outgrow git
-  comfort.
-- ~~Valkey~~ (removed 2026-06): the calibration server now reads the git mirror
-  directly (git-sync sidecar keeps the checkout <=1m behind), so the volatile
-  cache layer is gone.
-
-Remaining mirror follow-ups: skip-resolved hardening if the roster grows enough
-that no-op resolved-market checks matter, and roster growth from G1/H3 harvest.
+- Grow the roster with markets selected by the G1/H3 harvest and quality filters.
+- Add skip-resolved optimization only if the roster grows enough for repeated no-op
+  checks to matter.
 
 ### Phasing
 

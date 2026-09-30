@@ -6,7 +6,6 @@ from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
 from cdk8s_plus_34 import (
     Capability,
     ConfigMap,
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     ContainerSecutiryContextCapabilities,
@@ -18,46 +17,37 @@ from cdk8s_plus_34 import (
     LabelSelector,
     MemoryResources,
     PodSecurityContextProps,
-    Protocol,
-    Secret,
-    SecretValue,
     Service,
-    ServicePort,
     Volume,
     k8s,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetTemplate,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, namespaces, pod_policy, public_coder_devbox
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.ssh_mcp.config import (
     BEARER_SECRET_KEY,
     BEARER_SECRET_NAME,
     CONFIG_DIR,
     CONFIG_MAP_NAME,
-    HTTP_PORT,
     NAME,
     NAMESPACE,
+    SERVICE,
     SshMcpConfig,
 )
 from cluster.scripts.nebula_mesh import Mesh
 
 IMAGE_NAME = "git.allegedly.works/ducktape-ci/ssh-mcp"
 PLACEHOLDER_TAG = "unset"
-LABELS = {"app.kubernetes.io/name": NAME}
+_BEARER = SecretRef(namespace=NAMESPACE, name=BEARER_SECRET_NAME).key(BEARER_SECRET_KEY)
 _KEY_VOLUMES = (
     ("keys", "ssh-mcp-keys", f"{CONFIG_DIR}/keys"),
     ("keys-public-coder-devbox", "ssh-mcp-keys-public-coder-devbox", f"{CONFIG_DIR}/keys-public-coder-devbox"),
@@ -65,34 +55,12 @@ _KEY_VOLUMES = (
 )
 
 
-def _bearer_credentials(scope: Construct) -> None:
-    """agentplane-staging copies it with ESO through a store that can read this one Secret
-    (cluster/cdk8s/agentplane/staging.py): this namespace also holds every target's SSH private
-    key, which no store may reach."""
-    Password(
-        scope,
-        "bearer-password-generator",
-        metadata=metadata(BEARER_SECRET_NAME, NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
-        scope,
-        "bearer-external-secret",
-        name=BEARER_SECRET_NAME,
-        namespace=NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(BEARER_SECRET_NAME)],
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        template=ExternalSecretSpecTargetTemplate(type="Opaque", data={BEARER_SECRET_KEY: "{{ .password }}"}),
-    )
-
-
 def _config_map(scope: Construct, config: SshMcpConfig) -> ConfigMap:
 
     return ConfigMap(
         scope,
         "configuration",
-        metadata=metadata(CONFIG_MAP_NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=CONFIG_MAP_NAME, namespace=NAMESPACE),
         data={"settings.yaml": yaml_config(config.settings), "known_hosts": config.known_hosts},
     )
 
@@ -105,7 +73,7 @@ def _egress(mesh: Mesh, config: SshMcpConfig) -> list[CiliumNetworkPolicySpecEgr
         EgressRule.to_entities(Entity.HOST, Entity.REMOTE_NODE, ports=[22]),
         # The devbox is an ordinary pod, while non-Kubernetes Nebula peers need to be
         # selected by CIDR. Their membership and addresses come from nebula-mesh.json.
-        EgressRule.to_endpoints(cilium.endpoint_labels("public-coder-agent", "public-coder-devbox"), 22),
+        public_coder_devbox.SSH.egress(),
     ]
     external_ips = [
         f"{mesh.hosts[hostname].nebula_ip}/32"
@@ -130,14 +98,24 @@ class SshMcp(Construct):
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=NAMESPACE)
 
     def _add_credentials(self) -> None:
-        _bearer_credentials(self)
+        # agentplane-staging copies it with ESO through a store that can read this one Secret
+        # (cluster/cdk8s/agentplane/staging.py): this namespace also holds every target's SSH
+        # private key, which no store may reach.
+        mint_bearer_secret(
+            self,
+            "bearer-external-secret",
+            name=_BEARER.secret.name,
+            namespace=_BEARER.secret.namespace,
+            key=_BEARER.key,
+            creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        )
 
     def _add_deployment(self, config_map: ConfigMap, *, config: SshMcpConfig, mesh: Mesh) -> Deployment:
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(NAME, NAMESPACE, labels=LABELS, annotations={"reloader.stakater.com/auto": "true"}),
-            pod_metadata=ApiObjectMetadata(labels=LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=SERVICE.pods.selector),
+            pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,
             select=False,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
@@ -146,28 +124,25 @@ class SshMcp(Construct):
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
         )
         # The Deployment selector is immutable; retain its existing labels for Flux adoption.
-        deployment.select(LabelSelector.of(labels=LABELS))
-        ApiObject.of(deployment).add_json_patch(runtime_default_seccomp_patch())
-        bearer = Secret.from_secret_name(self, "bearer-secret-ref", BEARER_SECRET_NAME)
+        deployment.select(LabelSelector.of(labels=SERVICE.pods.selector))
         deployment.add_container(
             name="server",
             image=f"{IMAGE_NAME}:{PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             env_variables={
                 "SSH_MCP_CONFIG_FILE": EnvValue.from_value(f"{CONFIG_DIR}/settings.yaml"),
-                "SSH_MCP_BEARER_TOKEN": EnvValue.from_secret_value(SecretValue(secret=bearer, key=BEARER_SECRET_KEY)),
+                "SSH_MCP_BEARER_TOKEN": _BEARER.env_value(self, "bearer-secret-ref"),
                 "SSH_MCP_HOST": EnvValue.from_value("0.0.0.0"),
-                "SSH_MCP_PORT": EnvValue.from_value(str(HTTP_PORT)),
+                "SSH_MCP_PORT": EnvValue.from_value(str(SERVICE.pod_port)),
             },
-            ports=[ContainerPort(name="http", number=HTTP_PORT, protocol=Protocol.TCP)],
+            ports=[SERVICE.port.container_port()],
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            readiness=http_probe("/healthz", port=HTTP_PORT, initial_delay_seconds=3),
-            liveness=http_probe("/healthz", port=HTTP_PORT, initial_delay_seconds=15, period_seconds=20),
+            readiness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=3),
+            liveness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=15, period_seconds=20),
             security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 ensure_non_root=True,
                 user=1000,
@@ -202,26 +177,27 @@ class SshMcp(Construct):
                 ],
             )
         )
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(NAME, NAMESPACE),
+            metadata=ApiObjectMetadata(name=SERVICE.name, namespace=NAMESPACE),
             selector=deployment,
-            ports=[ServicePort(name="http", port=HTTP_PORT, target_port=HTTP_PORT, protocol=Protocol.TCP)],
+            ports=[SERVICE.port.service_port()],
         )
 
     def _add_network_policy(self, config: SshMcpConfig, mesh: Mesh) -> None:
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=metadata(NAME, NAMESPACE),
-            selector=LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+            endpoint_selector=SERVICE.pods.selector,
             ingress=[
                 IngressRule.from_endpoints(
-                    cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[HTTP_PORT]
+                    cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[SERVICE.pod_port]
                 )
             ],
             egress=_egress(mesh, config),
@@ -230,14 +206,14 @@ class SshMcp(Construct):
 
 def chart(app: App, *, config: SshMcpConfig, mesh: Mesh) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={"name": NAMESPACE, "goldilocks.fairwinds.com/enabled": "false"},
-            annotations={"description": "SSH MCP backend; private keys stay in this namespace."},
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.DISABLED,
+        agent_readable=None,
+        labels={"name": NAMESPACE},
+        annotations={"description": "SSH MCP backend; private keys stay in this namespace."},
     )
     SshMcp(chart, NAME, config=config, mesh=mesh)
     return chart

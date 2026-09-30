@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.atuin.server import DB_APP_SECRET, NAMESPACE
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.atuin.server import DATABASE, NAMESPACE
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "atuin-user-provisioner"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
+# Reflector's copy of user-agentydragon's SOPS-managed Secret.
+_USER_PASSWORD = SecretRef(namespace=NAMESPACE, name="atuin-user-password").key("user_password")
 _SCRIPT_CONFIG_MAP = f"{NAME}-script"
 _SCRIPT_DIR = "/scripts"
 _SCRIPT = textwrap.dedent(
@@ -35,8 +36,6 @@ _SCRIPT = textwrap.dedent(
 
     USERNAME = "agentydragon"
     EMAIL = "agentydragon@allegedly.works"
-    DB_HOST = "atuin-db-rw.atuin.svc.cluster.local"
-    DB_PORT = 5432
     DB_NAME = "atuin"
     DB_USER = "atuin"
 
@@ -45,7 +44,8 @@ _SCRIPT = textwrap.dedent(
         user_password = os.environ["ATUIN_USER_PASSWORD"]
         db_password = os.environ["POSTGRES_PASSWORD"]
 
-        conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=db_password)
+        # libpq reads the host and port from PGHOST and PGPORT.
+        conn = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=db_password)
         conn.autocommit = True
 
         ph = argon2.PasswordHasher()
@@ -115,8 +115,9 @@ def chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels={"app": NAME}),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     restart_policy="OnFailure",
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     containers=[
                         k8s.Container(
                             name="provisioner",
@@ -127,20 +128,10 @@ def chart(app: App) -> Chart:
                                 f"pip install --quiet psycopg2-binary argon2-cffi && python {_SCRIPT_DIR}/provision.py",
                             ],
                             env=[
-                                k8s.EnvVar(
-                                    name="ATUIN_USER_PASSWORD",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(
-                                            name="atuin-user-password", key="user_password"
-                                        )
-                                    ),
-                                ),
-                                k8s.EnvVar(
-                                    name="POSTGRES_PASSWORD",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(name=DB_APP_SECRET, key="password")
-                                    ),
-                                ),
+                                _USER_PASSWORD.env_var("ATUIN_USER_PASSWORD"),
+                                DATABASE.app_secret.key("password").env_var("POSTGRES_PASSWORD"),
+                                k8s.EnvVar(name="PGHOST", value=DATABASE.rw.host),
+                                k8s.EnvVar(name="PGPORT", value=str(DATABASE.rw.port.number)),
                             ],
                             volume_mounts=[k8s.VolumeMount(name="script", mount_path=_SCRIPT_DIR, read_only=True)],
                         )
@@ -153,17 +144,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def atuin_user_provisioner(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, atuin: Kustomization, user_agentydragon: Kustomization
+    chart: Chart, directory: RenderedDirectory, atuin: Kustomization, user_agentydragon: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         retry_interval=None,
         wait=None,
         depends_on=flux_kustomization_depends_on_many(atuin, user_agentydragon),

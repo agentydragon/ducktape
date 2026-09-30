@@ -1,25 +1,24 @@
-"""Tempo (traces) with its tenant-local SeaweedFS bucket and credentials."""
+"""Tempo (traces) with its tenant-local SeaweedFS bucket, identity and credentials."""
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.monitoring import grafana_helmrepository, mimir
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "tempo"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/tempo"
 _NAMESPACE = "monitoring"
 _CREDENTIALS_SECRET = "tempo-seaweedfs-credentials"
+# The chart's Service exposes OTLP/gRPC on the receiver's port.
+_OTLP_GRPC_PORT = 4317
+OTLP_GRPC_ENDPOINT = f"{NAME}.{_NAMESPACE}.svc.cluster.local:{_OTLP_GRPC_PORT}"
 
 
 def _storage(chart: Chart) -> None:
@@ -31,7 +30,7 @@ def _storage(chart: Chart) -> None:
         adopt_existing=True,
         description="Tempo's tenant-local SeaweedFS trace bucket.",
     )
-    identity = s3.Identity(chart, "identity", name=NAME)
+    identity = s3.Identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
     bucket.grant_read_write(identity)
     identity.credentials(
         namespace=_NAMESPACE,
@@ -67,7 +66,12 @@ def chart(app: App) -> Chart:
         values={
             "tempo": {
                 "receivers": {
-                    "otlp": {"protocols": {"grpc": {"endpoint": "0.0.0.0:4317"}, "http": {"endpoint": "0.0.0.0:4318"}}}
+                    "otlp": {
+                        "protocols": {
+                            "grpc": {"endpoint": f"0.0.0.0:{_OTLP_GRPC_PORT}"},
+                            "http": {"endpoint": "0.0.0.0:4318"},
+                        }
+                    }
                 },
                 "storage": {
                     "trace": {
@@ -82,7 +86,7 @@ def chart(app: App) -> Chart:
                 # because there are no metrics-generator instances registered in the ring.
                 "metricsGenerator": {
                     "enabled": True,
-                    "remoteWriteUrl": "http://mimir-gateway.monitoring.svc.cluster.local/api/v1/push",
+                    "remoteWriteUrl": mimir.PUSH_URL,
                     "processor": {"local_blocks": {}, "service_graphs": {}, "span_metrics": {}},
                 },
                 "overrides": {
@@ -101,24 +105,15 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def tempo(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    monitoring_crds: Kustomization,
-    grafana_helmrepository: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "tempo",
-        artifact,
+        directory,
         wait=None,
         suspend=False,
-        decryption=SOPS_DECRYPTION,
         health_checks=[
             KustomizationSpecHealthChecks(
                 api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="tempo", namespace="monitoring"
@@ -134,7 +129,6 @@ def tempo(
         depends_on=flux_kustomization_depends_on_many(
             # the chart's serviceMonitor.enabled
             monitoring_crds,
-            grafana_helmrepository,
-            seaweedfs_cluster,
+            seaweedfs_operator,
         ),
     )

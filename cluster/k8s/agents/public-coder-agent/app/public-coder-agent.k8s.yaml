@@ -84,8 +84,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: public-coder-agent
   name: public-coder-agent
@@ -164,9 +162,9 @@ spec:
             - name: NODE_USE_ENV_PROXY
               value: "1"
             - name: HTTP_PROXY
-              value: http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080
+              value: http://public-coder-agent-proxy.public-coder-agent.svc:8080
             - name: HTTPS_PROXY
-              value: http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080
+              value: http://public-coder-agent-proxy.public-coder-agent.svc:8080
             - name: NO_PROXY
               value: 127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local
             - name: NODE_EXTRA_CA_CERTS
@@ -177,11 +175,12 @@ spec:
               value: /etc/ssl/certs/ca-certificates.crt
             - name: PIP_CERT
               value: /etc/ssl/certs/ca-certificates.crt
-          image: ghcr.io/agentydragon/openclaw:unset
+          image: git.allegedly.works/ducktape-ci/public-coder-agent:unset
           name: openclaw
           ports:
             - containerPort: 18789
               name: gateway
+              protocol: TCP
           readinessProbe:
             failureThreshold: 3
             httpGet:
@@ -207,9 +206,6 @@ spec:
               name: trust
               readOnly: true
               subPath: ca-certificates.crt
-            - mountPath: /egress-proxy-ca
-              name: haku-egress-proxy-ca-cert
-              readOnly: true
             - mountPath: /home/openclaw/.ssh
               name: ssh
               readOnly: true
@@ -217,6 +213,8 @@ spec:
               name: tmp
             - mountPath: /diag
               name: diagnostics
+      imagePullSecrets:
+        - name: forgejo-images-creds
       initContainers:
         - command:
             - sh
@@ -224,7 +222,7 @@ spec:
             - |
               cp /cfg/openclaw.json5 /state/openclaw.json5
               rm -f /state/openclaw.json5.last-good /state/openclaw.json5.bak*
-          image: ghcr.io/agentydragon/openclaw:unset
+          image: git.allegedly.works/ducktape-ci/public-coder-agent:unset
           name: seed-config
           volumeMounts:
             - mountPath: /cfg
@@ -246,9 +244,6 @@ spec:
         - configMap:
             name: public-coder-agent-proxy-ca-cert
           name: trust
-        - configMap:
-            name: haku-egress-proxy-ca-cert
-          name: haku-egress-proxy-ca-cert
         - name: ssh
           projected:
             defaultMode: 288
@@ -272,6 +267,7 @@ spec:
   ports:
     - name: gateway
       port: 18789
+      protocol: TCP
       targetPort: 18789
   selector:
     app.kubernetes.io/name: public-coder-agent

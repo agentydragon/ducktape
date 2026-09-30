@@ -20,12 +20,6 @@ off a heavy task. Requires the extension to keep a small ring buffer of
 `(timestamp, used_percent)` samples and finite-difference them. Surface as an
 extra popup line: `burn (30m): 4%/h → exhausts in 5h12m at this rate`.
 
-## Per-model breakdown for Claude
-
-The Claude usage API also returns `seven_day_opus` and `seven_day_sonnet`.
-Hide behind `show-model-breakdown` (default off) so the popup doesn't get
-crowded for users who don't care.
-
 ## Option E (logo-as-pie / water fill)
 
 `DESIGN.md` lists this as the cutest panel rendering but the most expensive

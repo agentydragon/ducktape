@@ -32,7 +32,7 @@ from util.bazel.runfiles import get_required_path, own_repo_rlocation
 def control(
     *,
     equity_share: float,
-    quantity: float,
+    quantity: Decimal | int,
     annual: Decimal,
     horizon: int,
     blocks: list[tuple[LevelSeriesKey, np.ndarray]],
@@ -47,7 +47,7 @@ def control(
     lot = opening_lots(equity_share)[0]
     lot = replace(
         lot,
-        units=int(quantity_to_quanta(quantity, scale=lot.quantity_scale)),
+        units=quantity_to_quanta(quantity, scale=lot.quantity_scale),
         basis=int(currency_amount_to_quanta(cost_basis, quantum=QUANTUM)),
     )
     world = compose(case, 0, lots=(lot,), annual_withdrawal=annual)
@@ -117,7 +117,7 @@ def test_final_exact_depletion_is_success_but_an_unpaid_final_withdrawal_is_not(
 ) -> None:
     result = control(
         equity_share=1,
-        quantity=portfolio_dollars / 100,
+        quantity=Decimal(portfolio_dollars) / 100,
         annual=Decimal(1),
         horizon=HORIZON_MONTHS,
         blocks=[

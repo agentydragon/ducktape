@@ -1,26 +1,48 @@
+import base64
+import hashlib
+import json
+import time
 from datetime import UTC, date, datetime
-from types import SimpleNamespace
 from typing import cast
 from uuid import UUID
 
+import jwt
 import pytest_bazel
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
+from itsdangerous import TimestampSigner
 from plaid.model.accounts_get_request import AccountsGetRequest
+from plaid.model.country_code import CountryCode
+from plaid.model.institution import Institution
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
+from plaid.model.institutions_get_by_id_response import InstitutionsGetByIdResponse
 from plaid.model.institutions_search_request import InstitutionsSearchRequest
+from plaid.model.institutions_search_response import InstitutionsSearchResponse
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
+from plaid.model.item import Item
 from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+from plaid.model.item_public_token_exchange_response import ItemPublicTokenExchangeResponse
 from plaid.model.item_remove_request import ItemRemoveRequest
+from plaid.model.item_remove_response import ItemRemoveResponse
+from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
+from plaid.model.item_webhook_update_response import ItemWebhookUpdateResponse
+from plaid.model.jwk_public_key import JWKPublicKey
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.link_token_create_response import LinkTokenCreateResponse
+from plaid.model.products import Products
 from plaid.model.transactions_get_request import TransactionsGetRequest
+from plaid.model.transactions_sync_response import TransactionsSyncResponse
+from plaid.model.webhook_verification_key_get_request import WebhookVerificationKeyGetRequest
+from plaid.model.webhook_verification_key_get_response import WebhookVerificationKeyGetResponse
 
 from finance.plaid.db.client import PlaidClient, PlaidSdkApiLike
 from finance.plaid.db.config import PlaidWebSettings
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
-from finance.plaid.link.app import PlaidWebClient, create_app
+from finance.plaid.link.app import create_app
+from finance.plaid.link.auth import session_cookie_name
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -29,6 +51,8 @@ from finance.plaid.link.app import PlaidWebClient, create_app
 class _FakeStorage:
     def __init__(self) -> None:
         self.purged_item_ids: list[str] = []
+        self.queued_transaction_syncs: list[str] = []
+        self.webhook_deliveries: list[dict[str, str | None]] = []
 
     def _link(self) -> StoredLink:
         return StoredLink(
@@ -60,6 +84,35 @@ class _FakeStorage:
     async def running_sync_item_ids(self) -> set[str]:
         return set()
 
+    async def claim_transaction_sync(self) -> None:
+        return None
+
+    async def enqueue_transaction_sync(self, item_id: str) -> None:
+        self.queued_transaction_syncs.append(item_id)
+
+    async def record_plaid_webhook_delivery(self, raw_body: str) -> int:
+        self.webhook_deliveries.append({"raw_body": raw_body, "disposition": "received"})
+        return len(self.webhook_deliveries)
+
+    async def update_plaid_webhook_delivery(
+        self,
+        delivery_id: int,
+        *,
+        webhook_type: str | None,
+        webhook_code: str | None,
+        item_id: str | None,
+        disposition: str,
+    ) -> None:
+        self.webhook_deliveries[delivery_id - 1].update(
+            {"webhook_type": webhook_type, "webhook_code": webhook_code, "item_id": item_id, "disposition": disposition}
+        )
+
+    async def finish_transaction_sync(self, claim: object) -> None:
+        raise AssertionError("the fake worker never claims transaction syncs")
+
+    async def retry_transaction_sync(self, claim: object) -> None:
+        raise AssertionError("the fake worker never claims transaction syncs")
+
 
 class _FakeSecrets:
     def __init__(self) -> None:
@@ -81,21 +134,85 @@ class _FakePlaidApi:
     api_client = object()
 
     def __init__(self) -> None:
+        self.webhook_private_key = ec.generate_private_key(ec.SECP256R1())
         self.link_token_requests: list[dict[str, object]] = []
         self.exchanged_public_tokens: list[str] = []
         self.removed_access_tokens: list[str] = []
 
-    def link_token_create(self, request: LinkTokenCreateRequest) -> SimpleNamespace:
+    def link_token_create(self, request: LinkTokenCreateRequest) -> LinkTokenCreateResponse:
         self.link_token_requests.append(request.to_dict())
-        return SimpleNamespace(link_token=f"link-token-{len(self.link_token_requests)}")
+        return cast(
+            LinkTokenCreateResponse,
+            LinkTokenCreateResponse(
+                link_token=f"link-token-{len(self.link_token_requests)}",
+                expiration=datetime(2026, 6, 1, tzinfo=UTC),
+                request_id="req-link-token",
+            ),
+        )
 
-    def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest) -> SimpleNamespace:
+    def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest) -> ItemPublicTokenExchangeResponse:
         self.exchanged_public_tokens.append(request.public_token)
-        return SimpleNamespace(access_token="access-sandbox-new", item_id="item-sandbox-new")
+        return cast(
+            ItemPublicTokenExchangeResponse,
+            ItemPublicTokenExchangeResponse(
+                access_token="access-sandbox-new", item_id="item-sandbox-new", request_id="req-token-exchange"
+            ),
+        )
 
-    def item_remove(self, request: ItemRemoveRequest) -> object:
+    def item_remove(self, request: ItemRemoveRequest) -> ItemRemoveResponse:
         self.removed_access_tokens.append(request.access_token)
-        return object()
+        return cast(ItemRemoveResponse, ItemRemoveResponse(request_id="req-item-remove"))
+
+    def item_webhook_update(self, request: ItemWebhookUpdateRequest) -> ItemWebhookUpdateResponse:
+        return cast(
+            ItemWebhookUpdateResponse,
+            ItemWebhookUpdateResponse(
+                item=cast(
+                    Item,
+                    Item(
+                        item_id="item_123",
+                        webhook=request.webhook,
+                        error=None,
+                        available_products=[Products("transactions")],
+                        billed_products=[],
+                        consent_expiration_time=None,
+                        update_type="background",
+                        _check_type=False,
+                    ),
+                ),
+                request_id="req-webhook-update",
+            ),
+        )
+
+    def webhook_verification_key_get(
+        self, request: WebhookVerificationKeyGetRequest
+    ) -> WebhookVerificationKeyGetResponse:
+        assert request.key_id == "test-key"
+        numbers = self.webhook_private_key.public_key().public_numbers()
+
+        def encode(value: int) -> str:
+            return base64.urlsafe_b64encode(value.to_bytes(32, "big")).rstrip(b"=").decode("ascii")
+
+        key = cast(
+            JWKPublicKey,
+            JWKPublicKey(
+                alg="ES256",
+                crv="P-256",
+                kid="test-key",
+                kty="EC",
+                use="sig",
+                x=encode(numbers.x),
+                y=encode(numbers.y),
+                created_at=0,
+                expired_at=None,
+            ),
+        )
+        return cast(
+            WebhookVerificationKeyGetResponse, WebhookVerificationKeyGetResponse(key=key, request_id="req-webhook-key")
+        )
+
+    def transactions_sync(self, request: object) -> TransactionsSyncResponse:
+        raise AssertionError("unexpected transaction sync in this app test")
 
     def item_get(self, request: ItemGetRequest) -> object:
         raise AssertionError("unexpected sync call in smoke test")
@@ -115,20 +232,34 @@ class _FakePlaidApi:
     def liabilities_get(self, request: LiabilitiesGetRequest) -> object:
         raise AssertionError("unexpected sync call in smoke test")
 
-    def institutions_search(self, request: InstitutionsSearchRequest) -> SimpleNamespace:
-        return SimpleNamespace(to_dict=lambda: {"institutions": [{"institution_id": "ins_3", "name": "Chase"}]})
-
-    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest) -> SimpleNamespace:
-        return SimpleNamespace(
-            to_dict=lambda: {
-                "institution": {
-                    "institution_id": "ins_3",
-                    "name": "Chase",
-                    "url": "https://chase.example",
-                    "products": ["auth", "transactions", "identity", "liabilities"],
-                }
-            }
+    def institutions_search(self, request: InstitutionsSearchRequest) -> InstitutionsSearchResponse:
+        return cast(
+            InstitutionsSearchResponse,
+            InstitutionsSearchResponse(institutions=[_institution()], request_id="req-institutions-search"),
         )
+
+    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest) -> InstitutionsGetByIdResponse:
+        return cast(
+            InstitutionsGetByIdResponse,
+            InstitutionsGetByIdResponse(
+                institution=_institution(url="https://chase.example"), request_id="req-institutions-get"
+            ),
+        )
+
+
+def _institution(*, url: str | None = None) -> Institution:
+    return cast(
+        Institution,
+        Institution(
+            institution_id="ins_3",
+            name="Chase",
+            products=[Products("auth"), Products("transactions"), Products("identity"), Products("liabilities")],
+            country_codes=[CountryCode("US")],
+            routing_numbers=[],
+            oauth=False,
+            url=url,
+        ),
+    )
 
 
 def _client(
@@ -140,16 +271,35 @@ def _client(
         client_secret="client-secret",
         DATABASE_URL="postgresql://example.invalid/plaid",
         public_base_url="https://plaid-mcp.test",
+        webhook_url="https://plaid-mcp.test/webhooks/plaid",
         target_namespace="plaid-mcp",
+        oidc_issuer="https://auth.example.test/application/o/plaid-link-oidc/",
+        oidc_client_id="plaid-link",
+        oidc_client_secret="test-client-secret",
+        oidc_session_secret="test-session-secret",
     )
-    return TestClient(
+    test_client = TestClient(
         create_app(
             settings,
             storage=cast(PlaidLinkStorage, storage or _FakeStorage()),
             secrets=secrets or _FakeSecrets(),
-            client=cast(PlaidWebClient, PlaidClient(api=cast(PlaidSdkApiLike, api or _FakePlaidApi()))),
-        )
+            client=PlaidClient(api=cast(PlaidSdkApiLike, api or _FakePlaidApi())),
+        ),
+        base_url=settings.public_base_url,
+        headers={"Origin": settings.public_base_url},
     )
+    session = {
+        "user": {
+            "issuer": settings.oidc_issuer,
+            "subject": "test-subject",
+            "username": "agentydragon",
+            "expires_at": time.time() + 3600,
+        }
+    }
+    encoded_session = base64.b64encode(json.dumps(session, separators=(",", ":")).encode("utf-8"))
+    cookie = TimestampSigner(settings.oidc_session_secret.get_secret_value()).sign(encoded_session).decode("utf-8")
+    test_client.cookies.set(session_cookie_name(settings.public_base_url), cookie, domain="plaid-mcp.test", path="/")
+    return test_client
 
 
 def test_link_ui_exposes_management_actions() -> None:
@@ -298,6 +448,111 @@ def test_link_token_never_pins_an_institution() -> None:
     assert response.status_code == 200
     assert "institution_id" not in api.link_token_requests[0]
     assert api.link_token_requests[0]["products"] == ["transactions"]
+    assert api.link_token_requests[0]["webhook"] == "https://plaid-mcp.test/webhooks/plaid"
+
+
+def _signed_webhook(api: _FakePlaidApi, payload: dict[str, object]) -> tuple[bytes, str]:
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    token = jwt.encode(
+        {"iat": int(time.time()), "request_body_sha256": hashlib.sha256(body).hexdigest()},
+        api.webhook_private_key,
+        algorithm="ES256",
+        headers={"kid": "test-key"},
+    )
+    return body, token
+
+
+def test_signed_transactions_webhook_is_queued_and_body_tampering_is_rejected() -> None:
+    api = _FakePlaidApi()
+    storage = _FakeStorage()
+    body, token = _signed_webhook(
+        api,
+        {
+            "webhook_type": "TRANSACTIONS",
+            "webhook_code": "SYNC_UPDATES_AVAILABLE",
+            "item_id": "item_123",
+            "future_plaid_field": {"kept": True},
+        },
+    )
+
+    with _client(storage=storage, api=api) as client:
+        response = client.post(
+            "/webhooks/plaid", content=body, headers={"Plaid-Verification": token, "Content-Type": "application/json"}
+        )
+        tampered = client.post(
+            "/webhooks/plaid",
+            content=body + b" ",
+            headers={"Plaid-Verification": token, "Content-Type": "application/json"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "queued"}
+    assert storage.queued_transaction_syncs == ["item_123"]
+    assert storage.webhook_deliveries == [
+        {
+            "raw_body": body.decode(),
+            "disposition": "queued",
+            "webhook_type": "TRANSACTIONS",
+            "webhook_code": "SYNC_UPDATES_AVAILABLE",
+            "item_id": "item_123",
+        }
+    ]
+    assert tampered.status_code == 401
+
+
+def test_authenticated_unhandled_webhook_is_recorded_and_ignored() -> None:
+    api = _FakePlaidApi()
+    storage = _FakeStorage()
+    body, token = _signed_webhook(
+        api,
+        {
+            "webhook_type": "TRANSACTIONS",
+            "webhook_code": "INITIAL_UPDATE",
+            "item_id": "item_123",
+            "new_plaid_field": "preserve this",
+        },
+    )
+
+    with _client(storage=storage, api=api) as client:
+        response = client.post(
+            "/webhooks/plaid", content=body, headers={"Plaid-Verification": token, "Content-Type": "application/json"}
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ignored"}
+    assert storage.queued_transaction_syncs == []
+    assert storage.webhook_deliveries == [
+        {
+            "raw_body": body.decode(),
+            "disposition": "ignored",
+            "webhook_type": "TRANSACTIONS",
+            "webhook_code": "INITIAL_UPDATE",
+            "item_id": "item_123",
+        }
+    ]
+
+
+def test_authenticated_unrecognized_envelope_body_is_recorded() -> None:
+    api = _FakePlaidApi()
+    storage = _FakeStorage()
+    body, token = _signed_webhook(api, {"future_envelope": {"value": 42}})
+
+    with _client(storage=storage, api=api) as client:
+        response = client.post(
+            "/webhooks/plaid", content=body, headers={"Plaid-Verification": token, "Content-Type": "application/json"}
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ignored"}
+    assert storage.webhook_deliveries == [
+        {
+            "raw_body": body.decode(),
+            "disposition": "ignored",
+            "webhook_type": None,
+            "webhook_code": None,
+            "item_id": None,
+        }
+    ]
 
 
 def test_link_token_rejects_an_empty_product_set() -> None:

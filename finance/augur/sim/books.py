@@ -14,6 +14,7 @@ from finance.augur.sim.ids import (
     PortfolioId,
     PropertyId,
 )
+from finance.augur.sim.income import InterestCharacter
 
 
 class Record(BaseModel):
@@ -75,7 +76,7 @@ class TaxLiabilityState(Record):
 
 class PropertyState(Record):
     property_id: PropertyId
-    location_id: LocationId
+    market: LocationId
     owner_agent_id: AgentId
     purchase_month: int
     adjusted_basis: int
@@ -218,7 +219,7 @@ class BondCashflowOutcome(Record):
     bond_id: BondId
     agent_id: AgentId
     account_id: AccountId
-    issuer_jurisdiction_id: JurisdictionId | None
+    character: InterestCharacter
     coupon: int
     accretion: int
     redemption: int

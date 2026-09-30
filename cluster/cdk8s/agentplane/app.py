@@ -34,9 +34,8 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
-    ConfigMap,
-    ContainerPort,
     ContainerResources,
+    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
     Deployment,
@@ -45,16 +44,11 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     MemoryResources,
     PodSecurityContextProps,
-    Protocol,
     Role,
     RoleBinding,
     RolePolicyRule,
-    Secret,
-    SecretValue,
     Service,
     ServiceAccount,
-    ServicePort,
-    Volume,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
@@ -62,28 +56,21 @@ from constructs import Construct
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
-from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import (
-    actions,
-    container_security,
-    database,
-    egress,
-    electric,
-    llm_ingress,
-    node_scheduling,
-    sandbox_pod,
-)
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s.agentplane import actions, database, egress, electric, llm_ingress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
+from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import cli_args, env_name
 
@@ -92,19 +79,45 @@ NAME = "agentplane-app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
 _RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner"
-CONTAINER_PORT = 8080
 _RUNNER_PORT = 7000
 _LABELS = {"app.kubernetes.io/name": NAME}
 _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
-_CONFIG_DIR = "/etc/agentplane"
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
 # SandboxTemplate's own VolumeClaimTemplate -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
+_QWEN_IQ4XS = "qwen3.8-flash-next-iq4xs"
+
+
+def service(namespace: str) -> ServiceRef:
+    """The app's Service in one environment's namespace."""
+    return ServiceRef(
+        name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+    )
+
+
+def oidc_secret(namespace: str) -> SecretRef:
+    """The OIDC client Secret the app reads; in testing, Dex writes it (dex.py)."""
+    return SecretRef(namespace=namespace, name="agentplane-oidc")
+
+
+def _runner_model_context_windows() -> dict[str, int]:
+    """Context verified for the Agentplane Qwen IQ4_XS routes, on both client wires.
+
+    Route ids and limits come from the LiteLLM model roster; keep this scoped to the Qwen routes
+    rather than assuming every Ollama model has the same window.
+    """
+    return {
+        exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context)): context
+        for model, _, contexts in OLLAMA_CHAT_MODELS
+        if model == _QWEN_IQ4XS
+        for context in contexts
+        for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
+    }
 
 
 class App(Construct):
-    """ServiceAccounts, RBAC, Deployment (+ migrate initContainer), Service,
+    """ServiceAccounts, RBAC, the config ConfigMap, Deployment (+ migrate initContainer), Service,
     HTTPRoute, NetworkPolicy, optional PodDisruptionBudget, and the runner
     SandboxTemplate.
     """
@@ -112,11 +125,21 @@ class App(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
         self.env = env
+        self.service = service(env.namespace)
+        self.oidc = oidc_secret(env.namespace)
 
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=env.namespace)
         app_service_account = self._add_service_accounts()
         self._add_rbac(app_service_account)
-        deployment = self._add_deployment(app_service_account)
+        config = SettingsFile(
+            self,
+            "config",
+            metadata=ApiObjectMetadata(name="agentplane-app-config", namespace=env.namespace),
+            model=Settings,
+            content=env.app_config.to_config_file(),
+            path="/etc/agentplane/config.yaml",
+        )
+        deployment = self._add_deployment(app_service_account, config)
         self._add_service(deployment)
         self._add_http_route()
         self._add_network_policy()
@@ -129,16 +152,22 @@ class App(Construct):
         # The identity an agent presents to the app's own API; no Pod runs as it, so no
         # mounted token.
         ServiceAccount(
-            self, "serviceaccount-agent", metadata=metadata("agentplane-agent", namespace), automount_token=False
+            self,
+            "serviceaccount-agent",
+            metadata=ApiObjectMetadata(name="agentplane-agent", namespace=namespace),
+            automount_token=False,
         )
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the app
         # mounts its own token to call TokenReview as itself.
         app_service_account = ServiceAccount(
-            self, "serviceaccount-app", metadata=metadata(NAME, namespace), automount_token=True
+            self, "serviceaccount-app", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), automount_token=True
         )
         # The runner Pods' identity, with no RBAC of its own.
         ServiceAccount(
-            self, "serviceaccount-runner", metadata=metadata("agentplane-runner", namespace), automount_token=False
+            self,
+            "serviceaccount-runner",
+            metadata=ApiObjectMetadata(name="agentplane-runner", namespace=namespace),
+            automount_token=False,
         )
         return app_service_account
 
@@ -156,7 +185,7 @@ class App(Construct):
         Role(
             self,
             "role",
-            metadata=metadata(NAME, namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
                 # GET /sandboxes/templates lists them; a get-only Role 403'd the route (#7023).
                 RolePolicyRule(
@@ -196,65 +225,59 @@ class App(Construct):
             ],
         )
         RoleBinding(
-            self, "rolebinding", metadata=metadata(NAME, namespace), role=Role.from_role_name(self, "role-ref", NAME)
+            self,
+            "rolebinding",
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            role=Role.from_role_name(self, "role-ref", NAME),
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
-        postgres_app = Secret.from_secret_name(self, "postgres-app-secret", "postgres-app")
-        oidc_secret = Secret.from_secret_name(self, "agentplane-oidc-secret", "agentplane-oidc")
-        oidc_session_secret = (
-            oidc_secret
-            if self.env.app.oidc_session_secret_name == "agentplane-oidc"
-            else Secret.from_secret_name(self, "agentplane-oidc-session-secret", self.env.app.oidc_session_secret_name)
-        )
+        postgres_app = database.postgres(self.env).app_secret
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
-            CONFIG_FILE_ENV: EnvValue.from_value(f"{_CONFIG_DIR}/config.yaml"),
-            "AGENTPLANE_DB_USER": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="username")),
-            "AGENTPLANE_DB_PASSWORD": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="password")),
-            "AGENTPLANE_DB_HOST": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="host")),
-            "AGENTPLANE_DB_PORT": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="port")),
-            "AGENTPLANE_DB_NAME": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="dbname")),
+            "AGENTPLANE_DB_USER": postgres_app.key("username").env_value(self, "postgres-app-user-ref"),
+            "AGENTPLANE_DB_PASSWORD": postgres_app.key("password").env_value(self, "postgres-app-password-ref"),
+            "AGENTPLANE_DB_HOST": postgres_app.key("host").env_value(self, "postgres-app-host-ref"),
+            "AGENTPLANE_DB_PORT": postgres_app.key("port").env_value(self, "postgres-app-port-ref"),
+            "AGENTPLANE_DB_NAME": postgres_app.key("dbname").env_value(self, "postgres-app-dbname-ref"),
             env_name(Settings, "database_url"): EnvValue.from_value(
                 "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
                 "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
             ),
-            env_name(Settings, "electric_url"): EnvValue.from_value(
-                f"http://{electric.NAME}.{namespace}.svc.cluster.local:{electric.PORT}"
-            ),
+            env_name(Settings, "electric_url"): EnvValue.from_value(electric.service(namespace).url),
             env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
             env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.env.app.hostname}"),
-            env_name(OIDCSettings, "client_id"): EnvValue.from_secret_value(
-                SecretValue(secret=oidc_secret, key="client-id")
+            env_name(OIDCSettings, "client_id"): self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
+            env_name(OIDCSettings, "client_secret"): self.oidc.key("client-secret").env_value(
+                self, "oidc-client-secret-ref"
             ),
-            env_name(OIDCSettings, "client_secret"): EnvValue.from_secret_value(
-                SecretValue(secret=oidc_secret, key="client-secret")
-            ),
-            env_name(OIDCSettings, "session_secret"): EnvValue.from_secret_value(
-                SecretValue(secret=oidc_session_secret, key="session-secret")
-            ),
+            env_name(OIDCSettings, "session_secret"): SecretRef(
+                namespace=namespace, name=self.env.app.oidc_session_secret_name
+            )
+            .key("session-secret")
+            .env_value(self, "oidc-session-secret-ref"),
             env_name(Settings, "token_subjects"): EnvValue.from_value(token_subjects),
         }
 
-    def _add_deployment(self, app_service_account: ServiceAccount) -> Deployment:
+    def _add_deployment(self, app_service_account: ServiceAccount, config: SettingsFile) -> Deployment:
         namespace = self.env.namespace
         env = self._container_env()
-        oidc_secret_reload = "agentplane-oidc"
-        if self.env.app.oidc_session_secret_name != "agentplane-oidc":
+        oidc_secret_reload = self.oidc.name
+        if self.env.app.oidc_session_secret_name != self.oidc.name:
             oidc_secret_reload += f",{self.env.app.oidc_session_secret_name}"
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                namespace,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=namespace,
                 labels=_LABELS,
                 annotations={
                     # A re-minted client secret otherwise leaves the pod on the old
                     # one, and every login 401s.
                     "secret.reloader.stakater.com/reload": oidc_secret_reload,
-                    "configmap.reloader.stakater.com/reload": "agentplane-app-config",
+                    "configmap.reloader.stakater.com/reload": config.config_map.name,
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
@@ -287,35 +310,36 @@ class App(Construct):
                 sandbox_namespace=namespace,
                 runner_port=_RUNNER_PORT,
                 host="0.0.0.0",
-                port=CONTAINER_PORT,
+                port=self.service.pod_port,
             ),
             env_variables=env,
-            ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
-            readiness=http_probe("/readyz", port=CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/healthz", port=CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30),
+            ports=[self.service.port.container_port()],
+            readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
+            liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=container_security.WRITABLE_ROOT,
+            # Writable: its root filesystem writes are unaudited.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
-        config = ConfigMap.from_config_map_name(self, "app-config-ref", "agentplane-app-config")
-        volume = Volume.from_config_map(self, "config-volume", config)
-        deployment.containers[0].mount(_CONFIG_DIR, volume, read_only=True)
+        config.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
 
         # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app
         # carries no control-plane toleration.
-        node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment)
+        pod_policy.place(deployment, node_scheduling.HIL_OVH)
+        pod_policy.harden(deployment)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(NAME, self.env.namespace, labels=_LABELS),
+            metadata=ApiObjectMetadata(
+                name=self.service.name, namespace=self.env.namespace, labels=self.service.labels
+            ),
             selector=deployment,
-            ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
+            ports=[self.service.port.service_port()],
         )
 
     def _add_http_route(self) -> None:
@@ -323,10 +347,9 @@ class App(Construct):
         https_route(
             self,
             "httproute",
-            metadata=metadata(namespace, namespace),
-            hostname=self.env.app.hostname,
-            backend=NAME,
-            port=CONTAINER_PORT,
+            metadata=ApiObjectMetadata(name=namespace, namespace=namespace),
+            hostnames=[self.env.app.hostname],
+            backend=self.service,
             # A session stream stays attached for as long as the tab is open.
             timeout="3600s",
         )
@@ -341,19 +364,17 @@ class App(Construct):
 
     def _add_network_policy(self) -> None:
         namespace = self.env.namespace
+        runner = Pods(namespace=namespace, labels=tuple(_RUNNER_LABELS.items()))
         dns_egress = cilium.dns_egress()
         # Runner Pods reach DNS and the egress proxy's listener, which the sidecar
         # relays to; port 7000 is open only to Pods in this namespace.
         NetworkPolicy(
             self,
             "networkpolicy-runner",
-            metadata=metadata("agentplane-runner", namespace),
-            selector=_RUNNER_LABELS,
+            metadata=ApiObjectMetadata(name="agentplane-runner", namespace=namespace),
+            endpoint_selector=runner.selector,
             ingress=[IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": namespace}, ports=[_RUNNER_PORT])],
-            egress=[
-                dns_egress,
-                EgressRule.to_endpoints(cilium.endpoint_labels(namespace, "agentplane-egress"), egress.PROXY_PORT),
-            ],
+            egress=[dns_egress, egress.proxy(namespace).egress()],
         )
         # The app takes browser traffic straight from the gateway and reaches DNS, the
         # API server, the OIDC provider, the runner Pods, the egress proxy's admin
@@ -361,22 +382,20 @@ class App(Construct):
         NetworkPolicy(
             self,
             "networkpolicy-app",
-            metadata=metadata(NAME, namespace),
-            selector=_LABELS,
-            ingress=[IngressRule.from_gateway(CONTAINER_PORT)],
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            endpoint_selector=self.service.pods.selector,
+            ingress=[IngressRule.from_gateway(self.service.pod_port)],
             egress=[
                 dns_egress,
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
-                EgressRule.to_endpoints(cilium.endpoint_labels(namespace, "agentplane-runner"), _RUNNER_PORT),
-                EgressRule.to_endpoints(cilium.endpoint_labels(namespace, "agentplane-egress"), egress.ADMIN_PORT),
+                EgressRule.to_endpoints(runner.cilium, _RUNNER_PORT),
+                egress.admin(namespace).egress(),
                 # Separate BFF/operator transport boundary. The Action Service
                 # still requires its own configured operator authenticator;
                 # network reachability grants no review authority.
-                EgressRule.to_endpoints(
-                    cilium.endpoint_labels(namespace, "agentplane-actions"), actions.CONTAINER_PORT
-                ),
-                EgressRule.to_endpoints(cilium.endpoint_labels(namespace, electric.NAME), electric.PORT),
+                actions.service(namespace).egress(),
+                electric.service(namespace).egress(),
                 EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,
@@ -390,9 +409,9 @@ class App(Construct):
         )
 
     def _runner_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:
-        litellm_url = (
-            f"http://agentplane-llm-ingress.{self.env.namespace}.svc.cluster.local:{llm_ingress.CONTAINER_PORT}"
-        )
+        # Through the egress proxy, which matches the host on the exact string its policy names.
+        llm = llm_ingress.service(self.env.namespace)
+        litellm_url = f"http://{llm.fqdn}:{llm.port.number}"
         # The environment a harness child starts from: a bare NAME takes the runner's
         # value, NAME=value sets one. The routing vars are named rather than set, so the
         # container env below is where they are written once and everything in the Pod
@@ -426,6 +445,12 @@ class App(Construct):
             security_context=sandbox_pod.workload_security_context(),
             env=[
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(name="LITELLM_URL", value=litellm_url),
+                # Optional runner-only config. Older runner images ignore this environment
+                # variable; the updated runner applies it when a model is listed.
+                SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                    name="AGENTPLANE_MODEL_CONTEXT_WINDOWS",
+                    value=json.dumps(_runner_model_context_windows(), sort_keys=True, separators=(",", ":")),
+                ),
                 # On the container and not just on the harness children the runner spawns.
                 *sandbox_pod.egress_env(),
                 # Neither a workload token nor a LiteLLM key: the placeholder the
@@ -463,15 +488,17 @@ class App(Construct):
         SandboxTemplate(
             self,
             "sandboxtemplate",
-            name="agentplane-runner",
-            namespace=namespace,
-            # What the sandbox Actions tell an agent choosing among the templates they offer.
-            annotations={
-                DESCRIPTION_ANNOTATION: (
-                    "The shared runner image, built to host an agent harness: the sandbox tools (git, "
-                    "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-                )
-            },
+            metadata=ApiObjectMetadata(
+                name="agentplane-runner",
+                namespace=namespace,
+                # What the sandbox Actions tell an agent choosing among the templates they offer.
+                annotations={
+                    DESCRIPTION_ANNOTATION: (
+                        "The shared runner image, built to host an agent harness: the sandbox tools (git, "
+                        "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
+                    )
+                },
+            ),
             # The CiliumNetworkPolicy next to this construct is the runner's fence.
             network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
             volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,

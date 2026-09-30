@@ -1,0 +1,115 @@
+#!/bin/sh
+set -eu
+# pipefail makes a curl-failure exit status propagate through the awk filter,
+# so the Job actually fails (and the pod retries) instead of looking healthy.
+# busybox ash supports `set -o pipefail` since 1.34.
+set -o pipefail
+# Sizes are the model-layer size from the ollama registry manifest.
+# Total ~228 GB; PVC `llm-models` is 350Gi (cluster/cdk8s/ollama/app.py).
+#
+# We hit `/api/pull` directly instead of using `ollama pull` because the CLI
+# emits a CR-redrawn TTY progress bar that is unreadable in `kubectl logs`.
+# Streaming JSON lets us print one human-readable line per status change and
+# every ~5% of bytes.
+
+# Pod can race ollama's readiness on a co-recreate; wait for the API.
+echo "=== waiting for $OLLAMA_HOST ==="
+until curl -sSf -m 5 "$OLLAMA_HOST/" >/dev/null 2>&1; do
+  sleep 5
+done
+echo "=== ollama is up ==="
+
+echo "=== registering SSD Qwen3.8 IQ4_XS ==="
+# The init container links the verified SSD shards into the existing blob namespace.
+# Creating the manifest does not load the model or copy weights onto HDD.
+# The derived first shard changes only the GGUF chat-template metadata. Keep the
+# original split filenames as /api/create keys, so Ollama groups all three shards.
+derived_digest=$(awk 'NR == 1 { print $1 } END { if (NR != 1) exit 1 }' /scripts/qwen38-ssd-derived-shards.tsv)
+create_request=$(awk -v derived_digest="$derived_digest" '
+  BEGIN {
+    printf "{\"model\":\"qwen3.8-flash-next-iq4xs\",\"files\":{"
+  }
+  {
+    digest = $1
+    if ($1 == "5ce89370720f8bf90890f439361282104c1aa1482d4013bb9a50923e758e71a4") {
+      digest = derived_digest
+      replaced++
+    }
+    printf "%s\"%s\":\"sha256:%s\"", (NR == 1 ? "" : ","), $3, digest
+  }
+  END {
+    if (replaced != 1) exit 1
+    print "},\"parameters\":{\"num_ctx\":131072,\"num_thread\":6,\"temperature\":0.6,\"min_p\":0.05},\"stream\":false}"
+  }
+' /scripts/qwen38-ssd-shards.tsv)
+if ! create_response=$(curl -sS --fail-with-body --max-time 120 \
+  -H 'Content-Type: application/json' \
+  --data-binary "$create_request" "$OLLAMA_HOST/api/create"); then
+  printf '%s\n' "$create_response" >&2
+  exit 1
+fi
+printf '%s\n' "$create_response"
+case "$create_response" in
+  *'"status":"success"'*) ;;
+  *)
+    echo "SSD model registration failed" >&2
+    exit 1
+    ;;
+esac
+
+# A separate alias makes 256K effective through Ollama's OpenAI-compatible API,
+# which does not consume native options.num_ctx. This reuses the same SSD blobs.
+if ! create_response=$(curl -sS --fail-with-body --max-time 120 \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"model":"qwen3.8-flash-next-iq4xs-256k","from":"qwen3.8-flash-next-iq4xs","parameters":{"num_ctx":262144},"stream":false}' \
+  "$OLLAMA_HOST/api/create"); then
+  printf '%s\n' "$create_response" >&2
+  exit 1
+fi
+printf '%s\n' "$create_response"
+case "$create_response" in
+  *'"status":"success"'*) ;;
+  *)
+    echo "256K model registration failed" >&2
+    exit 1
+    ;;
+esac
+
+pull() {
+  model=$1
+  echo "=== pulling $model ==="
+  curl -sS -N --fail-with-body -X POST "$OLLAMA_HOST/api/pull" \
+    -H 'Content-Type: application/json' \
+    -d "{\"name\":\"$model\",\"stream\":true}" \
+    | awk -v model="$model" '
+        BEGIN { last_status=""; last_pct=-1 }
+        {
+            status = ""; total = 0; comp = 0; err = ""
+            if (match($0, /"status":"[^"]*"/))    status = substr($0, RSTART+10, RLENGTH-11)
+            if (match($0, /"total":[0-9]+/))      total  = substr($0, RSTART+8,  RLENGTH-8) + 0
+            if (match($0, /"completed":[0-9]+/))  comp   = substr($0, RSTART+12, RLENGTH-12) + 0
+            if (match($0, /"error":"[^"]*"/))     err    = substr($0, RSTART+9,  RLENGTH-10)
+            if (err != "") { printf "[%s] ERROR: %s\n", model, err; exit 1 }
+            if (total > 0) {
+                pct = int((comp*100)/total)
+                if (status != last_status || pct - last_pct >= 5 || pct == 100) {
+                    printf "[%s] %s: %3d%% (%.2f / %.2f GB)\n", model, status, pct, comp/1e9, total/1e9
+                    last_status = status; last_pct = pct
+                }
+            } else if (status != "" && status != last_status) {
+                printf "[%s] %s\n", model, status
+                last_status = status
+            }
+        }
+    '
+}
+
+pull gpt-oss:20b        # 13.8 GB
+pull gpt-oss:120b       # 65.4 GB
+pull gemma4:31b-it-q8_0 # 33.8 GB
+pull qwen3-embedding:4b # 2.5 GB
+# Disabled (2026-09-26): does not fit in wyrm2's combined GPU VRAM (87GB resident vs.
+# ~61GB usable across 2x RTX 5090s); measured 0.056-1.44 tokens/sec, ~20-1000x too slow
+# to be usable, on both Ollama 0.34.0 and 0.34.4. See
+# agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md.
+# pull metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL # 112 GB

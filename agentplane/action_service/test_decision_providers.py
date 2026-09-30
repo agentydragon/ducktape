@@ -530,10 +530,9 @@ async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
         ),
         pytest.param(
             lambda: _index(
-                sets={"deny-only": {"autoDenyIf": BOUNDED_ECHO["autoApproveIf"], "autoDenyUnless": []}},
-                bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["deny-only"]}},
+                sets={"no-policies": {}}, bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["no-policies"]}}
             ),
-            id="deny-lists-decide-nothing-yet",
+            id="set-with-no-policies",
         ),
     ],
 )

@@ -25,7 +25,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -35,12 +34,7 @@ py_library(
     srcs = ["alloy_otlp_bearer_token.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:terraform",
-        "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -51,11 +45,9 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -65,12 +57,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/providers/flux:helmrepository",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -81,14 +69,10 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/flux:helmrelease",
-        "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -98,13 +82,9 @@ py_library(
     srcs = ["cilium_monitoring.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -114,15 +94,13 @@ py_library(
     srcs = ["stack.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
-        "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -131,12 +109,18 @@ py_library(
 py_library(
     name = "alloy",
     srcs = ["alloy.py"],
+    data = ["config.alloy"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_helmrepository",
+        ":loki",
+        ":mimir",
+        ":tempo",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -145,19 +129,22 @@ py_library(
 py_library(
     name = "loki",
     srcs = ["loki.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
+    ],
     deps = [
         ":grafana_helmrepository",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:namespace",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
@@ -168,15 +155,17 @@ py_library(
 py_library(
     name = "mimir",
     srcs = ["mimir.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
+    ],
     deps = [
         ":grafana_helmrepository",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -189,12 +178,11 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_helmrepository",
+        ":mimir",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -204,15 +192,22 @@ py_library(
 py_library(
     name = "grafana_instance",
     srcs = ["grafana_instance.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    data = [":dashboards"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
+    ],
     deps = [
+        ":mimir",
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
-        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:grafana_dashboards",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
-        "//cluster/cdk8s/providers/cnpg:cluster",
-        "//cluster/cdk8s/providers/gateway_api:httproute",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/grafana_operator:grafana",
         "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",
@@ -223,17 +218,19 @@ py_library(
     ],
 )
 
+# `grafana_instance`'s dashboard JSON, also the Grafana skill verifier's candidates.
+filegroup(
+    name = "dashboards",
+    srcs = glob(["dashboards/*.json"]),
+    visibility = ["//cluster/skills/grafana:__pkg__"],
+)
+
 py_library(
     name = "rules",
     srcs = ["rules.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -306,13 +303,12 @@ py_library(
     deps = [
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:metadata",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

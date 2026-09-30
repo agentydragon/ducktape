@@ -5,9 +5,7 @@ with their Providers, and the Secret that points the ntfy Provider at the self-h
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecRefreshPolicy,
@@ -17,41 +15,33 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 from flux_alert_crds.io.fluxcd.toolkit.notification import (
-    Alert,
-    AlertSpec,
     AlertSpecEventSeverity,
     AlertSpecEventSources,
     AlertSpecEventSourcesKind,
     AlertSpecProviderRef,
 )
-from flux_provider_crds.io.fluxcd.toolkit.notification import (
-    Provider,
-    ProviderSpec,
-    ProviderSpecSecretRef,
-    ProviderSpecType,
-)
-from flux_receiver_crds.io.fluxcd.toolkit.notification import (
-    Receiver,
-    ReceiverSpec,
-    ReceiverSpecResources,
-    ReceiverSpecResourcesKind,
-    ReceiverSpecSecretRef,
-    ReceiverSpecType,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from flux_provider_crds.io.fluxcd.toolkit.notification import ProviderSpecSecretRef, ProviderSpecType
+from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecretRef, ReceiverSpecType
 
 from cluster.cdk8s import ntfy
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.providers.flux.notification import Alert, Provider, Receiver, ReceiverResource
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "flux-webhook"
 NAMESPACE = "flux-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-webhook"
 _NTFY_WEBHOOK = "ntfy-webhook"
+# notification-controller's receiver Service, from the Flux install (gotk-components.yaml).
+_RECEIVER = ServiceRef(
+    name="webhook-receiver",
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=NAMESPACE, labels=(("app", "notification-controller"),)),
+    target_port=9292,
+)
 # ntfy fills the X-Title/X-Message placeholders from Flux's webhook payload (Template: yes).
 # They are Go raw strings here so ESO's own template engine emits them untouched instead of
 # failing on the missing `involvedObject` key.
@@ -83,96 +73,68 @@ def chart(app: App) -> Chart:
     Receiver(
         chart,
         "github-receiver",
-        metadata=metadata("github", NAMESPACE),
-        spec=ReceiverSpec(
-            type=ReceiverSpecType.GITHUB,
-            events=["push", "registry_package"],
-            secret_ref=ReceiverSpecSecretRef(name="github-webhook-token"),
-            resources=[
-                ReceiverSpecResources(
-                    api_version="source.toolkit.fluxcd.io/v1",
-                    kind=ReceiverSpecResourcesKind.GIT_REPOSITORY,
-                    name="flux-system",
-                    namespace="flux-system",
-                ),
-                # Public Flux control objects retain a dedicated sparse checkout. Reconcile
-                # it immediately on a Ducktape push rather than waiting for its poll.
-                ReceiverSpecResources(
-                    api_version="source.toolkit.fluxcd.io/v1",
-                    kind=ReceiverSpecResourcesKind.GIT_REPOSITORY,
-                    name="ducktape",
-                    namespace="ducktape-flux",
-                ),
-                ReceiverSpecResources(
-                    api_version="image.toolkit.fluxcd.io/v1",
-                    kind=ReceiverSpecResourcesKind.IMAGE_REPOSITORY,
-                    name="haku-openclaw-spike",
-                ),
-                ReceiverSpecResources(
-                    api_version="image.toolkit.fluxcd.io/v1",
-                    kind=ReceiverSpecResourcesKind.IMAGE_REPOSITORY,
-                    name="openclaw",
-                ),
-            ],
-        ),
+        metadata=ApiObjectMetadata(name="github", namespace=NAMESPACE),
+        type=ReceiverSpecType.GITHUB,
+        events=["push", "registry_package"],
+        secret_ref=ReceiverSpecSecretRef(name="github-webhook-token"),
+        resources=[
+            ReceiverResource.git_repository("flux-system", namespace="flux-system"),
+            # Public Flux control objects retain a dedicated sparse checkout. Reconcile
+            # it immediately on a Ducktape push rather than waiting for its poll.
+            ReceiverResource.git_repository("ducktape", namespace="ducktape-flux"),
+        ],
     )
     grafana = Provider(
         chart,
         "grafana-provider",
-        metadata=metadata("grafana", NAMESPACE),
-        spec=ProviderSpec(
-            type=ProviderSpecType.GRAFANA,
-            # notification-controller >=1.7 sends the request to `address` as-is (no
-            # auto-append of /api/annotations like older versions did), so the full endpoint
-            # path is required here.
-            address="https://grafana.allegedly.works/api/annotations",
-            secret_ref=ProviderSpecSecretRef(name="grafana-flux-token"),
-        ),
+        metadata=ApiObjectMetadata(name="grafana", namespace=NAMESPACE),
+        type=ProviderSpecType.GRAFANA,
+        # notification-controller >=1.7 sends the request to `address` as-is (no
+        # auto-append of /api/annotations like older versions did), so the full endpoint
+        # path is required here.
+        address="https://grafana.allegedly.works/api/annotations",
+        secret_ref=ProviderSpecSecretRef(name="grafana-flux-token"),
     )
     Alert(
         chart,
         "grafana-alert",
-        metadata=metadata("grafana-annotations", NAMESPACE),
-        spec=AlertSpec(
-            provider_ref=AlertSpecProviderRef(name=grafana.name),
-            event_severity=AlertSpecEventSeverity.INFO,
-            event_sources=_alert_sources(
-                (AlertSpecEventSourcesKind.KUSTOMIZATION, "flux-system"),
-                (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
-                (AlertSpecEventSourcesKind.HELM_RELEASE, "flux-system"),
-            ),
+        metadata=ApiObjectMetadata(name="grafana-annotations", namespace=NAMESPACE),
+        provider_ref=AlertSpecProviderRef(name=grafana.name),
+        event_severity=AlertSpecEventSeverity.INFO,
+        event_sources=_alert_sources(
+            (AlertSpecEventSourcesKind.KUSTOMIZATION, "flux-system"),
+            (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
+            (AlertSpecEventSourcesKind.HELM_RELEASE, "flux-system"),
         ),
     )
     ntfy_provider = Provider(
         chart,
         "ntfy-provider",
-        metadata=metadata("ntfy", NAMESPACE),
-        spec=ProviderSpec(type=ProviderSpecType.GENERIC, secret_ref=ProviderSpecSecretRef(name=_NTFY_WEBHOOK)),
+        metadata=ApiObjectMetadata(name="ntfy", namespace=NAMESPACE),
+        type=ProviderSpecType.GENERIC,
+        secret_ref=ProviderSpecSecretRef(name=_NTFY_WEBHOOK),
     )
     Alert(
         chart,
         "ntfy-alert",
-        metadata=metadata("on-call", NAMESPACE),
-        spec=AlertSpec(
-            provider_ref=AlertSpecProviderRef(name=ntfy_provider.name),
-            event_severity=AlertSpecEventSeverity.ERROR,
-            event_sources=_alert_sources(
-                (AlertSpecEventSourcesKind.KUSTOMIZATION, "flux-system"),
-                (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
-                (AlertSpecEventSourcesKind.HELM_RELEASE, "flux-system"),
-                (AlertSpecEventSourcesKind.GIT_REPOSITORY, "flux-system"),
-                (AlertSpecEventSourcesKind.GIT_REPOSITORY, "ducktape-flux"),
-            ),
+        metadata=ApiObjectMetadata(name="on-call", namespace=NAMESPACE),
+        provider_ref=AlertSpecProviderRef(name=ntfy_provider.name),
+        event_severity=AlertSpecEventSeverity.ERROR,
+        event_sources=_alert_sources(
+            (AlertSpecEventSourcesKind.KUSTOMIZATION, "flux-system"),
+            (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
+            (AlertSpecEventSourcesKind.HELM_RELEASE, "flux-system"),
+            (AlertSpecEventSourcesKind.GIT_REPOSITORY, "flux-system"),
+            (AlertSpecEventSourcesKind.GIT_REPOSITORY, "ducktape-flux"),
         ),
     )
     # Handles the GitHub push and registry_package webhooks.
     https_route(
         chart,
         "route",
-        metadata=metadata(NAME, NAMESPACE),
-        hostname="flux-webhook.allegedly.works",
-        backend="webhook-receiver",
-        port=80,
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        hostnames=["flux-webhook.allegedly.works"],
+        backend=_RECEIVER,
         hsts=False,
         listener=None,
     )
@@ -183,10 +145,10 @@ def chart(app: App) -> Chart:
         "gateway-ingress",
         metadata=k8s.ObjectMeta(name="allow-gateway-webhook-ingress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels={"app": "notification-controller"}),
+            pod_selector=k8s.LabelSelector(match_labels=_RECEIVER.pods.selector),
             ingress=[
                 k8s.NetworkPolicyIngressRule(
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(9292), protocol="TCP")]
+                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_RECEIVER.pod_port), protocol="TCP")]
                 )
             ],
             policy_types=["Ingress"],
@@ -195,10 +157,16 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "ntfy-webhook",
-        name=_NTFY_WEBHOOK,
-        namespace=NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
-        store=SecretStoreRef.cluster(ntfy.SECRET_STORE),
+        metadata=ApiObjectMetadata(
+            name=_NTFY_WEBHOOK,
+            namespace=NAMESPACE,
+            annotations={
+                "description": "Flux failure notifications delivered through the self-hosted ntfy instance",
+                "ntfy.ducktape.io/auth-generation": "1",
+            },
+        ),
+        refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
+        secret_store_ref=SecretStoreRef.cluster(ntfy.SECRET_STORE),
         data=[remote_data("ntfy-credentials", "alertmanager-token", secret_key="alertmanager_token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -207,33 +175,23 @@ def chart(app: App) -> Chart:
             type="Opaque",
             data={"address": f"https://{ntfy.HOSTNAME}/alerts", "headers": _NTFY_HEADERS},
         ),
-        annotations={
-            "description": "Flux failure notifications delivered through the self-hosted ntfy instance",
-            "ntfy.ducktape.io/auth-generation": "1",
-        },
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def flux_webhook(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    flux_webhook_token: Kustomization,
-    ntfy: Kustomization,
-    external_secrets_config: Kustomization,
-    gateway: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         retry_interval=None,
         wait=None,
         timeout="5m",
-        decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(flux_webhook_token, ntfy, external_secrets_config, gateway),
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_operator,
+            # Kyverno's failurePolicy: Fail webhooks admit the HTTPRoute.
+            kyverno,
+        ),
     )

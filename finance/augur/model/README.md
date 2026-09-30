@@ -1,6 +1,7 @@
 # Market paths and product construction
 
-Load/select historical windows or sample structural paths, then choose products:
+Load/select historical windows (or sample paths from an experimental model such as
+`x/models/structural_macro.py`), then choose products:
 
 ```python
 from finance.augur.model.bond_fund import BondFundSpec
@@ -27,8 +28,8 @@ Preserving existing outputs isolates this boundary change; it does not make the
 current approximations a correctness oracle or a compatibility requirement.
 Financial corrections can land independently with independently justified tests.
 
-Fitted VECM and state-space inputs carry dated `ExogenousObservedPoint` records
-with actual source units. Evidence loaders choose each factor's anchor explicitly;
+Inputs to the fitted VECM and state-space models (`x/models/`) carry dated
+`ExogenousObservedPoint` records (`conditioning.py`) with actual source units. Evidence loaders choose each factor's anchor explicitly;
 runtime providers never search source-name fallbacks. Auxiliary observations and
 return/calibration provenance are separate from those anchors. Monthly observations
 use the month's first day as their existing period label, not a claimed daily quote.

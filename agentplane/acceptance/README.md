@@ -29,6 +29,15 @@ thread, per stage, cold and warm, against regression ceilings; its module docstr
 interval. Each run writes its timings to
 `bazel-testlogs/agentplane/acceptance/test_thread_latency/test.outputs/`.
 
+## Suspend and resume
+
+`//agentplane/acceptance:test_suspend_resume` opens one Claude Thread and one Codex Thread in the
+same owned testing Sandbox, asks each to remember a unique token, suspends until the old Pod is
+gone, then resumes both original Threads. It requires native resume evidence, the expected token
+from each model, and no cross-Thread token. Run it after the app and runner image changes have
+reached `agentplane-testing`; it uses the same controlled-host and cleanup requirements as the
+other live targets below.
+
 ## MCP integration
 
 `//agentplane/acceptance:test_mcp` belongs to this deployed suite. Both real harnesses
@@ -36,7 +45,7 @@ receive the Action API URL and public workload placeholder, discover the `everyt
 group's `echo` Action, submit a structured group/name request, poll until terminal,
 and report JSON. The test checks the reported result against the fresh marker's exact
 upstream echo output. It uses the existing sandbox setup/teardown and `Agent` fixtures.
-Testing GitOps (`cluster/k8s/agentplane-testing/`) wires the upstream image, ActionGroup
+Testing GitOps (`cluster/generated/agentplane-testing/`) wires the upstream image, ActionGroup
 and discovery egress; nothing there auto-approves. `test_agent_executes_mcp_action` first binds
 its Sandbox to an `exact_actions` set naming `everything/echo`, written through the Kubernetes
 API as below. Run after the PR's images and manifests have rolled out; remote adapter tests are
@@ -50,7 +59,7 @@ and executed, and the BFF receipt's Decision names the binding, the set and the 
 an over-long message waits for the operator; after the binding is patched to an expiry in the past
 and re-acknowledged, so does a match. The objects are deleted at teardown; the pending requests are
 denied through the BFF so nothing lingers. The role in
-`../../cluster/k8s/agentplane-testing/agentplane.k8s.yaml`
+`../../cluster/generated/agentplane-testing/agentplane.k8s.yaml`
 grants create/get/patch/delete on the two kinds for this.
 
 `test_agent_mcp_bff_decision` adds allow/deny cases on each harness: turn 1 submits
@@ -132,6 +141,10 @@ its pytest id, for example
 `harness_codex-ollama-oai-chat-gpt-oss-20b-128k`. Each cell writes a small JSON
 result under the target's `test.outputs/` directory. A Bazel rerun of this target
 replaces local test outputs, so save any evidence needed across runs first.
+Results include context windows reported by the native harness (Codex token-usage
+notifications and Claude result model usage). These can differ from server context:
+for example, Codex may report its usable budget after reserving headroom. An empty
+list means the harness did not report a window in the observed turn.
 For transient sidecar diagnosis, `--test_env=OLLAMA_SMOKE_HOLD_SECONDS=30` retains
 the isolated Sandbox for at most 30 seconds after the turn result is written, before
 normal fixture cleanup.

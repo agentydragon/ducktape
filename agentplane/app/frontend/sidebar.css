@@ -31,43 +31,47 @@
   outline: none;
 }
 
-/* Dims the page behind the phone-width drawer; only ever rendered while the
-   drawer is open (sidebar.tsx), so no default-hidden state is needed here for desktop -- but the
-   media query still guards against a stale `mobileOpen` surviving a resize from phone to desktop
-   width (e.g. rotating a tablet) without a click to reset it. */
-.agentplane-sidebar-backdrop {
+/* Collapsed by default at every width -- the shared shell topbar's toggle (app.tsx/shell.css) is
+   what shows it. `!important` overrides the resized inline width the same way the phone media
+   query below already does for its own width, so JS never needs to decide whether to apply that
+   style; it always does, and CSS alone decides what "closed" looks like per breakpoint. */
+.agentplane-sidebar:not(.agentplane-sidebar-open) {
+  width: 0 !important;
+  opacity: 0;
+  overflow: hidden;
+  border-right: none;
+}
+
+.agentplane-sidebar-close {
   display: none;
 }
 
 @media (max-width: 560px) {
-  .agentplane-sidebar-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.35);
-    z-index: 29;
-  }
-
   /* Overrides the resized inline width: dragging a 6px handle on a touch-width sidebar isn't a
-     usable interaction, so the drawer gets its own fixed width and the handle is hidden. Hidden by
-     default and off-canvas -- only `.agentplane-sidebar-mobile-open` (the hamburger toggle in
-     app.tsx/shell.css) brings it on screen, since there's no room to show it alongside content at
-     this width the way the desktop layout does. */
+     usable interaction, so the open drawer takes the full screen and the handle is hidden. Hidden
+     by default -- only `.agentplane-sidebar-open` brings it on screen, since there's no room to
+     show it alongside content at this width the way the desktop layout does. */
   .agentplane-sidebar {
     display: none;
     position: fixed;
-    inset: 0 auto 0 0;
-    width: min(85vw, 320px) !important;
+    inset: 0;
+    width: 100% !important;
     z-index: 30;
-    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.2);
   }
 
-  .agentplane-sidebar.agentplane-sidebar-mobile-open {
+  .agentplane-sidebar.agentplane-sidebar-open {
     display: flex;
+    opacity: 1;
   }
 
   .agentplane-sidebar-resize-handle {
     display: none;
+  }
+
+  /* The full-screen drawer has no dimmed backdrop to tap outside of, so it needs its own close
+     affordance -- unlike the desktop column, which the shell topbar's toggle can always reach. */
+  .agentplane-sidebar.agentplane-sidebar-open .agentplane-sidebar-close {
+    display: inline-flex;
   }
 }
 
@@ -92,7 +96,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--mantine-font-size-xs);
+  line-height: var(--mantine-line-height-xs);
   font-weight: 700;
   color: var(--mantine-color-dimmed);
   padding: 10px 8px 4px;
@@ -142,7 +147,8 @@
   gap: 8px;
   padding: 7px 8px;
   border-radius: 7px;
-  font-size: 13px;
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-sm);
   color: var(--mantine-color-text);
   cursor: pointer;
   border: none;

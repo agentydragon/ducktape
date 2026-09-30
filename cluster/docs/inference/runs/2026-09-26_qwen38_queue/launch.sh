@@ -18,7 +18,7 @@ if [[ $mode == downloads ]] && pgrep -af 'curl.*--output /var/lib/llm-models-ssd
   echo "Existing model download writer; stop that owned process before launch" >&2
   exit 1
 fi
-for command in docker kubectl jq rg curl flock setsid nvidia-smi; do command -v "$command"; done
+for command in docker kubectl jq rg curl flock setsid timeout nvidia-smi; do command -v "$command"; done
 mkdir -p "$output/source"
 cp -R "$here" "$here/../2026-09-26_qwen38_capacity" "$output/source/"
 git -C "$here" rev-parse HEAD >"$output/source-revision.txt"

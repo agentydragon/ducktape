@@ -6,15 +6,16 @@ environment's own module copies in the credentials that environment gets
 """
 
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import Namespace, Role, RoleBinding, RolePolicyRule, ServiceAccount
+from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, ServiceAccount
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 STAGING_NAMESPACE = "agentplane-staging-egress-credentials"
@@ -32,24 +33,25 @@ class EgressCredentials(Construct):
 
     def __init__(self, scope: Construct, id: str, *, namespace: str, proxy_namespace: str) -> None:
         super().__init__(scope, id)
-        Namespace(
+        namespaces.namespace(
             self,
             "namespace",
-            metadata=ApiObjectMetadata(
-                name=namespace,
-                annotations={
-                    "description": f"Outbound credentials readable only by the {proxy_namespace} egress proxy."
-                },
-            ),
+            name=namespace,
+            vpa=Vpa.RECOMMEND,
+            agent_readable=None,
+            annotations={"description": f"Outbound credentials readable only by the {proxy_namespace} egress proxy."},
         )
         proxy_role = Role(
             self,
             "proxy-role",
-            metadata=metadata("agentplane-egress-credentials-reader", namespace),
+            metadata=ApiObjectMetadata(name="agentplane-egress-credentials-reader", namespace=namespace),
             rules=[RolePolicyRule(resources=[custom_resource("", "secrets")], verbs=["get", "list", "watch"])],
         )
         RoleBinding(
-            self, "proxy-binding", metadata=metadata(f"{proxy_namespace}-egress", namespace), role=proxy_role
+            self,
+            "proxy-binding",
+            metadata=ApiObjectMetadata(name=f"{proxy_namespace}-egress", namespace=namespace),
+            role=proxy_role,
         ).add_subjects(
             ServiceAccount.from_service_account_name(self, "proxy", "agentplane-egress", namespace_name=proxy_namespace)
         )
@@ -62,10 +64,9 @@ def credential_external_secret(
     ExternalSecret(
         scope,
         target,
-        name=target,
-        namespace=namespace,
-        refresh="1h",
-        store=SecretStoreRef.cluster(store),
+        metadata=ApiObjectMetadata(name=target, namespace=namespace),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster(store),
         data=[remote_data(source, key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,

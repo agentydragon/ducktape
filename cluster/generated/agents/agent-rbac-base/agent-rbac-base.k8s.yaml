@@ -3,9 +3,10 @@ kind: Namespace
 metadata:
   labels:
     environment: development
-    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
     name: claude-sandbox
   name: claude-sandbox
+spec: {}
 ---
 apiVersion: v1
 kind: ResourceQuota

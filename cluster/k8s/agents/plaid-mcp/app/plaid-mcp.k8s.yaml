@@ -27,6 +27,7 @@ data:
   PLAID_MCP_PLAID_ENV: production
   PLAID_MCP_PUBLIC_BASE_URL: https://plaid-mcp.allegedly.works
   PLAID_MCP_TRANSACTION_DAYS: "730"
+  PLAID_MCP_WEBHOOK_URL: https://plaid-mcp.allegedly.works/webhooks/plaid
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -68,12 +69,87 @@ subjects:
     name: plaid-mcp
     namespace: plaid-mcp
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plaid-link-oidc-reader
+  namespace: plaid-mcp
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plaid-link-oidc-reader
+  namespace: authentik
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-link-oidc-config
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plaid-link-oidc-reader
+  namespace: authentik
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plaid-link-oidc-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: plaid-link-oidc-reader
+    namespace: plaid-mcp
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-plaid-link-oidc-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - plaid-mcp
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: plaid-link-oidc-reader
+      remoteNamespace: authentik
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-link-oidc-config
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - extract:
+        key: plaid-link-oidc-config
+  refreshInterval: 10m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-plaid-link-oidc-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Delete
+    name: plaid-link-oidc-config
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    description: Plaid self-contained link web UI. Authentik proxy outpost protects browser access; no bespoke Plaid MCP tools are exposed in v0. The app writes access-token Secrets and syncs linked Items into the plaid-mcp Postgres database.
-    reloader.stakater.com/auto: "true"
+    description: Plaid Link UI authenticates users with Authentik OIDC; verified webhooks queue transaction syncs, with the daily Cron catching up the mirror.
   labels:
     app.kubernetes.io/name: plaid-mcp
   name: plaid-mcp
@@ -100,6 +176,11 @@ spec:
                 configMapKeyRef:
                   key: PLAID_MCP_PUBLIC_BASE_URL
                   name: plaid-mcp-config
+            - name: PLAID_MCP_WEBHOOK_URL
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_MCP_WEBHOOK_URL
+                  name: plaid-mcp-config
             - name: PLAID_MCP_TRANSACTION_DAYS
               valueFrom:
                 configMapKeyRef:
@@ -125,6 +206,23 @@ spec:
                 secretKeyRef:
                   key: client_secret
                   name: plaid-client-credentials
+            - name: PLAID_MCP_OIDC_ISSUER
+              value: https://auth.allegedly.works/application/o/plaid-link/
+            - name: PLAID_MCP_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: plaid-link-oidc-config
+            - name: PLAID_MCP_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: plaid-link-oidc-config
+            - name: PLAID_MCP_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: session_secret
+                  name: plaid-link-oidc-config
           image: git.allegedly.works/ducktape-ci/plaid-mcp-server:unset
           imagePullPolicy: Always
           livenessProbe:
@@ -170,7 +268,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   annotations:
-    description: v0 synchronous full-refresh Plaid sync. Keeps Postgres fresh within 12 hours; no real-time balance endpoint calls.
+    description: Daily catch-up sync for transactions, accounts, holdings and liabilities. Transaction history uses Plaid cursors; no real-time balance endpoint calls.
   name: plaid-mcp-sync
   namespace: plaid-mcp
 spec:
@@ -195,6 +293,11 @@ spec:
                   valueFrom:
                     configMapKeyRef:
                       key: PLAID_MCP_PUBLIC_BASE_URL
+                      name: plaid-mcp-config
+                - name: PLAID_MCP_WEBHOOK_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      key: PLAID_MCP_WEBHOOK_URL
                       name: plaid-mcp-config
                 - name: PLAID_MCP_TRANSACTION_DAYS
                   valueFrom:
@@ -244,7 +347,7 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           serviceAccountName: plaid-mcp
-  schedule: 17 */12 * * *
+  schedule: 17 0 * * *
   successfulJobsHistoryLimit: 3
 ---
 apiVersion: v1
@@ -259,16 +362,40 @@ spec:
     - name: http
       port: 8080
       protocol: TCP
-      targetPort: http
+      targetPort: 8080
   selector:
     app.kubernetes.io/name: plaid-mcp
   type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    description: Plaid Link UI; browser access authenticates with Authentik OIDC.
+  name: plaid-mcp
+  namespace: plaid-mcp
+spec:
+  hostnames:
+    - plaid-mcp.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: plaid-mcp
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   annotations:
-    description: Default-deny ingress for plaid-mcp pods. Only the Authentik embedded proxy outpost can reach the v0 web UI.
+    description: Default-deny ingress for plaid-mcp pods. Only the cluster Gateway can reach the public Link UI and Plaid webhook routes.
   name: plaid-mcp-ingress
   namespace: plaid-mcp
 spec:
@@ -276,10 +403,8 @@ spec:
     matchLabels:
       app.kubernetes.io/name: plaid-mcp
   ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: authentik
-            k8s:io.kubernetes.pod.namespace: authentik
+    - fromEntities:
+        - ingress
       toPorts:
         - ports:
             - port: "8080"

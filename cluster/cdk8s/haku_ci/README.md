@@ -66,8 +66,8 @@ rejections are handled by `oci-cache`'s Zot `http.compat: ["docker2s2"]` setting
 | `runner_config.py` | the fields of the forgejo-runner config file haku-ci sets                                                                                                                                                                                                                                                         |
 
 The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
-(a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret) —
-not committed here.
+(a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret in
+`forgejo`) and copied into `haku-ci` by this chart's ExternalSecret — not committed here.
 
 The central Flux chart entry applies this directory with `wait: false` because the runner stays
 pending until that token Secret lands.

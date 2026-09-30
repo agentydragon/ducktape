@@ -2,9 +2,9 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: auto
   name: headlamp
+spec: {}
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
@@ -79,8 +79,6 @@ spec:
           maxConcurrent: 2
       enabled: true
       version: 0.1.1
-    podAnnotations:
-      reloader.stakater.com/auto: "true"
     replicaCount: 1
     resources:
       limits:

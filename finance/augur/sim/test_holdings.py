@@ -9,10 +9,9 @@ import pytest_bazel
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Buy, LotSale, Sell
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting
-from finance.augur.sim.holdings import Holdings
+from finance.augur.sim.holdings import Holdings, Lot, Pool
 from finance.augur.sim.ids import AccountId, AssetId, LotId
 from finance.augur.sim.money import MAX_COUNT
-from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot
 from finance.augur.sim.testing.accounting import ACCOUNTS, CASH, EXOGENOUS, HOUSEHOLD, accounting, taxpayer
 
 BROKERAGE = AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("brokerage"))
@@ -35,26 +34,24 @@ class Books:
 
 @pytest.fixture
 def books() -> Books:
-    accounting_ = accounting((*ACCOUNTS, PreparedAccount(account=BROKERAGE, opening_balance=0)), (taxpayer(HOUSEHOLD),))
+    accounting_ = accounting({**ACCOUNTS, BROKERAGE: 0}, (taxpayer(HOUSEHOLD),))
     holdings = Holdings()
     holdings.declare_pool(
         accounting_,
-        PreparedHoldingPool(
-            agent_id=HOUSEHOLD, account_id=AccountId("brokerage"), asset_id=AssetId("test_fund"), quantity_scale=10
-        ),
+        Pool(agent_id=HOUSEHOLD, account_id=AccountId("brokerage"), asset_id=AssetId("test_fund"), quantity_scale=10),
     )
     for month, id_, basis in [(-12, "old", 17), (0, "new", 32)]:
         holdings.hold(
             accounting_,
-            PreparedLot(
+            Lot(
                 lot_id=LotId(id_),
                 agent_id=HOUSEHOLD,
                 account_id=AccountId("brokerage"),
                 asset_id=AssetId("test_fund"),
                 purchase_month=month,
                 quantity_scale=10,
-                units=10,
-                basis=basis,
+                units_remaining=10,
+                basis_remaining=basis,
             ),
         )
     return Books(accounting_, holdings)
@@ -202,7 +199,7 @@ def test_purchase_posts_cash_and_basis_then_joins_future_exact_sales(books: Book
     books.holdings.buy(books.accounting, 0, purchase(), price=10)
     lot = books.holdings.lots[2]
     assert lot.units_remaining == lot.basis_remaining == 15
-    assert lot.spec.purchase_month == 0
+    assert lot.purchase_month == 0
     assert lot.snapshot().asset_id == "test_fund"
     assert books.accounting.ledger.balance(CASH) == 85
     books.holdings.sell(books.accounting, 0, sale(LotId("bought"), 15), price=20)

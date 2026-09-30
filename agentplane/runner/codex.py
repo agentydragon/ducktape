@@ -12,6 +12,7 @@ Observed with Codex app-server 0.152.0:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -21,7 +22,9 @@ from uuid import uuid4
 from agentplane.native.codex import facade, scenarios, wire
 from agentplane.protocol import event_pb2
 from agentplane.runner.adapter import HarnessAdapter
+from agentplane.runner.codex_history import read_history
 from agentplane.runner.config import CodexLaunch
+from agentplane.runner.recovery import compare_item, observed_items
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -61,7 +64,10 @@ class CodexAdapter(HarnessAdapter):
         self._turn_starts: dict[wire.RequestId, _TurnStart] = {}
 
     def command(self) -> list[str]:
-        return scenarios.command(str(self.launch.binary), endpoint=self.launch.base_url)
+        context_window = self.session.config.model_context_windows.get(self.session.record.model)
+        return scenarios.command(
+            str(self.launch.binary), endpoint=self.launch.base_url, model_context_window=context_window
+        )
 
     def environment(self) -> Mapping[str, str]:
         # Codex refuses to start without an existing CODEX_HOME.
@@ -99,6 +105,35 @@ class CodexAdapter(HarnessAdapter):
             raise RuntimeError(f"Codex {method} returned no result")
         self._thread_id = wire.ThreadResult.model_validate(response.response.result).thread.id
         return self._thread_id
+
+    async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
+        # The pinned core/tasks/mod.rs flushes conversation items before TurnAborted;
+        # a stopped process also has no pending writes. The UI thread/resume projection
+        # omits some pending calls, so inspect the model history instead.
+        observed = await observed_items(self.session.journal, turn_id)
+        reason = "native continuation evidence is unavailable or unsupported"
+        try:
+            recovered = await asyncio.to_thread(
+                read_history, self.session.directory / "codex", self._thread_id, observed
+            )
+        except (OSError, ValueError) as error:
+            recovered = None
+            reason = f"cannot inspect native continuation: {error}"
+        decisions = []
+        for item in observed.values():
+            if (
+                recovered is None
+                or item.kind == event_pb2.ITEM_KIND_REASONING
+                or (item.kind == event_pb2.ITEM_KIND_TOOL_CALL and item.tool_name != "commandExecution")
+            ):
+                decisions.append(
+                    event_pb2.ItemRecovery(
+                        item_id=item.item_id, disposition=event_pb2.RECOVERY_DISPOSITION_UNKNOWN, reason=reason
+                    )
+                )
+            else:
+                decisions.append(compare_item(item, recovered.get(item.item_id)))
+        return event_pb2.ConversationReconciled(turn_id=turn_id, items=decisions)
 
     async def submit(self, command_id: str, text: str) -> None:
         model_change = await self._take_pending_model_change()

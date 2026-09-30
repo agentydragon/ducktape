@@ -2,21 +2,27 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from cdk8s import ApiObjectMetadata, App, Chart
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitorSpecEndpointsScheme,
+    ServiceMonitorSpecNamespaceSelector,
+    ServiceMonitorSpecSelector,
+)
 
-from cdk8s import App, Chart
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpointsScheme
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
-
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
 
 NAME = "cilium-monitoring"
 NAMESPACE = "monitoring"
-OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/cilium"
+# The agent DaemonSet's Pods, on the host network. The Cilium chart
+# (cluster/terraform/main/cilium-values.yaml) renders both metrics Services in front of them.
+_AGENT = Pods(namespace="kube-system", labels=(("app.kubernetes.io/name", "cilium-agent"),))
+_AGENT_METRICS = HostNetworkServiceRef(name="cilium-agent", port=Port(name="metrics", number=9962), pods=_AGENT)
+# Hubble flow metrics, enabled by `hubble.metrics` in cilium-values.yaml. The chart creates
+# this headless Service only when that list is non-empty.
+_HUBBLE_METRICS = HostNetworkServiceRef(
+    name="hubble-metrics", port=Port(name="hubble-metrics", number=9965), pods=_AGENT
+)
 
 
 def _labels(name: str) -> dict[str, str]:
@@ -28,45 +34,27 @@ def chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "cilium-agent",
-        metadata=metadata("cilium-agent", NAMESPACE, labels=_labels("cilium-agent")),
-        namespace_selector=["kube-system"],
-        selector={"app.kubernetes.io/name": "cilium-agent"},
-        endpoints=[Endpoint.plain(port="metrics", scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s")],
+        metadata=ApiObjectMetadata(name="cilium-agent", namespace=NAMESPACE, labels=_labels("cilium-agent")),
+        namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[_AGENT_METRICS.pods.namespace]),
+        selector=ServiceMonitorSpecSelector(match_labels=_AGENT_METRICS.labels),
+        endpoints=[
+            Endpoint.plain(
+                port=_AGENT_METRICS.port.name, scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s"
+            )
+        ],
     )
-    # Hubble flow metrics, enabled by `hubble.metrics` in
-    # cluster/terraform/main/cilium-values.yaml. The Cilium chart creates the
-    # headless `hubble-metrics` Service only when that list is non-empty, so this
-    # produces no targets until the corresponding Helm upgrade has been applied.
-    #
-    # `k8s-app: hubble` also matches hubble-peer/relay/ui; the `hubble-metrics` port
-    # name is what narrows the targets to the metrics Service.
     ServiceMonitor(
         chart,
         "hubble",
-        metadata=metadata("hubble", NAMESPACE, labels=_labels("hubble")),
-        namespace_selector=["kube-system"],
-        selector={"k8s-app": "hubble"},
+        metadata=ApiObjectMetadata(name="hubble", namespace=NAMESPACE, labels=_labels("hubble")),
+        namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[_HUBBLE_METRICS.pods.namespace]),
+        # The chart labels this Service `k8s-app: hubble`, which the agent Pods behind it do not
+        # carry, so `_HUBBLE_METRICS.labels` would not select it.
+        selector=ServiceMonitorSpecSelector(match_labels={"k8s-app": "hubble"}),
         endpoints=[
-            Endpoint.plain(port="hubble-metrics", scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s")
+            Endpoint.plain(
+                port=_HUBBLE_METRICS.port.name, scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="10s"
+            )
         ],
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def cilium_monitoring(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        artifact,
-        timeout="2m",
-        depends_on=[
-            # ServiceMonitor
-            flux_kustomization_depends_on(monitoring_crds)
-        ],
-    )

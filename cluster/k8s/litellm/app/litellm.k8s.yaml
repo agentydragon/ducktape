@@ -12,6 +12,42 @@ metadata:
 data:
   config.yaml: |
     model_list:
+      - model_name: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+        litellm_params:
+          model: openai/qwen3.8-flash-next-iq4xs:latest
+          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+          api_key: ollama
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+        litellm_params:
+          model: ollama_chat/qwen3.8-flash-next-iq4xs:latest
+          api_base: http://ollama.ollama.svc.cluster.local:11434
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+        litellm_params:
+          model: openai/qwen3.8-flash-next-iq4xs-256k:latest
+          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+          api_key: ollama
+          extra_body:
+            options:
+              num_ctx: 262144
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
+        litellm_params:
+          model: ollama_chat/qwen3.8-flash-next-iq4xs-256k:latest
+          api_base: http://ollama.ollama.svc.cluster.local:11434
+          extra_body:
+            options:
+              num_ctx: 262144
+        model_info:
+          mode: chat
+          supports_function_calling: true
       - model_name: ollama/oai-chat/gpt-oss-20b-128k
         litellm_params:
           model: openai/gpt-oss:20b
@@ -55,14 +91,14 @@ data:
           supports_function_calling: true
       - model_name: ollama/olm-chat/gpt-oss-20b-128k
         litellm_params:
-          model: ollama/gpt-oss:20b
+          model: ollama_chat/gpt-oss:20b
           api_base: http://ollama.ollama.svc.cluster.local:11434
         model_info:
           mode: chat
           supports_function_calling: true
       - model_name: ollama/olm-chat/gpt-oss-20b-256k
         litellm_params:
-          model: ollama/gpt-oss:20b
+          model: ollama_chat/gpt-oss:20b
           api_base: http://ollama.ollama.svc.cluster.local:11434
           extra_body:
             options:
@@ -72,7 +108,7 @@ data:
           supports_function_calling: true
       - model_name: ollama/olm-chat/gpt-oss-20b-512k
         litellm_params:
-          model: ollama/gpt-oss:20b
+          model: ollama_chat/gpt-oss:20b
           api_base: http://ollama.ollama.svc.cluster.local:11434
           extra_body:
             options:
@@ -82,7 +118,7 @@ data:
           supports_function_calling: true
       - model_name: ollama/olm-chat/gpt-oss-20b-1m
         litellm_params:
-          model: ollama/gpt-oss:20b
+          model: ollama_chat/gpt-oss:20b
           api_base: http://ollama.ollama.svc.cluster.local:11434
           extra_body:
             options:
@@ -100,7 +136,7 @@ data:
           supports_function_calling: true
       - model_name: ollama/olm-chat/gpt-oss-120b-128k
         litellm_params:
-          model: ollama/gpt-oss:120b
+          model: ollama_chat/gpt-oss:120b
           api_base: http://ollama.ollama.svc.cluster.local:11434
         model_info:
           mode: chat
@@ -115,7 +151,7 @@ data:
           supports_function_calling: true
       - model_name: ollama/olm-chat/gemma4-31b-it-q8_0-128k
         litellm_params:
-          model: ollama/gemma4:31b-it-q8_0
+          model: ollama_chat/gemma4:31b-it-q8_0
           api_base: http://ollama.ollama.svc.cluster.local:11434
         model_info:
           mode: chat
@@ -771,8 +807,6 @@ automountServiceAccountToken: false
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: litellm
   name: litellm
@@ -907,6 +941,9 @@ spec:
               memory: 1024Mi
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: false

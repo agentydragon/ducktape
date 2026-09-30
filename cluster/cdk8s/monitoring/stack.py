@@ -6,8 +6,6 @@ Hand-written beside the generated output: `grafana-admin-password.sops.yaml`.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart, JsonPatch
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
@@ -19,20 +17,11 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeRemediation,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "monitoring-stack"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/stack"
@@ -285,7 +274,7 @@ def _values() -> dict[str, object]:
             },
             "rules": {
                 "alertmanager": True,
-                # Static Talos etcd endpoints are scraped by monitoring/etcd; keep the
+                # Static Talos etcd endpoints are scraped through cluster/cdk8s/etcd.py; keep the
                 # chart's stock etcd rule bundle disabled until the scrape is verified.
                 "etcd": False,
                 "configReloaders": True,
@@ -331,27 +320,12 @@ def _values() -> dict[str, object]:
                     }
                 },
                 # Chart auto-generates podAntiAffinity when replicas > 1
-                "nodeSelector": {"topology.kubernetes.io/zone": "hil-ovh"},
+                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
                 # The replica with its local PVC on a control plane must survive the
                 # default taint until monitoring-state migration. Prefer workers for
                 # any placement not constrained by that PVC.
-                "tolerations": [
-                    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-                ],
-                "affinity": {
-                    "nodeAffinity": {
-                        "preferredDuringSchedulingIgnoredDuringExecution": [
-                            {
-                                "weight": 100,
-                                "preference": {
-                                    "matchExpressions": [
-                                        {"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}
-                                    ]
-                                },
-                            }
-                        ]
-                    }
-                },
+                "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
+                "affinity": node_scheduling.PREFER_WORKERS,
                 "resources": {
                     "requests": {"cpu": "10m", "memory": "64Mi"},
                     "limits": {"cpu": "100m", "memory": "128Mi"},
@@ -359,7 +333,7 @@ def _values() -> dict[str, object]:
                 "retention": "120h",
             },
         },
-        # Grafana disabled — managed by grafana-operator (cluster/k8s/monitoring/grafana-instance/).
+        # Grafana disabled — managed by grafana-operator (grafana_instance.py).
         # Dashboards, datasources, and service accounts are GrafanaDashboard/GrafanaDatasource/
         # GrafanaServiceAccount CRs. JWT auth eliminates admin password bootstrap dependency.
         "grafana": {"enabled": False},
@@ -442,16 +416,16 @@ def _values() -> dict[str, object]:
             "resources": {"requests": {"cpu": "10m", "memory": "128Mi"}, "limits": {"cpu": "100m", "memory": "512Mi"}},
         },
         "kubeApiServer": {
-            # Scraped natively from cluster/k8s/monitoring/alloy/config.alloy instead,
+            # Scraped natively from cluster/cdk8s/monitoring/config.alloy instead,
             # preserving the explicit auth and rule labels used by that configuration.
             "enabled": False
         },
-        # Same as kubeApiServer: scraped natively in cluster/k8s/monitoring/alloy/config.alloy.
+        # Same as kubeApiServer: scraped natively in cluster/cdk8s/monitoring/config.alloy.
         "kubelet": {"enabled": False},
         "kubeControllerManager": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # `serviceMonitor.authorization: null` is patched in below.
         "coreDns": {"enabled": True, "serviceMonitor": {}},
-        # Static Talos etcd endpoints are managed in cluster/generated/monitoring/etcd.
+        # Static Talos etcd endpoints are managed in cluster/cdk8s/etcd.py.
         "kubeEtcd": {"enabled": False},
         "kubeScheduler": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # kube-proxy is intentionally absent: Cilium runs kube-proxy replacement,
@@ -460,12 +434,12 @@ def _values() -> dict[str, object]:
     }
 
 
-def _prometheus_ingress_rule(namespace: str, app: str) -> k8s.NetworkPolicyIngressRule:
+def _prometheus_ingress_rule(namespace: str, pod_labels: dict[str, str]) -> k8s.NetworkPolicyIngressRule:
     return k8s.NetworkPolicyIngressRule(
         from_=[
             k8s.NetworkPolicyPeer(
                 namespace_selector=k8s.LabelSelector(match_labels={"kubernetes.io/metadata.name": namespace}),
-                pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": app}),
+                pod_selector=k8s.LabelSelector(match_labels=pod_labels),
             )
         ],
         ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_PROMETHEUS_PORT), protocol="TCP")],
@@ -487,17 +461,17 @@ def chart(app: App) -> Chart:
         ),
         type="kubernetes.io/service-account-token",
     )
-    repository = HelmRepository(
-        chart,
-        "helm-repository",
-        metadata=metadata(_HELM_REPOSITORY, "flux-system"),
-        spec=HelmRepositorySpec(interval="12h", url="https://prometheus-community.github.io/helm-charts"),
-    )
     release = helm_release(
         chart,
         "kube-prometheus-stack",
         _NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(
+            chart,
+            _HELM_REPOSITORY,
+            "flux-system",
+            url="https://prometheus-community.github.io/helm-charts",
+            interval="12h",
+        ),
         chart="kube-prometheus-stack",
         version="91.3.0",
         interval="30m",
@@ -541,39 +515,29 @@ def chart(app: App) -> Chart:
             policy_types=["Ingress"],
             ingress=[
                 # Grafana: datasource queries for dashboards
-                _prometheus_ingress_rule(_NAMESPACE, "grafana"),
+                _prometheus_ingress_rule(_NAMESPACE, {"app.kubernetes.io/name": "grafana"}),
                 # Alertmanager: Prometheus pushes alerts to Alertmanager; allow return traffic
-                _prometheus_ingress_rule(_NAMESPACE, "alertmanager"),
+                _prometheus_ingress_rule(_NAMESPACE, {"app.kubernetes.io/name": "alertmanager"}),
                 # Gatus: health check probes
-                _prometheus_ingress_rule("gatus", "gatus"),
+                _prometheus_ingress_rule(cilium.PROBER.namespace, cilium.PROBER.selector),
             ],
         ),
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", "grafana-admin-password.sops.yaml"]),
-    )
-
-
 def monitoring_stack(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     monitoring_namespace: Kustomization,
     monitoring_crds: Kustomization,
-    ntfy: Kustomization,
-    external_secrets_config: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "monitoring-stack",
-        artifact,
+        directory,
         wait=None,
-        decryption=SOPS_DECRYPTION,
         health_checks=[
             KustomizationSpecHealthChecks(
                 api_version="v1", kind="Secret", name="alloy-control-plane-token", namespace="monitoring"
@@ -598,7 +562,7 @@ def monitoring_stack(
             # The chart's Prometheus/Alertmanager CRs are rejected at admission until
             # the CRDs exist, and the chart no longer installs them itself.
             monitoring_crds,
-            ntfy,
-            external_secrets_config,
+            # Kyverno's failurePolicy: Fail webhooks admit the chart's Deployments and DaemonSet.
+            kyverno,
         ),
     )

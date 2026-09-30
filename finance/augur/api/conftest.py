@@ -21,7 +21,6 @@ from finance.augur.api.config import (
     PropertySourceConfig,
 )
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.local_regulation import LocalRegulation, TaxRegime
 from finance.augur.api.portfolio_source_config import (
     FixedPortfolioSourceConfig,
     PlaidCashSourceConfig,
@@ -31,11 +30,11 @@ from finance.augur.api.portfolio_source_config import (
 )
 from finance.augur.api.server import ApiServerConfig, create_app, static_price_clients
 from finance.augur.api.wire import ActorRole
-from finance.augur.model.independent import IndependentProviderConfig
-from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import LocationId
 from finance.augur.model.testing import ConstantFrameModel
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.augur.x.models.provider_config import ProviderConfig
 
 # Factories the fixtures below hand tests: build a Config (`minimal_config` overrides any field;
 # `make_catalog_config` takes the property-shortlist path for the catalog-builder tests) or a
@@ -46,45 +45,7 @@ MakeClient = Callable[[dict[str, Any]], TestClient]
 
 
 @pytest.fixture
-def fixture_regulation() -> LocalRegulation:
-    """Synthetic CALIFORNIA_PROP13 regulation for the public-fixture locations."""
-    return LocalRegulation(
-        property_tax_regime=TaxRegime.CALIFORNIA_PROP13,
-        default_tax_regimes=(
-            TaxRegime.CALIFORNIA_PROP13,
-            TaxRegime.CALIFORNIA_TRANSFER_TAX,
-            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
-            TaxRegime.FEDERAL_CAPITAL_GAINS,
-            TaxRegime.CALIFORNIA_INCOME_TAX,
-        ),
-        property_tax_annual_pct=1.0,
-        notes="Synthetic public fixture location.",
-    )
-
-
-@pytest.fixture
-def san_francisco_regulation() -> LocalRegulation:
-    """San Francisco secured-property-tax regulation (the real SF regime stack)."""
-    return LocalRegulation(
-        property_tax_regime=TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
-        default_tax_regimes=(
-            TaxRegime.CALIFORNIA_PROP13,
-            TaxRegime.CALIFORNIA_TRANSFER_TAX,
-            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
-            TaxRegime.FEDERAL_CAPITAL_GAINS,
-            TaxRegime.CALIFORNIA_INCOME_TAX,
-            TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
-            TaxRegime.SAN_FRANCISCO_TRANSFER_TAX,
-        ),
-        property_tax_annual_pct=1.18,
-        notes="San Francisco fixture",
-    )
-
-
-@pytest.fixture
-def fixture_locations(
-    fixture_regulation: LocalRegulation, san_francisco_regulation: LocalRegulation
-) -> tuple[LocationConfig, ...]:
+def fixture_locations() -> tuple[LocationConfig, ...]:
     """The two synthetic fixture locations plus San Francisco, for the catalog-builder tests."""
     return (
         LocationConfig(
@@ -92,7 +53,7 @@ def fixture_locations(
             label="Location A",
             city="Location A",
             state="Fixture",
-            local_regulation=fixture_regulation,
+            situs=JurisdictionId("san_francisco"),
             notes=("Synthetic public fixture location.",),
         ),
         LocationConfig(
@@ -100,7 +61,7 @@ def fixture_locations(
             label="Location B",
             city="Location B",
             state="Fixture",
-            local_regulation=fixture_regulation,
+            situs=JurisdictionId("san_francisco"),
             notes=("Synthetic public fixture location.",),
         ),
         LocationConfig(
@@ -108,7 +69,7 @@ def fixture_locations(
             label="San Francisco, CA",
             city="San Francisco",
             state="CA",
-            local_regulation=san_francisco_regulation,
+            situs=JurisdictionId("san_francisco"),
             notes=("San Francisco fixture.",),
         ),
     )

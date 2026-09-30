@@ -33,6 +33,7 @@ py_package(
     ],
     deps = [
         ":credentials",
+        ":oauth_client",
         ":statusline",
         ":usage",
         "//devinfra/claude/claude_api/hooks:dispatch_input",
@@ -77,4 +78,10 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "oauth_client",
+    srcs = ["oauth_client.py"],
+    visibility = ["//visibility:public"],
 )

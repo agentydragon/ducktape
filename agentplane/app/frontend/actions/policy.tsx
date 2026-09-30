@@ -206,7 +206,7 @@ function actionsText(policy: EffectivePolicyView["policy"]): string {
     .join(" · ");
 }
 
-/** One of the three lists as the Action Service walks it: first match wins, in this order. */
+/** One policy list as the Action Service walks it: first match wins, in this order. */
 function PolicyList({
   title,
   policies,
@@ -297,7 +297,7 @@ function Unavailable({ failure }: { failure: ActionPolicyUnavailable }): JSX.Ele
 
 /**
  * What the Action Service auto-decides for the sandbox, as the service itself resolves it for the
- * sandbox's UID: the bindings, the sets they name, and the three lists as it evaluates them. What
+ * sandbox's UID: the bindings, the sets they name, and the auto-approval list as it evaluates it. What
  * arrives here is the service's answer, or why there is none. Read-only.
  */
 export function ActionPolicySection({
@@ -321,18 +321,6 @@ export function ActionPolicySection({
         title="Auto-approve if"
         policies={policy.auto_approve_if}
         empty="Nothing: every Action from this sandbox waits for the operator."
-      />
-      {/* The deny lists are accepted and shown but produce no Decision in this version of the
-          Action Service (agentplane/action_service/SPEC.md § Action policies). */}
-      <PolicyList
-        title="Auto-deny if"
-        policies={policy.auto_deny_if}
-        empty="Nothing. Accepted by the Action Service; not yet enforced."
-      />
-      <PolicyList
-        title="Auto-deny unless"
-        policies={policy.auto_deny_unless}
-        empty="Nothing. Accepted by the Action Service; not yet enforced."
       />
     </Stack>
   );

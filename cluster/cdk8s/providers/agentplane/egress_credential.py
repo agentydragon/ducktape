@@ -1,6 +1,6 @@
 """Ergonomic wrapper for Agentplane's own `EgressCredential` CRD
 (cluster/k8s/agentplane-crds/crd-egresscredentials.yaml), following cdk8s-plus's own
-construction pattern: a class named after the kind, and a named `@classmethod` factory group for
+construction pattern: a class named after the kind, and a named `@staticmethod` factory group for
 `source`'s real variant shapes.
 """
 
@@ -30,29 +30,21 @@ class Source:
     audience.
     """
 
-    def __init__(self, spec: EgressCredentialSpecSource) -> None:
-        self._spec = spec
+    @staticmethod
+    def secret_ref(*, name: str, key: str) -> EgressCredentialSpecSource:
+        return EgressCredentialSpecSource(secret_ref=EgressCredentialSpecSourceSecretRef(name=name, key=key))
 
-    def to_spec(self) -> EgressCredentialSpecSource:
-        return self._spec
-
-    @classmethod
-    def secret_ref(cls, *, name: str, key: str) -> Source:
-        return cls(EgressCredentialSpecSource(secret_ref=EgressCredentialSpecSourceSecretRef(name=name, key=key)))
-
-    @classmethod
-    def authenticated_workload_token(cls) -> Source:
+    @staticmethod
+    def authenticated_workload_token() -> EgressCredentialSpecSource:
         # The schema types this branch `maxProperties: 0`: a required, always-empty object. The
         # generated field defaults to unset (`None`), so selecting this branch means passing that
         # empty object explicitly rather than omitting the keyword.
-        return cls(EgressCredentialSpecSource(authenticated_workload_token={}))
+        return EgressCredentialSpecSource(authenticated_workload_token={})
 
-    @classmethod
-    def projected_workload_token(cls, *, audience: str) -> Source:
-        return cls(
-            EgressCredentialSpecSource(
-                projected_workload_token=EgressCredentialSpecSourceProjectedWorkloadToken(audience=audience)
-            )
+    @staticmethod
+    def projected_workload_token(*, audience: str) -> EgressCredentialSpecSource:
+        return EgressCredentialSpecSource(
+            projected_workload_token=EgressCredentialSpecSourceProjectedWorkloadToken(audience=audience)
         )
 
 

@@ -14,18 +14,17 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-    ExternalSecretSpecTargetTemplate,
 )
 
+from cluster.cdk8s import haku_egress_proxy, node_scheduling
 from cluster.cdk8s.config_format import json5_config
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
@@ -33,24 +32,26 @@ from cluster.cdk8s.openclaw_gateway import (
     session_memory_hook,
     trusted_proxy_gateway,
 )
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAMESPACE = "haku-openclaw-spike"
 _NAME = "haku-openclaw-spike"
-_LABELS = {"app.kubernetes.io/name": _NAME}
+# Authentik's outpost reaches it by FQDN (cluster/k8s/authentik/app/blueprints/haku-openclaw-spike-sso.yaml).
+_GATEWAY = ServiceRef(
+    name=_NAME,
+    port=Port(name="gateway", number=18789),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+)
 _CONFIG_MAP_NAME = "haku-openclaw-spike-config"
 # Rendered from the hand-written kube-client-config by the kustomization.yaml's configMapGenerator.
 _KUBECONFIG_CONFIG_MAP_NAME = "haku-openclaw-spike-kubeconfig"
-_GATEWAY_PASSWORD_NAME = "haku-openclaw-spike-gateway-password"
+_GATEWAY_PASSWORD = SecretRef(namespace=_NAMESPACE, name="haku-openclaw-spike-gateway-password").key("password")
 _STATE_CLAIM_NAME = "haku-openclaw-spike-state-v2"
 _IMAGE = "git.allegedly.works/ducktape-ci/haku-openclaw-spike:unset"
-_GATEWAY_PORT_NAME = "gateway"
-_GATEWAY_PORT = 18789
 _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
-_EGRESS_PROXY = "http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181"
-_EGRESS_PROXY_PORT = 8181
 _NO_PROXY = "127.0.0.1,localhost"
 
 # OpenClaw's own native `anthropic/<model>` id, not the `{provider}/{shape}/{model}`
@@ -268,12 +269,7 @@ def _openclaw_container() -> k8s.Container:
             # Authentik authenticates proxied browser traffic. Local backend clients have
             # no proxy identity headers, so use OpenClaw's documented trusted-proxy
             # local-password fallback.
-            k8s.EnvVar(
-                name="OPENCLAW_GATEWAY_PASSWORD",
-                value_from=k8s.EnvVarSource(
-                    secret_key_ref=k8s.SecretKeySelector(name=_GATEWAY_PASSWORD_NAME, key="password")
-                ),
-            ),
+            _GATEWAY_PASSWORD.env_var("OPENCLAW_GATEWAY_PASSWORD"),
             _CLAUDE_CODE_OAUTH_TOKEN,
             # OpenClaw clears ambient Claude credentials by default so auth profiles cannot
             # accidentally inherit host credentials. This deployment intentionally supplies
@@ -289,11 +285,11 @@ def _openclaw_container() -> k8s.Container:
             # Keep both cases: Node honors the uppercase variables, while curl/libcurl (and
             # therefore Git over plain HTTP) require the lowercase form and intentionally
             # ignore uppercase HTTP_PROXY.
-            _env("HTTP_PROXY", _EGRESS_PROXY),
-            _env("HTTPS_PROXY", _EGRESS_PROXY),
+            _env("HTTP_PROXY", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
+            _env("HTTPS_PROXY", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
             _env("NO_PROXY", _NO_PROXY),
-            _env("http_proxy", _EGRESS_PROXY),
-            _env("https_proxy", _EGRESS_PROXY),
+            _env("http_proxy", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
+            _env("https_proxy", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
             _env("no_proxy", _NO_PROXY),
             _env("NODE_EXTRA_CA_CERTS", _CA_BUNDLE),
             # Python is the other runtime that ignores the mounted system bundle: pip trusts
@@ -306,7 +302,7 @@ def _openclaw_container() -> k8s.Container:
             _env("REQUESTS_CA_BUNDLE", _CA_BUNDLE),
             _env("PIP_CERT", _CA_BUNDLE),
         ],
-        ports=[k8s.ContainerPort(name=_GATEWAY_PORT_NAME, container_port=_GATEWAY_PORT)],
+        ports=[_GATEWAY.port.k8s_container_port()],
         # Without this the Deployment reports 1/1 Running whenever a process exists, which
         # hid two different outages during the 2026.8.1 recovery: a gateway crash-looping
         # every ~4 minutes, and one that started but never bound its port. /healthz answers
@@ -318,7 +314,7 @@ def _openclaw_container() -> k8s.Container:
         # measured reading ~940 KB/s, hundreds of MB in, still progressing. A restarting
         # probe would kill that and never let it finish.
         readiness_probe=k8s.Probe(
-            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(_GATEWAY_PORT_NAME)),
+            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(_GATEWAY.port.name)),
             initial_delay_seconds=10,
             period_seconds=10,
             timeout_seconds=5,
@@ -353,15 +349,13 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_GATEWAY.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_GATEWAY.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_GATEWAY.pods.selector),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     # State is on the worker-local state-v2 PVC. Exclude control-plane nodes
@@ -373,7 +367,7 @@ def _deployment(scope: Construct) -> None:
                                     k8s.NodeSelectorTerm(
                                         match_expressions=[
                                             k8s.NodeSelectorRequirement(
-                                                key="node-role.kubernetes.io/control-plane", operator="DoesNotExist"
+                                                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
                                             )
                                         ]
                                     )
@@ -420,26 +414,7 @@ def _deployment(scope: Construct) -> None:
     )
 
 
-def _state_claims(scope: Construct) -> None:
-    k8s.KubePersistentVolumeClaim(
-        scope,
-        "state",
-        metadata=k8s.ObjectMeta(
-            name="haku-openclaw-spike-state",
-            namespace=_NAMESPACE,
-            annotations={
-                "description": (
-                    "Persistent OpenClaw home, agent workspace, memory, and Claude Code session "
-                    "transcripts for the isolated Haku spike."
-                )
-            },
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="local-path-ovh-hdd",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("30Gi")}),
-        ),
-    )
+def _state_claim(scope: Construct) -> None:
     k8s.KubePersistentVolumeClaim(
         scope,
         "state-v2",
@@ -448,11 +423,9 @@ def _state_claims(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={
                 "description": (
-                    "Worker-local (optiplex SSD) replacement for the OpenClaw spike state, migrating "
-                    "it off the ovh-ns103656 HDD (which fell over under I/O contention with "
-                    "etcd+kubelet). WaitForFirstConsumer binds it on optiplex when the VolSync "
-                    "restore mover is created; it must not be mounted by the Deployment before the "
-                    "restore completes."
+                    "Persistent OpenClaw home, agent workspace, memory, and Claude Code session "
+                    "transcripts for the isolated Haku spike, on the optiplex worker's local SSD, "
+                    "away from the control-plane disks etcd and kubelet need."
                 )
             },
         ),
@@ -471,24 +444,19 @@ def _gateway_password(scope: Construct) -> None:
     clients, including subagent completion handoffs, connect directly to the loopback
     Gateway and therefore have no Authentik identity headers; OpenClaw's local password
     fallback covers them. Generated once and retained, injected only into this workload."""
-    generator = Password(
-        scope,
-        "gateway-password-generator",
-        metadata=metadata("haku-openclaw-spike-gateway-password-generator", _NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    mint_bearer_secret(
         scope,
         "gateway-password",
-        name=_GATEWAY_PASSWORD_NAME,
-        namespace=_NAMESPACE,
+        name=_GATEWAY_PASSWORD.secret.name,
+        namespace=_GATEWAY_PASSWORD.secret.namespace,
+        key=_GATEWAY_PASSWORD.key,
+        generator_name=f"{_GATEWAY_PASSWORD.secret.name}-generator",
         # The generator value is stable. Avoid automatic rotation, which would
         # interrupt active local Gateway clients unnecessarily.
         refresh="8760h",
-        data_from=[DataFrom.from_password_generator(generator.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        template=ExternalSecretSpecTargetTemplate(data={"password": "{{ .password }}"}),
+        secret_type=None,
     )
 
 
@@ -496,17 +464,8 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name=_GATEWAY_PORT_NAME,
-                    port=_GATEWAY_PORT,
-                    target_port=k8s.IntOrString.from_string(_GATEWAY_PORT_NAME),
-                )
-            ],
-        ),
+        metadata=k8s.ObjectMeta(name=_GATEWAY.name, namespace=_NAMESPACE),
+        spec=k8s.ServiceSpec(selector=_GATEWAY.pods.selector, ports=[_GATEWAY.port.k8s_service_port()]),
     )
 
 
@@ -518,7 +477,7 @@ def _network_policies(scope: Construct) -> None:
         "ingress",
         metadata=k8s.ObjectMeta(name="haku-openclaw-spike-ingress", namespace=_NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=_GATEWAY.pods.selector),
             policy_types=["Ingress"],
             ingress=[
                 k8s.NetworkPolicyIngressRule(
@@ -535,7 +494,7 @@ def _network_policies(scope: Construct) -> None:
                             ),
                         )
                     ],
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_GATEWAY_PORT), protocol="TCP")],
+                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_GATEWAY.pod_port), protocol="TCP")],
                 )
             ],
         ),
@@ -547,7 +506,7 @@ def _network_policies(scope: Construct) -> None:
         "egress",
         metadata=k8s.ObjectMeta(name="haku-openclaw-spike-egress", namespace=_NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=_GATEWAY.pods.selector),
             policy_types=["Egress"],
             egress=[
                 k8s.NetworkPolicyEgressRule(
@@ -568,14 +527,21 @@ def _network_policies(scope: Construct) -> None:
                     to=[
                         k8s.NetworkPolicyPeer(
                             namespace_selector=k8s.LabelSelector(
-                                match_labels={"kubernetes.io/metadata.name": "haku-egress-proxy"}
+                                match_labels={
+                                    "kubernetes.io/metadata.name": haku_egress_proxy.OPENCLAW_SPIKE_PROXY.pods.namespace
+                                }
                             ),
                             pod_selector=k8s.LabelSelector(
-                                match_labels={"app.kubernetes.io/name": "haku-openclaw-spike-proxy"}
+                                match_labels=haku_egress_proxy.OPENCLAW_SPIKE_PROXY.pods.selector
                             ),
                         )
                     ],
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_EGRESS_PROXY_PORT), protocol="TCP")],
+                    ports=[
+                        k8s.NetworkPolicyPort(
+                            port=k8s.IntOrString.from_number(haku_egress_proxy.OPENCLAW_SPIKE_PROXY.pod_port),
+                            protocol="TCP",
+                        )
+                    ],
                 ),
             ],
         ),
@@ -611,7 +577,7 @@ def app_chart(app: App) -> Chart:
     workload = Chart(app, _NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(workload, "forgejo-images-creds", namespace=_NAMESPACE)
     _gateway_password(workload)
-    _state_claims(workload)
+    _state_claim(workload)
     _deployment(workload)
     _service(workload)
     _network_policies(workload)

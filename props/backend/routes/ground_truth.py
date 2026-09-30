@@ -100,7 +100,7 @@ def _ranges_to_locations(ranges: list[OccurrenceRangeORM]) -> list[LocationAncho
         LocationAnchor(
             file=str(r.file_path),
             start_line=r.start_line,
-            end_line=r.end_line if r.end_line != r.start_line else None,
+            end_line=r.end_line if (r.end_line is not None and r.end_line != r.start_line) else None,
             note=r.note,
         )
         for r in ranges

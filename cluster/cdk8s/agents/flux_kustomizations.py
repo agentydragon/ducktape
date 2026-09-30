@@ -9,6 +9,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
+    RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on,
     flux_kustomization_depends_on_many,
@@ -67,13 +68,7 @@ def authentik_jwt_rotation(
 
 
 def forgejo_token_rotation(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    forgejo_images: Kustomization,
-    authentik_jwt_rotation: Kustomization,
-    forgejo_claude: Kustomization,
-    haku_state: Kustomization,
-    forgejo_agentydragon_repos: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:
     name = "forgejo-token-rotation"
     return flux_kustomization(
@@ -82,15 +77,8 @@ def forgejo_token_rotation(
         artifact,
         retry_interval=None,
         wait=None,
-        depends_on=flux_kustomization_depends_on_many(
-            forgejo_images,
-            # owns the agents-infra namespace
-            authentik_jwt_rotation,
-            forgejo_claude,
-            haku_state,
-            forgejo_agentydragon_repos,
-        ),
         timeout="2m",
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
     )
 
 
@@ -138,14 +126,11 @@ def haku_openclaw_spike_app(
 def plaid_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
     cnpg: Kustomization,
-    local_path_provisioner: Kustomization,
-    external_secrets_config: Kustomization,
-    valkey: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
+    external_secrets_operator: Kustomization,
+    authentik: Kustomization,
+    authentik_tf: Kustomization,
+    mcp_oauth_state: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "plaid-mcp"
@@ -156,14 +141,11 @@ def plaid_mcp(
         timeout="10m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            forgejo_images,
-            gateway,
             cnpg,
-            local_path_provisioner,
-            external_secrets_config,
-            valkey,
-            agent_machine_access_tf,
-            reflector,
+            external_secrets_operator,
+            authentik,
+            authentik_tf,
+            mcp_oauth_state,
             # ServiceMonitor
             monitoring_crds,
         ),
@@ -228,28 +210,24 @@ def public_coder_agent_app(
     )
 
 
-def agent_shared_secrets(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, claude_rbac: Kustomization
-) -> Kustomization:
+def agent_shared_secrets(chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization) -> Kustomization:
     name = "agent-shared-secrets"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         retry_interval=None,
         wait=None,
         timeout="5m",
         depends_on=[flux_kustomization_depends_on(claude_rbac)],
-        decryption=SOPS_DECRYPTION,
     )
 
 
 def tana_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
-    valkey: Kustomization,
+    external_secrets_operator: Kustomization,
+    mcp_oauth_state: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "tana-mcp"
@@ -260,9 +238,8 @@ def tana_mcp(
         timeout="5m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
-            external_creds,
-            external_secrets_config,
-            valkey,
+            external_secrets_operator,
+            mcp_oauth_state,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
         ),

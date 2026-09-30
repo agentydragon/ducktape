@@ -36,7 +36,7 @@ registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
    (`{branch}-{timestamp}-{sha7}`). For in-cluster images:
    - Create `ImageRepository` + `ImagePolicy` in `generated/flux-image-automation-forgejo/`
      (with `secretRef: forgejo-images-creds` on the repository) or, for a GHCR image,
-     in `k8s/flux-image-automation-ghcr/`
+     in `generated/flux-image-automation-ghcr/`
    - Add `{"$imagepolicy": "flux-system:<policy-name>"}` comment to the image field
    - **GHCR only: add the `ImageRepository` to the GitHub webhook receiver** at
      `cdk8s/flux_webhook/chart.py` — without this, the image only
@@ -79,8 +79,9 @@ Flux image scan are retired.
      `{"$imagepolicy": "flux-system:<name>"}` marker on the image field. The
      cluster-wide `all-images` `ImageUpdateAutomation` updates it.
 4. **Consume** — image `git.allegedly.works/ducktape-ci/<image>` +
-   `imagePullSecrets: [{name: forgejo-images-creds}]`; the app's Flux Kustomization
-   `dependsOn: forgejo-images`.
+   `imagePullSecrets: [{name: forgejo-images-creds}]`. The app's Flux Kustomization
+   does not depend on `forgejo-images`: kubelet retries the pull until the
+   credential lands.
 
 **Tradeoff**: unlike GHCR (external), a Forgejo outage means these pods can't pull.
 Fine for non-critical workloads (agent pods); weigh per-image before moving

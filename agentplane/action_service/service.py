@@ -395,6 +395,11 @@ class ActionService:
     ) -> list[ActionRequestView]:
         return await self._store.list_requests(principal, states=states, idempotency_key=idempotency_key)
 
+    async def history(
+        self, principal: OperatorPrincipal, *, limit: int, cursor: str | None
+    ) -> tuple[list[ActionRequestView], str | None]:
+        return await self._store.history(principal, limit=limit, cursor=cursor)
+
     async def get(self, request_id: UUID, principal: Principal) -> ActionRequestView:
         return await self._store.get(request_id, principal)
 

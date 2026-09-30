@@ -33,7 +33,7 @@ from agentplane.action_service.github_policy.visibility import (
     REQUEST_TIMEOUT_SECONDS,
     RepositoryVisibilityService,
 )
-from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpOAuthServer
+from agentplane.action_service.mcp_linkage import McpClientMetadataSettings, McpLinkageAuthority, McpOAuthServer
 from agentplane.action_service.oauth import OAuthSettings, running_oauth
 from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from agentplane.action_service.policy_evaluation import PolicySetDecisionProvider
@@ -52,6 +52,16 @@ from util.kubernetes import CustomObjectsClient
 # gazelle:include_dep @pypi//pyyaml
 
 logger = logging.getLogger(__name__)
+DEFAULT_MAX_WAIT_SECONDS = 30.0
+DEFAULT_DIRECT_WAIT_SECONDS = 30.0
+
+
+def _validate_shared_mcp_client_metadata(
+    mcp_servers: dict[Key, McpOAuthServer], client_metadata: McpClientMetadataSettings | None
+) -> None:
+    uses_shared_cimd = any(server.use_shared_cimd for server in mcp_servers.values())
+    if uses_shared_cimd != (client_metadata is not None):
+        raise ValueError("configure mcp_client_metadata exactly when an MCP server uses the shared CIMD")
 
 
 class ActionServer(uvicorn.Server):
@@ -77,6 +87,47 @@ class GitHubVisibilitySettings(BaseModel):
         ge=0,
         description="How long one repository's confirmed visibility is reused before GitHub is asked again.",
     )
+
+
+class WebPushDeploymentSettings(BaseModel):
+    """The Web Push fields cdk8s writes; the private key comes from the mounted Secret."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject: str
+    public_base_url: str
+    allowed_push_hosts: list[str]
+
+
+class ActionServiceDeploymentSettings(BaseModel):
+    """The Action Service settings authored by cdk8s and written to its YAML file.
+
+    Runtime-only inputs such as the database URL and Web Push private key come from
+    environment variables; `settings_file` validates those supplied leaves against the
+    complete runtime `Settings` model.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    operator_oidc: OperatorOidcSettings
+    allowed_service_account_namespaces: frozenset[str]
+    direct_wait_seconds: float = Field(
+        ge=0,
+        allow_inf_nan=False,
+        description="How long a direct tool call waits before returning its Action request ID.",
+    )
+    max_wait_seconds: float = Field(
+        ge=0, allow_inf_nan=False, description="Maximum caller-requested wait on an Action receipt or result."
+    )
+    web_push: WebPushDeploymentSettings | None = None
+    mcp_client_metadata: McpClientMetadataSettings | None = None
+    mcp_servers: dict[Key, McpOAuthServer] = Field(default_factory=dict)
+    action_groups: dict[Key, ActionGroup] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_shared_mcp_client_metadata(self) -> ActionServiceDeploymentSettings:
+        _validate_shared_mcp_client_metadata(self.mcp_servers, self.mcp_client_metadata)
+        return self
 
 
 # Names the YAML settings file a deployment mounts; not a field, so not a flag.
@@ -109,8 +160,20 @@ class Settings(BaseSettings):
         "ActionPolicySets, ActionPolicyBindings and labeled caller ServiceAccounts the service watches; "
         "does not grant Action approval.",
     )
+    direct_wait_seconds: float = Field(
+        default=DEFAULT_DIRECT_WAIT_SECONDS,
+        ge=0,
+        allow_inf_nan=False,
+        description="How long a direct tool call waits before returning its Action request ID.",
+    )
     policy_resync_seconds: int = Field(
         default=300, gt=0, description="Policy watch lifetime; every watched kind is relisted this often."
+    )
+    max_wait_seconds: float = Field(
+        default=DEFAULT_MAX_WAIT_SECONDS,
+        ge=0,
+        allow_inf_nan=False,
+        description="Maximum caller-requested wait on an Action receipt or result.",
     )
     github_visibility: GitHubVisibilitySettings = Field(default_factory=GitHubVisibilitySettings)
     operator_bearer_file: Path | None = None
@@ -121,12 +184,14 @@ class Settings(BaseSettings):
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
     )
     mcp_servers: dict[Key, McpOAuthServer] = Field(default_factory=dict)
+    mcp_client_metadata: McpClientMetadataSettings | None = None
     web_push: WebPushSettings | None = Field(default=None, description="Optional Web Push delivery identity.")
 
     @model_validator(mode="after")
     def one_operator_authority(self) -> Settings:
         if self.operator_oidc is not None and self.operator_bearer_file is not None:
             raise ValueError("configure operator_oidc or legacy operator_bearer_file, never both")
+        _validate_shared_mcp_client_metadata(self.mcp_servers, self.mcp_client_metadata)
         return self
 
     @classmethod
@@ -189,7 +254,9 @@ async def async_main(settings: Settings) -> None:
         stack.push_async_callback(stop_informer)
         connections = ConnectionAuthority(make_sessionmaker(engine), policy_index)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
-        mcp_linkage = McpLinkageAuthority(make_sessionmaker(engine), settings.mcp_servers, engine=engine)
+        mcp_linkage = McpLinkageAuthority(
+            make_sessionmaker(engine), settings.mcp_servers, client_metadata=settings.mcp_client_metadata, engine=engine
+        )
         await mcp_linkage.cleanup_removed_servers()
         await mcp_linkage.start_refresh_loop()
         stack.push_async_callback(mcp_linkage.close)
@@ -263,6 +330,8 @@ async def async_main(settings: Settings) -> None:
             if settings.web_push is not None
             else None,
             mcp_linkage=mcp_linkage,
+            direct_wait_seconds=settings.direct_wait_seconds,
+            max_wait_seconds=settings.max_wait_seconds,
         )
         await ActionServer(
             uvicorn.Config(app, host=settings.host, port=settings.port, timeout_graceful_shutdown=5), service

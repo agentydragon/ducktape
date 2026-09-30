@@ -1,0 +1,187 @@
+{
+  "snapshot_at": "2026-09-26T12:20:24-07:00",
+  "status": "preliminary; IQ4 task result pending",
+  "method": "First six completed requests for each run; aggregate throughput = summed tokens / summed native timing seconds. Different trajectories and download overlap; not an isolated quant comparison.",
+  "models": {
+    "iq4": {
+      "source_log": "/tmp/wyrm2-iq4-speed-snapshot.log",
+      "source_log_sha256": "955f68d45837d331b691c3ab0ffdf8c8b011bef27202bb1eeaaea45f990ec97b",
+      "requests": [
+        {
+          "task_id": "0",
+          "prompt_tokens": 1189,
+          "prompt eval time": {
+            "seconds": 8.99934,
+            "tokens": 1189
+          },
+          "eval time": {
+            "seconds": 5.49161,
+            "tokens": 240
+          }
+        },
+        {
+          "task_id": "244",
+          "prompt_tokens": 2176,
+          "prompt eval time": {
+            "seconds": 3.58205,
+            "tokens": 991
+          },
+          "eval time": {
+            "seconds": 35.989839999999994,
+            "tokens": 1628
+          }
+        },
+        {
+          "task_id": "1876",
+          "prompt_tokens": 4435,
+          "prompt eval time": {
+            "seconds": 5.229550000000001,
+            "tokens": 2263
+          },
+          "eval time": {
+            "seconds": 61.02052,
+            "tokens": 2746
+          }
+        },
+        {
+          "task_id": "4626",
+          "prompt_tokens": 6570,
+          "prompt eval time": {
+            "seconds": 4.20254,
+            "tokens": 2139
+          },
+          "eval time": {
+            "seconds": 77.40758,
+            "tokens": 3301
+          }
+        },
+        {
+          "task_id": "7931",
+          "prompt_tokens": 8132,
+          "prompt eval time": {
+            "seconds": 3.18012,
+            "tokens": 1566
+          },
+          "eval time": {
+            "seconds": 58.31167,
+            "tokens": 2505
+          }
+        },
+        {
+          "task_id": "10440",
+          "prompt_tokens": 10730,
+          "prompt eval time": {
+            "seconds": 5.80455,
+            "tokens": 2602
+          },
+          "eval time": {
+            "seconds": 79.26374,
+            "tokens": 3372
+          }
+        }
+      ],
+      "aggregate": {
+        "prompt eval time": {
+          "seconds": 30.998150000000003,
+          "tokens": 10750,
+          "tokens_per_second": 346.79488937243025
+        },
+        "eval time": {
+          "seconds": 317.48496,
+          "tokens": 13792,
+          "tokens_per_second": 43.44142790260049
+        }
+      }
+    },
+    "q4": {
+      "source_log": "/tmp/wyrm2-qwen38-q4-20260926/q4-128k-q8_0-terminus/server.log",
+      "source_log_sha256": "c09e0905885ee2b5e25fd74e3fe81e96cfd2f6cf97c1b2bba943f8f8eaf100d9",
+      "requests": [
+        {
+          "task_id": "0",
+          "prompt_tokens": 1191,
+          "prompt eval time": {
+            "seconds": 21.29251,
+            "tokens": 1191
+          },
+          "eval time": {
+            "seconds": 11.553799999999999,
+            "tokens": 314
+          }
+        },
+        {
+          "task_id": "318",
+          "prompt_tokens": 2403,
+          "prompt eval time": {
+            "seconds": 8.976299999999998,
+            "tokens": 1216
+          },
+          "eval time": {
+            "seconds": 44.644580000000005,
+            "tokens": 1193
+          }
+        },
+        {
+          "task_id": "1515",
+          "prompt_tokens": 4646,
+          "prompt eval time": {
+            "seconds": 15.27857,
+            "tokens": 2247
+          },
+          "eval time": {
+            "seconds": 25.57043,
+            "tokens": 542
+          }
+        },
+        {
+          "task_id": "2061",
+          "prompt_tokens": 5735,
+          "prompt eval time": {
+            "seconds": 11.65838,
+            "tokens": 1093
+          },
+          "eval time": {
+            "seconds": 37.27939,
+            "tokens": 1050
+          }
+        },
+        {
+          "task_id": "3115",
+          "prompt_tokens": 6979,
+          "prompt eval time": {
+            "seconds": 6.12858,
+            "tokens": 1248
+          },
+          "eval time": {
+            "seconds": 101.73850999999999,
+            "tokens": 3099
+          }
+        },
+        {
+          "task_id": "6218",
+          "prompt_tokens": 8176,
+          "prompt eval time": {
+            "seconds": 8.25276,
+            "tokens": 1201
+          },
+          "eval time": {
+            "seconds": 167.02425,
+            "tokens": 4920
+          }
+        }
+      ],
+      "aggregate": {
+        "prompt eval time": {
+          "seconds": 71.58709999999999,
+          "tokens": 8196,
+          "tokens_per_second": 114.48990111346878
+        },
+        "eval time": {
+          "seconds": 387.81095999999997,
+          "tokens": 11118,
+          "tokens_per_second": 28.66860699346919
+        }
+      }
+    }
+  }
+}

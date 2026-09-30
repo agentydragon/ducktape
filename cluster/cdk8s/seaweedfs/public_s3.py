@@ -14,9 +14,7 @@ instead of generating a replacement. DriveFS permissions come from its Bucket
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from seaweed_s3policy_crds.com.seaweedfs.seaweed import (
@@ -36,13 +34,11 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
     S3PolicyBindingSpecSubjects,
     S3PolicyBindingSpecSubjectsKind,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.seaweedfs import (
     cluster,
     drivefs_artifacts_bucket,
@@ -51,16 +47,17 @@ from cluster.cdk8s.seaweedfs import (
     namespace,
     s3,
 )
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "public-s3"
 OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/public-s3"
-_PORT = 8333
-_METRICS_PORT = 9327
 _CONFIG_MAP = "public-s3-bootstrap-config"
 _CONFIG_KEY = "seaweedfs_s3_config.json"
 _CONFIG_DIR = "/etc/sw"
-_SELECTOR = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "s3"}
-_LABELS = {**_SELECTOR, "app.kubernetes.io/part-of": "seaweedfs"}
+_PODS = Pods(namespace=namespace.NAME, labels=(("app.kubernetes.io/name", NAME), ("app.kubernetes.io/component", "s3")))
+_S3 = ServiceRef(name=NAME, port=Port(name="s3-http", number=8333), pods=_PODS)
+_METRICS = ServiceRef(name=NAME, port=Port(name="s3-metrics", number=9327), pods=_PODS)
+_LABELS = {**_PODS.selector, "app.kubernetes.io/part-of": "seaweedfs"}
 _CLAUDE_READER = "claude-reader"
 _CLAUDE_READER_POLICY = "claude-reader-buckets"
 # Buckets claude-reader may list and read.
@@ -103,7 +100,7 @@ def _iam(scope: Construct) -> None:
     S3Policy(
         scope,
         "claude-reader-policy",
-        metadata=metadata(_CLAUDE_READER_POLICY, namespace.NAME),
+        metadata=ApiObjectMetadata(name=_CLAUDE_READER_POLICY, namespace=namespace.NAME),
         spec=S3PolicySpec(
             seaweed_ref=S3PolicySpecSeaweedRef(name=cluster.NAME),
             reclaim_policy=S3PolicySpecReclaimPolicy.RETAIN,
@@ -138,7 +135,7 @@ def _iam(scope: Construct) -> None:
     S3PolicyBinding(
         scope,
         "claude-reader-policy-binding",
-        metadata=metadata(_CLAUDE_READER_POLICY, namespace.NAME),
+        metadata=ApiObjectMetadata(name=_CLAUDE_READER_POLICY, namespace=namespace.NAME),
         spec=S3PolicyBindingSpec(
             seaweed_ref=S3PolicyBindingSpecSeaweedRef(name=cluster.NAME),
             policy_ref=S3PolicyBindingSpecPolicyRef(name=_CLAUDE_READER_POLICY),
@@ -168,28 +165,24 @@ def _gateway(scope: Construct) -> None:
             namespace=namespace.NAME,
             labels=_LABELS,
             annotations={
-                "reloader.stakater.com/auto": "true",
                 "description": (
                     "Single public-facing SeaweedFS S3 gateway (s3.allegedly.works). Mounts a static config for"
                     " bootstrap and public-specific identities. Filer-backed IAM identities are also valid here,"
                     " so every credential must remain a confidential Secret even when its usual consumer is"
                     " cluster-internal."
-                ),
+                )
             },
         ),
         spec=k8s.DeploymentSpec(
             replicas=2,
-            selector=k8s.LabelSelector(match_labels=_SELECTOR),
+            selector=k8s.LabelSelector(match_labels=_PODS.selector),
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     containers=[
                         k8s.Container(
                             name="s3",
@@ -198,15 +191,14 @@ def _gateway(scope: Construct) -> None:
                             command=[
                                 "/bin/sh",
                                 "-ec",
-                                f"weed -logtostderr=true s3 -port={_PORT} -filer=seaweedfs-filer:8888"
-                                f" -config={_CONFIG_DIR}/{_CONFIG_KEY} -metricsPort={_METRICS_PORT} -ip.bind=0.0.0.0",
+                                f"weed -logtostderr=true s3 -port={_S3.pod_port} -filer=seaweedfs-filer:8888"
+                                f" -config={_CONFIG_DIR}/{_CONFIG_KEY} -metricsPort={_METRICS.pod_port} -ip.bind=0.0.0.0",
                             ],
-                            ports=[
-                                k8s.ContainerPort(name="s3-http", container_port=_PORT, protocol="TCP"),
-                                k8s.ContainerPort(name="s3-metrics", container_port=_METRICS_PORT, protocol="TCP"),
-                            ],
+                            ports=[_S3.port.k8s_container_port(), _METRICS.port.k8s_container_port()],
                             readiness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(path="/status", port=k8s.IntOrString.from_number(_PORT)),
+                                http_get=k8s.HttpGetAction(
+                                    path="/status", port=k8s.IntOrString.from_number(_S3.pod_port)
+                                ),
                                 initial_delay_seconds=10,
                                 timeout_seconds=3,
                                 period_seconds=15,
@@ -241,30 +233,19 @@ def _gateway(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=namespace.NAME, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=_S3.name, namespace=namespace.NAME, labels=_LABELS),
         spec=k8s.ServiceSpec(
             type="ClusterIP",
-            selector=_SELECTOR,
-            ports=[
-                k8s.ServicePort(
-                    name="s3-http", protocol="TCP", port=_PORT, target_port=k8s.IntOrString.from_string("s3-http")
-                ),
-                k8s.ServicePort(
-                    name="s3-metrics",
-                    protocol="TCP",
-                    port=_METRICS_PORT,
-                    target_port=k8s.IntOrString.from_string("s3-metrics"),
-                ),
-            ],
+            selector=_PODS.selector,
+            ports=[_S3.port.k8s_service_port(), _METRICS.port.k8s_service_port()],
         ),
     )
     https_route(
         scope,
         "route",
-        metadata=metadata(NAME, namespace.NAME),
-        hostname="s3.allegedly.works",
-        backend=NAME,
-        port=_PORT,
+        metadata=ApiObjectMetadata(name=NAME, namespace=namespace.NAME),
+        hostnames=["s3.allegedly.works"],
+        backend=_S3,
         timeout="3600s",
         hsts=False,
         listener=None,
@@ -278,36 +259,19 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def seaweedfs_public_s3(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_external_credentials: Kustomization,
-    seaweedfs_drivefs_artifacts_bucket: Kustomization,
-    vm_images_publisher: Kustomization,
-    seaweedfs_secrets: Kustomization,
-    seaweedfs_cluster: Kustomization,
-    gateway: Kustomization,
+    chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "seaweedfs-public-s3"
     return flux_kustomization(
         chart,
         name,
-        # Gate on Bucket CRs managed in this repo that the public identities target.
-        # Claude and DriveFS identities authenticate through native IAM; static
-        # gateway configuration now contains only the credential-free anonymous read.
-        artifact,
+        directory,
         depends_on=flux_kustomization_depends_on_many(
-            seaweedfs_external_credentials,
-            seaweedfs_drivefs_artifacts_bucket,
-            vm_images_publisher,
-            seaweedfs_secrets,
-            seaweedfs_cluster,
-            gateway,
+            # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs
+            seaweedfs_operator,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno,
         ),
         timeout="5m",
-        decryption=SOPS_DECRYPTION,
     )

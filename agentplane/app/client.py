@@ -24,7 +24,7 @@ from agentplane.app.api import EgressGrant, ModelCatalog
 from agentplane.app.decisions import Decision
 from agentplane.app.egress import BindingView, PolicyView
 from agentplane.app.inventory import NewSandbox, ProvisioningState, SandboxView
-from agentplane.app.presets import Harness, SandboxPresetView
+from agentplane.app.presets import SandboxPresetView
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 
@@ -76,7 +76,7 @@ class Client:
 
     async def models(self) -> ModelCatalog:
         """Which models each harness may be opened with, as this deployment is configured."""
-        return {Harness(harness): names for harness, names in (await self._json("GET", "/models")).items()}
+        return ModelCatalog.model_validate(await self._json("GET", "/models"))
 
     async def presets(self) -> list[SandboxPresetView]:
         return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]
@@ -97,6 +97,9 @@ class Client:
 
     async def suspend_sandbox(self, name: str) -> None:
         await self._json("POST", f"/sandboxes/{name}/suspend")
+
+    async def resume_sandbox(self, name: str) -> None:
+        await self._json("POST", f"/sandboxes/{name}/resume")
 
     async def delete_sandbox(self, name: str) -> None:
         await self._json("DELETE", f"/sandboxes/{name}")
@@ -122,6 +125,11 @@ class Client:
         """Open with the concrete defaults recorded on the Sandbox, plus caller overrides."""
         body = NewSession(session_id=session_id, spec=overrides or {})
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
+        return Attachment(ParseDict(answered, protocol_pb2.Attached()))
+
+    async def resume_thread(self, thread_id: UUID) -> Attachment:
+        """Resume the runner session already bound to this Thread."""
+        answered = await self._json("POST", f"/threads/{thread_id}/resume")
         return Attachment(ParseDict(answered, protocol_pb2.Attached()))
 
     async def thread(self, sandbox: str, session_id: str) -> ThreadView:

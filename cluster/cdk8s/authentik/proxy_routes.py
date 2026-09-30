@@ -11,44 +11,33 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
-    HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-)
+from cdk8s import ApiObjectMetadata, App, Chart
+from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
 
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
+from cluster.cdk8s.authentik.app import SERVER
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 
 NAME = "proxy-routes"
 NAMESPACE = "authentik"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/proxy-routes"
-_OUTPOST = "authentik-server"
-_OUTPOST_PORT = 80
 
 # Route name -> public hostname.
 _ROUTES = {
     "hubble-ui": "hubble.allegedly.works",
     # Alloy OTLP: external clients authenticate with a Bearer token at the outpost.
     "alloy-otlp": "alloy-otlp.allegedly.works",
-    "grocy-sf": "grocy-sf.allegedly.works",
-    "grocy-vallejo": "grocy-vallejo.allegedly.works",
+    "grocy-sf": grocy.hostname("sf"),
+    "grocy-vallejo": grocy.hostname("vallejo"),
     # ActivityWatch's read-only proxy.
     "activitywatch": "activitywatch.allegedly.works",
     # The OpenClaw mitmproxy traffic viewer (admin-only).
     "agents-mitmproxy": "agents-mitmproxy.allegedly.works",
     # proxmox-proxy nginx -> atlas:8006.
     "proxmox": "atlas.allegedly.works",
-    # The plaid-mcp web UI for Plaid Link.
-    "plaid-mcp": "plaid-mcp.allegedly.works",
     "goldilocks-dashboard": "goldilocks.allegedly.works",
     # OpenWebRX+.
     "sdr": "sdr.allegedly.works",
@@ -110,10 +99,9 @@ def _proxy_route(chart: Chart, name: str, hostname: str, *, timeout: str | None 
     https_route(
         chart,
         name,
-        metadata=metadata(name, NAMESPACE),
-        hostname=hostname,
-        backend=_OUTPOST,
-        port=_OUTPOST_PORT,
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+        hostnames=[hostname],
+        backend=SERVER,
         timeout=timeout,
         hsts=False,
         listener=None,
@@ -125,31 +113,23 @@ def _haku_ui_route(chart: Chart) -> None:
     agentydragon-only. Operator-owned by construction: Kyverno forbids Haku creating routes in
     haku-sandbox, so this is haku-ui's only public path. Security model: haku/docs/security.md
     (enforcement inventory, "Authentik proxy route to haku-ui")."""
-    HttpRoute(
+    https_route(
         chart,
         "haku-ui",
-        metadata=metadata("haku-ui", NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=["haku-ui.allegedly.works"],
-            rules=[
-                HttpRouteSpecRules(
-                    filters=[
-                        HttpRouteSpecRulesFilters(
-                            type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                            response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                                set=[
-                                    HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
-                                        name="Content-Security-Policy", value=_HAKU_UI_CSP
-                                    )
-                                ]
-                            ),
-                        )
-                    ],
-                    backend_refs=[HttpRouteSpecRulesBackendRefs(name=_OUTPOST, port=_OUTPOST_PORT)],
-                )
-            ],
-        ),
+        metadata=ApiObjectMetadata(name="haku-ui", namespace=NAMESPACE),
+        hostnames=["haku-ui.allegedly.works"],
+        backend=SERVER,
+        hsts=False,
+        listener=None,
+        extra_filters=[
+            RouteFilter.response_header_modifier(
+                set=[
+                    HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
+                        name="Content-Security-Policy", value=_HAKU_UI_CSP
+                    )
+                ]
+            )
+        ],
     )
 
 

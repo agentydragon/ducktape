@@ -123,8 +123,8 @@ returned client; there is no cross-request token cache or ambient bearer lookup.
     pointing at the OAuth2 provider above.
   - Kubernetes secrets in the `grocy-sf` / `grocy-vallejo` namespaces,
     carrying `client_id`, `client_secret`, and `grocy_proxy_client_id`.
-- **K8s manifests** live at <../../cluster/k8s/grocy/{sf,vallejo}/mcp/>
-  and follow the POC's three-layer pattern (namespace / TF / app) minus
+- **K8s manifests** are generated per household by <../cluster/cdk8s/grocy/mcp.py>,
+  settings file included, and follow the POC's three-layer pattern (namespace / TF / app) minus
   the `tf/` layer since TF is shared with `agent-machine-access`.
 
 ## Refreshing the OpenAPI spec
@@ -150,7 +150,7 @@ bbr test //grocy_mcp:test_server
 
 Same shape as <../authentik_mcp_poc/archive/2026_05_24_historical_runbook.md>'s
 "Verification in the cluster" section. After Flux reconciles the per-household grocy namespace →
-`agent-machine-access-tf` → grocy MCP app:
+`authentik-tf` → grocy MCP app:
 
 ```bash
 curl -i https://grocy-mcp-sf.allegedly.works/mcp

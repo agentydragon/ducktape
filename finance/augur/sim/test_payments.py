@@ -13,8 +13,8 @@ from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import Claim, Claims
 from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.payments import execute
-from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.testing.accounting import (
@@ -208,7 +208,7 @@ def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
     for month in (3, 5, 8):
         pay_in_full(assessed(month))
     books.tax.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 10_000)
-    authority.close_month(books, 11, [], ())
+    authority.close_month(books, 11, [])
     assert [liability.amount_owed for liability in books.tax_liabilities] == [1000]
     claims = assessed(12)
     assert [claim.amount_due for claim in claims.entries] == [100, 600]

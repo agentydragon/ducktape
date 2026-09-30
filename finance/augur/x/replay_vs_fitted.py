@@ -35,8 +35,8 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
-from finance.augur.model.structural_macro import EquityProcess, StructuralMacroProviderConfig
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
+from finance.augur.x.models.structural_macro import EquityProcess, StructuralMacroProviderConfig
 
 HORIZON_MONTHS = 360
 EQUITY = EquitySpec(symbol=SecuritySymbol("VOO"), initial_price_usd=520.0)

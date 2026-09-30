@@ -121,11 +121,11 @@ def _pools(
     return selected
 
 
-def _quoted_value(units: int, price: int, scale: int) -> int:
+def quoted_value(units: int, price: int, scale: int) -> int:
     return _count((2 * units * price + scale) // (2 * scale))
 
 
-def _sale_lots(
+def sale_lots(
     lots: list[PublicPosition], amount: int, *, full_exit: bool = False, unit_target: Fraction | None = None
 ) -> tuple[list[LotSale], int]:
     """Select an ordered lot prefix by gross money or an explicit economic-unit budget.
@@ -151,7 +151,7 @@ def _sale_lots(
             )
         if not units:
             continue
-        value = _quoted_value(units, lot.price, lot.quantity_scale)
+        value = quoted_value(units, lot.price, lot.quantity_scale)
         remaining -= value
         proceeds += value
         if unit_target is not None:
@@ -171,16 +171,16 @@ def _sales(
     actions: list[Action] = []
     proceeds = 0
     for index, ((pool, lots, _), amount, full_exit) in enumerate(zip(selected, amounts, full_exits, strict=True)):
-        sale_lots, raised = _sale_lots(lots, amount, full_exit=full_exit)
+        sold, raised = sale_lots(lots, amount, full_exit=full_exit)
         proceeds += raised
-        if sale_lots:
+        if sold:
             actions.append(
                 Sell(
                     cause_id=f"{cause_id}-sell-{index}",
                     agent_id=observation.agent_id,
                     proceeds_account_id=cash_account_id,
                     asset_id=pool.asset_id,
-                    lots=tuple(sale_lots),
+                    lots=tuple(sold),
                 )
             )
     return actions, _count(proceeds)
@@ -201,7 +201,7 @@ def _buys(
         units = quantity_for_value(min(amount, cash_budget), pool.price, pool.quantity_scale, round_up=False)
         if not units:
             continue
-        cash_budget -= _quoted_value(units, pool.price, pool.quantity_scale)
+        cash_budget -= quoted_value(units, pool.price, pool.quantity_scale)
         actions.append(
             Buy(
                 cause_id=f"{cause_id}-buy-{index}",

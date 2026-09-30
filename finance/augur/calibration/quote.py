@@ -80,6 +80,8 @@ def implied_probability(quote: Quote, *, volume: float | None) -> float | None:
                     # resting size on one side pulls the estimate toward the other quote.
                     return (book.bid * book.ask_size + book.ask * book.bid_size) / (book.bid_size + book.ask_size)
                 return (book.bid + book.ask) / 2
+            # Kalshi reports an untraded contract's last price as "0.0000", not null, so a zero last
+            # trade is no observation.
             return book.last_trade if (book.last_trade and volume) else None
         case None:
             return None

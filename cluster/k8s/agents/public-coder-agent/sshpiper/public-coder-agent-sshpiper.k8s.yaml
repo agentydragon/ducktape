@@ -57,8 +57,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: public-coder-agent-sshpiper
   name: public-coder-agent-sshpiper
@@ -106,6 +104,7 @@ spec:
           ports:
             - containerPort: 2222
               name: ssh
+              protocol: TCP
           readinessProbe:
             periodSeconds: 10
             tcpSocket:
@@ -211,7 +210,7 @@ spec:
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: public-coder-agent
-            k8s:kubevirt.io/domain: public-coder-devbox
+            kubevirt.io/domain: public-coder-devbox
       toPorts:
         - ports:
             - port: "22"

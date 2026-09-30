@@ -134,7 +134,6 @@ kind: Deployment
 metadata:
   annotations:
     description: Claude and Codex subscription quota API via the CLIProxyAPI integration.
-    reloader.stakater.com/auto: "true"
   labels:
     app.kubernetes.io/name: aiquota
   name: aiquota-api
@@ -172,7 +171,7 @@ spec:
                   key: management-password
                   name: cli-proxy-api-management
             - name: AIQUOTA_CLICKHOUSE_URL
-              value: http://clickhouse.clickhouse.svc.cluster.local:8123
+              value: http://clickhouse.clickhouse.svc:8123
             - name: AIQUOTA_CLICKHOUSE_DATABASE
               value: aiquota
             - name: AIQUOTA_CLICKHOUSE_USERNAME
@@ -255,7 +254,7 @@ spec:
         - name: forgejo-images-creds
       initContainers:
         - args:
-            - --host=clickhouse.clickhouse.svc.cluster.local
+            - --host=clickhouse.clickhouse.svc
             - --port=9000
             - --connect_timeout=10
             - --receive_timeout=60

@@ -9,8 +9,8 @@ from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.agent import assemble
 from finance.augur.sim.claims import Claim, Claims
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.market_path import Series
 from finance.augur.sim.observations import Observation
-from finance.augur.sim.prepared import PreparedHoldingPool, PreparedLot, PreparedSeries
 from finance.augur.sim.results import Executed
 from finance.augur.sim.testing.accounting import (
     CASH,
@@ -25,36 +25,45 @@ from finance.augur.sim.testing.accounting import (
 )
 from finance.augur.sim.world import World
 
-POOLS = tuple(
-    PreparedHoldingPool(agent_id=actor, account_id=AccountId(account), asset_id=AssetId(asset), quantity_scale=10)
-    for actor, account, asset in (
-        (HOUSEHOLD, "checking", "stock"),
-        (HOUSEHOLD, "checking", "second"),
-        (HOUSEHOLD, "savings", "stock"),
-        (OTHER, "checking", "stock"),
-    )
+# Every pool holds tenths of a unit.
+SCALE = 10
+POOLS = (
+    (HOUSEHOLD, "checking", "stock"),
+    (HOUSEHOLD, "checking", "second"),
+    (HOUSEHOLD, "savings", "stock"),
+    (OTHER, "checking", "stock"),
 )
+
+
+@dataclass(frozen=True, kw_only=True)
+class Lot:
+    lot_id: LotId
+    agent_id: AgentId
+    account_id: AccountId
+    asset_id: AssetId
+    purchase_month: int
+    units: int
+    basis: int
 
 
 @dataclass(frozen=True)
 class Scoped:
     """Lots across both household accounts and another actor's, on one path of prices and CPI."""
 
-    lots: tuple[PreparedLot, ...]
-    series: tuple[PreparedSeries, ...]
+    lots: tuple[Lot, ...]
+    series: tuple[Series, ...]
 
 
 @pytest.fixture
 def scoped() -> Scoped:
     return Scoped(
         lots=tuple(
-            PreparedLot(
+            Lot(
                 lot_id=LotId(id_),
                 agent_id=actor,
                 account_id=AccountId(account),
                 asset_id=AssetId(asset),
                 purchase_month=month,
-                quantity_scale=10,
                 units=units,
                 basis=0,
             )
@@ -67,7 +76,7 @@ def scoped() -> Scoped:
             )
         ),
         series=tuple(
-            PreparedSeries(series_id=id_, snapshots=4, values=values)
+            Series(series_id=id_, snapshots=4, values=values)
             for id_, values in (
                 ("inflation", (1_000_000_000, 1_500_000_000, 2_000_000_000, 3_000_000_000)),
                 ("security:stock", (1, 3, 5, 7)),
@@ -81,10 +90,19 @@ def composed(case: Scoped) -> World:
     world = world_on(
         case.series, horizon_months=3, accounts=opening({CASH: 100, RESERVE: 900, RECIPIENT: 5000}), taxpayers=()
     )
-    for pool in POOLS:
-        world.declare_pool(pool)
+    for actor, account, asset in POOLS:
+        world.declare_pool(agent_id=actor, account_id=AccountId(account), asset_id=AssetId(asset), quantity_scale=SCALE)
     for lot in case.lots:
-        world.hold(lot)
+        world.hold_lot(
+            lot_id=lot.lot_id,
+            agent_id=lot.agent_id,
+            account_id=lot.account_id,
+            asset_id=lot.asset_id,
+            purchase_month=lot.purchase_month,
+            quantity_scale=SCALE,
+            units=lot.units,
+            basis=lot.basis,
+        )
     return world
 
 

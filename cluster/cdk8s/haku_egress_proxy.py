@@ -15,19 +15,6 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_clusterwide_crds.io.cilium import (
-    CiliumClusterwideNetworkPolicy,
-    CiliumClusterwideNetworkPolicySpec,
-    CiliumClusterwideNetworkPolicySpecEgress,
-    CiliumClusterwideNetworkPolicySpecEgressToEndpoints,
-    CiliumClusterwideNetworkPolicySpecEgressToEntities,
-    CiliumClusterwideNetworkPolicySpecEgressToPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPorts,
-    CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumClusterwideNetworkPolicySpecEndpointSelector,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions,
-    CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
-)
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -40,25 +27,31 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "haku-egress-proxy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy"
-_LABELS = {"app.kubernetes.io/name": NAME}
+# The mitmproxy chokepoint haku-sandbox and haku-ci send their external egress through.
+SERVICE = ServiceRef(
+    name=NAME,
+    port=Port(name="proxy", number=8080),
+    pods=Pods(namespace=NAME, labels=(("app.kubernetes.io/name", NAME),)),
+)
 _CA_SECRET = "haku-egress-proxy-ca"
 _IRON_PROXY_IMAGE = "git.allegedly.works/ducktape-ci/iron-proxy:unset"
-_OPENCLAW_SPIKE_PROXY = "haku-openclaw-spike-proxy"
+_IRON_PROXY_METRICS = Port(name="metrics", number=9090)
+# The OpenClaw spike's only egress path.
+OPENCLAW_SPIKE_PROXY = ServiceRef(
+    name="haku-openclaw-spike-proxy",
+    port=Port(name="proxy", number=8181),
+    pods=Pods(namespace=NAME, labels=(("app.kubernetes.io/name", "haku-openclaw-spike-proxy"),)),
+)
 _PUBLISHED_SECRETS_READER = "authentik-jwt-rotation-published-secrets-reader"
 
 
 def _quantities(**values: str) -> dict[str, k8s.Quantity]:
     return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
-
-
-def _secret_env(name: str, secret: str, key: str, *, optional: bool | None = None) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name,
-        value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key, optional=optional)),
-    )
 
 
 def _ca(chart: Chart) -> None:
@@ -88,17 +81,15 @@ def _mitmproxy(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             # Two, so one container's restart never empties the Service. mitmproxy OOM-kills
             # under haku-ci traffic (#5846), and with one replica every kill was a CI outage:
             # dependency fetches mid-flight got "connection refused" for the restart's duration.
             replicas=2,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     affinity=k8s.Affinity(
                         pod_anti_affinity=k8s.PodAntiAffinity(
@@ -108,7 +99,7 @@ def _mitmproxy(chart: Chart) -> None:
                                 k8s.WeightedPodAffinityTerm(
                                     weight=100,
                                     pod_affinity_term=k8s.PodAffinityTerm(
-                                        label_selector=k8s.LabelSelector(match_labels=_LABELS),
+                                        label_selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
                                         topology_key="kubernetes.io/hostname",
                                     ),
                                 )
@@ -148,7 +139,7 @@ def _mitmproxy(chart: Chart) -> None:
                                 "--listen-host",
                                 "0.0.0.0",
                                 "--listen-port",
-                                "8080",
+                                str(SERVICE.pod_port),
                                 "--set",
                                 "confdir=/mitmproxy-data",
                                 # Stream (don't buffer) response bodies over 1 MB. dind pulls
@@ -173,11 +164,11 @@ def _mitmproxy(chart: Chart) -> None:
                                 "--ignore-hosts",
                                 r"api\.anthropic\.com",
                             ],
-                            ports=[k8s.ContainerPort(name="proxy", container_port=8080)],
+                            ports=[SERVICE.port.k8s_container_port()],
                             # An endpoint only once the listener is up: with two replicas a rolling
                             # update otherwise routes to a pod that is not listening yet.
                             readiness_probe=k8s.Probe(
-                                tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_string("proxy")),
+                                tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_string(SERVICE.port.name)),
                                 period_seconds=5,
                             ),
                             volume_mounts=[k8s.VolumeMount(name="mitmproxy-data", mount_path="/mitmproxy-data")],
@@ -205,11 +196,8 @@ def _mitmproxy(chart: Chart) -> None:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[k8s.ServicePort(name="proxy", port=8080, target_port=k8s.IntOrString.from_number(8080))],
-        ),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAME),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()]),
     )
     # With two replicas, a voluntary disruption (node drain, descheduler eviction, rolling
     # update) may take one proxy pod at a time but never both, so haku-ci's only egress path
@@ -219,7 +207,7 @@ def _mitmproxy(chart: Chart) -> None:
         "poddisruptionbudget",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAME),
         spec=k8s.PodDisruptionBudgetSpec(
-            min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=_LABELS)
+            min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector)
         ),
     )
     # Allow proxy clients (haku-sandbox + haku-ci) to reach the egress proxy (port 8080) and
@@ -230,7 +218,7 @@ def _mitmproxy(chart: Chart) -> None:
         "networkpolicy",
         metadata=k8s.ObjectMeta(name="allow-authentik-egress-proxy-ingress", namespace=NAME),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             ingress=[
                 k8s.NetworkPolicyIngressRule(
                     from_=[
@@ -241,7 +229,7 @@ def _mitmproxy(chart: Chart) -> None:
                         )
                         for namespace in ("haku-sandbox", "haku-ci")
                     ],
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(8080), protocol="TCP")],
+                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(SERVICE.pod_port), protocol="TCP")],
                 ),
                 k8s.NetworkPolicyIngressRule(
                     from_=[
@@ -259,11 +247,12 @@ def _mitmproxy(chart: Chart) -> None:
     )
 
 
-def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port: int, env: list[k8s.EnvVar]) -> None:
+def _iron_proxy(chart: Chart, service: ServiceRef, *, description: str, config: dict, env: list[k8s.EnvVar]) -> None:
     """An iron-proxy Deployment holding real credentials and substituting them for a sandbox's
     placeholders, its config, and its Service."""
-    labels = {"app.kubernetes.io/name": name}
-    # No content-hash name suffix: `reloader.stakater.com/auto` rolls the proxy when this changes.
+    name = service.name
+    labels = service.pods.selector
+    # No content-hash name suffix: Reloader's `autoReloadAll` rolls the proxy when this changes.
     config_map = k8s.KubeConfigMap(
         chart,
         f"{name}-config",
@@ -273,12 +262,7 @@ def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port
     k8s.KubeDeployment(
         chart,
         f"{name}-deployment",
-        metadata=k8s.ObjectMeta(
-            name=name,
-            namespace=NAME,
-            labels=labels,
-            annotations={"description": description, "reloader.stakater.com/auto": "true"},
-        ),
+        metadata=k8s.ObjectMeta(name=name, namespace=NAME, labels=labels, annotations={"description": description}),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=labels),
@@ -299,10 +283,7 @@ def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port
                             image=_IRON_PROXY_IMAGE,
                             args=["-config", "/etc/iron-proxy/iron.yaml"],
                             env=env,
-                            ports=[
-                                k8s.ContainerPort(name="proxy", container_port=port),
-                                k8s.ContainerPort(name="metrics", container_port=9090),
-                            ],
+                            ports=[service.port.k8s_container_port(), _IRON_PROXY_METRICS.k8s_container_port()],
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
@@ -329,27 +310,22 @@ def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port
         f"{name}-service",
         metadata=k8s.ObjectMeta(name=name, namespace=NAME),
         spec=k8s.ServiceSpec(
-            selector=labels,
-            ports=[
-                k8s.ServicePort(name="proxy", port=port, target_port=k8s.IntOrString.from_string("proxy")),
-                k8s.ServicePort(name="metrics", port=9090, target_port=k8s.IntOrString.from_string("metrics")),
-            ],
+            selector=labels, ports=[service.port.k8s_service_port(), _IRON_PROXY_METRICS.k8s_service_port()]
         ),
     )
 
 
-def _github_token(chart: Chart, name: str) -> None:
+def _github_token(chart: Chart, token: SecretKey) -> None:
     """The agentydragon-agent GitHub PAT, consumed only by one iron-proxy here; its sandbox
     receives a non-secret placeholder that the proxy replaces in Authorization headers for
     exact GitHub hosts."""
     ExternalSecret(
         chart,
-        name,
-        name=name,
-        namespace=NAME,
-        refresh="1h",
-        store=external_creds.STORE,
-        data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
+        token.secret.name,
+        metadata=ApiObjectMetadata(name=token.secret.name, namespace=token.secret.namespace),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
+        data=[remote_data("github-agentydragon-agent", "token", secret_key=token.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
@@ -370,7 +346,7 @@ def _openclaw_spike_iron_config() -> dict:
     return {
         "dns": {"enabled": False},
         "proxy": {
-            "tunnel_listen": ":8181",
+            "tunnel_listen": f":{OPENCLAW_SPIKE_PROXY.pod_port}",
             # Forgejo generates a full-history Git pack before returning response headers. The
             # default 30s cap aborts that request with HTTP 502, while shallow fetches finish in
             # time. Keep a bounded but practical limit.
@@ -414,34 +390,35 @@ def _openclaw_spike_iron_config() -> dict:
 
 def _openclaw_spike_proxy(chart: Chart) -> None:
     # Shared with public-coder-agent's copy of the same PAT.
-    github_token = "haku-openclaw-spike-github-token"
-    kube_token = "haku-openclaw-spike-kube-token"
+    github_token = SecretRef(namespace=NAME, name="haku-openclaw-spike-github-token").key("GITHUB_TOKEN")
+    kube_token = SecretRef(namespace=NAME, name="haku-openclaw-spike-kube-token")
     _github_token(chart, github_token)
     _iron_proxy(
         chart,
-        _OPENCLAW_SPIKE_PROXY,
+        OPENCLAW_SPIKE_PROXY,
         description=(
             "Holds Haku OpenClaw spike credentials and substitutes placeholders only for exact destination hosts."
         ),
         config=_openclaw_spike_iron_config(),
-        port=8181,
         env=[
-            _secret_env("CLAUDE_CODE_OAUTH_TOKEN", "haku-claude-oauth-token", "CLAUDE_CODE_OAUTH_TOKEN"),
-            _secret_env("HAKU_GIT_PASSWORD", "haku-forgejo-git", "password"),
-            _secret_env("HAKU_CONSOLE_TOKEN", "haku-console-agent-api", "token"),
-            _secret_env("GITHUB_TOKEN", github_token, "GITHUB_TOKEN"),
+            SecretRef(namespace=NAME, name="haku-claude-oauth-token")
+            .key("CLAUDE_CODE_OAUTH_TOKEN")
+            .env_var("CLAUDE_CODE_OAUTH_TOKEN"),
+            SecretRef(namespace=NAME, name="haku-forgejo-git").key("password").env_var("HAKU_GIT_PASSWORD"),
+            SecretRef(namespace=NAME, name="haku-console-agent-api").key("token").env_var("HAKU_CONSOLE_TOKEN"),
+            github_token.env_var("GITHUB_TOKEN"),
             # Rotated roughly every 44 days by agents/authentik-jwt-rotation, which commits the
             # Secret SOPS-encrypted straight into THIS namespace -- deliberately not via the
             # shared claude-sandbox store that carries GITHUB_TOKEN above. That store is
             # conditioned to four namespaces including public-coder-agent, the one deliberately
             # unconfined fence in the cluster; a cluster-API bearer has exactly one consumer and
-            # should be readable by exactly one namespace. reloader.stakater.com/auto restarts
+            # should be readable by exactly one namespace. Reloader's `autoReloadAll` restarts
             # this pod when Flux applies a rotation -- without it, kubectl would start 401ing
             # ~44 days after it last worked with nothing visibly changed.
             # Optional: this proxy is the ONLY egress path for the spike, so a missing kube
             # token must not take out Anthropic, Forgejo and GitHub too. Unset simply means no
             # substitution: kubectl 401s, everything else is untouched.
-            _secret_env("HAKU_KUBE_JWT", kube_token, "jwt", optional=True),
+            kube_token.key("jwt").env_var("HAKU_KUBE_JWT", optional=True),
         ],
     )
     k8s.KubeNetworkPolicy(
@@ -449,7 +426,7 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
         "openclaw-spike-networkpolicy",
         metadata=k8s.ObjectMeta(name="allow-haku-openclaw-spike-proxy-ingress", namespace=NAME),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": _OPENCLAW_SPIKE_PROXY}),
+            pod_selector=k8s.LabelSelector(match_labels=OPENCLAW_SPIKE_PROXY.pods.selector),
             policy_types=["Ingress"],
             ingress=[
                 k8s.NetworkPolicyIngressRule(
@@ -460,7 +437,11 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
                             )
                         )
                     ],
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(8181), protocol="TCP")],
+                    ports=[
+                        k8s.NetworkPolicyPort(
+                            port=k8s.IntOrString.from_number(OPENCLAW_SPIKE_PROXY.pod_port), protocol="TCP"
+                        )
+                    ],
                 )
             ],
         ),
@@ -483,7 +464,7 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
                 )
             },
         ),
-        rules=[k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["get"], resource_names=[kube_token])],
+        rules=[k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["get"], resource_names=[kube_token.name])],
     )
     k8s.KubeRoleBinding(
         chart,
@@ -494,79 +475,23 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
     )
 
 
-_TCP = CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-_UDP = CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol.UDP
-
-
-def _ports(
-    *ports: tuple[int, CiliumClusterwideNetworkPolicySpecEgressToPortsPortsProtocol],
-) -> list[CiliumClusterwideNetworkPolicySpecEgressToPorts]:
-    return [
-        CiliumClusterwideNetworkPolicySpecEgressToPorts(
-            ports=[
-                CiliumClusterwideNetworkPolicySpecEgressToPortsPorts(port=str(number), protocol=protocol)
-                for number, protocol in ports
-            ]
-        )
-    ]
-
-
-def _to_endpoint(namespace: str, labels: dict[str, str], port: int) -> CiliumClusterwideNetworkPolicySpecEgress:
-    """Egress to the pods carrying `labels` in `namespace`, on TCP `port`."""
-    return CiliumClusterwideNetworkPolicySpecEgress(
-        to_endpoints=[
-            CiliumClusterwideNetworkPolicySpecEgressToEndpoints(
-                match_labels={"k8s:io.kubernetes.pod.namespace": namespace, **labels}
-            )
-        ],
-        to_ports=_ports((port, _TCP)),
-    )
-
-
-# DNS resolution (CoreDNS in kube-system)
-_DNS = CiliumClusterwideNetworkPolicySpecEgress(
-    to_endpoints=[CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=cilium.KUBE_DNS_LABELS)],
-    to_ports=_ports((53, _UDP), (53, _TCP)),
-)
-
-
-def _namespace_selector(namespace: str) -> CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions:
-    return CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions(
-        key="k8s:io.kubernetes.pod.namespace",
-        operator=CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
-        values=[namespace],
-    )
-
-
 def _sandbox_fence(chart: Chart) -> None:
     """Force all external egress from the haku-sandbox namespace through the dedicated
     haku-egress-proxy. Allows: DNS, cluster-internal traffic, kube-apiserver, and haku-egress-proxy
     port 8080. Blocks: direct external internet access.
     """
-    CiliumClusterwideNetworkPolicy(
+    cilium.force_proxy_egress(
         chart,
         "haku-sandbox-force-proxy-egress",
-        metadata=ApiObjectMetadata(name="haku-sandbox-force-proxy-egress"),
-        spec=CiliumClusterwideNetworkPolicySpec(
-            endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
-                match_expressions=[_namespace_selector("haku-sandbox")]
-            ),
-            egress=[
-                _DNS,
-                # All cluster-internal traffic (pod-to-service, bypasses proxy via NO_PROXY).
-                # This is also how haku-sandbox reaches the Plaid Postgres cluster-internally.
-                CiliumClusterwideNetworkPolicySpecEgress(
-                    to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.CLUSTER]
-                ),
-                # Kubernetes API server
-                CiliumClusterwideNetworkPolicySpecEgress(
-                    to_entities=[CiliumClusterwideNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
-                    to_ports=_ports((6443, _TCP)),
-                ),
-                # Shared proxy for existing sandbox traffic.
-                _to_endpoint(NAME, {"k8s:app.kubernetes.io/name": NAME}, 8080),
-            ],
-        ),
+        name="haku-sandbox-force-proxy-egress",
+        namespaces=["haku-sandbox"],
+        proxy_namespace=SERVICE.pods.namespace,
+        proxy_name=NAME,
+        proxy_port=SERVICE.pod_port,
+        # All cluster-internal traffic (pod-to-service, bypasses proxy via NO_PROXY).
+        # This is also how haku-sandbox reaches the Plaid Postgres cluster-internally.
+        cluster_ports=None,
+        kube_apiserver=True,
     )
 
 

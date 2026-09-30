@@ -1,7 +1,7 @@
 """Ergonomic wrapper for Agentplane's own `EgressBinding` CRD
 (cluster/k8s/agentplane-crds/crd-egressbindings.yaml): a class named after the kind, following
-cdk8s-plus's own construction pattern. The schema has exactly one shape -- `subjects` plus
-`policies` plus optional `expiresAt` -- so this is a plain passthrough with no factory group.
+cdk8s-plus's own construction pattern. Every keyword is an `EgressBindingSpec` field under its own
+name and type; this wrapper adds no ducktape-specific policy.
 """
 
 from __future__ import annotations
@@ -19,10 +19,9 @@ from constructs import Construct
 
 
 class EgressBinding(_EgressBinding):
-    """Agentplane's `EgressBinding`: attaches `policies` (EgressPolicy names in the binding's
-    namespace) to `subjects`. The binding's existence is the grant; `expires_at` unset (`None`)
-    means it never expires.
-    """
+    """Agentplane's `EgressBinding`: what sandboxes running as `subjects` may reach, as the union of
+    the named `EgressPolicy` objects. `subjects` and `policies` are the fields the CRD itself
+    requires."""
 
     def __init__(
         self,

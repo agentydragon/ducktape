@@ -1,17 +1,14 @@
-"""Mimir (metrics storage and the ruler) with its tenant-local SeaweedFS buckets and
-credentials."""
+"""Mimir (metrics storage and the ruler) with its tenant-local SeaweedFS buckets, identity
+and credentials."""
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
@@ -22,18 +19,9 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/mimir"
 _NAMESPACE = "monitoring"
 _CREDENTIALS_SECRET = "mimir-seaweedfs-credentials"
 _S3_ENDPOINT = "seaweedfs-s3.seaweedfs.svc:8333"
-_ZONE_SELECTOR = {"topology.kubernetes.io/zone": "hil-ovh"}
-# Prefer ordinary workers when this workload tolerates control planes.
-_PREFER_WORKERS_NODE_AFFINITY = {
-    "preferredDuringSchedulingIgnoredDuringExecution": [
-        {
-            "weight": 100,
-            "preference": {
-                "matchExpressions": [{"key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"}]
-            },
-        }
-    ]
-}
+# The chart's nginx gateway Service, on port 80, named after the release.
+GATEWAY_URL = f"http://{NAME}-gateway.{_NAMESPACE}.svc.cluster.local"
+PUSH_URL = f"{GATEWAY_URL}/api/v1/push"
 
 
 def _s3(bucket: str) -> dict[str, object]:
@@ -54,8 +42,8 @@ def _component(replicas: int, cpu: str, memory: str, **extra: object) -> dict[st
         "replicas": replicas,
         **extra,
         "resources": {"requests": {"cpu": cpu, "memory": memory}},
-        "nodeSelector": _ZONE_SELECTOR,
-        "affinity": {"nodeAffinity": _PREFER_WORKERS_NODE_AFFINITY},
+        "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
+        "affinity": node_scheduling.PREFER_WORKERS,
     }
 
 
@@ -63,7 +51,7 @@ def _storage(chart: Chart) -> None:
     # Tenant-local ownership for Mimir's existing Seaweed buckets and credentials.
     # The old seaweedfs-namespace resources remain until the consumer cutover and
     # data-path verification are complete.
-    identity = s3.Identity(chart, "identity", name=NAME)
+    identity = s3.Identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
     for bucket, description in (("mimir-blocks", "Mimir blocks."), ("mimir-ruler", "Mimir ruler state.")):
         s3.Bucket(
             chart,
@@ -158,13 +146,13 @@ def _values() -> dict[str, object]:
             "replicas": 2,
             "persistentVolume": {"storageClass": "local-path-ovh", "size": "10Gi"},
             "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}},
-            "nodeSelector": _ZONE_SELECTOR,
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # 2 ingesters + RF=2 + RF=2 on the 2 kimsufi workers gives all-pairs
             # placement; zone-aware would just add a second StatefulSet and
             # rollout-operator coupling for no behavioural win at this scale.
             "zoneAwareReplication": {"enabled": False},
             "affinity": {
-                "nodeAffinity": _PREFER_WORKERS_NODE_AFFINITY,
+                "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
                 "podAntiAffinity": {
                     "requiredDuringSchedulingIgnoredDuringExecution": [
                         {
@@ -235,24 +223,15 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def mimir(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    monitoring_crds: Kustomization,
-    grafana_helmrepository: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization, seaweedfs_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "mimir",
-        artifact,
+        directory,
         wait=None,
         suspend=False,
-        decryption=SOPS_DECRYPTION,
         health_checks=[
             KustomizationSpecHealthChecks(
                 api_version="seaweed.seaweedfs.com/v1", kind="Bucket", name="mimir-blocks", namespace="monitoring"
@@ -271,9 +250,7 @@ def mimir(
         depends_on=flux_kustomization_depends_on_many(
             # the chart's metaMonitoring.serviceMonitor
             monitoring_crds,
-            grafana_helmrepository,
-            # seaweedfs-cluster provides the Seaweed CR + Bucket CRD that our
-            # mimir-blocks / mimir-ruler Bucket resources reference (buckets.yaml).
-            seaweedfs_cluster,
+            # The Bucket, S3Identity and S3Credentials CRDs.
+            seaweedfs_operator,
         ),
     )

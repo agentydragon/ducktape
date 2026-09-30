@@ -77,7 +77,7 @@ def proxy_objects() -> list[dict[str, Any]]:
             app,
             app_namespace=public_coder_agent_config.NAMESPACE,
             app_labels=public_coder_agent_config.LABELS,
-            aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key_selector,
+            aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key,
         )
     )
 
@@ -115,7 +115,7 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
 
     sources = {
         "clickhouse agent-diagnostics-rbac chart": clickhouse_diagnostics_objects,
-        "haku-console chart": console_objects,
+        "haku-console chart": _named(console_objects, "agent-haku-console-metadata-reader"),
         "public-coder-agent chart": _named(app_objects, "agent-public-coder-extended-diagnostics-reader"),
     }
     for source, objects in sources.items():
@@ -173,7 +173,7 @@ def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[st
     """ClickHouse stays out of NO_PROXY: only the proxy replaces the app's password placeholder."""
     container = one(_one(app_objects, "Deployment")["spec"]["template"]["spec"]["containers"])
     no_proxy = one(entry["value"] for entry in container["env"] if entry["name"] == "NO_PROXY").split(",")
-    assert not {client.HOST, client.HOST.removesuffix(".cluster.local")} & set(no_proxy)
+    assert not {client.HTTP.fqdn, client.HTTP.host} & set(no_proxy)
 
 
 def test_public_coder_never_exceeds_haku(

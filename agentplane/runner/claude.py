@@ -18,6 +18,7 @@ Observed with Claude Code 2.1.252 under `--replay-user-messages`:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
@@ -27,7 +28,9 @@ from agentplane.native.claude import driver, facade, scenarios, wire
 from agentplane.native.claude.blocks import Block, TextBlock, ThinkingBlock, ToolResultBlock, ToolUseBlock, blocks_of
 from agentplane.protocol import event_pb2
 from agentplane.runner.adapter import HarnessAdapter
+from agentplane.runner.claude_history import read_history
 from agentplane.runner.config import ClaudeLaunch
+from agentplane.runner.recovery import compare_item, observed_items
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -78,12 +81,16 @@ class ClaudeAdapter(HarnessAdapter):
     def environment(self) -> Mapping[str, str]:
         config_dir = self.session.directory / "claude"
         config_dir.mkdir(exist_ok=True)
-        return {
+        environment = {
             **self.session.config.environment,
             **scenarios.environment(
                 endpoint=self.launch.base_url, token=self.launch.auth_token, config_dir=str(config_dir)
             ),
         }
+        context_window = self.session.config.model_context_windows.get(self.session.record.model)
+        if context_window is not None:
+            environment["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context_window)
+        return environment
 
     async def handshake(self) -> str:
         # Every start sends the session's standing instructions, so a resumed harness has them too.
@@ -91,6 +98,35 @@ class ClaudeAdapter(HarnessAdapter):
         if not isinstance(response.response, wire.ControlResponseFrame):
             raise RuntimeError(f"Claude initialization failed: {response.response}")
         return self._native_session_id
+
+    async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
+        observed = await observed_items(self.session.journal, turn_id)
+        reason = "native continuation evidence is unavailable or unsupported"
+        if resumed:
+            try:
+                recovered = await asyncio.to_thread(
+                    read_history, self.session.directory / "claude", self._native_session_id
+                )
+            except (OSError, ValueError) as error:
+                recovered = None
+                reason = f"cannot inspect native continuation: {error}"
+        else:
+            recovered = {key: item for key, item in observed.items() if item.completed}
+        decisions = []
+        for item in observed.values():
+            if (
+                recovered is None
+                or item.kind == event_pb2.ITEM_KIND_REASONING
+                or (not resumed and item.kind == event_pb2.ITEM_KIND_TOOL_CALL and not item.completed)
+            ):
+                decisions.append(
+                    event_pb2.ItemRecovery(
+                        item_id=item.item_id, disposition=event_pb2.RECOVERY_DISPOSITION_UNKNOWN, reason=reason
+                    )
+                )
+            else:
+                decisions.append(compare_item(item, recovered.get(item.item_id)))
+        return event_pb2.ConversationReconciled(turn_id=turn_id, items=decisions)
 
     async def submit(self, command_id: str, text: str) -> None:
         if not self.session.active_turn_id:

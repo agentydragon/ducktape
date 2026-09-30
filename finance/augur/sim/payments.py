@@ -6,7 +6,7 @@ from finance.augur.sim import results
 from finance.augur.sim.accounting import Accounting, MortgagePaymentOutcome, TransferOutcome
 from finance.augur.sim.actions import Consume, PayClaim
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, TaxPaymentOutcome, TaxSettlementOutcome
-from finance.augur.sim.claims import Claim, Claims, OrdinaryDeduction, PropertyTax, TaxPayment, TaxTrueUp
+from finance.augur.sim.claims import AdValoremTax, Claim, Claims, OrdinaryDeduction, TaxPayment, TaxTrueUp
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.money import checked_count, mul_div
@@ -105,8 +105,8 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
         tax.income.deduct_from_ordinary(
             source.agent_id, mul_div(amount, effect.fraction, MONEY_FACTOR_SCALE, "ordinary deduction")
         )
-    elif isinstance(effect, PropertyTax):
-        tax.property_tax(effect.owner, amount, effect.rented_fraction)
+    elif isinstance(effect, AdValoremTax):
+        tax.ad_valorem_tax(effect.owner, amount, effect.rented_fraction)
     elif isinstance(effect, TaxPayment | TaxTrueUp):
         profile = effect.profile
         if amount:
