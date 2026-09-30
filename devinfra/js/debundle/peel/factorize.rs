@@ -466,17 +466,6 @@ fn spec_module_groups(graph: &OwnerGraphReport) -> Vec<SpecModuleGroup> {
         .collect()
 }
 
-fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
-    node.source_location
-        .as_ref()
-        .map(|loc| {
-            loc.end_line
-                .saturating_sub(loc.start_line)
-                .saturating_add(1)
-        })
-        .unwrap_or(0)
-}
-
 /// The line count the size cap (and `size_lines_estimate`) measures
 /// for a class, matching the spec edit the proposal would perform:
 ///
@@ -498,7 +487,7 @@ fn class_proposal_lines(
     quotient
         .class_members(c)
         .filter(|o| graph.is_residual(&graph.nodes[o.0].destination))
-        .map(|o| owner_line_count(&graph.nodes[o.0]))
+        .map(|o| graph.nodes[o.0].line_count())
         .sum()
 }
 
@@ -912,7 +901,7 @@ fn build_proposal(
     let size_lines = if is_extension {
         owner_idxs
             .iter()
-            .map(|&idx| owner_line_count(&graph.nodes[idx]))
+            .map(|&idx| graph.nodes[idx].line_count())
             .sum()
     } else {
         class_lines
