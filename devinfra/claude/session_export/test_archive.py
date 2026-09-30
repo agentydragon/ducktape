@@ -1,10 +1,12 @@
 import gzip
 import json
+import logging
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 
+from devinfra.claude.session_export import archive
 from devinfra.claude.session_export.api import SessionsApi
 from devinfra.claude.session_export.archive import (
     ManifestRecord,
@@ -34,6 +36,23 @@ async def test_export_session_archives_every_event_losslessly(
     assert [json.loads(line) for line in read_lines(tmp_path / f"{SESSION_ID}.jsonl.gz")] == events
     assert record.event_count == 1203
     assert record.is_complete
+
+
+async def test_export_session_reports_progress_against_the_expected_total(
+    service: FakeSessionsService,
+    api: SessionsApi,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(archive, "PROGRESS_INTERVAL_SECONDS", 0)  # report after every page
+    service.events[SESSION_ID] = make_events(1203)
+    with caplog.at_level(logging.INFO, logger=archive.logger.name):
+        await export_session(api, SessionSummary(id=SESSION_ID, last_event_at="test-time"), tmp_path)
+    reports = [record.getMessage() for record in caplog.records]
+    assert len(reports) == 3  # pages of 500, 500 and 203
+    assert reports[0].startswith(f"{SESSION_ID}: 500/1203 events")
+    assert reports[-1].startswith(f"{SESSION_ID}: 1203/1203 events (100%)")
 
 
 async def test_export_session_rejects_a_sequence_gap_and_leaves_no_finished_file(

@@ -23,7 +23,7 @@ and how the inference config holds up under it.
 
 Docs hub for LLM inference on the cluster. Notes that should outlive any
 one deployment go here; reusable service scripts live with the workload
-(`cluster/k8s/ollama/`, `x/local_llm/`), while exact experimental drivers live
+(`cluster/cdk8s/ollama/`, `x/local_llm/`), while exact experimental drivers live
 with their dated run records.
 
 ## What's here
@@ -57,12 +57,14 @@ with their dated run records.
 
 ## Current state
 
-As checked September 26, cluster **Ollama 0.34.4 / GGUF on wyrm2** is running
-again after [PR #8000](https://github.com/agentydragon/ducktape/pull/8000), using its
-HDD-backed PVC. Host experiment containers have been stopped. Pause Ollama through
-GitOps before resuming exclusive GPU experiments; retain its PVC.
-The [September SSD run](runs/2026-09-24_qwen38_ssd/README.md) records current
-Qwen3.8 experiments and launch commands. The July
+As checked September 27, cluster **Ollama 0.34.4 / GGUF on wyrm2** serves
+Qwen3.8-Flash-Next IQ4_XS from the SSD-backed PV while retaining its HDD registry
+and other models. The [September 27 run](runs/2026-09-27_ollama_ssd/README.md)
+records 128K and 256K serving checks, including a successful 145K history; full
+256K input and concurrent serving remain untested. Host experiment containers have
+been stopped. Pause Ollama through GitOps before resuming exclusive GPU experiments;
+retain its PVC. The [September SSD run](runs/2026-09-24_qwen38_ssd/README.md)
+records the earlier host Qwen3.8 experiments and launch commands. The July
 `runs/` records include Kubernetes vLLM experiments, while host launchers live
 in `x/local_llm/`. The dated backend matrix is in <backend_comparison.md>.
 
@@ -81,6 +83,6 @@ individual tasks remain in <TODO.md>.
 
 ## See also
 
-- <../../k8s/ollama/> — current cluster Ollama deployment
+- <../../cdk8s/ollama/> — current cluster Ollama deployment
 - <../../../x/local_llm/> — wyrm2 host scripts (vLLM/Ollama/comfyui)
 - <../gpu.md> — GPU/CDI runtime stack on wyrm2

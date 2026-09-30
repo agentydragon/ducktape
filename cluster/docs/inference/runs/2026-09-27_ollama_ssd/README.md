@@ -109,8 +109,8 @@ that total by its 859 ms partial-prefill duration would be a misleading input ra
 
 ## Reproduction
 
-Deployment sources: `cluster/cdk8s/ollama/`; shard manifest and operational notes:
-`cluster/k8s/ollama/`. Verify the setup Job, mounts and blob links before generation.
+Deployment sources, shard manifest and operational notes: `cluster/cdk8s/ollama/`.
+Verify the setup Job, mounts and blob links before generation.
 Keep index workers and the generative health probe paused, and stop exclusive host
 inference. Port-forward the serving pod in a separate terminal:
 
