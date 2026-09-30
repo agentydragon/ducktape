@@ -33,6 +33,7 @@ from finance.plaid.db.schema import (
     BalanceSnapshotRow,
     HoldingSnapshotRow,
     InvestmentTransactionRow,
+    ItemSyncQueueRow,
     LiabilityCreditSnapshotRow,
     LiabilityMortgageSnapshotRow,
     LiabilityStudentSnapshotRow,
@@ -42,7 +43,6 @@ from finance.plaid.db.schema import (
     SecurityRow,
     SyncRunRow,
     TransactionRow,
-    TransactionSyncQueueRow,
     async_session_factory,
     utcnow,
 )
@@ -106,10 +106,11 @@ class ApiEvent:
 
 
 @dataclass(frozen=True)
-class TransactionSyncClaim:
+class ItemSyncClaim:
     item_id: str
     generation: int
     claimed_at: datetime
+    full_sync: bool
 
 
 class PlaidLinkStorage:
@@ -202,7 +203,7 @@ class PlaidLinkStorage:
                 AccountRow,
             ):
                 await session.execute(delete(row_type).where(row_type.item_id == item_id))
-            await session.execute(delete(TransactionSyncQueueRow).where(TransactionSyncQueueRow.item_id == item_id))
+            await session.execute(delete(ItemSyncQueueRow).where(ItemSyncQueueRow.item_id == item_id))
             await session.execute(delete(LinkRow).where(LinkRow.item_id == item_id))
             if security_ids_to_check:
                 await session.execute(
@@ -317,18 +318,25 @@ class PlaidLinkStorage:
             await session.commit()
         return run_id
 
-    async def enqueue_transaction_sync(self, item_id: str) -> None:
+    async def enqueue_item_sync(self, item_id: str, *, full_sync: bool = False) -> None:
         now = utcnow()
-        statement = pg_insert(TransactionSyncQueueRow).values(
-            item_id=item_id, generation=1, requested_at=now, claimed_at=None, attempts=0, retry_after=None
+        statement = pg_insert(ItemSyncQueueRow).values(
+            item_id=item_id,
+            generation=1,
+            requested_at=now,
+            claimed_at=None,
+            attempts=0,
+            retry_after=None,
+            full_sync=full_sync,
         )
         statement = statement.on_conflict_do_update(
             index_elements=["item_id"],
             set_={
-                "generation": TransactionSyncQueueRow.generation + 1,
+                "generation": ItemSyncQueueRow.generation + 1,
                 "requested_at": now,
                 "attempts": 0,
                 "retry_after": None,
+                "full_sync": or_(ItemSyncQueueRow.full_sync, statement.excluded.full_sync),
             },
         )
         async with self._session_factory() as session:
@@ -364,21 +372,18 @@ class PlaidLinkStorage:
             row.disposition = disposition
             await session.commit()
 
-    async def claim_transaction_sync(self) -> TransactionSyncClaim | None:
+    async def claim_item_sync(self) -> ItemSyncClaim | None:
         now = utcnow()
         stale_before = now - timedelta(minutes=30)
         async with self._session_factory() as session:
             row = (
                 await session.execute(
-                    select(TransactionSyncQueueRow)
+                    select(ItemSyncQueueRow)
                     .where(
-                        or_(
-                            TransactionSyncQueueRow.claimed_at.is_(None),
-                            TransactionSyncQueueRow.claimed_at < stale_before,
-                        ),
-                        or_(TransactionSyncQueueRow.retry_after.is_(None), TransactionSyncQueueRow.retry_after <= now),
+                        or_(ItemSyncQueueRow.claimed_at.is_(None), ItemSyncQueueRow.claimed_at < stale_before),
+                        or_(ItemSyncQueueRow.retry_after.is_(None), ItemSyncQueueRow.retry_after <= now),
                     )
-                    .order_by(TransactionSyncQueueRow.requested_at)
+                    .order_by(ItemSyncQueueRow.requested_at)
                     .with_for_update(skip_locked=True)
                     .limit(1)
                 )
@@ -386,13 +391,15 @@ class PlaidLinkStorage:
             if row is None:
                 return None
             row.claimed_at = now
-            claim = TransactionSyncClaim(item_id=row.item_id, generation=row.generation, claimed_at=now)
+            claim = ItemSyncClaim(
+                item_id=row.item_id, generation=row.generation, claimed_at=now, full_sync=row.full_sync
+            )
             await session.commit()
             return claim
 
-    async def finish_transaction_sync(self, claim: TransactionSyncClaim) -> None:
+    async def finish_item_sync(self, claim: ItemSyncClaim) -> None:
         async with self._session_factory() as session:
-            row = await session.get(TransactionSyncQueueRow, claim.item_id, with_for_update=True)
+            row = await session.get(ItemSyncQueueRow, claim.item_id, with_for_update=True)
             if row is not None and row.claimed_at == claim.claimed_at:
                 if row.generation == claim.generation:
                     await session.delete(row)
@@ -402,9 +409,9 @@ class PlaidLinkStorage:
                     row.retry_after = None
             await session.commit()
 
-    async def retry_transaction_sync(self, claim: TransactionSyncClaim) -> None:
+    async def retry_item_sync(self, claim: ItemSyncClaim) -> None:
         async with self._session_factory() as session:
-            row = await session.get(TransactionSyncQueueRow, claim.item_id)
+            row = await session.get(ItemSyncQueueRow, claim.item_id)
             if row is None or row.claimed_at != claim.claimed_at:
                 return
             row.claimed_at = None

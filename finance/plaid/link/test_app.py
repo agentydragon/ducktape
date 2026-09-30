@@ -50,7 +50,7 @@ from finance.plaid.link.app import create_app
 class _FakeStorage:
     def __init__(self) -> None:
         self.purged_item_ids: list[str] = []
-        self.queued_transaction_syncs: list[str] = []
+        self.queued_item_syncs: list[tuple[str, bool]] = []
         self.webhook_deliveries: list[dict[str, str | None]] = []
 
     def _link(self) -> StoredLink:
@@ -83,11 +83,11 @@ class _FakeStorage:
     async def running_sync_item_ids(self) -> set[str]:
         return set()
 
-    async def claim_transaction_sync(self) -> None:
+    async def claim_item_sync(self) -> None:
         return None
 
-    async def enqueue_transaction_sync(self, item_id: str) -> None:
-        self.queued_transaction_syncs.append(item_id)
+    async def enqueue_item_sync(self, item_id: str, *, full_sync: bool = False) -> None:
+        self.queued_item_syncs.append((item_id, full_sync))
 
     async def record_plaid_webhook_delivery(self, raw_body: str) -> int:
         self.webhook_deliveries.append({"raw_body": raw_body, "disposition": "received"})
@@ -106,11 +106,11 @@ class _FakeStorage:
             {"webhook_type": webhook_type, "webhook_code": webhook_code, "item_id": item_id, "disposition": disposition}
         )
 
-    async def finish_transaction_sync(self, claim: object) -> None:
-        raise AssertionError("the fake worker never claims transaction syncs")
+    async def finish_item_sync(self, claim: object) -> None:
+        raise AssertionError("the fake worker never claims Item syncs")
 
-    async def retry_transaction_sync(self, claim: object) -> None:
-        raise AssertionError("the fake worker never claims transaction syncs")
+    async def retry_item_sync(self, claim: object) -> None:
+        raise AssertionError("the fake worker never claims Item syncs")
 
 
 class _FakeSecrets:
@@ -508,7 +508,7 @@ def test_signed_transactions_webhook_is_queued_and_body_tampering_is_rejected() 
 
     assert response.status_code == 200
     assert response.json() == {"status": "queued"}
-    assert storage.queued_transaction_syncs == ["item_123"]
+    assert storage.queued_item_syncs == [("item_123", False)]
     assert storage.webhook_deliveries == [
         {
             "raw_body": body.decode(),
@@ -541,7 +541,7 @@ def test_authenticated_unhandled_webhook_is_recorded_and_ignored() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ignored"}
-    assert storage.queued_transaction_syncs == []
+    assert storage.queued_item_syncs == []
     assert storage.webhook_deliveries == [
         {
             "raw_body": body.decode(),

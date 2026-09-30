@@ -1,4 +1,4 @@
-"""Plaid Link UI, verified webhook receiver, and queued transaction sync worker."""
+"""Plaid Link UI, verified webhook receiver, and queued Item sync worker."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from finance.plaid.db.client import InstitutionDetail, PlaidClient, PlaidClientError, PlaidCreds
 from finance.plaid.db.config import MAX_TRANSACTION_DAYS, PlaidWebSettings
-from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError, TransactionSyncClaim
+from finance.plaid.db.link_store import ItemSyncClaim, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
 from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import PlaidApiLike, sync_link, sync_transactions_only
@@ -28,6 +28,13 @@ from finance.plaid.link.webhooks import InvalidPlaidWebhookError, PlaidWebhookVe
 from util.oidc_login import LoginConfig, install_login
 
 logger = logging.getLogger(__name__)
+
+_SYNC_WEBHOOK_EVENTS = {
+    ("TRANSACTIONS", "SYNC_UPDATES_AVAILABLE"): (Product.TRANSACTIONS.value, False),
+    ("HOLDINGS", "DEFAULT_UPDATE"): (Product.INVESTMENTS.value, True),
+    ("INVESTMENTS_TRANSACTIONS", "DEFAULT_UPDATE"): (Product.INVESTMENTS.value, True),
+    ("LIABILITIES", "DEFAULT_UPDATE"): (Product.LIABILITIES.value, True),
+}
 
 # Institution product lists change on the order of months, and /api/links is re-fetched after every
 # action -- without this the list view would hit Plaid once per link per refresh.
@@ -199,7 +206,9 @@ def create_app(
             runtime_secrets = secrets
         state.secrets = runtime_secrets
         worker_task = asyncio.create_task(
-            _transaction_sync_worker(api=runtime_client, storage=runtime_storage, secrets=runtime_secrets)
+            _item_sync_worker(
+                api=runtime_client, storage=runtime_storage, secrets=runtime_secrets, webhook_url=settings.webhook_url
+            )
         )
         try:
             yield
@@ -264,7 +273,9 @@ def create_app(
                 delivery_id, webhook_type=None, webhook_code=None, item_id=None, disposition="ignored"
             )
             return {"status": "ignored"}
-        if event.webhook_type != "TRANSACTIONS" or event.webhook_code != "SYNC_UPDATES_AVAILABLE":
+        webhook_event = (event.webhook_type, event.webhook_code)
+        sync_request = _SYNC_WEBHOOK_EVENTS.get(webhook_event)
+        if sync_request is None:
             await storage.update_plaid_webhook_delivery(
                 delivery_id,
                 webhook_type=event.webhook_type,
@@ -274,7 +285,7 @@ def create_app(
             )
             return {"status": "ignored"}
         if event.item_id is None:
-            logger.warning("ignoring authenticated transaction webhook without item_id")
+            logger.warning("ignoring authenticated Plaid sync webhook without item_id")
             await storage.update_plaid_webhook_delivery(
                 delivery_id,
                 webhook_type=event.webhook_type,
@@ -285,8 +296,9 @@ def create_app(
             return {"status": "ignored"}
         link = await storage.get_link(event.item_id)
         disposition = "ignored"
-        if link is not None and Product.TRANSACTIONS.value in link.products_requested:
-            await storage.enqueue_transaction_sync(event.item_id)
+        required_product, full_sync = sync_request
+        if link is not None and required_product in link.products_requested:
+            await storage.enqueue_item_sync(event.item_id, full_sync=full_sync)
             disposition = "queued"
         await storage.update_plaid_webhook_delivery(
             delivery_id,
@@ -295,7 +307,7 @@ def create_app(
             item_id=event.item_id,
             disposition=disposition,
         )
-        return {"status": "queued"}
+        return {"status": disposition}
 
     @app.get("/link", response_class=HTMLResponse)
     async def link_ui() -> str:
@@ -523,14 +535,16 @@ async def _sync_one_link(
         ) from exc
 
 
-async def _transaction_sync_worker(*, api: PlaidApiLike, storage: PlaidLinkStorage, secrets: SecretStore) -> None:
+async def _item_sync_worker(
+    *, api: PlaidApiLike, storage: PlaidLinkStorage, secrets: SecretStore, webhook_url: str | None
+) -> None:
     while True:
         try:
-            claim = await storage.claim_transaction_sync()
+            claim = await storage.claim_item_sync()
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("could not poll the transaction sync queue")
+            logger.exception("could not poll the Item sync queue")
             await asyncio.sleep(5)
             continue
         if claim is None:
@@ -538,25 +552,30 @@ async def _transaction_sync_worker(*, api: PlaidApiLike, storage: PlaidLinkStora
             continue
         try:
             link = await storage.get_link(claim.item_id)
-            if link is not None and link.status != "revoked" and Product.TRANSACTIONS.value in link.products_requested:
-                await sync_transactions_only(api=api, storage=storage, secrets=secrets, link=link)
-            await storage.finish_transaction_sync(claim)
+            if link is not None and link.status != "revoked":
+                if claim.full_sync:
+                    await sync_link(
+                        api=api, storage=storage, secrets=secrets, link=link, trigger="webhook", webhook_url=webhook_url
+                    )
+                elif Product.TRANSACTIONS.value in link.products_requested:
+                    await sync_transactions_only(api=api, storage=storage, secrets=secrets, link=link)
+            await storage.finish_item_sync(claim)
         except asyncio.CancelledError:
-            await _retry_transaction_sync(storage, claim)
+            await _retry_item_sync(storage, claim)
             raise
         except SyncAlreadyRunningError:
-            await _retry_transaction_sync(storage, claim)
+            await _retry_item_sync(storage, claim)
             await asyncio.sleep(3)
         except Exception:
-            logger.exception("queued transaction sync failed for item %s", claim.item_id)
-            await _retry_transaction_sync(storage, claim)
+            logger.exception("queued Item sync failed for item %s", claim.item_id)
+            await _retry_item_sync(storage, claim)
 
 
-async def _retry_transaction_sync(storage: PlaidLinkStorage, claim: TransactionSyncClaim) -> None:
+async def _retry_item_sync(storage: PlaidLinkStorage, claim: ItemSyncClaim) -> None:
     try:
-        await storage.retry_transaction_sync(claim)
+        await storage.retry_item_sync(claim)
     except Exception:
-        logger.exception("could not release transaction sync claim")
+        logger.exception("could not release Item sync claim")
 
 
 def main() -> None:
