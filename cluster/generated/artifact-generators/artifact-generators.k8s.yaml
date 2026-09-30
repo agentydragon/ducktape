@@ -191,8 +191,8 @@ spec:
       name: github-secrets-sync-secrets
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/monitoring/grafana-instance/**"
-          to: "@artifact/cluster/k8s/monitoring/grafana-instance/"
+        - from: "@repo/cluster/generated/monitoring/grafana-instance/**"
+          to: "@artifact/cluster/generated/monitoring/grafana-instance/"
       name: grafana-instance
       originRevision: "@repo"
     - copy:
@@ -388,8 +388,8 @@ spec:
       name: aiquota
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/grafana/**"
-          to: "@artifact/cluster/k8s/grafana/"
+        - from: "@repo/cluster/generated/grafana/**"
+          to: "@artifact/cluster/generated/grafana/"
       name: clickhouse-grafana
       originRevision: "@repo"
     - copy:
