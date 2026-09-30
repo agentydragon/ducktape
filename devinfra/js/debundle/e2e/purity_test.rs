@@ -1309,3 +1309,20 @@ fn annotation_property_write_cannot_be_split_from_its_declarer() {
         &["atomic", "cycle", "co-locate"],
     );
 }
+
+#[test]
+fn string_raw_template_initializer_admits_cycle_break() {
+    assert_pure_cycle_break(
+        r#"const a = (() => 1)();
+const b = String.raw`value:${1}`;
+const c = b.length + a;
+console.log(c);
+export { a, b, c };
+"#,
+        vec![logical_module("b_module", &[Member::new("b")])],
+        "b_module",
+        &["const b = String.raw"],
+        &["const a"],
+        "8\n",
+    );
+}
