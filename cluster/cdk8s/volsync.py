@@ -72,6 +72,7 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=https_helm_repository(chart, "backube", "flux-system", url="https://backube.github.io/helm-charts/"),
         chart=NAME,
+        # renovate: datasource=helm depName=volsync registryUrl=https://backube.github.io/helm-charts/
         version="0.16.0",
         interval="30m",
         chart_interval="12h",

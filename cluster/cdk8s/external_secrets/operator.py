@@ -94,6 +94,7 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://charts.external-secrets.io"),
         chart="external-secrets",
+        # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
         version="2.10.0",
         interval="15m",
         install=RETRY_FAILED_INSTALL,

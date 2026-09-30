@@ -563,6 +563,7 @@ class Console(Construct):
         )
         container = job.add_container(
             name="psql",
+            # renovate: datasource=docker
             image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             command=["psql"],

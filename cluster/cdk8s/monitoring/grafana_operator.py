@@ -23,6 +23,7 @@ def chart(app: App) -> Chart:
         "monitoring",
         repository=oci_helm_repository(chart, NAME, "flux-system", url="oci://ghcr.io/grafana/helm-charts"),
         chart=NAME,
+        # renovate: datasource=docker depName=ghcr.io/grafana/helm-charts/grafana-operator versioning=helm
         version="~5.22",
         interval="30m",
         chart_interval="12h",

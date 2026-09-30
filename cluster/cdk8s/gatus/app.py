@@ -85,6 +85,7 @@ def _helm_release(scope: Construct) -> None:
         _NAMESPACE,
         repository=repository,
         chart="gatus",
+        # renovate: datasource=helm depName=gatus registryUrl=https://twin.github.io/helm-charts
         version="1.5.0",
         interval="15m",
         install=HelmReleaseSpecInstall(

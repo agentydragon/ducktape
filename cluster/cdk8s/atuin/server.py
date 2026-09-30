@@ -62,6 +62,7 @@ def _server(chart: Chart) -> None:
                     containers=[
                         k8s.Container(
                             name=NAME,
+                            # renovate: datasource=docker
                             image="ghcr.io/atuinsh/atuin:18.22.0",
                             args=["start"],
                             ports=[SERVER.port.k8s_container_port()],

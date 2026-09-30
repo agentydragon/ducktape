@@ -33,6 +33,7 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://flux-iac.github.io/tofu-controller"),
         chart="tofu-controller",
+        # renovate: datasource=helm depName=tofu-controller registryUrl=https://flux-iac.github.io/tofu-controller
         version="0.16.5",
         interval="15m",
         install=HelmReleaseSpecInstall(

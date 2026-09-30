@@ -48,6 +48,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAMESPACE = "agentplane-testing"
 _NAME = "agentplane-testing-dex"
+# renovate: datasource=docker
 _IMAGE = "ghcr.io/dexidp/dex:v2.45.1"
 _SERVICE = ServiceRef(
     name=_NAME,

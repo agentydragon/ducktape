@@ -51,6 +51,9 @@ PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
 _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
+# The pod-log and journal promtail releases run one chart version.
+# renovate: datasource=helm depName=promtail registryUrl=https://grafana.github.io/helm-charts
+_PROMTAIL_CHART_VERSION = "6.x"
 # Must exceed the roaming-node count, or an offline laptop's undeletable pod
 # holds the whole unavailable budget and the rollout deadlocks silently.
 # Enforced by //cluster/cdk8s/monitoring:test_roaming_daemonset_capacity (which
@@ -247,6 +250,7 @@ def _loki_values() -> dict[str, object]:
             "extraContainers": [
                 {
                     "name": "dnsmasq",
+                    # renovate: datasource=docker
                     "image": "4km3/dnsmasq:2.90-r3-alpine-3.22.2",
                     "args": ["-k", "--no-hosts", "--listen-address=127.0.0.1", "--port=8053", "--cache-size=150"],
                     "ports": [{"name": "dns", "containerPort": 8053, "protocol": "UDP"}],
@@ -386,6 +390,7 @@ def _helm_releases(chart: Chart) -> None:
         NAME,
         repository=grafana_helmrepository.SOURCE_REF,
         chart="loki",
+        # renovate: datasource=helm depName=loki registryUrl=https://grafana.github.io/helm-charts
         version="7.x",
         interval="30m",
         chart_interval="12h",
@@ -398,7 +403,7 @@ def _helm_releases(chart: Chart) -> None:
         NAME,
         repository=grafana_helmrepository.SOURCE_REF,
         chart="promtail",
-        version="6.x",
+        version=_PROMTAIL_CHART_VERSION,
         interval="30m",
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
@@ -423,7 +428,7 @@ def _helm_releases(chart: Chart) -> None:
         NAME,
         repository=grafana_helmrepository.SOURCE_REF,
         chart="promtail",
-        version="6.x",
+        version=_PROMTAIL_CHART_VERSION,
         interval="30m",
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,

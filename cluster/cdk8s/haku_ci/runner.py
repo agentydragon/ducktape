@@ -103,6 +103,7 @@ _REGISTRATION_SECRET = "haku-ci-runner-token"
 # Needs `one-job --wait` and `register --ephemeral`; the latter also needs a Forgejo 15+ server.
 # Since 8.0.0 the runner refuses workflows that fail schema validation -- see README, "Upgrading
 # the runner image".
+# renovate: datasource=docker
 _RUNNER_IMAGE = "code.forgejo.org/forgejo/runner:12.13.2"
 # `bazel-ci / image` has taken 27m03s, and with one job per pod the Bazel cache does not carry
 # over between CI jobs, so this needs real headroom.
@@ -260,6 +261,7 @@ def _dind() -> InitContainer:
     """
     return InitContainer(
         name="dind",
+        # renovate: datasource=docker
         image="docker:29-dind-rootless",
         restart_policy="Always",
         args=[

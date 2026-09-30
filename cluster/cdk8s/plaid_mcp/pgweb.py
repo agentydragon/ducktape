@@ -40,6 +40,7 @@ AUTH_USER = "plaid"
 AUTH = SecretRef(namespace=NAMESPACE, name=f"{_NAME}-auth")
 AUTH_KEY = "password"
 # 0.17.0's multi-arch index digest.
+# renovate: datasource=docker
 _IMAGE = "ghcr.io/sosedoff/pgweb:0.17.0@sha256:a5256d416e2e8b92d69a4459058e3eca33a9f075d8325491644411d0bc3bd70b"
 _QUERY_TIMEOUT_SECONDS = 60
 # The CNPG Cluster in db.py.

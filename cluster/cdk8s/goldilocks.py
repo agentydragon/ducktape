@@ -27,6 +27,7 @@ def chart(app: App) -> Chart:
         # Declared by the vpa directory.
         repository=vpa.REPOSITORY_SOURCE_REF,
         chart=NAME,
+        # renovate: datasource=helm depName=goldilocks registryUrl=https://charts.fairwinds.com/stable
         version="11.1.0",
         interval="30m",
         chart_interval="12h",

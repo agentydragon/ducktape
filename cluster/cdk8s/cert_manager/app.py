@@ -122,6 +122,7 @@ def chart(app: App) -> Chart:
             chart, _REPOSITORY_NAME, _REPOSITORY_NAMESPACE, url="https://charts.jetstack.io"
         ),
         chart="cert-manager",
+        # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
         version="v1.21.2",
         interval="30m",
         chart_interval="12h",

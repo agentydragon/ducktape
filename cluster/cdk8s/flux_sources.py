@@ -20,6 +20,16 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux/sources"
+# renovate: datasource=github-tags depName=external-secrets/external-secrets
+_EXTERNAL_SECRETS_TAG = "v2.10.0"
+# renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
+_PROMETHEUS_OPERATOR_TAG = "v0.94.0"
+# Also the snapshot-controller image tag, which must match the manifests it patches.
+# renovate: datasource=github-tags depName=kubernetes-csi/external-snapshotter
+EXTERNAL_SNAPSHOTTER_TAG = "v8.6.0"
+# Match the sshpiperd image tag in public_coder_sshpiper.py.
+# renovate: datasource=github-tags depName=tg123/sshpiper
+_SSHPIPER_TAG = "v1.6.1"
 
 
 def _source(
@@ -41,13 +51,16 @@ def _source(
 def chart(app: App) -> Chart:
     chart = Chart(app, "git-repositories", disable_resource_name_hashes=True)
     _source(
-        chart, "external-secrets-source", url="https://github.com/external-secrets/external-secrets.git", tag="v2.10.0"
+        chart,
+        "external-secrets-source",
+        url="https://github.com/external-secrets/external-secrets.git",
+        tag=_EXTERNAL_SECRETS_TAG,
     )
     _source(
         chart,
         "prometheus-operator-source",
         url="https://github.com/prometheus-operator/prometheus-operator.git",
-        tag="v0.94.0",
+        tag=_PROMETHEUS_OPERATOR_TAG,
         description="Prometheus Operator CRDs, split out of the kube-prometheus-stack HelmRelease so a "
         "ServiceMonitor's dependency is the CRD and not Prometheus being healthy. The tag tracks "
         "kube-prometheus-stack's appVersion - bump both together.",
@@ -56,14 +69,13 @@ def chart(app: App) -> Chart:
         chart,
         "external-snapshotter-source",
         url="https://github.com/kubernetes-csi/external-snapshotter.git",
-        tag="v8.6.0",
+        tag=EXTERNAL_SNAPSHOTTER_TAG,
     )
     _source(
         chart,
         "sshpiper-source",
         url="https://github.com/tg123/sshpiper.git",
-        # Match the sshpiperd image tag in public_coder_sshpiper.py.
-        tag="v1.6.1",
+        tag=_SSHPIPER_TAG,
         # Keep only the CRD. In particular, plugin/kubernetes/sample.yaml is an example
         # Pipe, not a production route to apply. Flux generates a kustomization.yaml for
         # this plain-YAML path.

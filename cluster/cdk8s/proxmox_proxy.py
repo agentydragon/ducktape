@@ -98,6 +98,7 @@ def chart(app: App) -> Chart:
                     containers=[
                         k8s.Container(
                             name="nginx",
+                            # renovate: datasource=docker
                             image="docker.io/library/nginx:alpine",
                             ports=[SERVICE.port.k8s_container_port()],
                             volume_mounts=[

@@ -213,6 +213,7 @@ def chart(app: App) -> Chart:
         _NAMESPACE,
         repository=grafana_helmrepository.SOURCE_REF,
         chart="mimir-distributed",
+        # renovate: datasource=helm depName=mimir-distributed registryUrl=https://grafana.github.io/helm-charts
         version="6.x",
         interval="30m",
         chart_interval="12h",

@@ -135,6 +135,7 @@ def _values() -> dict[str, object]:
         "langfuse": {
             # Chart 2.1.0's appVersion trails the current release; pin both web and
             # worker to the same current Langfuse image explicitly.
+            # renovate: datasource=docker depName=langfuse/langfuse
             "image": {"tag": "4.35.0"},
             "features": {
                 # SSO-only: email/password login is disabled below via
@@ -290,6 +291,7 @@ def _helm_release(scope: Construct) -> None:
         _NAMESPACE,
         repository=https_helm_repository(scope, _NAME, _NAMESPACE, url="https://langfuse.github.io/langfuse-k8s"),
         chart=_NAME,
+        # renovate: datasource=helm depName=langfuse registryUrl=https://langfuse.github.io/langfuse-k8s
         version="2.1.0",
         interval="15m",
         timeout="20m",

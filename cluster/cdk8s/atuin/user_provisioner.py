@@ -121,6 +121,7 @@ def chart(app: App) -> Chart:
                     containers=[
                         k8s.Container(
                             name="provisioner",
+                            # renovate: datasource=docker
                             image="python:3.14-alpine",
                             command=[
                                 "sh",

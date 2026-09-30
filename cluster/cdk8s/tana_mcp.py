@@ -118,6 +118,7 @@ def _tana_deployment(chart: Chart) -> None:
                         # that the port is open.
                         k8s.Container(
                             name="proxy",
+                            # renovate: datasource=docker
                             image="nginx:alpine",
                             ports=[MCP_PROXY.port.k8s_container_port()],
                             volume_mounts=[

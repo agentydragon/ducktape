@@ -39,6 +39,7 @@ def chart(app: App) -> Chart:
             chart, _REPOSITORY_NAME, _REPOSITORY_NAMESPACE, url="https://charts.fairwinds.com/stable"
         ),
         chart=NAME,
+        # renovate: datasource=helm depName=vpa registryUrl=https://charts.fairwinds.com/stable
         version="5.0.1",
         interval="30m",
         chart_interval="12h",

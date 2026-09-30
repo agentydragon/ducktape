@@ -50,6 +50,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
+# renovate: datasource=docker
 _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
 _CONFIG_CLAIM = "grocy-config-ovh"
 _BACKUP = "grocy-config-ovh-backup"

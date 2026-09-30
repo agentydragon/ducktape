@@ -155,6 +155,7 @@ def _ollama_container() -> k8s.Container:
     probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("ollama"))
     return k8s.Container(
         name="ollama",
+        # renovate: datasource=docker
         image="ollama/ollama:0.34.4",
         ports=[k8s.ContainerPort(name="ollama", container_port=SERVICE.pod_port, protocol="TCP")],
         env=[
@@ -201,6 +202,7 @@ def _ollama_container() -> k8s.Container:
 def _link_ssd_models_container() -> k8s.Container:
     return k8s.Container(
         name="link-ssd-models",
+        # renovate: datasource=docker
         image="ollama/ollama:0.34.4",
         command=["/bin/sh", f"{_SCRIPTS_DIR}/{_LINK_SCRIPT}"],
         volume_mounts=[
@@ -214,6 +216,7 @@ def _link_ssd_models_container() -> k8s.Container:
 def _auth_proxy_container() -> k8s.Container:
     return k8s.Container(
         name="auth-proxy",
+        # renovate: datasource=docker
         image="nginx:1.31-alpine",
         ports=[_AUTH_PROXY.port.k8s_container_port()],
         # nginx-auth-proxy.conf.template reads all three.
@@ -371,6 +374,7 @@ def _setup_job(scope: Construct) -> None:
                         # serving Deployment keeps its SSD mount read-only.
                         k8s.Container(
                             name="registration-api",
+                            # renovate: datasource=docker
                             image="ollama/ollama:0.34.4",
                             args=["serve"],
                             restart_policy="Always",
@@ -396,6 +400,7 @@ def _setup_job(scope: Construct) -> None:
                     containers=[
                         k8s.Container(
                             name="setup",
+                            # renovate: datasource=docker
                             image="curlimages/curl:8.22.0",
                             command=[f"{_SCRIPTS_DIR}/{_SETUP_SCRIPT}"],
                             env=[k8s.EnvVar(name="OLLAMA_HOST", value="http://127.0.0.1:11434")],

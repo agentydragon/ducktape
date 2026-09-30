@@ -83,10 +83,8 @@ def _deployment(chart: Chart) -> None:
                     containers=[
                         k8s.Container(
                             name="postgres-mcp",
-                            image=(
-                                "enterprisedb/pg-airman-mcp:latest"
-                                "@sha256:99fb30356e66b7ebd816dbbbf70a29f091bcc1db09cf952bc719f10a05818c04"
-                            ),
+                            # renovate: datasource=docker
+                            image="enterprisedb/pg-airman-mcp:latest@sha256:99fb30356e66b7ebd816dbbbf70a29f091bcc1db09cf952bc719f10a05818c04",
                             image_pull_policy="IfNotPresent",
                             args=[
                                 "--access-mode=restricted",

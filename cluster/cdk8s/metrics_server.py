@@ -23,6 +23,7 @@ def chart(app: App) -> Chart:
             chart, NAME, "flux-system", url="https://kubernetes-sigs.github.io/metrics-server/"
         ),
         chart="metrics-server",
+        # renovate: datasource=helm depName=metrics-server registryUrl=https://kubernetes-sigs.github.io/metrics-server/
         version="3.14.0",
         interval="30m",
         chart_interval="12h",

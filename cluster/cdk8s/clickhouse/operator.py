@@ -42,6 +42,7 @@ def _values() -> dict[str, object]:
             # The chart invokes /bin/sh in this image; the official kubectl image is distroless.
             "image": {
                 "repository": "bitnamilegacy/kubectl",
+                # renovate: datasource=docker depName=bitnamilegacy/kubectl
                 "tag": "1.33.4@sha256:ed0b31a0508da84ee655c5c6e01bd3897fc56ad6cf69debb27fa1893a06d2246",
             },
             "resources": {"requests": {"cpu": "25m", "memory": "32Mi"}, "limits": {"cpu": "200m", "memory": "128Mi"}},
@@ -101,6 +102,7 @@ def helmrelease_chart(app: App) -> Chart:
             url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart",
         ),
         chart="altinity-clickhouse-operator",
+        # renovate: datasource=docker depName=ghcr.io/altinity/clickhouse-operator-helm-chart/altinity-clickhouse-operator
         version="0.27.3",
         interval="30m",
         chart_interval="12h",

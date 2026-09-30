@@ -36,6 +36,7 @@ def chart(app: App) -> Chart:
             chart, NAME, _REPOSITORY_NAMESPACE, url="https://seaweedfs.github.io/seaweedfs-operator/"
         ),
         chart=NAME,
+        # renovate: datasource=helm depName=seaweedfs-operator registryUrl=https://seaweedfs.github.io/seaweedfs-operator/
         version="0.1.42",  # operator v1.0.39 (latest stable as of 2026-09-14)
         interval="30m",
         chart_interval="12h",

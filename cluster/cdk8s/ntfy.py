@@ -50,6 +50,7 @@ NAME = "ntfy"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/ntfy"
 NAMESPACE = NAME
 HOSTNAME = "ntfy.allegedly.works"
+# renovate: datasource=docker
 _IMAGE = "binwiederhier/ntfy:v2.28.0"
 SERVICE = ServiceRef(
     name=NAME,

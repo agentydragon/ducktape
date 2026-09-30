@@ -29,6 +29,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "agentplane-electric"
 _LABELS = {"app.kubernetes.io/name": _NAME}
+# renovate: datasource=docker
 _IMAGE = "docker.io/electricsql/electric:1.8.1@sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211"
 _STORAGE_DIR = "/var/lib/electric"
 _RUN_AS = 65534  # The pinned image owns /app as nobody but leaves Config.User empty.

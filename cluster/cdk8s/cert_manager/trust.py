@@ -28,6 +28,7 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=JETSTACK_SOURCE_REF,
         chart="trust-manager",
+        # renovate: datasource=helm depName=trust-manager registryUrl=https://charts.jetstack.io
         version="0.25.*",
         interval="30m",
         install=RETRY_FAILED_INSTALL,

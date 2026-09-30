@@ -73,10 +73,8 @@ def chart(app: App) -> Chart:
                     containers=[
                         k8s.Container(
                             name=NAME,
-                            image=(
-                                "nvcr.io/nvidia/k8s/dcgm-exporter:4.5.2-4.8.1-ubuntu22.04"
-                                "@sha256:17e9d49093f2d86d90260eec3c07b18b3f78fc5eadef3c8ab26a24fa5a9c1b2c"
-                            ),
+                            # renovate: datasource=docker
+                            image="nvcr.io/nvidia/k8s/dcgm-exporter:4.5.2-4.8.1-ubuntu22.04@sha256:17e9d49093f2d86d90260eec3c07b18b3f78fc5eadef3c8ab26a24fa5a9c1b2c",
                             # Custom counter set -- the stock default omits DCGM_FI_DEV_XID_ERRORS.
                             args=["-f", f"{_CONFIG_DIR}/{_COUNTERS_FILE}"],
                             env=[

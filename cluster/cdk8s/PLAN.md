@@ -14,16 +14,12 @@ not approve a new abstraction, resource owner, authorization grant, or deploymen
 
 ### B. Restore dependency-update ownership
 
-`renovate.json5` scans both `cluster/k8s` and `cluster/generated` for Flux and
-Kubernetes YAML. Its custom manager covers Terraform provider pins, not cdk8s Python.
-There is no cdk8s regeneration workflow. Updating generated YAML conflicts with its
-source and the snapshot gate.
-
-The previously approved direction remains: annotate source pins with `# renovate:`,
-teach Renovate to update them, and regenerate on its branches. Exclude generated
-outputs from mutation only as source coverage replaces it. Keep repository-built image
-tags owned by Flux image automation. Operator/chart versions and CRD schema pins need
-coordinated updates where they describe the same deployed API.
+Generator pins carry `# renovate:` comments read by the cdk8s custom manager in
+`renovate.json5`, generated outputs are in its `ignorePaths`, and
+`.github/workflows/renovate-regenerate.yml` regenerates manifests on Renovate's
+branches (<AGENTS.md> § Version pins and Renovate). No Renovate branch has run the
+workflow yet. CRD schema pins in `MODULE.bazel` still do not move with the operator
+chart or source tag that describes the same deployed API.
 
 Done: an actual dependency update changes the Python source and its generated output,
 passes the generation gate, and leaves no independently editable duplicate pin.

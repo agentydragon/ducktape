@@ -89,6 +89,7 @@ class Descheduler(Construct):
                 self, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/descheduler"
             ),
             chart="descheduler",
+            # renovate: datasource=helm depName=descheduler registryUrl=https://kubernetes-sigs.github.io/descheduler
             version="0.36.0",
             interval="30m",
             install=RETRY_FAILED_INSTALL,

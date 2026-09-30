@@ -31,6 +31,7 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=https_helm_repository(chart, "nvidia", NAMESPACE, url="https://nvidia.github.io/k8s-device-plugin"),
         chart=NAME,
+        # renovate: datasource=helm depName=nvidia-device-plugin registryUrl=https://nvidia.github.io/k8s-device-plugin
         version="0.20.0",
         interval="15m",
         install=RETRY_FAILED_INSTALL,

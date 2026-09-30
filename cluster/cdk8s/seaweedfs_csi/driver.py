@@ -23,6 +23,7 @@ NAME = "seaweedfs-csi"
 NAMESPACE = "seaweedfs-csi-system"
 RELEASE = "seaweedfs-csi-driver"
 OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs-csi"
+# renovate: datasource=docker depName=chrislusf/seaweedfs-csi-driver
 _VERSION = "v1.4.30"
 _OVH_AFFINITY = {
     "nodeAffinity": {
@@ -212,6 +213,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="seaweedfs-csi-driver", namespace="flux-system"),
         interval="24h",
         url="https://github.com/seaweedfs/seaweedfs-csi-driver",
+        # renovate: datasource=github-tags depName=seaweedfs/seaweedfs-csi-driver
         ref=GitRepositorySpecRef(tag="v1.4.31"),
         ignore=textwrap.dedent(
             """\

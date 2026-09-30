@@ -473,6 +473,7 @@ def chart(app: App) -> Chart:
             interval="12h",
         ),
         chart="kube-prometheus-stack",
+        # renovate: datasource=helm depName=kube-prometheus-stack registryUrl=https://prometheus-community.github.io/helm-charts
         version="91.3.0",
         interval="30m",
         chart_interval="12h",

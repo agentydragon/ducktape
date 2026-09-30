@@ -81,6 +81,7 @@ class Mitmproxy(Construct):
                         init_containers=[
                             k8s.Container(
                                 name="mitmproxy-ca-init",
+                                # renovate: datasource=docker
                                 image="busybox:1.38",
                                 command=[
                                     "sh",
@@ -103,6 +104,7 @@ class Mitmproxy(Construct):
                                 # <12.2.3 every intercepted leaf's AKID mismatched the CA SKI and strict
                                 # clients rejected the chain ("unable to get local issuer certificate").
                                 # See cluster/docs/lessons_learned/2026_06_25_mitmproxy_ca_ski_aki_mismatch.md.
+                                # renovate: datasource=docker
                                 image="mitmproxy/mitmproxy:12.2.3",
                                 command=[
                                     "mitmweb",

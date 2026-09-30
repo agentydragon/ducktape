@@ -13,6 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
+from cluster.cdk8s.flux_sources import EXTERNAL_SNAPSHOTTER_TAG
 
 
 def snapshot_controller(chart: Chart) -> Kustomization:
@@ -27,7 +28,11 @@ def snapshot_controller(chart: Chart) -> Kustomization:
         ),
         path="./deploy/kubernetes/snapshot-controller",
         timeout="5m",
-        images=[KustomizationSpecImages(name="registry.k8s.io/sig-storage/snapshot-controller", new_tag="v8.6.0")],
+        images=[
+            KustomizationSpecImages(
+                name="registry.k8s.io/sig-storage/snapshot-controller", new_tag=EXTERNAL_SNAPSHOTTER_TAG
+            )
+        ],
         patches=[
             KustomizationSpecPatches(
                 target=KustomizationSpecPatchesTarget(

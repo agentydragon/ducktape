@@ -110,6 +110,7 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=https_helm_repository(chart, NAME, "flux-system", url="https://charts.containeroo.ch"),
         chart=NAME,
+        # renovate: datasource=helm depName=local-path-provisioner registryUrl=https://charts.containeroo.ch
         version="0.0.38",
         interval="30m",
         install=RETRY_FAILED_INSTALL,

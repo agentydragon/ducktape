@@ -131,6 +131,7 @@ def chart(app: App) -> Chart:
         repository=https_helm_repository(chart, NAME, _FLUX_NAMESPACE, url="https://kyverno.github.io/kyverno/"),
         chart="kyverno",
         # MODULE.bazel pins the kyverno.io CRD bindings to this chart's appVersion.
+        # renovate: datasource=helm depName=kyverno registryUrl=https://kyverno.github.io/kyverno/
         version="3.9.1",
         interval="15m",
         install=RETRY_FAILED_INSTALL,

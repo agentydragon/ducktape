@@ -327,6 +327,7 @@ def _helm_release(scope: Construct) -> None:
         _NAMESPACE,
         repository=oci_helm_repository(scope, _NAME, _NAMESPACE, url="oci://code.forgejo.org/forgejo-helm"),
         chart=_NAME,
+        # renovate: datasource=docker depName=code.forgejo.org/forgejo-helm/forgejo
         version="17.1.6",
         interval="15m",
         # Extended timeout (PostgreSQL + PVC binding + init containers)

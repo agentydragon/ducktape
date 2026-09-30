@@ -50,6 +50,7 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=repository,
         chart="cloudnative-pg",
+        # renovate: datasource=helm depName=cloudnative-pg registryUrl=https://cloudnative-pg.github.io/charts
         version="0.29.0",
         interval="30m",
         install=HelmReleaseSpecInstall(
@@ -64,6 +65,7 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=repository,
         chart=_BARMAN_CLOUD,
+        # renovate: datasource=helm depName=plugin-barman-cloud registryUrl=https://cloudnative-pg.github.io/charts
         version="0.8.0",
         interval="30m",
         install=HelmReleaseSpecInstall(

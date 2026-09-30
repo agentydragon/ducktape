@@ -74,6 +74,7 @@ def chart(app: App) -> Chart:
             chart, "stakater", "flux-system", url="https://stakater.github.io/stakater-charts"
         ),
         chart=NAME,
+        # renovate: datasource=helm depName=reloader registryUrl=https://stakater.github.io/stakater-charts
         version="2.*",
         interval="30m",
         install=RETRY_FAILED_INSTALL,

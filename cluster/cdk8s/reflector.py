@@ -15,6 +15,7 @@ from cluster.cdk8s.namespaces import Vpa
 NAME = "reflector"
 NAMESPACE = "reflector-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/reflector"
+# renovate: datasource=helm depName=reflector registryUrl=https://emberstack.github.io/helm-charts
 _VERSION = "10.0.65"
 
 

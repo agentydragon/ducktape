@@ -31,6 +31,7 @@ from cluster.cdk8s.providers.cnpg.cluster import Cluster
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
+# renovate: datasource=docker
 POSTGRES_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
 # The CNPG-I plugin that archives a Cluster's WAL and takes its base backups into an ObjectStore.
 BARMAN_PLUGIN = "barman-cloud.cloudnative-pg.io"

@@ -35,6 +35,7 @@ def chart(app: App) -> Chart:
             chart, "nfd", NAMESPACE, url="https://kubernetes-sigs.github.io/node-feature-discovery/charts"
         ),
         chart=NAME,
+        # renovate: datasource=helm depName=node-feature-discovery registryUrl=https://kubernetes-sigs.github.io/node-feature-discovery/charts
         version="0.19.0",
         interval="15m",
         install=RETRY_FAILED_INSTALL,

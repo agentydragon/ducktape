@@ -109,6 +109,7 @@ def _mitmproxy(chart: Chart) -> None:
                     init_containers=[
                         k8s.Container(
                             name="mitmproxy-ca-init",
+                            # renovate: datasource=docker
                             image="busybox:1.38",
                             command=["sh", "-c", _MITMPROXY_CA_INIT_SCRIPT],
                             volume_mounts=[
@@ -128,6 +129,7 @@ def _mitmproxy(chart: Chart) -> None:
                             # CA SKI and strict clients rejected the chain ("unable to get local
                             # issuer certificate"). See
                             # cluster/docs/lessons_learned/2026_06_25_mitmproxy_ca_ski_aki_mismatch.md.
+                            # renovate: datasource=docker
                             image="mitmproxy/mitmproxy:12.2.3",
                             command=[
                                 # mitmdump, not mitmweb. mitmweb keeps every flow in its View store

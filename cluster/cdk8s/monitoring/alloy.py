@@ -62,6 +62,7 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=grafana_helmrepository.SOURCE_REF,
         chart=_NAME,
+        # renovate: datasource=helm depName=alloy registryUrl=https://grafana.github.io/helm-charts
         version="1.x",
         interval="30m",
         chart_interval="12h",

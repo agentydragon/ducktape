@@ -43,6 +43,8 @@ ELEMENT_HOSTNAME = "chat.allegedly.works"
 _NAME = "matrix"
 DATABASE = cnpg.PostgresRef.generated(name="matrix-db", namespace=NAMESPACE)
 _HELM_REPOSITORY = "ananace-charts"
+# renovate: datasource=docker depName=matrixdotorg/synapse
+_SYNAPSE_TAG = "v1.160.0"
 # The chart's main Service: its selector is the chart name, the release and the component.
 SYNAPSE_HTTP = ServiceRef(
     name=SYNAPSE,
@@ -123,6 +125,7 @@ def _synapse(scope: Construct) -> None:
         NAMESPACE,
         repository=https_helm_repository(scope, _HELM_REPOSITORY, NAMESPACE, url="https://ananace.gitlab.io/charts"),
         chart="matrix-synapse",
+        # renovate: datasource=helm depName=matrix-synapse registryUrl=https://ananace.gitlab.io/charts
         version="3.12.37",
         interval="15m",
         install=HelmReleaseSpecInstall(
@@ -152,7 +155,7 @@ def _synapse(scope: Construct) -> None:
             ),
         ],
         values={
-            "image": {"repository": "matrixdotorg/synapse", "tag": "v1.160.0", "pullPolicy": "IfNotPresent"},
+            "image": {"repository": "matrixdotorg/synapse", "tag": _SYNAPSE_TAG, "pullPolicy": "IfNotPresent"},
             # Server name - this is the domain used in Matrix user IDs (@user:allegedly.works)
             "serverName": "allegedly.works",
             # Public server name - the hostname where Synapse is publicly accessible.
@@ -284,6 +287,7 @@ def _element(scope: Construct) -> None:
                     containers=[
                         k8s.Container(
                             name=_ELEMENT,
+                            # renovate: datasource=docker
                             image="vectorim/element-web:v1.12.27",
                             ports=[_ELEMENT_HTTP.port.k8s_container_port()],
                             volume_mounts=[

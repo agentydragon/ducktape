@@ -42,6 +42,7 @@ def chart(app: App) -> Chart:
         chart="keda",
         # 2.20.2 reports an empty Forgejo queue as inactive, allowing haku-ci
         # to scale to zero.
+        # renovate: datasource=helm depName=keda registryUrl=https://kedacore.github.io/charts
         version="2.20.2",
         interval="15m",
         chart_interval="12h",

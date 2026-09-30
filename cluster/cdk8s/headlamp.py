@@ -51,6 +51,7 @@ def chart(app: App) -> Chart:
         repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/headlamp/"),
         chart=NAME,
         # 0.45.0 ships the Prometheus details-view plugin, enabled by default.
+        # renovate: datasource=helm depName=headlamp registryUrl=https://kubernetes-sigs.github.io/headlamp/
         version="0.45.0",
         interval="15m",
         install=RETRY_FAILED_INSTALL,

@@ -79,6 +79,7 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=https_helm_repository(chart, RELEASE, "flux-system", url="https://openebs.github.io/lvm-localpv"),
         chart="lvm-localpv",
+        # renovate: datasource=helm depName=lvm-localpv registryUrl=https://openebs.github.io/lvm-localpv
         version="1.10.1",
         interval="30m",
         install=RETRY_FAILED_INSTALL,

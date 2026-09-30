@@ -242,6 +242,7 @@ def _deployment(scope: Construct) -> None:
                     containers=[
                         k8s.Container(
                             name=_NAME,
+                            # renovate: datasource=docker
                             image="ghcr.io/home-assistant/home-assistant:2026.9.2",
                             env=[
                                 k8s.EnvVar(name="TZ", value="America/Los_Angeles"),
@@ -269,6 +270,7 @@ def _deployment(scope: Construct) -> None:
                         ),
                         k8s.Container(
                             name="caddy",
+                            # renovate: datasource=docker
                             image="caddy:2.11.4-alpine",
                             env=[_METRICS_TOKEN.env_var("METRICS_TOKEN")],
                             ports=[SERVICE.port.k8s_container_port()],
