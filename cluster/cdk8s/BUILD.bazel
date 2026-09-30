@@ -1764,7 +1764,6 @@ py_library(
         "//cluster/cdk8s/plaid_mcp:app",
         "//cluster/cdk8s/plaid_mcp:db",
         "//cluster/cdk8s/plaid_mcp:pgweb",
-        "//cluster/cdk8s/plaid_mcp:reader",
         "//cluster/cdk8s/seaweedfs:cluster",
         "//cluster/cdk8s/seaweedfs:drivefs_artifacts_bucket",
         "//cluster/cdk8s/seaweedfs:external_credentials",

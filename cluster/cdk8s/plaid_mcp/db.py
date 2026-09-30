@@ -70,7 +70,7 @@ def _cluster(chart: Chart) -> None:
                     login=True,
                     password_secret=ClusterSpecManagedRolesPasswordSecret(name=READONLY.name),
                     comment=(
-                        "Read-only SQL access for the Plaid Postgres MCP facade; ESO copies the secret into the"
+                        "Read-only SQL access to the Plaid mirror; ESO copies the secret into the"
                         " haku-sandbox namespace."
                     ),
                 )

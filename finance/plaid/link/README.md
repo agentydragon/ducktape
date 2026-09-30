@@ -1,16 +1,13 @@
-# plaid_utils/mcp_server
+# Plaid Link management service
 
-Plaid link-management runtime package.
-
-The deployed image now runs [`app.py`](app.py): a FastAPI web UI for Plaid Link
-management, a signed webhook receiver, and a queued Item sync worker. The agent-facing
-read path is not this package; it is EnterpriseDB Pg Airman MCP pointed at the
-synced Postgres database with a read-only role.
+This package provides the FastAPI web UI, signed webhook receiver, and queued Item
+sync worker. The synced database is queried through pgweb by Agentplane and through
+read-only in-cluster PostgreSQL access by Haku; there is no Plaid MCP endpoint.
 
 ## Entrypoints
 
-- `//plaid_utils/mcp_server:app_cli` / `server_image`: web UI on `:8080`.
-- `//plaid_utils/mcp_server:sync_cli` / `sync_image`: CronJob entrypoint that
+- `//finance/plaid/link:app_cli` / `server_image`: web UI on `:8080`.
+- `//finance/plaid/sync:sync_cli_bin` / `sync_image`: CronJob entrypoint that
   refreshes every active link into Postgres.
 
 ## Configuration
@@ -126,7 +123,7 @@ webhook configuration requirements.
 
 GitOps manifests live under
 [`cluster/k8s/agents/plaid-mcp/`](../../cluster/k8s/agents/plaid-mcp/README.md).
-The human UI is `https://plaid-mcp.allegedly.works/link`; the app performs
-Authentik OIDC login and owns its browser session. The read-only SQL MCP
-is `https://plaid-db.allegedly.works/mcp`. The domain root
-`https://plaid-mcp.allegedly.works/` serves the same UI for convenience.
+The UI is `https://plaid-mcp.allegedly.works/link`; the app performs Authentik OIDC
+login and owns its browser session. The domain root `https://plaid-mcp.allegedly.works/`
+serves the same UI for convenience. Read-only SQL access is provided separately by
+pgweb for Agentplane and by in-cluster PostgreSQL access for Haku; no MCP endpoint is published.

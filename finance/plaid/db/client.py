@@ -366,8 +366,8 @@ def _create_sdk_api(creds: PlaidCreds) -> plaid_api.PlaidApi:
     )
     # plaid-python (urllib3) passes ca_certs=ssl_ca_cert; left unset urllib3 falls back to the
     # system trust store, which the debian_slim runtime image ships empty -> production.plaid.com
-    # fails with CERTIFICATE_VERIFY_FAILED. Point it at certifi's bundle (already in the image via
-    # fastmcp -> httpx), matching how the other MCP servers get their CA roots.
+    # fails with CERTIFICATE_VERIFY_FAILED. Point it at certifi's bundle; the Debian slim image
+    # ships without a system CA bundle.
     configuration.ssl_ca_cert = certifi.where()
     return plaid_api.PlaidApi(plaid.ApiClient(configuration))
 

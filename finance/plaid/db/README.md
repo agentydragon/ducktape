@@ -1,7 +1,7 @@
 # plaid_utils
 
 Plaid client and sync utilities for personal accounts, cards, liabilities, and
-investments. Backs the [Plaid Link management service](mcp_server/README.md).
+investments. Backs the [Plaid Link management service](../link/README.md).
 
 Named `plaid_utils` (not `plaid`) so the top-level package doesn't collide with the
 official `plaid` SDK — same convention as `openai_utils`.
@@ -19,8 +19,8 @@ user-level age anchors (admin + wyrm2/rugged/atlas/iguana-agentydragon).
 
 `plaid_utils.dev_creds.load()` reads it via `sops -d` and selects the secret by `$PLAID_ENV`.
 Fallback: if the file is missing, it reads `PLAID_CLIENT_ID`/`PLAID_SECRET` from env. This
-sops/env loader lives in `dev_creds.py`, separate from `client.py`, so the MCP server never
-bundles it.
+sops/env loader lives in `dev_creds.py`, separate from `client.py`, so the deployed Link and
+sync entrypoints do not bundle developer-only SOPS/subprocess loading.
 
 Plaid removed the `development` environment in 2024 — only `sandbox` (fake
 banks, free, unlimited) and `production` (real banks, paid; first 10 Items
@@ -42,7 +42,7 @@ free on the Trial plan for teams created on/after 2026-04-15) remain.
 - **Pending → posted:** a `pending` transaction is later replaced by a posted one
   whose `pending_transaction_id` points back to the pending id.
 - **`ITEM_LOGIN_REQUIRED`:** when a bank login expires Plaid returns this error and
-  the Item must be repaired through the Plaid MCP `/link` UI. The UI launches
+  the Item must be repaired through the Plaid Link management UI. The UI launches
   Plaid update mode for the existing Item.
 
 ## Sandbox smoke test

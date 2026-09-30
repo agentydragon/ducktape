@@ -2768,10 +2768,6 @@ spec:
       namespace: ducktape-flux
     - name: authentik-tf
       namespace: ducktape-flux
-    - name: mcp-oauth-state-db
-      namespace: ducktape-flux
-    - name: monitoring-crds
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/plaid-mcp
   prune: true

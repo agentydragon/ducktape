@@ -75,10 +75,7 @@ GROCY_VALLEJO = OAuthStateStore(
     id="grocy-vallejo", namespace="grocy-vallejo", database="mcp_oauth_grocy_vallejo", role="mcp_oauth_grocy_vallejo"
 )
 TANA = OAuthStateStore(id="tana", namespace="tana-mcp", database="mcp_oauth_tana", role="mcp_oauth_tana")
-PLAID_DB = OAuthStateStore(
-    id="plaid-db", namespace="plaid-mcp", database="mcp_oauth_plaid_db", role="mcp_oauth_plaid_db"
-)
-STORES = (GROCY_SF, GROCY_VALLEJO, TANA, PLAID_DB)
+STORES = (GROCY_SF, GROCY_VALLEJO, TANA)
 
 
 def _namespace_chart(app: App) -> Chart:

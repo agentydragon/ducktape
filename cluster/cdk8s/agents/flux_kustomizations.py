@@ -59,8 +59,6 @@ def plaid_mcp(
     external_secrets_operator: Kustomization,
     authentik: Kustomization,
     authentik_tf: Kustomization,
-    mcp_oauth_state: Kustomization,
-    monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "plaid-mcp"
     return flux_kustomization(
@@ -69,15 +67,7 @@ def plaid_mcp(
         artifact,
         timeout="10m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            cnpg,
-            external_secrets_operator,
-            authentik,
-            authentik_tf,
-            mcp_oauth_state,
-            # ServiceMonitor
-            monitoring_crds,
-        ),
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, authentik, authentik_tf),
     )
 
 

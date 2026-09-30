@@ -109,43 +109,6 @@ spec:
         username: mcp_oauth_tana
       type: kubernetes.io/basic-auth
 ---
-apiVersion: generators.external-secrets.io/v1alpha1
-kind: Password
-metadata:
-  name: mcp-oauth-plaid-db-credentials-generator
-  namespace: mcp-oauth-state
-spec:
-  allowRepeat: true
-  digits: 8
-  length: 40
-  noUpper: false
-  symbols: 0
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: mcp-oauth-plaid-db-credentials
-  namespace: mcp-oauth-state
-spec:
-  dataFrom:
-    - sourceRef:
-        generatorRef:
-          apiVersion: generators.external-secrets.io/v1alpha1
-          kind: Password
-          name: mcp-oauth-plaid-db-credentials-generator
-  refreshInterval: 8760h
-  target:
-    name: mcp-oauth-plaid-db-credentials
-    template:
-      data:
-        dbname: mcp_oauth_plaid_db
-        host: mcp-oauth-state-db-rw.mcp-oauth-state.svc
-        password: "{{ .password }}"
-        port: "5432"
-        uri: postgresql://mcp_oauth_plaid_db:{{ .password }}@mcp-oauth-state-db-rw.mcp-oauth-state.svc:5432/mcp_oauth_plaid_db
-        username: mcp_oauth_plaid_db
-      type: kubernetes.io/basic-auth
----
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -182,11 +145,6 @@ spec:
         name: mcp_oauth_tana
         passwordSecret:
           name: mcp-oauth-tana-credentials
-      - ensure: present
-        login: true
-        name: mcp_oauth_plaid_db
-        passwordSecret:
-          name: mcp-oauth-plaid-db-credentials
   monitoring:
     enablePodMonitor: true
   probes:
@@ -407,79 +365,6 @@ spec:
       auth:
         serviceAccount:
           name: mcp-oauth-tana-reader
-          namespace: mcp-oauth-state
-      remoteNamespace: mcp-oauth-state
-      server:
-        caProvider:
-          key: ca.crt
-          name: kube-root-ca.crt
-          namespace: default
-          type: ConfigMap
----
-apiVersion: postgresql.cnpg.io/v1
-kind: Database
-metadata:
-  name: mcp-oauth-plaid-db-database
-  namespace: mcp-oauth-state
-spec:
-  cluster:
-    name: mcp-oauth-state-db
-  databaseReclaimPolicy: retain
-  name: mcp_oauth_plaid_db
-  owner: mcp_oauth_plaid_db
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: mcp-oauth-plaid-db-reader
-  namespace: mcp-oauth-state
-automountServiceAccountToken: false
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: mcp-oauth-plaid-db-reader
-  namespace: mcp-oauth-state
-rules:
-  - apiGroups:
-      - ""
-    resourceNames:
-      - mcp-oauth-plaid-db-credentials
-    resources:
-      - secrets
-    verbs:
-      - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: mcp-oauth-plaid-db-reader
-  namespace: mcp-oauth-state
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: mcp-oauth-plaid-db-reader
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: mcp-oauth-plaid-db-reader
-    namespace: mcp-oauth-state
----
-apiVersion: external-secrets.io/v1
-kind: ClusterSecretStore
-metadata:
-  annotations:
-    description: Allows only the plaid-mcp MCP OAuth consumer to read its DSN from mcp-oauth-state.
-  name: mcp-oauth-plaid-db-secret-store
-spec:
-  conditions:
-    - namespaces:
-        - plaid-mcp
-  provider:
-    kubernetes:
-      auth:
-        serviceAccount:
-          name: mcp-oauth-plaid-db-reader
           namespace: mcp-oauth-state
       remoteNamespace: mcp-oauth-state
       server:

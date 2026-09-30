@@ -131,7 +131,7 @@ spec:
   instances: 2
   managed:
     roles:
-      - comment: Read-only SQL access for the Plaid Postgres MCP facade; ESO copies the secret into the haku-sandbox namespace.
+      - comment: Read-only SQL access to the Plaid mirror; ESO copies the secret into the haku-sandbox namespace.
         ensure: present
         login: true
         name: plaid_ro
