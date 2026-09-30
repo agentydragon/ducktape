@@ -14,7 +14,7 @@
 //!
 //! Realizability checking and factorization validation live in the
 //! `gate` crate; the spec-independent per-chunk chunk-analysis
-//! composer lives in the `stage_one` crate. Both build on this core.
+//! composer lives in the `chunk_analysis` crate. Both build on this core.
 
 pub mod analysis_hints;
 pub mod atomic_units;

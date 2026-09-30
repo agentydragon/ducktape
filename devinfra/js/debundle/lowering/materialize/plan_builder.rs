@@ -1082,8 +1082,8 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    /// Apply a batch of rebind-fold decisions produced from chunk analysis
-    /// (`stage_one::compute_rebind_folds`).
+    /// Apply a batch of rebind-fold decisions produced by
+    /// `lowering/rebind_fold.rs`.
     ///
     /// Each fold reroutes a single binding from its previous plan
     /// (if any) to the cycle's explicit destination. The

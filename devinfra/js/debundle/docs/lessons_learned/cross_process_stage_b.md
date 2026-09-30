@@ -7,9 +7,9 @@ assemble partition → realizability → lower) reads it as input. Goal:
 spec edits hit only Stage B; Stage A's expensive parse + analysis
 gets cached.
 
-Only the structural composer (`stage_one/mod.rs::compute_chunk_analysis`)
-ever landed: no on-disk sidecar was written and no cross-process
-consumer exists. **The design is abandoned.** This note records why,
+Only the structural composer (`chunk_analysis/mod.rs::compute_chunk_analysis`,
+formerly `stage_one/mod.rs`) ever landed: no on-disk sidecar was written
+and no cross-process consumer exists. **The design is abandoned.** This note records why,
 so we don't sleepwalk back into it.
 
 ## What broke it: SWC hygiene is `Globals`-local
@@ -116,6 +116,6 @@ caching.
 ## Pointers
 
 - `../wire_format.md` — the live `Atom`-only convention.
-- `stage_one/mod.rs` — the composer that survived.
+- `chunk_analysis/mod.rs` — the composer that survived (formerly `stage_one/mod.rs`).
 - Git history: the abandoned design lived in `PIPELINE_SPLIT.md`
   pre-deletion (`git log -- devinfra/js/debundle/PIPELINE_SPLIT.md`).

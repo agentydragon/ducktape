@@ -15,7 +15,8 @@
 //! which unclaimed cycle members should silently fold into the
 //! cycle's single explicit destination. The decision is pure: it
 //! only reads the owner graph + atomic-units + assignment + the
-//! residual plan index. Mutation of the lowering-side `ModulePlan`
+//! residual plan index. It stays beside lowering because its input is
+//! the post-seed lowering assignment; mutation of the `ModulePlan`
 //! list happens at the caller (today: `ChunkPlanBuilder::apply_rebind_folds`).
 //! It runs after chunk analysis (`compute_chunk_analysis`) and after
 //! the partition's seed phases, but before module emission.

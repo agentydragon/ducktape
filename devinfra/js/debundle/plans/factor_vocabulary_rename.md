@@ -88,7 +88,7 @@ The phrase "atomic factor unit" in comments and diagnostics
 
 - `OwnerGraph`, `OwnerNode`, `OwnerId`
 - `AtomicUnit`, `AtomicGraphReport`, `AtomicUnitReport`, `AtomicUnitEdgeReport`
-- `ChunkAnalysis`
+- `gate::ChunkAnalysis` (the gate's factorization context)
 - `compute_owner_graph_and_units_with()`, `compute_atomic_units()`
 - `ModuleQuotient`, `build_module_quotient()`, `OwnerGraphQuotientReport`,
   `QuotientEdgeReport`, `QuotientSccReport`, and the `module_graph` JSON key

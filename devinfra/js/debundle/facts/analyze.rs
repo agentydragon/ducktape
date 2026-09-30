@@ -38,7 +38,7 @@ impl Visit for TopLevelAwaitFinder {
 ///
 /// **Sharing**: materialization computes this layer once and feeds it
 /// to selector resolution and then to [`analyze_chunk_with_policy`]
-/// (via `stage_one::compute_chunk_analysis`), so the source-text walk
+/// (via `chunk_analysis::compute_chunk_analysis`), so the source-text walk
 /// happens once per chunk. `vendor::strip` calls [`analyze_chunk`] on
 /// its own: it reparses the emitted chunk file from disk and mutates it
 /// (`split_top_level_var_decls`, `strip_export_specifiers`) before

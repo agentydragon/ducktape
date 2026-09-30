@@ -40,20 +40,10 @@
 //! `docs/lessons_learned/cross_process_stage_b.md`).
 //! The composer survives as a structural readability boundary.
 //!
-//! Atomic-unit-rebind folding runs after
-//! the partition seed phases (explicit requests, destructure pull,
-//! residual sweep) but is purely a function of chunk-analysis output
-//! (owner graph + atomic units) and the post-seed binding→module
-//! assignment. The decision logic lives at
-//! [`compute_rebind_folds`]; the lowering-side caller applies the
-//! returned folds to its `ModulePlan` list.
-
 mod chunk_admission;
-mod rebind_fold;
 
 pub use chunk_admission::DynamicImportTarget;
 use chunk_admission::enforce_chunk_admission;
-pub use rebind_fold::{RebindFold, compute_rebind_folds};
 
 use anyhow::{Context, Result, bail};
 use swc_common::Span;
@@ -65,10 +55,10 @@ use analysis::facts::{ChunkFactAnalysis, StructuralChunkAnalysis, analyze_chunk_
 use analysis::graph::OwnerGraphOptions;
 use analysis::purity::{RedundantPureMemberReason, RedundantPurityReason};
 
-/// Output of chunk analysis: the per-chunk analysis that does not
-/// depend on the spec.
+/// Output of chunk analysis: per-chunk facts, owner graph, and atomic
+/// units that do not depend on the module partition.
 #[derive(Debug, Clone)]
-pub struct ChunkAnalysis {
+pub struct ChunkAnalysisOutput {
     /// Per-statement static facts plus chunk-wide flags (top-level
     /// await detection, redundant purity / pure-member hints).
     pub fact_analysis: ChunkFactAnalysis,
@@ -106,7 +96,7 @@ pub fn compute_chunk_analysis<F>(
     line_range_for_span: F,
     owner_graph_options: OwnerGraphOptions,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
-) -> Result<ChunkAnalysis>
+) -> Result<ChunkAnalysisOutput>
 where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
@@ -131,7 +121,7 @@ where
     let owner_graph_and_units =
         compute_owner_graph_and_units_with(&fact_analysis.facts, owner_graph_options)
             .with_context(|| format!("building owner graph for chunk {chunk_id}"))?;
-    Ok(ChunkAnalysis {
+    Ok(ChunkAnalysisOutput {
         fact_analysis,
         owner_graph_and_units,
     })

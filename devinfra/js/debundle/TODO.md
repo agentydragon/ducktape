@@ -211,7 +211,7 @@ _d.{name};` by string interpolation, so a string-literal export name in a vendor
 - **Top-level `for await` and `await using` are not treated as top-level await.**
   Status: reported. `facts/analyze.rs` `TopLevelAwaitFinder` overrides only
   `visit_await_expr`, so a module made async by either form is not bailed as A2,
-  and `stage_one/chunk_admission.rs` does not cover it. Confirm with a two-line
+  and `chunk_analysis/chunk_admission.rs` does not cover it. Confirm with a two-line
   fixture beside `e2e/realizability_test.rs::top_level_await_is_rejected`.
 - **The at-init fallback finder does not scan class bodies.** Status: reported.
   `facts/at_init_fallback.rs` `UntrustedAtInitInlineFnFallbackFinder::visit_class`

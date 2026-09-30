@@ -483,13 +483,12 @@ rust_test(
 )
 
 rust_library(
-    name = "stage_one",
+    name = "chunk_analysis",
     srcs = [
-        "stage_one/chunk_admission.rs",
-        "stage_one/mod.rs",
-        "stage_one/rebind_fold.rs",
+        "chunk_analysis/chunk_admission.rs",
+        "chunk_analysis/mod.rs",
     ],
-    crate_root = "stage_one/mod.rs",
+    crate_root = "chunk_analysis/mod.rs",
     edition = "2024",
     deps = [
         ":analysis",
@@ -503,8 +502,8 @@ rust_library(
 )
 
 rust_test(
-    name = "stage_one_test",
-    crate = ":stage_one",
+    name = "chunk_analysis_test",
+    crate = ":chunk_analysis",
     edition = "2024",
     deps = [
         "@crates//:swc_ecma_parser",
@@ -751,6 +750,7 @@ rust_library(
         "lowering/naturalize.rs",
         "lowering/plan_references.rs",
         "lowering/plans.rs",
+        "lowering/rebind_fold.rs",
         "lowering/rename_ledger.rs",
         "lowering/rename_ledger_proptest.rs",
         "lowering/rewrite_runtime.rs",
@@ -766,6 +766,7 @@ rust_library(
         ":analysis",
         ":artifact",
         ":binding_targets",
+        ":chunk_analysis",
         ":gate",
         ":js_ast",
         ":output_layout",
@@ -774,7 +775,6 @@ rust_library(
         ":selector_resolve",
         ":source_match",
         ":spec",
-        ":stage_one",
         ":vendor",
         "@crates//:anyhow",
         "@crates//:rayon",

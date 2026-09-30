@@ -13,10 +13,8 @@ use analysis::{
     LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
     OwnerGraphOptions, RedundantPurityHint, top_level_id,
 };
+use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
 use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
-use stage_one::{
-    ChunkAnalysis, DynamicImportTarget, RebindFold, compute_chunk_analysis, compute_rebind_folds,
-};
 
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysisReport, ChunkArtifact, ChunkBundle,
@@ -49,6 +47,7 @@ mod materialize;
 mod naturalize;
 mod plan_references;
 mod plans;
+mod rebind_fold;
 pub mod rename_ledger;
 #[cfg(test)]
 mod rename_ledger_proptest;
@@ -100,6 +99,7 @@ use plans::{
     LogicalRequest, MemberRequest, ModulePlan, known_effect_from_member_effect,
     logical_requests_for_chunk,
 };
+use rebind_fold::{RebindFold, compute_rebind_folds};
 use rename_ledger::{
     RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
     SealedRenames, merge_module_renames,

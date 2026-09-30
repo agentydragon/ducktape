@@ -397,7 +397,7 @@ pub(super) fn finish_logical_chunk(
         hints
     };
     // Chunk analysis: hint-sensitive facts, owner graph, and structural
-    // atomic units. See `stage_one/mod.rs` for the current implementation.
+    // atomic units. See `chunk_analysis/mod.rs` for the current implementation.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
     let chunk_analysis = compute_chunk_analysis(
         chunk_id,
@@ -410,7 +410,7 @@ pub(super) fn finish_logical_chunk(
         &resolve_dynamic_import,
     )?;
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
-    let ChunkAnalysis {
+    let ChunkAnalysisOutput {
         fact_analysis: analysis,
         owner_graph_and_units: precomputed,
     } = chunk_analysis;
@@ -573,7 +573,7 @@ pub(super) fn finish_logical_chunk(
 
 /// Rebind-fold composer: fold rebind-only atomic units into their
 /// explicit destination. Bridges the pure
-/// `stage_one::compute_rebind_folds` decision over the chunk's
+/// `compute_rebind_folds` decision in `lowering/rebind_fold.rs` over the chunk's
 /// post-seed partition (managed by `ChunkPlanBuilder`) into the
 /// builder's plan-list/catalogue state.
 ///

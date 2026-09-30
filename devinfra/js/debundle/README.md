@@ -136,7 +136,7 @@ optimizations"):
 
 Every materialized chunk is screened for A1 (top-level `eval`), A3 (dynamic
 `import(...)`) and A5 (`import.meta`) before any quotient or lowering work
-(`stage_one/chunk_admission.rs`). Audited corpora disable individual checks per
+(`chunk_analysis/chunk_admission.rs`). Audited corpora disable individual checks per
 chunk with `chunk_analysis_options.<chunk>.admission_overrides`. Enforcement
 strength, override reporting and the unchecked residual: `docs/design.md` →
 "Conditions on the input chunk".
