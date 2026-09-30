@@ -92,6 +92,7 @@ def _cron_job(scope: Construct) -> None:
                     active_deadline_seconds=5400,
                     template=k8s.PodTemplateSpec(
                         spec=k8s.PodSpec(
+                            automount_service_account_token=False,
                             restart_policy="Never",
                             # The internal SeaweedFS endpoint resolves via normal pod DNS -- no
                             # hostNetwork needed.

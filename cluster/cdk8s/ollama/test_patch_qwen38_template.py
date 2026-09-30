@@ -21,7 +21,7 @@ from util.bazel.runfiles import get_required_path
 
 
 def _template_path() -> Path:
-    return get_required_path("_main/cluster/k8s/ollama/qwen38-chat-template.jinja")
+    return get_required_path("_main/cluster/cdk8s/ollama/qwen38-chat-template.jinja")
 
 
 def _string(value: bytes) -> bytes:

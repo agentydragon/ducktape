@@ -17,7 +17,10 @@ py_library(
 py_library(
     name = "attic",
     srcs = ["attic.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
+    ],
     deps = [
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:external_creds",

@@ -38,11 +38,13 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix"
 NAMESPACE = "matrix"
 SYNAPSE = "matrix-synapse"
+HOSTNAME = "matrix.allegedly.works"
+ELEMENT_HOSTNAME = "chat.allegedly.works"
 _NAME = "matrix"
 DATABASE = cnpg.PostgresRef.generated(name="matrix-db", namespace=NAMESPACE)
 _HELM_REPOSITORY = "ananace-charts"
 # The chart's main Service: its selector is the chart name, the release and the component.
-_SYNAPSE_HTTP = ServiceRef(
+SYNAPSE_HTTP = ServiceRef(
     name=SYNAPSE,
     port=Port(name="http", number=8008),
     pods=Pods(
@@ -71,9 +73,7 @@ SOPS_FILES = (
 )
 
 _ELEMENT_CONFIG = {
-    "default_server_config": {
-        "m.homeserver": {"base_url": "https://matrix.allegedly.works", "server_name": "allegedly.works"}
-    },
+    "default_server_config": {"m.homeserver": {"base_url": f"https://{HOSTNAME}", "server_name": "allegedly.works"}},
     "brand": "Element",
     "integrations_ui_url": "https://scalar.vector.im/",
     "integrations_rest_url": "https://scalar.vector.im/api",
@@ -157,7 +157,7 @@ def _synapse(scope: Construct) -> None:
             "serverName": "allegedly.works",
             # Public server name - the hostname where Synapse is publicly accessible.
             # The chart derives public_baseurl as https://<publicServerName>.
-            "publicServerName": "matrix.allegedly.works",
+            "publicServerName": HOSTNAME,
             "resources": {"limits": {"cpu": "1000m", "memory": "2Gi"}, "requests": {"cpu": "200m", "memory": "512Mi"}},
             # Media store on distributed storage — the AGENTS.md default for app data
             # volumes, and RWX, so Synapse is not pinned to whichever node owns a local
@@ -192,7 +192,7 @@ def _synapse(scope: Construct) -> None:
             },
             "service": {
                 "type": "ClusterIP",
-                "port": _SYNAPSE_HTTP.port.number,
+                "port": SYNAPSE_HTTP.port.number,
                 "federation": {"enabled": True, "port": 8448},
             },
             # PostgreSQL via external CNPG cluster (matrix-db)
@@ -237,8 +237,8 @@ def _synapse_routes(scope: Construct) -> None:
         scope,
         "synapse-route",
         metadata=ApiObjectMetadata(name=SYNAPSE, namespace=NAMESPACE),
-        hostnames=["matrix.allegedly.works"],
-        backend=_SYNAPSE_HTTP,
+        hostnames=[HOSTNAME],
+        backend=SYNAPSE_HTTP,
         hsts=False,
         listener=None,
     )
@@ -255,7 +255,7 @@ def _synapse_routes(scope: Construct) -> None:
         rules=[
             HttpRouteSpecRules(
                 matches=[RouteMatch.path_prefix(prefix)],
-                backend_refs=[HttpRouteSpecRulesBackendRefs(name=_SYNAPSE_HTTP.name, port=_SYNAPSE_HTTP.port.number)],
+                backend_refs=[HttpRouteSpecRulesBackendRefs(name=SYNAPSE_HTTP.name, port=SYNAPSE_HTTP.port.number)],
             )
             for prefix in ("/_matrix", "/.well-known/matrix")
         ],
@@ -280,6 +280,7 @@ def _element(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_ELEMENT_HTTP.pods.selector),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     containers=[
                         k8s.Container(
                             name=_ELEMENT,
@@ -326,7 +327,7 @@ def _element(scope: Construct) -> None:
         scope,
         "element-route",
         metadata=ApiObjectMetadata(name=_ELEMENT, namespace=NAMESPACE),
-        hostnames=["chat.allegedly.works"],
+        hostnames=[ELEMENT_HOSTNAME],
         backend=_ELEMENT_HTTP,
         hsts=False,
         listener=None,

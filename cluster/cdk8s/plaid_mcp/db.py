@@ -56,8 +56,7 @@ def _cluster(chart: Chart) -> None:
         ref=POSTGRES,
         annotations={
             "description": (
-                "CNPG Postgres mirror for Plaid link metadata, full-refresh sync state, and Plaid-shaped"
-                " financial data."
+                "CNPG Postgres mirror for Plaid link metadata, webhook queue state, and Plaid-shaped financial data."
             )
         },
         placement=node_scheduling.HIL_OVH,

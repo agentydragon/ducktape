@@ -17,9 +17,6 @@ data:
           model: openai/qwen3.8-flash-next-iq4xs:latest
           api_base: http://ollama.ollama.svc.cluster.local:11434/v1
           api_key: ollama
-          use_chat_completions_api: true
-          allowed_openai_params:
-            - reasoning_effort
         model_info:
           mode: chat
           supports_function_calling: true
@@ -38,9 +35,6 @@ data:
           extra_body:
             options:
               num_ctx: 262144
-          use_chat_completions_api: true
-          allowed_openai_params:
-            - reasoning_effort
         model_info:
           mode: chat
           supports_function_calling: true
@@ -59,9 +53,6 @@ data:
           model: openai/gpt-oss:20b
           api_base: http://ollama.ollama.svc.cluster.local:11434/v1
           api_key: ollama
-          use_chat_completions_api: true
-          allowed_openai_params:
-            - reasoning_effort
         model_info:
           mode: chat
           supports_function_calling: true
@@ -73,9 +64,6 @@ data:
           extra_body:
             options:
               num_ctx: 262144
-          use_chat_completions_api: true
-          allowed_openai_params:
-            - reasoning_effort
         model_info:
           mode: chat
           supports_function_calling: true
@@ -87,9 +75,6 @@ data:
           extra_body:
             options:
               num_ctx: 524288
-          use_chat_completions_api: true
-          allowed_openai_params:
-            - reasoning_effort
         model_info:
           mode: chat
           supports_function_calling: true
@@ -101,9 +86,6 @@ data:
           extra_body:
             options:
               num_ctx: 1048576
-          use_chat_completions_api: true
-          allowed_openai_params:
-            - reasoning_effort
         model_info:
           mode: chat
           supports_function_calling: true
@@ -149,9 +131,6 @@ data:
           model: openai/gpt-oss:120b
           api_base: http://ollama.ollama.svc.cluster.local:11434/v1
           api_key: ollama
-          use_chat_completions_api: true
-          allowed_openai_params:
-            - reasoning_effort
         model_info:
           mode: chat
           supports_function_calling: true
@@ -167,9 +146,6 @@ data:
           model: openai/gemma4:31b-it-q8_0
           api_base: http://ollama.ollama.svc.cluster.local:11434/v1
           api_key: ollama
-          use_chat_completions_api: true
-          allowed_openai_params:
-            - reasoning_effort
         model_info:
           mode: chat
           supports_function_calling: true

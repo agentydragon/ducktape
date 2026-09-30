@@ -124,6 +124,27 @@ creating MergeTree parts. Collection failures do not kill the API; `/readyz`
 becomes successful after the first persisted snapshot and Prometheus metrics
 report subsequent provider or ClickHouse failures.
 
+### Gauge resolution
+
+**Deviation:** the parsers type the percentages as `float`, but both providers report
+whole percentage points. From 2026-08-28 to 2026-09-30, no stored reading of Claude's
+`five_hour`/`seven_day` `utilization` or Codex's `used_percent` was fractional, and the
+last 30 days of stored upstream bodies contain no fractional percent, so the difference
+between two readings is known to within one point. Whether upstream floors or rounds is
+not established. Recheck with:
+
+```sql
+SELECT provider, window_name, window_seconds, count() AS n,
+       countIf(used_percent != round(used_percent)) AS fractional
+FROM aiquota.aiquota_windows
+GROUP BY provider, window_name, window_seconds
+```
+
+The same history shows which windows exist: Claude reports a 5-hour and a weekly window,
+and no `seven_day_opus`/`seven_day_sonnet` object appeared in the last 30 days of bodies;
+Codex reports a single weekly window, plus `GPT-5.3-Codex-Spark` windows that read 0 and
+stopped appearing on 2026-09-17.
+
 ### Schema
 
 `cluster/k8s/aiquota/schema.sql` defines every table, materialized view, and

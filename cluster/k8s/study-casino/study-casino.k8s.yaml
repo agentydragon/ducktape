@@ -63,6 +63,7 @@ spec:
       labels:
         app: study-casino-db-readonly-provisioner
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -155,6 +156,7 @@ spec:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
               weight: 100
+      automountServiceAccountToken: false
       containers:
         - env:
             - name: STUDY_CASINO_IMAGE_TAG

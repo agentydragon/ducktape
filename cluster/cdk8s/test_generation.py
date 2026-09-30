@@ -42,8 +42,13 @@ def test_flux_decrypts_exactly_when_a_sibling_is_sops(tmp_path: Path, siblings: 
 
 
 def test_writer_refuses_an_artifact_with_shared_bases(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="shared bases"):
+    with pytest.raises(ValueError, match="also copies"):
         write_directory(tmp_path, artifact("test-app", "test/app", "test/base"), _chart("first"))
+
+
+def test_writer_accepts_a_copied_component_the_directory_includes(tmp_path: Path) -> None:
+    write_directory(tmp_path, artifact("test-app", "test/app", "test/pins"), _chart("first"), components=["../pins"])
+    assert yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())["components"] == ["../pins"]
 
 
 if __name__ == "__main__":

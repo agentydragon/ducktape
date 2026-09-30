@@ -18,6 +18,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/website"
 _NAME = "website"
 _NAMESPACE = "website"
 _CONTENT_CONFIG_MAP = "website-content"
+HOSTNAME = "www.allegedly.works"
 # nginx-unprivileged listens on 8080.
 _SERVICE = ServiceRef(
     name=_NAME,
@@ -161,6 +162,7 @@ def chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     containers=[
                         k8s.Container(
                             name="nginx",
@@ -217,7 +219,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        hostnames=["www.allegedly.works", "allegedly.works"],
+        hostnames=[HOSTNAME, "allegedly.works"],
         backend=_SERVICE,
         hsts=False,
         listener=None,

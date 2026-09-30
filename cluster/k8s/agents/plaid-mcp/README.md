@@ -8,7 +8,7 @@ The deployment has two public surfaces:
 
 ```text
 Browser -> https://plaid-mcp.allegedly.works/link
-  Gateway -> Authentik embedded proxy outpost -> plaid-mcp web UI (:8080)
+  Gateway -> plaid-mcp web UI (:8080) -> Authentik OIDC login + signed session
     - creates Plaid Link tokens for a chosen institution's supported products
     - exchanges public_tokens
     - writes per-Item access-token Secrets in the plaid-mcp namespace
@@ -36,6 +36,10 @@ There are no bespoke Plaid MCP tools. Agents read `links`, `accounts`,
 - `plaid-pgweb-auth` is the HTTP Basic password of pgweb's `plaid` user, minted by ESO. The
   agentplane-staging egress proxy reads a copy of it; nothing else outside pgweb does.
 - `plaid-client-credentials` is a SOPS-managed Secret in this namespace.
+- `plaid-link-oidc-config` is minted in the `authentik` namespace by
+  `tf/gitops/sso-providers`; a get-only SecretStore and ExternalSecret copy it
+  here for the web Deployment. Only the OIDC reader ServiceAccount can read that
+  source Secret. The sync CronJob receives none of the OIDC values.
 - Plaid access tokens are stored one Secret per linked Item and are not written to Postgres.
 - `plaid_api_events` is append-only and stores redacted Plaid request/response metadata.
 
@@ -74,10 +78,23 @@ in the typeahead; the UI looks up what that institution supports and offers exac
 products this app can mirror, so Link is never opened requesting a product the bank
 lacks — which would fail the whole session.
 
-`plaid-mcp-sync` runs every 12 hours and performs the full-refresh mirror. It
-uses date-window `/transactions/get` and `/investments/transactions/get`, not
-stateful `/transactions/sync` cursors yet. It does not call real-time balance
-endpoints; cached balances from product responses are snapshotted into Postgres.
+Plaid posts signed webhooks to `https://plaid-mcp.allegedly.works/webhooks/plaid`,
+on the same Gateway route as the Link UI. The app verifies Plaid's JWT signature
+and request-body hash, durably queues
+`TRANSACTIONS / SYNC_UPDATES_AVAILABLE`, then applies the `/transactions/sync`
+delta and cursor in the background. New Items receive the webhook URL through
+Link token creation; the next daily/manual sync updates existing Items.
+
+`plaid-mcp-sync` runs daily as a missed-webhook catch-up and refreshes every
+active Item. It uses `/transactions/sync` for transaction deltas and retains
+date-window `/investments/transactions/get` for investment history. It does not
+call real-time balance endpoints; cached balances from product responses are
+snapshotted into Postgres.
+
+The app's `PLAID_MCP_WEBHOOK_URL` must match the public HTTPS Gateway route.
+The route and network policy are generated from
+`cluster/cdk8s/plaid_mcp/app.py`; Plaid receives the URL per Item, so there is
+no global dashboard webhook URL to configure.
 
 ## Verification
 
@@ -91,5 +108,6 @@ curl -i https://plaid-db.allegedly.works/mcp
 
 Expected external behavior:
 
-- `plaid-mcp.allegedly.works` redirects through Authentik proxy auth for the human UI.
+- `plaid-mcp.allegedly.works` redirects unauthenticated browser requests to the app's Authentik OIDC login.
+- The UI and its `/api/*` endpoints require a valid signed app session; only `/healthz` and OIDC endpoints are public.
 - `plaid-db.allegedly.works/mcp` returns the MCP facade OAuth challenge until a client authenticates.

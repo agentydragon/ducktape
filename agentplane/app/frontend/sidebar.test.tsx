@@ -356,7 +356,7 @@ function footerButton(label: string): HTMLButtonElement {
   return found;
 }
 
-it("routes the footer icons to Sandboxes, pending approvals, Action history, and Settings", async () => {
+it("routes the footer icons to Sandboxes, Actions, and Settings", async () => {
   const { onOpenSettings } = await render([], {});
 
   await act(async () => footerButton("Sandboxes").click());
@@ -365,11 +365,9 @@ it("routes the footer icons to Sandboxes, pending approvals, Action history, and
   await act(async () => footerButton("Pending approvals").click());
   expect(location()).toBe("/actions");
 
-  await act(async () => footerButton("Action history").click());
-  expect(location()).toBe("/actions/history");
-
   await act(async () => footerButton("Settings").click());
   expect(onOpenSettings).toHaveBeenCalledOnce();
+  expect(container.querySelector('[aria-label="Action history"]')).toBeNull();
 });
 
 function sidebarWidth(): number {

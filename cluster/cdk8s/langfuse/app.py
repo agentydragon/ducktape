@@ -36,7 +36,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/langfuse"
 _NAME = "langfuse"
 _NAMESPACE = "langfuse"
 # The chart's web Service (`langfuse.selectorLabels` plus `app: web`), for release `_NAME`.
-_WEB = ServiceRef(
+WEB = ServiceRef(
     name="langfuse-web",
     port=Port(name="http", number=3000),
     pods=Pods(
@@ -318,7 +318,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["langfuse.allegedly.works"],
-        backend=_WEB,
+        backend=WEB,
         hsts=False,
         listener=None,
     )

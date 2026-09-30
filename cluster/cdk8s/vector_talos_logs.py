@@ -89,6 +89,7 @@ def chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     # hostNetwork lets Vector bind the actual host loopback address. A Cilium
                     # hostPort would also expose the listener on the node's public addresses.
                     host_network=True,

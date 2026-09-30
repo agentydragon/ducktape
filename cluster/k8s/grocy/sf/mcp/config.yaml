@@ -1,9 +1,0 @@
-# Non-secret config for the grocy-sf MCP server, mounted at GROCY_MCP_CONFIG_FILE.
-# Secrets (oidc client_id/secret, proxy client_id) come from env (grocy-mcp-oidc-sf
-# k8s Secret), so no single field here is secret.
-grocy_url: https://grocy-sf.allegedly.works
-auth:
-  oidc_issuer: https://auth.allegedly.works/application/o/grocy-mcp-sf/
-  public_base_url: https://grocy-mcp-sf.allegedly.works
-persistence:
-  kind: postgres

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from pydantic import BaseModel
-from sqlalchemy import delete, exists, func, select
+from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -24,6 +24,7 @@ from finance.plaid.db.models import (
     PlaidInvestmentTransaction,
     PlaidLiabilities,
     PlaidLiabilityEntry,
+    PlaidRemovedTransaction,
     PlaidSecurity,
     PlaidTransaction,
 )
@@ -37,9 +38,11 @@ from finance.plaid.db.schema import (
     LiabilityStudentSnapshotRow,
     LinkRow,
     PlaidApiEventRow,
+    PlaidWebhookDeliveryRow,
     SecurityRow,
     SyncRunRow,
     TransactionRow,
+    TransactionSyncQueueRow,
     async_session_factory,
     utcnow,
 )
@@ -81,6 +84,7 @@ class StoredLink:
     status: str
     access_token_secret: str
     last_synced_at: datetime | None
+    transactions_cursor: str | None = None
     earliest_transaction_date: date | None = None
     latest_transaction_date: date | None = None
     synced_transaction_count: int = 0
@@ -99,6 +103,13 @@ class ApiEvent:
     duration_ms: int | None = None
     error_type: str | None = None
     error_code: str | None = None
+
+
+@dataclass(frozen=True)
+class TransactionSyncClaim:
+    item_id: str
+    generation: int
+    claimed_at: datetime
 
 
 class PlaidLinkStorage:
@@ -191,6 +202,7 @@ class PlaidLinkStorage:
                 AccountRow,
             ):
                 await session.execute(delete(row_type).where(row_type.item_id == item_id))
+            await session.execute(delete(TransactionSyncQueueRow).where(TransactionSyncQueueRow.item_id == item_id))
             await session.execute(delete(LinkRow).where(LinkRow.item_id == item_id))
             if security_ids_to_check:
                 await session.execute(
@@ -266,28 +278,143 @@ class PlaidLinkStorage:
 
     async def begin_sync_run(self, *, trigger: str, item_id: str | None, configured_windows: dict[str, Any]) -> UUID:
         run_id = uuid4()
+        started_at = utcnow()
         async with self._session_factory() as session:
             if item_id is not None:
-                running = await session.execute(
-                    select(func.count())
-                    .select_from(SyncRunRow)
-                    .where(SyncRunRow.item_id == item_id, SyncRunRow.status == "running")
+                link = await session.scalar(select(LinkRow.item_id).where(LinkRow.item_id == item_id).with_for_update())
+                if link is None:
+                    raise ValueError(f"cannot start sync for missing Plaid link: {item_id}")
+                running = list(
+                    (
+                        await session.execute(
+                            select(SyncRunRow)
+                            .where(SyncRunRow.item_id == item_id, SyncRunRow.status == "running")
+                            .with_for_update()
+                        )
+                    ).scalars()
                 )
-                if running.scalar_one() > 0:
+                stale_before = started_at - timedelta(hours=2)
+                for row in running:
+                    if row.started_at < stale_before:
+                        row.status = "failed"
+                        row.finished_at = started_at
+                        row.error_summary = "sync exceeded the two-hour recovery lease"
+                if any(row.started_at >= stale_before for row in running):
+                    if any(row.status == "failed" for row in running):
+                        await session.commit()
                     raise SyncAlreadyRunningError(item_id)
             session.add(
                 SyncRunRow(
                     run_id=run_id,
                     trigger=trigger,
-                    mode="v0_full_refresh",
+                    mode="v1_cursor_transactions",
                     item_id=item_id,
                     configured_windows=configured_windows,
                     status="running",
-                    started_at=utcnow(),
+                    started_at=started_at,
                 )
             )
             await session.commit()
         return run_id
+
+    async def enqueue_transaction_sync(self, item_id: str) -> None:
+        now = utcnow()
+        statement = pg_insert(TransactionSyncQueueRow).values(
+            item_id=item_id, generation=1, requested_at=now, claimed_at=None, attempts=0, retry_after=None
+        )
+        statement = statement.on_conflict_do_update(
+            index_elements=["item_id"],
+            set_={
+                "generation": TransactionSyncQueueRow.generation + 1,
+                "requested_at": now,
+                "attempts": 0,
+                "retry_after": None,
+            },
+        )
+        async with self._session_factory() as session:
+            await session.execute(statement)
+            await session.commit()
+
+    async def record_plaid_webhook_delivery(self, raw_body: str) -> int:
+        """Persist the complete body of a signature-verified Plaid delivery before dispatch."""
+        async with self._session_factory() as session:
+            row = PlaidWebhookDeliveryRow(raw_body=raw_body, received_at=utcnow(), disposition="received")
+            session.add(row)
+            await session.flush()
+            delivery_id = row.id
+            await session.commit()
+            return delivery_id
+
+    async def update_plaid_webhook_delivery(
+        self,
+        delivery_id: int,
+        *,
+        webhook_type: str | None,
+        webhook_code: str | None,
+        item_id: str | None,
+        disposition: str,
+    ) -> None:
+        async with self._session_factory() as session:
+            row = await session.get(PlaidWebhookDeliveryRow, delivery_id)
+            if row is None:
+                raise ValueError(f"Plaid webhook delivery not found: {delivery_id}")
+            row.webhook_type = webhook_type
+            row.webhook_code = webhook_code
+            row.item_id = item_id
+            row.disposition = disposition
+            await session.commit()
+
+    async def claim_transaction_sync(self) -> TransactionSyncClaim | None:
+        now = utcnow()
+        stale_before = now - timedelta(minutes=30)
+        async with self._session_factory() as session:
+            row = (
+                await session.execute(
+                    select(TransactionSyncQueueRow)
+                    .where(
+                        or_(
+                            TransactionSyncQueueRow.claimed_at.is_(None),
+                            TransactionSyncQueueRow.claimed_at < stale_before,
+                        ),
+                        or_(TransactionSyncQueueRow.retry_after.is_(None), TransactionSyncQueueRow.retry_after <= now),
+                    )
+                    .order_by(TransactionSyncQueueRow.requested_at)
+                    .with_for_update(skip_locked=True)
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            row.claimed_at = now
+            claim = TransactionSyncClaim(item_id=row.item_id, generation=row.generation, claimed_at=now)
+            await session.commit()
+            return claim
+
+    async def finish_transaction_sync(self, claim: TransactionSyncClaim) -> None:
+        async with self._session_factory() as session:
+            row = await session.get(TransactionSyncQueueRow, claim.item_id, with_for_update=True)
+            if row is not None and row.claimed_at == claim.claimed_at:
+                if row.generation == claim.generation:
+                    await session.delete(row)
+                else:
+                    row.claimed_at = None
+                    row.attempts = 0
+                    row.retry_after = None
+            await session.commit()
+
+    async def retry_transaction_sync(self, claim: TransactionSyncClaim) -> None:
+        async with self._session_factory() as session:
+            row = await session.get(TransactionSyncQueueRow, claim.item_id)
+            if row is None or row.claimed_at != claim.claimed_at:
+                return
+            row.claimed_at = None
+            if row.generation != claim.generation:
+                row.attempts = 0
+                row.retry_after = None
+            else:
+                row.attempts += 1
+                row.retry_after = utcnow() + timedelta(seconds=min(60 * 2 ** min(row.attempts, 6), 3600))
+            await session.commit()
 
     async def finish_sync_run(self, run_id: UUID, *, status: str, error_summary: str | None = None) -> None:
         async with self._session_factory() as session:
@@ -362,19 +489,19 @@ class PlaidLinkStorage:
                 )
             await session.commit()
 
-    async def reconcile_transactions(
+    async def apply_transaction_delta(
         self,
         *,
         item_id: str,
-        start_date: date,
-        end_date: date,
-        transactions: Sequence[PlaidTransaction | dict[str, Any]],
+        added: Sequence[PlaidTransaction | dict[str, Any]],
+        modified: Sequence[PlaidTransaction | dict[str, Any]],
+        removed: Sequence[PlaidRemovedTransaction | dict[str, Any]],
+        next_cursor: str | None,
         captured_at: datetime,
     ) -> None:
-        transaction_payloads = [_validated_payload(PlaidTransaction, value) for value in transactions]
-        seen = {txn.transaction_id for txn in transaction_payloads}
         async with self._session_factory() as session:
-            for txn in transaction_payloads:
+            for transaction_value in [*added, *modified]:
+                txn = _validated_payload(PlaidTransaction, transaction_value)
                 pfc = txn.personal_finance_category
                 values = {
                     "transaction_id": txn.transaction_id,
@@ -394,27 +521,27 @@ class PlaidLinkStorage:
                     "raw_json": txn.model_dump(mode="json", exclude_unset=True),
                     "updated_at": captured_at,
                 }
-                stmt = pg_insert(TransactionRow).values(**values)
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=["transaction_id"], set_={k: v for k, v in values.items() if k != "transaction_id"}
+                statement = pg_insert(TransactionRow).values(**values)
+                statement = statement.on_conflict_do_update(
+                    index_elements=["transaction_id"],
+                    set_={key: value for key, value in values.items() if key != "transaction_id"},
                 )
-                await session.execute(stmt)
+                await session.execute(statement)
 
-            existing = (
+            for removed_value in removed:
+                removed_txn = _validated_payload(PlaidRemovedTransaction, removed_value)
                 await session.execute(
-                    select(TransactionRow).where(
-                        TransactionRow.item_id == item_id,
-                        TransactionRow.date >= start_date,
-                        TransactionRow.date <= end_date,
-                        TransactionRow.removed.is_(False),
+                    update(TransactionRow)
+                    .where(
+                        TransactionRow.item_id == item_id, TransactionRow.transaction_id == removed_txn.transaction_id
                     )
+                    .values(removed=True, removed_at=captured_at, updated_at=captured_at)
                 )
-            ).scalars()
-            for row in existing:
-                if row.transaction_id not in seen:
-                    row.removed = True
-                    row.removed_at = captured_at
-                    row.updated_at = captured_at
+
+            link = await session.get(LinkRow, item_id)
+            if link is None:
+                raise ValueError(f"Plaid link disappeared during transaction sync: {item_id}")
+            link.transactions_cursor = next_cursor
             await session.commit()
 
     async def apply_holdings(
@@ -538,6 +665,7 @@ def _stored_link(
         products_billed=list(row.products_billed),
         status=row.status,
         access_token_secret=row.access_token_secret,
+        transactions_cursor=row.transactions_cursor,
         last_synced_at=row.last_synced_at,
         earliest_transaction_date=earliest_transaction_date,
         latest_transaction_date=latest_transaction_date,

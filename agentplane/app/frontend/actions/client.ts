@@ -8,6 +8,7 @@ export type ActionPolicySetView = components["schemas"]["ActionPolicySetView"];
 export type EffectivePolicyView = components["schemas"]["EffectivePolicyView"];
 export type ReadyConditionView = components["schemas"]["ReadyConditionView"];
 export type ActionRequestView = components["schemas"]["ActionRequestView"];
+export type ActionHistoryPage = components["schemas"]["ActionHistoryPage"];
 export type ActionState = components["schemas"]["ActionState"];
 export type Verdict = components["schemas"]["Verdict"];
 
@@ -27,12 +28,19 @@ export const actionGroupService: ActionGroupService = {
 
 export interface ActionService {
   list(): Promise<ActionRequestView[]>;
+  history?(cursor?: string): Promise<ActionHistoryPage>;
   decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView>;
 }
 
 export const actionService: ActionService = {
   async list(): Promise<ActionRequestView[]> {
     const { data, error, response } = await api.GET("/actions");
+    if (error) throw new Error(httpError(response, error));
+    return data;
+  },
+
+  async history(cursor?: string): Promise<ActionHistoryPage> {
+    const { data, error, response } = await api.GET("/actions/history", { params: { query: { cursor, limit: 50 } } });
     if (error) throw new Error(httpError(response, error));
     return data;
   },

@@ -5,7 +5,10 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "website",
     srcs = ["website.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
+    ],
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",

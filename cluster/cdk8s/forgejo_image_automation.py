@@ -4,7 +4,7 @@ scanning each image and one ImagePolicy selecting its newest tag.
 Every entry has the same shape -- same registry, scan interval, pull credential and tag
 policy -- so the roster below is just the names. The `ImageUpdateAutomation` that writes
 the selected tags back into each directory's `image-pins/` Component lives in
-`cluster/k8s/flux-image-automation-ghcr`, not here; nothing in this chart carries an
+`cluster/generated/flux-image-automation-ghcr`, not here; nothing in this chart carries an
 `$imagepolicy` marker, so Flux never rewrites this generated file.
 """
 

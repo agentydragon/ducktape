@@ -6,23 +6,13 @@ PRs skip loading, analysis, and unchanged-action execution instead of paying a f
 every time. Founding constraint: no BuildBuddy/RBE or any external CI — `haku-state` source never
 leaves the cluster (`cluster/cdk8s/haku_ci/README.md`).
 
-## Status: Tier 1/1.5 landed; Tier 2 deferred
+## Status: Tier 2 deferred
 
-The runner runs every CI job in a fresh, ephemeral job container, so all Bazel state — the
-server, the output base, the `--disk_cache`, the repo cache — is discarded per job. Tier 1
-(persistent output-base/disk/repo cache on a PVC; ducktape #3467) and Tier 1.5 (`validate` folded
-into the `bazel` job so one warm server serves both; haku-state #24 + ducktape #3474, ~40 s/run
-saved) landed and took the `bazel` job from ~500–575 s cold to ~59–132 s. Even with caches warm,
-each run still pays one serial ~45 s load+analyze phase (profile-confirmed; latency-bound, not
-resource-bound) — exactly what a server kept warm across runs (Tier 2) would remove.
+Pursue this design only if one of the activation triggers below fires. The current
+runner and cache topology is documented in
+<../cdk8s/haku_ci/README.md> § What this costs: Bazel cache locality.
 
-Current state is `cluster/cdk8s/haku_ci/`: the KEDA `ScaledJob` migration (one job per pod,
-ducktape #3861) later traded Tier 1's cross-job PVC for a pod-local `emptyDir`, so cache warmth
-now spans only the Bazel invocations within one CI job — that README § "What this costs: Bazel
-cache locality" records the trade and names the fix if it proves too slow (a shared
-`--disk_cache` on a real volume).
-
-## Tier 2: decided — defer, don't drop
+## Activation triggers
 
 For a single-tenant, personal-infra CI at current PR volume, ~45 s/run does not justify standing
 up and babysitting a persistent cross-PR Bazel server — Skyframe staleness, workspace lifecycle

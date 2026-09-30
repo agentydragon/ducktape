@@ -36,7 +36,7 @@ registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
    (`{branch}-{timestamp}-{sha7}`). For in-cluster images:
    - Create `ImageRepository` + `ImagePolicy` in `generated/flux-image-automation-forgejo/`
      (with `secretRef: forgejo-images-creds` on the repository) or, for a GHCR image,
-     in `k8s/flux-image-automation-ghcr/`
+     in `generated/flux-image-automation-ghcr/`
    - Add `{"$imagepolicy": "flux-system:<policy-name>"}` comment to the image field
    - **GHCR only: add the `ImageRepository` to the GitHub webhook receiver** at
      `cdk8s/flux_webhook/chart.py` — without this, the image only

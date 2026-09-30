@@ -198,11 +198,11 @@ server. Pause Ollama by a focused GitOps PR immediately before exclusive experim
 the operator has authorized this again. No reboot or full NixOS activation.
 
 The reported ~1 token/s on HDD/Ollama versus ~30 on SSD/llama.cpp changes several
-variables at once: storage, runtime version, model representation, placement, context,
-and cache state. Treat it as an operational regression to isolate, not proof that
-HDD or the older runtime alone explains all of it. #8041 records earlier Ollama
-findings; those predate the currently deployed 0.34.4. Check current logs and the
-actual loaded model/context, rather than only the environment default.
+variables at once. The September 27 SSD-backed Ollama run measured 29.07 tok/s while
+continuing a cached 145K history, but also changed quant, prompt, context, placement,
+and cache state; it does not isolate the earlier slowdown's cause. #8041 records older
+Ollama findings. Check current logs and the actual loaded model/context, rather than
+only the environment default.
 
 ### What the Artificial Analysis comparison does and does not say
 
@@ -239,10 +239,12 @@ an experiment-allocation policy, not a claim that either model will win.
 
 September 27: [cluster SSD serving acceptance](runs/2026-09-27_ollama_ssd/README.md)
 now passes 24/24 LiteLLM text/tool probes across both 128K/256K routes and all three
-API shapes. A 145K input passes at 256K with 4/2 GiB fit margins; a continuation
-decodes at 29.07 tokens/s. Full-window reasoning quality and parallel slots remain
-untested. The [updated tradeoff plan](runs/2026-09-27_ollama_ssd/tradeoffs.md) separates
-measured capacity from projections and records Ollama's native-context clamp.
+API shapes. With 4/2 GiB fit targets, short 1,024-token generations measured 50.21 /
+60.01 tok/s at 128K and 44.39 / 49.48 tok/s at 256K (first / repeat); the 145K
+continuation measured 29.07 tok/s. A 145K input passes at 256K. The 2/0 GiB target
+passes short requests but OOMs during that long prefill. Full-window reasoning quality
+and parallel slots remain untested. The [updated tradeoff plan](runs/2026-09-27_ollama_ssd/tradeoffs.md)
+separates measured capacity from projections and records Ollama's native-context clamp.
 
 Reuse the demonstrated SSD configuration for these measurements.
 Capture effective settings and do only enough startup/tool checking to establish

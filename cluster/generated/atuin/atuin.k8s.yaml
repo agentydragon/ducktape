@@ -54,6 +54,7 @@ spec:
       labels:
         app.kubernetes.io/name: atuin
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - start

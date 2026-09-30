@@ -64,15 +64,7 @@ there's no new clash.
 
 ## Proposed Changes (Web Mode)
 
-### 1. Stable proxy socket path — no longer applicable
-
-Dropped. This proposal targeted a `/tmp/claude-hd/<session-uuid>/remote-proxy.sock`
-that the Bazel server reached through `--remote_proxy`. That mechanism has since
-been removed: `--remote_proxy` appears nowhere in the hook code, and
-`/tmp/claude-hd/<sid>/` now holds only the daemon socket and logs. Nothing here
-needs a stable path.
-
-### 2. Stable bazelrc path
+### 1. Stable bazelrc path
 
 **Current**: `~/.claude/session-env/<session-uuid>/bazelrc`
 **Proposed**: `~/.claude/session-env/<CLAUDE_CODE_SESSION_ID>/bazelrc`
@@ -82,7 +74,7 @@ The bazel wrapper injects `--bazelrc=<path>`. If the path doesn't
 change, Bazel doesn't detect a startup option change and keeps the
 existing server.
 
-### 3. Session-env directory structure
+### 2. Session-env directory structure
 
 **Current**: one directory per internal UUID
 
@@ -105,13 +97,6 @@ per-UUID subdirs for things that genuinely need per-transition state
       1c9fe809/                           (historical, can be cleaned up)
       3a1f5b5a/                           (current transition's logs, etc.)
 ```
-
-### 4. Companion process detection
-
-Companion processes (instruction pre-loading) are detected by the
-absence of `CLAUDE_ENV_FILE` in the hook env. When this is missing,
-the daemon should skip SessionStart setup entirely — no proxy, no
-bazelrc, no supervisor.
 
 ## What the sandbox preserves
 
@@ -169,15 +154,11 @@ mode would be novel.
 
 1. **Make `CLAUDE_CODE_SESSION_ID` available to SessionPaths** — thread
    it from CallerContext through to path computation
-2. **Stable proxy socket path** — change daemon to use
-   `CLAUDE_CODE_SESSION_ID` as the socket directory key in web mode
-3. **Stable bazelrc** — change path generation to use stable key
-4. **Bazel wrapper** — update `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR` to
+2. **Stable bazelrc** — change path generation to use stable key
+3. **Bazel wrapper** — update `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR` to
    point to stable dir (or make wrapper resolve it)
-5. **Cleanup** — garbage-collect old per-UUID dirs that aren't the
+4. **Cleanup** — garbage-collect old per-UUID dirs that aren't the
    current stable dir
-6. **Companion skip** — check for `CLAUDE_ENV_FILE` absence early in
-   daemon startup, skip all setup if missing
 
 ## Risks
 

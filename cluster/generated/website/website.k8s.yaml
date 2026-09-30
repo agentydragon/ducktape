@@ -140,6 +140,7 @@ spec:
       labels:
         app.kubernetes.io/name: website
     spec:
+      automountServiceAccountToken: false
       containers:
         - image: nginxinc/nginx-unprivileged:1.31-alpine
           livenessProbe:

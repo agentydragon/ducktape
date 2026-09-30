@@ -4,4 +4,4 @@ resources:
   - agentplane.k8s.yaml
   - web-push-vapid.sops.yaml
 components:
-  - ./image-pins
+  - image-pins

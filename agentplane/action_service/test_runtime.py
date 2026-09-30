@@ -516,6 +516,8 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
         catalog,
         callers=in_sync_index(),
         updates=ActionUpdates(db_url),
+        direct_wait_seconds=30,
+        max_wait_seconds=30,
     )
     server = ActionServer(uvicorn.Config(app, timeout_graceful_shutdown=5), service)
     original_handler = signal.getsignal(signal.SIGTERM)

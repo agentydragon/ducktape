@@ -1,5 +1,10 @@
 """agentplane-testing: one replica of everything, its own Dex for operator login, and
 credentialless MCP fixtures in place of the real action groups.
+
+One Flux Kustomization (`agentplane_testing`) applies the whole environment:
+`agentplane.k8s.yaml`, the `litellm-credentials.k8s.yaml` that `litellm/credentials.py`
+writes beside it, and the hand-written `image_pins` Component its root Kustomization
+includes across the roots.
 """
 
 from __future__ import annotations
@@ -43,6 +48,7 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 
 _NAMESPACE = "agentplane-testing"
@@ -71,6 +77,8 @@ _ACTION_FEDERATION = DirectFederationSettings(
 _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
     operator_oidc=_FEDERATION_TARGET,
     allowed_service_account_namespaces=frozenset({_NAMESPACE}),
+    direct_wait_seconds=30,
+    max_wait_seconds=180,
     mcp_servers={
         "example": McpOAuthServer(
             server_id="example",
@@ -122,7 +130,9 @@ ENV = Environment(
         "Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, "
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
-    extra_resources=(),
+    output_dir=f"{GENERATED_ROOT}/{_NAMESPACE}",
+    image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
+    extra_resources=("litellm-credentials.k8s.yaml",),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config=testing_config.config(action_federation=_ACTION_FEDERATION),
     db=DbProps(instances=1),

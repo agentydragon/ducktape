@@ -13,12 +13,21 @@ import pytest_bazel
 from finance.evidence.loading import (
     fred_series_frame,
     french_factors_frame,
+    french_international_market_frame,
     monthly_last,
     read_monthly_levels,
     source_bytes,
     yahoo_adjusted_close_frame,
 )
-from finance.evidence.sources import EVIDENCE_SOURCES, FRED_CPI, FRENCH_FACTORS, YAHOO_BTC, ZILLOW_ZHVI, EvidenceKind
+from finance.evidence.sources import (
+    EVIDENCE_SOURCES,
+    FRED_CPI,
+    FRENCH_FACTORS,
+    FRENCH_INTERNATIONAL_INDICES,
+    YAHOO_BTC,
+    ZILLOW_ZHVI,
+    EvidenceKind,
+)
 
 FRED_TEXT = (
     "observation_date,CPIAUCSL\n"
@@ -126,10 +135,6 @@ def test_source_bytes_missing_file_raises(tmp_path: Path) -> None:
         source_bytes(tmp_path, FRED_CPI)
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
-
-
 def _french_zip(body: str, *, member: str = "F-F_Research_Data_Factors.csv") -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -211,3 +216,92 @@ def test_read_monthly_levels_rejects_a_french_factors_file() -> None:
 
     with pytest.raises(ValueError, match="not one level series"):
         read_monthly_levels(Path("/nonexistent"), FRENCH_FACTORS)
+
+
+def _international_section(title: str, rows: list[tuple[str, float]]) -> str:
+    header = "                -- BE/ME --   --- E/P ---\r\n          Mkt   High    Low   High    Low\r\n"
+    body = "".join(f"{stamp}  {mkt:5.2f}  99.00  99.00  99.00  99.00\r\n" for stamp, mkt in rows)
+    return f"     {title}\r\n{header}{body}\r\n"
+
+
+_INTERNATIONAL_MONTHS = ("197501", "197502", "197503")
+
+
+def _international_zip(target_rows: list[tuple[str, float]], *, member: str = "Ind_all.Dat") -> bytes:
+    """`Ind_all.Dat`'s layout in miniature: the wanted block among decoys that share its columns.
+
+    Every decoy carries returns far from the wanted block's, so reading any of them shows.
+    """
+
+    body = "\r\n" + "".join(
+        [
+            _international_section("Value-Weight Dollar Returns      All 4 Data Items Not Reqd", target_rows),
+            _international_section(
+                "Value-Weight Local  Returns      All 4 Data Items Not Reqd", [(m, 50.0) for m in _INTERNATIONAL_MONTHS]
+            ),
+            _international_section(
+                "Value-Weight Dollar Returns      All 4 Data Items Required", [(m, 60.0) for m in _INTERNATIONAL_MONTHS]
+            ),
+            _international_section("Value-Weight Dollar Returns      All 4 Data Items Not Reqd", [("  1975", 70.0)]),
+        ]
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(member, body + "Copyright 2026 Kenneth R. French\r\n")
+        archive.writestr("Ind_UK.Dat", body.replace(" 1.00", "40.00"))
+    return buffer.getvalue()
+
+
+_INTERNATIONAL_TARGET = [("197501", 1.0), ("197502", -2.0), ("197503", 3.0)]
+
+
+def test_international_market_is_the_all_country_dollar_mkt_column_as_decimals() -> None:
+    frame = french_international_market_frame(_international_zip(_INTERNATIONAL_TARGET), FRENCH_INTERNATIONAL_INDICES)
+
+    assert frame.get_column("month").to_list() == [date(1975, 1, 1), date(1975, 2, 1), date(1975, 3, 1)]
+    assert frame.get_column("market_total_return").to_list() == pytest.approx([0.01, -0.02, 0.03])
+
+
+def test_international_sections_sharing_the_columns_are_not_read() -> None:
+    """Local-currency, all-ratios-required and annual blocks all parse as plausible returns under
+    the same `Mkt` header; reading one would mislabel currency or universe without a malformed
+    value anywhere."""
+
+    frame = french_international_market_frame(_international_zip(_INTERNATIONAL_TARGET), FRENCH_INTERNATIONAL_INDICES)
+
+    assert frame.height == len(_INTERNATIONAL_TARGET)
+    assert frame.get_column("market_total_return").abs().max() < 0.05
+
+
+@pytest.mark.parametrize(
+    ("rows", "message"),
+    [
+        ([("197501", 1.0), ("197503", 3.0)], "gapless"),
+        ([("197501", 1.0), ("197502", -99.99), ("197503", 3.0)], "missing in 1975-02-01"),
+    ],
+)
+def test_international_gaps_and_missing_markers_are_rejected(rows: list[tuple[str, float]], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        french_international_market_frame(_international_zip(rows), FRENCH_INTERNATIONAL_INDICES)
+
+
+def test_international_archive_without_the_all_country_member_is_rejected() -> None:
+    with pytest.raises(ValueError, match=r"no Ind_all\.Dat"):
+        french_international_market_frame(
+            _international_zip(_INTERNATIONAL_TARGET, member="Ind_Asia_Pacific.Dat"), FRENCH_INTERNATIONAL_INDICES
+        )
+
+
+def test_international_file_without_its_monthly_dollar_section_is_rejected() -> None:
+    body = _international_zip(_INTERNATIONAL_TARGET)
+    with zipfile.ZipFile(io.BytesIO(body)) as archive:
+        text = archive.read("Ind_all.Dat").decode().replace("Dollar Returns      All 4 Data Items Not Reqd", "Dollar")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("Ind_all.Dat", text)
+    with pytest.raises(ValueError, match="0 monthly"):
+        french_international_market_frame(buffer.getvalue(), FRENCH_INTERNATIONAL_INDICES)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

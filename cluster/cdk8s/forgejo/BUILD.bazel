@@ -9,6 +9,7 @@ py_library(
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/agentplane_index:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
         ":cache",

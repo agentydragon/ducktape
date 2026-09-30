@@ -129,27 +129,10 @@ through the transport. Three things it needs:
   deliberate — you have to name the session; ranked retrieval surfaces it by accident, at the top
   of the results, in answer to an innocent question.
 
-### Named indexes are the landed foundation
-
-The structural index split remains implemented but is not currently wired into production.
-`recall_indexes` configures named `git` and `chat` indexes; `search(index_ids=...)` ranks across the
-selected names; and `index_status` reports each configured index. The implementation and eventual
-operational contract live in <../recall_index/README.md>; this plan no longer repeats them.
-
-The conversation-read boundary is also built, in profile terms rather than tier terms (#4431
-stage 5): if Recall is re-enabled, per-profile `recall_index_ids` grants will be enforced once in
-the console, chat
-occurrences link to their `conversation_id`, and one profile-DAG authorizer
-(`haku/console/conversation_read_access.py` over `can_read_profiles`) fences `haku_conversations`
-drilldowns and `haku_index` chat search identically against the conversation's pinned
-`access_profile_id` — unknown or unpinned data fails closed for agents. The conversation's pinned
-profile is the label; a future tier is a change of how the label is derived (room tier, agent
-kind), not of the seam that enforces it.
-
-What is deliberately **not** built is the tier half itself — tiers on agent kinds and Matrix
-rooms, tier derivation for conversations, and tier-specific chat indexes if the label ever needs
-to move off the pinned profile — tracked in <../console/TODO.md> § Scope conversation reads to
-the reader's trust tier. The RLS alternative and read-surface inventory remain in
+Still open: define tiers for agent kinds and Matrix rooms, derive conversation
+trust labels, and add tier-specific chat indexes if profile labels are no longer
+sufficient. Track implementation in <../console/TODO.md> § Scope conversation reads
+to the reader's trust tier; the current Recall read contract remains in
 <../recall_index/README.md> § Read scoping.
 
 ## Running more than one agent at once

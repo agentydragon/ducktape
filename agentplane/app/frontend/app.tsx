@@ -9,11 +9,11 @@ import { ActionHistory } from "./actions/history";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
-import { ProjectedSession } from "./projected_session";
+import { ProjectedSession } from "./threads/projected_session";
 import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
-import { electricThreadSync } from "./thread_store";
-import { ThreadSyncContext } from "./thread_sync";
+import { electricThreadSync } from "./threads/thread_store";
+import { ThreadSyncContext } from "./threads/thread_sync";
 import { TopbarContext, type TopbarSlots } from "./topbar";
 import "./shell.css";
 
@@ -62,6 +62,23 @@ function SandboxRoute(): JSX.Element {
       onBack={() => void navigate("/sandboxes")}
       onOpenThread={(threadId) => void navigate(`/threads/${encodeURIComponent(threadId)}`)}
     />
+  );
+}
+
+function ActionsPage(): JSX.Element {
+  return (
+    <Stack>
+      <div>
+        <Text fw={700} size="lg">
+          Actions
+        </Text>
+        <Text c="dimmed" size="sm">
+          Review requests awaiting a decision, then browse completed actions.
+        </Text>
+      </div>
+      <ActionRequests embedded />
+      <ActionHistory embedded />
+    </Stack>
   );
 }
 
@@ -123,8 +140,7 @@ function AppRoutes(): JSX.Element {
             <Routes>
               <Route path="/" element={<ThreadsLanding />} />
               <Route path="/sandboxes" element={<SandboxListRoute />} />
-              <Route path="/actions" element={<ActionRequests />} />
-              <Route path="/actions/history" element={<ActionHistory />} />
+              <Route path="/actions" element={<ActionsPage />} />
               <Route path="/actions/:requestId" element={<ActionRequests />} />
               <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
               <Route path="/sandboxes/:name" element={<SandboxRoute />} />
