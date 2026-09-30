@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::OwnerId;
-use analysis::graph::{OwnerEdge, OwnerEdgeId, OwnerGraph};
+use analysis::graph::{EndpointView, OwnerEdge, OwnerEdgeId, OwnerGraph, project_endpoints};
 use analysis::ids::ModuleId;
 use analysis::partition::Partition;
 use analysis::reports::SccCore;
@@ -261,20 +261,15 @@ pub(super) fn increment_delta(
     }
 }
 
+/// What `edge` contributes to the quotient under the owner → module
+/// assignment `module_of`, projected through the gate view exactly as
+/// `IncrementalQuotient::add_current_edge` does for the committed state.
 pub(super) fn edge_contribution(
     edge: &OwnerEdge,
-    from: ModuleId,
-    to: ModuleId,
+    residual: ModuleId,
+    module_of: impl Fn(OwnerId) -> ModuleId,
 ) -> Option<EdgeContribution> {
-    if from == to {
-        return None;
-    }
-    // NOTE: cross-module at-init promoted edges are intentionally NOT
-    // filtered here — the matching gate-side view in
-    // `partition_endpoints(.., EndpointView::Gate)` keeps them for
-    // soundness (see
-    // `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`).
-
+    let (from, to) = project_endpoints(edge, residual, EndpointView::Gate, module_of)?;
     let kind = if edge.reason.is_rebind() {
         EdgeContributionKind::Rebind
     } else {
@@ -1151,18 +1146,15 @@ impl IncrementalQuotient {
         let mut overlay = QuotientOverlay::default();
         for edge_id in impacted_edges {
             let edge = owner_graph.edge(edge_id);
-            let current = edge_contribution(edge, partition.of(edge.from), partition.of(edge.to));
-            let next_from = if owners.contains(&edge.from) {
-                to
-            } else {
-                partition.of(edge.from)
-            };
-            let next_to = if owners.contains(&edge.to) {
-                to
-            } else {
-                partition.of(edge.to)
-            };
-            let next = edge_contribution(edge, next_from, next_to);
+            let current =
+                edge_contribution(edge, partition.residual(), |owner| partition.of(owner));
+            let next = edge_contribution(edge, partition.residual(), |owner| {
+                if owners.contains(&owner) {
+                    to
+                } else {
+                    partition.of(owner)
+                }
+            });
             if current == next {
                 continue;
             }

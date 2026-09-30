@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
-use crate::StatementOrdinal;
-use crate::partition::Partition;
+use crate::{ModuleId, StatementOrdinal};
 
 use super::owner_graph::OwnerId;
 
@@ -52,15 +51,17 @@ impl EdgeRole {
     }
 
     /// `true` if this is a `PromotedAtInit` role and the callee owner
-    /// lives in a different module than the caller per `partition`.
+    /// lives in a different module than the caller per `module_of`.
     /// The lenient projection view (quotient, reports) drops such
     /// edges; the gate view keeps them.
-    pub fn is_cross_module_promotion(self, from: OwnerId, partition: &Partition) -> bool {
+    pub fn is_cross_module_promotion(
+        self,
+        from: OwnerId,
+        module_of: impl Fn(OwnerId) -> ModuleId,
+    ) -> bool {
         match self {
             EdgeRole::Direct => false,
-            EdgeRole::PromotedAtInit { callee_owner } => {
-                partition.of(callee_owner) != partition.of(from)
-            }
+            EdgeRole::PromotedAtInit { callee_owner } => module_of(callee_owner) != module_of(from),
         }
     }
 }

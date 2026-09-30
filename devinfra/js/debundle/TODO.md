@@ -233,22 +233,10 @@ _d.{name};` by string interpolation, so a string-literal export name in a vendor
   and `x = 1`, and `get a(){}` and `a(){}`, to identical facts despite the
   "faithful, fail-closed" claim. A `static` needle could match a non-static
   subject. Confirm with a selector-matcher test case pairing the two.
-- **The incremental overlay skips the gate view's promoted-edge rule.** Status:
-  reported; nothing exercises it. `realizability/incremental_quotient.rs`
-  `overlay_for_move` and `edge_contribution` compute endpoints directly from
-  `partition.of(..)`, while the committed path and the pure reference go through
-  `partition_endpoints(.., EndpointView::Gate)`, which drops a `PromotedAtInit`
-  edge whose `callee_owner == edge.from` when `from` is the residual module
-  (`graph/quotient.rs` states that every quotient-projecting consumer must use
-  it). When the target of a fallback-promoted edge from the residual moves, the
-  overlay can add a spurious edge, so the ladder can reject a merge the gate
-  accepts, or the two paths disagree. Add a promoted-edge fixture to
-  `peel/gate_differential_test.rs` first (its sweep generates none and
-  `report_fixtures.rs` sets `role: None`). Related, likely benign: the post-seed
-  reporting in `peel/quotient.rs` keeps an SCC whose owners collapse into one
-  class, while the `translate_*` helpers drop it and
-  `would_be_cycles_after_contract` fabricates a two-class evidence, so one SCC
-  reads differently by path.
+- **One SCC reads differently by path in the peel kernel.** Status: reported,
+  likely benign. The post-seed reporting in `peel/quotient.rs` keeps an SCC
+  whose owners collapse into one class, while the `translate_*` helpers drop it
+  and `would_be_cycles_after_contract` fabricates a two-class evidence.
 - **`SwapVendorChunksConfig` has two defaults.** Status: reported. The derived
   `Default` gives `write = false`; the serde field default is `true`. Omitting
   `swap_vendor_chunks` therefore differs from writing `{}`, though the field doc

@@ -5,7 +5,7 @@ use crate::ModuleId;
 use crate::partition::Partition;
 
 use super::edge::{EdgeRole, OwnerEdge};
-use super::owner_graph::OwnerGraph;
+use super::owner_graph::{OwnerGraph, OwnerId};
 
 /// The I∪S module dependency graph: the quotient of an [`OwnerGraph`]
 /// by a [`Partition`], one edge per directed `(from, to)` module pair.
@@ -75,15 +75,32 @@ pub enum EndpointView {
 ///   for the regression fixture.
 ///
 /// Invariant: every quotient-projecting consumer of the owner graph
-/// MUST route through this function so the lenient-vs-gate decision
-/// stays welded to the edge's [`EdgeRole`] at one source-level point.
+/// MUST route through this function (or [`project_endpoints`], its form
+/// for an owner assignment that is not a materialised [`Partition`]) so
+/// the lenient-vs-gate decision stays welded to the edge's [`EdgeRole`]
+/// at one source-level point.
 pub fn partition_endpoints(
     edge: &OwnerEdge,
     partition: &Partition,
     view: EndpointView,
 ) -> Option<(ModuleId, ModuleId)> {
-    let from = partition.of(edge.from);
-    let to = partition.of(edge.to);
+    project_endpoints(edge, partition.residual(), view, |owner| {
+        partition.of(owner)
+    })
+}
+
+/// [`partition_endpoints`] under an arbitrary owner → module
+/// assignment `module_of`, with `residual` the assignment's ESM DFS
+/// root. Lets the gate's speculative move overlay project edges under
+/// the post-move assignment without cloning the partition.
+pub fn project_endpoints(
+    edge: &OwnerEdge,
+    residual: ModuleId,
+    view: EndpointView,
+    module_of: impl Fn(OwnerId) -> ModuleId,
+) -> Option<(ModuleId, ModuleId)> {
+    let from = module_of(edge.from);
+    let to = module_of(edge.to);
     if from == to {
         return None;
     }
@@ -100,7 +117,7 @@ pub fn partition_endpoints(
     // for entry.
     if let EdgeRole::PromotedAtInit { callee_owner } = edge.reason.role
         && callee_owner == edge.from
-        && from == partition.residual()
+        && from == residual
     {
         return None;
     }
@@ -108,7 +125,7 @@ pub fn partition_endpoints(
         && edge
             .reason
             .role
-            .is_cross_module_promotion(edge.from, partition)
+            .is_cross_module_promotion(edge.from, module_of)
     {
         return None;
     }
