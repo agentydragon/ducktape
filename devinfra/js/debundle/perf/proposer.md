@@ -43,7 +43,7 @@ greedy_merge_to_convergence
         └── ladder_decision_for_merge
             └── realizability_index::ladder_decision_after_moving_owners_touching
                 ├── tier 0: delta-free → cached pre-state verdict
-                ├── tier 1: constraining CondensationOrder (DSU + PK window-DFS)
+                ├── tier 1: constraining CondensationOrder (DSU + cone DFS)
                 ├── tier 2: I-graph CondensationOrder (scc_containing fallback
                 │           on removal-inside-SCC overlays)
                 └── tier 3: shared EsmEvaluationSimulator over the I-SCC

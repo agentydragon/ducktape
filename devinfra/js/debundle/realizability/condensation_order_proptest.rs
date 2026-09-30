@@ -1,23 +1,21 @@
 //! Proptest differential suite for [`CondensationOrder`]: random
 //! digraphs driven through proptest-generated interleaved sequences of
-//! edge insertions / removals / contractions / invalidations with
-//! speculative overlay queries, checked **after every operation**
-//! against a petgraph `tarjan_scc` brute-force recompute (the shared
-//! reference implementations in `condensation_order::test_support`).
+//! edge insertions / removals / invalidations with speculative overlay
+//! queries, checked **after every operation** against a petgraph
+//! `tarjan_scc` brute-force recompute (the shared reference in
+//! `condensation_order::test_support`).
 //!
 //! The case count is bounded for CI (see [`ci_config`]); for a longer
 //! local run override it via `bbr test //devinfra/js/debundle:gate_test
 //! --test_env=PROPTEST_CASES=2000`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use proptest::prelude::*;
 use proptest::test_runner::TestCaseError;
 
-use super::CondensationOrder;
-use super::condensation_order::test_support::{
-    TestAlias, assert_multi_matches_brute, brute_would_join,
-};
+use super::condensation_order::CondensationOrder;
+use super::condensation_order::test_support::{brute_would_join, in_multi_scc};
 use crate::rollback_graph::RollbackDiGraph;
 
 /// Node universe size. Small enough that the brute-force recompute
@@ -30,7 +28,6 @@ const NODES: usize = 8;
 enum Op {
     InsertEdge(usize, usize),
     RemoveEdge(usize, usize),
-    Contract { winner: usize, loser: usize },
     Invalidate,
 }
 
@@ -45,12 +42,12 @@ struct OverlayEntry {
 }
 
 /// One step: a committed mutation plus a speculative
-/// `would_join_multi_scc` query (pair + overlay) differential-checked
+/// `would_join_multi_scc` query (node + overlay) differential-checked
 /// on top of the mutated state.
 #[derive(Debug, Clone)]
 struct Step {
     op: Op,
-    query: (usize, usize),
+    query: usize,
     overlay: Vec<OverlayEntry>,
 }
 
@@ -62,7 +59,6 @@ fn arb_op() -> impl Strategy<Value = Op> {
     prop_oneof![
         4 => (arb_node(), arb_node()).prop_map(|(a, b)| Op::InsertEdge(a, b)),
         3 => (arb_node(), arb_node()).prop_map(|(a, b)| Op::RemoveEdge(a, b)),
-        2 => (arb_node(), arb_node()).prop_map(|(winner, loser)| Op::Contract { winner, loser }),
         1 => Just(Op::Invalidate),
     ]
 }
@@ -79,8 +75,11 @@ fn arb_overlay_entries() -> impl Strategy<Value = Vec<OverlayEntry>> {
 }
 
 fn arb_step() -> impl Strategy<Value = Step> {
-    (arb_op(), (arb_node(), arb_node()), arb_overlay_entries())
-        .prop_map(|(op, query, overlay)| Step { op, query, overlay })
+    (arb_op(), arb_node(), arb_overlay_entries()).prop_map(|(op, query, overlay)| Step {
+        op,
+        query,
+        overlay,
+    })
 }
 
 /// Resolve generated overlay entries against the *current* base
@@ -122,17 +121,14 @@ proptest! {
 
     /// After every committed operation: the internal invariants hold
     /// (`validate` — rank/inverse agreement, the topological rank
-    /// order over the condensation, module-count bookkeeping),
-    /// per-node multi-SCC membership matches a fresh tarjan
-    /// recompute, and a speculative overlay query matches the
-    /// brute-force identified-graph reference.
+    /// order over the condensation, member bookkeeping), per-node
+    /// multi-SCC membership matches a fresh tarjan recompute, and a
+    /// speculative overlay query matches the brute-force reference.
     #[test]
     fn mutation_sequences_match_brute_force(
         steps in proptest::collection::vec(arb_step(), 1..50),
     ) {
-        let universe: BTreeSet<usize> = (0..NODES).collect();
         let mut base = RollbackDiGraph::new();
-        let mut alias = TestAlias::default();
         let mut order = CondensationOrder::new();
         for (step_index, step) in steps.iter().enumerate() {
             match step.op {
@@ -148,26 +144,27 @@ proptest! {
                         order.remove_edge(&base, a, b);
                     }
                 }
-                Op::Contract { winner, loser } => {
-                    if winner != loser {
-                        order.apply_contract(&base, winner, loser);
-                        alias.union(winner, loser);
-                    }
-                }
                 Op::Invalidate => order.invalidate(),
             }
             let context = format!("step {step_index}: {:?}", step.op);
-            assert_multi_matches_brute(&mut order, &base, &alias, &universe, &context);
+            for n in 0..NODES {
+                prop_assert_eq!(
+                    in_multi_scc(&mut order, &base, n),
+                    brute_would_join(&base, &BTreeMap::new(), n),
+                    "{}: multi-SCC membership of {}",
+                    context, n,
+                );
+            }
             if let Err(violation) = order.validate(&base) {
                 return Err(TestCaseError::fail(format!("{context}: {violation}")));
             }
             let overlay = build_overlay(&base, &step.overlay);
-            let (u, v) = step.query;
+            let n = step.query;
             prop_assert_eq!(
-                order.would_join_multi_scc(&base, &overlay, u, v),
-                brute_would_join(&base, &alias, &overlay, u, v),
-                "{}: would_join({}, {}) overlay={:?}",
-                context, u, v, overlay,
+                order.would_join_multi_scc(&base, &overlay, n),
+                brute_would_join(&base, &overlay, n),
+                "{}: would_join({}) overlay={:?}",
+                context, n, overlay,
             );
         }
     }
@@ -179,8 +176,7 @@ proptest! {
     fn cold_start_would_join_matches_brute_force(
         edges in proptest::collection::vec((arb_node(), arb_node()), 0..30),
         entries in arb_overlay_entries(),
-        u in arb_node(),
-        v in arb_node(),
+        n in arb_node(),
     ) {
         let mut base = RollbackDiGraph::new();
         for &(a, b) in &edges {
@@ -189,13 +185,12 @@ proptest! {
             }
         }
         let overlay = build_overlay(&base, &entries);
-        let alias = TestAlias::default();
         let mut order = CondensationOrder::new();
         prop_assert_eq!(
-            order.would_join_multi_scc(&base, &overlay, u, v),
-            brute_would_join(&base, &alias, &overlay, u, v),
-            "would_join({}, {}) overlay={:?}",
-            u, v, overlay,
+            order.would_join_multi_scc(&base, &overlay, n),
+            brute_would_join(&base, &overlay, n),
+            "would_join({}) overlay={:?}",
+            n, overlay,
         );
     }
 }

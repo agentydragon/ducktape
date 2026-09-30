@@ -1099,7 +1099,6 @@ impl IncrementalQuotient {
             &self.constraining_graph,
             &overlay.constraining_delta,
             module,
-            module,
         ) {
             Some(LadderDecision::ConstrainingCycleReject)
         } else if self.any_cross_rebind_touching_with_overlay(module, overlay) {
@@ -1123,12 +1122,10 @@ impl IncrementalQuotient {
         } else {
             None
         };
-        let multi_i_scc = self.i_order.borrow_mut().would_join_multi_scc(
-            &self.i_graph,
-            &overlay.i_delta,
-            module,
-            module,
-        );
+        let multi_i_scc =
+            self.i_order
+                .borrow_mut()
+                .would_join_multi_scc(&self.i_graph, &overlay.i_delta, module);
         if !multi_i_scc {
             let tier2_nanos =
                 tier2_start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed()));
