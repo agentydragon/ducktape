@@ -1,7 +1,7 @@
 """grocy user-perms reconciler OCI image — converges Grocy user permissions to policy.yaml.
 
-Household-agnostic: each grocy household overlay (cluster/k8s/grocy/{sf,vallejo}/user-perms)
-instantiates the same Job/CronJob/policy in its own namespace.
+Household-agnostic: cluster/cdk8s/grocy/user_perms.py renders the same Job, CronJob and policy
+into each grocy household's namespace.
 """
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
@@ -12,6 +12,7 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "provision",
     srcs = ["provision.py"],
+    visibility = ["//cluster/cdk8s/grocy:__pkg__"],
     deps = [
         "@pypi//httpx",
         "@pypi//pydantic",
