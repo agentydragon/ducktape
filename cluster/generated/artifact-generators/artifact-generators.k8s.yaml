@@ -121,8 +121,8 @@ spec:
       name: tofu-state-db
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/mcp-oauth-state/**"
-          to: "@artifact/cluster/k8s/mcp-oauth-state/"
+        - from: "@repo/cluster/generated/mcp-oauth-state/**"
+          to: "@artifact/cluster/generated/mcp-oauth-state/"
       name: mcp-oauth-state
       originRevision: "@repo"
     - copy:
@@ -236,8 +236,8 @@ spec:
       name: cdi
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/flux-image-automation-ghcr/**"
-          to: "@artifact/cluster/k8s/flux-image-automation-ghcr/"
+        - from: "@repo/cluster/generated/flux-image-automation-ghcr/**"
+          to: "@artifact/cluster/generated/flux-image-automation-ghcr/"
       name: flux-image-automation-ghcr
       originRevision: "@repo"
     - copy:
@@ -428,8 +428,8 @@ spec:
       name: cpap-sync
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/dcgm-exporter/**"
-          to: "@artifact/cluster/k8s/dcgm-exporter/"
+        - from: "@repo/cluster/generated/dcgm-exporter/**"
+          to: "@artifact/cluster/generated/dcgm-exporter/"
       name: dcgm-exporter
       originRevision: "@repo"
     - copy:
@@ -466,6 +466,11 @@ spec:
         - from: "@repo/cluster/generated/forgejo/budget-namespace/**"
           to: "@artifact/cluster/generated/forgejo/budget-namespace/"
       name: budget-namespace
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/gaffer-private-source/**"
+          to: "@artifact/cluster/generated/gaffer-private-source/"
+      name: gaffer-private-source
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/gatus/**"

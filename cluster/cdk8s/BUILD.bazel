@@ -1637,7 +1637,6 @@ py_library(
         "//cluster/cdk8s/clickhouse:schema",
         "//cluster/cdk8s/cpap_sync:app",
         "//cluster/cdk8s/dcgm_exporter:exporter",
-        "//cluster/cdk8s/dcgm_exporter:flux_kustomizations",
         "//cluster/cdk8s/external_secrets:config",
         "//cluster/cdk8s/external_secrets:flux_kustomizations",
         "//cluster/cdk8s/external_secrets:operator",
