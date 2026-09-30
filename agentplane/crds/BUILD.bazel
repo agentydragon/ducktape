@@ -1,10 +1,11 @@
-# Typed cdk8s Python constructs generated from this repo's own Agentplane CRDs
-# (cluster/k8s/agentplane-crds/crd-*.yaml). These are first-party schemas -- their
-# authoritative source, not a copy of anything upstream -- so importing directly from
-# their in-repo location is correct (see devinfra/js/cdk8s_import.bzl's crd arg doc,
-# which only warns against vendoring a copy of an *upstream* CRD). See
-# cluster/docs/cdk8s.md. `bb run :generate_bin` writes the CRDs' derived schemas: the
-# binding CRDs' subject block and the kubeconform schemas under cluster/schemas/.
+# This repo's own Agentplane CRDs (crd-*.yaml), and the typed cdk8s Python constructs
+# generated from them. These are first-party schemas -- their authoritative source, not a
+# copy of anything upstream -- so importing directly from them is correct (see
+# devinfra/js/cdk8s_import.bzl's crd arg doc, which only warns against vendoring a copy of
+# an *upstream* CRD). See cluster/docs/cdk8s.md. `bb run :generate_bin` writes the CRDs'
+# derived schemas: the binding CRDs' subject block and the kubeconform schemas under
+# cluster/schemas/. //cluster/cdk8s:generate_manifests copies the CRDs into
+# cluster/generated/agentplane-crds, the directory Flux applies.
 
 # Each *_crds module below is generated at build time by cdk8s_import, not a pip
 # package -- gazelle can't resolve it from the requirements manifest.
@@ -17,9 +18,16 @@
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
+filegroup(
+    name = "crds",
+    srcs = glob(["crd-*.yaml"]),
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)
+
 py_library(
     name = "generate",
     srcs = ["generate.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//agentplane:subjects",
         "//util/bazel:workspace",
@@ -39,11 +47,7 @@ py_test(
     name = "test_generate",
     srcs = ["test_generate.py"],
     data = [
-        "//cluster/k8s:agentplane-crds/crd-actionpolicybindings.yaml",
-        "//cluster/k8s:agentplane-crds/crd-actionpolicysets.yaml",
-        "//cluster/k8s:agentplane-crds/crd-egressbindings.yaml",
-        "//cluster/k8s:agentplane-crds/crd-egresscredentials.yaml",
-        "//cluster/k8s:agentplane-crds/crd-egresspolicies.yaml",
+        ":crds",
         "//cluster/schemas",
     ],
     deps = [
@@ -61,7 +65,7 @@ py_test(
 
 cdk8s_import(
     name = "actionpolicyset",
-    crd = "//cluster/k8s:agentplane-crds/crd-actionpolicysets.yaml",
+    crd = "crd-actionpolicysets.yaml",
     module_name = "agentplane_actionpolicyset_crds",
     module_path = "works/allegedly/agentplane",
     visibility = ["//visibility:public"],
@@ -69,7 +73,7 @@ cdk8s_import(
 
 cdk8s_import(
     name = "actionpolicybinding",
-    crd = "//cluster/k8s:agentplane-crds/crd-actionpolicybindings.yaml",
+    crd = "crd-actionpolicybindings.yaml",
     module_name = "agentplane_actionpolicybinding_crds",
     module_path = "works/allegedly/agentplane",
     visibility = ["//visibility:public"],
@@ -77,7 +81,7 @@ cdk8s_import(
 
 cdk8s_import(
     name = "egresspolicy",
-    crd = "//cluster/k8s:agentplane-crds/crd-egresspolicies.yaml",
+    crd = "crd-egresspolicies.yaml",
     module_name = "agentplane_egresspolicy_crds",
     module_path = "works/allegedly/agentplane",
     visibility = ["//visibility:public"],
@@ -85,7 +89,7 @@ cdk8s_import(
 
 cdk8s_import(
     name = "egresscredential",
-    crd = "//cluster/k8s:agentplane-crds/crd-egresscredentials.yaml",
+    crd = "crd-egresscredentials.yaml",
     module_name = "agentplane_egresscredential_crds",
     module_path = "works/allegedly/agentplane",
     visibility = ["//visibility:public"],
@@ -93,7 +97,7 @@ cdk8s_import(
 
 cdk8s_import(
     name = "egressbinding",
-    crd = "//cluster/k8s:agentplane-crds/crd-egressbindings.yaml",
+    crd = "crd-egressbindings.yaml",
     module_name = "agentplane_egressbinding_crds",
     module_path = "works/allegedly/agentplane",
     visibility = ["//visibility:public"],

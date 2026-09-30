@@ -11,7 +11,7 @@ for it.
 ## Model
 
 Two namespaced Kubernetes resources in `agentplane.allegedly.works/v1alpha1`
-(`cluster/k8s/agentplane-crds/`), watched by the Action Service, plus ordinary ServiceAccounts as
+(`agentplane/crds/`), watched by the Action Service, plus ordinary ServiceAccounts as
 the external-caller principal.
 
 | Kind                  | Spec                                                                           |

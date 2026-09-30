@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: agent-sandbox-system
   labels:
-    name: agent-sandbox-system
     goldilocks.fairwinds.com/enabled: "false"
+    name: agent-sandbox-system
     rbac.ducktape.io/agent-readable-metadata: "true"
+  name: agent-sandbox-system
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -22,30 +22,29 @@ spec:
       labels:
         app: agent-sandbox-controller
     spec:
-      # Keep the controller and the workspaces on always-on OVH capacity.
-      nodeSelector:
-        topology.kubernetes.io/region: hil
-      securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
       containers:
-        - name: agent-sandbox-controller
-          image: registry.k8s.io/agent-sandbox/agent-sandbox-controller:v0.5.5
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
+        - image: registry.k8s.io/agent-sandbox/agent-sandbox-controller:v0.5.5
           livenessProbe:
             httpGet:
               path: /healthz
               port: healthz
             initialDelaySeconds: 15
             periodSeconds: 20
+          name: agent-sandbox-controller
           readinessProbe:
             httpGet:
               path: /readyz
               port: healthz
             initialDelaySeconds: 5
             periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault

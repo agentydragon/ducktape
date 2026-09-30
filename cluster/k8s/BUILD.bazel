@@ -56,30 +56,16 @@ filegroup(
 # Focused validation targets inline these direct-file inputs in their data lists.
 exports_files(
     [
-        "agentplane-crds/crd-actionpolicybindings.yaml",
-        "agentplane-crds/crd-actionpolicysets.yaml",
-        "agentplane-crds/crd-egressbindings.yaml",
-        "agentplane-crds/crd-egresscredentials.yaml",
-        "agentplane-crds/crd-egresspolicies.yaml",
         "clickhouse/cluster/clickhouse.k8s.yaml",
         "clickhouse/cluster/public-coder-credentials.sops.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "kustomization.yaml",
     ],
     visibility = [
-        "//agentplane/crds:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/haku_ci:__pkg__",
         "//cluster/validation:__pkg__",
     ],
-)
-
-# The rotation manifest the authentik-jwt-rotation CronJob runs, pinned by
-# //cluster/validation:test_rotations_config.
-filegroup(
-    name = "rotations_config",
-    srcs = ["agents/authentik-jwt-rotation/rotations.yaml"],
-    visibility = ["//cluster/validation:__pkg__"],
 )
 
 # //cluster/cdk8s/authentik:app lists every one in the `authentik-sso-blueprints` ConfigMap.

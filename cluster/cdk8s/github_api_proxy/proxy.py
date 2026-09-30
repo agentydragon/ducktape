@@ -54,7 +54,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.gateway_api.gateway import Gateway
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
@@ -398,10 +398,7 @@ def _network_policy(scope: Construct) -> None:
             IngressRule.from_gateway(_SERVICE.pod_port),
             IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy"), ports=[_METRICS.number]),
         ],
-        egress=[
-            cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
-            EgressRule.to_entities(Entity.WORLD, ports=[80, 443]),
-        ],
+        egress=[*cilium.open_internet_egress(ports=[80, 443], entities=(Entity.WORLD,))],
         # These non-public ranges can be outside Cilium's cluster identity set.
         # Limit the deny to web ports so the explicit cluster-DNS exception remains.
         # Runtime destination validation also fences loopback and DNS rebinding.

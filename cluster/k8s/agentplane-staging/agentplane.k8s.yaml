@@ -1015,17 +1015,6 @@ spec:
         - ports:
             - port: "5432"
               protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            k8s-app: kube-dns
-            k8s:io.kubernetes.pod.namespace: kube-system
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: ANY
-          rules:
-            dns:
-              - matchPattern: "*"
     - toEntities:
         - kube-apiserver
     - toEndpoints:
@@ -1068,6 +1057,17 @@ spec:
         - ports:
             - port: "8123"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
     - toEntities:
         - world
         - remote-node
@@ -1608,7 +1608,7 @@ data:
         model: chatgpt/oai-responses/gpt-6-luna
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
-        instructions: Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.
+        instructions: Work as a public-repository coding agent. You will usually work on the public GitHub repository agentydragon/ducktape. Your egress proxy gives you a full-access GitHub PAT for the user 'agentydragon-agent'. When contributing to ducktape, push branches to the fork owned by your dedicated user (agentydragon-agent/ducktape), then use the substituted agentydragon-agent GitHub PAT to open a PR in agentydragon/ducktape (requesting to merge your branch from agentydragon-agent/ducktape into agentydragon/ducktape's default branch 'devel').
       haku-claude:
         title: Haku
         harness: HARNESS_CLAUDE
