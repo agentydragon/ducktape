@@ -111,10 +111,7 @@ from cluster.cdk8s.clickhouse import (
     schema as clickhouse_schema,
 )
 from cluster.cdk8s.cpap_sync import app as cpap_sync_app
-from cluster.cdk8s.dcgm_exporter import (
-    exporter as dcgm_exporter_exporter,
-    flux_kustomizations as dcgm_exporter_flux_kustomizations,
-)
+from cluster.cdk8s.dcgm_exporter import exporter as dcgm_exporter_exporter
 from cluster.cdk8s.external_secrets import (
     config as external_secrets_config,
     flux_kustomizations as external_secrets_flux_kustomizations,
@@ -334,7 +331,6 @@ def generate_manifests(root: Path) -> None:
     litellm_credentials.write_agentplane_testing_manifests(root)
     ducktape_flux.write_manifests(root)
     flux_sources.write_manifests(root)
-    dcgm_exporter_exporter.write_manifests(root)
 
     flux_output = root / f"{HAND_WRITTEN_ROOT}/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -545,7 +541,17 @@ def generate_manifests(root: Path) -> None:
         clickhouse_operator_kustomization,
     )
     dcgm_exporter_artifact = artifact("dcgm-exporter", dcgm_exporter_exporter.OUTPUT_DIR)
-    dcgm_exporter_flux_kustomizations.dcgm_exporter(flux_chart, dcgm_exporter_artifact, monitoring_crds_kustomization)
+    dcgm_exporter_exporter.dcgm_exporter(
+        flux_chart,
+        write_directory(
+            root,
+            dcgm_exporter_artifact,
+            dcgm_exporter_exporter.chart,
+            namespace=dcgm_exporter_exporter.NAMESPACE,
+            config_map_generator=[dcgm_exporter_exporter.COUNTERS_CONFIG_MAP],
+        ),
+        monitoring_crds_kustomization,
+    )
     cert_manager_trust_artifact = artifact("cert-manager-trust", cert_manager_trust.OUTPUT_DIR)
     cert_manager_trust_kustomization = cert_manager_trust.cert_manager_trust(
         flux_chart,

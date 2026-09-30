@@ -428,8 +428,8 @@ spec:
       name: cpap-sync
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/dcgm-exporter/**"
-          to: "@artifact/cluster/k8s/dcgm-exporter/"
+        - from: "@repo/cluster/generated/dcgm-exporter/**"
+          to: "@artifact/cluster/generated/dcgm-exporter/"
       name: dcgm-exporter
       originRevision: "@repo"
     - copy:

@@ -1,9 +1,11 @@
 """Export Claude Code cloud-session event logs from claude.ai to a local archive.
 
-Read-only against a private API, authenticated with your claude.ai `sessionKey` cookie. See README.md.
+Read-only against a private API. Authenticates with a dedicated OAuth grant (`pair` mints it) or, as the
+browser does, a claude.ai `sessionKey` cookie. See README.md.
 
 Usage:
-    bb run //devinfra/claude/session_export:export_sessions_bin -- export --cookie-file F --out DIR
+    bb run //devinfra/claude/session_export:export_sessions_bin -- pair --credentials-file F
+    bb run //devinfra/claude/session_export:export_sessions_bin -- export --credentials-file F --out DIR
     bb run //devinfra/claude/session_export:export_sessions_bin -- count --cookie-file F
     bb run //devinfra/claude/session_export:export_sessions_bin -- verify --out DIR
 """
@@ -12,20 +14,36 @@ import argparse
 import asyncio
 import logging
 import statistics
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from enum import StrEnum
+
+import httpx
 
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
 from devinfra.claude.session_export.archive import canonical_id, export_all, verify_archive
 from devinfra.claude.session_export.models import SessionSummary
+from devinfra.claude.session_export.oauth import CALLBACK_PORT, CredentialStore, OAuthTokenSource, pair
 from util.bazel.workspace import get_build_working_directory
 
 logger = logging.getLogger(__name__)
 
+# The narrowest scopes worth trying first; `--scope` overrides.
+DEFAULT_SCOPES = ("user:profile", "user:sessions:claude_code")
+
 
 class Command(StrEnum):
+    PAIR = "pair"
     EXPORT = "export"
     COUNT = "count"
     VERIFY = "verify"
+
+
+def announce(url: str) -> None:
+    print(
+        f"Open this URL in a browser signed in to the account and approve:\n\n{url}\n\nWaiting for the callback...",
+        flush=True,
+    )
 
 
 async def count_events(api: SessionsApi, workers: int) -> None:
@@ -48,10 +66,33 @@ async def count_events(api: SessionsApi, workers: int) -> None:
     )
 
 
-async def async_main(args: argparse.Namespace) -> None:
-    cookie = SessionCookie.from_file(get_build_working_directory() / args.cookie_file)
-    async with SessionsApi(cookie) as api:
-        if Command(args.command) is Command.EXPORT:
+@asynccontextmanager
+async def open_api(args: argparse.Namespace) -> AsyncIterator[SessionsApi]:
+    if args.cookie_file:
+        cookie = SessionCookie.from_file(get_build_working_directory() / args.cookie_file)
+        async with SessionsApi.for_cookie(cookie) as api:
+            yield api
+        return
+    store = CredentialStore(get_build_working_directory() / args.credentials_file)
+    async with (
+        httpx.AsyncClient(timeout=30) as token_client,
+        SessionsApi.for_oauth(OAuthTokenSource(store, token_client)) as api,
+    ):
+        yield api
+
+
+async def async_main(command: Command, args: argparse.Namespace) -> None:
+    if command is Command.PAIR:
+        store = CredentialStore(get_build_working_directory() / args.credentials_file)
+        async with httpx.AsyncClient(timeout=30) as client:
+            try:
+                async with asyncio.timeout(args.timeout):
+                    await pair(client, store, scopes=args.scope or DEFAULT_SCOPES, port=args.port, announce=announce)
+            except TimeoutError as e:
+                raise TimeoutError(f"no authorization callback on port {args.port} within {args.timeout:.0f}s") from e
+        return
+    async with open_api(args) as api:
+        if command is Command.EXPORT:
             await export_all(
                 api,
                 get_build_working_directory() / args.out,
@@ -66,6 +107,17 @@ async def async_main(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
+    pair_parser = commands.add_parser(Command.PAIR, help="mint a dedicated OAuth grant through the browser")
+    pair_parser.add_argument("--credentials-file", required=True, help="where to write the credential (0600)")
+    pair_parser.add_argument(
+        "--scope",
+        action="append",
+        help=f"repeatable; default: {' '.join(DEFAULT_SCOPES)}. Choose the narrowest that works",
+    )
+    pair_parser.add_argument(
+        "--port", type=int, default=CALLBACK_PORT, help="loopback port of the registered redirect URI"
+    )
+    pair_parser.add_argument("--timeout", type=float, default=300, help="seconds to wait for the browser callback")
     export = commands.add_parser(Command.EXPORT, help="download every session's events into --out (resumable)")
     export.add_argument("--out", required=True)
     export.add_argument("--ids", help="only these comma-separated session ids (`session_…` or `cse_…`)")
@@ -74,7 +126,9 @@ def main() -> None:
     verify = commands.add_parser(Command.VERIFY, help="re-read --out and check it; no network")
     verify.add_argument("--out", required=True)
     for network_command, default_workers in ((export, 3), (count, 4)):
-        network_command.add_argument("--cookie-file", required=True, help="file holding sessionKey= and lastActiveOrg=")
+        credential = network_command.add_mutually_exclusive_group(required=True)
+        credential.add_argument("--credentials-file", help="OAuth credential written by `pair`")
+        credential.add_argument("--cookie-file", help="file holding sessionKey= and lastActiveOrg=")
         network_command.add_argument(
             "--workers", type=int, default=default_workers, help="sessions fetched concurrently"
         )
@@ -82,10 +136,11 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)  # otherwise one line per 500-event page
 
-    if Command(args.command) is Command.VERIFY:
+    command = Command(args.command)
+    if command is Command.VERIFY:
         verify_archive(get_build_working_directory() / args.out)
     else:
-        asyncio.run(async_main(args))
+        asyncio.run(async_main(command, args))
 
 
 if __name__ == "__main__":
