@@ -30,3 +30,9 @@ class ServeSettings(SyncSettings):
     port: int = 8080
     interval_seconds: float = Field(default=300, gt=0, description="Between sync cycles.")
     workers: int = Field(default=3, gt=0, description="Sessions read concurrently.")
+    live_streams: int = Field(
+        default=20, ge=0, description="Sessions followed by event stream at once; 0 leaves the sync to its cycles."
+    )
+    live_window_seconds: float = Field(
+        default=1800, gt=0, description="A session is followed live while its last event is this recent."
+    )

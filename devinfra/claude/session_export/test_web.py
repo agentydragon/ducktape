@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -58,6 +59,8 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
             token_client=FakeTokenEndpoint(PAIRED_RESPONSE, status=token_status).client,
             interval=3600,
             workers=1,
+            live_streams=0,
+            live_window=timedelta(hours=1),
         )
         server = uvicorn.Server(
             uvicorn.Config(create_app(supervisor=supervisor, settings=settings), log_level="warning")

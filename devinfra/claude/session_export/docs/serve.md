@@ -29,16 +29,18 @@ cookie with identity and expiry, and a write to the API from another origin is r
 
 Environment variables, all prefixed `SESSION_SYNC_` (`settings.py`):
 
-| Variable                                              | Meaning                                         |
-| ----------------------------------------------------- | ----------------------------------------------- |
-| `DATABASE_URL`                                        | The PostgreSQL the sync writes                  |
-| `CREDENTIALS_FILE`                                    | Where the OAuth credential is kept (0600)       |
-| `PUBLIC_BASE_URL`                                     | The page's origin, as Authentik redirects to it |
-| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | The Authentik provider                          |
-| `OIDC_SESSION_SECRET`, `OIDC_SESSION_SECONDS`         | Signing key and lifetime of the browser session |
-| `OIDC_ALLOWED_SUBJECT`                                | The one `sub` admitted                          |
-| `HOST`, `PORT`                                        | Where it listens (default `0.0.0.0:8080`)       |
-| `INTERVAL_SECONDS`, `WORKERS`                         | Between cycles (300); sessions read at once (3) |
+| Variable                                              | Meaning                                                                               |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                        | The PostgreSQL the sync writes                                                        |
+| `CREDENTIALS_FILE`                                    | Where the OAuth credential is kept (0600)                                             |
+| `PUBLIC_BASE_URL`                                     | The page's origin, as Authentik redirects to it                                       |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | The Authentik provider                                                                |
+| `OIDC_SESSION_SECRET`, `OIDC_SESSION_SECONDS`         | Signing key and lifetime of the browser session                                       |
+| `OIDC_ALLOWED_SUBJECT`                                | The one `sub` admitted                                                                |
+| `HOST`, `PORT`                                        | Where it listens (default `0.0.0.0:8080`)                                             |
+| `INTERVAL_SECONDS`, `WORKERS`                         | Between cycles (300); sessions read at once (3)                                       |
+| `LIVE_STREAMS`, `LIVE_WINDOW_SECONDS`                 | Sessions streamed live at once (20; 0 is off); how recent a last event follows (1800) |
 
 A cycle that fails is shown on the page and retried at the next interval; the process keeps running so the page
-can still pair again.
+can still pair again. The page also shows whether live following is on, how many streams are open, and when a frame
+last arrived ([sync.md](sync.md) § Live following).

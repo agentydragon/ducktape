@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 
 import type { SyncStatus } from "./api";
-import { ago, untilExpiry } from "./status";
+import { ago, liveSummary, untilExpiry } from "./status";
 
 type Props = {
   status: SyncStatus;
@@ -16,7 +16,7 @@ const STATE_LABEL: Record<SyncStatus["state"], string> = {
 };
 
 export function Overview({ status, now, onSyncNow }: Props): JSX.Element {
-  const { credential, last_cycle: cycle, last_failure: failure } = status;
+  const { credential, last_cycle: cycle, last_failure: failure, live } = status;
   return (
     <section aria-labelledby="overview-heading">
       <h2 id="overview-heading">Sync</h2>
@@ -36,6 +36,8 @@ export function Overview({ status, now, onSyncNow }: Props): JSX.Element {
             </dd>
             <dt>Access token</dt>
             <dd>refreshes {untilExpiry(credential.access_token_expires_at, now)}</dd>
+            <dt>Live</dt>
+            <dd>{liveSummary(live, now)}</dd>
           </>
         )}
         {cycle !== null && (
@@ -50,6 +52,11 @@ export function Overview({ status, now, onSyncNow }: Props): JSX.Element {
       {failure !== null && (
         <p role="alert" className="error">
           The last cycle failed {ago(failure.at, now)}: {failure.message}
+        </p>
+      )}
+      {live.failure !== null && (
+        <p role="alert" className="error">
+          Live following stopped {ago(live.failure.at, now)}, and polling carries on: {live.failure.message}
         </p>
       )}
       {credential !== null && (

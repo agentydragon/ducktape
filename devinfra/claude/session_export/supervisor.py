@@ -9,13 +9,15 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Iterator, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from typing import Self
 
 import httpx
 from pydantic import BaseModel, Field
 
 from devinfra.claude.session_export.api import SessionsApi
+from devinfra.claude.session_export.live import LiveFollower
 from devinfra.claude.session_export.oauth import (
     CALLBACK_PORT,
     DEFAULT_SCOPES,
@@ -24,6 +26,7 @@ from devinfra.claude.session_export.oauth import (
     PairingAttempt,
     redeem,
 )
+from devinfra.claude.session_export.settings import ServeSettings
 from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.sync import sync_once
 
@@ -53,6 +56,14 @@ class FailureStatus(BaseModel):
     message: str
 
 
+class LiveStatus(BaseModel):
+    following: bool = Field(description="Live following is on and has a credential to run with.")
+    watching: bool = Field(description="A session watch is open, or being reopened.")
+    streams: int = Field(description="Sessions with an event stream open, or being reopened.")
+    last_frame_at: datetime | None = Field(description="When a watch or event frame last arrived.")
+    failure: FailureStatus | None = Field(description="Why following stopped; the polling cycle carries on.")
+
+
 class SyncStatus(BaseModel):
     state: SyncState
     pairing_started: bool = Field(description="A pairing attempt is waiting for the redirect URL to be pasted back.")
@@ -61,6 +72,7 @@ class SyncStatus(BaseModel):
     sessions_behind: int
     last_cycle: CycleStatus | None
     last_failure: FailureStatus | None = Field(description="The latest cycle's error; cleared by the next success.")
+    live: LiveStatus
 
 
 def _leaves(failure: BaseException) -> Iterator[BaseException]:
@@ -84,14 +96,19 @@ class SyncSupervisor:
         token_client: httpx.AsyncClient,
         interval: float,
         workers: int,
+        live_streams: int,
+        live_window: timedelta,
         scopes: Sequence[str] = DEFAULT_SCOPES,
         api_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        """`live_streams`: how many sessions to follow by event stream at once; 0 leaves the sync to its cycles."""
         self._credentials = credentials
         self._store = store
         self._token_client = token_client
         self._interval = interval
         self._workers = workers
+        self._live_streams = live_streams
+        self._live_window = live_window
         self._scopes = scopes
         self._api_transport = api_transport
         self._state = SyncState.IDLE
@@ -101,6 +118,20 @@ class SyncSupervisor:
         self._wake = asyncio.Event()
         self._last_cycle: CycleStatus | None = None
         self._last_failure: FailureStatus | None = None
+        self._follower: LiveFollower | None = None
+        self._live_failure: FailureStatus | None = None
+
+    @classmethod
+    def for_settings(cls, settings: ServeSettings, *, store: SessionStore, token_client: httpx.AsyncClient) -> Self:
+        return cls(
+            credentials=CredentialStore(settings.credentials_file),
+            store=store,
+            token_client=token_client,
+            interval=settings.interval_seconds,
+            workers=settings.workers,
+            live_streams=settings.live_streams,
+            live_window=timedelta(seconds=settings.live_window_seconds),
+        )
 
     def start_pairing(self) -> str:
         """The URL to open in a browser signed in to the account. Replaces an attempt still waiting."""
@@ -146,6 +177,13 @@ class SyncSupervisor:
             sessions_behind=counts.behind,
             last_cycle=self._last_cycle,
             last_failure=self._last_failure,
+            live=LiveStatus(
+                following=self._follower is not None,
+                watching=self._follower is not None and self._follower.watching,
+                streams=self._follower.streams if self._follower else 0,
+                last_frame_at=self._follower.last_frame_at if self._follower else None,
+                failure=self._live_failure,
+            ),
         )
 
     async def run(self) -> None:
@@ -164,6 +202,30 @@ class SyncSupervisor:
             self._wake.clear()
 
     async def _cycles(self, api: SessionsApi, version: int) -> None:
+        """Poll on the credential `version`, and follow live alongside when that is on."""
+        if not self._live_streams:
+            await self._poll(api, version, follower=None)
+            return
+        follower = LiveFollower(
+            api, self._store, max_streams=self._live_streams, window=self._live_window, on_resync=self.sync_now
+        )
+        self._follower, self._live_failure = follower, None
+        try:
+            async with asyncio.TaskGroup() as tasks:
+                following = tasks.create_task(self._follow(follower))
+                await self._poll(api, version, follower=follower)
+                following.cancel()
+        finally:
+            self._follower = None
+
+    async def _follow(self, follower: LiveFollower) -> None:
+        try:
+            await follower.run()
+        except Exception as failure:  # the polling cycle is the safety net, so this must not end the process
+            logger.exception("live following stopped")
+            self._live_failure = FailureStatus(at=datetime.now(UTC), message=describe_failure(failure))
+
+    async def _poll(self, api: SessionsApi, version: int, *, follower: LiveFollower | None) -> None:
         while self._credential_version == version:
             self._state = SyncState.SYNCING
             try:
@@ -177,6 +239,8 @@ class SyncSupervisor:
                     finished_at=datetime.now(UTC), behind=result.behind, events_read=result.events_read
                 )
             self._state = SyncState.IDLE
+            if follower:
+                follower.refresh()
             with contextlib.suppress(TimeoutError):
                 async with asyncio.timeout(self._interval):
                     await self._wake.wait()

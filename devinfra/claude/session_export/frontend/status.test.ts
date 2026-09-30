@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ago, sentence, untilExpiry } from "./status";
+import { ago, liveSummary, sentence, untilExpiry } from "./status";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
 
@@ -25,6 +25,26 @@ describe("ago", () => {
 
   it("counts minutes back", () => {
     expect(ago("2026-01-01T11:45:00Z", NOW)).toBe("15m ago");
+  });
+});
+
+describe("liveSummary", () => {
+  const following = { following: true, watching: true, streams: 2, last_frame_at: "2026-01-01T11:45:00Z" };
+
+  it("says polling is all there is when following is off", () => {
+    expect(liveSummary({ ...following, following: false, watching: false, streams: 0 }, NOW)).toBe(
+      "Off; the sync polls only"
+    );
+  });
+
+  it("reports the watch, the open streams and the last frame", () => {
+    expect(liveSummary(following, NOW)).toBe("watching for new sessions, 2 sessions streaming, last frame 15m ago");
+  });
+
+  it("says so when no frame has arrived and the watch is down", () => {
+    expect(liveSummary({ ...following, watching: false, streams: 1, last_frame_at: null }, NOW)).toBe(
+      "not watching, 1 session streaming, no frame yet"
+    );
   });
 });
 
