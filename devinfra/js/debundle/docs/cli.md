@@ -197,7 +197,7 @@ resolve one selector at a time and never solve.
 
 `run --dry-run` (per chunk, `reports/tree/<chunk-id>/selector_diagnostics.json`),
 `spec validate` and `spec match-selector` all report selectors as
-`SelectorOutcome` records (`selector_outcome.rs`; kinds and severities in
+`SelectorOutcome` records (`selectors/resolution/selector_outcome.rs`; kinds and severities in
 <../SPEC.md> § Outcomes). JSON is `{counts, outcomes}`; `run` and
 `validate` list only selectors that did not resolve plus warnings,
 `match-selector` its one probe (with `slack`). Text is one line per record:

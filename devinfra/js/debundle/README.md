@@ -15,6 +15,11 @@ How selectors actually resolve: `docs/selector_resolution.md`.
 Import planning and emission helpers are grouped under `lowering/imports/`.
 They remain separate modules and passes, composed by the lowering crate.
 
+Selector implementation is grouped under `selectors/`: AST matching and
+`source_match` live in `matching/`, selector solving in `resolution/`, selector
+generation and minimization in `authoring/`, and selector-debt reporting in
+`diagnostics/`. Bazel target names remain stable.
+
 Cheat sheet of the most-used commands:
 
 - `debundle run` — execute the transform pipeline (parse + facts +

@@ -5,19 +5,19 @@ guarantee is <../SPEC.md>; this is how they are computed.
 
 ## One resolve
 
-`selector_resolve::resolve` (<../selector_resolve.rs>) takes parsed chunks,
+`selector_resolve::resolve` (<../selectors/resolution/selector_resolve.rs>) takes parsed chunks,
 each with the spec entities scoped to it, and returns one `SelectorOutcome`
 per entity. Every command that resolves selectors calls it, directly or as
 `Chunk::resolve` of one chunk:
 
-| Caller                                                    | Chunks and entities                                                                                                                                                    | Uses the outcomes                                                                                       |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `run` (`lowering/materialize/`)                           | every chunk, with every module of it (of every tree scoped to it), less what `run` claims itself: import-specifier pins, duplicate claims, pins on undeclared bindings | claims each resolved entity, records the rest (and elimination warnings) in `selector_diagnostics.json` |
-| `spec validate --spec`                                    | as `run` (it is a keep-going dry run)                                                                                                                                  | reports every non-`ok` outcome and lists each matched template's free identifiers                       |
-| `spec validate --source-file` (`cli/validate.rs`)         | one chunk file, with every module file                                                                                                                                 | reports every non-`ok` outcome and lists each matched template's free identifiers                       |
-| `spec match-selector` (`match_selector.rs`)               | the probe alone                                                                                                                                                        | reports its outcome                                                                                     |
-| `synthesize-selectors` proof (`selector_codemod.rs`)      | the candidate selector alone                                                                                                                                           | proven only when `resolved_by: own_selector` at the intended declaration                                |
-| edit gate, `describe`, `peel` (`anonymous_resolution.rs`) | every chunk source the owner graph names, each with every module's `source_matches[]` and anonymous statements                                                         | an entity must resolve in one source and match in no other                                              |
+| Caller                                                                         | Chunks and entities                                                                                                                                                    | Uses the outcomes                                                                                       |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `run` (`lowering/materialize/`)                                                | every chunk, with every module of it (of every tree scoped to it), less what `run` claims itself: import-specifier pins, duplicate claims, pins on undeclared bindings | claims each resolved entity, records the rest (and elimination warnings) in `selector_diagnostics.json` |
+| `spec validate --spec`                                                         | as `run` (it is a keep-going dry run)                                                                                                                                  | reports every non-`ok` outcome and lists each matched template's free identifiers                       |
+| `spec validate --source-file` (`cli/validate.rs`)                              | one chunk file, with every module file                                                                                                                                 | reports every non-`ok` outcome and lists each matched template's free identifiers                       |
+| `spec match-selector` (`selectors/authoring/match_selector.rs`)                | the probe alone                                                                                                                                                        | reports its outcome                                                                                     |
+| `synthesize-selectors` proof (`selectors/authoring/selector_codemod.rs`)       | the candidate selector alone                                                                                                                                           | proven only when `resolved_by: own_selector` at the intended declaration                                |
+| edit gate, `describe`, `peel` (`selectors/resolution/anonymous_resolution.rs`) | every chunk source the owner graph names, each with every module's `source_matches[]` and anonymous statements                                                         | an entity must resolve in one source and match in no other                                              |
 
 A command that needs a selector unique on its own resolves it as a spec of one
 entity: its outcome is then its own candidates' verdict.
@@ -36,7 +36,7 @@ The resolve is two halves, so `run` can do the first per chunk in parallel:
    template matches, and each place maps to its owner (a post-split top-level
    statement) and binding through the chunk's structural analysis. A template
    with no place is `no_match`, one with over `MAX_CANDIDATES_PER_SELECTOR`
-   (100, `selector_outcome.rs`) is `too_broad`, and a matcher error or a place
+   (100, `selectors/resolution/selector_outcome.rs`) is `too_broad`, and a matcher error or a place
    with no owner (an import specifier declares none) is `invalid` — all before
    any solve. A name pin's places are the top-level declarations of its name
    (of its kind); a pin with none is `no_match`. A `bindings[]` local the
@@ -67,9 +67,9 @@ and a place is always one chunk's: two chunks never compete for it.
 
 ## The solver
 
-`selector_ortools_cpsat_backend.rs` implements `SelectorProblemBackend` over
+`selectors/resolution/selector_ortools_cpsat_backend.rs` implements `SelectorProblemBackend` over
 OR-Tools' CP-SAT, linked into the `debundle` binary: a released `debundle` is one
-file that needs nothing beside it. `selector_ortools_cpsat_model.rs` builds
+file that needs nothing beside it. `selectors/resolution/selector_ortools_cpsat_model.rs` builds
 OR-Tools' own `CpModelProto` (prost bindings of its `cp_model.proto`) from the
 compiled problem, and `ortools_cpsat_ffi.rs` — the only `unsafe` in the crate —
 calls CP-SAT's C API. The support search solves the model repeatedly, each time
@@ -123,7 +123,7 @@ its elimination warnings. That is the order `--fail-fast` stops in
 ## Outcomes
 
 The kinds and their severities are <../SPEC.md> § Outcomes; the record and
-its constants live in `selector_outcome.rs`. `MAX_LISTED_CANDIDATES` also bounds
+its constants live in `selectors/resolution/selector_outcome.rs`. `MAX_LISTED_CANDIDATES` also bounds
 the solver's alternative search (`MAX_ALTERNATIVES_PER_VARIABLE`), so an
 `ambiguous` target lists what the solver found, not every place.
 
@@ -248,11 +248,11 @@ authoring specs in parallel produces several at once.
 
 ## The shape matcher
 
-`source_match/chunk_resolver.rs` builds one per-chunk model and resolves many
+`selectors/matching/source_match/chunk_resolver.rs` builds one per-chunk model and resolves many
 selectors against it, so a chunk with thousands of selectors pays setup once.
 `selector_match` is the homomorphism itself: hole-skipping, alpha-equivalence
 bijections, and run-hole subsequence alignment, with
-<../selector_match_test.rs> pinning the exact semantics.
+<../selectors/matching/selector_match_test.rs> pinning the exact semantics.
 
 Two properties make it near-linear rather than quadratic in selector count:
 needle-only validation is hoisted out of the candidate loop, and exact-mode

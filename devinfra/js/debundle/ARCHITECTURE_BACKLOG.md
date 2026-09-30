@@ -126,8 +126,9 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
 
 **Real value but needs design work / behavior-risk:**
 
-1. Parameterize the per-form AST holing visitors (`render.rs` `hole_expr` /
-   `hole_stmt`, `minimize/class.rs` `hole_class_member`, etc.) behind a `Holer`
+1. Parameterize the per-form AST holing visitors (`selectors/authoring/render.rs`
+   `hole_expr` / `hole_stmt`, `selectors/authoring/minimize/class.rs`
+   `hole_class_member`, etc.) behind a `Holer`
    trait or table to collapse repeated per-variant match clusters. ~150 LOC,
    medium risk (over-abstraction hazard; the per-form holing strategies differ
    for good reasons).
@@ -139,8 +140,8 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
    specs). Points: <e2e/vendor_swap_test.rs> (~lines 1680, 1821 and the
    `report_out_dir` literals), builder surface in `vendor/mod.rs`.
 3. Consolidate the two `*BindingProjection` enums
-   (`TargetBindingProjection` in `selector_constraint_backend.rs`,
-   `SourceBindingProjection` in `selector_constraint_model_builder.rs`) into one
+   (`TargetBindingProjection` in `selectors/resolution/selector_constraint_backend.rs`,
+   `SourceBindingProjection` in `selectors/resolution/selector_constraint_model_builder.rs`) into one
    shared projection type.
    They are structurally identical views of the same binding-namespace
    partition, duplicated per solver stage; the copies drift silently when a
@@ -148,7 +149,7 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
    extension) and re-point the three stages at it.
 
 **Organization only (≈0 LOC removed, navigability win):** split the giant
-files by responsibility — <selector_codemod.rs>, <peel/quotient.rs>,
+files by responsibility — <selectors/authoring/selector_codemod.rs>, <peel/quotient.rs>,
 <lowering/rename_ledger.rs>.
 
 ## Quick wins (≤30 min each)

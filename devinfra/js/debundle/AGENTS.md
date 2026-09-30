@@ -85,8 +85,9 @@ of re-deriving the fact in another stage.
 
 ## Selector resolution
 
-Read <docs/selector_resolution.md> before touching `selector_resolve.rs`,
-`source_match/`, `selector_ir_lowering` or `selector_constraint_model_builder`.
+Read <docs/selector_resolution.md> before touching
+`selectors/resolution/selector_resolve.rs`, `selectors/matching/source_match/`,
+`selector_ir_lowering` or `selector_constraint_model_builder`.
 A command never decides exactly-one itself; it calls `selector_resolve`. Its
 § "Rejected: tree matching as solver constraints" and § "Rejected: localizing a
 contradiction with assumption cores" are measured dead ends: do not reopen
