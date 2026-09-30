@@ -53,7 +53,7 @@
 //! `target_is_hoisted` filter the promoted-read path uses, so no
 //! `EagerUse` edge to a FnDecl owner is emitted.
 
-use analysis::{DepKind, OwnerGraphReport};
+use analysis::DepKind;
 use debundle_e2e_support::*;
 
 #[test]
@@ -69,8 +69,7 @@ export { f };
 
     assert_entry_output(&fixture, "from-f\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
 
     let fndecl_owner = graph
         .nodes

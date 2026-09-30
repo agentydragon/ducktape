@@ -6,8 +6,7 @@
 use debundle_e2e_support::{
     FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome, find_outcome, logical_module,
     logical_module_with_anon, logical_module_with_anon_alpha, read_selector_outcomes,
-    run_dry_run_fixture, run_dry_run_rejection_fixture, run_spec_validate,
-    write_validate_fixture_spec,
+    run_dry_run_fixture, run_dry_run_rejection_fixture, validate_json,
 };
 use serde_json::{Value, json};
 
@@ -404,16 +403,4 @@ function work(value) {
         "{}",
         rejected.stderr
     );
-}
-
-fn validate_json(opts: FixtureOpts<'_>) -> Value {
-    let fixture = write_validate_fixture_spec(opts);
-    let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
-    assert!(
-        out.status.success(),
-        "spec validate exited non-zero: stderr={}",
-        out.stderr
-    );
-    serde_json::from_str(&out.stdout)
-        .unwrap_or_else(|err| panic!("parse validate json: {err}\nstdout:\n{}", out.stdout))
 }

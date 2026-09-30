@@ -8,7 +8,8 @@
 use debundle_e2e_support::{
     Fixture, FixtureOpts, Member, assert_module_source, find_outcome, logical_module,
     logical_module_with_anon_alpha, read_selector_outcomes, run_dry_run_rejection_fixture,
-    run_fixture, run_source_only_validate, run_spec_validate, write_validate_fixture_spec,
+    run_fixture, run_source_only_validate, run_spec_validate, validate_json,
+    write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -543,16 +544,4 @@ fn validate_lists_free_identifiers_by_kind() {
     }
     assert!(!text.stdout.contains("`helper`"), "{}", text.stdout);
     assert!(!text.stdout.contains("`Object`"), "{}", text.stdout);
-}
-
-fn validate_json(opts: FixtureOpts<'_>) -> Value {
-    let fixture = write_validate_fixture_spec(opts);
-    let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
-    assert!(
-        out.status.success(),
-        "spec validate exited non-zero: stderr={}",
-        out.stderr
-    );
-    serde_json::from_str(&out.stdout)
-        .unwrap_or_else(|err| panic!("parse validate json: {err}\nstdout:\n{}", out.stdout))
 }

@@ -860,6 +860,7 @@ pub struct Fixture {
 }
 
 pub struct RejectedFixture {
+    pub chunk_id: String,
     pub stderr: String,
     pub report_root: PathBuf,
     /// The `write_js_tree` output root, exposed so dry-run callers can
@@ -867,6 +868,22 @@ pub struct RejectedFixture {
     pub out_root: PathBuf,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: TempDir,
+}
+
+impl Fixture {
+    pub fn owner_graph(&self) -> OwnerGraphReport {
+        read_owner_graph(&self.report_root, &self.chunk_id)
+    }
+}
+
+impl RejectedFixture {
+    pub fn owner_graph(&self) -> OwnerGraphReport {
+        read_owner_graph(&self.report_root, &self.chunk_id)
+    }
+}
+
+fn read_owner_graph(report_root: &Path, chunk_id: &str) -> OwnerGraphReport {
+    read_json(&report_root.join(chunk_id).join("owner_graph.json"))
 }
 
 pub struct DryRunFixture {
@@ -1059,6 +1076,7 @@ fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -
         result.stderr,
     );
     RejectedFixture {
+        chunk_id: opts.chunk_id.to_string(),
         stderr: result.stderr,
         report_root: setup.report_root,
         out_root: setup.out_root,
@@ -1086,6 +1104,27 @@ pub fn write_validate_fixture_spec(opts: FixtureOpts<'_>) -> ValidateFixture {
         spec_path,
         _root: setup.root,
     }
+}
+
+/// `debundle spec validate --spec --format json` over `opts`, parsed; panics on a
+/// non-zero exit.
+pub fn validate_json(opts: FixtureOpts<'_>) -> Value {
+    let fixture = write_validate_fixture_spec(opts);
+    let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
+    assert!(
+        out.status.success(),
+        "spec validate exited non-zero: stderr={}",
+        out.stderr
+    );
+    serde_json::from_str(&out.stdout)
+        .unwrap_or_else(|err| panic!("parse validate json: {err}\nstdout:\n{}", out.stdout))
+}
+
+/// The `outcomes` array of a selector-outcome report.
+pub fn outcomes(report: &Value) -> &[Value] {
+    report["outcomes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
 }
 
 /// Run `debundle spec validate --spec <path> <extra_args>` and return its
@@ -1530,13 +1569,6 @@ pub fn write_text_file(path: &Path, content: &str) {
     fs::write(path, content).unwrap();
 }
 
-/// Write `body` to `root`-relative path `rel`, creating parent dirs. The
-/// root-relative convenience over [`write_text_file`] for CLI tests that
-/// scatter several fixture files under one temp root.
-pub fn write_file(root: &Path, rel: &str, body: &str) {
-    write_text_file(&root.join(rel), body);
-}
-
 /// Parse a CLI invocation's stdout as JSON, panicking with both stdio streams
 /// on failure so a non-JSON (e.g. error) stdout is legible in the test log.
 pub fn parse_stdout_json(out: &std::process::Output) -> Value {
@@ -1549,6 +1581,14 @@ pub fn parse_stdout_json(out: &std::process::Output) -> Value {
     })
 }
 
+/// Run `debundle <args>` and return its raw output.
+pub fn run_debundle(args: &[&str]) -> std::process::Output {
+    Command::new(debundler_path())
+        .args(args)
+        .output()
+        .expect("spawn debundle")
+}
+
 /// Run `debundle spec synthesize-selectors --modules <dir> [extra...]`, asserting
 /// success and returning the raw output for the caller to parse.
 pub fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process::Output {
@@ -1559,10 +1599,7 @@ pub fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process:
         modules.to_str().unwrap(),
     ];
     args.extend_from_slice(extra);
-    let out = Command::new(debundler_path())
-        .args(&args)
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&args);
     assert!(
         out.status.success(),
         "non-zero exit\nstdout:\n{}\nstderr:\n{}",
@@ -1677,57 +1714,81 @@ pub fn owner_for_binding<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a 
     node.id.as_str()
 }
 
+/// An `owner_graph.json` node for the statement `ordinal`, declaring `binding`
+/// (exported under its own name) and destined for the module `destination`.
+pub fn owner_node(id: &str, ordinal: usize, binding: &str, destination: &str) -> Value {
+    serde_json::json!({
+        "id": id,
+        "statement_ordinal": ordinal,
+        "declared_bindings": [ { "binding": binding, "export_name": binding } ],
+        "statement_kind": "var_decl",
+        "purity": { "kind": "pure" },
+        "destination": destination
+    })
+}
+
+/// An `owner_graph.json` edge of `edge_kind` (`eager_use`, `eager_rebind`) that
+/// constrains init order: `source` depends on `binding` of `target`.
+pub fn owner_edge(
+    id: &str,
+    edge_kind: &str,
+    source: &str,
+    target: &str,
+    binding: &str,
+    ordinal: usize,
+) -> Value {
+    serde_json::json!({
+        "id": id,
+        "source": source,
+        "target": target,
+        "edge_kind": edge_kind,
+        "binding": binding,
+        "statement_ordinal": ordinal,
+        "constrains_init_order": true
+    })
+}
+
+/// An `owner_graph.json` body over `nodes` and `edges`, with empty module and
+/// atomic graphs.
+pub fn owner_graph(chunk_id: &str, nodes: Vec<Value>, edges: Vec<Value>) -> Value {
+    serde_json::json!({
+        "chunk_id": chunk_id,
+        "nodes": nodes,
+        "edges": edges,
+        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
+        "atomic_graph": { "nodes": [], "edges": [] }
+    })
+}
+
 /// Owner graph for a two-statement atomic unit: `alpha` and `beta` mutually
 /// `eager_rebind` each other and share destination `home/atom`, so the
 /// realizability gate must keep them co-located.
 pub fn graph_with_atomic_unit() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "declared_bindings": [
-                    { "binding": "alpha", "export_name": "alpha" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "home/atom"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "declared_bindings": [
-                    { "binding": "beta", "export_name": "beta" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "home/atom"
-            }
+    owner_graph(
+        "test/chunk",
+        vec![
+            owner_node("owner:0", 0, "alpha", "home/atom"),
+            owner_node("owner:1", 1, "beta", "home/atom"),
         ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_rebind",
-                "binding": "beta",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            },
-            {
-                "id": "owner_edge:1",
-                "source": "owner:1",
-                "target": "owner:0",
-                "edge_kind": "eager_rebind",
-                "binding": "alpha",
-                "statement_ordinal": 1,
-                "constrains_init_order": true
-            }
+        vec![
+            owner_edge(
+                "owner_edge:0",
+                "eager_rebind",
+                "owner:0",
+                "owner:1",
+                "beta",
+                0,
+            ),
+            owner_edge(
+                "owner_edge:1",
+                "eager_rebind",
+                "owner:1",
+                "owner:0",
+                "alpha",
+                1,
+            ),
         ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
+    )
     .to_string()
 }
 
@@ -1735,44 +1796,47 @@ pub fn graph_with_atomic_unit() -> String {
 /// `eager_use`s `beta` (module `b`) with no back edge, so the split is
 /// realizable.
 pub fn graph_with_acyclic_cross_module_read() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "declared_bindings": [
-                    { "binding": "alpha", "export_name": "alpha" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "a"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "declared_bindings": [
-                    { "binding": "beta", "export_name": "beta" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "b"
-            }
+    owner_graph(
+        "test/chunk",
+        vec![
+            owner_node("owner:0", 0, "alpha", "a"),
+            owner_node("owner:1", 1, "beta", "b"),
         ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_use",
-                "binding": "beta",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            }
+        vec![owner_edge(
+            "owner_edge:0",
+            "eager_use",
+            "owner:0",
+            "owner:1",
+            "beta",
+            0,
+        )],
+    )
+    .to_string()
+}
+
+/// Owner graph with three owners — alpha (module `a`), beta (`b`), gamma (`c`) —
+/// and the `eager_use` chain alpha → gamma → beta: a DAG quotient `a → c → b`
+/// that closes into the 2-cycle `m ↔ c` when `a` and `b` merge into `m`.
+pub fn graph_with_merge_cycle_potential() -> String {
+    owner_graph(
+        "test/chunk",
+        vec![
+            owner_node("owner:0", 0, "alpha", "a"),
+            owner_node("owner:1", 1, "beta", "b"),
+            owner_node("owner:2", 2, "gamma", "c"),
         ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
+        vec![
+            owner_edge(
+                "owner_edge:0",
+                "eager_use",
+                "owner:0",
+                "owner:2",
+                "gamma",
+                0,
+            ),
+            owner_edge("owner_edge:1", "eager_use", "owner:2", "owner:1", "beta", 2),
+        ],
+    )
     .to_string()
 }
 

@@ -97,8 +97,7 @@ fn at_init_call_to_cross_module_function_does_not_promote_body_reads() {
         ],
     ));
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
 
     let r_module = module_id_for(&graph, "triggerInit");
     let m2_module = module_id_for(&graph, "crossModBinding");
@@ -152,8 +151,7 @@ fn at_init_call_keeps_owner_edge_marked_with_callee() {
         ],
     ));
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let trigger_owner = owner_for_binding(&graph, "triggerInit");
     let target_owner = owner_for_binding(&graph, "crossModBinding");
     let gr_owner = owner_for_binding(&graph, "gR");
@@ -224,8 +222,7 @@ fn intra_module_at_init_call_still_promotes_body_reads() {
         vec![logical_module("mod_m2", &[Member::new("crossModBinding")])],
     ));
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
 
     let r_module = module_id_for(&graph, "triggerInit");
     let m2_module = module_id_for(&graph, "crossModBinding");
