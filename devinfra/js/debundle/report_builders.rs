@@ -123,7 +123,7 @@ fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<Module
     for (_, module) in factorization.partition.iter() {
         modules.insert(module);
     }
-    for (from, to, _) in factorization.dep_graph.all_edges() {
+    for (from, to) in factorization.dep_graph.all_edges() {
         modules.insert(from);
         modules.insert(to);
     }
@@ -374,7 +374,7 @@ fn quotient_edge_indices_by_source(
 
 /// True iff `id` refers to a logical module whose `residual` flag is
 /// set — the chunk's catch-all destination synthesized before
-/// `ChunkFactorization::build`. Used by the destination
+/// `ChunkFactorization::build_with`. Used by the destination
 /// projection in reports to gate residual-only predicates without
 /// string-matching module ids or labels.
 fn is_residual_destination(factorization: &ChunkFactorization, id: ModuleId) -> bool {

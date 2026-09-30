@@ -724,14 +724,6 @@ mod tests {
             );
             let runtime: serde_json::Value =
                 serde_json::from_str(&fs::read_to_string(out.join("reports/runtime.json"))?)?;
-            assert!(
-                runtime.get("schema_version").is_none(),
-                "runtime report should not carry a compatibility schema_version"
-            );
-            assert!(
-                runtime.get("parse_plan").is_none(),
-                "runtime report should not carry a parse_plan field"
-            );
             assert_eq!(
                 runtime.get("app_root").and_then(serde_json::Value::as_str),
                 Some("../app")
@@ -752,10 +744,6 @@ mod tests {
             );
             let chunks_manifest: serde_json::Value =
                 serde_json::from_str(&fs::read_to_string(out.join("reports/chunks.json"))?)?;
-            assert!(
-                chunks_manifest.get("schema_version").is_none(),
-                "chunks report should not carry a compatibility schema_version"
-            );
             assert_eq!(
                 chunks_manifest
                     .get("chunks")

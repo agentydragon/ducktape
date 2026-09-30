@@ -10,25 +10,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use selector_match::Mode;
 
 fn facts(source: &str) -> chunk_facts::ChunkFacts {
-    chunk_facts::extract_facts(&js_ast::parse_js_module_ast("<t>", source).unwrap()).unwrap()
+    chunk_facts::extract_facts_items(&js_ast::parse_js_module_ast("<t>", source).unwrap().body)
+        .unwrap()
 }
 
 /// Per-top-level-statement facts (one `ChunkFacts` per item), for the
 /// multi-statement sequence matcher.
 fn roots(source: &str) -> Vec<chunk_facts::ChunkFacts> {
-    let module = js_ast::parse_js_module_ast("<t>", source).unwrap();
-    let span = module.span;
-    module
+    js_ast::parse_js_module_ast("<t>", source)
+        .unwrap()
         .body
         .into_iter()
-        .map(|item| {
-            chunk_facts::extract_facts(&swc_ecma_ast::Module {
-                span,
-                body: vec![item],
-                shebang: None,
-            })
-            .unwrap()
-        })
+        .map(|item| chunk_facts::extract_facts_items(&[item]).unwrap())
         .collect()
 }
 
@@ -55,7 +48,7 @@ struct Case {
 }
 
 #[test]
-fn fact_matcher_agrees_with_production_on_faithful_subset() {
+fn fact_matcher_verdicts_on_faithful_subset() {
     js_ast::with_swc_globals(|| {
         let cases = [
             // --- exact-identifier mode ---
@@ -191,7 +184,7 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
                 expected: false,
             },
             // ANYTHING absorbs the surrounding properties; a two-hole list
-            // with an interior fixed segment (the corpus `{…, k, …}` shape).
+            // with an interior fixed segment (the `{…, k, …}` shape).
             Case {
                 selector: "const o = { a: 1, ANYTHING };",
                 subject: "const o = { a: 1, b: 2 };",
@@ -250,8 +243,7 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
                 expected: true,
             },
             // async / generator are part of a function's identity: an async-fn
-            // needle must not match a non-async fn (and vice versa), matching
-            // production's `eq_ignore_span` on `is_async`/`is_generator`.
+            // needle must not match a non-async fn (and vice versa).
             Case {
                 selector: "async function f(a) { STMT_LIST; return a; }",
                 subject: "async function g(x) { y(); return x; }",
@@ -284,8 +276,7 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
             },
             // A class's superclass (`extends`) is part of its identity: present in
             // both (alpha-matched), or absent in both. A no-`extends` needle must
-            // NOT match an `extends`-bearing class, and vice versa (mirrors
-            // production's `match_class` `super_class` arm) — the gap that made the
+            // NOT match an `extends`-bearing class, and vice versa; otherwise
             // `extends X { ANYTHING; }` class lists over-match.
             Case {
                 selector: "class A extends B { ANYTHING; }",
@@ -437,7 +428,7 @@ fn var_declarator_alignment_prebinding_forces_target_identity() {
     js_ast::with_swc_globals(|| {
         // Two subject declarators carry the same init; prebinding the needle's `c`
         // to the second subject binding pins the alignment to declarator 1 (the
-        // production declarator-hole resolver's per-candidate prebinding).
+        // resolver's per-candidate prebinding).
         let needle = facts("const c = \"abc\", DECLARATORS_AFTER = null;");
         let subject = facts("const x = \"abc\", y = \"abc\";");
         let free = free_of(std::slice::from_ref(&needle));
@@ -626,12 +617,11 @@ fn fail_closed_on_misplaced_run_hole() {
 
 // A hole-valued key-value property (`{ k: ANYTHING }`, object pattern or object
 // literal) must keep its single-node-hole identity: `ANYTHING` matches any one
-// value, not alpha-bind as a real identifier. Regression for the parity gap where
-// `shorthand_property_view` misclassified `{ k: ANYTHING }` as a same-name
-// property and fed `ANYTHING` into the alpha bijection — failing exact mode
-// (`ANYTHING` != the name) and conflicting when several `ANYTHING` targets shared
-// one frame. These shapes (destructured params, inlined style objects) are
-// pervasive in the real tana/re selectors AstWildcardMatcher resolved.
+// value, not alpha-bind as a real identifier. Regression: `shorthand_property_view`
+// misclassified `{ k: ANYTHING }` as a same-name property and fed `ANYTHING` into
+// the alpha bijection — failing exact mode (`ANYTHING` != the name) and
+// conflicting when several `ANYTHING` targets shared one frame. These shapes
+// (destructured params, inlined style objects) are pervasive in real selectors.
 #[test]
 fn key_value_hole_value_matches_any() {
     js_ast::with_swc_globals(|| {

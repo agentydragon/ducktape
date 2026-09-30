@@ -3,9 +3,8 @@
 //! `chunk_analysis_options.<chunk>.dataflow_aware_s_chain`).
 //!
 //! Each test pins one hole by asserting the owner graph carries the
-//! `Sequenced` edge the bundle's observable semantics require (red
-//! before the fix: edge absent), plus a runtime check that the
-//! emitted bundle preserves the original output once the edge exists.
+//! `Sequenced` edge the bundle's observable semantics require, plus a
+//! runtime check that the emitted bundle preserves the original output.
 //!
 //! Holes covered:
 //!

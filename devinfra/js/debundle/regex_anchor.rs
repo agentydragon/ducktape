@@ -7,12 +7,11 @@
 //! structure with a regex and wildcard the volatile fragment, so the selector
 //! survives the rebuild.
 //!
-//! Derivation rule (intentionally conservative — see
-//! `selector_minimizer_discrimination.md`):
+//! Derivation rule (intentionally conservative):
 //!
 //!   * We only derive a pattern when the literal ends in a *volatile tail*: a
-//!     trailing run of hex/digits. The tail must be at least
-//!     `MIN_VOLATILE_TAIL_LEN` chars so a one- to three-char numeric suffix
+//!     trailing run of hex/digits, split off by `shape_index::volatile_tail`. The
+//!     tail must be long enough that a one- to three-char numeric suffix
 //!     (which is more likely meaningful than generated) is left alone. Any
 //!     separator before the tail (`chunk-`, `main.`) stays in the pinned prefix.
 //!   * The derived pattern is `^<escaped stable prefix><tail class>$`, anchored
@@ -47,47 +46,26 @@ use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SynthesizedTargetBinding, prove_synthesized_selector,
 };
 
-/// Minimum length of a trailing hex/digit run for it to count as a volatile
-/// fragment worth wildcarding. Short numeric suffixes (`v2`, `s3`) are more
-/// often meaningful than generated, so they stay pinned exactly.
-const MIN_VOLATILE_TAIL_LEN: usize = 4;
-
 /// Derive an anchored `STR_LITERAL_MATCHING_RE` pattern that pins the stable
 /// prefix of `value` and wildcards a trailing volatile hex/digit fragment, or
 /// `None` when no meaningful stable-prefix/volatile-tail split exists. The
 /// returned pattern is always a valid `regex::Regex` (the only metacharacters
 /// it introduces are the anchors and a character class; the prefix is escaped).
 fn regex_anchor_pattern(value: &str) -> Option<String> {
-    let chars: Vec<char> = value.chars().collect();
-    // Length of the trailing run of hex digits.
-    let hex_tail = chars
-        .iter()
-        .rev()
-        .take_while(|c| c.is_ascii_hexdigit())
-        .count();
-    if hex_tail < MIN_VOLATILE_TAIL_LEN {
-        return None;
-    }
+    // A regex anchor must pin *something* stable: `volatile_tail` declines an
+    // empty or separator-only prefix. The trailing separator (if any) stays in
+    // the pinned, escaped prefix — `chunk-a1b2c3` pins `chunk-`, not `chunk`,
+    // which is the conservative choice (one fewer wildcarded char).
+    let (stable_prefix, tail) = shape_index::volatile_tail(value)?;
     // Prefer a pure-digit tail class when the whole tail is decimal; otherwise
     // a hex class. (Hex is a superset of digits, so the digit class is the
     // tighter, more honest wildcard when applicable.)
-    let tail_is_decimal = chars[chars.len() - hex_tail..]
-        .iter()
-        .all(char::is_ascii_digit);
-    let tail_class = if tail_is_decimal {
+    let tail_class = if tail.chars().all(|c| c.is_ascii_digit()) {
         "[0-9]+"
     } else {
         "[0-9A-Fa-f]+"
     };
-    let stable_prefix: String = chars[..chars.len() - hex_tail].iter().collect();
-    // A regex anchor must pin *something* stable: an empty or separator-only
-    // prefix discriminates nothing, so decline. The trailing separator (if any)
-    // stays in the pinned, escaped prefix — `chunk-a1b2c3` pins `chunk-`, not
-    // `chunk`, which is the conservative choice (one fewer wildcarded char).
-    if stable_prefix.is_empty() || stable_prefix.chars().all(|c| matches!(c, '-' | '_' | '.')) {
-        return None;
-    }
-    let pattern = format!("^{}{tail_class}$", regex::escape(&stable_prefix));
+    let pattern = format!("^{}{tail_class}$", regex::escape(stable_prefix));
     // Guard the invariant directly: never hand the matcher a pattern it cannot
     // compile (the matcher silently treats an uncompilable pattern as a
     // non-match, which would make the selector match nothing).
@@ -235,7 +213,7 @@ mod regex_anchor_pattern_tests {
     #[test]
     fn declines_short_numeric_suffixes() {
         // A two/three-char numeric suffix is more likely meaningful than
-        // generated, so no pattern is offered (`MIN_VOLATILE_TAIL_LEN`).
+        // generated, so no pattern is offered.
         assert_eq!(regex_anchor_pattern("v2"), None);
         assert_eq!(regex_anchor_pattern("step3"), None);
         assert_eq!(regex_anchor_pattern("h2o"), None);

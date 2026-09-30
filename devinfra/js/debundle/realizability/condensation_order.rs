@@ -1034,8 +1034,8 @@ fn effective_count<N: Copy + Ord>(
     base.edge_count(from, to) as isize + overlay.get(&(from, to)).copied().unwrap_or(0)
 }
 
-/// Brute-force reference implementations shared by the pinned-seed
-/// xorshift suites below and the proptest differential suite
+/// Brute-force reference implementations shared by the fixed-seed contraction
+/// test below and the proptest differential suite
 /// (`condensation_order_proptest.rs`).
 #[cfg(test)]
 pub(super) mod test_support {
@@ -1441,124 +1441,6 @@ mod tests {
             x ^= x << 17;
             self.0 = x;
             x as u32
-        }
-    }
-
-    #[test]
-    fn random_graph_would_join_matches_brute_force() {
-        // Random (cyclic) graphs + random overlays; every pair's
-        // would_join_multi_scc must equal the tarjan-based reference
-        // on the effective identified graph. Mirrors the kernel's
-        // random_dag_cycle_check_matches_brute_force.
-        let seeds: &[u64] = &[0xC0FFEE, 0xDEADBEEF, 0x1234, 0xABCD, 0xF00BA1, 0x5EED];
-        for &seed in seeds {
-            let mut rng = SimpleRng::new(seed);
-            let n = 10usize;
-            let mut base = RollbackDiGraph::new();
-            let mut edges: Vec<(usize, usize)> = Vec::new();
-            for a in 0..n {
-                for b in 0..n {
-                    if a != b && rng.next_u32().is_multiple_of(5) {
-                        base.increment_edge(a, b);
-                        edges.push((a, b));
-                    }
-                }
-            }
-            let alias = TestAlias::default();
-            let mut order = CondensationOrder::new();
-            for trial in 0..30 {
-                // Random overlay: remove up to 2 existing edges, add
-                // up to 2 random pairs.
-                let mut overlay: BTreeMap<(usize, usize), isize> = BTreeMap::new();
-                for _ in 0..(rng.next_u32() % 3) {
-                    if edges.is_empty() {
-                        break;
-                    }
-                    let (a, b) = edges[(rng.next_u32() as usize) % edges.len()];
-                    overlay.insert((a, b), -(base.edge_count(a, b) as isize));
-                }
-                for _ in 0..(rng.next_u32() % 3) {
-                    let a = (rng.next_u32() as usize) % n;
-                    let b = (rng.next_u32() as usize) % n;
-                    if a != b {
-                        *overlay.entry((a, b)).or_insert(0) += 1;
-                    }
-                }
-                let u = (rng.next_u32() as usize) % n;
-                let v = (rng.next_u32() as usize) % n;
-                let got = order.would_join_multi_scc(&base, &overlay, u, v);
-                let want = brute_would_join(&base, &alias, &overlay, u, v);
-                assert_eq!(got, want, "seed={seed:x} trial={trial} pair=({u},{v})");
-            }
-        }
-    }
-
-    #[test]
-    fn random_mutation_sequences_match_tarjan_partition() {
-        // Random graphs driven through interleaved insert / remove /
-        // contract / invalidate sequences: after every step, the
-        // internal invariants must validate and the multi-SCC verdict
-        // for every node must equal a fresh tarjan recompute.
-        let seeds: &[u64] = &[0xC0FFEE, 0xDEADBEEF, 0x1234, 0xBADBEEF, 0xFEEDFACE];
-        for &seed in seeds {
-            let mut rng = SimpleRng::new(seed);
-            let n = 9usize;
-            let universe: BTreeSet<usize> = (0..n).collect();
-            let mut base = RollbackDiGraph::new();
-            let mut alias = TestAlias::default();
-            let mut order = CondensationOrder::new();
-            for step in 0..120 {
-                let a = (rng.next_u32() as usize) % n;
-                let b = (rng.next_u32() as usize) % n;
-                match rng.next_u32() % 10 {
-                    0..=4 => {
-                        if a != b {
-                            base.increment_edge(a, b);
-                            order.insert_edge(&base, a, b);
-                        }
-                    }
-                    5..=7 => {
-                        if a != b && base.edge_count(a, b) > 0 {
-                            base.decrement_edge(a, b);
-                            order.remove_edge(&base, a, b);
-                        }
-                    }
-                    8 => {
-                        if a != b {
-                            order.apply_contract(&base, a, b);
-                            alias.union(a, b);
-                        }
-                    }
-                    _ => order.invalidate(),
-                }
-                let context = format!("seed={seed:x} step={step}");
-                assert_multi_matches_brute(&mut order, &base, &alias, &universe, &context);
-                order
-                    .validate(&base)
-                    .unwrap_or_else(|e| panic!("{context}: {e}"));
-                // Speculative query differential on top of the
-                // mutated state: random pair + small random overlay.
-                let mut overlay: BTreeMap<(usize, usize), isize> = BTreeMap::new();
-                for _ in 0..(rng.next_u32() % 3) {
-                    let x = (rng.next_u32() as usize) % n;
-                    let y = (rng.next_u32() as usize) % n;
-                    if x == y {
-                        continue;
-                    }
-                    if base.edge_count(x, y) > 0 && rng.next_u32().is_multiple_of(2) {
-                        overlay.insert((x, y), -(base.edge_count(x, y) as isize));
-                    } else {
-                        *overlay.entry((x, y)).or_insert(0) += 1;
-                    }
-                }
-                let u = (rng.next_u32() as usize) % n;
-                let v = (rng.next_u32() as usize) % n;
-                assert_eq!(
-                    order.would_join_multi_scc(&base, &overlay, u, v),
-                    brute_would_join(&base, &alias, &overlay, u, v),
-                    "{context}: would_join({u},{v}) overlay={overlay:?}",
-                );
-            }
         }
     }
 

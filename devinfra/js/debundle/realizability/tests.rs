@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use super::*;
 use analysis::OwnerId;
 use analysis::facts::analyze_chunk;
-use analysis::graph::build_owner_graph;
+use analysis::graph::build_owner_graph_with;
 use analysis::ids::{LogicalModuleIndex, ModuleId};
 use analysis::partition::Partition;
 use analysis::{AnalysisHints, OwnerGraph};
@@ -30,7 +30,7 @@ fn parse_and_build(source: &str) -> OwnerGraph {
         .parse_module()
         .expect("parse module");
     let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
-    build_owner_graph(&facts).unwrap()
+    build_owner_graph_with(&facts, Default::default()).unwrap()
 }
 
 /// Two top-level constants in different modules, with one reading
@@ -422,7 +422,8 @@ fn namespace_aggregator_with_pure_subs_is_realizable() {
     );
 }
 
-/// **RED regression test** for the namespace-aggregator TDZ hole.
+/// Namespace-aggregator TDZ hole: a cycle closed only by a promoted edge is
+/// unrealizable.
 ///
 /// The cycle goes through a *promoted* edge — the sub-module's at-init
 /// `readSeed()` call has its body's read of `seed` (in residual) promoted
@@ -928,9 +929,8 @@ fn assert_cached_simulator_matches_rebuild(index: &RealizabilityIndex, label: &s
 /// current `i_graph` / `constraining_buckets`. Also asserts the
 /// cached `(i_successors, constraining_pairs)` snapshots match.
 ///
-/// Initially RED before the cache is wired to invalidate on edge
-/// mutations; GREEN once `add_current_edge` /
-/// `remove_current_edge` / `rollback_graphs` all drop the cache.
+/// `add_current_edge` / `remove_current_edge` / `rollback_graphs` each drop
+/// the cache, so a stale simulator never outlives an edge mutation.
 #[test]
 fn incremental_simulator_matches_rebuild_after_each_delta() {
     struct Fixture {

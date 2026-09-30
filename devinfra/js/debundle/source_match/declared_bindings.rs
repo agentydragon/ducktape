@@ -1,16 +1,5 @@
 use super::*;
 
-pub(crate) fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
-            Decl::Var(var) => Some(var),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 pub(crate) fn declared_bindings(item: &ModuleItem) -> Vec<ResolvedMemberBinding> {
     match item {
         ModuleItem::Stmt(Stmt::Decl(decl)) => declared_bindings_for_decl(decl),

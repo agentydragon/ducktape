@@ -27,7 +27,7 @@ pub struct LogicalModuleIndex(pub usize);
 /// Wraps a [`LogicalModuleIndex`] pointing into the schedule's
 /// `logical_modules` list. The residual catch-all is just a logical
 /// module flagged `residual: true` — synthesized by the materializer
-/// before `ChunkFactorization::build` for chunks that need a default
+/// before `ChunkFactorization::build_with` for chunks that need a default
 /// destination (every `InlineInEntry` and `CatchallFile` chunk; the
 /// `MiniFactors` synthesizer handles assignments itself).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
@@ -37,10 +37,6 @@ pub struct ModuleId(pub LogicalModuleIndex);
 impl ModuleId {
     pub fn logical(idx: usize) -> Self {
         Self(LogicalModuleIndex(idx))
-    }
-
-    pub fn index(self) -> LogicalModuleIndex {
-        self.0
     }
 }
 

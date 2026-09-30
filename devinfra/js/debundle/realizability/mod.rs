@@ -229,11 +229,11 @@ pub fn check_realizability(
     // `(at-init forward, lazy back)` candidates: the constraining
     // subgraph alone is acyclic, but the lazy back-edge closes a
     // cycle in the runtime DFS topology. Lemma 2
-    // (`chunk_source_import_order`) reverses entry's import order
-    // within each I-SCC so DFS lands on the dependent first and
-    // unwinds through the dependency; the simulator below checks
-    // whether that reversal actually rescues evaluation given the
-    // spec's full import topology.
+    // (`chunk_source_import_order_from_adjacency`) reverses entry's
+    // import order within each I-SCC so DFS lands on the dependent
+    // first and unwinds through the dependency; the simulator below
+    // checks whether that reversal actually rescues evaluation given
+    // the spec's full import topology.
     let mut i_graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
     for (from, succs) in &canonical.i_successors {
         for to in succs {

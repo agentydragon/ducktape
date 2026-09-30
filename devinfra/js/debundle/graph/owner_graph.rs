@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -54,7 +54,7 @@ pub struct OwnerNode {
     pub id: OwnerId,
     pub statement_ordinal: StatementOrdinal,
     pub source_location: Option<SourceLocation>,
-    pub declared: std::collections::BTreeSet<Id>,
+    pub declared: BTreeSet<Id>,
     pub kind: StatementKind,
     pub purity: Purity,
 }
@@ -119,28 +119,6 @@ impl OwnerGraph {
     }
 }
 
-/// Recovery handle that maps the JSON `OwnerGraphReport` owner-id
-/// strings to the `OwnerId`s of an `OwnerGraph` built via
-/// `OwnerGraph::from_report`. The position of an owner-id in
-/// `OwnerGraphReport.nodes` equals the constructed `OwnerId.0`, so the
-/// index lookup is just a position scan; this struct keeps the lookup
-/// O(1) via an interned `HashMap`.
-#[derive(Debug, Clone)]
-pub struct OwnerReportIndex {
-    pub owner_ids: Vec<String>,
-    by_id: HashMap<String, OwnerId>,
-}
-
-impl OwnerReportIndex {
-    pub fn lookup(&self, id: &str) -> Option<OwnerId> {
-        self.by_id.get(id).copied()
-    }
-
-    pub fn id_of(&self, owner: OwnerId) -> Option<&str> {
-        self.owner_ids.get(owner.0).map(String::as_str)
-    }
-}
-
 impl OwnerGraph {
     /// Reconstruct a typed `OwnerGraph` from a JSON-deserialized
     /// `crate::OwnerGraphReport`. Used by the peel planner CLI so the
@@ -148,28 +126,12 @@ impl OwnerGraph {
     /// gate does, instead of re-deriving cycle detection over the
     /// JSON-flattened edge list.
     ///
-    /// `facts` is the per-statement fact slice from a
-    /// `ChunkFactsReport` (see `facts/wire.rs`); when supplied, the
-    /// reconstructed nodes' [`OwnerNode::declared`] sets are
-    /// populated by joining each node's `statement_ordinal` against
-    /// the matching `StatementFactsReport.declared`. Pass `&[]` to
-    /// opt out — `declared` stays empty, which is appropriate for
-    /// gate-only consumers that never call
-    /// [`crate::factor_assembly::assemble_partition`] on the
-    /// reconstructed graph.
-    ///
-    /// The result is "gate-grade": the returned graph carries enough
-    /// information for `check_realizability` (edge endpoints,
-    /// `DepKind`, residual marker) and — with `facts` supplied — the
-    /// per-owner declared-binding set
-    /// `factor_assembly::compute_owner_claims` walks. Per-edge
-    /// `binding` and per-node `kind` / `purity` mirror the JSON wire
-    /// shape; the hygienic `SyntaxContext` carried by `IdReport` is
-    /// only meaningful within a single SWC `Globals` scope, so
-    /// reconstructed `Id`s round-trip *within one process* but
-    /// **must not** be compared against re-parsed AST identifiers
-    /// from a different `Globals` — `facts.json` is debug-only, see
-    /// <../docs/lessons_learned/cross_process_stage_b.md>.
+    /// The result is "gate-grade": it carries edge endpoints,
+    /// `DepKind`, the residual marker, and the per-edge `binding` and
+    /// per-node `kind` / `purity` the JSON wire shape mirrors. Every
+    /// node's [`OwnerNode::declared`] is empty — the report has no
+    /// hygienic `Id`s — so the graph cannot feed
+    /// [`crate::factor_assembly::assemble_partition`].
     ///
     /// `OwnerEdgeId`s in the reconstructed graph are assigned in the
     /// order edges appear in `report.edges`; they don't necessarily
@@ -184,21 +146,13 @@ impl OwnerGraph {
     /// graph than the one the report described.
     pub fn from_report(
         report: &crate::OwnerGraphReport,
-        facts: &[crate::StatementFactsReport],
-    ) -> Result<(Self, OwnerReportIndex), UnresolvedOwnerEdgeEndpoint> {
-        let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
-        let by_id: HashMap<String, OwnerId> = owner_ids
+    ) -> Result<Self, UnresolvedOwnerEdgeEndpoint> {
+        let by_id: HashMap<String, OwnerId> = report
+            .nodes
             .iter()
             .enumerate()
-            .map(|(i, id)| (id.clone(), OwnerId(i)))
+            .map(|(i, n)| (n.id.clone(), OwnerId(i)))
             .collect();
-
-        // Join key: a statement's ordinal is its identity across both
-        // wire shapes — `OwnerGraphNodeReport.statement_ordinal` and
-        // `StatementFactsReport.ordinal`. Build a lookup table once
-        // so the per-node hydration below is O(1) per node.
-        let declared_by_ordinal: HashMap<StatementOrdinal, &Vec<crate::IdReport>> =
-            facts.iter().map(|f| (f.ordinal, &f.declared)).collect();
 
         let nodes: Vec<OwnerNode> = report
             .nodes
@@ -208,10 +162,7 @@ impl OwnerGraph {
                 id: OwnerId(i),
                 statement_ordinal: n.statement_ordinal,
                 source_location: n.source_location.clone(),
-                declared: declared_by_ordinal
-                    .get(&n.statement_ordinal)
-                    .map(|ids| ids.iter().map(crate::IdReport::to_id).collect())
-                    .unwrap_or_default(),
+                declared: BTreeSet::new(),
                 kind: n.statement_kind,
                 purity: n.purity.clone(),
             })
@@ -247,6 +198,12 @@ impl OwnerGraph {
             });
         }
 
+        Ok(Self::from_parts(nodes, edges))
+    }
+
+    /// Assemble the graph from `nodes` and `edges` (`edges[i].id` is
+    /// `OwnerEdgeId(i)`), deriving the CSR adjacency in one pass.
+    pub(super) fn from_parts(nodes: Vec<OwnerNode>, edges: Vec<OwnerEdge>) -> Self {
         let mut out_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
         let mut in_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
         let mut callee_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
@@ -263,16 +220,13 @@ impl OwnerGraph {
                 slot.push(edge.id);
             }
         }
-
-        let graph = OwnerGraph {
+        Self {
             nodes,
             edges,
             out_edges,
             in_edges,
             callee_edges,
-        };
-        let index = OwnerReportIndex { owner_ids, by_id };
-        Ok((graph, index))
+        }
     }
 }
 

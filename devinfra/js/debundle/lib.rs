@@ -29,24 +29,21 @@ pub mod reports;
 
 pub use analysis_hints::{AnalysisHints, KnownEffect, LocalEffectPolicy};
 pub use atomic_units::{
-    AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units,
-    compute_owner_graph_and_units_with,
+    AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units_with,
 };
 pub use factor_assembly::{
     AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_partition,
 };
 pub use facts::{
-    ChunkFactAnalysis, ChunkFactsReport, EffectCell, IdReport, PositionBucketed,
-    StatementEffectSummary, StatementFacts, StatementFactsReport, StatementKind,
-    StructuralChunkAnalysis, StructuralStatementFacts, analyze_chunk, analyze_chunk_structural,
-    analyze_chunk_with_policy, find_top_level_await, local_namespace_iife_target,
+    ChunkFactAnalysis, EffectCell, PositionBucketed, StatementEffectSummary, StatementFacts,
+    StatementKind, StructuralChunkAnalysis, StructuralStatementFacts, analyze_chunk,
+    analyze_chunk_structural, analyze_chunk_with_policy, local_namespace_iife_target,
 };
 pub use graph::{
-    ChunkConstrainingEdgeSet, DepKind, DuplicateTopLevelDeclaration, EdgeMetadata, EdgeReason,
-    EdgeRole, ModuleQuotient, OwnerEdge, OwnerEdgeId, OwnerGraph, OwnerGraphOptions, OwnerId,
-    OwnerNode, OwnerReportIndex, UnresolvedOwnerEdgeEndpoint, build_module_quotient,
-    build_owner_graph, build_owner_graph_with, chunk_constraining_module_edges, chunk_linker_order,
-    chunk_source_import_order, position_lookup,
+    ChunkConstrainingEdgeSet, DepKind, DuplicateTopLevelDeclaration, EdgeReason, EdgeRole,
+    ModuleQuotient, OwnerEdge, OwnerEdgeId, OwnerGraph, OwnerGraphOptions, OwnerId, OwnerNode,
+    UnresolvedOwnerEdgeEndpoint, build_module_quotient, build_owner_graph_with,
+    chunk_constraining_module_edges, position_lookup,
 };
 pub use ids::{
     BindingKind, ChunkId, ChunkTable, LogicalModule, LogicalModuleIndex, ModuleId,

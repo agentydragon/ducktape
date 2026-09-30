@@ -29,10 +29,16 @@ Proposed execution order for the Thread correctness/UI track:
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Low priority / deferred:** bounded browser cache state (`THREAD_LAZY_HISTORY`, desire D6),
-  adopting harness-native subagents as Threads (`NATIVE_SUBAGENT_THREADS`), and optional
-  app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`). The current
-  view sync lazily loads long content and retains loaded rows/bodies until the Thread closes; it
-  keeps the archive lossless.
+  and optional app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`).
+  The current view sync lazily loads long content and retains loaded rows/bodies until the Thread
+  closes; it keeps the archive lossless.
+- **Unranked future harness capabilities:** project skills and commands, web search, visual input,
+  native subagents, interactive controls, project hooks/plugins, and prompt suggestions. The
+  existing P2 item `DT` is included below as a cross-reference and keeps its current priority; it
+  covers Action-backed tools and background-work control. The new candidates are an inventory, not
+  an execution order or a priority claim against the rest of this DAG. Their win/work estimates are
+  provisional; compare them with the full roadmap when scheduling. `HARNESS_CONFIG_ISOLATION` is
+  the shared technical prerequisite.
 
 The independent Action Service track still has console policy parity (`CONSOLE_POLICIES`) and Haku
 MCP/tool-approval retirement (`MCP_CONSOLE_INTERNAL`, `MCPAGG`, `RETIRE_TOOLS`). Transcript
@@ -68,7 +74,15 @@ flowchart TB
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
     ING["Deferred support<br/>Event & Notification Hub<br/>Action decisions and subscribed external events -> Thread ingress"]:::future
-    DT["P2 deferred<br/>driver-provided declarations/background control"]:::future
+    DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
+    HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
+    HARNESS_SKILLS["Unranked candidate<br/>project-scoped skills and commands<br/>both native harnesses"]:::future
+    HARNESS_WEB_SEARCH["Unranked candidate<br/>routed web search<br/>source evidence in Thread"]:::future
+    HARNESS_VISUAL_INPUT["Unranked candidate<br/>image attachments and visual input<br/>composer, protocol, storage, replay"]:::future
+    HARNESS_INTERACTIVE_CONTROLS["Unranked candidate<br/>questions and permission decisions<br/>durable park, answer, recovery"]:::future
+    HARNESS_PROJECT_HOOKS["Unranked candidate<br/>trusted project hooks<br/>bounded execution and control replies"]:::future
+    HARNESS_PLUGINS["Unranked candidate<br/>project plugins and skill packages<br/>source trust and capability grants"]:::future
+    HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
     CROSS_IDENTITY_READ_POLICY["Deferred decision<br/>explicit policy for reading across Identities<br/>what cross-Identity delivery waits on"]:::decision
@@ -102,7 +116,7 @@ flowchart TB
     THREAD_ACTIVITY_MOCKS["P1 UI design<br/>mock compact tool/reasoning activity<br/>one-line calls with individual expansion"]:::future
     THREAD_ACTIVITY_DENSITY["Planned UI after mock review<br/>compact activity with per-item disclosure<br/>preserve status, ordering, and Raw evidence"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
-    NATIVE_SUBAGENT_THREADS["Low-priority exploration<br/>adopt native Claude/Codex subagents<br/>as linked Agentplane Threads"]:::future
+    NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
@@ -123,6 +137,15 @@ flowchart TB
     RETIRE_APPROVAL_QUEUE --> RETIRE_TOOLS
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_SKILLS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_WEB_SEARCH
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_VISUAL_INPUT
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> NATIVE_SUBAGENT_THREADS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_INTERACTIVE_CONTROLS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_PROJECT_HOOKS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_PLUGINS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_PROMPT_SUGGESTIONS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> DT
     THREAD_ACTIVITY_MOCKS --> THREAD_ACTIVITY_DENSITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
@@ -542,20 +565,71 @@ credentials, login form contents, OAuth state, or unrelated user Threads. Clean 
 resources the run owns. Cover tail-first history, and combined start once it lands, without
 making this P2 suite a prerequisite of either.
 
-### `NATIVE_SUBAGENT_THREADS` — adopt harness-native subagents as Threads
+### Unranked future harness capabilities
 
-**Low-priority exploration:** when Claude or Codex starts a native subagent, discover
-its native identity and available transcript/events and expose it as a linked child
-Thread in Agentplane. Start with separate harness evidence for creation, output,
-completion, and restart/resume; verify what is observable rather than inferring child
-messages from the parent's tool summary. Preserve native frames and parent/child
-provenance, and deduplicate rediscovery across reconnects and restarts.
+These candidates describe native features currently disabled, narrowed, or not surfaced by
+Agentplane's hosted adapters. The `DT` row is the existing P2 item; other rows are unranked. Their
+value and effort estimates are rough planning inputs, not a ranking. The harness protocol roster
+records the current switches and uncovered wire surfaces
+([protocol roster](../native/docs/protocol_roster.md)). Keep the test capture profile deterministic;
+feature enablement belongs in an isolated hosted profile, not by widening every capture. Rows are
+ordered by identifier only. For Claude-specific behavior, start from the partial Claude Code
+reverse engineering in the sibling `gaffer-private` repository and extend it where a candidate
+needs evidence that work does not already provide.
 
-Decide the mapping to Sandbox, Thread, and harness incarnation before implementation.
-Adoption is not spawning another Agentplane-managed harness or claiming the parent's
-command receipts for a child. Read-only inspection may be the first useful slice;
-independent input, interrupt, model control, and resume are separate evidence-gated
-capabilities. Nothing in the current delivery/UI batch depends on this.
+- **`DT` (existing P2) — high win, medium–high work:** Surface Action-backed tools through
+  Claude driver MCP and Codex dynamic tools, plus the existing list/status and per-task stop floor
+  for background work. Reuse Action Service decisions, execution, idempotency, and provenance; it
+  remains deferred pending a named consumer. See [driver tools and background work](driver_tools_and_background.md).
+- **`HARNESS_INTERACTIVE_CONTROLS` — high win, high work:** Support questions and permission
+  requests that park a turn, survive reconnect/restart, accept or reject a durable decision, and
+  resume safely. Keep user decisions distinct from Action Service authorization.
+- **`HARNESS_PLUGINS` — medium win, high work:** Enable project plugin/skill packages with
+  explicit source trust and capability grants. Define install/update behavior and test that plugin
+  tools cannot exceed the Thread's authority.
+- **`HARNESS_PROJECT_HOOKS` — medium win, high work:** Run project hooks only behind an explicit
+  trust boundary; support bounded execution, hook replies, timeout/cancellation, and evidence in
+  the Thread. Do not inherit arbitrary host hooks.
+- **`HARNESS_PROMPT_SUGGESTIONS` — low win, low work:** Consider Claude's prompt suggestions only
+  if user research shows meaningful composer value; keep optional and avoid extra model work
+  without evidence.
+- **`HARNESS_SKILLS` — high win, low–medium work:** Enable project-scoped skills and custom
+  commands for Claude and Codex. Prove the project catalog is available in a Thread while
+  host-global settings and unrelated user configuration stay out.
+- **`HARNESS_VISUAL_INPUT` — high win, high work:** Carry image attachments through composer,
+  request protocol, storage, and replay/rendering; enable Codex image viewing and prove Claude's
+  image input path. Text-only transcripts are insufficient acceptance.
+- **`HARNESS_WEB_SEARCH` — high win, medium work:** Route native search through an approved,
+  observable egress path; retain source evidence and links in the Thread. Confirm provider/tool
+  availability before wiring either harness.
+- **`NATIVE_SUBAGENT_THREADS` — high win, high work:** Enable Claude Task and Codex multi-agent
+  features; discover child identity, output, completion, and restart/resume, then expose linked
+  child Threads with parent/child provenance and reconnect deduplication. Start with read-only
+  inspection; child control is a separate evidence-gated extension.
+
+#### `HARNESS_CONFIG_ISOLATION` — separate hosted features from capture configuration
+
+**Unranked prerequisite:** production adapters currently reuse narrow scenario launch/config
+helpers. Separate deterministic capture settings from an explicit hosted feature profile before
+turning on native capabilities. Prove that each Thread receives only its selected Agentplane
+configuration, project-scoped settings stay inside the workspace boundary, and machine/user-global
+configuration cannot silently expand tools or permissions. Keep feature choices independently
+switchable so each candidate can be enabled and accepted on its own. This is a harness-configuration
+boundary, separate from the deferred product capability profile in [Profiles](profiles.md).
+
+#### `NATIVE_SUBAGENT_THREADS` — adopt harness-native subagents as Threads
+
+**Unranked candidate:** when Claude or Codex starts a native subagent, discover its native identity
+and available transcript/events and expose it as a linked child Thread in Agentplane. Verify
+creation, output, completion, and restart/resume from separate harness evidence; do not infer child
+messages from the parent's tool summary. Preserve native frames and parent/child provenance, and
+deduplicate rediscovery across reconnects and restarts.
+
+Decide the mapping to Sandbox, Thread, and harness incarnation before implementation. Adoption is
+not spawning another Agentplane-managed harness or claiming the parent's command receipts for a
+child. Read-only inspection may be the first useful slice; independent input, interrupt, model
+control, and resume are separate evidence-gated capabilities. This has no dependency on the current
+delivery/UI batch.
 
 ### `ELEVATE` — agent-requested temporary permission
 

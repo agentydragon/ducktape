@@ -82,13 +82,11 @@ export { entry_value, cross_value, lazy_reader };
     assert_entry_output(&fixture, "alpha alpha-beta alpha-beta\n");
 }
 
-// Node-anchored regression test (originally RED) for the gaffer
-// over-rejection: an asymmetric I-cycle whose only residual-side
-// reference points at the constraining edge's TARGET (the
-// dependency), never the source (the dependent).
+// An asymmetric I-cycle whose only residual-side reference points at the
+// constraining edge's TARGET (the dependency), never the source (the
+// dependent), is accepted and runs under Node.
 //
-// Shape (gaffer's `domains/system/ids` ↔ `domains/system/schemas`
-// minimal repro; unit-level twin:
+// Shape (unit-level twin:
 // `realizability::tests::pass_two_simulator_models_entry_universal_imports_for_runtime_dfs`):
 //
 // - `mod_schemas` owns `schemas_target` (eager-read target) and
@@ -98,18 +96,17 @@ export { entry_value, cross_value, lazy_reader };
 // - residual's only reference into the SCC is `console.log(schemas_target)`
 //   — the dependency side. (No `export` statements: entry-side
 //   re-exports add residual read edges of their own, which would
-//   incidentally hand the old gate a direct edge to the dependent
-//   and mask the over-rejection this test pins.)
+//   incidentally hand a gate a direct edge to the dependent and mask what
+//   this test pins.)
 //
-// The old gate modeled residual's DFS fan-out as only the modules
-// residual's statements reference, entered the SCC at `mod_schemas`,
-// followed the emitted lazy-read import to `mod_ids`, and flagged a
-// TDZ. The emitted entry, however, imports EVERY plan in Lemma 2's
-// source-import order — `mod_ids` (the dependent) first — so the
-// runtime DFS unwinds through `mod_schemas` and evaluates it before
-// `mod_ids`. If the order were wrong, `ids_val`'s initializer would
-// throw a TDZ ReferenceError during loading and the asserted stdout
-// would never be produced.
+// A gate that modeled residual's DFS fan-out as only the modules residual's
+// statements reference would enter the SCC at `mod_schemas`, follow the
+// emitted lazy-read import to `mod_ids`, and flag a TDZ. The emitted entry,
+// however, imports EVERY plan in Lemma 2's source-import order — `mod_ids`
+// (the dependent) first — so the runtime DFS unwinds through `mod_schemas`
+// and evaluates it before `mod_ids`. If the order were wrong, `ids_val`'s
+// initializer would throw a TDZ ReferenceError during loading and the
+// asserted stdout would never be produced.
 #[test]
 fn dependency_only_residual_reference_into_asymmetric_cycle_runs_under_node() {
     let fixture = run_fixture(FixtureOpts::new(

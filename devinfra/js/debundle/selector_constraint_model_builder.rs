@@ -6,9 +6,9 @@ use std::fmt;
 
 use analysis::{OwnerId, StatementOrdinal};
 use selector_constraint_backend::{
-    AllDifferentReason, AllowedTupleRowsId, BackendValueId, CompiledSelectorProblem,
-    CompiledSelectorProblemBuilder, CompiledSelectorProblemError, ConstraintValue,
-    ConstraintVariableId, SharedVariableDomainId, TargetBindingProjection,
+    AllowedTupleRowsId, BackendValueId, CompiledSelectorProblem, CompiledSelectorProblemBuilder,
+    CompiledSelectorProblemError, ConstraintValue, ConstraintVariableId, SharedVariableDomainId,
+    TargetBindingProjection,
 };
 use selector_ir::{
     OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
@@ -35,11 +35,7 @@ pub fn compile_selector_problem(
     domains.discard_full_domain_source_sets();
     let mut variables = Vec::with_capacity(program.variables.len());
     for variable in &program.variables {
-        variables.push(model.add_variable(
-            variable.id,
-            variable.domain,
-            variable.debug_name.clone(),
-        )?);
+        variables.push(model.add_variable(variable.domain, variable.debug_name.clone()));
     }
 
     for target in &program.targets {
@@ -59,30 +55,18 @@ pub fn compile_selector_problem(
     let mut support_cache = EncodedSupportCache::default();
     for atom in &program.atoms {
         lower_atom_constraint(atom, &domains, &variables, &mut model, &mut support_cache)?;
-        if model.known_unsat_reason().is_some() {
+        if model.known_unsat() {
             break;
         }
     }
 
-    if model.known_unsat_reason().is_none() {
+    if !model.known_unsat() {
         model.simplify_allowed_tuples_against_current_domains()?;
     }
 
-    if model.known_unsat_reason().is_none() {
+    if !model.known_unsat() {
         for targets in &program.all_different {
             model.require_target_all_different(targets.clone())?;
-        }
-        for variable_set in &program.all_different_variables {
-            model.add_all_different(
-                variable_set
-                    .variables
-                    .iter()
-                    .map(|variable| model_variable(&variables, *variable))
-                    .collect::<Result<Vec<_>, _>>()?,
-                AllDifferentReason::SelectorSemantics {
-                    label: variable_set.label.clone(),
-                },
-            )?;
         }
     }
 
@@ -206,7 +190,6 @@ fn lower_atom_constraint(
         SelectorAtom::ProjectedAllowedTuples {
             variables: projected_variables,
             rows,
-            reason: _,
         } => add_projected_allowed_tuples(model, variables, projected_variables, rows),
         SelectorAtom::OwnerReferencesOwner { owner, referenced } => {
             add_cached_owner_owner_allowed_tuples(
@@ -366,20 +349,6 @@ struct EncodedSupportCache {
     owner_string_binary: BTreeMap<&'static str, AllowedTupleRowsId>,
 }
 
-fn restrict_owner_variable_to_candidates(
-    model: &mut CompiledSelectorProblemBuilder,
-    variable: ConstraintVariableId,
-    candidates: impl IntoIterator<Item = OwnerId>,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    let values = candidates
-        .into_iter()
-        .map(|owner| model.intern_owner(owner))
-        .collect::<Result<Vec<_>, _>>()?;
-    model
-        .restrict_variable_to_encoded_values(variable, values)
-        .map_err(Into::into)
-}
-
 fn restrict_string_variable_to_candidates<'a>(
     model: &mut CompiledSelectorProblemBuilder,
     variable: ConstraintVariableId,
@@ -430,67 +399,6 @@ fn cached_string_domain<'a>(
     Ok(domain_id)
 }
 
-fn add_owner_string_indexed_allowed_tuples(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: &[ConstraintVariableId],
-    owner: &OwnerTerm,
-    string: &StringTerm,
-    index: &OwnerStringIndex,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    match (owner, string) {
-        (OwnerTerm::Const { owner }, StringTerm::Const { value }) => {
-            index.contains(*owner, value).then_some(()).ok_or_else(|| {
-                CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                    atom: format!("owner/string fact {owner:?} {value:?}"),
-                }
-            })
-        }
-        (OwnerTerm::Var { id }, StringTerm::Const { value }) => {
-            let variable = model_variable(variables, *id)?;
-            restrict_owner_variable_to_candidates(
-                model,
-                variable,
-                index
-                    .owners_by_value
-                    .get(value)
-                    .into_iter()
-                    .flatten()
-                    .copied(),
-            )
-        }
-        (OwnerTerm::Const { owner }, StringTerm::Var { id }) => {
-            let variable = model_variable(variables, *id)?;
-            restrict_string_variable_to_candidates(
-                model,
-                variable,
-                index
-                    .values_by_owner
-                    .get(owner)
-                    .into_iter()
-                    .flatten()
-                    .map(String::as_str),
-            )
-        }
-        (OwnerTerm::Var { id: owner_id }, StringTerm::Var { id: string_id }) => {
-            let constraint_variables = [
-                model_variable(variables, *owner_id)?,
-                model_variable(variables, *string_id)?,
-            ];
-            let tuples = index
-                .rows
-                .iter()
-                .map(|(fact_owner, fact_string)| {
-                    Ok((
-                        model.intern_owner(*fact_owner)?,
-                        model.intern_string(fact_string)?,
-                    ))
-                })
-                .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-            add_encoded_allowed_binary_tuple_set(model, constraint_variables, tuples)
-        }
-    }
-}
-
 fn add_cached_owner_string_indexed_allowed_tuples(
     model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
@@ -501,6 +409,13 @@ fn add_cached_owner_string_indexed_allowed_tuples(
     support_cache: &mut EncodedSupportCache,
 ) -> Result<(), CompiledSelectorProblemBuildError> {
     match (owner, string) {
+        (OwnerTerm::Const { owner }, StringTerm::Const { value }) => {
+            index.contains(*owner, value).then_some(()).ok_or_else(|| {
+                CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
+                    atom: format!("owner/string fact {owner:?} {value:?}"),
+                }
+            })
+        }
         (OwnerTerm::Var { id }, StringTerm::Const { value }) => {
             let variable = model_variable(variables, *id)?;
             let key = (relation, value.clone());
@@ -523,16 +438,26 @@ fn add_cached_owner_string_indexed_allowed_tuples(
                 .restrict_variable_to_shared_sparse_domain(variable, domain_id)
                 .map_err(Into::into)
         }
+        (OwnerTerm::Const { owner }, StringTerm::Var { id }) => {
+            let variable = model_variable(variables, *id)?;
+            restrict_string_variable_to_candidates(
+                model,
+                variable,
+                index
+                    .values_by_owner
+                    .get(owner)
+                    .into_iter()
+                    .flatten()
+                    .map(String::as_str),
+            )
+        }
         (OwnerTerm::Var { id: owner_id }, StringTerm::Var { id: string_id }) => {
+            // `SelectorProgram::validate` types owner terms as owner variables
+            // and string terms as string variables: the two are distinct.
             let constraint_variables = [
                 model_variable(variables, *owner_id)?,
                 model_variable(variables, *string_id)?,
             ];
-            if constraint_variables[0] == constraint_variables[1] {
-                return add_owner_string_indexed_allowed_tuples(
-                    model, variables, owner, string, index,
-                );
-            }
             let row_set = if let Some(row_set) = support_cache.owner_string_binary.get(relation) {
                 *row_set
             } else {
@@ -559,7 +484,6 @@ fn add_cached_owner_string_indexed_allowed_tuples(
                 .map(|_| ())
                 .map_err(Into::into)
         }
-        _ => add_owner_string_indexed_allowed_tuples(model, variables, owner, string, index),
     }
 }
 
@@ -818,27 +742,6 @@ fn projected_value(value: SelectorProjectedValue) -> ConstraintValue {
         SelectorProjectedValue::Owner(value) => ConstraintValue::Owner(value),
         SelectorProjectedValue::String(value) => ConstraintValue::String(value),
     }
-}
-
-fn add_encoded_allowed_binary_tuple_set(
-    model: &mut CompiledSelectorProblemBuilder,
-    variables: [ConstraintVariableId; 2],
-    tuples: Vec<(BackendValueId, BackendValueId)>,
-) -> Result<(), CompiledSelectorProblemBuildError> {
-    if variables[0] == variables[1] {
-        return model
-            .restrict_variable_to_encoded_values(
-                variables[0],
-                tuples
-                    .into_iter()
-                    .filter_map(|(left, right)| (left == right).then_some(left)),
-            )
-            .map_err(Into::into);
-    }
-    model
-        .add_encoded_allowed_binary_tuples(variables, tuples)
-        .map(|_| ())
-        .map_err(Into::into)
 }
 
 fn optional_string_term_const(
@@ -1564,11 +1467,7 @@ impl FactDomains {
                 self.add_owner_term(owner);
                 self.add_string_term(binding);
             }
-            SelectorAtom::ProjectedAllowedTuples {
-                variables: _,
-                rows,
-                reason: _,
-            } => {
+            SelectorAtom::ProjectedAllowedTuples { rows, .. } => {
                 for row in rows {
                     for value in row {
                         self.add_projected_value(value);
@@ -1677,24 +1576,15 @@ impl FactDomains {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::{ChunkId, OwnerId, StatementOrdinal};
-    use selector_constraint_backend::{
-        AllowedTupleConstraintId, BackendValueId,
-        CompiledAllDifferentConstraint as AllDifferentConstraint, ConstraintValue,
-    };
-    use selector_ir::{ClaimKind, ClaimOrigin};
+    use analysis::{OwnerId, StatementOrdinal};
+    use selector_constraint_backend::{AllowedTupleConstraintId, BackendValueId, ConstraintValue};
+    use selector_ir::ClaimKind;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct AllowedTupleConstraint {
         id: AllowedTupleConstraintId,
         variables: Vec<ConstraintVariableId>,
         tuples: Vec<Vec<ConstraintValue>>,
-    }
-
-    impl PartialEq<&AllowedTupleConstraint> for AllowedTupleConstraint {
-        fn eq(&self, other: &&AllowedTupleConstraint) -> bool {
-            self == *other
-        }
     }
 
     fn owner(value: usize) -> ConstraintValue {
@@ -1707,7 +1597,6 @@ mod tests {
 
     fn owner_fact(owner: usize, ordinal: usize, statement_kind: &str) -> SelectorFact {
         SelectorFact::Owner {
-            chunk_id: ChunkId(0),
             owner: OwnerId(owner),
             statement_ordinal: StatementOrdinal(ordinal),
             statement_kind: statement_kind.to_string(),
@@ -1716,7 +1605,6 @@ mod tests {
 
     fn declared_binding(owner: usize, binding: &str) -> SelectorFact {
         SelectorFact::DeclaredBinding {
-            chunk_id: ChunkId(0),
             owner: OwnerId(owner),
             binding: binding.to_string(),
         }
@@ -1724,7 +1612,6 @@ mod tests {
 
     fn owner_reference(owner: usize, binding: &str, edge_kind: &str) -> SelectorFact {
         SelectorFact::OwnerReferencesBinding {
-            chunk_id: ChunkId(0),
             owner: OwnerId(owner),
             binding: binding.to_string(),
             edge_kind: edge_kind.to_string(),
@@ -1733,7 +1620,6 @@ mod tests {
 
     fn member_read(ordinal: usize, object: Option<&str>, member: &str) -> SelectorFact {
         SelectorFact::MemberRead {
-            chunk_id: ChunkId(0),
             statement_ordinal: StatementOrdinal(ordinal),
             object: object.map(str::to_string),
             member: member.to_string(),
@@ -1742,7 +1628,6 @@ mod tests {
 
     fn module_member_use(ordinal: usize, module: &str, member: &str) -> SelectorFact {
         SelectorFact::ModuleMemberUse {
-            chunk_id: ChunkId(0),
             statement_ordinal: StatementOrdinal(ordinal),
             module: module.to_string(),
             member: member.to_string(),
@@ -1756,7 +1641,6 @@ mod tests {
         arg_index: usize,
     ) -> SelectorFact {
         SelectorFact::CallArgumentUse {
-            chunk_id: ChunkId(0),
             argument: argument.to_string(),
             callee_object: callee_object.map(str::to_string),
             callee_member: callee_member.to_string(),
@@ -1766,7 +1650,6 @@ mod tests {
 
     fn decorate_call(callee: &str, class_anchor: &str, member: Option<&str>) -> SelectorFact {
         SelectorFact::DecorateCallUse {
-            chunk_id: ChunkId(0),
             callee: callee.to_string(),
             class_anchor: class_anchor.to_string(),
             member: member.map(str::to_string),
@@ -1775,7 +1658,6 @@ mod tests {
 
     fn intrinsic_alias(binding: &str, property: &str) -> SelectorFact {
         SelectorFact::IntrinsicAliasUse {
-            chunk_id: ChunkId(0),
             binding: binding.to_string(),
             property: property.to_string(),
         }
@@ -1941,7 +1823,6 @@ mod tests {
                 SelectorProjectedValue::Owner(OwnerId(7)),
                 SelectorProjectedValue::String("actual".to_string()),
             ]],
-            reason: "projected singleton test".to_string(),
         });
 
         let model = compile_selector_problem(&program, &fact_store(vec![])).unwrap();
@@ -1974,7 +1855,6 @@ mod tests {
                     SelectorProjectedValue::String("other".to_string()),
                 ],
             ],
-            reason: "projected correlation test".to_string(),
         });
 
         let model = compile_selector_problem(&program, &fact_store(vec![])).unwrap();
@@ -2002,22 +1882,18 @@ mod tests {
         let broad_owner = program.add_variable(VariableDomain::Owner, Some("broad".to_string()));
         let strict_owner = program.add_variable(VariableDomain::Owner, Some("strict".to_string()));
         let broad_target = program.add_target(
-            ChunkId(0),
             broad_owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Broad".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         let strict_target = program.add_target(
-            ChunkId(0),
             strict_owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Strict".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: broad_owner },
@@ -2062,7 +1938,7 @@ mod tests {
             model.target_projections[1].binding_projection,
             Some(TargetBindingProjection::Const("specific".to_string()))
         );
-        assert_eq!(model.all_different, Vec::<AllDifferentConstraint>::new());
+        assert!(model.all_different.is_empty());
 
         assert_eq!(
             decoded_variable_domain(&model, ConstraintVariableId(0)),
@@ -2075,70 +1951,14 @@ mod tests {
     }
 
     #[test]
-    fn lowers_selector_semantic_variable_all_different() {
-        let mut program = SelectorProgram::default();
-        let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
-        let left = program.add_variable(VariableDomain::String, Some("alpha.left".to_string()));
-        let right = program.add_variable(VariableDomain::String, Some("alpha.right".to_string()));
-        program.add_target(
-            ChunkId(0),
-            owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("Widget".to_string()),
-            },
-            ClaimOrigin::Synthetic,
-        );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: owner },
-            binding: StringTerm::Const {
-                value: "widget".to_string(),
-            },
-        });
-        program.add_atom(SelectorAtom::ProjectedAllowedTuples {
-            variables: vec![left],
-            rows: vec![vec![SelectorProjectedValue::String("a".to_string())]],
-            reason: "left".to_string(),
-        });
-        program.add_atom(SelectorAtom::ProjectedAllowedTuples {
-            variables: vec![right],
-            rows: vec![vec![SelectorProjectedValue::String("b".to_string())]],
-            reason: "right".to_string(),
-        });
-        program.require_variables_all_different(
-            vec![left, right],
-            "module::source_match.alpha_all.frame",
-        );
-
-        let facts = fact_store(vec![
-            owner_fact(10, 0, "var"),
-            declared_binding(10, "widget"),
-        ]);
-
-        let model = compile_selector_problem(&program, &facts).unwrap();
-
-        assert_eq!(model.all_different, Vec::<AllDifferentConstraint>::new());
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(1)),
-            vec![string("a")]
-        );
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(2)),
-            vec![string("b")]
-        );
-    }
-
-    #[test]
     fn target_binding_projection_preserves_binding_variable() {
         let mut program = SelectorProgram::default();
         let owner_var = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
         let binding_var = program.add_variable(VariableDomain::String, Some("binding".to_string()));
         let target = program.add_target(
-            ChunkId(0),
             owner_var,
             "module",
             ClaimKind::Binding { export_name: None },
-            ClaimOrigin::Synthetic,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: owner_var },
@@ -2166,7 +1986,7 @@ mod tests {
         );
         assert_eq!(
             allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
-            &AllowedTupleConstraint {
+            AllowedTupleConstraint {
                 id: AllowedTupleConstraintId(0),
                 variables: vec![ConstraintVariableId(0), ConstraintVariableId(1)],
                 tuples: vec![

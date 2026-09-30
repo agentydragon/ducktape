@@ -105,12 +105,14 @@ Solving in process means a solve's failures are the process's:
 
 ## Order
 
-A chunk's `Resolution` lists its outcomes in a fixed order: entities rejected
-before the solve (anonymous statements, then `source_matches[]` groups, then
-single `source_match` members, each in module order), name pins with no
-place, then the other anonymous statements, then the other members (name pins
-and relational selectors, then `source_matches[]` groups, then single
-`source_match` members, each in module order).
+A chunk's `Resolution` lists its outcomes in a fixed order: entities the matcher
+failed on (`invalid`), then entities rejected once their template references
+narrowed their places (§ Template references: `no_match`, `too_broad`,
+`conflict`, `invalid`), each set as anonymous statements, then `source_matches[]`
+groups, then single `source_match` members, in module order; then name pins
+with no place, then the other anonymous statements, then the other members
+(name pins and relational selectors, then `source_matches[]` groups, then
+single `source_match` members, each in module order).
 
 `run` records outcomes in two passes over the chunks, each in chunk-id order:
 first the claims it makes itself (duplicate claims, in request order), then,
@@ -229,8 +231,14 @@ authoring specs in parallel produces several at once.
 
 1. Add the fact to `chunk_facts` if it is not derivable from what is there.
    Extraction stays fail-closed.
-2. Lower it to a table over candidate ids in the resolve, with a compiled
-   encoding in `selector_constraint_model_builder`.
+2. Lower it through the selector program. `selector_ir`: a `SelectorAtom`
+   variant with arms in `variable_ids`, `remap_variables` and `validate_atom`,
+   and a `SelectorFact` variant for a new kind of fact. `selector_ir_lowering`:
+   an arm of `lower_selector_atoms`. `selector_resolve`: a `selector_fact_store`
+   branch that extracts its facts only when the program holds the atom.
+   `selector_constraint_model_builder`: an arm of `lower_atom_constraint`,
+   `DerivedFactRequirements::from_program` and `add_atom_constants`, and its
+   tables in `FactDomains` and `RelationSupportCache`.
 3. Prove it through `debundle run` on a fixture whose chunk also exports and
    uses the anchor, as <../e2e/cross_ref_lowering_test.rs> does: real graphs
    model `export { … }` and side-effect statements as owners that reference
@@ -244,7 +252,7 @@ authoring specs in parallel produces several at once.
 selectors against it, so a chunk with thousands of selectors pays setup once.
 `selector_match` is the homomorphism itself: hole-skipping, alpha-equivalence
 bijections, and run-hole subsequence alignment, with
-<../selector_match_differential_test.rs> pinning the exact semantics.
+<../selector_match_test.rs> pinning the exact semantics.
 
 Two properties make it near-linear rather than quadratic in selector count:
 needle-only validation is hoisted out of the candidate loop, and exact-mode

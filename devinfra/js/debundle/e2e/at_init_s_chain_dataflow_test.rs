@@ -1,89 +1,14 @@
-//! Regression tests (originally RED) for the dataflow-aware
-//! S-chain: emission consults per-statement dataflow before
-//! emitting a `Sequenced` owner edge between two consecutive
-//! impure top-level statements.
+//! Dataflow-aware S-chain (`dataflow_aware_s_chain`, docs/design.md
+//! "Emission modes"): a `Sequenced` owner edge joins two consecutive impure
+//! top-level statements only when the earlier one writes a cell the later
+//! one reads or writes.
 //!
-//! Background. The baseline S-chain emission in `graph/` walks
-//! every impure top-level statement in source order and
-//! unconditionally emits
-//!
-//! ```ignore
-//! raw_edges.push((curr, prev, EdgeReason::sequenced(curr.ord)));
-//! ```
-//!
-//! This is the transitive reduction of the total order over
-//! impure statements. It is sound (every realizable schedule
-//! satisfies it), but it is maximally conservative — it
-//! manufactures an init-order constraint between every adjacent
-//! pair of impure statements regardless of whether they
-//! actually interact via dataflow.
-//!
-//! ESM evaluates modules to completion in some linker-chosen
-//! order. Two impure statements that touch disjoint pieces of
-//! observable state are commutative across that boundary: the
-//! relative source-order between them is irrelevant to anyone
-//! else (no reader observes both an intermediate "after A,
-//! before B" and a "after B, before A" state because there is
-//! no shared cell to observe).
-//!
-//! The refinement under test (the "full dataflow" S-chain,
-//! opt-in via `dataflow_aware_s_chain`): for each impure
-//! top-level statement, compute its write set and read set
-//! (rebinds + global property mutations + property writes;
-//! reads from bindings + global properties); emit
-//! `Sequenced(prev → curr)` only when
-//!
-//! ```text
-//! prev.writes ∩ (curr.reads ∪ curr.writes) ≠ ∅
-//! ```
-//!
-//! This is strictly a relaxation of the existing chain (we
-//! never add an edge that wasn't there before), so soundness is
-//! straightforward: any realizable schedule of the relaxed
-//! graph is also realizable for the strict graph, and any
-//! schedule violated by the strict graph but not the relaxed
-//! one corresponds to a swap of two disjoint impure statements
-//! — observably indistinguishable.
-//!
-//! ## Patterns covered
-//!
-//! Anonymized from a real over-conservative S-chain observed
-//! in a large bundle's quotient cycle: 4 of 10 residual cut
-//! edges were S-chain edges between owners that touched
-//! disjoint state.
-//!
-//! 1. **Disjoint global property writes.** Two impure
-//!    statements that each `globalThis.X = ...` distinct,
-//!    independent property keys. The baseline S-edge chains
-//!    them; the dataflow-aware chain sees `{globalThis.alpha}`
-//!    vs `{globalThis.beta}` — disjoint — no edge.
-//!
-//! 2. **Fresh-local-only allocation after a global write.** A
-//!    `globalThis.tag = ...` followed by a `new LocalClass()`
-//!    or `Object.freeze({...})` call whose effect is confined
-//!    to a fresh local value. Both are impure, so the baseline
-//!    S-edge chains them; under dataflow the fresh-alloc
-//!    statement's write set is just its own binding and its
-//!    read set doesn't intersect `globalThis.tag` — no edge.
-//!
-//! 3. **Independent cross-module inits.** Two modules each
-//!    construct a one-off instance of a local class whose
-//!    constructor only touches `this`. The baseline S-edge
-//!    chains them; under dataflow each statement writes only
-//!    its own binding (plus the fresh instance); read sets are
-//!    disjoint — no edge.
-//!
-//! ## Test shape
-//!
-//! Each test builds a fixture, inspects
-//! `owner_graph.json::edges`, and asserts that no
-//! `Sequenced` owner edge connects the two non-interacting
-//! statements (in either direction). The fixtures themselves
-//! run correctly under the materializer — the S-edge is a
-//! spurious extra constraint, not a cycle-closer in
-//! isolation. Real impact (the gaffer case) is when the
-//! spurious edge happens to land inside an SCC of other
-//! constraining edges and becomes a member of the cut.
+//! Each test builds a fixture, inspects `owner_graph.json::edges`, and
+//! asserts that no `Sequenced` edge connects the two non-interacting
+//! statements in either direction. Patterns: disjoint global property
+//! writes; a fresh-local allocation after a global write; independent
+//! cross-module inits of a local class whose constructor only touches
+//! `this`.
 
 use analysis::{DepKind, OwnerGraphReport};
 use debundle_e2e_support::*;

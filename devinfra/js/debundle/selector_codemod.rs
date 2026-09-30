@@ -1,6 +1,6 @@
 //! Mechanical, reviewable spec selector rewrites.
 //!
-//! This powers `debundle spec selector-codemod`: a scripting-safe CLI for
+//! This powers `debundle spec synthesize-selectors`: a scripting-safe CLI for
 //! applying proven selector rewrites across a modules tree. The core
 //! source-aware rewrite is framed as: given one or more target entities, come
 //! up with the simplest selector/spec fragment that uniquely selects them.
@@ -15,6 +15,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use binding_targets::binding_name_strings;
+use js_ast::{item_decl, item_var_decl};
 use selector_outcome::{Outcome, ResolvedBy};
 use selector_resolve::{EntityIndex, Member, MemberSelector, SpecModule};
 use serde::Serialize;
@@ -48,25 +50,10 @@ use crate::minimize::{
 };
 use crate::render::holes_present;
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum SelectorCodemodRewrite {
-    NameBindingToSourceMatch,
-}
-
-impl SelectorCodemodRewrite {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::NameBindingToSourceMatch => "name_binding_to_source_match",
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct SelectorCodemodConfig {
     pub modules_root: PathBuf,
     pub apply: bool,
-    pub rewrite: SelectorCodemodRewrite,
     pub files: Vec<PathBuf>,
     pub modules: Vec<String>,
     pub module_prefixes: Vec<String>,
@@ -145,7 +132,6 @@ pub struct SelectorCodemodSummary {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SelectorCodemodReport {
-    pub rewrite: SelectorCodemodRewrite,
     pub action: String,
     pub candidates: Vec<SelectorCodemodCandidate>,
     pub summary: SelectorCodemodSummary,
@@ -210,9 +196,6 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
             ));
             continue;
         };
-        match config.rewrite {
-            SelectorCodemodRewrite::NameBindingToSourceMatch => {}
-        }
         let selected_exports = selected_item_exports.get(&module);
         if !selected_item_exports.is_empty() && selected_exports.is_none() {
             continue;
@@ -250,7 +233,6 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
     }
 
     Ok(SelectorCodemodReport {
-        rewrite: config.rewrite,
         action: if config.apply {
             "applied".to_string()
         } else {
@@ -747,7 +729,7 @@ fn load_synthesis_module(config: &SelectorCodemodConfig) -> Result<js_ast::Parse
             bail!("use either --source-file or --source-root with --chunk, not both")
         }
         _ => {
-            bail!("name-binding-to-source-match requires --source-file or --source-root + --chunk")
+            bail!("synthesize-selectors requires --source-file or --source-root + --chunk")
         }
     };
     let source = fs::read_to_string(&source_file)
@@ -907,7 +889,7 @@ impl IndexedDeclaration {
                 var.decls
                     .iter()
                     .flat_map(|declarator| {
-                        binding_names_for_pat(&declarator.name)
+                        binding_name_strings(&declarator.name)
                             .into_iter()
                             .map(move |name| IndexedBinding { name })
                     })
@@ -1195,7 +1177,7 @@ impl VisitMut for ShapeSignatureCanonicalizer {
 }
 
 /// The module name the synthesis probes resolve under.
-const SYNTHESIS_MODULE: &str = "<selector-codemod>";
+const SYNTHESIS_MODULE: &str = "<synthesize-selectors>";
 
 /// `match_source` as a member selector projected onto `export_name`.
 fn parse_member_selector(
@@ -1204,7 +1186,6 @@ fn parse_member_selector(
 ) -> Result<ParsedSourceMatchSelector> {
     ParsedSourceMatchSelector::parse(
         SYNTHESIS_MODULE,
-        "source_match",
         format!("<source_match needle in {SYNTHESIS_MODULE}>"),
         &SourceMatch {
             match_source: match_source.to_string(),
@@ -1545,52 +1526,6 @@ fn value_as_string(value: &Value) -> Option<String> {
     }
 }
 
-fn item_decl(item: &ModuleItem) -> Option<&Decl> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => Some(decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => Some(&export.decl),
-        _ => None,
-    }
-}
-
-fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
-    match item_decl(item) {
-        Some(Decl::Var(var)) => Some(var),
-        _ => None,
-    }
-}
-
-fn binding_names_for_pat(pat: &Pat) -> Vec<String> {
-    let mut names = Vec::new();
-    binding_names_for_pat_into(pat, &mut names);
-    names
-}
-
-fn binding_names_for_pat_into(pat: &Pat, names: &mut Vec<String>) {
-    match pat {
-        Pat::Ident(ident) => names.push(ident.id.sym.to_string()),
-        Pat::Array(array) => {
-            for elem in array.elems.iter().flatten() {
-                binding_names_for_pat_into(elem, names);
-            }
-        }
-        Pat::Object(object) => {
-            for prop in &object.props {
-                match prop {
-                    ObjectPatProp::KeyValue(key_value) => {
-                        binding_names_for_pat_into(&key_value.value, names);
-                    }
-                    ObjectPatProp::Assign(assign) => names.push(assign.key.id.sym.to_string()),
-                    ObjectPatProp::Rest(rest) => binding_names_for_pat_into(&rest.arg, names),
-                }
-            }
-        }
-        Pat::Rest(rest) => binding_names_for_pat_into(&rest.arg, names),
-        Pat::Assign(assign) => binding_names_for_pat_into(&assign.left, names),
-        Pat::Invalid(_) | Pat::Expr(_) => {}
-    }
-}
-
 fn single_ident_pat_name(pat: &Pat) -> Option<&str> {
     match pat {
         Pat::Ident(ident) => Some(ident.id.sym.as_ref()),
@@ -1605,9 +1540,8 @@ fn yk(key: &str) -> Value {
 pub fn render_selector_codemod_text(report: &SelectorCodemodReport, out: &mut String) {
     let s = &report.summary;
     out.push_str(&format!(
-        "{} {}: {} candidate(s), {} skipped, {} file(s) written\n",
+        "{}: {} candidate(s), {} skipped, {} file(s) written\n",
         report.action,
-        report.rewrite.name(),
         s.changed_candidates,
         s.skipped_candidates,
         s.files_written.len()

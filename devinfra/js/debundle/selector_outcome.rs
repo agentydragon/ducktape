@@ -9,10 +9,6 @@
 //! `run` and `validate` list only entities that did not resolve, plus
 //! resolved-by-elimination warnings; `match-selector` reports its one
 //! entity's outcome, resolved or not.
-//!
-//! Not yet recorded as outcomes: name-pin debt annotated with `note:`, and
-//! `alpha_all` readable names that are free references rather than local
-//! binders.
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -86,8 +82,6 @@ pub struct EntityRef {
 pub enum SelectorKind {
     #[serde(rename = "source_matches")]
     SourceMatches,
-    #[serde(rename = "members.source_match")]
-    MemberSourceMatch,
     #[serde(rename = "anonymous_statements.source_match")]
     AnonymousStatement,
     #[serde(rename = "members.binding")]
@@ -335,30 +329,10 @@ impl Serialize for OutcomeKind {
 }
 
 impl Outcome {
-    /// The outcome of a selector matched on its own, from every place it
-    /// matched.
     pub fn no_match() -> Self {
         Self::NoMatch {
             nearest_unclaimed: Vec::new(),
             reason: None,
-        }
-    }
-
-    pub fn from_matches(mut candidates: Vec<Candidate>) -> Self {
-        candidates.sort();
-        candidates.dedup();
-        match candidates.len() {
-            0 => Self::no_match(),
-            1 => {
-                let Candidate { owner, binding } = candidates.remove(0);
-                Self::Resolved {
-                    owner,
-                    binding,
-                    resolved_by: ResolvedBy::OwnSelector,
-                }
-            }
-            count if count > MAX_CANDIDATES_PER_SELECTOR => Self::too_broad(count),
-            _ => Self::ambiguous(candidates, false),
         }
     }
 
@@ -552,7 +526,6 @@ impl SelectorKind {
         match (self, target_binding) {
             (Self::SourceMatches, Some(target)) => format!("source_matches[].bindings[`{target}`]"),
             (Self::SourceMatches, None) => "source_matches[]".to_string(),
-            (Self::MemberSourceMatch, _) => "members[].selector.source_match".to_string(),
             (Self::AnonymousStatement, _) => "anonymous_statements[]".to_string(),
             (Self::Binding, _) => "members[].selector.binding".to_string(),
             (Self::CrossRef, _) => "members[].selector.cross_ref".to_string(),

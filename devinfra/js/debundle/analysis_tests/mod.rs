@@ -49,6 +49,10 @@ fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
     analyze_facts_with_hints(module, &AnalysisHints::default())
 }
 
+fn build_owner_graph(facts: &[StatementFacts]) -> Result<OwnerGraph, DuplicateTopLevelDeclaration> {
+    build_owner_graph_with(facts, OwnerGraphOptions::default())
+}
+
 /// A direct call `f()` at the chunk top level records `f` in the
 /// statement's `calls.eager` set. Drives at-init call promotion
 /// per docs/design.md "At-init call promotion".

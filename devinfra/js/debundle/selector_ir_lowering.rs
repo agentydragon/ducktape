@@ -8,10 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
-use analysis::{ChunkId, StatementKind};
+use analysis::StatementKind;
 use selector_ir::{
-    ClaimKind, ClaimOrigin, OwnerTerm, RelationalPrimitive, SelectorAtom, SelectorProgram,
-    SelectorProjectedValue, SelectorTargetId, SelectorVariableId, StringTerm, VariableDomain,
+    ClaimKind, OwnerTerm, SelectorAtom, SelectorProgram, SelectorProjectedValue, SelectorTargetId,
+    SelectorVariableId, StringTerm, VariableDomain,
 };
 use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation};
 
@@ -26,9 +26,8 @@ pub type ProjectedGroupRow = (Vec<(analysis::OwnerId, String)>, Vec<String>);
 /// Incremental builder for one joint selector program. Targets are scoped by
 /// logical module plus export name, while relation anchors resolve against the
 /// target set using the selector family's scoping rules.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MemberSelectorProgramBuilder {
-    chunk_id: ChunkId,
     program: SelectorProgram,
     owners_by_export: BTreeMap<(String, String), SelectorVariableId>,
     /// The binding each projected `source_match` export declares, by
@@ -62,20 +61,6 @@ enum OwnerInjectivityClass {
 }
 
 impl MemberSelectorProgramBuilder {
-    pub fn new(chunk_id: ChunkId) -> Self {
-        Self {
-            chunk_id,
-            program: SelectorProgram::default(),
-            owners_by_export: BTreeMap::new(),
-            projected_bindings: BTreeMap::new(),
-            projected_anonymous_owners: BTreeMap::new(),
-            global_owner_by_export: BTreeMap::new(),
-            targeted_owners: BTreeMap::new(),
-            injective_targeted_owners: BTreeSet::new(),
-            owner_injectivity_classes: BTreeMap::new(),
-        }
-    }
-
     pub fn declare_member_target(
         &mut self,
         logical_module: impl Into<String>,
@@ -96,7 +81,6 @@ impl MemberSelectorProgramBuilder {
         &mut self,
         logical_module: impl Into<String>,
         export_name: &str,
-        target_binding: &str,
         selector: MemberSelectorSpecRef<'_>,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         self.declare_target(
@@ -105,7 +89,6 @@ impl MemberSelectorProgramBuilder {
             selector,
             ClaimKind::BindingGroupMember {
                 export_name: export_name.to_string(),
-                target_binding: target_binding.to_string(),
             },
         )
     }
@@ -132,13 +115,7 @@ impl MemberSelectorProgramBuilder {
                 }
             })
             .or_insert(Some(owner));
-        Ok(self.program.add_target(
-            self.chunk_id,
-            owner,
-            logical_module.clone(),
-            claim,
-            selector_origin(selector),
-        ))
+        Ok(self.program.add_target(owner, logical_module, claim))
     }
 
     pub fn declare_projected_anonymous_statement_target_in_module(
@@ -157,11 +134,9 @@ impl MemberSelectorProgramBuilder {
             .insert((logical_module.clone(), statement_index), owner);
         self.injective_targeted_owners.insert(owner);
         self.program.add_target(
-            self.chunk_id,
             owner,
             logical_module,
-            ClaimKind::AnonymousStatement,
-            ClaimOrigin::AnonymousStatement {
+            ClaimKind::AnonymousStatement {
                 index: statement_index,
             },
         )
@@ -192,9 +167,6 @@ impl MemberSelectorProgramBuilder {
                         .collect()
                 })
                 .collect(),
-            reason: format!(
-                "{logical_module}::anonymous_statement.source_match.projected.{statement_index}"
-            ),
         });
     }
 
@@ -283,7 +255,6 @@ impl MemberSelectorProgramBuilder {
                     .collect()
                 })
                 .collect(),
-            reason: format!("{logical_module}::source_match.projected.{export_name}"),
         });
     }
 
@@ -336,7 +307,6 @@ impl MemberSelectorProgramBuilder {
                         .collect::<Vec<_>>()
                 })
                 .collect(),
-            reason: format!("{logical_module}::source_matches.projected"),
         });
     }
 
@@ -575,13 +545,6 @@ fn optional_index(index: Option<usize>) -> Result<Option<u32>, SelectorIrLowerin
         .transpose()
 }
 
-fn selector_origin(selector: MemberSelectorSpecRef<'_>) -> ClaimOrigin {
-    match relation_for_selector(selector) {
-        Some(relation) => ClaimOrigin::RelationalSelector { relation },
-        None => ClaimOrigin::MemberSelector,
-    }
-}
-
 fn statement_kind_str_for_spec(kind: BindingSourceKind) -> &'static str {
     let statement_kind = match kind {
         BindingSourceKind::VariableDeclarator => StatementKind::VarDecl,
@@ -654,28 +617,12 @@ impl From<selector_ir::SelectorProgramError> for SelectorIrLoweringError {
     }
 }
 
-fn relation_for_selector(selector: MemberSelectorSpecRef<'_>) -> Option<RelationalPrimitive> {
-    match selector {
-        MemberSelectorSpecRef::CrossRef(_) => Some(RelationalPrimitive::CrossRef),
-        MemberSelectorSpecRef::ReadsMember(_) => Some(RelationalPrimitive::ReadsMember),
-        MemberSelectorSpecRef::MemberOfModule(_) => Some(RelationalPrimitive::MemberOfModule),
-        MemberSelectorSpecRef::PassedToCall(_) => Some(RelationalPrimitive::PassedToCall),
-        MemberSelectorSpecRef::MakesDecorateCall(_) => Some(RelationalPrimitive::MakesDecorateCall),
-        MemberSelectorSpecRef::IntrinsicAlias(_) => Some(RelationalPrimitive::IntrinsicAlias),
-        MemberSelectorSpecRef::Binding(_) | MemberSelectorSpecRef::SourceMatch(_) => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use spec::CrossRefTarget;
 
     const MODULE: &str = "runtime/widgets";
-
-    fn new_builder() -> MemberSelectorProgramBuilder {
-        MemberSelectorProgramBuilder::new(ChunkId(3))
-    }
 
     fn lower(
         builder: &mut MemberSelectorProgramBuilder,
@@ -709,7 +656,7 @@ mod tests {
             kind: Some(BindingSourceKind::ImportSpecifier),
         };
         let error = lower(
-            &mut new_builder(),
+            &mut MemberSelectorProgramBuilder::default(),
             "ImportedWidget",
             MemberSelectorSpecRef::Binding(&selector),
         )
@@ -726,7 +673,7 @@ mod tests {
 
     #[test]
     fn joint_builder_reuses_anchor_owner_variable() {
-        let mut builder = new_builder();
+        let mut builder = MemberSelectorProgramBuilder::default();
         let anchor = lower(
             &mut builder,
             "Anchor",
@@ -760,7 +707,7 @@ mod tests {
 
     #[test]
     fn relational_targets_remain_owner_injective_without_binding_anchors() {
-        let mut builder = new_builder();
+        let mut builder = MemberSelectorProgramBuilder::default();
         let anchor = lower(
             &mut builder,
             "Anchor",

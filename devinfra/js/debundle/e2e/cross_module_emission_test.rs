@@ -4,8 +4,6 @@
 use debundle_e2e_support::*;
 use std::fs;
 
-// --- Cross-module dependency wiring --------------------------------------
-
 #[test]
 fn extracted_module_imports_unowned_helper_from_residual() {
     // Spec claims only `b`. Its helper `a` is unclaimed, so `a`
@@ -231,14 +229,11 @@ console.log(w({ a: null, b: "d" }));
     assert_entry_output(&fixture, "c\n");
 }
 
-// --- Consumer-side import-local disambiguation ---------------------------
-
 #[test]
 fn duplicate_top_level_decl_claims_are_rejected() {
-    // Two YAMLs both claim the same input-bundle top-level binding. Previously
-    // the emitter put the body in one module and emitted `export { X };` with
-    // no backing decl in the other — invalid JS that fails `import()` with
-    // "SyntaxError: Export 'X' is not defined in module".
+    // Two YAMLs both claim the same input-bundle top-level binding; emitting
+    // both would leave `export { X };` with no backing decl in one module
+    // (`SyntaxError: Export 'X' is not defined in module`).
     //
     // The spec author's options are: put both renames in one module,
     // or pick one module to own the declaration. Two modules
@@ -782,8 +777,6 @@ export { destructure, alias, consumer };
     assert_entry_output(&run_fixture(opts), "0 y vx\n");
 }
 
-// --- ImportSpecifier-bound members --------------------------------------
-
 #[test]
 fn import_specifier_member_emits_reimport_in_destination() {
     // Chunk imports `x` as local `a`. Spec claims that import
@@ -821,8 +814,6 @@ export { a };
         "mod_x.js must export Readable; got:\n{mod_x}",
     );
 }
-
-// --- Duplicate import-specifier claims are rejected ---------------------
 
 #[test]
 fn duplicate_import_specifier_claims_are_rejected() {
@@ -867,8 +858,6 @@ export { a };
         ],
     );
 }
-
-// --- Source-chunk re-imports for moved bodies ---------------------------
 
 #[test]
 fn moved_body_re_imports_runtime_specifier_local() {
@@ -1025,8 +1014,6 @@ console.log(runConsumer());
     );
 }
 
-// --- Dead source-chunk specifier trim ------------------------------------
-
 #[test]
 fn drops_specifier_for_imported_binding_claimed_and_unused_in_residual() {
     // Source chunk imports `dep` from vendor and uses it only to
@@ -1113,18 +1100,11 @@ export { composed };
     assert_entry_output(&fixture, "41\n");
 }
 
-// Regression test (originally RED) for the phantom-first import
-// divergence: the emitter used to place phantom side-effect imports
-// FIRST in every moved module as a separate run before the
-// cross-module binding imports, while the realizability gate's
-// evaluation simulator ordered ALL of a module's import targets in
-// one `linker_position` list. A phantom provider with a HIGHER
-// linker position than a binding-import provider therefore made the
-// emitted DFS order diverge from the simulated one. Both sides now
-// consume the single shared ordering (`EsmImportOrder`); this pins
-// the emitted shape: imports interleave by linker position, so the
-// binding import of `mod_p1` (the deeper dependency) precedes the
-// phantom side-effect import of `mod_p2`.
+// Phantom side-effect imports and cross-module binding imports share one
+// ordering (`EsmImportOrder`) with the realizability gate's evaluation
+// simulator, so imports interleave by linker position: the binding import
+// of `mod_p1` (the deeper dependency) precedes the phantom side-effect
+// import of `mod_p2`.
 //
 // Shape: `mod_m`'s body references `p1_v` directly (binding import
 // of `mod_p1`) and calls the residual helper `read_helper` at init,

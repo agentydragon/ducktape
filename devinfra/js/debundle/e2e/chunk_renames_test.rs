@@ -2,21 +2,16 @@
 //! staying in entry's body without creating an explicit `Logical(R)`
 //! module that would form a 2-module SCC with `ResidualEntry`.
 //!
-//! ## Background — the bug this op was added to fix
+//! ## Why not a `Logical(R)` module
 //!
-//! Previously, the gaffer-side non-emitting patch workflow stuffed its
-//! rename ops into a residual module's `members` list so the
-//! residual-member-rename path applied them. That works mechanically
-//! but the residual-member-rename path needs a `Logical(R)` module,
-//! which the validator treats as a distinct node from
-//! `ModuleId::ResidualEntry`. When the chunk interleaves orphan
-//! top-level statements (`console.log(x)` etc., owner =
-//! `ResidualEntry`) with side-effecting initializers on residual-
-//! owned decls (owner = `Logical(R)`), the S-edge ordering loop
-//! produces a 2-module SCC. Both nodes emit into files that evaluate
-//! in the chunk's same init phase — the cycle is a validator
-//! artifact, not a real evaluation hazard, but the gate still
-//! rejects.
+//! The residual-member-rename path needs a `Logical(R)` module, which the
+//! validator treats as a distinct node from `ModuleId::ResidualEntry`. When
+//! the chunk interleaves orphan top-level statements (`console.log(x)` etc.,
+//! owner = `ResidualEntry`) with side-effecting initializers on residual-
+//! owned decls (owner = `Logical(R)`), the S-edge ordering loop produces a
+//! 2-module SCC. Both nodes emit into files that evaluate in the chunk's
+//! same init phase — the cycle is a validator artifact, not a real
+//! evaluation hazard, but the gate still rejects.
 //!
 //! ## What `chunk_renames` does
 //!
@@ -167,12 +162,9 @@ fn private_chunk_renamed_residual_helper_used_by_extracted_module_auto_grows_ent
     // `mod_run`'s body can `import { helper as readableHelper }` from
     // entry. The chunk_renames mapping is honored: entry's local name
     // is `readableHelper`, exported as `helper`.
-    //
-    // Pre-redesign behavior was to reject this spec ("not exported by
-    // entry"). docs/design.md "Valid peels and atomic modules" now says
-    // residual entry bindings are importable because the emitter
-    // auto-exports them on demand; "private to entry" is not a
-    // first-class spec contract.
+    // docs/design.md "Valid peels and atomic modules": residual entry
+    // bindings are importable because the emitter auto-exports them on
+    // demand; "private to entry" is not a first-class spec contract.
     let opts = FixtureOpts::new(
         r#"function helper() {
   return "ok";

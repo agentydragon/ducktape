@@ -26,8 +26,8 @@ use selector_ir::{
 
 /// What every target of a program that admits no assignment reports.
 const UNSATISFIABLE_REASON: &str = "selectors that interact with this one admit no joint \
-    assignment: two or more claim the same place or contradict a relation (the conflicting \
-    selectors are not localized)";
+    assignment: two or more claim the same place or contradict a relation, and which ones is \
+    not determined";
 
 pub fn solve_with_backend<B>(
     program: &SelectorProgram,
@@ -39,7 +39,7 @@ where
 {
     let problem =
         compile_selector_problem(program, facts).map_err(SelectorBackendSolveError::Build)?;
-    if problem.known_unsat.is_some() {
+    if problem.known_unsat {
         return Ok(unsatisfiable_result(program));
     }
     if let Some(result) = singleton_no_constraint_backend_result(&problem) {
@@ -57,7 +57,7 @@ fn singleton_no_constraint_backend_result(
     // This is not a second exact-assignment backend. It is only the terminal case
     // where model compilation/simplification has already proven that no
     // constraints remain and every variable has exactly one possible value.
-    if problem.known_unsat.is_some()
+    if problem.known_unsat
         || !problem.allowed_tuples.is_empty()
         || !problem.all_different.is_empty()
     {
@@ -304,15 +304,15 @@ fn decode_unknown_result<E>(
     )
 }
 
-/// Targets in `decided_elsewhere` take their outcome from it; the assignments
-/// do not decide them.
+/// Targets in `undecided` take their outcome from it; the assignments do not
+/// decide them.
 fn decode_satisfying_assignments<E>(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
     problem: &CompiledSelectorProblem,
     assignments: &[BackendAssignment],
     capped: bool,
-    decided_elsewhere: &BTreeMap<SelectorTargetId, ClaimOutcome>,
+    undecided: &BTreeMap<SelectorTargetId, ClaimOutcome>,
 ) -> Result<SolverResult, SelectorBackendSolveError<E>> {
     let facts = MaterializationFacts::from_store(facts);
     let projections = problem
@@ -327,7 +327,7 @@ fn decode_satisfying_assignments<E>(
             .decode_assignment(assignment)
             .map_err(SelectorBackendSolveError::Assignment)?;
         for target in &program.targets {
-            if decided_elsewhere.contains_key(&target.id) {
+            if undecided.contains_key(&target.id) {
                 continue;
             }
             let projection = projections
@@ -356,11 +356,9 @@ fn decode_satisfying_assignments<E>(
                 .copied()
                 .ok_or(SelectorBackendSolveError::MissingOwnerFact { owner })?;
             let claim = ResolvedClaim {
-                chunk_id: target.chunk_id,
                 owner,
                 statement_ordinal,
                 binding,
-                provenance: Vec::new(),
             };
             let claims = claims_by_target.entry(target.id).or_default();
             if !claims.contains(&claim) {
@@ -375,7 +373,7 @@ fn decode_satisfying_assignments<E>(
             .iter()
             .map(|target| SolverClaim {
                 target: target.id,
-                outcome: match decided_elsewhere.get(&target.id) {
+                outcome: match undecided.get(&target.id) {
                     Some(outcome) => outcome.clone(),
                     None => claims_to_outcome(
                         claims_by_target.remove(&target.id).unwrap_or_default(),
@@ -491,13 +489,13 @@ impl MaterializationFacts {
 mod tests {
     use std::convert::Infallible;
 
-    use analysis::{ChunkId, OwnerId, StatementOrdinal};
+    use analysis::{OwnerId, StatementOrdinal};
     use selector_constraint_backend::ConstraintValue;
     use selector_constraint_backend::{
         BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
         BackendValueId, BackendVariableAssignment,
     };
-    use selector_ir::{ClaimOrigin, OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
+    use selector_ir::{OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
 
     use super::*;
 
@@ -571,7 +569,6 @@ mod tests {
 
     fn owner_fact(owner: OwnerId, ordinal: usize, kind: &str) -> SelectorFact {
         SelectorFact::Owner {
-            chunk_id: ChunkId(0),
             owner,
             statement_ordinal: StatementOrdinal(ordinal),
             statement_kind: kind.to_string(),
@@ -580,7 +577,6 @@ mod tests {
 
     fn binding_fact(owner: OwnerId, binding: &str) -> SelectorFact {
         SelectorFact::DeclaredBinding {
-            chunk_id: ChunkId(0),
             owner,
             binding: binding.to_string(),
         }
@@ -591,13 +587,11 @@ mod tests {
         let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
         let binding = program.add_variable(VariableDomain::String, Some("binding".to_string()));
         let target = program.add_target(
-            ChunkId(0),
             owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Readable".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: owner },
@@ -610,13 +604,11 @@ mod tests {
         let mut program = SelectorProgram::default();
         let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
         let target = program.add_target(
-            ChunkId(0),
             owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Readable".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: owner },
@@ -632,22 +624,18 @@ mod tests {
         let first_owner = program.add_variable(VariableDomain::Owner, Some("first".to_string()));
         let second_owner = program.add_variable(VariableDomain::Owner, Some("second".to_string()));
         let first_target = program.add_target(
-            ChunkId(0),
             first_owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("First".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         let second_target = program.add_target(
-            ChunkId(0),
             second_owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Second".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         for owner in [first_owner, second_owner] {
             program.add_atom(SelectorAtom::OwnerDeclaresBinding {
@@ -677,45 +665,15 @@ mod tests {
         facts
     }
 
-    #[test]
-    fn builds_backend_problem_from_selector_program() {
-        let (program, target) = binding_program();
-        let problem = compile_selector_problem(&program, &facts()).unwrap();
-
-        assert_eq!(problem.variables.len(), 2);
-        assert_eq!(problem.target_projections[0].target, target);
-        assert_eq!(
-            problem.target_projections[0].owner_variable,
-            ConstraintVariableId(0)
-        );
-        assert_eq!(
-            problem.target_projections[0].binding_projection,
-            Some(TargetBindingProjection::Variable(ConstraintVariableId(1)))
-        );
-        assert!(
-            problem
-                .value_dictionary
-                .encode(&ConstraintValue::Owner(OwnerId(1)))
-                .is_some()
-        );
-        assert!(
-            problem
-                .value_dictionary
-                .encode(&ConstraintValue::String("minA".to_string()))
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn backend_problem_preserves_constant_binding_projection() {
-        let (program, target) = const_binding_program();
-        let problem = compile_selector_problem(&program, &facts()).unwrap();
-
-        assert_eq!(problem.target_projections[0].target, target);
-        assert_eq!(
-            problem.target_projections[0].binding_projection,
-            Some(TargetBindingProjection::Const("minA".to_string()))
-        );
+    /// The outcome of a target resolved to the owner declaring `minA`.
+    fn min_a_outcome() -> ClaimOutcome {
+        ClaimOutcome::Unique {
+            claim: ResolvedClaim {
+                owner: OwnerId(1),
+                statement_ordinal: StatementOrdinal(10),
+                binding: Some("minA".to_string()),
+            },
+        }
     }
 
     #[test]
@@ -732,18 +690,7 @@ mod tests {
 
         let result = solve_with_backend(&program, &facts(), &backend).unwrap();
 
-        assert_eq!(
-            result.outcome_for(target),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
-                    owner: OwnerId(1),
-                    statement_ordinal: StatementOrdinal(10),
-                    binding: Some("minA".to_string()),
-                    provenance: Vec::new(),
-                }
-            })
-        );
+        assert_eq!(result.outcome_for(target), Some(&min_a_outcome()));
     }
 
     #[test]
@@ -757,18 +704,7 @@ mod tests {
 
         let result = solve_with_backend(&program, &facts(), &backend).unwrap();
 
-        assert_eq!(
-            result.outcome_for(target),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
-                    owner: OwnerId(1),
-                    statement_ordinal: StatementOrdinal(10),
-                    binding: Some("minA".to_string()),
-                    provenance: Vec::new(),
-                }
-            })
-        );
+        assert_eq!(result.outcome_for(target), Some(&min_a_outcome()));
     }
 
     #[test]
@@ -829,13 +765,11 @@ mod tests {
                 binding: StringTerm::Var { id: binding },
             });
             program.add_target(
-                ChunkId(0),
                 owner,
                 "module",
                 ClaimKind::Binding {
                     export_name: Some(export_name.to_string()),
                 },
-                ClaimOrigin::Synthetic,
             )
         });
         let backend = SelectingBackend {
@@ -888,18 +822,7 @@ mod tests {
 
         let result = solve_with_backend(&program, &facts(), &PanickingBackend).unwrap();
 
-        assert_eq!(
-            result.outcome_for(target),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
-                    owner: OwnerId(1),
-                    statement_ordinal: StatementOrdinal(10),
-                    binding: Some("minA".to_string()),
-                    provenance: Vec::new(),
-                }
-            })
-        );
+        assert_eq!(result.outcome_for(target), Some(&min_a_outcome()));
     }
 
     #[test]
@@ -909,18 +832,7 @@ mod tests {
         let result =
             solve_with_backend(&program, &single_binding_facts(), &PanickingBackend).unwrap();
 
-        assert_eq!(
-            result.outcome_for(target),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
-                    owner: OwnerId(1),
-                    statement_ordinal: StatementOrdinal(10),
-                    binding: Some("minA".to_string()),
-                    provenance: Vec::new(),
-                }
-            })
-        );
+        assert_eq!(result.outcome_for(target), Some(&min_a_outcome()));
     }
 
     /// Presolve proves the two fixed targets clash before any backend call.
@@ -950,13 +862,11 @@ mod tests {
                     },
                 });
                 program.add_target(
-                    ChunkId(0),
                     owner,
                     "module",
                     ClaimKind::Binding {
                         export_name: Some(binding.to_string()),
                     },
-                    ClaimOrigin::Synthetic,
                 )
             })
             .collect()
@@ -1012,18 +922,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            result.outcome_for(fixed),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
-                    owner: OwnerId(1),
-                    statement_ordinal: StatementOrdinal(10),
-                    binding: Some("minA".to_string()),
-                    provenance: Vec::new(),
-                }
-            })
-        );
+        assert_eq!(result.outcome_for(fixed), Some(&min_a_outcome()));
         assert_eq!(
             result.outcome_for(unproven),
             Some(&ClaimOutcome::Undecided {

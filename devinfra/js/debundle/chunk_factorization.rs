@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::report_builders::build_owner_graph_report;
-use analysis::atomic_units::{AtomicUnit, OwnerGraphAndUnits, compute_owner_graph_and_units};
+use analysis::atomic_units::{AtomicUnit, OwnerGraphAndUnits};
 use analysis::factor_assembly::{AtomicUnitConflict, assemble_partition};
 use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::partition::Partition;
@@ -53,44 +53,12 @@ pub struct ChunkFactorization {
 }
 
 impl ChunkFactorization {
-    /// Build a factorization from chunk facts plus the binding
-    /// catalogue plus spec-derived logical modules. `bindings` should
-    /// already have every `Owned` binding the spec assigned and every
-    /// `Imported` binding the spec re-exports.
-    ///
-    /// Convenience constructor: computes the owner graph and atomic
-    /// units internally. Call sites that already have those precomputed
-    /// (e.g. the materializer reuses them for mini-factor synthesis)
-    /// should call [`Self::build_with`] instead.
-    ///
-    /// Panics on facts where two statements declare the same binding
-    /// (`analysis::DuplicateTopLevelDeclaration`) — the production
-    /// path goes through `compute_chunk_analysis`, which surfaces
-    /// that as a spec-facing error before any factorization runs.
-    pub fn build(
-        chunk_id: String,
-        facts: &[analysis::StatementFacts],
-        bindings: HashMap<swc_ecma_ast::Id, analysis::BindingKind>,
-        logical_modules: Vec<LogicalModule>,
-        chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
-        default_destination: ModuleId,
-    ) -> Self {
-        let precomputed =
-            compute_owner_graph_and_units(facts).expect("chunk facts declare a binding twice");
-        Self::build_with(
-            chunk_id,
-            precomputed,
-            bindings,
-            logical_modules,
-            chunk_renames,
-            default_destination,
-        )
-    }
-
-    /// Build a factorization reusing a caller-computed owner graph +
-    /// atomic units. The materializer computes these once per chunk
-    /// for mini-factor synthesis and passes them in here so the
-    /// factorization doesn't redo the work.
+    /// Build a factorization from a caller-computed owner graph +
+    /// atomic units (the materializer computes these once per chunk
+    /// for mini-factor synthesis), the binding catalogue, and the
+    /// spec-derived logical modules. `bindings` should already have
+    /// every `Owned` binding the spec assigned and every `Imported`
+    /// binding the spec re-exports.
     pub fn build_with(
         chunk_id: String,
         precomputed: OwnerGraphAndUnits,
@@ -120,8 +88,8 @@ impl ChunkFactorization {
         let dep_graph_sccs = dep_graph.sccs();
         // Drive Lemma-2 ordering through the canonical
         // `ChunkConstrainingEdgeSet` so the emitter and the gate's
-        // simulator share one source of truth — see `graph.rs:
-        // chunk_constraining_module_edges` for the invariant doc.
+        // simulator share one source of truth — see
+        // `graph::chunk_constraining_module_edges` for the invariant doc.
         let canonical_edges = chunk_constraining_module_edges(&owner_graph, &partition);
         // Every logical module needs a deterministic source-order
         // slot for emit stability, even singletons that don't

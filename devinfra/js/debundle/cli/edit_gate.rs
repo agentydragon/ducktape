@@ -348,12 +348,11 @@ pub fn gate_post_edit_partition(
 ) -> Result<()> {
     let owner_graph_report = crate::load_owner_graph_report(owner_graph_path)?;
 
-    // The gate algorithm walks edges + partition, not declared sets.
-    // Pass `&[]` for facts — `from_report` leaves `declared` empty,
-    // which is fine for `check_realizability`/`validate_factorization`
-    // (both consume the partition we build below, not the per-owner
-    // declared field).
-    let (owner_graph, _index) = OwnerGraph::from_report(&owner_graph_report, &[])
+    // The gate algorithm walks edges + partition, not declared sets:
+    // `from_report` leaves `declared` empty, which is fine for
+    // `check_realizability`/`validate_factorization` (both consume the
+    // partition we build below, not the per-owner declared field).
+    let owner_graph = OwnerGraph::from_report(&owner_graph_report)
         .with_context(|| format!("reconstructing owner graph {}", owner_graph_path.display()))?;
 
     // owner_by_binding_name uses the Atom-only declared_bindings the

@@ -17,6 +17,7 @@ rust_library(
     crate_root = "js_ast.rs",
     edition = "2024",
     deps = [
+        ":binding_targets",
         "@crates//:anyhow",
         "@crates//:swc_atoms",
         "@crates//:swc_common",
@@ -72,13 +73,8 @@ rust_library(
     crate_root = "selector_candidate_index.rs",
     edition = "2024",
     deps = [
-        ":binding_targets",
-        ":js_ast",
         ":source_match_holes",
-        ":spec",
-        "@crates//:anyhow",
         "@crates//:roaring",
-        "@crates//:rustc-hash",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
@@ -89,7 +85,7 @@ rust_test(
     crate = ":selector_candidate_index",
     edition = "2024",
     deps = [
-        ":source_match",
+        ":js_ast",
     ],
 )
 
@@ -111,20 +107,6 @@ rust_test(
     name = "shape_index_test",
     crate = ":shape_index",
     edition = "2024",
-)
-
-# OPT/read-off-depth distribution + size-sweep benchmark over synthetic
-# chunks. Run with `bazelisk run //devinfra/js/debundle:shape_index_bench`.
-rust_binary(
-    name = "shape_index_bench",
-    srcs = ["shape_index_bench.rs"],
-    crate_root = "shape_index_bench.rs",
-    edition = "2024",
-    deps = [
-        ":js_ast",
-        ":shape_index",
-        "@crates//:swc_ecma_ast",
-    ],
 )
 
 # Read-off selector renderer (W2): maps a read-off AnchorSet to the kept-span
@@ -405,7 +387,6 @@ rust_library(
         "facts/mod.rs",
         "facts/purity_classification.rs",
         "facts/statement_facts.rs",
-        "facts/wire.rs",
         "graph/build.rs",
         "graph/edge.rs",
         "graph/linker_order.rs",
@@ -654,6 +635,7 @@ rust_library(
     crate_root = "selector_codemod.rs",
     edition = "2024",
     deps = [
+        ":binding_targets",
         ":js_ast",
         ":readoff_render",
         ":selector_outcome",
@@ -678,10 +660,7 @@ rust_test(
     name = "selector_codemod_test",
     crate = ":selector_codemod",
     edition = "2024",
-    deps = [
-        "@crates//:proptest",
-        "@crates//:swc_ecma_codegen",
-    ],
+    deps = ["@crates//:proptest"],
 )
 
 rust_library(
@@ -989,19 +968,13 @@ rust_library(
     name = "selector_ir",
     srcs = ["selector_ir.rs"],
     edition = "2024",
-    deps = [
-        ":analysis",
-        "@crates//:serde",
-    ],
+    deps = [":analysis"],
 )
 
 rust_test(
     name = "selector_ir_test",
     crate = ":selector_ir",
     edition = "2024",
-    deps = [
-        "@crates//:serde_json",
-    ],
 )
 
 rust_library(
@@ -1012,7 +985,6 @@ rust_library(
         ":analysis",
         ":selector_ir",
         ":selector_outcome",
-        "@crates//:serde",
     ],
 )
 
@@ -1141,7 +1113,6 @@ rust_test(
         ":analysis",
         ":selector_backend_solver",
         ":selector_ir",
-        "@crates//:serde_json",
     ],
 )
 
@@ -1232,7 +1203,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":js_ast",
-        "@crates//:serde",
+        "@crates//:strum",
         "@crates//:swc_ecma_ast",
     ],
 )
@@ -1241,7 +1212,6 @@ rust_test(
     name = "chunk_facts_test",
     crate = ":chunk_facts",
     edition = "2024",
-    deps = ["@crates//:serde_json"],
 )
 
 # The shape matcher's kernel: a structural homomorphism from a selector needle's
@@ -1262,16 +1232,15 @@ rust_library(
 # verdicts across identifier modes, holes, and declarator alignment, plus
 # fail-closed `Unsupported` outside the faithful subset.
 rust_test(
-    name = "selector_match_differential_test",
-    srcs = ["selector_match_differential_test.rs"],
-    crate_root = "selector_match_differential_test.rs",
+    name = "selector_match_test",
+    srcs = ["selector_match_test.rs"],
+    crate_root = "selector_match_test.rs",
     edition = "2024",
     deps = [
         ":chunk_facts",
         ":js_ast",
         ":selector_match",
         ":source_match",
-        "@crates//:swc_ecma_ast",
     ],
 )
 

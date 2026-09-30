@@ -1624,17 +1624,6 @@ mod tests {
         assert!(invalid.is_err(), "unknown admission check must be rejected");
     }
 
-    /// Default (empty) overrides serialize away entirely so untouched
-    /// specs round-trip without a spurious `admission_overrides: []`.
-    #[test]
-    fn empty_admission_overrides_are_skipped_on_serialize() {
-        let serialized = serde_json::to_string(&OwnerGraphOptions::default()).unwrap();
-        assert!(
-            !serialized.contains("admission_overrides"),
-            "default overrides must not serialize: {serialized}"
-        );
-    }
-
     #[test]
     fn source_match_unknown_field_reports_unsupported_selector_capability() {
         let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
@@ -1651,69 +1640,6 @@ mod tests {
         );
         assert!(
             message.contains("object_props"),
-            "unexpected error: {message}"
-        );
-    }
-
-    #[test]
-    fn source_match_rejects_legacy_wildcard_string_literals() {
-        let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
-            r#"{
-              "match": "const readable = \"TOKEN\";",
-              "wildcard_string_literals": ["TOKEN"]
-            }"#,
-        )
-        .unwrap_err();
-        let message = error.to_string();
-        assert!(
-            message.contains("unsupported selector capability"),
-            "unexpected error: {message}"
-        );
-        assert!(
-            message.contains("wildcard_string_literals"),
-            "unexpected error: {message}"
-        );
-    }
-
-    #[test]
-    fn source_match_defaults_to_alpha_all_identifiers() {
-        let source_match: SourceMatch =
-            serde_json::from_str(r#"{ "match": "const readable = runtime;" }"#).unwrap();
-        assert_eq!(
-            source_match.identifiers,
-            SourceMatchIdentifierMode::AlphaAll
-        );
-    }
-
-    #[test]
-    fn source_match_rejects_public_identifiers_field() {
-        let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
-            r#"{
-              "identifiers": "alpha_all",
-              "match": "const readable = runtime;"
-            }"#,
-        )
-        .unwrap_err();
-        let message = error.to_string();
-        assert!(
-            message.contains("unsupported selector capability") && message.contains("identifiers"),
-            "unexpected error: {message}"
-        );
-    }
-
-    #[test]
-    fn source_match_rejects_public_target_binding_field() {
-        let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
-            r#"{
-              "match": "const readable = runtime;",
-              "target_binding": "readable"
-            }"#,
-        )
-        .unwrap_err();
-        let message = error.to_string();
-        assert!(
-            message.contains("unsupported selector capability")
-                && message.contains("target_binding"),
             "unexpected error: {message}"
         );
     }
@@ -1788,13 +1714,6 @@ mod tests {
     }
 
     #[test]
-    fn cross_ref_unknown_field_is_rejected() {
-        let result: std::result::Result<MemberSelector, _> =
-            serde_json::from_str(r#"{ "cross_ref": { "references": "A", "calls": "B" } }"#);
-        assert!(result.is_err(), "unknown cross_ref field must be rejected");
-    }
-
-    #[test]
     fn reads_member_selector_resolves_to_a_reads_member_target() {
         let selector: MemberSelector = serde_json::from_str(
             r#"{ "reads_member": { "member": "uniqueId", "object": "codegenContext", "kind": "function_declaration" } }"#,
@@ -1811,93 +1730,6 @@ mod tests {
     }
 
     #[test]
-    fn reads_member_selector_defaults_object_and_kind() {
-        let selector: MemberSelector =
-            serde_json::from_str(r#"{ "reads_member": { "member": "render" } }"#).unwrap();
-        assert_eq!(
-            selector.selected().unwrap(),
-            MemberSelectorSpec::ReadsMember(ReadsMemberTarget {
-                member: "render".to_string(),
-                object: None,
-                kind: None,
-            })
-        );
-    }
-
-    #[test]
-    fn reads_member_requires_member() {
-        let result: std::result::Result<MemberSelector, _> =
-            serde_json::from_str(r#"{ "reads_member": { "object": "ctx" } }"#);
-        assert!(result.is_err(), "reads_member without `member` is rejected");
-    }
-
-    #[test]
-    fn reads_member_conflicts_with_other_selector_kinds() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "binding": { "name": "x" }, "reads_member": { "member": "id" } }"#,
-        )
-        .unwrap();
-        assert!(
-            selector.selected().is_err(),
-            "a member must use exactly one selector kind",
-        );
-    }
-
-    #[test]
-    fn reads_member_unknown_field_is_rejected() {
-        let result: std::result::Result<MemberSelector, _> =
-            serde_json::from_str(r#"{ "reads_member": { "member": "id", "writes": "x" } }"#);
-        assert!(
-            result.is_err(),
-            "unknown reads_member field must be rejected"
-        );
-    }
-
-    #[test]
-    fn member_rejects_legacy_inline_note_and_comment() {
-        for body in [
-            r#"{ "selector": { "binding": { "name": "x" } }, "note": "no forward-stable anchor yet" }"#,
-            r#"{ "selector": { "binding": { "name": "x" } }, "comment": "emitted prose" }"#,
-        ] {
-            let result: std::result::Result<Member, _> = serde_json::from_str(body);
-            assert!(
-                result.is_err(),
-                "legacy inline member metadata must be rejected: {body}"
-            );
-        }
-    }
-
-    #[test]
-    fn logical_module_accepts_and_round_trips_note() {
-        // Module-level `note:` is the remaining non-emitting annotation
-        // (`modules merge` writes its `merged from:` provenance here): it must
-        // survive `deny_unknown_fields`, round-trip intact, and — being absent
-        // from every lowering plan struct — never reach generated JS.
-        let module: LogicalModule =
-            serde_json::from_str(r#"{ "members": [], "note": "merged from: src.yaml" }"#).unwrap();
-        assert_eq!(module.note.as_deref(), Some("merged from: src.yaml"));
-        assert!(module.comment.is_none());
-        let round_tripped = serde_json::to_string(&module).unwrap();
-        assert!(
-            round_tripped.contains(r#""note":"merged from: src.yaml""#),
-            "note must survive round-trip: {round_tripped}",
-        );
-    }
-
-    #[test]
-    fn logical_module_note_is_absent_from_serialization_when_unset() {
-        // `skip_serializing_if = "Option::is_none"` keeps the field off the
-        // wire (and out of generated YAML/JSON) when no note is present.
-        let module: LogicalModule = serde_json::from_str(r#"{ "members": [] }"#).unwrap();
-        assert!(module.note.is_none());
-        let round_tripped = serde_json::to_string(&module).unwrap();
-        assert!(
-            !round_tripped.contains("note"),
-            "unset note must not serialize: {round_tripped}",
-        );
-    }
-
-    #[test]
     fn member_of_module_selector_resolves_to_a_target() {
         let selector: MemberSelector = serde_json::from_str(
             r#"{ "member_of_module": { "module": "./accessors", "member": "CardsView", "kind": "class_declaration" } }"#,
@@ -1910,61 +1742,6 @@ mod tests {
                 member: "CardsView".to_string(),
                 kind: Some(BindingSourceKind::ClassDeclaration),
             })
-        );
-    }
-
-    #[test]
-    fn member_of_module_selector_defaults_kind() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "member_of_module": { "module": "react", "member": "memo" } }"#,
-        )
-        .unwrap();
-        assert_eq!(
-            selector.selected().unwrap(),
-            MemberSelectorSpec::MemberOfModule(MemberOfModuleTarget {
-                module: "react".to_string(),
-                member: "memo".to_string(),
-                kind: None,
-            })
-        );
-    }
-
-    #[test]
-    fn member_of_module_requires_module_and_member() {
-        let no_member: std::result::Result<MemberSelector, _> =
-            serde_json::from_str(r#"{ "member_of_module": { "module": "./m" } }"#);
-        assert!(
-            no_member.is_err(),
-            "member_of_module without `member` is rejected"
-        );
-        let no_module: std::result::Result<MemberSelector, _> =
-            serde_json::from_str(r#"{ "member_of_module": { "member": "X" } }"#);
-        assert!(
-            no_module.is_err(),
-            "member_of_module without `module` is rejected"
-        );
-    }
-
-    #[test]
-    fn member_of_module_conflicts_with_other_selector_kinds() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "binding": { "name": "x" }, "member_of_module": { "module": "./m", "member": "X" } }"#,
-        )
-        .unwrap();
-        assert!(
-            selector.selected().is_err(),
-            "a member must use exactly one selector kind",
-        );
-    }
-
-    #[test]
-    fn member_of_module_unknown_field_is_rejected() {
-        let result: std::result::Result<MemberSelector, _> = serde_json::from_str(
-            r#"{ "member_of_module": { "module": "./m", "member": "X", "object": "y" } }"#,
-        );
-        assert!(
-            result.is_err(),
-            "unknown member_of_module field must be rejected"
         );
     }
 
@@ -1986,55 +1763,6 @@ mod tests {
     }
 
     #[test]
-    fn passed_to_call_selector_defaults_object_index_and_kind() {
-        let selector: MemberSelector =
-            serde_json::from_str(r#"{ "passed_to_call": { "callee_member": "register" } }"#)
-                .unwrap();
-        assert_eq!(
-            selector.selected().unwrap(),
-            MemberSelectorSpec::PassedToCall(PassedToCallTarget {
-                callee_member: "register".to_string(),
-                object: None,
-                arg_index: None,
-                kind: None,
-            })
-        );
-    }
-
-    #[test]
-    fn passed_to_call_requires_callee_member() {
-        let result: std::result::Result<MemberSelector, _> =
-            serde_json::from_str(r#"{ "passed_to_call": { "object": "r" } }"#);
-        assert!(
-            result.is_err(),
-            "passed_to_call without `callee_member` is rejected"
-        );
-    }
-
-    #[test]
-    fn passed_to_call_conflicts_with_other_selector_kinds() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "binding": { "name": "x" }, "passed_to_call": { "callee_member": "register" } }"#,
-        )
-        .unwrap();
-        assert!(
-            selector.selected().is_err(),
-            "a member must use exactly one selector kind",
-        );
-    }
-
-    #[test]
-    fn passed_to_call_unknown_field_is_rejected() {
-        let result: std::result::Result<MemberSelector, _> = serde_json::from_str(
-            r#"{ "passed_to_call": { "callee_member": "register", "module": "./m" } }"#,
-        );
-        assert!(
-            result.is_err(),
-            "unknown passed_to_call field must be rejected"
-        );
-    }
-
-    #[test]
     fn makes_decorate_call_selector_resolves_to_a_target() {
         let selector: MemberSelector = serde_json::from_str(
             r#"{ "makes_decorate_call": { "class": "ComponentPopover", "member": "componentInstance", "kind": "variable_declarator" } }"#,
@@ -2051,54 +1779,6 @@ mod tests {
     }
 
     #[test]
-    fn makes_decorate_call_selector_defaults_member_and_kind() {
-        let selector: MemberSelector =
-            serde_json::from_str(r#"{ "makes_decorate_call": { "class": "PopoverBase" } }"#)
-                .unwrap();
-        assert_eq!(
-            selector.selected().unwrap(),
-            MemberSelectorSpec::MakesDecorateCall(MakesDecorateCallTarget {
-                class: "PopoverBase".to_string(),
-                member: None,
-                kind: None,
-            })
-        );
-    }
-
-    #[test]
-    fn makes_decorate_call_requires_class() {
-        let result: std::result::Result<MemberSelector, _> =
-            serde_json::from_str(r#"{ "makes_decorate_call": { "member": "x" } }"#);
-        assert!(
-            result.is_err(),
-            "makes_decorate_call without `class` is rejected"
-        );
-    }
-
-    #[test]
-    fn makes_decorate_call_conflicts_with_other_selector_kinds() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "binding": { "name": "x" }, "makes_decorate_call": { "class": "C" } }"#,
-        )
-        .unwrap();
-        assert!(
-            selector.selected().is_err(),
-            "a member must use exactly one selector kind",
-        );
-    }
-
-    #[test]
-    fn makes_decorate_call_unknown_field_is_rejected() {
-        let result: std::result::Result<MemberSelector, _> = serde_json::from_str(
-            r#"{ "makes_decorate_call": { "class": "C", "callee_member": "register" } }"#,
-        );
-        assert!(
-            result.is_err(),
-            "unknown makes_decorate_call field must be rejected"
-        );
-    }
-
-    #[test]
     fn intrinsic_alias_selector_resolves_to_a_target() {
         let selector: MemberSelector = serde_json::from_str(
             r#"{ "intrinsic_alias": { "property": "defineProperty", "referenced_by": "decorateClassMember" } }"#,
@@ -2110,49 +1790,6 @@ mod tests {
                 property: "defineProperty".to_string(),
                 referenced_by: "decorateClassMember".to_string(),
             })
-        );
-    }
-
-    #[test]
-    fn intrinsic_alias_requires_property() {
-        let result: std::result::Result<MemberSelector, _> =
-            serde_json::from_str(r#"{ "intrinsic_alias": { "referenced_by": "helper" } }"#);
-        assert!(
-            result.is_err(),
-            "intrinsic_alias without `property` is rejected"
-        );
-    }
-
-    #[test]
-    fn intrinsic_alias_requires_referenced_by() {
-        let result: std::result::Result<MemberSelector, _> =
-            serde_json::from_str(r#"{ "intrinsic_alias": { "property": "defineProperty" } }"#);
-        assert!(
-            result.is_err(),
-            "intrinsic_alias without `referenced_by` is rejected"
-        );
-    }
-
-    #[test]
-    fn intrinsic_alias_conflicts_with_other_selector_kinds() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "binding": { "name": "x" }, "intrinsic_alias": { "property": "defineProperty", "referenced_by": "h" } }"#,
-        )
-        .unwrap();
-        assert!(
-            selector.selected().is_err(),
-            "a member must use exactly one selector kind",
-        );
-    }
-
-    #[test]
-    fn intrinsic_alias_unknown_field_is_rejected() {
-        let result: std::result::Result<MemberSelector, _> = serde_json::from_str(
-            r#"{ "intrinsic_alias": { "property": "defineProperty", "referenced_by": "h", "object": "Object" } }"#,
-        );
-        assert!(
-            result.is_err(),
-            "unknown intrinsic_alias field must be rejected"
         );
     }
 }

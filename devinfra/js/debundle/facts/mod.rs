@@ -53,7 +53,6 @@ mod local_effect_targets;
 mod local_effects;
 mod purity_classification;
 mod statement_facts;
-pub mod wire;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
@@ -66,13 +65,10 @@ pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
 
 // Public API: importable at `facts::<item>` exactly as before the split.
-pub use analyze::{
-    analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy, find_top_level_await,
-};
+pub use analyze::{analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy};
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;
 pub use statement_facts::{
     ChunkFactAnalysis, EffectCell, PositionBucketed, StatementEffectSummary, StatementFacts,
     StatementKind, StructuralChunkAnalysis, StructuralStatementFacts,
 };
-pub use wire::{ChunkFactsReport, IdReport, StatementFactsReport};

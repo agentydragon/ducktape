@@ -35,10 +35,7 @@ use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
 use selector_codemod::match_selector::{
     MatchSelectorConfig, render_match_selector_text, run_match_selector,
 };
-use selector_codemod::{
-    SelectorCodemodConfig, SelectorCodemodRewrite, render_selector_codemod_text,
-    run_selector_codemod,
-};
+use selector_codemod::{SelectorCodemodConfig, render_selector_codemod_text, run_selector_codemod};
 use selector_debt::{
     SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
     populate_name_only_module_groups, render_selector_debt_text,
@@ -159,17 +156,11 @@ enum SpecNsCommand {
     /// modules tree.
     #[command(name = "selector-debt")]
     SelectorDebt(SelectorDebtArgs),
-    /// Dry-run or apply mechanical selector rewrites across module YAML.
-    ///
-    /// Dry-run by default; `--apply` writes. Scope the run with
-    /// `--file`, `--module`, `--module-prefix`, or `--item`. Skipped
-    /// rows carry a machine-readable reason.
-    #[command(name = "selector-codemod")]
-    SelectorCodemod(SelectorCodemodArgs),
     /// Synthesize structural selectors for selected name-only members.
     ///
-    /// Alias for `selector-codemod --rewrite
-    /// name-binding-to-source-match`: given module exports, produce a
+    /// Dry-run by default; `--apply` writes. Scope the run with `--file`,
+    /// `--module`, `--module-prefix`, or `--item`. Skipped rows carry a
+    /// machine-readable reason. Given module exports, produce a
     /// forward-compatible `source_matches[]` selector that uniquely
     /// selects them, proven with the production matcher. Prefers the
     /// loosest readable unique form — holes and stable anchors over long
@@ -277,32 +268,12 @@ pub struct SelectorDebtArgs {
     pub format: Option<OutputFormat>,
 }
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-#[value(rename_all = "kebab-case")]
-pub enum SelectorCodemodRewriteArg {
-    /// Convert name-only binding members to source_matches selectors.
-    NameBindingToSourceMatch,
-}
-
-impl From<SelectorCodemodRewriteArg> for SelectorCodemodRewrite {
-    fn from(value: SelectorCodemodRewriteArg) -> Self {
-        match value {
-            SelectorCodemodRewriteArg::NameBindingToSourceMatch => Self::NameBindingToSourceMatch,
-        }
-    }
-}
-
-/// Args for `debundle spec selector-codemod`.
+/// Args for `debundle spec synthesize-selectors`.
 #[derive(Debug, ClapArgs)]
 pub struct SelectorCodemodArgs {
     /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
-
-    /// Rewrite to run. Only canonical source_matches[] synthesis remains after
-    /// legacy selector shapes were removed.
-    #[arg(long = "rewrite", value_enum, default_value_t = SelectorCodemodRewriteArg::NameBindingToSourceMatch)]
-    pub rewrite: SelectorCodemodRewriteArg,
 
     /// Apply edits. Without this flag the command is a dry run.
     #[arg(long = "apply")]
@@ -338,8 +309,8 @@ pub struct SelectorCodemodArgs {
     pub items: Vec<String>,
 
     /// Emit up to N ranked candidate selectors per item (a menu of alternative
-    /// anchors), not just the minimizer's single pick. Only affects
-    /// `synthesize-selectors`; the extras are reported as `alternatives`. Default 1.
+    /// anchors), not just the minimizer's single pick; the extras are reported
+    /// as `alternatives`. Default 1.
     #[arg(long = "candidates", default_value_t = 1)]
     pub candidates: usize,
 
@@ -815,11 +786,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::Spec(args) => match args.command {
             SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
             SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s),
-            SpecNsCommand::SelectorCodemod(s) => run_selector_codemod_cmd(s),
-            SpecNsCommand::SynthesizeSelectors(mut s) => {
-                s.rewrite = SelectorCodemodRewriteArg::NameBindingToSourceMatch;
-                run_selector_codemod_cmd(s)
-            }
+            SpecNsCommand::SynthesizeSelectors(s) => run_synthesize_selectors_cmd(s),
             SpecNsCommand::MatchSelector(s) => run_match_selector_cmd(s),
             SpecNsCommand::Validate(v) => {
                 run_validate_cmd(v).context("running keep-going selector validation")
@@ -848,11 +815,10 @@ where
     print_report(report, OutputFormat::resolve(format), text_render).context(context)
 }
 
-fn run_selector_codemod_cmd(args: SelectorCodemodArgs) -> Result<()> {
+fn run_synthesize_selectors_cmd(args: SelectorCodemodArgs) -> Result<()> {
     let report = run_selector_codemod(&SelectorCodemodConfig {
         modules_root: args.modules_root,
         apply: args.apply,
-        rewrite: args.rewrite.into(),
         files: args.files,
         modules: args.modules,
         module_prefixes: args.module_prefixes,
@@ -866,7 +832,7 @@ fn run_selector_codemod_cmd(args: SelectorCodemodArgs) -> Result<()> {
         args.format,
         &report,
         render_selector_codemod_text,
-        "writing selector-codemod output",
+        "writing synthesize-selectors output",
     )
 }
 
@@ -1526,7 +1492,7 @@ mod tests {
     use pipeline::{TransformArgs, TransformSpecSource};
     use tempfile::TempDir;
 
-    use super::{DebundleArgs, SelectionKind};
+    use super::{DebundleArgs, DebundleCommand, SelectionKind};
 
     fn write(root: &Path, rel: &str, body: &str) {
         let path = root.join(rel);
@@ -1539,7 +1505,7 @@ mod tests {
     fn parsed_run_args(argv: &[&str]) -> TransformArgs {
         let parsed = DebundleArgs::try_parse_from(argv).expect("parse cli");
         match parsed.command {
-            super::DebundleCommand::Run(args) => args,
+            DebundleCommand::Run(args) => args,
             other => panic!("expected run command, got {other:?}"),
         }
     }
@@ -1614,86 +1580,55 @@ mod tests {
         });
     }
 
+    /// Wiring check: each subcommand path parses to its `DebundleCommand`
+    /// variant.
     #[test]
-    fn deprecated_command_roots_are_rejected() {
-        for args in [
-            &["debundle", "peel", "plan-work"][..],
-            &["debundle", "peel", "units"],
-            &["debundle", "peel", "patch-plan"],
-            &["debundle", "peel", "explain"],
-            &["debundle", "peel", "source-slice"],
-            &["debundle", "peel", "graph-summary"],
-            &["debundle", "module", "merge"],
-        ] {
-            let error = DebundleArgs::try_parse_from(args).expect_err("alias should be rejected");
-            assert_eq!(error.kind(), clap::error::ErrorKind::InvalidSubcommand);
+    fn subcommands_parse_to_their_variants() {
+        type IsExpected = fn(&DebundleCommand) -> bool;
+        let cases: [(&str, IsExpected); 10] = [
+            ("atoms --graph g.json --modules m", |command| {
+                matches!(command, DebundleCommand::Atoms(_))
+            }),
+            ("coverage --graph g.json --modules m", |command| {
+                matches!(command, DebundleCommand::Coverage(_))
+            }),
+            ("graph-summary --graph g.json --modules m", |command| {
+                matches!(command, DebundleCommand::GraphSummary(_))
+            }),
+            ("describe XOe --graph g.json --modules m", |command| {
+                matches!(command, DebundleCommand::Describe(_))
+            }),
+            (
+                "show-source XOe --graph g.json --modules m --source-root /s",
+                |command| matches!(command, DebundleCommand::ShowSource(_)),
+            ),
+            ("bindings comment --modules m XOe text", |command| {
+                matches!(command, DebundleCommand::Bindings(_))
+            }),
+            ("modules comment --modules m runtime/x --clear", |command| {
+                matches!(command, DebundleCommand::Modules(_))
+            }),
+            ("gate list --graph g.json", |command| {
+                matches!(command, DebundleCommand::Gate(_))
+            }),
+            ("gate describe 0 --graph g.json --binding XOe", |command| {
+                matches!(command, DebundleCommand::Gate(_))
+            }),
+            ("gate cut 3 --graph g.json --cycles c.json", |command| {
+                matches!(command, DebundleCommand::Gate(_))
+            }),
+        ];
+        for (args, is_expected) in cases {
+            let parsed = DebundleArgs::try_parse_from(
+                std::iter::once("debundle").chain(args.split_whitespace()),
+            )
+            .unwrap_or_else(|error| panic!("{args}: {error}"));
+            assert!(
+                is_expected(&parsed.command),
+                "{args} parsed to {:?}",
+                parsed.command
+            );
         }
-    }
-
-    #[test]
-    fn parse_top_level_atoms_command() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "atoms",
-            "--graph",
-            "owner_graph.json",
-            "--modules",
-            "modules",
-        ])
-        .expect("parse cli");
-        assert!(matches!(parsed.command, super::DebundleCommand::Atoms(_)));
-    }
-
-    #[test]
-    fn parse_top_level_coverage_command() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "coverage",
-            "--graph",
-            "owner_graph.json",
-            "--modules",
-            "modules",
-        ])
-        .expect("parse cli");
-        assert!(matches!(
-            parsed.command,
-            super::DebundleCommand::Coverage(_)
-        ));
-    }
-
-    #[test]
-    fn parse_top_level_graph_summary_command() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "graph-summary",
-            "--graph",
-            "owner_graph.json",
-            "--modules",
-            "modules",
-        ])
-        .expect("parse cli");
-        assert!(matches!(
-            parsed.command,
-            super::DebundleCommand::GraphSummary(_)
-        ));
-    }
-
-    #[test]
-    fn parse_top_level_describe_command() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "describe",
-            "XOe",
-            "--graph",
-            "owner_graph.json",
-            "--modules",
-            "modules",
-        ])
-        .expect("parse cli");
-        assert!(matches!(
-            parsed.command,
-            super::DebundleCommand::Describe(_)
-        ));
     }
 
     #[test]
@@ -1738,26 +1673,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_top_level_show_source_command() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "show-source",
-            "XOe",
-            "--graph",
-            "owner_graph.json",
-            "--modules",
-            "modules",
-            "--source-root",
-            "/snapshot",
-        ])
-        .expect("parse cli");
-        assert!(matches!(
-            parsed.command,
-            super::DebundleCommand::ShowSource(_)
-        ));
-    }
-
-    #[test]
     fn dispatch_id_selection_resolves_unique_module_basename_before_proposal_id() {
         let dir = TempDir::new().unwrap();
         let modules_root = dir.path().join("modules");
@@ -1773,39 +1688,6 @@ mod tests {
             selection,
             SelectionKind::ModulePath("auto_partition/auto_partition_0499".to_string())
         );
-    }
-
-    #[test]
-    fn parse_bindings_comment_command() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "bindings",
-            "comment",
-            "--modules",
-            "spec/modules",
-            "XOe",
-            "hand-written annotation",
-        ])
-        .expect("parse cli");
-        assert!(matches!(
-            parsed.command,
-            super::DebundleCommand::Bindings(_)
-        ));
-    }
-
-    #[test]
-    fn parse_modules_comment_command() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "modules",
-            "comment",
-            "--modules",
-            "spec/modules",
-            "runtime/plugins",
-            "--clear",
-        ])
-        .expect("parse cli");
-        assert!(matches!(parsed.command, super::DebundleCommand::Modules(_)));
     }
 
     #[test]
@@ -1869,50 +1751,5 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let sel = super::dispatch_id_selection("XOe", tmp.path()).unwrap();
         assert_eq!(sel, SelectionKind::Binding("XOe".to_string()));
-    }
-
-    #[test]
-    fn parse_top_level_gate_list_command() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "gate",
-            "list",
-            "--graph",
-            "owner_graph.json",
-        ])
-        .expect("parse cli");
-        assert!(matches!(parsed.command, super::DebundleCommand::Gate(_)));
-    }
-
-    #[test]
-    fn parse_top_level_gate_describe_command() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "gate",
-            "describe",
-            "0",
-            "--graph",
-            "owner_graph.json",
-            "--binding",
-            "XOe",
-        ])
-        .expect("parse cli");
-        assert!(matches!(parsed.command, super::DebundleCommand::Gate(_)));
-    }
-
-    #[test]
-    fn parse_top_level_gate_cut_command_with_cycles_override() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "gate",
-            "cut",
-            "3",
-            "--graph",
-            "owner_graph.json",
-            "--cycles",
-            "/other/cycles.json",
-        ])
-        .expect("parse cli");
-        assert!(matches!(parsed.command, super::DebundleCommand::Gate(_)));
     }
 }

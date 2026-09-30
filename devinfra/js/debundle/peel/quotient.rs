@@ -370,18 +370,14 @@ impl QuotientGraph {
     /// the report listed — constraining and non-constraining alike —
     /// so the gate sees the same I-graph the materializer does.
     ///
-    /// The reconstructed graph's per-owner `declared` set is left
-    /// empty: this kernel only consumes the edge topology + module
-    /// quotient for the gate, never the declared-binding join used
-    /// by `factor_assembly::compute_owner_claims`. If a future
-    /// consumer (e.g. running `assemble_partition` against the
-    /// reconstructed graph) needs `declared`, switch this call to
-    /// pass the chunk's `StatementFactsReport` slice.
+    /// The reconstructed graph's per-owner `declared` set is empty:
+    /// this kernel only consumes the edge topology + module quotient
+    /// for the gate.
     pub fn from_report(
         report: &OwnerGraphReport,
         cap_lines: usize,
     ) -> Result<Self, analysis::UnresolvedOwnerEdgeEndpoint> {
-        let (owner_graph, _) = OwnerGraph::from_report(report, &[])?;
+        let owner_graph = OwnerGraph::from_report(report)?;
         let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
         let owner_id_to_idx: FxHashMap<String, OwnerIdx> = owner_ids
             .iter()
