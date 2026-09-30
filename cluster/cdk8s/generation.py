@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import posixpath
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
@@ -80,13 +81,24 @@ def write_directory(
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
-    an `image-pins` Component, a generated ConfigMap's source file).
+    an `image-pins` Component, a generated ConfigMap's source file). A `components` entry
+    outside the directory, a hand-written `image-pins` Component across the roots
+    (cluster/docs/cdk8s_remainder.md § Mixed-directory layout), is the one other directory
+    `artifact` copies, after it.
     One keeping a hand-written `kustomization.yaml` uses `write_charts`. The returned
     directory's `decryption` is set exactly when a sibling is SOPS ciphertext.
     """
     directory = artifact_directory(artifact)
-    if len(artifact.copy) != 1:
-        raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies shared bases")
+    outside = [
+        path
+        for path in (posixpath.normpath(posixpath.join(directory, component)) for component in components)
+        if not path.startswith(f"{directory}/")
+    ]
+    if [copy.to for copy in artifact.copy[1:]] != [f"@artifact/{path}/" for path in outside]:
+        raise ValueError(
+            f"{artifact.name=} must copy the directory, then exactly the Components outside it"
+            f" ({outside=}); it copies {[copy.to for copy in artifact.copy]}"
+        )
     resources = [*write_charts(root, directory, *chart_builders), *siblings]
     write_yaml(
         root / directory / "kustomization.yaml",
