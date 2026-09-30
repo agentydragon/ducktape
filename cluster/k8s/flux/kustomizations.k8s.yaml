@@ -2683,7 +2683,7 @@ spec:
       name: ducktape
       namespace: agentplane-index
   interval: 10m
-  path: ./cluster/k8s/agentplane-index
+  path: ./cluster/generated/agentplane-index
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2943,7 +2943,7 @@ spec:
     - name: grafana-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/github-exporter
+  path: ./cluster/generated/github-exporter
   prune: true
   retryInterval: 1m
   sourceRef:
