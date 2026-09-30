@@ -12,13 +12,13 @@ use petgraph::graphmap::DiGraphMap;
 /// of debundle owner/module semantics; callers layer evidence and
 /// domain-specific labels on top.
 #[derive(Debug, Clone)]
-pub struct RollbackDiGraph<N> {
+pub struct CountedDiGraph<N> {
     edge_counts: BTreeMap<(N, N), usize>,
     out_edges: BTreeMap<N, BTreeSet<N>>,
     in_edges: BTreeMap<N, BTreeSet<N>>,
 }
 
-impl<N> Default for RollbackDiGraph<N>
+impl<N> Default for CountedDiGraph<N>
 where
     N: Copy + Ord,
 {
@@ -27,7 +27,7 @@ where
     }
 }
 
-impl<N> RollbackDiGraph<N>
+impl<N> CountedDiGraph<N>
 where
     N: Copy + Ord,
 {
@@ -56,7 +56,7 @@ where
         let old_count = self.edge_count(from, to);
         assert!(
             old_count > 0,
-            "RollbackDiGraph::decrement_edge called for absent edge",
+            "CountedDiGraph::decrement_edge called for absent edge",
         );
         self.set_edge_count(from, to, old_count - 1);
     }
@@ -106,7 +106,7 @@ where
     }
 }
 
-impl<N> RollbackDiGraph<N>
+impl<N> CountedDiGraph<N>
 where
     N: Copy + Ord + Hash,
 {
@@ -135,11 +135,11 @@ where
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::RollbackDiGraph;
+    use super::CountedDiGraph;
 
     #[test]
     fn counted_parallel_edges_keep_adjacency_until_last_edge_is_removed() {
-        let mut graph = RollbackDiGraph::new();
+        let mut graph = CountedDiGraph::new();
         graph.increment_edge(1, 2);
         graph.increment_edge(1, 2);
         assert_eq!(graph.edge_count(1, 2), 2);
@@ -158,11 +158,11 @@ mod tests {
 
     #[test]
     fn all_sccs_reflect_added_edges() {
-        let mut graph = RollbackDiGraph::new();
+        let mut graph = CountedDiGraph::new();
         for (from, to) in [(1, 2), (2, 1), (2, 3), (3, 4), (4, 3), (5, 6)] {
             graph.increment_edge(from, to);
         }
-        let sccs = |graph: &RollbackDiGraph<i32>| -> BTreeSet<BTreeSet<i32>> {
+        let sccs = |graph: &CountedDiGraph<i32>| -> BTreeSet<BTreeSet<i32>> {
             graph.all_sccs().into_iter().collect()
         };
         let baseline = BTreeSet::from([

@@ -11,7 +11,7 @@ use analysis::ids::ModuleId;
 use analysis::partition::Partition;
 use analysis::reports::SccCore;
 
-use crate::rollback_graph::RollbackDiGraph;
+use crate::counted_digraph::CountedDiGraph;
 
 use super::condensation_order::CondensationOrder;
 use super::esm_simulator::EsmEvaluationSimulator;
@@ -268,7 +268,7 @@ pub(super) fn edge_contribution(
 }
 
 pub(super) struct OverlayGraphView<'a> {
-    pub(super) base: &'a RollbackDiGraph<ModuleId>,
+    pub(super) base: &'a CountedDiGraph<ModuleId>,
     pub(super) delta: &'a BTreeMap<(ModuleId, ModuleId), isize>,
     pub(super) added_out: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
     pub(super) added_in: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
@@ -276,7 +276,7 @@ pub(super) struct OverlayGraphView<'a> {
 
 impl<'a> OverlayGraphView<'a> {
     pub(super) fn new(
-        base: &'a RollbackDiGraph<ModuleId>,
+        base: &'a CountedDiGraph<ModuleId>,
         delta: &'a BTreeMap<(ModuleId, ModuleId), isize>,
     ) -> Self {
         let mut added_out = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
@@ -413,8 +413,8 @@ type ConstrainingPairs = BTreeSet<(ModuleId, ModuleId)>;
 
 #[derive(Debug, Clone)]
 pub(super) struct IncrementalQuotient {
-    pub(super) i_graph: RollbackDiGraph<ModuleId>,
-    pub(super) constraining_graph: RollbackDiGraph<ModuleId>,
+    pub(super) i_graph: CountedDiGraph<ModuleId>,
+    pub(super) constraining_graph: CountedDiGraph<ModuleId>,
     pub(super) constraining_buckets: BTreeMap<(ModuleId, ModuleId), ConstrainingBucket>,
     pub(super) cross_rebinds: BTreeMap<OwnerEdgeId, CrossRebindEdge>,
     /// Chunk's residual module — the ESM DFS root. The Lemma 2
@@ -457,8 +457,8 @@ pub(super) struct IncrementalQuotient {
 impl IncrementalQuotient {
     pub(super) fn new(owner_graph: &OwnerGraph, partition: &Partition) -> Self {
         let mut quotient = Self {
-            i_graph: RollbackDiGraph::new(),
-            constraining_graph: RollbackDiGraph::new(),
+            i_graph: CountedDiGraph::new(),
+            constraining_graph: CountedDiGraph::new(),
             constraining_buckets: BTreeMap::new(),
             cross_rebinds: BTreeMap::new(),
             residual: partition.residual(),
