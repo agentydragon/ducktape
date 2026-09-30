@@ -4,6 +4,7 @@ S3Credentials in `oci-cache`, and the grant letting them reference the SeaweedFS
 from __future__ import annotations
 
 from cdk8s import App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -30,5 +31,10 @@ def seaweedfs_registry_cache_bucket(
 ) -> Kustomization:
     name = "seaweedfs-registry-cache-bucket"
     return flux_kustomization(
-        chart, name, directory, depends_on=[flux_kustomization_depends_on(seaweedfs_operator)], timeout="5m"
+        chart,
+        name,
+        directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        depends_on=[flux_kustomization_depends_on(seaweedfs_operator)],
+        timeout="5m",
     )

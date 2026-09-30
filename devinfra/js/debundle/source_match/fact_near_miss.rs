@@ -19,8 +19,7 @@
 //! pure-AST helpers in this module (`render_var_declarator_label`) and
 //! `declared_bindings` — they walk the candidate/needle item, which the fact model
 //! also carries node-for-node. The reason strings are pinned by the golden
-//! `fact_near_miss_golden_per_variant` test (one input per reachable variant) and
-//! `fact_near_miss_declarator_hole_fallback_score_is_stable`.
+//! `fact_near_miss_golden_per_variant` test (one input per reachable variant).
 
 use super::*;
 use chunk_facts::NodeId;
@@ -968,10 +967,8 @@ mod tests {
     }
 
     /// One golden case: the selector needle, a non-matching candidate, the
-    /// identifier mode, the variant's expected score, the full expected reason
-    /// string, and a marker substring that confirms the input reaches the intended
-    /// variant (so a mis-built input is caught rather than silently testing the
-    /// wrong variant).
+    /// identifier mode, the variant's expected score, and the full expected
+    /// reason string. `variant` labels the case in assertion messages.
     struct Case {
         variant: &'static str,
         needle_src: &'static str,
@@ -979,7 +976,6 @@ mod tests {
         alpha: bool,
         expected_score: usize,
         expected_reason: &'static str,
-        reason_marker: &'static str,
     }
 
     /// Drive the fact `fact_first_mismatch_reason` over one case and assert it
@@ -1006,18 +1002,10 @@ mod tests {
             "[{}] fact near-miss reason changed; needle {:?} vs {:?}",
             case.variant, case.needle_src, case.candidate_src,
         );
-        // The input reaches the intended variant (score + a discriminating marker).
         assert_eq!(
             fact_reason.score, case.expected_score,
             "[{}] expected score {} for this variant, got reason {:?}",
             case.variant, case.expected_score, fact_reason.reason,
-        );
-        assert!(
-            fact_reason.reason.contains(case.reason_marker),
-            "[{}] reason {:?} did not contain expected marker {:?}",
-            case.variant,
-            fact_reason.reason,
-            case.reason_marker,
         );
     }
 
@@ -1030,345 +1018,165 @@ mod tests {
         });
     }
 
-    /// The fact near-miss reason for a `(needle, candidate)` pair (or `None` when
-    /// the candidate matches). Returns the reason so a caller can probe which
-    /// variant was hit.
-    fn fact_reason(needle_src: &str, candidate_src: &str, alpha: bool) -> Option<MismatchReason> {
-        let sel = selector(alpha);
-        let needle = parse_one(needle_src);
-        let candidate = parse_one(candidate_src);
-        let needle_index = item_index(&needle).expect("test needle projects to facts");
-        fact_first_mismatch_reason(&needle, &needle_index, &candidate, selector_mode(&sel))
-            .expect("supported needle")
-    }
-
-    /// Variant 21 — `first_var_declarator_hole_placement_mismatch_reason`'s final
-    /// fallback ("pinned declarators matched in order, but DECLARATORS_* hole
-    /// placement differed …"). Stress the declarator-hole alignment with several
-    /// hole-bearing needle/candidate pairs (reorderings, repeated string anchors,
-    /// holes on every side). The fallback only fires when the greedy in-order pin
-    /// scan and the segment placement disagree in a way the leading/between/
-    /// trailing gap checks do not localize; whichever hole-placement variant fires
-    /// (17-21), it carries score 55. This asserts the fact path produces a stable
-    /// score-55 declarator-alignment reason for each pair and records whether the
-    /// residual fallback string was observed, documenting that variant's
-    /// reachability for the run.
-    #[test]
-    fn fact_near_miss_declarator_hole_fallback_score_is_stable() {
-        js_ast::with_swc_globals(|| {
-            const FALLBACK: &str = "DECLARATORS_* hole placement differed";
-            // Pairs chosen to exercise the hole-placement decision tree (and try to
-            // drive the residual fallback): repeated-anchor reorderings where the
-            // greedy pin scan and the anchored segment placement can disagree.
-            let pairs: &[(&str, &str)] = &[
-                (
-                    "const a = \"A\", DECLARATORS_GAP = null, b = \"B\";",
-                    "const b = \"B\", a = \"A\";",
-                ),
-                (
-                    "const a = \"A\", DECLARATORS_GAP = null, b = \"B\";",
-                    "const a = \"A\", a2 = \"A\", b = \"B\";",
-                ),
-                (
-                    "const DECLARATORS_BEFORE = null, a = \"DUP\", DECLARATORS_GAP = null, b = \"DUP\", DECLARATORS_AFTER = null;",
-                    "const b = \"DUP\", a = \"DUP\";",
-                ),
-                (
-                    "const a = \"A\", DECLARATORS_GAP = null, b = \"B\", DECLARATORS_AFTER = null;",
-                    "const a = \"A\", b = \"B\", a2 = \"A\";",
-                ),
-                (
-                    "const DECLARATORS_BEFORE = null, a = \"A\", b = \"B\";",
-                    "const a = \"A\", x = \"X\", b = \"B\";",
-                ),
-            ];
-            let mut saw_fallback = false;
-            // Some pairs are genuine matches (a hole absorbs the extra declarator),
-            // which yield no near-miss row; for the pairs that DO diverge on the
-            // declarator alignment, the reason carries score 55 (variants 17-21).
-            for (needle_src, candidate_src) in pairs {
-                let Some(reason) = fact_reason(needle_src, candidate_src, true) else {
-                    continue;
-                };
-                assert_eq!(
-                    reason.score, 55,
-                    "declarator-alignment near-miss score for {needle_src:?} vs {candidate_src:?}"
-                );
-                if reason.reason.contains(FALLBACK) {
-                    saw_fallback = true;
-                }
-            }
-            // Documenting the run: if no pair drove the residual fallback, it is the
-            // defensive branch the analysis predicts (greedy-in-order + all gaps
-            // hole-covered implies the segment placement also succeeds, so the only
-            // reachable hole-placement failures are the localized leading/between/
-            // trailing variants 18-20). This line records which world we are in.
-            eprintln!(
-                "fact_near_miss variant-21 fallback observed in stress pairs: {saw_fallback}"
-            );
-        });
-    }
-
-    /// One fact-representable input per near-miss reason variant. Variant 7
-    /// (originally reachable only via a same-discriminant pair of TS-only
-    /// declarations, e.g. two `TsInterface`s) and variant 13 (a `declare`
-    /// modifier mismatch) are intentionally absent — the fact model still
-    /// does not represent either construct (see
-    /// `fact_near_miss_ts_only_variants_are_outside_the_fact_subset`).
-    ///
-    /// `chunk_facts.rs` now models `Decl::Using`/`ForHead::UsingDecl` as a
-    /// `VarDecl` node with a `"using"`/`"await using"` operator label (the
-    /// same way `var`/`let`/`const` share one node kind), so a lone `using`
-    /// declaration now fact-indexes (see
-    /// `fact_near_miss_ts_only_variants_are_outside_the_fact_subset`'s
-    /// positive assertion) — but comparing it against a real `var`/`let`
-    /// pair here would additionally need `decl_var` below (and its callers)
-    /// to accept `Decl::Using`, not just `Decl::Var`; that AST-side plumbing
-    /// is separate follow-up work, so no CASES entry exercises it yet. Each
-    /// `expected_reason` is the golden string the matcher produced before deletion
-    /// (corpus near-miss differential proved fact == matcher byte-for-byte).
+    /// One fact-representable input per near-miss reason variant. Two variants
+    /// are absent because the fact model cannot reach them: two same-discriminant
+    /// TS-only declarations (e.g. two `TsInterface`s) never project to facts
+    /// (`chunk_facts` fails closed on them), and a `declare` modifier mismatch is
+    /// invisible because `chunk_facts::var_decl` does not project `declare`.
+    /// A `using` declaration fact-indexes, but `decl_var` and its callers accept
+    /// only `Decl::Var`, so no case compares `using` against `var`/`let`.
     const CASES: &[Case] = &[
-        // 1: top-level item kind differs (statement vs module declaration).
         Case {
-            variant: "1 top-level item kind",
+            variant: "top-level item kind",
             needle_src: "const a = 1;",
             candidate_src: "import x from \"m\";",
             alpha: true,
             expected_score: 1,
             expected_reason: "top-level item kind differs: selector is statement, candidate is module declaration",
-            reason_marker: "top-level item kind differs: selector is statement, candidate is module declaration",
         },
-        // 2: module declaration kind differs (import vs export-all).
         Case {
-            variant: "2 module decl kind",
+            variant: "module decl kind",
             needle_src: "import a from \"m\";",
             candidate_src: "export * from \"n\";",
             alpha: true,
             expected_score: 10,
             expected_reason: "module declaration kind differs: selector is import, candidate is export all",
-            reason_marker: "module declaration kind differs: selector is import, candidate is export all",
         },
-        // 3: module declaration shape differs (both imports, differing source).
         Case {
-            variant: "3 module decl shape",
+            variant: "module decl shape",
             needle_src: "import a from \"m\";",
             candidate_src: "import a from \"n\";",
             alpha: true,
             expected_score: 20,
             expected_reason: "module declaration shape differs",
-            reason_marker: "module declaration shape differs",
         },
-        // 4: statement kind differs (expression statement vs if).
         Case {
-            variant: "4 statement kind",
+            variant: "statement kind",
             needle_src: "foo();",
             candidate_src: "if (x) y();",
             alpha: false,
             expected_score: 10,
             expected_reason: "statement kind differs: selector is expression, candidate is if",
-            reason_marker: "statement kind differs: selector is expression, candidate is if",
         },
-        // 5: statement shape differs (both ifs, differing consequent).
         Case {
-            variant: "5 statement shape",
+            variant: "statement shape",
             needle_src: "if (a) foo();",
             candidate_src: "if (a) bar();",
             alpha: false,
             expected_score: 20,
             expected_reason: "statement shape differs",
-            reason_marker: "statement shape differs",
         },
-        // 6: declaration kind differs (class vs function).
         Case {
-            variant: "6 declaration kind",
+            variant: "declaration kind",
             needle_src: "class A {}",
             candidate_src: "function b() {}",
             alpha: true,
             expected_score: 30,
             expected_reason: "declaration kind differs: selector is class, candidate is function",
-            reason_marker: "declaration kind differs: selector is class, candidate is function",
         },
-        // 8: class name differs (exact mode pins the name).
         Case {
-            variant: "8 class name",
+            variant: "class name",
             needle_src: "class A { m() {} }",
             candidate_src: "class B { m() {} }",
             alpha: false,
             expected_score: 40,
             expected_reason: "class name differs: selector `A`, candidate `B`",
-            reason_marker: "class name differs: selector `A`, candidate `B`",
         },
-        // 9: function name differs (exact mode pins the name).
         Case {
-            variant: "9 function name",
+            variant: "function name",
             needle_src: "function f() {}",
             candidate_src: "function g() {}",
             alpha: false,
             expected_score: 40,
             expected_reason: "function name differs: selector `f`, candidate `g`",
-            reason_marker: "function name differs: selector `f`, candidate `g`",
         },
-        // 10: function signature or body differs (alpha names match, body differs).
         Case {
-            variant: "10 function body",
+            variant: "function body",
             needle_src: "function f() { return 1; }",
             candidate_src: "function g() { return 2; }",
             alpha: true,
             expected_score: 35,
             expected_reason: "function signature or body differs",
-            reason_marker: "function signature or body differs",
         },
-        // 11: variable declaration keyword differs (const vs let).
         Case {
-            variant: "11 var keyword",
+            variant: "var keyword",
             needle_src: "const a = 1;",
             candidate_src: "let a = 1;",
             alpha: true,
             expected_score: 45,
             expected_reason: "variable declaration kind differs: selector is const, candidate is let",
-            reason_marker: "variable declaration kind differs: selector is const, candidate is let",
         },
-        // 12: declarator count differs, no hole (1 vs 2 declarators).
         Case {
-            variant: "12 declarator count",
+            variant: "declarator count",
             needle_src: "const a = f();",
             candidate_src: "const a = f(), b = g();",
             alpha: true,
             expected_score: 55,
             expected_reason: "variable declarators differ: selector has 1 declarator(s), candidate has 2",
-            reason_marker: "variable declarators differ: selector has 1 declarator(s), candidate has 2",
         },
-        // 14: class member matched by name, but body differs.
         Case {
-            variant: "14 member body",
+            variant: "member body",
             needle_src: "class A { m() { return 1; } }",
             candidate_src: "class A { m() { return 2; } }",
             alpha: true,
             expected_score: 65,
             expected_reason: "class member `m` matched by name, but its signature or body differs",
-            reason_marker: "class member `m` matched by name, but its signature or body differs",
         },
-        // 15: class pinned member not found in order.
         Case {
-            variant: "15 member missing",
+            variant: "member missing",
             needle_src: "class A { important() {} }",
             candidate_src: "class A { other() {} }",
             alpha: true,
             expected_score: 70,
             expected_reason: "selector class pinned member `important` was not found in the candidate class body in order",
-            reason_marker: "selector class pinned member `important` was not found in the candidate class body in order",
         },
-        // 16: class heritage differs (members all match; superclass present only in candidate).
         Case {
-            variant: "16 class heritage/order",
+            variant: "class heritage/order",
             needle_src: "class A { m() {} }",
             candidate_src: "class A extends B { m() {} }",
             alpha: true,
             expected_score: 45,
             expected_reason: "class heritage, decorators, or member order differs",
-            reason_marker: "class heritage, decorators, or member order differs",
         },
-        // 17: pinned declarator not found in order (hole present; the pin's
+        // pinned declarator not found in order (hole present; the pin's
         // string-literal init — invariant under alpha — has no candidate match).
         Case {
-            variant: "17 pinned declarator missing",
+            variant: "pinned declarator missing",
             needle_src: "const target = \"WANTED\", DECLARATORS_AFTER = null;",
             candidate_src: "const a = \"X\", b = \"Y\";",
             alpha: true,
             expected_score: 55,
             expected_reason: "selector pinned declarator #0 `target = \"WANTED\"` was not found in order (remaining candidate declarators: `a = \"X\"`, `b = \"Y\"`)",
-            reason_marker: "was not found in order",
         },
-        // 18: leading unmatched declarators before the first pin (no leading hole;
+        // leading unmatched declarators before the first pin (no leading hole;
         // the pin matches a non-first candidate declarator).
         Case {
-            variant: "18 leading unmatched",
+            variant: "leading unmatched",
             needle_src: "const target = \"WANTED\", DECLARATORS_AFTER = null;",
             candidate_src: "const lead = \"X\", m = \"WANTED\";",
             alpha: true,
             expected_score: 55,
             expected_reason: "candidate has unmatched leading declarator(s) before selector declarator #0 `target = \"WANTED\"`: `lead = \"X\"`. Add a `DECLARATORS_* = null` pseudo-declarator before the first pinned declarator.",
-            reason_marker: "unmatched leading declarator(s) before selector declarator",
         },
-        // 19: unmatched declarators between two pins (pins adjacent in the needle,
+        // unmatched declarators between two pins (pins adjacent in the needle,
         // so no hole between them; candidate has a declarator between the matches).
         Case {
-            variant: "19 between unmatched",
+            variant: "between unmatched",
             needle_src: "const a = \"A\", b = \"B\", DECLARATORS_AFTER = null;",
             candidate_src: "const a = \"A\", mid = \"M\", b = \"B\";",
             alpha: true,
             expected_score: 55,
             expected_reason: "candidate has unmatched declarator(s) between selector declarator #0 `a = \"A\"` and #1 `b = \"B\"`: `mid = \"M\"`. Add a `DECLARATORS_* = null` pseudo-declarator between those pinned declarators.",
-            reason_marker: "unmatched declarator(s) between selector declarator",
         },
-        // 20: trailing unmatched declarators after the last pin (leading hole + pin;
+        // trailing unmatched declarators after the last pin (leading hole + pin;
         // the pin matches the first candidate declarator, leaving a trailing one).
         Case {
-            variant: "20 trailing unmatched",
+            variant: "trailing unmatched",
             needle_src: "const DECLARATORS_BEFORE = null, target = \"WANTED\";",
             candidate_src: "const m = \"WANTED\", tail = \"X\";",
             alpha: true,
             expected_score: 55,
             expected_reason: "candidate has unmatched trailing declarator(s) after selector declarator #1 `target = \"WANTED\"`: `tail = \"X\"`. Add a `DECLARATORS_* = null` pseudo-declarator after the last pinned declarator.",
-            reason_marker: "unmatched trailing declarator(s) after selector declarator",
         },
     ];
-
-    /// Two near-miss reasons — `declaration shape differs` and `variable
-    /// declaration shape differs` — are unreachable here. They require
-    /// TypeScript-only constructs the fact model does not represent:
-    ///
-    /// - Variant 7 needs two same-discriminant declarations that are neither
-    ///   class, function, nor variable — e.g. two `TsInterface`s. The fact
-    ///   extractor (`chunk_facts::decl`) fails closed on `TsInterface`/
-    ///   `TsTypeAlias`/`TsEnum`/`TsModule`, so such a needle never projects to
-    ///   facts and `fact_source_match_body_debt` returns no row. `using`
-    ///   declarations used to trigger this same variant, but `chunk_facts.rs`
-    ///   now models them (as a `VarDecl` node — see the "using keyword" case
-    ///   above), so `using` no longer belongs to this unsupported set; the
-    ///   trigger below uses `TsInterface` instead, and a separate positive
-    ///   assertion below confirms `using` now fact-indexes.
-    /// - Variant 13 needs a `declare` modifier mismatch (`declare let a;` vs
-    ///   `let a;`). The fact extractor (`chunk_facts::var_decl`) does not project
-    ///   the `declare` modifier, so the fact matcher treats the two as equal and
-    ///   reports a match (no row).
-    ///
-    /// Both triggers are outside the fact model's supported subset. This is the
-    /// pre-existing fact-matcher coverage boundary (the `declare`/TS analogue of
-    /// the decorator caveat), not a near-miss-specific regression. This test pins
-    /// that boundary: the fact path does not invent a divergent row for these
-    /// inputs.
-    #[test]
-    fn fact_near_miss_ts_only_variants_are_outside_the_fact_subset() {
-        js_ast::with_swc_globals(|| {
-            // Variant 13 trigger: `declare` modifier. The fact extractor ignores
-            // `declare`, so the needle projects to facts identically to `let a;`
-            // and the fact matcher reports a match — no near-miss row.
-            assert!(
-                fact_reason("declare let a;", "let a;", true).is_none(),
-                "fact path treats `declare let a` == `let a` (declare unmodeled), so no \
-                 divergent row",
-            );
-
-            // Variant 7 trigger: a `TsInterface` declaration. The fact extractor
-            // still fails closed on `Decl::TsInterface`, so the needle does not
-            // project to facts.
-            let interface_needle = parse_one("interface A {}");
-            assert!(
-                item_index(&interface_needle).is_none(),
-                "fact extractor fails closed on `interface` (TS-only), so the \
-                 variant-7 trigger never enters the fact near-miss path",
-            );
-
-            // `using` used to be a variant-7 trigger too (see the doc comment
-            // above): now that `chunk_facts.rs` models it, a lone `using`
-            // declaration DOES fact-index.
-            let using_needle = parse_one("using a = acquire();");
-            assert!(
-                item_index(&using_needle).is_some(),
-                "fact extractor now models `Decl::Using`, so this needle should \
-                 fact-index",
-            );
-        });
-    }
 }

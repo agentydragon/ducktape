@@ -4,6 +4,7 @@ credentials, plus the grant letting them reference the SeaweedFS cluster."""
 from __future__ import annotations
 
 from cdk8s import App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecAccessActions
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
@@ -41,6 +42,7 @@ def seaweedfs_pr_visuals_bucket(
         chart,
         name,
         directory,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         interval="1h",
         timeout="5m",
         depends_on=[flux_kustomization_depends_on(seaweedfs_operator)],

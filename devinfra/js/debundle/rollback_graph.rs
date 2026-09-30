@@ -88,26 +88,6 @@ where
         self.edge_counts.get(&(from, to)).copied().unwrap_or(0)
     }
 
-    /// Number of `(from, to)` adjacency pairs with nonzero count.
-    /// Counts each parallel-edge multiplicity as 1 (matches the SCC /
-    /// reachability view, which is set-based). Used by
-    /// `realizability::gate_perf_counters` to record base-graph shape
-    /// when `DEBUNDLE_TIMING=1`.
-    pub(crate) fn distinct_edge_count(&self) -> usize {
-        self.edge_counts.len()
-    }
-
-    /// Number of distinct nodes participating in at least one edge.
-    /// Matches `PetgraphView`'s `node_bound`. Used by
-    /// `realizability::gate_perf_counters` to record base-graph shape
-    /// when `DEBUNDLE_TIMING=1`.
-    pub(crate) fn node_count(&self) -> usize {
-        let mut nodes: BTreeSet<N> = BTreeSet::new();
-        nodes.extend(self.out_edges.keys().copied());
-        nodes.extend(self.in_edges.keys().copied());
-        nodes.len()
-    }
-
     #[cfg(test)]
     fn contains_edge(&self, from: N, to: N) -> bool {
         self.edge_count(from, to) > 0
@@ -440,7 +420,7 @@ mod tests {
         assert_eq!(graph.edge_count("c", "a"), 0);
         // Rolling back to the post-commit baseline is a no-op.
         graph.rollback_to(graph.mark());
-        assert_eq!(graph.distinct_edge_count(), 2);
+        assert_eq!(graph.edge_pairs().count(), 2);
     }
 
     #[test]

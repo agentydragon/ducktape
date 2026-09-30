@@ -1059,6 +1059,18 @@ mod tests {
     }
 
     #[test]
+    fn skeletons_keep_stable_literals_and_ignore_binding_names() {
+        // Same structure, different *stable* literal => different skeletons; the
+        // same literal under a renamed binding => the same skeletons. (The
+        // literal sits within the skeleton depth budget as a direct declarator
+        // init.)
+        let module = parse("const a = \"alpha\";\nconst b = \"beta\";\nconst c = \"alpha\";");
+        let index = ShapeIndex::new(&module);
+        assert_ne!(index.items[0].skeletons, index.items[1].skeletons);
+        assert_eq!(index.items[0].skeletons, index.items[2].skeletons);
+    }
+
+    #[test]
     fn volatile_tail_splits_off_a_generated_suffix() {
         assert_eq!(volatile_tail("chunk-a1b2c3"), Some(("chunk-", "a1b2c3")));
         assert_eq!(volatile_tail("main.4f3a2b"), Some(("main.", "4f3a2b")));

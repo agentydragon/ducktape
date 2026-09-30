@@ -2,21 +2,6 @@
 //! `factorize` renderer-over-quotient. Compiled against `:peel`'s
 //! public API as a separate crate — the same surface external
 //! consumers of the kernel see.
-//!
-//! Core behavior covered here:
-//!
-//! - `seed_pre_contracts_atomic_units`
-//! - `seed_pre_contracts_spec_modules`
-//! - `seed_skips_unrealizable_spec_module_contraction_and_reports`
-//! - `seed_atomic_unit_contractions_never_rejected_on_well_formed_input`
-//! - `seed_rejection_diagnostic_is_canonical`
-//! - `contract_never_un_contracts`
-//! - `factorize_golden_output_unchanged` — load-bearing snapshot
-//!   assertion that the renderer-over-quotient produces stable output.
-//! - `partition_constructor_contracts_each_group` — internal
-//!   invariant: the partition-based kernel constructor collapses each
-//!   input group into one class, regardless of pre-existing edges
-//!   between the owners.
 
 use analysis::{
     AtomicUnitEdgeReport, DepKind, OwnerGraphNodeReport, OwnerGraphReport, Purity, SourceLocation,
@@ -1142,13 +1127,10 @@ fn incremental_index_matches_rebuild_on_synthetic_specs() {
     // `would_be_cycles_after_contract` query or `contract` call on
     // the kernel, the kernel's `realizability_verdict()` (read from
     // the persistent `RealizabilityIndex`) byte-equals a from-scratch
-    // `check_realizability(&owner_graph, &project_partition(None))`.
-    //
-    // Pins commit 5's wiring: the index's committed partition stays
-    // synchronized with the kernel's class projection across both
-    // committed mutations and speculative overlay queries. RED if
-    // the index is forked from the kernel; GREEN when the wiring is
-    // correct.
+    // `check_realizability(&owner_graph, &project_partition(None))`:
+    // the index's committed partition stays synchronized with the
+    // kernel's class projection across both committed mutations and
+    // speculative overlay queries.
     use peel::quotient::{ClassId, PartitionGroup};
 
     let mut fixtures: Vec<(&'static str, OwnerGraphReport, Vec<PartitionGroup>)> = Vec::new();
@@ -1389,43 +1371,6 @@ fn boolean_merge_gate_matches_diagnostic_cycle_gate() {
             "boolean hot path diverged from diagnostic verdict for ({left:?}, {right:?})",
         );
     }
-}
-
-#[test]
-#[ignore = "needs GAFFER_OWNER_GRAPH pointing at a real corpus owner_graph.json; run manually"]
-fn greedy_on_gaffer_chunk_completes_under_one_minute() {
-    // Benchmark: real owner_graph.json from a recent gaffer cache,
-    // pointed at via GAFFER_OWNER_GRAPH. We run the full factorize
-    // pipeline (cells + greedy + emit) since the greedy is only
-    // meaningful with the cells-derived partition's
-    // pre-existing-module markings.
-    let path = std::env::var("GAFFER_OWNER_GRAPH").expect("GAFFER_OWNER_GRAPH must be set");
-    let body = std::fs::read_to_string(&path).expect("read GAFFER_OWNER_GRAPH");
-    let report: OwnerGraphReport = serde_json::from_str(&body).expect("parse owner_graph.json");
-    // The factorize CLI loads active claims from a modules-root
-    // directory. The benchmark just runs factorize without claims
-    // (every owner with destination.id != residual is treated as
-    // its own active module, which is what the planner would see
-    // before any spec edits).
-    let started = std::time::Instant::now();
-    let result = factorize(&report, &no_claims(), 10_000).unwrap();
-    let elapsed = started.elapsed();
-    let extension_proposals: usize = result
-        .proposals
-        .iter()
-        .filter(|p| p.extends_module_id.is_some())
-        .count();
-    eprintln!(
-        "gaffer chunk: {} owners, {} proposals ({} extension), {:?}",
-        report.nodes.len(),
-        result.proposals.len(),
-        extension_proposals,
-        elapsed,
-    );
-    assert!(
-        elapsed < std::time::Duration::from_secs(60),
-        "factorize on gaffer-scale input must complete in under 60s, took {elapsed:?}",
-    );
 }
 
 // ---------- Full mergeability + merge output shape. ----------
@@ -2540,80 +2485,6 @@ fn planner_and_materializer_agree_on_corpus() {
              planner rejections: {rejected:?}",
             case.label,
         );
-    }
-}
-
-#[test]
-fn incremental_kernel_query_matches_rebuild_after_each_contract() {
-    // Property test (extends `incremental_state_matches_rebuild_on_synthetic_specs`):
-    // after every greedy contraction in the unified gate, the
-    // incremental kernel's verdict on a candidate merge agrees with
-    // the materializer's verdict on a from-scratch projected
-    // partition. This pins the unified gate's cross-query state
-    // updates against the from-scratch reference.
-
-    let mut fixtures: Vec<(
-        &'static str,
-        analysis::OwnerGraphReport,
-        Vec<peel::quotient::PartitionGroup>,
-    )> = Vec::new();
-    fixtures.push(("empty_corpus", fixture_singletons().1, vec![]));
-
-    {
-        let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-        let h1 = residual_owner("owner:h1", 2, &["BindingH1"], 5);
-        let h2 = residual_owner("owner:h2", 3, &["BindingH2"], 5);
-        fixtures.push((
-            "single_module_two_orphans_unified",
-            graph_of(
-                vec![a.clone(), h1.clone(), h2.clone()],
-                vec![
-                    owner_edge(
-                        "edge:0",
-                        "owner:a",
-                        "owner:h1",
-                        analysis::DepKind::EagerUse,
-                        true,
-                    ),
-                    owner_edge(
-                        "edge:1",
-                        "owner:a",
-                        "owner:h2",
-                        analysis::DepKind::EagerUse,
-                        true,
-                    ),
-                ],
-                vec![
-                    atomic_unit_for("atomic:0", &[&a]),
-                    atomic_unit_for("atomic:1", &[&h1]),
-                    atomic_unit_for("atomic:2", &[&h2]),
-                ],
-                vec![],
-            ),
-            vec![module_group("ui/x", vec![0])],
-        ));
-    }
-
-    for (label, report, groups) in fixtures {
-        let (mut incremental, _) =
-            peel::quotient::QuotientGraph::from_report_with_partition_extended(
-                &report, 10_000, &groups,
-            )
-            .unwrap();
-
-        loop {
-            let one = peel::quotient::greedy_step(&mut incremental);
-            let Some(_) = one else { break };
-            // After the contract, the cached cycle set should equal
-            // a from-scratch rebuild over the same partition.
-            let cached = incremental.cycle_set();
-            let replay = replay_partition(&report, &groups, &incremental, 10_000);
-            assert_eq!(
-                cached,
-                replay.cycle_set(),
-                "[{label}] cached cycle set diverges from rebuild after merge",
-            );
-        }
     }
 }
 

@@ -311,6 +311,7 @@ py_library(
 py_library(
     name = "app_settings",
     srcs = ["app_settings.py"],
+    data = ["public_coder_instructions.md"],
     visibility = [
         "//agentplane/acceptance:__pkg__",
         "//cluster/cdk8s:__pkg__",

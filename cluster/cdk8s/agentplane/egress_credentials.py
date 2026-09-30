@@ -22,6 +22,7 @@ STAGING_NAMESPACE = "agentplane-staging-egress-credentials"
 TESTING_NAMESPACE = "agentplane-testing-egress-credentials"
 # The Secret `egress.py`'s `github-pat` EgressCredential reads, in both environments.
 GITHUB_PAT_SECRET = "agentplane-github-pat"
+BUILDBUDDY_API_KEY_SECRET = "buildbuddy-api-key"
 EXTERNAL_CREDS_STORE = "kubernetes-external-creds-secret-store"
 # The store authenticates as this ServiceAccount in the consuming namespace (ESO referent auth), so a
 # namespace that copies from external-creds needs its own.

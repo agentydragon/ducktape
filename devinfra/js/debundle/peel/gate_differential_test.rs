@@ -17,10 +17,6 @@
 //! the three semantic fixes the cutover landed (the atomic-unit /
 //! residual-pile over-rejection, Pass-2 blindness, module-granularity
 //! Pass 1) plus the clause-2 cross-rebind caveat.
-//!
-//! Skeleton caveat (completed by Track F1 in later PRs): generation
-//! uses a deterministic xorshift sweep over small synthetic reports
-//! rather than proptest (no proptest dep in the crate universe yet).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -446,8 +442,7 @@ fn gate_rejects_promotion_created_cross_rebind() {
 // Randomized sweep over small synthetic reports.
 // ---------------------------------------------------------------------
 
-/// Deterministic xorshift64 — placeholder for the Track F1 proptest
-/// generator; no external dep, fully reproducible.
+/// Deterministic xorshift64: reproducible generation for the sweep.
 struct Rng(u64);
 
 impl Rng {

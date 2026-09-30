@@ -54,12 +54,13 @@ from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, llm_ingress
 from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
+    BUILDBUDDY_POLICY,
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
     PACKAGES_POLICY,
 )
-from cluster.cdk8s.agentplane.egress_credentials import GITHUB_PAT_SECRET
+from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -170,6 +171,24 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
             ),
+        ],
+    )
+
+    EgressCredential(
+        scope,
+        "egresscredential-buildbuddy",
+        metadata=ApiObjectMetadata(name=BUILDBUDDY_POLICY, namespace=namespace),
+        description=(
+            "The shared BuildBuddy API key, copied into this environment's isolated egress-credentials "
+            "namespace by ESO. BuildBuddy uses this key for its JSON-over-HTTP API and gRPC services, "
+            "presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry. Its "
+            "authority is the account's BuildBuddy permissions; the egress policy limits where it is sent."
+        ),
+        source=Source.secret_ref(name=BUILDBUDDY_API_KEY_SECRET, key="api-key"),
+        targets=[
+            EgressCredentialSpecTargets(
+                header="x-buildbuddy-api-key", method=EgressCredentialSpecTargetsMethod.WHOLE_VALUE
+            )
         ],
     )
 
@@ -326,6 +345,20 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # credentialRef here -- this is the same shape as `packages` below. GET-only:
             # retrieving a log or artifact archive, never uploading one.
             EgressPolicySpecRules(hosts=["*.blob.core.windows.net"], methods=[EgressPolicySpecRulesMethods.GET])
+        ],
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-buildbuddy",
+        metadata=ApiObjectMetadata(name=BUILDBUDDY_POLICY, namespace=namespace),
+        rules=[
+            # app.buildbuddy.io serves the HTTP API (including invocation details and logs);
+            # remote.buildbuddy.io serves Build Event Service, Remote Execution and remote cache.
+            # The API key itself limits BuildBuddy authority to the account's configured access.
+            EgressPolicySpecRules(
+                hosts=["app.buildbuddy.io", "remote.buildbuddy.io"],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name=BUILDBUDDY_POLICY),
+            )
         ],
     )
     EgressPolicy(
