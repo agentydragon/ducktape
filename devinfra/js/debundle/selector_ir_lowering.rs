@@ -8,10 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
-use analysis::{ChunkId, StatementKind};
+use analysis::StatementKind;
 use selector_ir::{
-    ClaimKind, ClaimOrigin, OwnerTerm, RelationalPrimitive, SelectorAtom, SelectorProgram,
-    SelectorProjectedValue, SelectorTargetId, SelectorVariableId, StringTerm, VariableDomain,
+    ClaimKind, OwnerTerm, SelectorAtom, SelectorProgram, SelectorProjectedValue, SelectorTargetId,
+    SelectorVariableId, StringTerm, VariableDomain,
 };
 use spec::{
     AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation,
@@ -29,14 +29,12 @@ pub type ProjectedGroupRow = (Vec<(analysis::OwnerId, String)>, Vec<String>);
 /// Context shared by every member selector lowered for one logical module.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemberSelectorLoweringContext {
-    pub chunk_id: ChunkId,
     pub logical_module: String,
 }
 
 impl MemberSelectorLoweringContext {
-    pub fn new(chunk_id: ChunkId, logical_module: impl Into<String>) -> Self {
+    pub fn new(logical_module: impl Into<String>) -> Self {
         Self {
-            chunk_id,
             logical_module: logical_module.into(),
         }
     }
@@ -181,7 +179,6 @@ impl MemberSelectorProgramBuilder {
         &mut self,
         logical_module: impl Into<String>,
         export_name: &str,
-        target_binding: &str,
         selector: MemberSelectorSpecRef<'_>,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         self.declare_target_in_module_ref(
@@ -190,7 +187,6 @@ impl MemberSelectorProgramBuilder {
             selector,
             ClaimKind::BindingGroupMember {
                 export_name: export_name.to_string(),
-                target_binding: target_binding.to_string(),
             },
         )
     }
@@ -217,13 +213,7 @@ impl MemberSelectorProgramBuilder {
                 }
             })
             .or_insert(Some(owner));
-        Ok(self.program.add_target(
-            self.context.chunk_id,
-            owner,
-            logical_module.clone(),
-            claim,
-            selector_origin_ref(selector),
-        ))
+        Ok(self.program.add_target(owner, logical_module, claim))
     }
 
     pub fn declare_projected_anonymous_statement_target_in_module(
@@ -242,11 +232,9 @@ impl MemberSelectorProgramBuilder {
             .insert((logical_module.clone(), statement_index), owner);
         self.injective_targeted_owners.insert(owner);
         self.program.add_target(
-            self.context.chunk_id,
             owner,
             logical_module,
-            ClaimKind::AnonymousStatement,
-            ClaimOrigin::AnonymousStatement {
+            ClaimKind::AnonymousStatement {
                 index: statement_index,
             },
         )
@@ -277,9 +265,6 @@ impl MemberSelectorProgramBuilder {
                         .collect()
                 })
                 .collect(),
-            reason: format!(
-                "{logical_module}::anonymous_statement.source_match.projected.{statement_index}"
-            ),
         });
     }
 
@@ -381,7 +366,6 @@ impl MemberSelectorProgramBuilder {
                     .collect()
                 })
                 .collect(),
-            reason: format!("{logical_module}::source_match.projected.{export_name}"),
         });
     }
 
@@ -434,7 +418,6 @@ impl MemberSelectorProgramBuilder {
                         .collect::<Vec<_>>()
                 })
                 .collect(),
-            reason: format!("{logical_module}::source_matches.projected"),
         });
     }
 
@@ -673,13 +656,6 @@ fn optional_index(index: Option<usize>) -> Result<Option<u32>, SelectorIrLowerin
         .transpose()
 }
 
-fn selector_origin_ref(selector: MemberSelectorSpecRef<'_>) -> ClaimOrigin {
-    match relation_for_selector_ref(selector) {
-        Some(relation) => ClaimOrigin::RelationalSelector { relation },
-        None => ClaimOrigin::MemberSelector,
-    }
-}
-
 fn statement_kind_str_for_spec(kind: BindingSourceKind) -> &'static str {
     let statement_kind = match kind {
         BindingSourceKind::VariableDeclarator => StatementKind::VarDecl,
@@ -758,18 +734,6 @@ impl From<selector_ir::SelectorProgramError> for SelectorIrLoweringError {
     }
 }
 
-fn relation_for_selector_ref(selector: MemberSelectorSpecRef<'_>) -> Option<RelationalPrimitive> {
-    match selector {
-        MemberSelectorSpecRef::CrossRef(_) => Some(RelationalPrimitive::CrossRef),
-        MemberSelectorSpecRef::ReadsMember(_) => Some(RelationalPrimitive::ReadsMember),
-        MemberSelectorSpecRef::MemberOfModule(_) => Some(RelationalPrimitive::MemberOfModule),
-        MemberSelectorSpecRef::PassedToCall(_) => Some(RelationalPrimitive::PassedToCall),
-        MemberSelectorSpecRef::MakesDecorateCall(_) => Some(RelationalPrimitive::MakesDecorateCall),
-        MemberSelectorSpecRef::IntrinsicAlias(_) => Some(RelationalPrimitive::IntrinsicAlias),
-        MemberSelectorSpecRef::Binding(_) | MemberSelectorSpecRef::SourceMatch(_) => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -777,7 +741,7 @@ mod tests {
     use spec::{CrossRefRelation, CrossRefTarget};
 
     fn context() -> MemberSelectorLoweringContext {
-        MemberSelectorLoweringContext::new(ChunkId(3), "runtime/widgets")
+        MemberSelectorLoweringContext::new("runtime/widgets")
     }
 
     #[test]

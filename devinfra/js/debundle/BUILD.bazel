@@ -1033,19 +1033,13 @@ rust_library(
     name = "selector_ir",
     srcs = ["selector_ir.rs"],
     edition = "2024",
-    deps = [
-        ":analysis",
-        "@crates//:serde",
-    ],
+    deps = [":analysis"],
 )
 
 rust_test(
     name = "selector_ir_test",
     crate = ":selector_ir",
     edition = "2024",
-    deps = [
-        "@crates//:serde_json",
-    ],
 )
 
 rust_library(
@@ -1056,7 +1050,6 @@ rust_library(
         ":analysis",
         ":selector_ir",
         ":selector_outcome",
-        "@crates//:serde",
     ],
 )
 
@@ -1199,7 +1192,6 @@ rust_test(
         ":analysis",
         ":selector_backend_solver",
         ":selector_ir",
-        "@crates//:serde_json",
     ],
 )
 

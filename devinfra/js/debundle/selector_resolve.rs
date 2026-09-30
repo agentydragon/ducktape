@@ -12,7 +12,7 @@ use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use analysis::facts::StructuralChunkAnalysis;
-use analysis::{ChunkId, DepKind, OwnerId, StatementKind, StatementOrdinal};
+use analysis::{DepKind, OwnerId, StatementKind, StatementOrdinal};
 use anyhow::{Context, Result, bail};
 use js_ast::body_index_for_statement_ordinal;
 use rayon::prelude::*;
@@ -39,7 +39,6 @@ use swc_ecma_ast::{ImportSpecifier, Module, ModuleDecl, ModuleItem};
 /// sets.
 pub struct Chunk<'m> {
     name: String,
-    id: ChunkId,
     module: &'m Module,
     structural: StructuralChunkAnalysis<'m>,
     matcher: OnceCell<ChunkResolver<'m>>,
@@ -442,17 +441,14 @@ struct Group {
 }
 
 impl<'m> Chunk<'m> {
-    /// `name` is how outcomes and the selector program name the chunk; `id`
-    /// its interned id in the facts.
+    /// `name` is how outcomes and the selector program name the chunk.
     pub fn new(
         name: impl Into<String>,
-        id: ChunkId,
         module: &'m Module,
         structural: StructuralChunkAnalysis<'m>,
     ) -> Self {
         Self {
             name: name.into(),
-            id,
             module,
             structural,
             matcher: OnceCell::new(),
@@ -463,7 +459,7 @@ impl<'m> Chunk<'m> {
     /// A chunk read from a file, outside a pipeline run.
     pub fn analyze(name: impl Into<String>, module: &'m Module) -> Self {
         let structural = analysis::facts::analyze_chunk_structural(module, None, |_| None);
-        Self::new(name, ChunkId(0), module, structural)
+        Self::new(name, module, structural)
     }
 
     pub fn into_structural(self) -> StructuralChunkAnalysis<'m> {
@@ -478,7 +474,7 @@ impl<'m> Chunk<'m> {
     }
 
     fn program_builder(&self) -> MemberSelectorProgramBuilder {
-        MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(self.id, &self.name))
+        MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(&self.name))
     }
 
     fn places(&self) -> &Places {
@@ -555,9 +551,9 @@ pub fn solve(chunks: Vec<(&Chunk<'_>, &[SpecModule], Projection)>) -> Result<Vec
         .map(|_| SolverResult::default())
         .collect::<Vec<_>>();
     let mut requests = Vec::new();
-    for (index, (chunk, _, projection)) in chunks.iter().enumerate() {
+    for (index, (_, _, projection)) in chunks.iter().enumerate() {
         for group in projection.interacting_groups() {
-            match projection.decide_alone(chunk.id, &group) {
+            match projection.decide_alone(&group) {
                 Some(claims) => decided[index].claims.extend(claims),
                 None => requests.push((index, group)),
             }
@@ -858,17 +854,11 @@ impl Projection {
     /// The claims of `group` when it can be decided without the solver: it
     /// is one `source_match` or anonymous statement, whose candidates are
     /// exactly its own rows, or one name pin with one place.
-    fn decide_alone(
-        &self,
-        chunk: ChunkId,
-        group: &BTreeSet<SelectorTargetId>,
-    ) -> Option<Vec<SolverClaim>> {
+    fn decide_alone(&self, group: &BTreeSet<SelectorTargetId>) -> Option<Vec<SolverClaim>> {
         let claim = |place: &Place| ResolvedClaim {
-            chunk_id: chunk,
             owner: place.owner,
             statement_ordinal: StatementOrdinal(place.owner.0),
             binding: place.binding.clone(),
-            provenance: Vec::new(),
         };
         if let Some(entity) = self.projected.iter().find(|entity| {
             entity.targets.len() == group.len()
@@ -1578,14 +1568,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 targets.push(target);
             }
             CollectedShape::Group(group) => {
-                for (target_binding, member_index) in &group.members_by_target {
+                for member_index in group.members_by_target.values() {
                     let member = &module.members[*member_index];
                     let target = self
                         .builder
                         .declare_binding_group_member_target_in_module_ref(
                             &logical_module,
                             &member.export_name,
-                            target_binding,
                             member.selector.spec_ref(),
                         )?;
                     self.members
@@ -2329,20 +2318,17 @@ fn logical_module_path(id: &str) -> String {
 fn target_entity_ref(target: &selector_ir::SelectorTarget) -> EntityRef {
     EntityRef {
         logical_module: logical_module_path(&target.logical_module),
-        entity: match (&target.claim, &target.origin) {
-            (
-                selector_ir::ClaimKind::Binding {
-                    export_name: Some(export_name),
-                },
-                _,
-            )
-            | (selector_ir::ClaimKind::BindingGroupMember { export_name, .. }, _) => {
+        entity: match &target.claim {
+            selector_ir::ClaimKind::Binding {
+                export_name: Some(export_name),
+            }
+            | selector_ir::ClaimKind::BindingGroupMember { export_name } => {
                 Some(Entity::Export(export_name.clone()))
             }
-            (_, selector_ir::ClaimOrigin::AnonymousStatement { index }) => {
+            selector_ir::ClaimKind::AnonymousStatement { index } => {
                 Some(Entity::AnonymousStatement(*index))
             }
-            _ => None,
+            selector_ir::ClaimKind::Binding { export_name: None } => None,
         },
     }
 }
@@ -2393,7 +2379,6 @@ fn import_sources(module: &Module) -> HashMap<String, String> {
 /// kind and declared bindings, its references to other statements' bindings,
 /// and the relation facts only the relational selectors in `program` read.
 fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> SelectorFactStore {
-    let chunk_id = chunk.id;
     let structural = &chunk.structural;
     let module = chunk.module;
     let mut store = SelectorFactStore::default();
@@ -2422,14 +2407,12 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     for statement in &structural.per_statement {
         let owner = OwnerId(statement.ordinal.0);
         store.push(SelectorFact::Owner {
-            chunk_id,
             owner,
             statement_ordinal: statement.ordinal,
             statement_kind: statement.kind.to_string(),
         });
         for binding in &statement.declared {
             store.push(SelectorFact::DeclaredBinding {
-                chunk_id,
                 owner,
                 binding: binding.0.as_str().to_string(),
             });
@@ -2479,7 +2462,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
                 .is_some_and(|target_owner| *target_owner != owner)
             {
                 store.push(SelectorFact::OwnerReferencesBinding {
-                    chunk_id,
                     owner,
                     binding: binding.0.as_str().to_string(),
                     edge_kind: edge_kind.to_string(),
@@ -2498,7 +2480,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
         for (ordinal, member_reads) in chunk_facts::member_reads_by_ordinal(module) {
             for read in member_reads {
                 store.push(SelectorFact::MemberRead {
-                    chunk_id,
                     statement_ordinal: StatementOrdinal(ordinal),
                     object: read.object,
                     member: read.member,
@@ -2516,7 +2497,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
         {
             for use_site in uses {
                 store.push(SelectorFact::ModuleMemberUse {
-                    chunk_id,
                     statement_ordinal: StatementOrdinal(ordinal),
                     module: use_site.module,
                     member: use_site.member,
@@ -2532,7 +2512,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     }) {
         for call in chunk_facts::call_argument_uses(module) {
             store.push(SelectorFact::CallArgumentUse {
-                chunk_id,
                 argument: call.argument,
                 callee_object: call.callee_object,
                 callee_member: call.callee_member,
@@ -2547,7 +2526,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     {
         for call in chunk_facts::decorate_call_uses(module) {
             store.push(SelectorFact::DecorateCallUse {
-                chunk_id,
                 callee: call.callee,
                 class_anchor: call.class_anchor,
                 member: call.member,
@@ -2561,7 +2539,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     {
         for alias in chunk_facts::intrinsic_alias_uses(module) {
             store.push(SelectorFact::IntrinsicAliasUse {
-                chunk_id,
                 binding: alias.binding,
                 property: alias.property,
             });
