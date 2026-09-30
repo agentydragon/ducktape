@@ -45,6 +45,14 @@ free on the Trial plan for teams created on/after 2026-04-15) remain.
   the Item must be repaired through the Plaid Link management UI. The UI launches
   Plaid update mode for the existing Item.
 
+## Spend snapshot invalidation
+
+PostgreSQL listeners can wait for `plaid_spend_changed`; its payload is empty.
+Storage emits it with successful sync completion, visible link status changes, and
+removal of a linked Item and its mirrored data. It is a transient wake-up, not a
+durable change stream. Consumers reload the full current snapshot after a
+notification and on startup or reconnect.
+
 ## Sandbox smoke test
 
 End-to-end, no Link UI: creates a fake public_token via `/sandbox/public_token/create`,

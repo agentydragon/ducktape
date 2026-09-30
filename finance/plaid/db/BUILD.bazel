@@ -90,6 +90,7 @@ py_test(
         "//:conftest",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

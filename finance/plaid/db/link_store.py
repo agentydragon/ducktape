@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from pydantic import BaseModel
-from sqlalchemy import delete, exists, func, or_, select, update
+from sqlalchemy import delete, exists, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -50,6 +50,12 @@ from finance.plaid.db.schema import (
 logger = logging.getLogger(__name__)
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+_SPEND_CHANGED_CHANNEL = "plaid_spend_changed"
+
+
+async def _notify_spend_changed(session: AsyncSession) -> None:
+    """Queue an empty, transaction-scoped wake-up; this is not a durable change stream."""
+    await session.execute(text("SELECT pg_notify(:channel, '')"), {"channel": _SPEND_CHANGED_CHANNEL})
 
 
 def _run_alembic_migrations(conn: Any) -> None:
@@ -175,9 +181,10 @@ class PlaidLinkStorage:
     async def mark_link_revoked(self, item_id: str) -> None:
         async with self._session_factory() as session:
             row = await session.get(LinkRow, item_id)
-            if row is not None:
+            if row is not None and row.status != "revoked":
                 row.status = "revoked"
                 row.updated_at = utcnow()
+                await _notify_spend_changed(session)
                 await session.commit()
 
     async def purge_link_data(self, item_id: str) -> None:
@@ -192,6 +199,7 @@ class PlaidLinkStorage:
         )
         async with self._session_factory() as session:
             security_ids_to_check = list((await session.execute(security_ids)).scalars())
+            link_exists = bool(await session.scalar(select(exists().where(LinkRow.item_id == item_id))))
             for row_type in (
                 LiabilityCreditSnapshotRow,
                 LiabilityMortgageSnapshotRow,
@@ -213,6 +221,8 @@ class PlaidLinkStorage:
                         ~exists().where(InvestmentTransactionRow.security_id == SecurityRow.security_id),
                     )
                 )
+            if link_exists:
+                await _notify_spend_changed(session)
             await session.commit()
 
     async def mark_link_update_succeeded(self, *, item_id: str, products_requested: list[str]) -> StoredLink | None:
@@ -220,10 +230,17 @@ class PlaidLinkStorage:
             row = await session.get(LinkRow, item_id)
             if row is None:
                 return None
+            changed = (
+                row.status != "active"
+                or list(row.products_requested) != products_requested
+                or list(row.products_authorized) != _merge_products(list(row.products_authorized), products_requested)
+            )
             row.products_requested = products_requested
             row.products_authorized = _merge_products(list(row.products_authorized), products_requested)
             row.status = "active"
             row.updated_at = utcnow()
+            if changed:
+                await _notify_spend_changed(session)
             await session.commit()
             return _stored_link(row)
 
@@ -437,6 +454,8 @@ class PlaidLinkStorage:
                 if link is not None:
                     link.last_synced_at = finished_at
                     link.updated_at = finished_at
+            if status == "succeeded":
+                await _notify_spend_changed(session)
             await session.commit()
 
     async def record_api_event(self, event: ApiEvent) -> None:
