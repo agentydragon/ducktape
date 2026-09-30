@@ -1015,17 +1015,6 @@ spec:
         - ports:
             - port: "5432"
               protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            k8s-app: kube-dns
-            k8s:io.kubernetes.pod.namespace: kube-system
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: ANY
-          rules:
-            dns:
-              - matchPattern: "*"
     - toEntities:
         - kube-apiserver
     - toEndpoints:
@@ -1068,6 +1057,17 @@ spec:
         - ports:
             - port: "8123"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
     - toEntities:
         - world
         - remote-node
