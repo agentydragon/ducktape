@@ -222,6 +222,58 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
+  name: interface-flap-frequency
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: interface-flap-frequency.json
+    name: interface-flap-frequency-dashboard
+  datasources:
+    - datasourceName: Loki
+      inputName: DS_LOKI
+    - datasourceName: Mimir
+      inputName: DS_PROMETHEUS
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: rugged-power
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: rugged-power.json
+    name: rugged-power-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_PROMETHEUS
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cluster-storage-io
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: cluster-storage-io.json
+    name: cluster-storage-io-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_MIMIR
+    - datasourceName: Loki
+      inputName: DS_LOKI
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
   name: cert-manager
   namespace: monitoring
 spec:
@@ -318,24 +370,6 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
-  name: interface-flap-frequency
-  namespace: monitoring
-spec:
-  configMapRef:
-    key: interface-flap-frequency.json
-    name: interface-flap-frequency-dashboard
-  datasources:
-    - datasourceName: Loki
-      inputName: DS_LOKI
-    - datasourceName: Mimir
-      inputName: DS_PROMETHEUS
-  instanceSelector:
-    matchLabels:
-      dashboards: grafana
----
-apiVersion: grafana.integreatly.org/v1beta1
-kind: GrafanaDashboard
-metadata:
   name: node-exporter-full
   namespace: monitoring
 spec:
@@ -345,40 +379,6 @@ spec:
   grafanaCom:
     id: 1860
     revision: 45
-  instanceSelector:
-    matchLabels:
-      dashboards: grafana
----
-apiVersion: grafana.integreatly.org/v1beta1
-kind: GrafanaDashboard
-metadata:
-  name: rugged-power
-  namespace: monitoring
-spec:
-  configMapRef:
-    key: rugged-power.json
-    name: rugged-power-dashboard
-  datasources:
-    - datasourceName: Mimir
-      inputName: DS_PROMETHEUS
-  instanceSelector:
-    matchLabels:
-      dashboards: grafana
----
-apiVersion: grafana.integreatly.org/v1beta1
-kind: GrafanaDashboard
-metadata:
-  name: cluster-storage-io
-  namespace: monitoring
-spec:
-  configMapRef:
-    key: cluster-storage-io.json
-    name: cluster-storage-io-dashboard
-  datasources:
-    - datasourceName: Mimir
-      inputName: DS_MIMIR
-    - datasourceName: Loki
-      inputName: DS_LOKI
   instanceSelector:
     matchLabels:
       dashboards: grafana
