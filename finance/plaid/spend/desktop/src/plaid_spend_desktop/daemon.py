@@ -20,7 +20,9 @@ BUS_NAME = "works.allegedly.PlaidSpend"
 OBJECT_PATH = "/works/allegedly/PlaidSpend"
 INTERFACE_NAME = "works.allegedly.PlaidSpend1"
 API_URL = os.environ.get("PLAID_SPEND_API_URL", "https://plaid-spend.allegedly.works").rstrip("/")
-OIDC_ISSUER = os.environ.get("PLAID_SPEND_OIDC_ISSUER", "https://auth.allegedly.works/application/o/plaid-spend/")
+OIDC_ISSUER = os.environ.get(
+    "PLAID_SPEND_OIDC_ISSUER", "https://auth.allegedly.works/application/o/plaid-spend-desktop/"
+)
 OIDC_CLIENT_ID = os.environ.get("PLAID_SPEND_OIDC_CLIENT_ID", "plaid-spend-desktop")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

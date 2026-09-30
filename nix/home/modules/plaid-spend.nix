@@ -20,7 +20,7 @@ in
 
     oidcIssuer = lib.mkOption {
       type = lib.types.str;
-      default = "https://auth.allegedly.works/application/o/plaid-spend/";
+      default = "https://auth.allegedly.works/application/o/plaid-spend-desktop/";
       description = "Authentik OIDC issuer used for Plaid Spend sign-in.";
     };
 

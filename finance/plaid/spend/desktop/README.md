@@ -21,4 +21,4 @@ The D-Bus interface is `works.allegedly.PlaidSpend1` at `/works/allegedly/PlaidS
 
 ## Deployment assumptions
 
-The backend must accept an Authentik access token issued for the configured OIDC client/audience and provide the endpoints and event shape above. The default issuer slug and client ID are `plaid-spend` and `plaid-spend-desktop`; both can be overridden in Nix if the Authentik provider is registered with different values. The OAuth provider needs the exact callback URL `http://127.0.0.1:43821/callback` and permission to issue refresh tokens for `offline_access`.
+The backend must accept an Authentik access token issued for the configured OIDC client/audience and provide the endpoints and event shape above. The default issuer slug and client ID are both `plaid-spend-desktop`; both can be overridden in Nix if the Authentik provider is registered with different values. The OAuth provider needs the exact callback URL `http://127.0.0.1:43821/callback` and permission to issue refresh tokens for `offline_access`.
