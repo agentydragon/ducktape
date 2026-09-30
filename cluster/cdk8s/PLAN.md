@@ -37,9 +37,9 @@ passes the generation gate, and leaves no independently editable duplicate pin.
 
 ### C. Convert useful YAML seams
 
-Start with Grocy's household overlays, then Airlock's typed configuration and the
-rotator rosters. The remainder backlog names the existing models, semantic hazards, and acceptance
-conditions. Authentik blueprints need a separate ownership decision consistent with
+Start with Airlock's typed configuration, then the rotator rosters. The remainder
+backlog names the existing models, semantic hazards, and acceptance conditions.
+Authentik blueprints need a separate ownership decision consistent with
 `cluster/docs/sso.md`; embedding their text in Python is not completion.
 
 Generate non-secret configuration through the application's existing model where one

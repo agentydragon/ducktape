@@ -287,8 +287,6 @@ repos:
             cluster/k8s/authentik/app/blueprints/.*|
             # Application config files, not K8s manifests
             cluster/k8s/agents/airlock/config\.yaml|
-            cluster/k8s/grocy/sf/mcp/config\.yaml|
-            cluster/k8s/grocy/vallejo/mcp/config\.yaml|
             cluster/k8s/agents/plaid-mcp/app/items\.yaml|
             cluster/k8s/agents/grocy-mcp/envoy\.yaml|
             cluster/k8s/agents/homeassistant-proxy/config\.yaml|
@@ -313,8 +311,6 @@ repos:
             cluster/k8s/agents/forgejo-token-rotation/tokens\.yaml|
             # rotate.py token list, mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/nix-cache/rotators\.yaml|
-            # provision.py user→permission policy, mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/grocy/user-perms-base/policy\.yaml|
             # APT manifests for Bazel rules_distroless, not K8s manifests
             cluster/k8s/agents/authentik-jwt-rotation/trixie_authentik_rotation\.yaml|
             cluster/k8s/agents/attic-jwt-rotation/trixie_attic_rotation\.yaml|

@@ -14,7 +14,7 @@ from collections.abc import Iterable, Sequence
 from typing import Annotated, Any, TypeAliasType, Union, get_args, get_origin
 
 from more_itertools import one
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings
 
@@ -55,17 +55,21 @@ def _is_model(annotation: Any) -> bool:
 
 def _field_annotation(model: Any, name: str) -> Any:
     """`name`'s annotation on `model`, or the one annotation the members of a union that have
-    the field agree on."""
+    the field agree on. Pydantic moves a field's own `Annotated[..., Field(discriminator=...)]`
+    onto its `FieldInfo`; the discriminator goes back on the annotation for `_resolve`."""
     model, _ = _resolve(model)
     members = [member for member in _members(_without_none(model)) if _is_model(member)]
     if not members:
         raise TypeError(f"{model!r} is not a model, so it has no field {name!r}")
-    annotations = [member.model_fields[name].annotation for member in members if name in member.model_fields]
-    if not annotations:
+    fields = [member.model_fields[name] for member in members if name in member.model_fields]
+    if not fields:
         raise KeyError(f"{' | '.join(member.__name__ for member in members)} has no field {name!r}")
-    if any(annotation != annotations[0] for annotation in annotations):
+    first = fields[0]
+    if any((field.annotation, field.discriminator) != (first.annotation, first.discriminator) for field in fields):
         raise TypeError(f"field {name!r} is typed differently across {model!r}")
-    return annotations[0]
+    if isinstance(first.discriminator, str):
+        return Annotated[first.annotation, Field(discriminator=first.discriminator)]
+    return first.annotation
 
 
 def env_name(settings: type[BaseSettings], field: str, *path: str) -> str:

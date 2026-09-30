@@ -39,6 +39,7 @@ NAME = "authentik"
 NAMESPACE = "authentik"
 HOSTNAME = "auth.allegedly.works"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/app"
+HOSTNAME = "auth.allegedly.works"
 _HOST_CONFIG_MAP = "authentik-host"
 _BLUEPRINTS_CONFIG_MAP = "authentik-sso-blueprints"
 _SOPS_SECRETS = (
@@ -59,6 +60,11 @@ SERVER = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=tuple(_SERVER_LABELS.items())),
     target_port=_HTTP,
 )
+
+
+def oidc_issuer(application: str) -> str:
+    """The issuer of the OAuth2 provider behind the Authentik application with slug `application`."""
+    return f"https://{HOSTNAME}/application/o/{application}/"
 
 
 def _pod_env() -> dict[str, object]:

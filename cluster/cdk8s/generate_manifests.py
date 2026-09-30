@@ -309,8 +309,9 @@ def generate_manifests(root: Path) -> None:
     forgejo_app.write_manifests(root)
     home_assistant_app.write_manifests(root)
     home_assistant_backup.write_manifests(root)
-    grocy_app.write_manifests(root)
     grocy_mcp.write_manifests(root)
+    for household in grocy_app.HOUSEHOLDS:
+        grocy_app.write_manifests(root, household, mcp_dir=grocy_mcp.output_dir(household))
     grocy_user_perms.write_manifests(root)
     oci_cache_zot.write_manifests(root)
     plaid_mcp_app.write_manifests(root)
@@ -330,7 +331,6 @@ def generate_manifests(root: Path) -> None:
     litellm_credentials.write_agentplane_testing_manifests(root)
     ducktape_flux.write_manifests(root)
     flux_sources.write_manifests(root)
-    gaffer_private_source.write_manifests(root)
 
     flux_output = root / f"{HAND_WRITTEN_ROOT}/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -428,8 +428,11 @@ def generate_manifests(root: Path) -> None:
     )
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
     valkey_kustomization = valkey.valkey(flux_chart, write_directory(root, valkey_artifact, valkey.chart))
-    gaffer_private_source_flux_kustomizations.gaffer_private_source(
-        flux_chart, flux_image_automation_ghcr_kustomization
+    gaffer_private_source_artifact = artifact("gaffer-private-source", gaffer_private_source.OUTPUT_DIR)
+    gaffer_private_source.gaffer_private_source(
+        flux_chart,
+        write_directory(root, gaffer_private_source_artifact, gaffer_private_source.chart),
+        flux_image_automation_ghcr_kustomization,
     )
     kubevirt_artifact = artifact("kubevirt", kubevirt_app.OUTPUT_DIR)
     kubevirt_kustomization = kubevirt_app.kubevirt(
@@ -1136,9 +1139,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         grafana_operator_kustomization,
     )
-    grocy_sf_artifact = artifact(
-        "grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR
-    )
+    grocy_sf_artifact = artifact("grocy-sf", grocy_app.output_dir("sf"), grocy_mcp.output_dir("sf"), grocy_mcp.BASE_DIR)
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
         flux_chart,
         grocy_sf_artifact,
@@ -1149,10 +1150,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     grocy_vallejo_artifact = artifact(
-        "grocy-vallejo",
-        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app",
-        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp",
-        grocy_mcp.BASE_DIR,
+        "grocy-vallejo", grocy_app.output_dir("vallejo"), grocy_mcp.output_dir("vallejo"), grocy_mcp.BASE_DIR
     )
     grocy_vallejo_kustomization = grocy_flux_kustomizations.grocy_vallejo(
         flux_chart,
@@ -1252,11 +1250,11 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     grocy_sf_user_perms_artifact = artifact(
-        "grocy-sf-user-perms", f"{HAND_WRITTEN_ROOT}/grocy/sf/user-perms", grocy_user_perms.BASE_DIR
+        "grocy-sf-user-perms", grocy_user_perms.output_dir("sf"), grocy_user_perms.BASE_DIR
     )
     grocy_flux_kustomizations.grocy_sf_user_perms(flux_chart, grocy_sf_user_perms_artifact, grocy_sf_kustomization)
     grocy_vallejo_user_perms_artifact = artifact(
-        "grocy-vallejo-user-perms", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/user-perms", grocy_user_perms.BASE_DIR
+        "grocy-vallejo-user-perms", grocy_user_perms.output_dir("vallejo"), grocy_user_perms.BASE_DIR
     )
     grocy_flux_kustomizations.grocy_vallejo_user_perms(
         flux_chart, grocy_vallejo_user_perms_artifact, grocy_vallejo_kustomization
@@ -1482,6 +1480,7 @@ def generate_manifests(root: Path) -> None:
             flux_webhook_artifact,
             forgejo_gitops_artifact,
             budget_namespace_artifact,
+            gaffer_private_source_artifact,
             gatus_artifact,
             github_api_proxy_artifact,
             github_tf_artifact,

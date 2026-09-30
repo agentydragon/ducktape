@@ -1,4 +1,11 @@
-"""Flux Kustomizations for the cluster/k8s/sshpiper-crds slice."""
+"""The sshpiper `Pipe` CRD, applied straight from upstream `plugin/kubernetes/crd.yaml` in the
+`sshpiper-source` GitRepository (`flux_sources.py`). The cdk8s `Pipe` binding reads the same
+file through the SHA-256-pinned `sshpiper_pipe_crd` repository in `MODULE.bazel`; the CRD is
+never copied into this repository.
+
+The CRD has its own Kustomization, not its consumer's (today only `public_coder_sshpiper`), so
+that it outlives any one sshpiperd deployment.
+"""
 
 from __future__ import annotations
 
