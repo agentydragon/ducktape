@@ -1714,6 +1714,35 @@ data:
           through the proxy when reading invocation details or logs from the allowed BuildBuddy API host. The
           proxy substitutes the cluster-held API key; never read, print, or persist the real key or bypass the
           proxy. If no applicable rule is present, report the missing access instead of guessing a credential.
+      finance-agent-codex:
+        title: Finance agent / Codex
+        harness: HARNESS_CODEX
+        model: chatgpt/oai-responses/gpt-6-luna
+        cwd: /state/workspaces/{session_id}
+        reasoning_effort: medium
+        instructions: |-
+          Work as Rai's financial-leash agent. Your job: build and maintain tooling that turns his Plaid
+          transaction data into a felt, daily spending signal, and more generally help with his personal
+          finance/budgeting infrastructure.
+
+          Two repos, two roles -- keep them separate:
+
+          - **finance-agent** (this sandbox's own workspace, already cloned to `/state/workspaces/finance-agent`)
+            is your private memory: your own notes, scratch analysis, work in progress, and anything tied to
+            Rai's actual numbers, account structure, or budget figures. Nothing here is meant to be public.
+          - **ducktape** (`github.com/agentydragon/ducktape`, public) is where generic, reusable tooling goes
+            -- a pace-tracking library, a Plaid-query helper, a dashboard component -- as ordinary
+            open-source code with no personal figures or Rai-specific configuration baked in. Your egress
+            proxy gives you a full-access GitHub PAT for the user `agentydragon-agent`: fork to
+            `agentydragon-agent/ducktape`, push there, then use the substituted PAT to open a PR against
+            `agentydragon/ducktape`'s default branch `devel`.
+
+          Query live transaction data through the Plaid mirror's read-only SQL endpoint (pgweb) -- check your
+          granted egress rules for the exact host and credential placeholder; the underlying role can only
+          `SELECT`. Never commit transaction data, account numbers, or balances to either repo's git history.
+
+          This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
+          action against a real financial account.
       haku-claude:
         title: Haku
         harness: HARNESS_CLAUDE
@@ -1743,6 +1772,26 @@ data:
           mkdir -p /state/workspaces
           if [ ! -f "$marker" ]; then
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
+          fi
+      finance-agent:
+        title: Finance agent
+        template: agentplane-runner
+        policies:
+          - basic
+          - packages
+          - forgejo-finance-agent
+          - plaid-pgweb
+          - github-agentydragon-agent
+          - github-clone
+          - github-actions-logs
+          - buildbuddy
+        thread_preset: finance-agent-codex
+        bootstrap: |
+          marker=/state/workspaces/.agentplane-finance-agent-ready
+          mkdir -p /state/workspaces
+          if [ ! -f "$marker" ]; then
+            git clone --branch main --single-branch http://finance-agent:agentplane-credential-forgejo-finance-agent@forgejo-http.forgejo.svc.cluster.local:3000/finance-agent/finance-agent.git /state/workspaces/finance-agent
+            printf '%s\n' 'finance-agent workspace initialized' > "$marker"
           fi
       haku:
         title: Haku
@@ -4665,6 +4714,111 @@ spec:
         - git.allegedly.works
       credentialRef:
         name: forgejo-haku
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-forgejo-finance-agent-reader
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - finance-agent-git-creds
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-forgejo-finance-agent-reader
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-forgejo-finance-agent-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-forgejo-finance-agent-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: forgejo
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: finance-agent-git-creds
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: finance-agent-git-creds
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-forgejo-finance-agent-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: finance-agent-git-creds
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: forgejo-finance-agent
+  namespace: agentplane-staging
+spec:
+  description: The password of the `finance-agent` account on the internal Forgejo, the service user that owns the finance-agent repo (tf/gitops/finance-agent) -- Rai's personal financial-leash agent workspace. Requests carrying it act as that account with its full authority, but the account owns exactly one repo, so the blast radius is that repo alone.
+  source:
+    secretRef:
+      name: finance-agent-git-creds
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: forgejo-finance-agent
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - forgejo-http.forgejo.svc.cluster.local
+        - forgejo-http.forgejo.svc
+        - forgejo-http.forgejo
+      clusterInternal: true
+      credentialRef:
+        name: forgejo-finance-agent
+    - hosts:
+        - git.allegedly.works
+      credentialRef:
+        name: forgejo-finance-agent
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
