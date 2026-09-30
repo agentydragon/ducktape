@@ -72,13 +72,8 @@ rust_library(
     crate_root = "selector_candidate_index.rs",
     edition = "2024",
     deps = [
-        ":binding_targets",
-        ":js_ast",
         ":source_match_holes",
-        ":spec",
-        "@crates//:anyhow",
         "@crates//:roaring",
-        "@crates//:rustc-hash",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
@@ -89,7 +84,7 @@ rust_test(
     crate = ":selector_candidate_index",
     edition = "2024",
     deps = [
-        ":source_match",
+        ":js_ast",
     ],
 )
 
@@ -128,20 +123,6 @@ rust_test(
         ":shape_index",
         ":source_match",
         ":spec",
-        "@crates//:swc_ecma_ast",
-    ],
-)
-
-# OPT/read-off-depth distribution + size-sweep benchmark over synthetic
-# chunks. Run with `bazelisk run //devinfra/js/debundle:shape_index_bench`.
-rust_binary(
-    name = "shape_index_bench",
-    srcs = ["shape_index_bench.rs"],
-    crate_root = "shape_index_bench.rs",
-    edition = "2024",
-    deps = [
-        ":js_ast",
-        ":shape_index",
         "@crates//:swc_ecma_ast",
     ],
 )
