@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_bazel
+from starlette.types import Receive, Scope, Send
 
 from devinfra.claude.session_export.conftest import (
     PAIRED_RESPONSE,
@@ -123,9 +124,9 @@ async def test_the_owner_pairs_by_pasting_the_redirect_url(owner: httpx.AsyncCli
 async def test_pairing_can_start_on_one_web_replica_and_finish_on_another(store: SessionStore, tmp_path: Path) -> None:
     """Both public pods proxy to the single control process that owns the PKCE attempt and credential."""
     private_key, public_key = generate_rsa_keypair()
-    idp_sock = bind_free_port()
+    idp_sock, app_sock = bind_free_port(), bind_free_port()
     idp_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}"
-    app_url = "http://claude-session-sync.test"
+    app_url = f"http://127.0.0.1:{app_sock.getsockname()[1]}"
     idp = build_mock_oidc_app(
         issuer_url=idp_url,
         private_key=private_key,
@@ -169,18 +170,18 @@ async def test_pairing_can_start_on_one_web_replica_and_finish_on_another(store:
     ):
         web_one = create_web_app(settings=web_settings, control_client=control_client, frontend_dir=tmp_path)
         web_two = create_web_app(settings=web_settings, control_client=control_client, frontend_dir=tmp_path)
+
+        async def route_to_replica(scope: Scope, receive: Receive, send: Send) -> None:
+            app = web_two if scope["path"] == "/api/pairing/complete" else web_one
+            await app(scope, receive, send)
+
         async with (
-            httpx.AsyncClient(
-                base_url=app_url, headers={"Origin": app_url}, transport=httpx.ASGITransport(app=web_one)
-            ) as first_replica,
-            httpx.AsyncClient(
-                base_url=app_url, headers={"Origin": app_url}, transport=httpx.ASGITransport(app=web_two)
-            ) as second_replica,
+            serve_app_in_loop(route_to_replica, sock=app_sock),
+            httpx.AsyncClient(base_url=app_url, headers={"Origin": app_url}) as owner,
         ):
-            await first_replica.get("/auth/login", follow_redirects=True)
-            second_replica.cookies.update(first_replica.cookies)
-            started = await first_replica.post("/api/pairing")
-            finished = await second_replica.post(
+            await owner.get("/auth/login", follow_redirects=True)
+            started = await owner.post("/api/pairing")
+            finished = await owner.post(
                 "/api/pairing/complete",
                 json={"redirect_url": redirect_url(authorization_state(started.json()["authorization_url"]))},
             )
