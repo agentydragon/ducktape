@@ -5,12 +5,8 @@
 //! against a petgraph `tarjan_scc` brute-force recompute (the shared
 //! reference implementations in `condensation_order::test_support`).
 //!
-//! Complements the pinned-seed xorshift suites in
-//! `condensation_order.rs` — those stay as fast fixed-seed
-//! regressions; this suite explores fresh cases per run with
-//! proptest's shrinking. The case count is bounded for CI (see
-//! [`ci_config`]); for a longer local run override it via
-//! `bbr test //devinfra/js/debundle:gate_test
+//! The case count is bounded for CI (see [`ci_config`]); for a longer
+//! local run override it via `bbr test //devinfra/js/debundle:gate_test
 //! --test_env=PROPTEST_CASES=2000`.
 
 use std::collections::{BTreeMap, BTreeSet};

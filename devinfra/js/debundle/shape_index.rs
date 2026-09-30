@@ -1133,17 +1133,13 @@ mod tests {
 
     #[test]
     fn distinct_literals_break_shape_equality() {
-        // Same structure, different *stable* literal => different shape.
-        let module = parse(r#"const a = f("alpha");"#);
-        let other = parse(r#"const a = f("beta");"#);
-        let i0 = ShapeIndex::new(&module);
-        let i1 = ShapeIndex::new(&other);
-        // Deepest skeletons differ because the kept string literal differs.
-        let deep0: BTreeSet<u32> = i0.items[0].skeletons.iter().map(|s| s.as_u32()).collect();
-        let deep1: BTreeSet<u32> = i1.items[0].skeletons.iter().map(|s| s.as_u32()).collect();
-        // Ids are per-index sequential, so compare via multiplicity structure:
-        // the literal leaf shows up as a singleton shape in each.
-        assert_eq!(deep0.len(), deep1.len());
+        // Same structure, different *stable* literal => different shape; the
+        // same literal under a renamed binding => the same shape. (The literal
+        // sits within the skeleton depth budget as a direct declarator init.)
+        let module = parse("const a = \"alpha\";\nconst b = \"beta\";\nconst c = \"alpha\";");
+        let index = ShapeIndex::new(&module);
+        assert_ne!(index.items[0].skeletons, index.items[1].skeletons);
+        assert_eq!(index.items[0].skeletons, index.items[2].skeletons);
     }
 
     #[test]

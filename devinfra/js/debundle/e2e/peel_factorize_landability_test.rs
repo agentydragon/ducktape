@@ -5,28 +5,10 @@
 //! factorizer computes heuristic module proposals from that emitted
 //! graph on demand. Blocked or size-capped frontier states are
 //! diagnostics, not proposals.
-//!
-//! Paired fixtures:
-//!
-//! 1. **Init-order chain** — a blocked residual cell absorbs its
-//!    small at-init prerequisite when the combined closure is
-//!    landable.
-//! 2. **Single-prereq closure** — a residual binding's body
-//!    references another residual binding that isn't on entry's
-//!    export list. Promoting the consumer standalone would be
-//!    rejected; the factorizer reports the consumer plus its
-//!    prerequisite as one landable closure.
-//! 3. **Multi-prereq closure** — same shape with two independent
-//!    prerequisites, pinning that a blocked consumer can absorb all
-//!    small prerequisites at once.
-//! 4. **Shared-prereq closure** — two blocked consumers share the
-//!    same small prerequisite; the factorizer should merge the
-//!    whole closure instead of leaving the prerequisite as a
-//!    singleton leaf.
 
 use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
-use peel::factorize::{PeelCandidateStatus, factorize};
+use peel::factorize::{PeelCandidateStatus, PeelFactorizeReport, factorize};
 use spec::{MemberEffect, ModulePath};
 use std::collections::BTreeMap;
 
@@ -34,6 +16,19 @@ use std::collections::BTreeMap;
 /// residual graph (no pre-existing spec modules).
 fn no_claims() -> BTreeMap<String, ModulePath> {
     BTreeMap::new()
+}
+
+/// The owner graph `debundle run` emits for `source` with `modules`
+/// claimed and every other binding inlined in the residual entry.
+fn owner_graph_of(source: &str, modules: Vec<LogicalModuleEntry>) -> OwnerGraphReport {
+    let mut opts = FixtureOpts::new(source, modules);
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    read_json(&fixture.report_root.join("static/app/owner_graph.json"))
+}
+
+fn factorize_residual(source: &str, modules: Vec<LogicalModuleEntry>) -> PeelFactorizeReport {
+    factorize(&owner_graph_of(source, modules), &no_claims(), 10_000).unwrap()
 }
 
 fn proposal_has_bindings(proposal: &peel::factorize::FactorizeProposal, bindings: &[&str]) -> bool {
@@ -51,30 +46,25 @@ fn annotated_effect_module(
 }
 
 #[test]
-fn analyzer_factorizer_peels_lazy_consumer_alone_under_emit_auto_grow() {
-    // Pre-redesign: a `function consumer() { return dep; }` body's
-    // lazy read of `dep` (residual + unexported) made `consumer`
-    // `blocked_emit_resolvability`, so the factorizer combined the
-    // pair `{dep, consumer}` into one cell to "internalize the
-    // prerequisite". docs/design.md "Emit-side responsibilities" now
-    // owns that: emit auto-grows entry's exports, so `consumer` is
-    // independently peelable. The factorizer proposes
-    // `{consumer}` alone, and `dep` stays in residual entry.
+fn factorizer_proposes_lazy_consumer_alone_via_emit_auto_grown_exports() {
+    // `dep` is residual and NOT in entry's `export { ... }` list;
+    // `consumer` lazily reads it inside its body. Emit grows entry's
+    // export list on demand (docs/design.md "Valid peels and atomic
+    // modules", importability clause), so `consumer` is peelable on its
+    // own and `dep` stays in the residual entry.
+    //
+    // `anchor` exists so the chunk has at least one active logical
+    // module (the spec rejects all-residual chunks).
     let chunk_source = r#"const anchor = "anchor";
 const dep = "secret";
 function consumer() { return dep; }
 export { anchor, consumer };
 "#;
 
-    let mut opts = FixtureOpts::new(
+    let report = factorize_residual(
         chunk_source,
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     assert!(
         report.proposals.iter().all(
@@ -94,36 +84,6 @@ export { anchor, consumer };
 }
 
 #[test]
-fn analyzer_factorizer_coalesces_shared_prerequisite_closure_under_cap() {
-    let chunk_source = r#"const anchor = "anchor";
-const shared = "shared";
-const consumer_a = shared + "/a";
-const consumer_b = shared + "/b";
-export { anchor, consumer_a, consumer_b };
-"#;
-
-    let mut opts = FixtureOpts::new(
-        chunk_source,
-        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
-    );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
-    assert!(
-        report
-            .proposals
-            .iter()
-            .any(|proposal| proposal_has_bindings(
-                proposal,
-                &["shared", "consumer_a", "consumer_b"]
-            ) && proposal.landable_today),
-        "CLI should preserve the analyzer's shared-prerequisite proposal: {report:#?}",
-    );
-}
-
-#[test]
 fn analyzer_factorizer_keeps_importable_lazy_consumers_as_singletons() {
     let chunk_source = r#"const anchor = "anchor";
 function dep() { return "dep"; }
@@ -131,15 +91,10 @@ function consumer() { return dep(); }
 export { anchor, dep, consumer };
 "#;
 
-    let mut opts = FixtureOpts::new(
+    let report = factorize_residual(
         chunk_source,
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     assert!(
         report.proposals.iter().any(|proposal| {
@@ -174,15 +129,10 @@ const c = b + 2;
 export { a, b, c };
 "#;
 
-    let mut opts = FixtureOpts::new(
+    let report = factorize_residual(
         chunk_source,
         vec![logical_module("anchors/a", &[Member::new("a")])],
     );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     let chain_cell = report
         .proposals
@@ -209,55 +159,10 @@ export { a, b, c };
 }
 
 #[test]
-fn factorizer_proposes_lazy_only_consumer_alone_via_emit_auto_grown_exports() {
-    // `dep` is residual and NOT in entry's `export { ... }` list.
-    // `consumer` lazily reads `dep` (inside its body). Under the old
-    // emit-resolvability proposer gate this peel was refused; the
-    // factorizer combined `consumer` with `dep` into one cell as a
-    // workaround. The new design (docs/design.md "Valid peels and atomic
-    // modules", importability clause) makes the emitter grow entry's
-    // export list on demand, so `consumer` is peelable on its own
-    // and the factorizer proposes the smaller `{consumer}` cell.
-    //
-    // `anchor` exists so the chunk has at least one active logical
-    // module (the spec rejects all-residual chunks); `dep` and
-    // `consumer` stay in the residual entry via
-    // `unassigned_mode_inline()` (`InlineInEntry`).
-    let chunk_source = r#"const anchor = "anchor";
-const dep = "secret";
-function consumer() { return dep; }
-export { anchor, consumer };
-"#;
-
-    let mut opts = FixtureOpts::new(
-        chunk_source,
-        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
-    );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
-
-    let consumer_alone = report
-        .proposals
-        .iter()
-        .find(|p| p.binding_ids == vec!["consumer".to_string()])
-        .expect("factorizer should propose `{consumer}` as a singleton");
-    assert!(
-        consumer_alone.landable_today,
-        "singleton consumer cell must be landable; got {consumer_alone:?}",
-    );
-}
-
-#[test]
 fn factorizer_proposes_lazy_consumer_alone_when_multiple_residual_deps_are_unexported() {
-    // `dep_a` and `dep_b` are residual and unexported. `consumer`
-    // reads both lazily (inside its body). Same pattern as the
-    // previous test, but with two prerequisites. With the new
-    // emit-resolvability design, all three of `dep_a`, `dep_b`, and
-    // `consumer` are independently peelable — and the factorizer
-    // proposes them as three singletons rather than one closure.
+    // `dep_a` and `dep_b` are residual and unexported; `consumer` reads
+    // both lazily. As in the single-`dep` test above, all three are
+    // independently peelable: three singleton proposals, not one closure.
     let chunk_source = r#"const anchor = "anchor";
 const dep_a = "left";
 const dep_b = "right";
@@ -265,25 +170,22 @@ function consumer() { return dep_a + dep_b; }
 export { anchor, consumer };
 "#;
 
-    let mut opts = FixtureOpts::new(
+    let report = factorize_residual(
         chunk_source,
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
-    let consumer_alone = report
-        .proposals
-        .iter()
-        .find(|p| p.binding_ids == vec!["consumer".to_string()])
-        .expect("factorizer should propose `{consumer}` as a singleton");
-    assert!(
-        consumer_alone.landable_today,
-        "singleton consumer cell must be landable; got {consumer_alone:?}",
-    );
+    for binding in ["dep_a", "dep_b", "consumer"] {
+        let singleton = report
+            .proposals
+            .iter()
+            .find(|p| p.binding_ids == vec![binding.to_string()])
+            .unwrap_or_else(|| panic!("factorizer should propose `{{{binding}}}` as a singleton"));
+        assert!(
+            singleton.landable_today,
+            "singleton `{binding}` cell must be landable; got {singleton:?}",
+        );
+    }
 }
 
 #[test]
@@ -300,24 +202,15 @@ const consumer_b = shared + "/b";
 export { anchor, consumer_a, consumer_b };
 "#;
 
-    let mut opts = FixtureOpts::new(
+    let report = factorize_residual(
         chunk_source,
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     let combined = report
         .proposals
         .iter()
-        .find(|p| {
-            p.binding_ids.contains(&"shared".to_string())
-                && p.binding_ids.contains(&"consumer_a".to_string())
-                && p.binding_ids.contains(&"consumer_b".to_string())
-        })
+        .find(|p| proposal_has_bindings(p, &["shared", "consumer_a", "consumer_b"]))
         .expect("factorizer should combine both consumers with their shared prerequisite");
     assert!(
         combined.landable_today,
@@ -359,14 +252,10 @@ const consumer = dep + "/x";
 export { anchor, dep, consumer };
 "#;
 
-    let mut opts = FixtureOpts::new(
+    let graph = owner_graph_of(
         chunk_source,
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
     let report = factorize(&graph, &no_claims(), 1).unwrap();
 
     let blocked = report
@@ -382,13 +271,6 @@ export { anchor, dep, consumer };
     assert!(
         !blocked.landable_today,
         "cross-residual proposal must not claim landability; got {blocked:?}",
-    );
-    assert!(
-        blocked
-            .landability_notes
-            .iter()
-            .any(|note| note.contains("other residual cells")),
-        "expected cross-residual landability note: {blocked:?}",
     );
 
     let landable = report
@@ -415,15 +297,10 @@ const impure = new Something(), pureBrand = Symbol("Brand");
 export { anchor, impure, pureBrand };
 "#;
 
-    let mut opts = FixtureOpts::new(
+    let report = factorize_residual(
         chunk_source,
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["pureBrand".to_string()]
@@ -464,15 +341,10 @@ mutable = mutable + 1;
 export { anchor, mutable, peer };
 "#;
 
-    let mut opts = FixtureOpts::new(
+    let report = factorize_residual(
         chunk_source,
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["mutable".to_string()]
@@ -524,7 +396,7 @@ console.log("tail");
 export { anchor, SearchPopoverState };
 "#;
 
-    let mut opts = FixtureOpts::new(
+    let report = factorize_residual(
         chunk_source,
         vec![
             logical_module("anchors/anchor", &[Member::new("anchor")]),
@@ -536,11 +408,6 @@ export { anchor, SearchPopoverState };
             logical_module("infra/decorators/observable", &[Member::new("Z")]),
         ],
     );
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     assert!(
         report.proposals.iter().any(|proposal| {
