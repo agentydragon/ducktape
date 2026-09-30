@@ -1,6 +1,6 @@
 """The SeaweedFS cluster on the OVH Kimsufi nodes: the `Seaweed` CR, its hourly
-replication-repair `AdminScript`, and the PodDisruptionBudgets the operator CRD has no
-field for.
+replication-repair `AdminScript`, the PodDisruptionBudgets the operator CRD has no
+field for, and the `tenants` grant letting the `TENANTS` namespaces' S3 objects reference it.
 
 Replication "001" (1 copy on a different node, same rack) survives a single node loss in
 each 3-node, single-rack topology group. Volume server PVCs use the `local-path-ovh-*`
@@ -34,6 +34,12 @@ from seaweed_adminscript_crds.com.seaweedfs.seaweed import (
     AdminScriptSpecResourcesLimits,
     AdminScriptSpecResourcesRequests,
     AdminScriptSpecRestartPolicy,
+)
+from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
+    ResourceReferenceGrantSpecFrom,
+    ResourceReferenceGrantSpecFromNamespaceSelector,
+    ResourceReferenceGrantSpecFromNamespaceSelectorMatchExpressions,
+    ResourceReferenceGrantSpecTo,
 )
 from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
     Seaweed,
@@ -80,10 +86,32 @@ from seaweed_seaweed_crds.com.seaweedfs.seaweed import (
 from cluster.cdk8s import node_scheduling, stateful_infra
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.seaweedfs.resource_reference_grant import ResourceReferenceGrant
 from cluster.cdk8s.seaweedfs import filer_db, namespace, s3_config
 
 NAME = "seaweedfs"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/seaweedfs/cluster"
+# The operator's API group, which a ResourceReferenceGrant names on both sides.
+GROUP = "seaweed.seaweedfs.com"
+# Namespaces whose Buckets, S3Identities and S3Credentials may reference this cluster from
+# outside its namespace; each comment names the module that builds them. The `tenants` grant
+# admits exactly these.
+TENANTS = frozenset(
+    {
+        "authentik",  # authentik/db_backups.py
+        "flux-system",  # seaweedfs/pr_visuals_bucket.py
+        "forgejo",  # forgejo/app.py
+        "haku-openclaw-spike",  # haku_openclaw_spike_config.py
+        "home-assistant",  # home_assistant/backup.py
+        "langfuse",  # langfuse/app.py
+        "loki",  # monitoring/loki.py
+        "monitoring",  # monitoring/mimir.py, monitoring/tempo.py
+        "nix-cache",  # nix_cache/attic.py
+        "oci-cache",  # seaweedfs/registry_cache_bucket.py
+        "public-coder-agent",  # public_coder_backup.py
+        "vm-images-publisher",  # vm_images_publisher/publisher.py
+    }
+)
 _HOSTNAME = "kubernetes.io/hostname"
 
 
@@ -439,6 +467,34 @@ def _pod_disruption_budget(scope: Construct, component: str, *, min_available: i
     )
 
 
+def _tenants_grant(scope: Construct) -> None:
+    """One `from` entry per kind, selecting the tenants by namespace name: the CRD caps `from`
+    at 16 entries, fewer than one per kind and tenant."""
+    tenants = ResourceReferenceGrantSpecFromNamespaceSelector(
+        match_expressions=[
+            ResourceReferenceGrantSpecFromNamespaceSelectorMatchExpressions(
+                key="kubernetes.io/metadata.name", operator="In", values=sorted(TENANTS)
+            )
+        ]
+    )
+    ResourceReferenceGrant(
+        scope,
+        "tenants",
+        metadata=ApiObjectMetadata(
+            name="tenants",
+            namespace=namespace.NAME,
+            annotations={
+                "description": "Lets the tenant namespaces' Buckets, S3Identities and S3Credentials reference this cluster."
+            },
+        ),
+        from_=[
+            ResourceReferenceGrantSpecFrom(group=GROUP, kind=kind, namespace_selector=tenants)
+            for kind in ("Bucket", "S3Identity", "S3Credentials")
+        ],
+        to=[ResourceReferenceGrantSpecTo(group=GROUP, kind="Seaweed", name=NAME)],
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     seaweed(chart)
@@ -489,6 +545,7 @@ def chart(app: App) -> Chart:
     _pod_disruption_budget(chart, "master", min_available=2)
     _pod_disruption_budget(chart, "volume", min_available=2)
     _pod_disruption_budget(chart, "filer", min_available=1)
+    _tenants_grant(chart)
     return chart
 
 
