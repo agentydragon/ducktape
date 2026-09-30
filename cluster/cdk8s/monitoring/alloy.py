@@ -104,20 +104,11 @@ def chart(app: App) -> Chart:
         values={
             "fullnameOverride": _CONTROL_PLANE_RELEASE,
             "alloy": {
-                "configMap": {
-                    "name": "alloy-control-plane-config",
-                    "key": "control-plane.alloy",
-                    "create": False,
-                },
+                "configMap": {"name": "alloy-control-plane-config", "key": "control-plane.alloy", "create": False},
                 # This instance uses the host network only to scrape its own loopback.
                 # Keep Alloy's unauthenticated UI on host loopback too.
                 "listenAddr": "127.0.0.1",
-                "extraEnv": [
-                    {
-                        "name": "NODE_NAME",
-                        "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName"}},
-                    }
-                ],
+                "extraEnv": [{"name": "NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName"}}}],
                 "resources": {
                     "requests": {"cpu": "50m", "memory": "128Mi"},
                     "limits": {"cpu": "500m", "memory": "512Mi"},
@@ -129,19 +120,12 @@ def chart(app: App) -> Chart:
                 "dnsPolicy": "ClusterFirstWithHostNet",
                 "nodeSelector": {node_scheduling.CONTROL_PLANE_TAINT_KEY: ""},
                 "tolerations": [
-                    {
-                        "key": node_scheduling.CONTROL_PLANE_TAINT_KEY,
-                        "operator": "Exists",
-                        "effect": "NoSchedule",
-                    }
+                    {"key": node_scheduling.CONTROL_PLANE_TAINT_KEY, "operator": "Exists", "effect": "NoSchedule"}
                 ],
             },
             "service": {"enabled": False},
             "serviceMonitor": {"enabled": False},
-            "serviceAccount": {
-                "name": _CONTROL_PLANE_RELEASE,
-                "automountServiceAccountToken": True,
-            },
+            "serviceAccount": {"name": _CONTROL_PLANE_RELEASE, "automountServiceAccountToken": True},
             # The chart's RBAC template cannot render one empty rules list beside a non-empty
             # list. Define the narrow metrics permission below instead of granting its defaults.
             "rbac": {"create": False},
@@ -157,14 +141,8 @@ def chart(app: App) -> Chart:
         chart,
         "control-plane-metrics-binding",
         metadata=k8s.ObjectMeta(name=_CONTROL_PLANE_METRICS_RBAC),
-        role_ref=k8s.RoleRef(
-            api_group="rbac.authorization.k8s.io",
-            kind=metrics_role.kind,
-            name=metrics_role.name,
-        ),
-        subjects=[
-            k8s.Subject(kind="ServiceAccount", name=_CONTROL_PLANE_RELEASE, namespace=_NAMESPACE),
-        ],
+        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind=metrics_role.kind, name=metrics_role.name),
+        subjects=[k8s.Subject(kind="ServiceAccount", name=_CONTROL_PLANE_RELEASE, namespace=_NAMESPACE)],
     )
     k8s.KubeNetworkPolicy(
         chart,

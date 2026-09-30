@@ -524,7 +524,7 @@ def monitoring_stack(
                 kind="HelmRelease",
                 name="kube-prometheus-stack",
                 namespace="monitoring",
-            ),
+            )
         ],
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
