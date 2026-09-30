@@ -4,7 +4,13 @@ from typing import Any
 
 import pytest_bazel
 
-from devinfra.ci.pr_mergeability import Assessment, inspect_pull_request, publish_check
+from devinfra.ci.pr_mergeability import (
+    Assessment,
+    SourceRevisionError,
+    inspect_pull_request,
+    publish_check,
+    verify_source_revision,
+)
 
 
 def _pull(*, mergeable: bool | None, head: str = "head", base: str = "base", merge: str = "merge") -> dict[str, Any]:
@@ -124,6 +130,55 @@ def test_publish_check_creates_or_updates_the_pr_head_check() -> None:
     expected_update = api.created[0].copy()
     del expected_update["head_sha"]
     assert api.updated == [(7, expected_update)]
+
+
+def test_source_ref_checkout_validates_the_synthetic_merge_head_parent() -> None:
+    resolved_sha = verify_source_revision(
+        "merge",
+        source_ref="refs/pull/15/merge",
+        expected_sha="event-sha",
+        expected_head_sha="head",
+        second_parent_sha="head",
+    )
+
+    assert resolved_sha == "merge"
+
+
+def test_source_commit_checkout_must_match_the_requested_sha() -> None:
+    message = _source_revision_error("checked-out", source_ref="", expected_sha="requested", expected_head_sha="")
+
+    assert message == "checked out checked-out, expected requested"
+
+
+def test_live_source_ref_mismatch_explains_that_a_fresh_workflow_is_needed() -> None:
+    message = _source_revision_error(
+        "merge",
+        source_ref="refs/pull/15/merge",
+        expected_sha="event-sha",
+        expected_head_sha="current-head",
+        second_parent_sha="old-head",
+    )
+
+    assert "merge parent old-head" in message
+    assert "event-time PR head" in message
+    assert "start a fresh PR workflow" in message
+
+
+def test_event_merge_sha_mismatch_explains_that_rerun_reuses_source() -> None:
+    message = _source_revision_error(
+        "merge", source_ref="", expected_sha="merge", expected_head_sha="current-head", second_parent_sha="old-head"
+    )
+
+    assert "merge parent old-head" in message
+    assert "rerunning this run reuses the old source" in message
+
+
+def _source_revision_error(resolved_sha: str, **kwargs: str) -> str:
+    try:
+        verify_source_revision(resolved_sha, **kwargs)
+    except SourceRevisionError as error:
+        return str(error)
+    raise AssertionError("invalid source revision was accepted")
 
 
 if __name__ == "__main__":

@@ -80,54 +80,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-        id: source-checkout
-        continue-on-error: true
+        name: "Check out source (source unavailable: no tests/build ran; inspect PR mergeability)"
         with:
           ref: ${{ inputs.source_ref || inputs.source_commit || github.sha }}
           fetch-depth: 0
           allow-unsafe-pr-checkout: ${{ inputs.allow_unsafe_pr_checkout }}
-
-      - name: Diagnose unavailable PR merge source
-        if: steps.source-checkout.outcome == 'failure'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
-          EXPECTED_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha || '' }}
-          EXPECTED_MERGE_SHA: ${{ github.sha }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$PR_NUMBER" ]]; then
-            echo "::error::GitHub Actions could not check out the requested source revision; no PR mergeability information is available for this event."
-            exit 1
-          fi
-          pull=''
-          for attempt in 1 2 3; do
-            if pull=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" 2>/dev/null) && \
-              [[ "$(jq -r '.mergeable // "null"' <<<"$pull")" != "null" ]]; then
-              break
-            fi
-            if [[ "$attempt" != 3 ]]; then sleep 2; fi
-          done
-          if [[ -z "$pull" ]]; then
-            echo "::error::The PR merge source could not be checked out, and GitHub's current mergeability could not be read. This is a source/API failure, not a Bazel test failure."
-            exit 1
-          fi
-          mergeable=$(jq -r '.mergeable // "null"' <<<"$pull")
-          merge_state=$(jq -r '.mergeable_state // "unknown"' <<<"$pull")
-          current_head=$(jq -r '.head.sha // "unknown"' <<<"$pull")
-          current_base=$(jq -r '.base.sha // "unknown"' <<<"$pull")
-          current_merge=$(jq -r '.merge_commit_sha // "unknown"' <<<"$pull")
-          if [[ "$mergeable" == "false" ]]; then
-            echo "::error::PR #$PR_NUMBER cannot be cleanly merged with its base (merge state: $merge_state; head: $current_head; base: $current_base). Resolve the PR/base conflict and push an updated branch. Rerunning this CI run will reuse its recorded merge source. No Bazel work was started."
-          elif [[ "$EVENT_NAME" == "pull_request" && "$current_merge" != "$EXPECTED_MERGE_SHA" ]]; then
-            echo "::error::This run's synthetic merge ($EXPECTED_MERGE_SHA) is stale; GitHub currently reports merge $current_merge for head $current_head and base $current_base. Start a new PR run after GitHub refreshes the merge ref; rerunning this run reuses the stale SHA. No Bazel work was started."
-          elif [[ "$mergeable" == "true" ]]; then
-            echo "::error::GitHub reports PR #$PR_NUMBER mergeable (head: $current_head; base: $current_base; merge: $current_merge), but this runner could not fetch its synthetic merge source. This is a GitHub source-fetch failure, not a Bazel test failure. No Bazel work was started."
-          else
-            echo "::error::GitHub has not finished calculating mergeability for PR #$PR_NUMBER (head: $EXPECTED_HEAD_SHA). Retry the mergeability check after GitHub completes; this is not a Bazel test failure."
-          fi
-          exit 1
 
       # pull_request_target payloads can pair the current head SHA with an old
       # merge_commit_sha. Resolve the live merge ref only after the caller's
@@ -135,33 +92,13 @@ jobs:
       # is the trusted head before loading any PR-controlled local action.
       - name: Resolve and verify source revision
         id: source
-        if: steps.source-checkout.outcome == 'success'
         env:
           EXPECTED_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha }}
           SOURCE_COMMIT: ${{ inputs.source_commit }}
           SOURCE_REF: ${{ inputs.source_ref }}
-        run: |
-          set -euo pipefail
-          resolved_sha=$(git rev-parse HEAD)
-          if [[ -z "$SOURCE_REF" ]]; then
-            expected_sha="${SOURCE_COMMIT:-$GITHUB_SHA}"
-            if [[ "$resolved_sha" != "$expected_sha" ]]; then
-              echo "::error::checked out $resolved_sha, expected $expected_sha"
-              exit 1
-            fi
-          fi
-          if [[ -n "$EXPECTED_HEAD_SHA" ]]; then
-            actual_head=$(git rev-parse HEAD^2)
-            if [[ "$actual_head" != "$EXPECTED_HEAD_SHA" ]]; then
-              echo "::error::GitHub's synthetic merge is stale for this PR head (merge parent $actual_head; current head $EXPECTED_HEAD_SHA). This is a PR source-sync failure, not a Bazel test failure. Wait for GitHub to refresh the merge ref and start a new run; rerunning this run reuses the old source."
-              exit 1
-            fi
-          fi
-          echo "sha=$resolved_sha" >> "$GITHUB_OUTPUT"
-          echo "Resolved source revision: $resolved_sha"
+        run: python3 devinfra/ci/pr_mergeability.py verify-source
 
       - uses: ./.github/actions/setup-nix-devtools
-        if: steps.source-checkout.outcome == 'success'
         with:
           package: citools
 
@@ -187,7 +124,6 @@ jobs:
       # mid-flight. See devinfra/ci/invocation_ids.py.
       - name: Derive BuildBuddy invocation IDs
         id: invocation-ids
-        if: steps.source-checkout.outcome == 'success'
         run: |
           for role in test build; do
             id=$(python3 devinfra/ci/invocation_ids.py \
@@ -197,7 +133,6 @@ jobs:
 
       - name: Test + Build + lint
         id: bb-remote
-        if: steps.source-checkout.outcome == 'success'
         uses: ./.github/actions/bb-remote
         with:
           rbe_container_image: ${{ inputs.rbe_container_image }}
@@ -225,7 +160,7 @@ jobs:
             BUILD_INVOCATION_ID=${{ steps.invocation-ids.outputs.build }}
           script: python3 devinfra/ci/bazel_ci.py
       - name: Upload BuildBuddy linkage
-        if: always() && steps.source-checkout.outcome == 'success'
+        if: always() && steps.source.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: bazel-ci-linkage-${{ github.run_id }}-${{ github.run_attempt }}

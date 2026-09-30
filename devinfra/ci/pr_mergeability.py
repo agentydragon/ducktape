@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -21,6 +24,10 @@ class GitHubApiError(RuntimeError):
     def __init__(self, message: str, *, status: int | None = None) -> None:
         super().__init__(message)
         self.status = status
+
+
+class SourceRevisionError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -92,6 +99,54 @@ class GitHubApi:
 
     def update_check_run(self, check_run_id: int, payload: dict[str, Any]) -> None:
         self.request("PATCH", f"check-runs/{check_run_id}", payload)
+
+
+def verify_source_revision(
+    resolved_sha: str, *, source_ref: str, expected_sha: str, expected_head_sha: str, second_parent_sha: str = ""
+) -> str:
+    """Verify a checked-out commit and, for PR merges, its expected PR head parent."""
+    if not source_ref and resolved_sha != expected_sha:
+        raise SourceRevisionError(f"checked out {resolved_sha}, expected {expected_sha}")
+    if expected_head_sha and second_parent_sha != expected_head_sha:
+        actual_head = second_parent_sha or "unknown"
+        remediation = (
+            "The live source ref no longer matches this workflow's event-time PR head; start a fresh PR workflow "
+            "after GitHub synchronizes the PR."
+            if source_ref
+            else "Wait for GitHub to refresh the merge ref and start a new run; rerunning this run reuses the old source."
+        )
+        raise SourceRevisionError(
+            f"GitHub's synthetic merge is stale for this PR head (merge parent {actual_head}; "
+            f"expected PR head {expected_head_sha}). This is a PR source-sync failure, not a Bazel or Nix test failure. "
+            f"{remediation}"
+        )
+    return resolved_sha
+
+
+def verify_checked_out_source() -> None:
+    """Validate the current checkout and expose its SHA to following workflow steps."""
+    source_ref = os.environ.get("SOURCE_REF", "")
+    expected_sha = os.environ.get("SOURCE_COMMIT") or os.environ.get("GITHUB_SHA", "")
+    expected_head_sha = os.environ.get("EXPECTED_HEAD_SHA", "")
+    try:
+        resolved_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        second_parent_sha = ""
+        if expected_head_sha:
+            with suppress(subprocess.CalledProcessError):
+                second_parent_sha = subprocess.check_output(["git", "rev-parse", "HEAD^2"], text=True).strip()
+        verify_source_revision(
+            resolved_sha,
+            source_ref=source_ref,
+            expected_sha=expected_sha,
+            expected_head_sha=expected_head_sha,
+            second_parent_sha=second_parent_sha,
+        )
+    except (OSError, subprocess.CalledProcessError, SourceRevisionError) as error:
+        print(f"::error::{error}")
+        raise SystemExit(1) from error
+
+    _write_output(os.environ.get("GITHUB_OUTPUT", ""), "sha", resolved_sha)
+    print(f"Resolved source revision: {resolved_sha}")
 
 
 def inspect_pull_request(
@@ -240,6 +295,12 @@ def _write_summary(path: str, number: int, result: Assessment, url: str) -> None
 
 
 def main() -> None:
+    if sys.argv[1:] == ["verify-source"]:
+        verify_checked_out_source()
+        return
+    if sys.argv[1:]:
+        raise ValueError(f"unsupported command: {' '.join(sys.argv[1:])}")
+
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     repository = os.environ.get("GITHUB_REPOSITORY", "")
     if not token or not repository:
