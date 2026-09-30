@@ -766,7 +766,9 @@ impl IncrementalQuotient {
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
 
-        let constraining_modules = self.constraining_graph.scc_containing(module);
+        let no_delta = BTreeMap::new();
+        let constraining_modules =
+            OverlayGraphView::new(&self.constraining_graph, &no_delta).scc_containing(module);
         if constraining_modules.len() >= 2 {
             let constraining_owner_edges = self.constraining_edges_inside(&constraining_modules);
             reported.insert(constraining_modules.clone());
@@ -779,7 +781,7 @@ impl IncrementalQuotient {
             });
         }
 
-        let i_modules = self.i_graph.scc_containing(module);
+        let i_modules = OverlayGraphView::new(&self.i_graph, &no_delta).scc_containing(module);
         if i_modules.len() >= 2
             && !reported.contains(&i_modules)
             && self

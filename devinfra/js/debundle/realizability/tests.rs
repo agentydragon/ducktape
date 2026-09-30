@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
+use super::incremental_quotient::OverlayGraphView;
 use super::*;
+use crate::rollback_graph::RollbackDiGraph;
 use analysis::OwnerId;
 use analysis::facts::analyze_chunk;
 use analysis::graph::build_owner_graph_with;
@@ -787,6 +789,26 @@ fn verdict_touching_matches_full_verdict_filtered_to_module() {
         normalize_verdict(index.verdict_touching(module_id(2))),
         normalize_verdict(filter_verdict_touching(&full, module_id(2))),
         "unrelated module should not inherit the a/b SCC",
+    );
+}
+
+#[test]
+fn empty_delta_overlay_scc_containing_is_the_base_scc() {
+    let mut graph = RollbackDiGraph::new();
+    for (from, to) in [(1, 2), (2, 3), (3, 1), (3, 4), (4, 5)] {
+        graph.increment_edge(module_id(from), module_id(to));
+    }
+    let no_delta = BTreeMap::new();
+    let view = OverlayGraphView::new(&graph, &no_delta);
+
+    assert_eq!(
+        view.scc_containing(module_id(2)),
+        BTreeSet::from([module_id(1), module_id(2), module_id(3)]),
+    );
+    assert_eq!(
+        view.scc_containing(module_id(4)),
+        BTreeSet::from([module_id(4)]),
+        "4 is reachable from the cycle but cannot reach it",
     );
 }
 

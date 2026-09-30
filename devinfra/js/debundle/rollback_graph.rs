@@ -1,11 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::Hash;
 
-use petgraph::Directed;
 use petgraph::algo::tarjan_scc;
-use petgraph::visit::{
-    GraphBase, GraphProp, GraphRef, IntoNeighbors, IntoNeighborsDirected, IntoNodeIdentifiers,
-    NodeIndexable,
-};
+use petgraph::graphmap::DiGraphMap;
 
 /// Journal position for [`RollbackDiGraph`]. Rolling back to a mark
 /// restores every edge count changed after the mark was created.
@@ -141,51 +138,6 @@ where
             .flatten()
     }
 
-    /// The strict SCC containing `node`, computed as the intersection
-    /// of forward and reverse reachability from `node`. Localized:
-    /// cost is bounded by `node`'s reachable cones, not the whole
-    /// graph — the previous shape ran a full Tarjan and materialized
-    /// every SCC per query. A node with no incident edges yields
-    /// `{node}`.
-    pub(crate) fn scc_containing(&self, node: N) -> BTreeSet<N> {
-        let forward = self.reachable_from(node, |graph, n| graph.successors(n));
-        let mut scc: BTreeSet<N> = self
-            .reachable_from(node, |graph, n| graph.predecessors(n))
-            .intersection(&forward)
-            .copied()
-            .collect();
-        scc.insert(node);
-        scc
-    }
-
-    /// Nodes reachable from `start` (excluding `start` unless it lies
-    /// on a cycle through itself) via the `neighbors` direction.
-    fn reachable_from<'a, I>(
-        &'a self,
-        start: N,
-        neighbors: impl Fn(&'a Self, N) -> I,
-    ) -> BTreeSet<N>
-    where
-        I: Iterator<Item = N> + 'a,
-    {
-        let mut seen: BTreeSet<N> = BTreeSet::new();
-        let mut stack: Vec<N> = neighbors(self, start).collect();
-        while let Some(n) = stack.pop() {
-            if seen.insert(n) {
-                stack.extend(neighbors(self, n));
-            }
-        }
-        seen
-    }
-
-    pub(crate) fn all_sccs(&self) -> Vec<BTreeSet<N>> {
-        let view = PetgraphView::new(self);
-        tarjan_scc(&view)
-            .into_iter()
-            .map(|scc| scc.into_iter().collect())
-            .collect()
-    }
-
     fn restore_edge_count(&mut self, from: N, to: N, count: usize) {
         let old_count = self.edge_count(from, to);
         if old_count == count {
@@ -207,6 +159,18 @@ where
     }
 }
 
+impl<N> RollbackDiGraph<N>
+where
+    N: Copy + Ord + Hash,
+{
+    pub(crate) fn all_sccs(&self) -> Vec<BTreeSet<N>> {
+        tarjan_scc(&DiGraphMap::<N, ()>::from_edges(self.edge_pairs()))
+            .into_iter()
+            .map(|scc| scc.into_iter().collect())
+            .collect()
+    }
+}
+
 fn remove_adjacent<N>(adjacency: &mut BTreeMap<N, BTreeSet<N>>, from: N, to: N)
 where
     N: Copy + Ord,
@@ -220,148 +184,9 @@ where
     }
 }
 
-/// Petgraph adapter that materializes a dense node index for
-/// [`RollbackDiGraph`]. `RollbackDiGraph` only tracks nodes that
-/// participate in at least one edge, matching petgraph `GraphMap`
-/// semantics — the view's node bound is the count of such nodes.
-struct PetgraphView<'a, N> {
-    graph: &'a RollbackDiGraph<N>,
-    nodes: Vec<N>,
-    index_of: BTreeMap<N, usize>,
-}
-
-impl<'a, N> PetgraphView<'a, N>
-where
-    N: Copy + Ord,
-{
-    fn new(graph: &'a RollbackDiGraph<N>) -> Self {
-        let mut node_set: BTreeSet<N> = BTreeSet::new();
-        for &(from, to) in graph.edge_counts.keys() {
-            node_set.insert(from);
-            node_set.insert(to);
-        }
-        let nodes: Vec<N> = node_set.into_iter().collect();
-        let index_of: BTreeMap<N, usize> = nodes
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(i, n)| (n, i))
-            .collect();
-        Self {
-            graph,
-            nodes,
-            index_of,
-        }
-    }
-}
-
-impl<N> GraphBase for &PetgraphView<'_, N>
-where
-    N: Copy + Ord,
-{
-    type NodeId = N;
-    type EdgeId = (N, N);
-}
-
-impl<N> GraphRef for &PetgraphView<'_, N> where N: Copy + Ord {}
-
-impl<N> GraphProp for &PetgraphView<'_, N>
-where
-    N: Copy + Ord,
-{
-    type EdgeType = Directed;
-}
-
-impl<N> NodeIndexable for &PetgraphView<'_, N>
-where
-    N: Copy + Ord,
-{
-    fn node_bound(&self) -> usize {
-        self.nodes.len()
-    }
-
-    fn to_index(&self, node: N) -> usize {
-        *self
-            .index_of
-            .get(&node)
-            .expect("node not present in RollbackDiGraph view")
-    }
-
-    fn from_index(&self, index: usize) -> N {
-        self.nodes[index]
-    }
-}
-
-/// Iterator over the optionally-present adjacency set for a node.
-/// Returning a concrete type lets `IntoNeighbors` etc. avoid boxing.
-struct NeighborIter<'a, N> {
-    inner: Option<std::collections::btree_set::Iter<'a, N>>,
-}
-
-impl<'a, N: Copy> Iterator for NeighborIter<'a, N> {
-    type Item = N;
-
-    fn next(&mut self) -> Option<N> {
-        self.inner.as_mut()?.next().copied()
-    }
-}
-
-fn neighbor_iter<'a, N: Ord>(
-    adjacency: &'a BTreeMap<N, BTreeSet<N>>,
-    node: &N,
-) -> NeighborIter<'a, N> {
-    NeighborIter {
-        inner: adjacency.get(node).map(|set| set.iter()),
-    }
-}
-
-impl<'a, N> IntoNeighbors for &'a PetgraphView<'_, N>
-where
-    N: Copy + Ord + 'a,
-{
-    type Neighbors = NeighborIter<'a, N>;
-
-    fn neighbors(self, node: N) -> Self::Neighbors {
-        neighbor_iter(&self.graph.out_edges, &node)
-    }
-}
-
-impl<'a, N> IntoNeighborsDirected for &'a PetgraphView<'_, N>
-where
-    N: Copy + Ord + 'a,
-{
-    type NeighborsDirected = NeighborIter<'a, N>;
-
-    fn neighbors_directed(
-        self,
-        node: N,
-        direction: petgraph::Direction,
-    ) -> Self::NeighborsDirected {
-        let adjacency = match direction {
-            petgraph::Direction::Outgoing => &self.graph.out_edges,
-            petgraph::Direction::Incoming => &self.graph.in_edges,
-        };
-        neighbor_iter(adjacency, &node)
-    }
-}
-
-impl<'a, N> IntoNodeIdentifiers for &'a PetgraphView<'_, N>
-where
-    N: Copy + Ord + 'a,
-{
-    type NodeIdentifiers = std::iter::Copied<std::slice::Iter<'a, N>>;
-
-    fn node_identifiers(self) -> Self::NodeIdentifiers {
-        self.nodes.iter().copied()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-
-    use petgraph::algo::tarjan_scc;
-    use petgraph::graphmap::DiGraphMap;
 
     use super::RollbackDiGraph;
 
@@ -424,52 +249,26 @@ mod tests {
     }
 
     #[test]
-    fn scc_containing_is_forward_reverse_reachability_intersection() {
+    fn all_sccs_follow_rollback() {
         let mut graph = RollbackDiGraph::new();
-        graph.increment_edge(1, 2);
-        graph.increment_edge(2, 3);
-        graph.increment_edge(3, 1);
-        graph.increment_edge(3, 4);
-
-        assert_eq!(
-            graph.scc_containing(2),
-            BTreeSet::from([1, 2, 3]),
-            "1, 2, 3 are mutually reachable",
-        );
-        assert_eq!(
-            graph.scc_containing(4),
-            BTreeSet::from([4]),
-            "4 is reachable from the cycle but cannot reach it",
-        );
-    }
-
-    #[test]
-    fn tarjan_output_matches_petgraph_for_small_graph() {
-        let edges = [(1, 2), (2, 1), (2, 3), (3, 4), (4, 3), (5, 6)];
-        let mut graph = RollbackDiGraph::new();
-        let mut petgraph: DiGraphMap<i32, (), std::collections::hash_map::RandomState> =
-            DiGraphMap::new();
-        for (from, to) in edges {
+        for (from, to) in [(1, 2), (2, 1), (2, 3), (3, 4), (4, 3), (5, 6)] {
             graph.increment_edge(from, to);
-            petgraph.add_edge(from, to, ());
         }
-
-        let mut ours: BTreeSet<BTreeSet<i32>> = graph.all_sccs().into_iter().collect();
-        // `RollbackDiGraph` only knows nodes that are edge endpoints,
-        // matching this petgraph construction.
-        let pet: BTreeSet<BTreeSet<i32>> = tarjan_scc(&petgraph)
-            .into_iter()
-            .map(|scc| scc.into_iter().collect())
-            .collect();
-
-        assert_eq!(ours, pet);
+        let sccs = |graph: &RollbackDiGraph<i32>| -> BTreeSet<BTreeSet<i32>> {
+            graph.all_sccs().into_iter().collect()
+        };
+        let baseline = BTreeSet::from([
+            BTreeSet::from([1, 2]),
+            BTreeSet::from([3, 4]),
+            BTreeSet::from([5]),
+            BTreeSet::from([6]),
+        ]);
+        assert_eq!(sccs(&graph), baseline);
 
         let mark = graph.mark();
         graph.increment_edge(6, 5);
-        ours = graph.all_sccs().into_iter().collect();
-        assert!(ours.contains(&BTreeSet::from([5, 6])));
+        assert!(sccs(&graph).contains(&BTreeSet::from([5, 6])));
         graph.rollback_to(mark);
-        ours = graph.all_sccs().into_iter().collect();
-        assert_eq!(ours, pet);
+        assert_eq!(sccs(&graph), baseline);
     }
 }
