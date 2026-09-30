@@ -65,7 +65,8 @@ of truth and the streams only shorten the delay.
 - **Session watch.** One `sessions/watch` stream pushes each session change: the change is upserted and the followed
   set re-derived at once, so a new session is followed from its first event ([api.md](api.md) § Session watch: the
   request needs a platform header). The page shows "watch connected", or "not connected" with the reason; discovery
-  covers meanwhile and after a gap. A watch the server no longer holds takes a fresh resume token.
+  covers meanwhile and after a gap. Every connection takes a fresh resume token, since the server answers an old one
+  with a watch that stays open and delivers nothing.
 
 Rules that keep the mirror exact:
 

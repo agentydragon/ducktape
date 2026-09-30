@@ -143,6 +143,10 @@ is the list route's `resume_token`. Observed 2026-09-30 with the OAuth bearer ag
   list route sends it (`id`, `title`, `status`, `created_at`, `updated_at`, `last_event_at`, `config`,
   `worker_status`, …); `removed` carries `{id}` (from the web client's code, not seen). A frame with no `event:` name
   and no data also arrives, seconds after connecting: a keepalive.
+- **The token must be fresh.** One up to 225 s old opened a watch that delivered `added`, `sync` and `changed`; one
+  of 240 s or more got a 200 and a keepalive, then nothing at all, not even `sync`, and no later change either. The
+  answer is not a 410, so nothing in the response says the watch is dead. The token is a nanosecond timestamp,
+  base64-encoded. Page size does not matter, and neither does an `Accept: text/event-stream` header.
 - 410 means the token expired and 400 that none was sent (both from the web client's code, not seen).
 
 `GET /v1/sessions/watch`, the older route family, needs no such header and streams `session_updated` frames of a
