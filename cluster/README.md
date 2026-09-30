@@ -151,8 +151,8 @@ cluster/
 │   ├── agents/             # Agent infra (public-coder-agent, airlock, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
 │   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)
-│   ├── <service>/          # Grouped: subdirs per flux-kustomization (namespace, secrets, app, db)
-│   ├── <service>/          # Flat: single flux-kustomization, all manifests at root
+│   ├── <service>/          # One flux-kustomization, all manifests at root (docs/flux_kustomization_policy.md)
+│   ├── <service>/          # Subdirs per concern; a separate flux-kustomization only where the same doc's rule 3 allows
 │   └── flux-system/        # Flux controllers (auto-generated)
 ├── rotators/               # Source for credential-rotation CronJob images (authentik/attic JWTs)
 ├── provisioners/           # Source for active reconciler CronJob/Job images (grocy user-perms, matrix users)

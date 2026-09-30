@@ -214,17 +214,40 @@ and Flux readiness alone do not prove service continuity. See the
 [Redis operator incident and guarded recovery](docs/lessons_learned/2026_09_20_redis_operator_flux_labels.md),
 including upstream issue #1347 and the partial fix in PR #1382.
 
-**Custom resources must transitively depend on the Kustomization providing their
-CRDs/operator.** An application HelmRelease may share a Kustomization with resources
-from separately installed operators (for example, a CNPG Cluster or ExternalSecret).
-An operator HelmRelease and instances requiring that operator belong in separate
-Kustomizations: admitting the HelmRelease does not install its CRDs synchronously.
-`validate_operator_dependencies` enforces this in
+### How many Kustomizations a component gets
+
+**One**, unless it ships CRDs others need, owns persistent state a prune would
+destroy, reconciles from another source or age key, must be suspendable alone
+mid-incident, or needs a different interval. Namespace, ExternalSecrets,
+HelmRelease, ServiceMonitor, HTTPRoute and RoleBindings all belong in that one. An
+operator a HelmRelease installs ships CRDs even to its own component: admitting the
+HelmRelease does not install its CRDs synchronously, so instances of them go in a
+separate Kustomization.
+
+**`dependsOn` is only for what admission rejects** — an unestablished CRD, or an
+unanswered `failurePolicy: Fail` webhook where the operator registers one (ESO,
+CNPG, cert-manager, Kyverno, KubeVirt, CDI do; check, don't assume). Absent a
+webhook the edge points at `<operator>-crds`, not at its HelmRelease. Anything Kubernetes
+retries its way out of (a Secret, a StorageClass, a pull credential, a database,
+a Gateway) is not a dependency; an edge for one needs a registered reason in the
+`_ORDERING_EXCEPTIONS` table (<validation/dependencies.py>), and the test is whether
+`bazel run //cluster:bootstrap` still converges without it. `wait: true` and
+`healthChecks` go only where something gates on this Kustomization.
+
+**An edge across two `ExternalArtifact`s gates on `Ready`, not on the
+prerequisite having applied the new revision** — so it orders bootstrap and
+propagates failure, and does not order updates. Where ordered updates are the
+actual requirement (a migration before its writer), carry both paths in **one**
+artifact and point both `sourceRef`s at it; the revision check only engages when
+the `sourceRef`s match.
+
+`validate_operator_dependencies` checks the CRD half in
 `//cluster/validation:test_cluster_integration`; regression coverage lives in
 `//cluster/validation:test_crd_layering`.
 
-- Flat example: `k8s/aiquota/` — single flux-kustomization, all manifests at root
-- Grouped example: `k8s/langfuse/` — one Flux unit composing namespace, secrets, database, cache, storage, and app directories
+Rationale, the measurements behind it, and the rejected alternatives:
+<docs/flux_kustomization_policy.md>. Flat example: `k8s/aiquota/`; one unit composing
+several directories: `k8s/langfuse/`.
 
 ### Parked (non-ducktape-owned) application manifests
 
