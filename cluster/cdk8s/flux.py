@@ -244,7 +244,10 @@ class ConfigMapArgs(BaseModel):
     (`ConfigMap.from_config_map_name`)."""
 
     name: str
-    namespace: str
+    namespace: str | None = Field(
+        description="None only in a base whose overlays set the namespace, as on the objects that mount it: "
+        "kustomize rewrites a reference to the hashed name only within one namespace."
+    )
     options: GeneratorOptions | None = None
     files: list[str] | None = Field(
         default=None, description="File names relative to the directory; each becomes a key of that name."

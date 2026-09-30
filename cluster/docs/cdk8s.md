@@ -5,9 +5,12 @@ Python cdk8s (`cluster/cdk8s/`) generates resources under two roots
 directory every file of which is generated lives under `cluster/generated`, a closed
 world: the parity test fails on any file there the generator does not write. A directory
 holding any hand-written file lives under `cluster/k8s`, its generated files beside the
-hand-written ones. A directory is never split across the roots, and never nested inside
-another Kustomization's path or artifact copy in the other root. The Flux
-Kustomization graph is one generated chart at `cluster/k8s/flux/kustomizations.k8s.yaml`;
+hand-written ones; the exception is an `image-pins` Component, which may be a
+`cluster/k8s` directory of its own that a generated directory includes across the roots
+([the mixed-directory rule](cdk8s_remainder.md#mixed-directory-layout)). A directory is
+never split across the roots, and never nested inside another Kustomization's path or
+artifact copy in the other root. The Flux Kustomization graph is one generated chart at
+`cluster/k8s/flux/kustomizations.k8s.yaml`;
 the neighboring `flux/kustomization.yaml` keeps bootstrap and source objects hand-written.
 Flux reads `devel` as it always has. Regenerate with `bb run //cluster/cdk8s:generate_manifests`
 (the binary writes into the checkout, so `bb run`, not `bbr run`);

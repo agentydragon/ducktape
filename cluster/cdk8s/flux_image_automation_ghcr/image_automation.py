@@ -9,9 +9,9 @@ from cdk8s import App, Chart
 from cluster.cdk8s import ducktape_flux
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.image_automation import ImageUpdatePush
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/flux-image-automation-ghcr"
+OUTPUT_DIR = f"{GENERATED_ROOT}/flux-image-automation-ghcr"
 
 
 def automation_chart(app: App) -> Chart:

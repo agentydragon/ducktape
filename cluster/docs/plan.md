@@ -27,14 +27,6 @@ editing a route.
 
 ## Next Actions
 
-- [x] **etcd lease-PUT latency / historical control-plane HDD I/O contention.** The
-      structural fix landed on 2026-09-18: etcd now runs on the three NVMe-backed
-      control planes (`ovh-ns104952`, `ovh-ns104963`, `ovh-ns1001419`), and the former
-      KS-5 HDD control plane (`ovh-ns103656`) is a worker. The 2026-06-28 outage and
-      its mitigations remain documented in
-      <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>. Worker-first workload
-      placement, control-plane I/O alerting, and the remaining tofu-runner pins are
-      defense in depth; they are no longer blockers for the etcd-on-NVMe move.
 - [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
       Forgejo's namespace is Goldilocks-enabled and has a generated
       `goldilocks-forgejo` VPA, but the VPA control-plane deployments in
@@ -319,14 +311,11 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       restarts are boring.
 - [ ] Enable systemd watchdog for kubelet on NixOS workers (`WatchdogSec=` in kubelet
       service unit) — restarts kubelet if it deadlocks
-- [x] NVIDIA GPU monitoring: DCGM exporter DaemonSet + PodMonitor + Grafana dashboard
-      (gnetId 12239) landed in `cluster/k8s/dcgm-exporter/`. Gets power/temp/clocks, PCIe
-      replay counters, and XID-as-a-metric (`DCGM_FI_DEV_XID_ERRORS`) into Mimir (365 d) to
-      characterize the recurring RTX 5090 fall-off events. Alloy auto-scrapes the PodMonitor.
-      Follow-ups: retire the local-CSV `gpu-monitor.nix` poller once Mimir coverage is
-      confirmed; add a per-GPU PCIe AER correctable-error scrape (see
-      `debug/atlas/gpu_lockup_20260718_followups.md` #4). Context:
-      <../../debug/atlas/gpu_lockup_20260718_followups.md>.
+- [ ] Confirm DCGM/Mimir captures run-up telemetry over a full RTX 5090 fall-off cycle
+      before retiring the local-CSV `gpu-monitor.nix` poller. `DCGM_FI_DEV_XID_ERRORS` is
+      unsupported on these cards; Xid-79 events are captured through journal → Loki.
+      Optional DCGM experimental-XID and per-GPU PCIe AER work are tracked in
+      `cluster/k8s/TODO.md` (see `debug/atlas/gpu_lockup_20260718_followups.md` #4).
 - [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver, now via Alloy)
 - [ ] **Roaming node DaemonSet problem** (high priority; recurs for any DaemonSet):
       Offline roaming nodes (iguana/rugged) leave DaemonSet pods Pending, which
@@ -486,9 +475,6 @@ Proxmox-only gap.)
       OVH-hosted PVC or object storage. No such CronJob exists today — the one
       precedent (tofu-state's) was deleted 2026-06-02; see "Set up offsite tofu-state
       backup" in Next Actions.
-- [x] Authentik's OVH-HA cluster uses CNPG-I Barman Cloud with daily base backups,
-      continuous WAL archiving, and 30-day retention in its dedicated SeaweedFS S3
-      bucket (`k8s/authentik/db/`).
 - [ ] Extend CNPG `ScheduledBackup` + Barman to the remaining clusters for continuous
       WAL archiving and point-in-time recovery.
 - [ ] Verify Proxmox ZFS auto-snapshot schedule covers CNPG data directories

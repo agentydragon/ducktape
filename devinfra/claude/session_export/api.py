@@ -1,7 +1,7 @@
 """Read-only client for claude.ai's private Claude Code session API (contract: docs/api.md)."""
 
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from enum import StrEnum
 from pathlib import Path
 from types import TracebackType
@@ -13,8 +13,11 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait
 from tenacity.wait import wait_base
 
 from devinfra.claude.session_export.models import Event, EventsPage, SessionsPage, SessionSummary
+from devinfra.claude.session_export.oauth import OAuthTokenSource
 
-BASE_URL = "https://claude.ai"
+CLAUDE_AI_URL = "https://claude.ai"
+FIRST_PARTY_API_URL = "https://api.anthropic.com"
+CCR_BETA = "ccr-byoc-2025-07-29"  # sent by the first-party clients; the list route works without it
 EVENTS_PAGE_LIMIT = 500  # server maximum
 SESSIONS_PAGE_LIMIT = 100
 USER_AGENT = "claude-session-export/0.1 (personal data export)"  # the default python UA gets a Cloudflare challenge
@@ -48,24 +51,29 @@ def _is_transient(exc: BaseException) -> bool:
     return isinstance(exc, httpx.TransportError)
 
 
+class BearerAuth(httpx.Auth):
+    """Asks the token source for a valid access token on every request, so a long run outlives one token."""
+
+    def __init__(self, tokens: OAuthTokenSource) -> None:
+        self._tokens = tokens
+
+    async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        request.headers["authorization"] = f"Bearer {await self._tokens.access_token()}"
+        yield request
+
+
 class SessionsApi:
     def __init__(
         self,
-        cookie: SessionCookie,
+        base_url: str,
+        headers: dict[str, str],
         *,
+        auth: httpx.Auth | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         retry_wait: wait_base | None = None,
     ) -> None:
         self._client = httpx.AsyncClient(
-            base_url=BASE_URL,
-            headers={
-                "cookie": f"sessionKey={cookie.session_key.get_secret_value()}",
-                "x-organization-uuid": cookie.org_uuid,
-                "anthropic-version": "2023-06-01",
-                "user-agent": USER_AGENT,
-            },
-            timeout=120,
-            transport=transport,
+            base_url=base_url, headers=headers, auth=auth, timeout=120, transport=transport
         )
         self._retrying = AsyncRetrying(
             retry=retry_if_exception(_is_transient),
@@ -73,6 +81,40 @@ class SessionsApi:
             stop=stop_after_attempt(_MAX_ATTEMPTS),
             reraise=True,
         )
+
+    @classmethod
+    def for_cookie(
+        cls,
+        cookie: SessionCookie,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+        retry_wait: wait_base | None = None,
+    ) -> Self:
+        """Authenticate as the browser does: a `sessionKey` cookie against claude.ai."""
+        headers = {
+            "cookie": f"sessionKey={cookie.session_key.get_secret_value()}",
+            "x-organization-uuid": cookie.org_uuid,
+            "anthropic-version": "2023-06-01",
+            "user-agent": USER_AGENT,
+        }
+        return cls(CLAUDE_AI_URL, headers, transport=transport, retry_wait=retry_wait)
+
+    @classmethod
+    def for_oauth(
+        cls,
+        tokens: OAuthTokenSource,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+        retry_wait: wait_base | None = None,
+    ) -> Self:
+        """Authenticate as the Claude Code CLI does: an OAuth bearer against the first-party API."""
+        headers = {
+            "x-organization-uuid": tokens.organization_uuid,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": CCR_BETA,
+            "user-agent": USER_AGENT,
+        }
+        return cls(FIRST_PARTY_API_URL, headers, auth=BearerAuth(tokens), transport=transport, retry_wait=retry_wait)
 
     async def __aenter__(self) -> Self:
         return self
