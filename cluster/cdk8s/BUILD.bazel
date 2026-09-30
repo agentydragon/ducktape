@@ -1780,7 +1780,6 @@ py_library(
         "//cluster/cdk8s/ssh_mcp:generation",
         "//cluster/cdk8s/sshpiper_crds:flux_kustomizations",
         "//cluster/cdk8s/study_casino:app",
-        "//cluster/cdk8s/study_casino:flux_kustomizations",
         "//cluster/cdk8s/tofu_controller:release",
         "//cluster/cdk8s/tofu_state:db",
         "//cluster/cdk8s/tofu_state:namespace",

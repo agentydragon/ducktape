@@ -3234,7 +3234,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/study-casino
+  path: ./cluster/generated/study-casino
   prune: true
   retryInterval: 1m
   sourceRef:
