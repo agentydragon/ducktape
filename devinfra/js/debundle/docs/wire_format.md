@@ -30,7 +30,7 @@ in memory, but the wire form is the string itself, which is portable.
 ### Why the convention works for these files
 
 These files all carry **post-filter** data — data that has already
-passed through `binding_owner.get(binding)` at `graph.rs:598`. That
+passed through the `binding_owner` lookup in `graph/build.rs`. That
 lookup is keyed by the full `Id`. Anything whose `SyntaxContext` does
 not match a chunk-top-level binding (closure-local reads with inner-
 scope marks, globals with `SyntaxContext::empty()`, etc.) **misses the
@@ -62,12 +62,10 @@ with inner-scope marks. Those inner-scope `Id`s are `Globals`-bound:
 their `ctxt: u32` is meaningful only inside the SWC `Globals` that
 minted them.
 
-We don't serialize them. An earlier design proposed an `Atom`-only
-shape that reconstructed `Id`s via `top_level_id(name, fresh_mark)`,
-but that's unsound under shadowing (a closure-local `counter` would
-collide with a top-level `counter`). The other paths considered (a
-SWC hygiene-snapshot replay; pre-filtering inner-scope reads) didn't
-pay for themselves. See
+We don't serialize them. An `Atom`-only shape that reconstructs `Id`s via
+`top_level_id(name, fresh_mark)` is unsound under shadowing (a closure-local
+`counter` would collide with a top-level `counter`); a SWC hygiene-snapshot
+replay and pre-filtering inner-scope reads don't pay for themselves. See
 `docs/lessons_learned/cross_process_stage_b.md`.
 
 ## Reader audiences
@@ -128,11 +126,9 @@ Everything that points at a module carries only the interned
 
 There is no second encoding of a module: a reference is a key, the path
 and residual flag live once in the table, and a consumer resolves a key
-via `OwnerGraphReport::module(key)` / `is_residual(key)`. The former
-`ModuleReportRef { id, label, residual, index, target_file }` — which
-spelled one identity five ways — and the parallel `sccs[].labels` are
-gone. Residual-ness is read from the table's authoritative `residual`
-flag, never inferred from a key string.
+via `OwnerGraphReport::module(key)` / `is_residual(key)`. Residual-ness is
+read from the table's authoritative `residual` flag, never inferred from a
+key string.
 
 ## Module identity everywhere else: `ModulePath` / `ModuleRef`
 

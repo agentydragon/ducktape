@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from itertools import batched
@@ -178,9 +178,11 @@ class SessionStore:
         async with self._engine.connect() as connection:
             return list((await connection.execute(query)).scalars())
 
-    async def counts(self) -> StoreCounts:
-        """How many sessions are stored and how many of those are behind the API."""
-        behind = SessionRow.synced_last_event_at.is_distinct_from(SessionRow.last_event_at)
+    async def counts(self, *, followed: Collection[str]) -> StoreCounts:
+        """How many sessions are stored, and how many are behind the API with no live stream to keep them current."""
+        behind = SessionRow.synced_last_event_at.is_distinct_from(
+            SessionRow.last_event_at
+        ) & SessionRow.session_id.not_in(followed)
         async with self._engine.connect() as connection:
             sessions, lagging = (
                 await connection.execute(select(func.count(), func.count().filter(behind)).select_from(SessionRow))

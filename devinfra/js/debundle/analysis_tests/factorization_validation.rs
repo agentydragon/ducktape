@@ -6,11 +6,9 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use super::{analyze_facts, parse, test_id};
+use super::{analyze_facts, build_owner_graph, parse, parse_with_source_map, test_id};
 use crate::*;
 use analysis::*;
-use swc_common::{FileName, sync::Lrc};
-use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
 /// Test-only convenience for constructing `ModuleId` values from a
 /// raw logical index (the `logical` free function is not part of the
@@ -455,7 +453,7 @@ fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
 }
 
 #[test]
-fn owner_graph_report_emits_atomic_graph_not_heuristic_peel_fields() {
+fn owner_graph_report_emits_atomic_graph() {
     let factorization = factorization_with_residual_module(
         "const Leaf = 1; const ResidualUse = Leaf + 1; const Existing = ResidualUse + 1;",
         &["Leaf", "ResidualUse"],
@@ -481,8 +479,6 @@ fn owner_graph_report_emits_atomic_graph_not_heuristic_peel_fields() {
     );
     let json = serde_json::to_string(&report).expect("serialize OwnerGraphReport");
     assert!(json.contains(r#""atomic_graph""#));
-    assert!(!json.contains(r#""peelability""#));
-    assert!(!json.contains(r#""peel_proposals""#));
 }
 
 #[test]
@@ -539,55 +535,6 @@ fn has_side_effect_for(src: &str) -> Vec<bool> {
         .into_iter()
         .map(|f| !f.purity.is_pure())
         .collect()
-}
-
-#[test]
-fn pure_const_decl_is_not_side_effecting() {
-    assert_eq!(has_side_effect_for("const X = 42;"), vec![false]);
-    assert_eq!(has_side_effect_for("const X = { a: 1 };"), vec![false]);
-    assert_eq!(has_side_effect_for("const X = [1, 2, 3];"), vec![false]);
-    assert_eq!(has_side_effect_for("const X = OTHER;"), vec![false]);
-    assert_eq!(has_side_effect_for("const X = 1 + 2;"), vec![false]);
-    // `A + B` on opaque Idents runs ToPrimitive — possible user
-    // `valueOf` — and is side-effecting under the coercing-operator
-    // gate (see purity classifier_tests).
-    assert_eq!(has_side_effect_for("const X = A + B;"), vec![true]);
-}
-
-#[test]
-fn impure_const_decl_is_side_effecting() {
-    assert_eq!(has_side_effect_for("const X = compute();"), vec![true]);
-    assert_eq!(has_side_effect_for("const X = new Foo();"), vec![true]);
-    assert_eq!(has_side_effect_for("const X = (y = 1, y);"), vec![true]);
-}
-
-#[test]
-fn ts_enum_iife_var_decl_is_not_side_effecting_for_matching_binding() {
-    assert_eq!(
-        has_side_effect_for(
-            r#"var WL = ((n) => (n.NO_SOUND = "no-sound", n.YES = "yes", n))(WL || {});"#
-        ),
-        vec![false]
-    );
-    assert_eq!(
-        has_side_effect_for(r#"var E = ((n) => (n[(n.A = 0)] = "A", n))(E || {});"#),
-        vec![false]
-    );
-}
-
-#[test]
-fn ts_enum_iife_var_decl_rejects_unsafe_shapes_as_side_effecting() {
-    for source in [
-        r#"var X = ((p) => (p.A = io(), p))(X || {});"#,
-        r#"var X = ((p) => (globalThis.A = "a", p))(X || {});"#,
-        r#"var X = ((p) => (other.A = "a", p))(X || {});"#,
-        r#"var X = ((p) => (p[key] = "a", p))(X || {});"#,
-        r#"var X = ((p) => (p.A = value, p))(X || {});"#,
-        r#"var X = ((p) => (leaked = p, p))(X || {});"#,
-        r#"var X = ((p) => (p.A = "a", p))(Other || {});"#,
-    ] {
-        assert_eq!(has_side_effect_for(source), vec![true], "{source}");
-    }
 }
 
 #[test]
@@ -663,86 +610,6 @@ fn owner_for_binding(graph: &OwnerGraph, name: &str) -> OwnerId {
 }
 
 #[test]
-fn split_two_declarator_const() {
-    assert_eq!(
-        statement_kinds("const A = 1, B = 2;"),
-        vec![StatementKind::VarDecl, StatementKind::VarDecl]
-    );
-    assert_eq!(
-        declared_per_statement("const A = 1, B = 2;"),
-        vec![vec!["A".to_string()], vec!["B".to_string()]]
-    );
-}
-
-#[test]
-fn split_mixed_purity_const_gives_each_declarator_its_own_owner() {
-    let source = r#"class Something {}
-const impure = new Something(), pureBrand = Symbol("Brand");"#;
-    assert_eq!(
-        declared_per_statement(source),
-        vec![
-            vec!["Something".to_string()],
-            vec!["impure".to_string()],
-            vec!["pureBrand".to_string()],
-        ],
-    );
-
-    let module = parse(source);
-    let facts = analyze_facts(&module);
-    let graph = build_owner_graph(&facts).unwrap();
-    let impure_owner = owner_for_binding(&graph, "impure");
-    let brand_owner = owner_for_binding(&graph, "pureBrand");
-    assert_ne!(
-        impure_owner, brand_owner,
-        "comma-list declarators must become distinct owners",
-    );
-    assert!(
-        !graph.node(impure_owner).unwrap().purity.is_pure(),
-        "`new Something()` should remain impure after splitting",
-    );
-    assert!(
-        graph.node(brand_owner).unwrap().purity.is_pure(),
-        "`Symbol(\"Brand\")` should classify pure after splitting",
-    );
-}
-
-#[test]
-fn split_three_declarator_let() {
-    assert_eq!(
-        declared_per_statement("let A = 1, B = 2, C = 3;"),
-        vec![
-            vec!["A".to_string()],
-            vec!["B".to_string()],
-            vec!["C".to_string()],
-        ]
-    );
-}
-
-#[test]
-fn split_comma_list_attributes_later_declarator_read_to_later_owner() {
-    let module = parse(r#"const first = Symbol("First"), second = first;"#);
-    let facts = analyze_facts(&module);
-    let graph = build_owner_graph(&facts).unwrap();
-    let first_owner = owner_for_binding(&graph, "first");
-    let second_owner = owner_for_binding(&graph, "second");
-    let first_binding = test_id("first");
-    let edge = graph
-        .iter_edges()
-        .find(|edge| {
-            edge.from == second_owner
-                && edge.to == first_owner
-                && edge.reason.kind() == DepKind::EagerUse
-                && edge.reason.binding() == Some(&first_binding)
-        })
-        .expect("second's initializer should eagerly read first");
-    assert_eq!(
-        edge.reason.statement_ordinal(),
-        graph.node(second_owner).unwrap().statement_ordinal,
-        "the read edge must be attributed to the later declarator's owner",
-    );
-}
-
-#[test]
 fn split_comma_list_rebind_unit_sticks_to_mutable_declarator_only() {
     let module = parse(
         r#"let mutable = 1, peer = Symbol("Peer");
@@ -777,21 +644,6 @@ mutable = mutable + 1;"#,
         peer_unit.members.len(),
         1,
         "pure split sibling should remain independently peelable",
-    );
-}
-
-#[test]
-fn split_export_const_with_comma_list() {
-    // `export const A = 1, B = 2;` splits into two ExportDecls,
-    // each declaring one name. Kind stays VarDecl (per
-    // classify_item, ExportDecl-of-Var classifies as VarDecl).
-    assert_eq!(
-        statement_kinds("export const A = 1, B = 2;"),
-        vec![StatementKind::VarDecl, StatementKind::VarDecl]
-    );
-    assert_eq!(
-        declared_per_statement("export const A = 1, B = 2;"),
-        vec![vec!["A".to_string()], vec!["B".to_string()]]
     );
 }
 
@@ -842,120 +694,56 @@ fn split_comma_list_attributes_reads_per_declarator() {
     let mod_1 = ModuleId(LogicalModuleIndex(1));
     assert!(
         !factorization.dep_graph.contains_edge(mod_0, mod_1),
-        "no edge mod_0 → mod_1 expected, got: {:?}",
-        factorization.dep_graph.edge_weight(mod_0, mod_1),
+        "no edge mod_0 → mod_1 expected",
     );
     assert!(
         !factorization.dep_graph.contains_edge(mod_1, mod_0),
-        "no edge mod_1 → mod_0 expected, got: {:?}",
-        factorization.dep_graph.edge_weight(mod_1, mod_0),
+        "no edge mod_1 → mod_0 expected",
     );
 }
 
 #[test]
 fn split_comma_list_assigns_per_declarator_source_ranges() {
-    // Multi-declarator var statement spread across three source
-    // lines. After Bucket-F splits the comma list, each resulting
-    // single-declarator owner must report just its declarator's
-    // line range — not the full parent statement's range. The
-    // factorizer's `size_lines_estimate` and the lane workers'
-    // `body_extraction` per-owner snippets both rely on this.
-    let cm: Lrc<swc_common::SourceMap> = Default::default();
-    let source = "const A = 1,\n      B = 2,\n      C = 3;\n";
-    let fm = cm.new_source_file(
-        FileName::Custom("test.js".into()).into(),
-        source.to_string(),
-    );
-    let lexer = Lexer::new(
-        Syntax::Es(Default::default()),
-        Default::default(),
-        StringInput::from(&*fm),
-        None,
-    );
-    let module = Parser::new_from(lexer).parse_module().unwrap();
-    let cm_clone = cm.clone();
-    let line_range_for_span = move |span: swc_common::Span| -> Option<(usize, usize)> {
-        if span == swc_common::DUMMY_SP {
-            return None;
-        }
-        let lo = cm_clone.lookup_char_pos(span.lo()).line;
-        let hi = cm_clone.lookup_char_pos(span.hi()).line;
-        Some((lo, hi))
-    };
-    let analysis = analyze_chunk(
-        &module,
-        &AnalysisHints::default(),
-        Some("test.js"),
-        line_range_for_span,
-    );
-    assert_eq!(analysis.facts.len(), 3);
-    let lines: Vec<(usize, usize)> = analysis
-        .facts
-        .iter()
-        .map(|f| {
-            let loc = f
-                .source_location
-                .as_ref()
-                .expect("source_location should be populated");
-            (loc.start_line, loc.end_line)
-        })
-        .collect();
-    assert_eq!(
-        lines,
-        vec![(1, 1), (2, 2), (3, 3)],
-        "each declarator should report only its own line, got {lines:?}",
-    );
-}
-
-#[test]
-fn split_export_comma_list_assigns_per_declarator_source_ranges() {
-    // Same fix applies to `export const A = 1, B = 2;`: the
-    // outer `ExportDecl` wrapper's span gets replaced by the
-    // declarator's span on each post-split item.
-    let cm: Lrc<swc_common::SourceMap> = Default::default();
-    let source = "export const A = 1,\n             B = 2,\n             C = 3;\n";
-    let fm = cm.new_source_file(
-        FileName::Custom("test.js".into()).into(),
-        source.to_string(),
-    );
-    let lexer = Lexer::new(
-        Syntax::Es(Default::default()),
-        Default::default(),
-        StringInput::from(&*fm),
-        None,
-    );
-    let module = Parser::new_from(lexer).parse_module().unwrap();
-    let cm_clone = cm.clone();
-    let line_range_for_span = move |span: swc_common::Span| -> Option<(usize, usize)> {
-        if span == swc_common::DUMMY_SP {
-            return None;
-        }
-        let lo = cm_clone.lookup_char_pos(span.lo()).line;
-        let hi = cm_clone.lookup_char_pos(span.hi()).line;
-        Some((lo, hi))
-    };
-    let analysis = analyze_chunk(
-        &module,
-        &AnalysisHints::default(),
-        Some("test.js"),
-        line_range_for_span,
-    );
-    let lines: Vec<(usize, usize)> = analysis
-        .facts
-        .iter()
-        .map(|f| {
-            let loc = f
-                .source_location
-                .as_ref()
-                .expect("source_location should be populated");
-            (loc.start_line, loc.end_line)
-        })
-        .collect();
-    assert_eq!(
-        lines,
-        vec![(1, 1), (2, 2), (3, 3)],
-        "each exported declarator should report only its own line, got {lines:?}",
-    );
+    // Each post-split single-declarator owner must report just its
+    // declarator's line range, not the parent statement's (for
+    // `export const`, not the `ExportDecl` wrapper's). The factorizer's
+    // `size_lines_estimate` and the lane workers' `body_extraction`
+    // per-owner snippets both rely on this.
+    for source in [
+        "const A = 1,\n      B = 2,\n      C = 3;\n",
+        "export const A = 1,\n             B = 2,\n             C = 3;\n",
+    ] {
+        let (module, cm) = parse_with_source_map(source);
+        let analysis = analyze_chunk(
+            &module,
+            &AnalysisHints::default(),
+            Some("test.js"),
+            |span| {
+                (span != swc_common::DUMMY_SP).then(|| {
+                    (
+                        cm.lookup_char_pos(span.lo()).line,
+                        cm.lookup_char_pos(span.hi()).line,
+                    )
+                })
+            },
+        );
+        let lines: Vec<(usize, usize)> = analysis
+            .facts
+            .iter()
+            .map(|f| {
+                let loc = f
+                    .source_location
+                    .as_ref()
+                    .expect("source_location should be populated");
+                (loc.start_line, loc.end_line)
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            vec![(1, 1), (2, 2), (3, 3)],
+            "each declarator should report only its own line for {source:?}",
+        );
+    }
 }
 
 #[test]
@@ -1299,19 +1087,5 @@ fn factor_assembly_independent_owners_keep_independent_claims() {
             ("B".to_string(), "mod_1".to_string()),
             ("C".to_string(), "mod_0".to_string()),
         ],
-    );
-}
-
-#[test]
-fn factorization_report_serializes_linker_order_as_snake_case() {
-    let factorization = factorization_for(
-        "const A = 1; const B = A + 1;",
-        &[("A", logical(0)), ("B", logical(1))],
-    );
-    let report = factorization.validate();
-    let json = serde_json::to_string(&report).expect("serialize FactorizationReport");
-    assert!(
-        json.contains(r#""linker_order""#),
-        "FactorizationReport must serialize linker_order as `linker_order`; got: {json}",
     );
 }

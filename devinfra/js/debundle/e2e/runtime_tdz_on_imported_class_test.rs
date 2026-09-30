@@ -1,8 +1,6 @@
-//! Regression test (originally RED): a chunk the realizability
-//! gate ACCEPTS must actually execute under Node when
-//! materialized. The gate used to accept a partition whose
-//! emitted ESM graph TDZ'd at runtime — its proof was unsound
-//! for this shape.
+//! A chunk the realizability gate accepts must execute under Node when
+//! materialized; the asymmetric-cycle shape `(at-init forward, lazy back)`
+//! below TDZs at runtime, so the gate rejects it.
 //!
 //! ## Shape
 //!
@@ -46,32 +44,6 @@
 //! 5. `class Backend` is a class declaration — Temporal Dead Zone
 //!    until its line runs. The body crashes with
 //!    `ReferenceError: Cannot access 'Backend' before initialization`.
-//!
-//! ## Why ducktape accepted
-//!
-//! The cycle `entry ↔ mod_logger` carries:
-//!
-//! - `mod_logger → entry`: at-init `EagerUse(Backend)` from the
-//!   anonymous `setLogger(new Backend())` statement.
-//! - `entry → mod_logger`: a `LazyUse` of `currentLogger`
-//!   (the `console.log` reads it; or the residual statement is
-//!   peeled and replaced by a re-export).
-//!
-//! The relaxed realizability primitive (docs/design.md "Realizability
-//! primitive", clause 3) accepts cycles whose constraining-edge
-//! subgraph (drops `LazyUse`) has no multi-module SCC. Here the
-//! constraining edges from `mod_logger → entry` form a singleton
-//! SCC, so the primitive's verdict is "realizable" — based on
-//! Lemma 2's claim that the materializer's `source_import_position`
-//! puts the cycle dependent (here `mod_logger`) FIRST in entry's
-//! source so the linker's DFS lands entry first.
-//!
-//! That claim was the bug. The cycle dependent (`mod_logger`)
-//! being put FIRST in entry's source means ESM's DFS visits it
-//! FIRST, not entry first — so post-order evaluation runs
-//! mod_logger's body before entry's body. Backend is TDZ at
-//! mod_logger's evaluation. Lemma 2's direction is inverted for
-//! the `(at-init forward, lazy back)` shape hit here.
 //!
 //! ## Pinned behavior
 //!

@@ -1,31 +1,20 @@
-//! Soundness regression: at-init calls whose callee can't be resolved
-//! to a chunk-declared function must not be silently skipped by
-//! at-init call promotion (`graph.rs::promote_at_init_calls`).
-//!
-//! Before the fix, `calls.eager` recorded only bare-`Ident` callees
-//! and promotion silently `continue`d when a callee didn't resolve to
-//! a chunk function — so an at-init call routed through a
-//! single-assignment alias (`const g = readB; g();`) or an
-//! object-literal method (`api.read()`) fired its body's TDZ-locked
-//! cross-module reads at runtime without any owner-graph edge. The
-//! gate accepted the spec; the emitted bundle threw a TDZ
-//! `ReferenceError` under node.
-//!
-//! The fix gives statements with unresolvable at-init callees a
-//! conservative fallback: the statement eagerly depends on the
+//! Soundness: at-init calls whose callee can't be resolved to a
+//! chunk-declared function must not be skipped by at-init call promotion
+//! (`graph.rs::promote_at_init_calls`). An at-init call routed through a
+//! single-assignment alias (`const g = readB; g();`) or an object-literal
+//! method (`api.read()`) fires its body's TDZ-locked cross-module reads at
+//! runtime, so such a statement conservatively depends eagerly on the
 //! transitive lazy closures of every chunk binding it reads at-init
-//! (following initializer read chains), so the canonical
-//! gate-accepted-but-TDZ shapes below now close a constraining cycle
-//! and are rejected.
+//! (following initializer read chains); the gate-accepted-but-TDZ shapes
+//! below close a constraining cycle and are rejected.
 
-use analysis::{DepKind, EdgeRoleReport, OwnerGraphReport};
+use analysis::{DepKind, EdgeRoleReport};
 use debundle_e2e_support::*;
 
-/// `const g = readB; const r = g();` — the alias `g` is a VarDecl,
-/// not a function declaration, so the old promotion pass skipped the
-/// call entirely. `readB`'s body reads `B` (mod_b), and mod_b
-/// eagerly reads `A` (mod_a): an asymmetric cycle the simulator
-/// accepted while the runtime TDZ'd on `g()`.
+/// `const g = readB; const r = g();` — the alias `g` is a VarDecl, not a
+/// function declaration. `readB`'s body reads `B` (mod_b), and mod_b
+/// eagerly reads `A` (mod_a): an asymmetric cycle that TDZs on `g()` at
+/// runtime.
 #[test]
 fn aliased_at_init_call_closing_cross_module_cycle_is_rejected() {
     expect_rejection(
@@ -56,8 +45,7 @@ export { A, B, g, r, readB };
 }
 
 /// Method-call variant: `const api = { read: () => B }; api.read();`
-/// — the callee is a member expression, never recorded in
-/// `calls.eager` at all before the fix.
+/// — the callee is a member expression, not a bare identifier.
 #[test]
 fn object_literal_method_at_init_call_closing_cycle_is_rejected() {
     expect_rejection(
@@ -136,8 +124,7 @@ export { later, tools, toolCopies, byName, ids, copiedIds, byId };
         )],
     ));
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let later_owner = owner_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
         .edges
@@ -170,8 +157,7 @@ export { later };
         vec![logical_module("later_mod", &[Member::new("later")])],
     ));
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let later_owner = owner_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
         .edges
@@ -206,8 +192,7 @@ export { later, document, button };
         vec![logical_module("later_mod", &[Member::new("later")])],
     ));
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let later_owner = owner_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
         .edges

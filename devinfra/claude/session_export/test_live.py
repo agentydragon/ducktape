@@ -128,6 +128,7 @@ async def test_pushed_events_are_stored_as_they_arrive(
     await eventually(stored_through_five)
     assert page_reads(service) == ["3"]  # the catch-up before the stream opened, and nothing since
     assert following.follower.streams == 1
+    assert following.follower.followed == {ONE}
     assert following.follower.last_event_at is not None
 
 

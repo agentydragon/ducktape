@@ -245,7 +245,7 @@ export { Alpha, Beta };
 /// carries rides through resolution. (A single helper here, but the constraint must
 /// not spuriously exclude the genuine `var` helper.)
 #[test]
-fn makes_decorate_call_constrains_by_kind_through_full_pipeline() {
+fn makes_decorate_call_constrains_by_kind() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var gx = Object.getOwnPropertyDescriptor;
 var px = Object.defineProperty;

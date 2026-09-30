@@ -127,8 +127,8 @@ factorization (anything that moves a binding between modules), that means
 the full realizability + atom-split gate — which requires
 `--graph <owner_graph.json>` unless `--no-verify` is set; for renames, it
 means name-collision detection; for comment edits, shape preservation only
-(`--no-verify` is a no-op there). If validation fails the command refuses
-with a structured diagnostic and **does not modify any file**.
+(they take `--dry-run` but no `--no-verify`). If validation fails the command
+refuses with a structured diagnostic and **does not modify any file**.
 
 On spec-edit commands:
 
@@ -428,8 +428,7 @@ authoring `comment:` fields". The CLI surface is `bindings comment` /
 - **No cross-process materializer reader.** `debundle run` reads the spec
   and emits JS in one process — see `wire_format.md` § "Why pre-filter
   facts (`StatementFacts`) aren't on the wire" and
-  `lessons_learned/cross_process_stage_b.md`. `facts.json` is an
-  in-process debug artifact, not a CLI input (`facts/wire.rs`).
+  `lessons_learned/cross_process_stage_b.md`.
 - **Shell tab completion.**
 
 ## See also

@@ -416,11 +416,11 @@ def _chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    (spec,) = proxy_specs()
-    write_charts(root, APP_DIR, _chart)
     write_yaml(
         root / APP_DIR / "kustomization.yaml",
-        kustomize_kustomization(namespace="litellm", resources=[f"{spec.name}.k8s.yaml"], components=["./image-pins"]),
+        kustomize_kustomization(
+            namespace="litellm", resources=[write_charts(root, APP_DIR, _chart)], components=["./image-pins"]
+        ),
     )
 
 

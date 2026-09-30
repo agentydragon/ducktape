@@ -45,10 +45,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use analysis::{
-    FactorizeDiagnosticReason, LineRange, OwnerGraphNodeReport, OwnerGraphReport,
-    PeelCandidateStatus, StatementKind,
-};
+use analysis::{LineRange, OwnerGraphNodeReport, OwnerGraphReport, StatementKind};
 use anonymous_resolution::addressable_anonymous_statement_owner_ids;
 use spec::ModulePath;
 use spec_modules::load_active_claims;
@@ -179,9 +176,6 @@ pub struct FactorizeProposal {
     /// (promoting it alone would route reads through
     /// `residual_entry`, which the cycle gate rejects — the
     /// referenced cells must land first or together).
-    /// `BlockedCycle` is currently unreachable here: the quotient's
-    /// contraction gate refuses cycle-creating merges, so no emitted
-    /// class is cyclic by construction.
     pub status: PeelCandidateStatus,
     /// `true` when the proposal can be applied as a spec edit today:
     /// `status` is `PeelableNow` (no outgoing constraining edges into
@@ -209,6 +203,19 @@ pub struct FactorizeProposal {
     /// `extension_owner_ids`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_into: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeelCandidateStatus {
+    PeelableNow,
+    BlockedResidualDependency,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FactorizeDiagnosticReason {
+    ExceedsSizeCap,
 }
 
 /// A class the factorizer cannot turn into a proposal. `reason` is
@@ -1085,7 +1092,6 @@ fn size_bucket(value: usize) -> &'static str {
 fn status_key(status: PeelCandidateStatus) -> &'static str {
     match status {
         PeelCandidateStatus::PeelableNow => "peelable_now",
-        PeelCandidateStatus::BlockedCycle => "blocked_cycle",
         PeelCandidateStatus::BlockedResidualDependency => "blocked_residual_dependency",
     }
 }
@@ -1093,9 +1099,6 @@ fn status_key(status: PeelCandidateStatus) -> &'static str {
 fn diagnostic_reason_key(reason: FactorizeDiagnosticReason) -> &'static str {
     match reason {
         FactorizeDiagnosticReason::ExceedsSizeCap => "exceeds_size_cap",
-        FactorizeDiagnosticReason::NoExactRepair => "no_exact_repair",
-        FactorizeDiagnosticReason::ActiveModuleConflict => "active_module_conflict",
-        FactorizeDiagnosticReason::RepeatedFrontier => "repeated_frontier",
     }
 }
 

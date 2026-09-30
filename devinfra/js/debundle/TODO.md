@@ -70,7 +70,7 @@ in <docs/selector_resolution.md> § Interactive budget.
 ### P1 — test infrastructure
 
 1. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke
-   (§ Excalidraw live-browser smoke) so private-corpus debundler issues can be
+   (<plans/excalidraw_live_smoke.md>) so private-corpus debundler issues can be
    reproduced and protected in public CI.
 2. **Ground selector-stabilization skill fixtures.** Add tested, anonymized
    fixtures for the common anchor-choice cases of the `debundle_stabilize`
@@ -82,7 +82,7 @@ Proposer-gate, `debundle run` (report opt-out, chunk-level incremental
 rebuilds, codegen cache), and materialize-stage performance work lives in
 <perf/proposer.md>.
 
-1. `JsChunk::{get_file,get_file_mut,remove_file}` (`artifact.rs`) are linear
+1. `JsChunk::{get_file,remove_file}` (`artifact.rs`) are linear
    scans over `files`, so passes that touch every file go O(n²) per chunk.
    Replace them with a path-keyed index if fresh profiles show chunk file
    lookup hot.
@@ -133,103 +133,6 @@ rebuilds, codegen cache), and materialize-stage performance work lives in
    exists or the menu is not enumerated for that shape (seen on an empty
    `class X extends Y {}`). Distinguish the two in the JSON.
 
-## Excalidraw live-browser smoke
-
-Build an open-source live-browser smoke test for the debundler against
-a Bazel-managed Excalidraw bundle. The motivation: when a debundler
-issue surfaces against a private upstream corpus (proxy crash, AST
-corruption, missing chunk, emit shape regression, optimisation
-behaviour bug), reproducing the failure on Excalidraw lets us share
-the repro in a public bug report, write a regression test that runs
-in ducktape's open CI, and avoid leaking proprietary upstream bundle
-detail. Excalidraw is open-source and broadly representative of "real
-React + vendored chunks + dynamic imports + service worker."
-
-### Bundle build
-
-Use a Bazel-managed Excalidraw build. Two viable paths:
-
-- **Pull a prebuilt deploy** (snapshot a specific `excalidraw.com`
-  publish). Requires keeping the snapshot fresh enough that
-  upstream's auxiliary endpoints (if any) still work. Easier to
-  bootstrap.
-- **Build from source under Bazel** — Excalidraw's `excalidraw-app/`
-  builds with Vite; reproduce that build (npm + vite via
-  aspect_rules_js, or via a `genrule` shelling to npm) and feed the
-  output into the pipeline. More work upfront, but the bundle is
-  reproducible from a single git pin and we control the optimisation
-  level / minifier settings.
-
-Either way, the build configuration must produce a realistic
-production bundle: minify on, identifier renames,
-production-tree-shaken, real chunk-split boundaries. A development
-build (with un-mangled names and source maps inlined) won't exercise
-the debundler's RE-relevant code paths.
-
-### Spec scope
-
-Not the round-trip minimum — the spec should exercise realistic-ish
-module extraction and rename paths, the same shape a private-corpus
-spec runs. Concretely:
-
-- `vendor` marks with `level: swap` over a couple of
-  Excalidraw's actual vendor chunks (React, Roughjs, Pointers, etc.)
-  so vendor-swap edge cases (`named_from_default`,
-  `named_from_module_default`, default-only, JSON-default) get covered
-  on a real bundle, not only synthetic fixtures.
-- `materialize_logical_modules` over a handful of pre-identified
-  Excalidraw source modules — pick ones whose shape is recognisable
-  in the compiled output (a clearly-bounded React component, a pure
-  geometry helper, a state slice). Goal: prove the materialiser
-  recovers approximately the right symbols/files from a real
-  scrambled bundle.
-- A small set of `logical_modules` rename entries on identifiers
-  visible in the compiled output. Goal: exercise the rename pipeline
-  at realistic aggressiveness.
-- `emit_browser_harness`, relying on the always-on emission-time
-  specifier canonicalization, so the output is a runnable app the
-  live proxy can serve.
-
-The exact module list / rename list is part of the implementation —
-pick stable shapes that are unlikely to drift wildly when Excalidraw
-upgrades. Stale picks become a self-test: if the materialiser fails
-to find them, that's a real signal (either the bundle moved or our
-matchers regressed).
-
-### Smoke target contract
-
-- runs `bazel test //devinfra/js/debundle/excalidraw:load_test` (or
-  similar);
-- builds the Excalidraw bundle through the shared `debundle_pipeline`
-  rule (<pipeline.bzl>);
-- starts the live-proxy binary against the resulting harness;
-- drives a headless Chromium through the proxy, asserts:
-  - no failed asset requests,
-  - no console errors,
-  - the canvas toolbar is visible (e.g. `[data-testid="toolbar"]`
-    or whichever stable selector Excalidraw exposes),
-  - a small interaction works (click the rectangle tool, click on
-    the canvas, verify a shape was added — proves the React app is
-    reactive after debundle).
-
-### Hosting
-
-Self-hosted, no MITM. Private-corpus smokes generally have to MITM the
-live host because their auth/data is server-side; Excalidraw runs
-entirely in the browser, so a self-hosted bundle is a fully working
-app. Self-hosting removes the network dependency and CDN-rotation
-flakiness (the test stays green even when excalidraw.com is down) and
-matches the "reproduce against Excalidraw" workflow goal — a public,
-deterministic smoke that doesn't depend on third-party uptime.
-
-### Workflow rule
-
-When a private-corpus debundler issue is tractable on Excalidraw too,
-prefer landing the regression test on this Excalidraw target (or a
-smaller minimised e2e under `devinfra/js/debundle/e2e/`) rather than
-only fixing it behind the private repo. The latter loses the
-public-CI signal and the public-bug-report leverage.
-
 ## Anonymous selector indexing in graph dumps
 
 Today `anonymous_statements:` selectors resolve purely by AST-shape match
@@ -254,39 +157,10 @@ Only when a multi-chunk bump needs them:
   hint naming that chunk.
 - A cross-chunk `same_as` relation for mirrored module trees.
 
-## Logical materialization breadth
+## Purity classifier
 
-The current `materialize_logical_modules` covers top-level
-function/class/variable declaration movement and explicit owner assignment.
-Still to do:
-
-- Full lowering matrix: binding placement reports, attached side-effects,
-  staged-shell edge cases beyond the focused fixture.
-- Owner-fragment modeling parity for nested declarations and re-exports.
-- Keep new analysis tooling on the existing owner graph and embedded atomic
-  DAG side outputs; do not add parallel selected-owner cache formats.
-
-## Analysis semantics breadth
-
-The focused fixtures exercise the core access model. Validate or extend
-behavior for:
-
-- Class fields, static blocks, computed keys, nested function bodies.
-- Replayable side-effect attachment.
-- Top-level side-effect classification across uncommon initializer shapes.
-
-The purity-classifier backlog (cross-chunk purity facts, block-bodied
-enum IIFE forms, statement-level overrides, compositional proof) lives
-in <x/purity_recursive.md>.
-
-## Corpus breadth
-
-Current passing surface is centered on small synthetic fixtures and the
-mock browser bundle. Extend to:
-
-- Large vendor-heavy graphs.
-- Unusual dynamic import forms.
-- HTML/runtime asset layouts outside the current corpus.
+Statement-level overrides, the redundant-hint guardrail and compositional proof:
+<x/purity_recursive.md>.
 
 ## Rename pipeline
 
@@ -294,16 +168,8 @@ mock browser bundle. Extend to:
 the collect → seal → execute-once `RenameLedger` pipeline. Ideas it unlocked,
 still open:
 
-- **Id-keyed rename executor.** Seal output is still projected to bare
-  syms (`SealedRenames::*_by_name`) because the application visitors are
-  string-keyed. Deleting the projection requires (a) emitting
-  import/export decls under real syntax contexts instead of
-  `Ident::new_no_ctxt` — today a single rename must hit both a no-ctxt
-  emitted import local and the real-ctxt body references, which only
-  sym-keyed application can do — and (b) hygiene-resolving the
-  `Function`-scope heuristic sources (currently keyed
-  `(sym, SyntaxContext::empty())`). Until then the by-name projection is
-  the executor boundary; its two-contexts-one-sym assert is the tripwire.
+- **Id-keyed rename executor.** Requirements and tripwire: <lowering/rename_ledger.rs>
+  module doc § Hygiene boundary.
 - **Aggressive auto-naturalization.** Now safe to build: every rename
   flows through one seal, so a new auto-naming heuristic contributor
   (readable names for still-minified bindings, driven by the
@@ -314,6 +180,137 @@ still open:
 - **Type-level structural-move barrier.** The "no structural moves
   between seal and execute" contract is convention-held; making
   non-execute passes take `&Module` would let the compiler enforce it.
+
+## Suspected bugs
+
+Findings from a read-only code review (2026-09-30), each with where to look and
+how to confirm. An entry is deleted when it is reproduced and fixed with a test,
+or disproved. Status says how far it was checked; "reported" means nobody has
+confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
+
+- **`UnassignedMode` ignores unknown fields.** Status: confirmed by reading.
+  `spec.rs` `UnassignedMode` (`tag = "kind"`) has no `deny_unknown_fields`, so a
+  misspelled `catchall_file` key such as `target_path` is ignored and the target
+  falls back to its default; a `spec_tree.rs` test carried exactly that typo and
+  still passed. Adding `deny_unknown_fields` is a behaviour change: a spec with a
+  typo then fails to load.
+- **`perf_wrapper.sh` always records `status=0` on failure.** Status: reproduced
+  in bash. `local status=$?` follows an `if timeout ...; then ...; return 0; fi`
+  with no `else`, so it reads the `if` compound's status (0 on fall-through) and
+  `*.failed.txt` loses the real exit code, including the timeout's 124. Capture
+  the status in an `else` branch.
+- **Vendor name validation accepts reserved words.** Status: function read,
+  reachability not checked. `vendor/mod.rs` `is_valid_identifier` accepts
+  `class`, `default` and `await`; it gates namespace, local and facade names that
+  `vendor/validate.rs` emits as binding names, so a reserved word would produce
+  unparseable JS. `lowering/util.rs` `is_valid_js_identifier` rejects reserved
+  words. Related, reported: `vendor/wrappers.rs` builds `export const {name} =
+_d.{name};` by string interpolation, so a string-literal export name in a vendor
+  chunk yields invalid JS (and bypasses the AST-only rule). Use one identifier
+  check from `js_ast`.
+- **Top-level `for await` and `await using` are not treated as top-level await.**
+  Status: reported. `facts/analyze.rs` `TopLevelAwaitFinder` overrides only
+  `visit_await_expr`, so a module made async by either form is not bailed as A2,
+  and `stage_one/chunk_admission.rs` does not cover it. Confirm with a two-line
+  fixture beside `e2e/realizability_test.rs::top_level_await_is_rejected`.
+- **The at-init fallback finder does not scan class bodies.** Status: reported.
+  `facts/at_init_fallback.rs` `UntrustedAtInitInlineFnFallbackFinder::visit_class`
+  is a no-op, so inline functions in `extends` clauses, static blocks, computed
+  keys and decorators, which run at init, are never seen. `facts/analyze.rs` ANDs
+  the collector's `at_init_unresolved_inline_fn` with this finder, which clears
+  the flag for `class C extends mixin.wrap(() => x) {}`; a callback fired
+  synchronously there would get no at-init promotion. Soundness-relevant. Confirm
+  with a fixture whose callback reads a binding that is still in its TDZ.
+- **`NoSyncMemberArgumentSourceCollector` has no `visit_class_member`.** Status:
+  reported. Unlike `StatementFactsCollector` and `OpaqueAtInitCallFinder`, it
+  walks constructor bodies and instance field initializers at depth 0, so their
+  no-sync call arguments are recorded as eager and then removed from
+  `at_init_unresolved_sources`. Needs a `no_sync_callback_members` hint and the
+  same identifier in a genuine at-init unresolved call in one statement, so it is
+  contrived.
+- **Class member facts drop method kind, `static` and decorators.** Status:
+  reported, not re-checked. `chunk_facts.rs` extraction projects `static x = 1`
+  and `x = 1`, and `get a(){}` and `a(){}`, to identical facts despite the
+  "faithful, fail-closed" claim. A `static` needle could match a non-static
+  subject. Confirm with a selector-matcher test case pairing the two.
+- **The incremental overlay skips the gate view's promoted-edge rule.** Status:
+  reported; nothing exercises it. `realizability/incremental_quotient.rs`
+  `overlay_for_move` and `edge_contribution` compute endpoints directly from
+  `partition.of(..)`, while the committed path and the pure reference go through
+  `partition_endpoints(.., EndpointView::Gate)`, which drops a `PromotedAtInit`
+  edge whose `callee_owner == edge.from` when `from` is the residual module
+  (`graph/quotient.rs` states that every quotient-projecting consumer must use
+  it). When the target of a fallback-promoted edge from the residual moves, the
+  overlay can add a spurious edge, so the ladder can reject a merge the gate
+  accepts, or the two paths disagree. Add a promoted-edge fixture to
+  `peel/gate_differential_test.rs` first (its sweep generates none and
+  `report_fixtures.rs` sets `role: None`). Related, likely benign: the post-seed
+  reporting in `peel/quotient.rs` keeps an SCC whose owners collapse into one
+  class, while the `translate_*` helpers drop it and
+  `would_be_cycles_after_contract` fabricates a two-class evidence, so one SCC
+  reads differently by path.
+- **`SwapVendorChunksConfig` has two defaults.** Status: reported. The derived
+  `Default` gives `write = false`; the serde field default is `true`. Omitting
+  `swap_vendor_chunks` therefore differs from writing `{}`, though the field doc
+  says they match. Small impact: both output paths are `None` when omitted.
+- **`chunk_renames_map` silently drops non-`binding` members.** Status: reported.
+  `spec_tree.rs` `chunk_renames_map` maps `binding_patches.yaml` members with
+  `m.selector.binding?`, so a member selecting by `cross_ref` or another kind is
+  accepted by the parser and then skipped without a diagnostic (STYLE.md § General,
+  strict data mapping).
+- **`needs_ast_for_chunk` tests the opposite direction to its comment.** Status:
+  reported. In `prepare_chunks.rs` the block commented "Chunk that imports a
+  vendor target needs AST" checks whether a vendor target imports this chunk;
+  the following block is the "imports" direction. The effect is over-retaining
+  ASTs, not unsoundness.
+- **Two definitions of "residual".** Status: reported. `reports/schema.rs`
+  `ModuleEntry.residual` is documented as authoritative, not derivable from
+  `path`, while `spec::is_residual_module_path`, `spec_stats` and the CLI derive
+  it from the `residual/` prefix. Possibly intentional (authoring tree versus
+  materialized), but undocumented.
+- **Two source-import resolvers can pick different entry files.** Status:
+  reported. `ArtifactSourceImportResolver::resolve` goes through
+  `get_chunk_entry_path`, which falls back from `chunk.entry_file` to the analysis
+  entry file, then the first `Entry` or `Runtime` file, then the first file;
+  `ArtifactIndexes::resolve_source_path_reference` reads only `entry_files`, with
+  no fallback. They disagree for a chunk whose `entry_file` is empty or missing
+  from `files`. Compare the fallbacks before unifying them.
+- **`bindings assign --batch` checks `:readable` collisions against `members[]`
+  only.** Status: reported; later lowering may catch some cases. `bindings rename`
+  (`find_readable_collisions`) and `modules merge` (`claim_names`) also check
+  `source_matches[].bindings[]` names, and the e2e collision test covers rename
+  only. Confirm by assigning a readable name equal to a canonical source-match
+  binding name.
+- **`cluster` and `scc --binding` take the first owner.** Status: reported.
+  `cli/scc_cluster.rs` calls `resolve_binding_owners(..)` and takes the first
+  result, though `docs/cli.md` promises a refusal with a list when the minified and
+  readable forms match different bindings and the resolver returns every owner so
+  callers can detect that.
+- **CLI papercuts.** Status: reported. `gate list` and `gate cut` require
+  `--graph` even with `--cycles`, which only needs it to derive a default path;
+  `scc --cycles-only --singletons-only` silently returns nothing (no
+  `conflicts_with`); `write_yaml_if_semantic_changed` re-reads and re-parses a file
+  its caller just compared (three call sites).
+- **Non-UTF-8 export names collapse to the empty string.** Status: reported.
+  `prune_module_exports.rs` `export_name_string` uses `unwrap_or_default()`, so
+  distinct non-UTF-8 string export names can collide; `binding_targets`
+  `module_export_name` does not do this (STYLE.md § General, no silent fallbacks).
+- **Anonymous-statement uniqueness scan is quadratic.** Status: reported, not
+  measured. `anonymous_resolution.rs`
+  `addressable_anonymous_statement_owner_ids_in_globals` compares each item
+  against the whole body with `eq_ignore_span` (`.take(2)` only short-circuits
+  after two matches), which is O(N²) for `modules propose --source-root` on a large
+  chunk. A hash of a span-free shape would avoid it.
+- **An ignored purity test contradicts the classifier.** Status: reported.
+  `e2e/purity_test.rs` `inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle`
+  (`#[ignore]`) asserts `new RegExp("a+")` is pure, while `purity/whitelists.rs`
+  deliberately omits `RegExp` (it throws `SyntaxError` at construction) and
+  `purity/classifier_tests.rs` `regexp_constructor_stays_unknown_even_with_literal_args`
+  asserts the opposite. Both cannot hold; the RegExp half of the ignored test is
+  the wrong one.
+- **`selector_minimizer_proptest.rs` ignores `PROPTEST_CASES`.** Status: reported.
+  The config hard-codes `cases: 96`; `condensation_order_proptest.rs` `ci_config`
+  is the pattern that honours the variable.
 
 ## CLI usability
 

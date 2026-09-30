@@ -15,12 +15,8 @@ use debundle_e2e_support::*;
 
 #[test]
 fn logical_module_at_catchall_target_renames_and_absorbs_overflow() {
-    let opts = FixtureOpts {
-        local_property_effects: false,
-        trusted_dataflow_summaries: false,
-        chunk_export_purity: &[],
-        extra_chunks: &[],
-        source: r#"function a() { return 1; }
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function a() { return 1; }
 function b() { return 2; }
 console.log(a(), b());
 export { a, b };
@@ -29,18 +25,11 @@ export { a, b };
         // `a` is an explicit member with a rename to `FirstFn`;
         // `b` is unclaimed and overflows into the same module via
         // the `catchall_file` overflow path.
-        logical_modules: vec![logical_module(
+        vec![logical_module(
             "residual/unhandled",
             &[Member::renamed("FirstFn", "a")],
         )],
-        chunk_renames: None,
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_catchall_file(None),
-        dataflow_aware_s_chain: false,
-        admission_overrides: &[],
-        extra_files: &[],
-    };
-    let fixture = run_fixture(opts);
+    ));
     // `a` was renamed to `FirstFn`; `b` is unclaimed overflow and
     // keeps its source name. Both live in the catchall module.
     assert_module_exports(

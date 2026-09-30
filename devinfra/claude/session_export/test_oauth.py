@@ -215,6 +215,16 @@ async def test_token_source_refreshes_an_expiring_token_once_and_persists_the_ro
     assert reloaded.access_token.get_secret_value() == "test-access-2"
 
 
+async def test_a_refused_refresh_carries_the_oauth_error_from_the_token_endpoint(
+    credential_store: Callable[..., CredentialStore],
+) -> None:
+    token_endpoint = FakeTokenEndpoint({"error": "invalid_grant"}, status=400)
+    store = credential_store(expires_in=timedelta(seconds=-1))
+    with pytest.raises(httpx.HTTPStatusError) as refused:
+        await OAuthTokenSource(store, token_endpoint.client).access_token()
+    assert any("invalid_grant" in note for note in refused.value.__notes__)
+
+
 async def test_token_source_keeps_a_valid_token_without_touching_the_network(
     credential_store: Callable[..., CredentialStore],
 ) -> None:

@@ -537,7 +537,6 @@ pub(super) fn finish_logical_chunk(
         build_final_module_report(&module_plans, &factorization, chunk_top_level_mark);
     let directory_dependency_facts = build_directory_dependency_facts(chunk_id, &factorization);
     let validation = ChunkValidationSummary {
-        status: "ok",
         linker_order: factorization_report.linker_order.clone(),
     };
     let report = ChunkModulesReport {

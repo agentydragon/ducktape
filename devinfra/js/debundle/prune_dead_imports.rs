@@ -384,7 +384,6 @@ mod tests {
             analysis: ChunkAnalysisReport {
                 chunk_id: "c".to_string(),
                 source_path: "c.js".to_string(),
-                parser: Default::default(),
                 entry_file: "entry.js".to_string(),
                 counts: Default::default(),
                 files: Vec::new(),

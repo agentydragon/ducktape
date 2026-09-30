@@ -1,7 +1,8 @@
 import httpx
+import pytest
 import pytest_bazel
 
-from devinfra.claude.session_export.failures import describe_failure
+from devinfra.claude.session_export.failures import describe_failure, raise_for_status_with_body
 
 
 def status_error(status: int, url: str, *, body: str | None = None) -> httpx.HTTPStatusError:
@@ -10,6 +11,16 @@ def status_error(status: int, url: str, *, body: str | None = None) -> httpx.HTT
     if body:
         error.add_note(body)
     return error
+
+
+def test_a_long_error_body_is_attached_as_a_note_cut_short() -> None:
+    body = "x" * 10_000
+    response = httpx.Response(400, text=body, request=httpx.Request("GET", "https://api.example.test/v1/x"))
+    with pytest.raises(httpx.HTTPStatusError) as failure:
+        raise_for_status_with_body(response)
+    (note,) = failure.value.__notes__
+    assert 0 < len(note) < len(body)
+    assert body.startswith(note)
 
 
 def test_an_http_failure_names_the_route_and_the_api_body_but_not_the_query() -> None:

@@ -261,6 +261,9 @@ postings instead of scanning every top-level statement. Scaling on a synthetic
 corpus of the same shape class measures an exponent of ≈1.30 (synthetic
 10k/40k-statement corpus, 2026-06-21).
 
+`STR_LITERAL_MATCHING_RE` predicates are compiled once per needle; compiling per
+candidate was the hot path.
+
 `chunk_facts` extraction is fail-closed: a construct it cannot project
 faithfully is `Unsupported` rather than approximated.
 
@@ -297,6 +300,8 @@ bound two different identifiers as unbound.
 Root `AGENTS.md` § Profiling applies. Interactive commands target under 10s on
 warmed inputs for the largest known downstream specs; sustained runs over 60s
 are priority bugs unless the command is an explicit offline/profile mode.
+Matcher and index changes show a material wall-time drop on a broad workload,
+not only a microbenchmark win.
 
 Always record the compilation mode with a selector timing. A `fastbuild` binary
 measured 5.1× slower than `-c opt` on the same `match-selector` probe, and 35×

@@ -200,7 +200,7 @@ def write_manifests(root: Path) -> None:
     write_yaml(
         root / BASE_DIR / "kustomization.yaml",
         kustomize_kustomization(
-            resources=write_charts(root, BASE_DIR, base_chart),
+            resources=[write_charts(root, BASE_DIR, base_chart)],
             components=[posixpath.relpath(PINS_DIR, BASE_DIR)],
             config_map_generator=[
                 ConfigMapArgs(

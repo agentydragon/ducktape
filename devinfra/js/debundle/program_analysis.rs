@@ -6,7 +6,7 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::{
     ChunkAnalysisReport, ChunkCounts, ChunkFileRecord, ExportAliasRecord, FileRole, ImportRecord,
-    ImportSpecifierKind, ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ParserOptionsRecord,
+    ImportSpecifierKind, ImportSpecifierRecord, KeptTopLevelDeclarationRecord,
     TopLevelDeclarationKind,
 };
 use binding_targets::{binding_names, member_root_sym, module_export_name};
@@ -247,14 +247,12 @@ pub fn build_chunk_manifest_from_analysis(
             line: owner.line,
             names: owner.names.clone(),
             kind: owner.kind,
-            unsafe_reason: "not_split",
         })
         .collect::<Vec<_>>();
 
     ChunkAnalysisReport {
         chunk_id: chunk_id.to_string(),
         source_path: source_path.to_string(),
-        parser: ParserOptionsRecord::default(),
         entry_file: entry_file.to_string(),
         counts: ChunkCounts {
             dynamic_imports: analysis.dynamic_import_count,

@@ -17,21 +17,7 @@ export const b = 2;
 
 #[test]
 fn catchall_keeps_unclaimed_bindings_in_residual() {
-    let opts = FixtureOpts {
-        local_property_effects: false,
-        trusted_dataflow_summaries: false,
-        chunk_export_purity: &[],
-        extra_chunks: &[],
-        source: FIXTURE_SOURCE,
-        logical_modules: vec![],
-        chunk_renames: None,
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_catchall_file(None),
-        dataflow_aware_s_chain: false,
-        admission_overrides: &[],
-        extra_files: &[],
-    };
-    let fixture = run_fixture(opts);
+    let fixture = run_fixture(FixtureOpts::new(FIXTURE_SOURCE, vec![]));
     // Default catchall: both `a` and `b` go into the residual
     // module; no synthetic `__auto/mini/...` files exist.
     assert_module_exports(
@@ -48,21 +34,10 @@ fn catchall_keeps_unclaimed_bindings_in_residual() {
 
 #[test]
 fn mini_factors_synthesizes_one_module_per_unclaimed_unit() {
-    let opts = FixtureOpts {
-        local_property_effects: false,
-        trusted_dataflow_summaries: false,
-        chunk_export_purity: &[],
-        extra_chunks: &[],
-        source: FIXTURE_SOURCE,
-        logical_modules: vec![],
-        chunk_renames: None,
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_mini_factors(),
-        dataflow_aware_s_chain: false,
-        admission_overrides: &[],
-        extra_files: &[],
-    };
-    let fixture = run_fixture(opts);
+    let fixture = run_fixture(
+        FixtureOpts::new(FIXTURE_SOURCE, vec![])
+            .with_unassigned_mode(unassigned_mode_mini_factors()),
+    );
     // Two top-level const bindings with no constraining edges
     // between them form two separate atomic units. Under
     // `mini_factors` each unit becomes its own synthetic module.
