@@ -255,6 +255,9 @@ class Shape {
 
   /** Rows of the shape, delivered to its subscriber like any change and returned. */
   async subset(params: SubsetParams): Promise<Row[]> {
+    // TRACKED in #8544: Electric 1.5.28 can count a same-offset fetch before requestSnapshot's
+    // pause aborts it, so valid subset reads may trip the fast-loop guard. Recheck after an
+    // upstream client fix is released.
     const opened = this.#opened;
     const request =
       opened === null ? this.#stream.requestSnapshot(params) : opened.then(() => this.#stream.requestSnapshot(params));

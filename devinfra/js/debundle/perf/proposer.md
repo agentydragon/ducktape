@@ -19,16 +19,6 @@ edges). Baseline, `-c opt` binaries, one host, 2026-06-11:
 | fully residual (`--claim-blocks 0`)                     | 3.5–3.8s |      1216 |
 | 62 claimed modules (`--claim-blocks 62`, 2461 bindings) | 2.2–2.3s |       933 |
 
-Gate-ladder tier distribution (`DEBUNDLE_TIMING=1`):
-
-| Variant  | Queries | Tier 0 accept | Tier 1 reject | Tier 2 accept | Tier 3 | Tier 1+2 wall |
-| -------- | ------: | ------------: | ------------: | ------------: | -----: | ------------: |
-| residual |    8834 |          8834 |             0 |             0 |      0 |        0.000s |
-| claimed  |    9944 |          6644 |           753 |          2547 |      0 |        0.265s |
-
-Tier 3 never fires on either variant, and overlay simulator rebuilds and
-`scc_containing` calls are both zero.
-
 **Never use `fastbuild` numbers for Rust wall comparisons** — always
 build `-c opt` (a `fastbuild` binary measured 35× slower on a proposer fixture).
 
@@ -57,60 +47,21 @@ contract / explicit diagnostic query
 
 ## Optimization policy
 
-Do not implement more proposer gate machinery from old profiles. If
+Add no more proposer gate machinery without a fresh measurement. If
 proposer latency becomes important again:
 
-1. Build and run an optimized binary (`-c opt`).
-2. Capture `DEBUNDLE_TIMING=1` counters on the corpus that matters.
-3. Use direct counters for the suspected boundary; profile attribution
-   alone is not enough for this code path.
+1. Build and run an optimized binary (`-c opt`, with debug info).
+2. Profile the corpus that matters with `perf_wrapper.sh`
+   (<../docs/bazel_integration.md> § Profiling); use Callgrind for exact call
+   counts on a reduced input and heaptrack for allocation.
+3. Do not act on sampled attribution alone: compare wall time of the same
+   `modules propose` run before and after the change across repeated runs.
 4. Stop if the measured wall delta is inside normal run-to-run noise.
 
-Cheap integer/shape counters stay always-on. Wall-clock timing, stderr
-reports, and shadow-graph traversals stay behind `DEBUNDLE_TIMING=1`.
+## How to run
 
-## Gate perf counters (reference)
-
-Permanent diagnostic counters for the proposer's realizability gate
-live in `realizability/mod.rs::gate_perf_counters`, exposed through the
-`SccTimingReporter` RAII guard. They cover the path through
-`IncrementalQuotient::verdict_with_overlay_touching` and its no-overlay
-cousin `verdict_touching`:
-
-1. `OverlayGraphView::scc_containing` calls, split overlay-empty /
-   overlay-non-empty.
-2. `scc_containing` cumulative wall time (only under `DEBUNDLE_TIMING=1`).
-3. Overlay shape histograms: `delta.len()`, additions, removals.
-4. Verdict counters: `verdict_touching` calls, overlay-call subset,
-   realizable/rejected split, SCC sizes, constraining-pair hits.
-5. Simulator counters: requests, structural-no-op vs structural-changed,
-   base rebuild count/time, overlay rebuild count/time.
-6. Diagnostic translation counters: calls, active vs bypassed,
-   owner-module vector size, unrealizable-SCC count.
-7. Base-graph snapshot rebuilds: opt-in shadow `tarjan_scc` over each
-   stale base graph to estimate snapshot+clone designs.
-8. Gate-ladder per-tier counters: decision counts per
-   `LadderDecision` variant (tier-0 accept/reject, tier-1
-   cycle/rebind reject, tier-2 accepts, tier-3 accept/reject) plus
-   per-tier cumulative wall under `DEBUNDLE_TIMING=1` — the "gate
-   ladder:" / "ladder wall:" stderr lines.
-
-When `DEBUNDLE_TIMING` is unset, normal runs pay only the cheap counter
-path (atomic increments + bounded integer histograms): no
-`Instant::now()`, no report output, no shadow Tarjan.
-
-Design notes: `OnceLock<bool>` enabled-check (first call resolves
-`std::env::var_os`, later calls are atomic loads); the proposer is
-single-threaded so the bounded-histogram mutex has no contention;
-histograms are reservoir-sampled (`RESERVOIR_CAP=4096`) with percentiles
-computed on report; output is stderr (stdout is reserved for proposal
-JSON). Add new counters next to the existing ones when validating a new
-hot-path hypothesis; keep cheap `O(1)` counters ungated and gate only
-timing / report output / extra traversals behind
-`gate_perf_counters::enabled()`.
-
-How to run (on the reproducible synthetic corpus; substitute your own
-`GRAPH`/`MODULES` for a real corpus):
+On the reproducible synthetic corpus; substitute your own `GRAPH`/`MODULES`
+for a real corpus:
 
 ```bash
 direnv exec . bash -lc 'bazelisk build //devinfra/js/debundle:debundle \
@@ -122,11 +73,10 @@ python3 devinfra/js/debundle/perf/gen_synth_corpus.py \
     --out /tmp/synth --statements 10000 --seed 1 --claim-blocks 62
 "$BIN" run --spec /tmp/synth/spec.json
 
-DEBUNDLE_TIMING=1 "$BIN" modules propose \
+devinfra/js/debundle/perf_wrapper.sh --output-dir /tmp/propose-profile -- \
+    "$BIN" modules propose \
     --graph /tmp/synth/out/reports/tree/static/app/owner_graph.json \
-    --modules /tmp/synth/modules --format json \
-    > /tmp/propose.json 2> /tmp/timing.txt
-cat /tmp/timing.txt
+    --modules /tmp/synth/modules --format json
 ```
 
 ## Backlog
@@ -137,8 +87,7 @@ conditional — gated on a fresh profile showing the relevant work hot.
 ### #1 — Fresh post-fix profile
 
 If proposer wall becomes material again, collect a fresh optimized
-profile and fresh `DEBUNDLE_TIMING=1` report and treat that as the new
-source of truth for choosing work.
+profile and treat it as the new source of truth for choosing work.
 
 ### #4 — Skip `build_simulator` rebuild when inputs are unchanged (conditional)
 

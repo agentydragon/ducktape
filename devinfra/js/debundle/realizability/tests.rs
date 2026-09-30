@@ -801,11 +801,11 @@ fn empty_delta_overlay_scc_containing_is_the_base_scc() {
     let view = OverlayGraphView::new(&graph, &no_delta);
 
     assert_eq!(
-        view.scc_containing_inner(module_id(2)),
+        view.scc_containing(module_id(2)),
         BTreeSet::from([module_id(1), module_id(2), module_id(3)]),
     );
     assert_eq!(
-        view.scc_containing_inner(module_id(4)),
+        view.scc_containing(module_id(4)),
         BTreeSet::from([module_id(4)]),
         "4 is reachable from the cycle but cannot reach it",
     );

@@ -22,9 +22,8 @@ pub use chunk_factorization::ChunkFactorization;
 pub use esm_import_order::EsmImportOrder;
 pub use realizability::{
     CondensationOrder, DeltaHandle, LadderDecision, PartitionDelta, RealizabilityIndex,
-    RealizabilityVerdict, SccDiagnosis, SccRejection, SccTimingReporter, check_realizability,
-    check_realizability_touching, record_gate_diagnostic_translation,
-    simulated_evaluation_post_order,
+    RealizabilityVerdict, SccDiagnosis, SccRejection, check_realizability,
+    check_realizability_touching, simulated_evaluation_post_order,
 };
 pub use validation::{
     BlockingSccEntry, CycleEdge, CycleReport, FactorizationReport,
