@@ -68,6 +68,8 @@ class EventStreamFrame(StrEnum):
 
 
 class WatchFrame(StrEnum):
+    # A frame with no `event:` line and no data, seen in the deployed sync's log as it connected: a keepalive.
+    UNNAMED = "message"
     ADDED = "added"
     CHANGED = "changed"
     REMOVED = "removed"
@@ -353,6 +355,8 @@ class SessionsApi:
                                 yield SessionRemoved.model_validate_json(frame.data)
                         case WatchFrame.SYNC:
                             pass  # the feed has delivered everything up to the token the watch opened with
+                        case WatchFrame.UNNAMED if not frame.data:
+                            pass  # a keepalive
                         case _:
                             self._note_unknown_frame(frame)
         except httpx.ReadTimeout:

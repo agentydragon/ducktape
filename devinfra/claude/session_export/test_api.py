@@ -211,12 +211,13 @@ async def test_resume_token_comes_from_a_one_item_list(service: FakeSessionsServ
 
 
 async def test_watch_yields_session_changes_and_advances_its_cursor(
-    service: FakeSessionsService, api: SessionsApi
+    service: FakeSessionsService, api: SessionsApi, caplog: pytest.LogCaptureFixture
 ) -> None:
     service.events = {SESSION_ID: make_events(1)}
     item = service.list_item(SESSION_ID)
 
     def script(stream: SseConnection) -> None:
+        stream.send(None, frame_id="cursor-0")  # a keepalive: no name, no data
         stream.send("sync", frame_id="cursor-1")
         stream.send("added", item, frame_id="cursor-2")
         stream.send("changed", {**item, "title": "Renamed"}, frame_id="cursor-3")
@@ -234,6 +235,7 @@ async def test_watch_yields_session_changes_and_advances_its_cursor(
     ]
     assert cursor.token == "cursor-4"
     assert connected == ["yes"]
+    assert not caplog.records  # the keepalive is not an unknown frame
     [opened] = service.watches()
     assert dict(opened.request.url.params) == {"exclude_tags": "-", "resume_token": RESUME_TOKEN}
     assert opened.request.headers["anthropic-client-platform"] == "web_claude_ai"
