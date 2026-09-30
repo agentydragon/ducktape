@@ -14,4 +14,3 @@ resources:
   - clusterrole-cleanup-controller-jobs.k8s.yaml
   - clusterrole-cleanup-controller-workloads.k8s.yaml
   - clusterrole-cleanup-controller-sandboxes.k8s.yaml
-  - ignore-cnpg-jobs-for-reloader.k8s.yaml

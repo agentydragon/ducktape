@@ -315,8 +315,6 @@ subjects:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  annotations:
-    reloader.stakater.com/auto: "false"
   name: setup-gpt-oss-v8
   namespace: ollama
 spec:

@@ -275,3 +275,36 @@ py_library(
     srcs = ["agent_sandbox.py"],
     visibility = ["//visibility:public"],
 )
+
+py_library(
+    name = "oidc_login",
+    srcs = ["oidc_login.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//authlib",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//itsdangerous",
+        "@pypi//joserfc",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_oidc_login",
+    srcs = ["test_oidc_login.py"],
+    deps = [
+        ":net",
+        ":oidc_login",
+        "//:conftest",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//itsdangerous",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

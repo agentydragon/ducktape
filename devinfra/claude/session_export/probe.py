@@ -8,11 +8,10 @@ token from the file and stops if that has lapsed. Nothing secret is printed, and
 import asyncio
 import contextlib
 import json
-from collections import deque
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from itertools import islice
 
 import httpx
 from httpx_sse import EventSource
@@ -24,8 +23,8 @@ from devinfra.claude.session_export.oauth import CredentialStore
 # What the web client sends on its CCR calls and on the watch, beyond what the sync sends on its list and events calls.
 CLIENT_FEATURE = {"anthropic-client-feature": "ccr"}
 CLIENT_PLATFORM = {"anthropic-client-platform": WATCH_CLIENT_PLATFORM}
-_MAX_FRAMES_SHOWN = 5
 _BODY_CHARS = 200
+_READ_MARGIN_SECONDS = 5  # so that the window ends a quiet stream, not a read timeout that would report it as an error
 
 
 @dataclass(frozen=True)
@@ -50,23 +49,31 @@ VARIANTS = (
 )
 
 
-def _frame_shape(event: str, frame_id: str, data: str) -> str:
+def _data_shape(data: str) -> str:
     try:
         document = json.loads(data)
     except ValueError:
-        shape = f"{len(data)} bytes, not JSON" if data else "no data"
-    else:
-        shape = f"keys {sorted(document)}" if isinstance(document, dict) else "JSON, not an object"
-    return f"[{event}{f' id={frame_id}' if frame_id else ''}: {shape}]"
+        return f"{len(data)} bytes, not JSON" if data else "no data"
+    return f"keys {sorted(document)}" if isinstance(document, dict) else "JSON, not an object"
 
 
 async def _summarize_frames(response: httpx.Response, seconds: float) -> str:
-    shapes: deque[str] = deque()  # appended as they arrive: a comprehension would lose them when the window closes
+    """Every frame counted by name and data shape, with how many ids came again and whether the server ended it."""
+    shapes: Counter[tuple[str, str]] = Counter()  # filled as frames arrive: the window closing must not lose them
+    seen_ids: set[str] = set()
+    resent = 0
+    closed = False
     with contextlib.suppress(TimeoutError):  # the window is the point: what arrived while it was open is the result
         async with asyncio.timeout(seconds):
             async for frame in EventSource(response).aiter_sse():
-                shapes.append(_frame_shape(frame.event, frame.id, frame.data))
-    return f"{len(shapes)} frame(s) in {seconds:g}s {' '.join(islice(shapes, _MAX_FRAMES_SHOWN))}"
+                shapes[frame.event, _data_shape(frame.data)] += 1
+                if frame.id:
+                    resent += frame.id in seen_ids
+                    seen_ids.add(frame.id)
+            closed = True
+    frames = " ".join(f"[{event} x{count}: {shape}]" for (event, shape), count in shapes.most_common())
+    ended = "closed by the server" if closed else "open at the end"
+    return f"{shapes.total()} frame(s) in {seconds:g}s, {resent} id(s) sent again, {ended}: {frames}"
 
 
 async def _try(
@@ -111,7 +118,10 @@ async def probe(
     }
     beta = {"anthropic-beta": CCR_BETA}
     async with httpx.AsyncClient(
-        base_url=FIRST_PARTY_API_URL, headers=base, transport=transport, timeout=httpx.Timeout(15, read=listen_seconds)
+        base_url=FIRST_PARTY_API_URL,
+        headers=base,
+        transport=transport,
+        timeout=httpx.Timeout(15, read=listen_seconds + _READ_MARGIN_SECONDS),
     ) as client:
         listed = await client.get("/v1/code/sessions", params={"limit": 1}, headers=beta)
         out(f"{listed.status_code} list of one session")

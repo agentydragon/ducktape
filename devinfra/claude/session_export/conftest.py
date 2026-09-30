@@ -94,6 +94,12 @@ def make_event(seq: int, **fields: Any) -> dict[str, Any]:
     }
 
 
+def make_stream_event(seq: int) -> dict[str, Any]:
+    """An event as a running session's stream sends it: only the fields every event has (observed 2026-09-30)."""
+    event = make_event(seq)
+    return {key: event[key] for key in ("event_id", "event_type", "source", "sequence_num", "created_at", "payload")}
+
+
 def make_events(count: int) -> list[dict[str, Any]]:
     return [make_event(seq) for seq in range(1, count + 1)]
 
