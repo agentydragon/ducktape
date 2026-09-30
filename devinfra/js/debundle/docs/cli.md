@@ -179,19 +179,19 @@ entities never claim the same place.
 
 `debundle spec validate` is `debundle run` in dry-run keep-going mode
 reporting every selector problem: it takes the **same inputs** (`--spec` /
-`--tree-config` + package roots) and needs the full pipeline, so run it via
-the Bazel `:debundle` target, not the standalone binary. Its source-only
+`--tree-config` + package roots) and runs the full pipeline, not only the
+modules tree. Its source-only
 preflight mode (`--modules` plus `--source-file` or `--source-root
 --chunk`) needs no pipeline build and resolves the module files jointly with
 the same resolve as `run`. How its outcomes differ from the pipeline's:
 <../SPEC.md> § Outcomes; also, a name pin on a binding the chunk does not
 declare is `no_match` in this mode but an unmatched claim in `run`.
 
-Each group of interacting selectors is one request to the CP-SAT sidecar, found in the
-`debundle` runfiles or through `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER` — in
-source-only `validate`, and in the edit gate, `describe` and `peel` when they
-resolve source claims. `match-selector` and `synthesize-selectors` resolve one
-selector at a time and never need it.
+Each group of interacting selectors is one CP-SAT solve inside the `debundle`
+process (<selector_resolution.md> § The solver) — in `run`, `validate`, and in
+the edit gate, `describe` and `peel` when they resolve source claims. The
+binary needs nothing beside it. `match-selector` and `synthesize-selectors`
+resolve one selector at a time and never solve.
 
 ### Selector outcomes
 
