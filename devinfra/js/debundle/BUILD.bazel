@@ -113,25 +113,6 @@ rust_test(
     edition = "2024",
 )
 
-# Soundness validation: every read-off, rendered to a source_match and run
-# through the legacy matcher oracle, must resolve uniquely to the intended item.
-# Separate crate so it exercises the public shape_index API plus the oracle
-# boundary explicitly.
-rust_test(
-    name = "shape_index_soundness_test",
-    srcs = ["shape_index_soundness_test.rs"],
-    crate_root = "shape_index_soundness_test.rs",
-    edition = "2024",
-    deps = [
-        ":js_ast",
-        ":selector_candidate_index",
-        ":shape_index",
-        ":source_match",
-        ":spec",
-        "@crates//:swc_ecma_ast",
-    ],
-)
-
 # OPT/read-off-depth distribution + size-sweep benchmark over synthetic
 # chunks. Run with `bazelisk run //devinfra/js/debundle:shape_index_bench`.
 rust_binary(
@@ -195,6 +176,7 @@ rust_library(
     srcs = ["output_layout.rs"],
     crate_root = "output_layout.rs",
     edition = "2024",
+    deps = ["@crates//:anyhow"],
 )
 
 rust_library(
@@ -223,7 +205,6 @@ rust_library(
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
     ],
 )
 
@@ -241,10 +222,8 @@ rust_library(
     deps = [
         ":artifact",
         ":identifier_rename_queue",
-        ":js_ast",
         ":output_layout",
         "@crates//:anyhow",
-        "@crates//:serde",
     ],
 )
 
@@ -426,7 +405,6 @@ rust_library(
         "facts/mod.rs",
         "facts/purity_classification.rs",
         "facts/statement_facts.rs",
-        "facts/wire.rs",
         "graph/build.rs",
         "graph/edge.rs",
         "graph/linker_order.rs",
@@ -565,7 +543,6 @@ rust_library(
         ":analysis",
         ":peel",
         ":spec",
-        "@crates//:swc_atoms",
     ],
 )
 
@@ -595,6 +572,7 @@ rust_library(
     crate_root = "spec_stats.rs",
     edition = "2024",
     deps = [
+        ":spec",
         ":spec_modules",
         "@crates//:anyhow",
         "@crates//:serde",
@@ -639,8 +617,8 @@ rust_test(
 
 rust_library(
     name = "yaml_edit",
-    srcs = ["cli/yaml_edit.rs"],
-    crate_root = "cli/yaml_edit.rs",
+    srcs = ["yaml_edit.rs"],
+    crate_root = "yaml_edit.rs",
     edition = "2024",
     deps = [
         "@crates//:anyhow",
@@ -677,7 +655,6 @@ rust_library(
     deps = [
         ":js_ast",
         ":readoff_render",
-        ":selector_candidate_index",
         ":selector_outcome",
         ":selector_resolve",
         ":shape_index",
@@ -724,12 +701,9 @@ rust_library(
         ":spec_modules",
         "@crates//:anyhow",
         "@crates//:clap",
-        "@crates//:petgraph",
         "@crates//:rustc-hash",
         "@crates//:serde",
         "@crates//:serde_json",
-        "@crates//:swc_atoms",
-        "@crates//:swc_common",
     ],
 )
 
@@ -739,9 +713,6 @@ rust_test(
     edition = "2024",
     deps = [
         ":report_fixtures",
-        "@crates//:serde_yaml",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_parser",
         "@crates//:tempfile",
     ],
 )
@@ -856,7 +827,6 @@ rust_library(
         ":spec",
         ":stage_one",
         ":vendor",
-        ":write_tree",
         "@crates//:anyhow",
         "@crates//:rayon",
         "@crates//:rustc-hash",
@@ -904,7 +874,6 @@ rust_library(
         ":spec",
         "@crates//:anyhow",
         "@crates//:rayon",
-        "@crates//:serde",
         "@crates//:swc_common",
     ],
 )
@@ -920,17 +889,9 @@ rust_library(
         ":js_ast",
         "@crates//:anyhow",
         "@crates//:serde",
-        "@crates//:serde_json",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
-)
-
-rust_test(
-    name = "identifier_rename_queue_test",
-    crate = ":identifier_rename_queue",
-    edition = "2024",
-    deps = [":binding_targets"],
 )
 
 rust_library(
@@ -941,10 +902,8 @@ rust_library(
     deps = [
         ":artifact",
         ":emit_harness",
-        ":identifier_rename_queue",
         ":js_ast",
         ":lowering",
-        ":output_layout",
         ":prepare_chunks",
         ":prune_dead_imports",
         ":prune_module_exports",
@@ -980,7 +939,6 @@ rust_library(
         "cli/outcome.rs",
         "cli/scc_cluster.rs",
         "cli/validate.rs",
-        "cli/yaml_edit.rs",
     ],
     crate_name = "debundle_cli",
     crate_root = "cli/mod.rs",
@@ -996,13 +954,13 @@ rust_library(
         ":pipeline",
         ":selector_codemod",
         ":selector_debt",
-        ":selector_ir_lowering",
         ":selector_outcome",
         ":selector_resolve",
         ":source_match",
         ":spec",
         ":spec_modules",
         ":spec_stats",
+        ":yaml_edit",
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:serde",
@@ -1018,17 +976,14 @@ rust_test(
     crate = ":cli",
     edition = "2024",
     deps = [
-        ":js_ast",
         ":report_fixtures",
         ":spec_tree",
         "@crates//:tempfile",
     ],
 )
 
-# Shared selector-program contract for the global resolver endpoint. This is the
-# data boundary between selector lowering, fact extraction, the fixed Ascent rule
-# library, and materialization; it is intentionally additive until the compare
-# path is wired.
+# Shared selector-program IR: the data boundary between selector lowering and
+# the constraint-solver backends.
 rust_library(
     name = "selector_ir",
     srcs = ["selector_ir.rs"],
@@ -1053,17 +1008,6 @@ rust_library(
     ],
 )
 
-rust_test(
-    name = "selector_constraint_backend_test",
-    size = "small",
-    crate = ":selector_constraint_backend",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":selector_ir",
-    ],
-)
-
 rust_library(
     name = "selector_constraint_model_builder",
     srcs = ["selector_constraint_model_builder.rs"],
@@ -1082,11 +1026,8 @@ rust_test(
     edition = "2024",
     deps = [
         ":analysis",
-        ":js_ast",
         ":selector_constraint_backend",
         ":selector_ir",
-        ":selector_ir_lowering",
-        ":spec",
     ],
 )
 
@@ -1236,14 +1177,8 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":chunk_facts",
-        ":js_ast",
         ":selector_ir",
-        ":source_match",
-        ":source_match_holes",
         ":spec",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
     ],
 )
 
@@ -1254,7 +1189,6 @@ rust_test(
     edition = "2024",
     deps = [
         ":selector_ir",
-        ":source_match",
         ":spec",
     ],
 )
@@ -1273,7 +1207,6 @@ rust_binary(
     deps = [
         ":cli",
         ":gate",
-        "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:swc_common",
     ],

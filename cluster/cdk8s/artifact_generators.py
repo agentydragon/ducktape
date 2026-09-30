@@ -23,6 +23,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
 )
 
 from cluster.cdk8s.flux import NAMESPACE, Kustomization, flux_kustomization
+from cluster.cdk8s.generation import write_app
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 _ARTIFACT_GENERATORS_DIR = f"{GENERATED_ROOT}/artifact-generators"
@@ -66,9 +67,7 @@ def write_artifact_generators(
     flux_system: Sequence[ArtifactGeneratorSpecArtifacts],
 ) -> None:
     """Synthesize one ArtifactGenerator per source repository from the artifacts its consumers read."""
-    out_dir = root / _ARTIFACT_GENERATORS_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
+    app = App()
     chart = Chart(app, "artifact-generators", disable_resource_name_hashes=True)
     for name, artifacts, source in (
         ("ducktape-artifacts", ducktape, _DUCKTAPE_SOURCE),
@@ -80,4 +79,4 @@ def write_artifact_generators(
             metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
             spec=ArtifactGeneratorSpec(artifacts=list(artifacts), sources=[source]),
         )
-    app.synth()
+    write_app(root, _ARTIFACT_GENERATORS_DIR, app)

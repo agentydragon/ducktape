@@ -1,7 +1,7 @@
 //! End-to-end exercise of `debundle modules list`'s filters by
 //! shelling out to the built binary against a tiny modules fixture.
 
-use debundle_e2e_support::{debundler_path, write_text_file};
+use debundle_e2e_support::{debundler_path, run_debundle, write_text_file};
 use std::path::Path;
 use std::process::Command;
 
@@ -24,17 +24,14 @@ fn modules_list_emits_every_module_with_counts() {
     let modules = dir.path().join("modules");
     setup_modules_fixture(&modules);
 
-    let output = Command::new(debundler_path())
-        .args([
-            "modules",
-            "list",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--format",
-            "json",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let output = run_debundle(&[
+        "modules",
+        "list",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
     assert!(
         output.status.success(),
         "non-zero exit: stderr={}",
@@ -58,18 +55,15 @@ fn modules_list_residual_filter() {
     let modules = dir.path().join("modules");
     setup_modules_fixture(&modules);
 
-    let output = Command::new(debundler_path())
-        .args([
-            "modules",
-            "list",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--residual",
-            "--format",
-            "json",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let output = run_debundle(&[
+        "modules",
+        "list",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--residual",
+        "--format",
+        "json",
+    ]);
     assert!(output.status.success());
     let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let modules_arr = parsed["modules"].as_array().unwrap();
@@ -83,18 +77,15 @@ fn modules_list_empty_filter() {
     let modules = dir.path().join("modules");
     setup_modules_fixture(&modules);
 
-    let output = Command::new(debundler_path())
-        .args([
-            "modules",
-            "list",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--empty",
-            "--format",
-            "json",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let output = run_debundle(&[
+        "modules",
+        "list",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--empty",
+        "--format",
+        "json",
+    ]);
     assert!(output.status.success());
     let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let modules_arr = parsed["modules"].as_array().unwrap();
@@ -122,18 +113,15 @@ fn modules_list_empty_filter_excludes_canonical_source_claims_and_annotations() 
 "#,
     );
 
-    let output = Command::new(debundler_path())
-        .args([
-            "modules",
-            "list",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--empty",
-            "--format",
-            "json",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let output = run_debundle(&[
+        "modules",
+        "list",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--empty",
+        "--format",
+        "json",
+    ]);
     assert!(
         output.status.success(),
         "non-zero exit: stderr={}",

@@ -41,7 +41,7 @@ export class TreeBase { kind() { return "tree"; } }
 /// — never by the minified class name. A regression that ignored the use-site
 /// edge (or matched the wrong subclass) fails this test.
 #[test]
-fn member_of_module_disambiguates_empty_subclasses_through_full_pipeline() {
+fn member_of_module_disambiguates_empty_subclasses() {
     let fixture = run_fixture(
         FixtureOpts::new(
             r#"import * as accessors from "./accessors.js";
@@ -87,7 +87,7 @@ export { CardsView, TreeView };
 /// consumes `gen.next` off an imported module. Resolves through the full pipeline
 /// to the helper binding, pinned by the (module, member) use-site pair.
 #[test]
-fn member_of_module_resolves_delegator_through_full_pipeline() {
+fn member_of_module_resolves_delegator() {
     let fixture = run_fixture(
         FixtureOpts::new(
             r#"import * as gen from "./gen.js";

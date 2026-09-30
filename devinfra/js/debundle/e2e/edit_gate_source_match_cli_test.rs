@@ -12,90 +12,26 @@
 //! `owner_graph.json` + source-file fixtures, mirroring
 //! `bindings_unassign_gate_cli_test.rs`.
 
-use debundle_e2e_support::{debundler_path, write_text_file};
+use debundle_e2e_support::{graph_with_atomic_unit, owner_node, run_debundle, write_text_file};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-/// Synthetic owner graph where alpha (owner:0) and beta (owner:1)
-/// form an atomic unit via mutual `eager_rebind` edges, plus an
-/// independent gamma (owner:2). Every node carries a
-/// `source_location` into `static/chunk.js` so source-backed
+/// [`graph_with_atomic_unit`] plus an independent gamma (owner:2). Every node
+/// carries a `source_location` into `static/chunk.js` so source-backed
 /// selector resolution can run.
 fn graph_with_atomic_unit_and_sources() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "source_location": {
-                    "source_path": "static/chunk.js",
-                    "start_line": 1,
-                    "end_line": 1
-                },
-                "declared_bindings": [
-                    { "binding": "alpha", "export_name": "alpha" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "home/atom"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "source_location": {
-                    "source_path": "static/chunk.js",
-                    "start_line": 2,
-                    "end_line": 2
-                },
-                "declared_bindings": [
-                    { "binding": "beta", "export_name": "beta" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "home/atom"
-            },
-            {
-                "id": "owner:2",
-                "statement_ordinal": 2,
-                "source_location": {
-                    "source_path": "static/chunk.js",
-                    "start_line": 3,
-                    "end_line": 3
-                },
-                "declared_bindings": [
-                    { "binding": "gamma", "export_name": "gamma" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "solo/gamma"
-            }
-        ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_rebind",
-                "binding": "beta",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            },
-            {
-                "id": "owner_edge:1",
-                "source": "owner:1",
-                "target": "owner:0",
-                "edge_kind": "eager_rebind",
-                "binding": "alpha",
-                "statement_ordinal": 1,
-                "constrains_init_order": true
-            }
-        ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
-    .to_string()
+    let mut graph = serde_json::from_str::<Value>(&graph_with_atomic_unit()).unwrap();
+    let nodes = graph["nodes"].as_array_mut().unwrap();
+    nodes.push(owner_node("owner:2", 2, "gamma", "solo/gamma"));
+    for (line, node) in nodes.iter_mut().enumerate() {
+        node["source_location"] = chunk_location(line + 1);
+    }
+    graph.to_string()
+}
+
+fn chunk_location(line: usize) -> Value {
+    json!({ "source_path": "static/chunk.js", "start_line": line, "end_line": line })
 }
 
 const CHUNK_SOURCE: &str = "const alpha = 1;\nconst beta = 2;\nconst gamma = 3;\n";
@@ -135,20 +71,17 @@ fn write_fixture(root: &Path, atom_yaml: &str) -> (PathBuf, PathBuf) {
 }
 
 fn run_unassign(root: &Path, modules: &Path, graph: &Path, sym: &str) -> std::process::Output {
-    Command::new(debundler_path())
-        .args([
-            "bindings",
-            "unassign",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "--source-root",
-            root.to_str().unwrap(),
-            sym,
-        ])
-        .output()
-        .expect("spawn debundle")
+    run_debundle(&[
+        "bindings",
+        "unassign",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "--source-root",
+        root.to_str().unwrap(),
+        sym,
+    ])
 }
 
 #[test]
@@ -260,18 +193,13 @@ fn gate_hard_errors_when_source_match_spec_has_unresolvable_sources() {
 /// Owner graph of [`graph_with_atomic_unit_and_sources`] plus one anonymous
 /// side-effect owner per ordinal in `anonymous_ordinals`.
 fn graph_with_anonymous_owners(anonymous_ordinals: &[usize]) -> String {
-    let mut graph: serde_json::Value =
-        serde_json::from_str(&graph_with_atomic_unit_and_sources()).unwrap();
+    let mut graph: Value = serde_json::from_str(&graph_with_atomic_unit_and_sources()).unwrap();
     let nodes = graph["nodes"].as_array_mut().unwrap();
     for &ordinal in anonymous_ordinals {
-        nodes.push(serde_json::json!({
+        nodes.push(json!({
             "id": format!("owner:{ordinal}"),
             "statement_ordinal": ordinal,
-            "source_location": {
-                "source_path": "static/chunk.js",
-                "start_line": ordinal + 1,
-                "end_line": ordinal + 1
-            },
+            "source_location": chunk_location(ordinal + 1),
             "declared_bindings": [],
             "statement_kind": "side_effect",
             "purity": { "kind": "pure" },

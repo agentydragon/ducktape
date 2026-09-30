@@ -1335,4 +1335,43 @@ export { runner };"#,
         assert!(!index.unique_value_anchor_candidates(0).is_empty());
         assert!(index.unique_value_anchor_cover(0).is_none());
     }
+
+    #[test]
+    fn number_literals_discriminate_otherwise_identical_items() {
+        let module = parse(
+            r#"const a = make(call(), 123);
+const b = make(call(), 456);
+const c = make(call(), 789);"#,
+        );
+        let index = ShapeIndex::new(&module);
+        for body_idx in 0..3 {
+            let anchor = index.minimal_anchor_set(body_idx).unwrap();
+            assert!(index.read_off_resolves_uniquely(body_idx, &anchor));
+        }
+    }
+
+    #[test]
+    fn bool_literal_discriminates_otherwise_identical_items() {
+        let module = parse(
+            r#"const a = cfg({ flag: true });
+const b = cfg({ flag: false });"#,
+        );
+        let index = ShapeIndex::new(&module);
+        let anchor = index.minimal_anchor_set(0).unwrap();
+        assert!(index.read_off_resolves_uniquely(0, &anchor));
+    }
+
+    #[test]
+    fn stable_feature_preferred_over_volatile() {
+        // The item carries both a stable key and a volatile-looking literal; the
+        // top-ranked anchor must be the stable one.
+        let module = parse(
+            r#"const a = init("chunk-a1b2c3", { stableKey: 1 });
+const b = init("chunk-d4e5f6", { otherKey: 2 });"#,
+        );
+        let index = ShapeIndex::new(&module);
+        let anchor = index.minimal_anchor_set(0).unwrap();
+        assert_ne!(anchor.anchors[0].stability, Stability::Volatile);
+        assert!(index.read_off_resolves_uniquely(0, &anchor));
+    }
 }

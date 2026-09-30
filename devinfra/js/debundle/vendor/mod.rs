@@ -32,7 +32,6 @@ pub use plan::{
     VendorImportAction, VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan,
 };
 use spec::PartialSwapKind;
-pub use strip::ChunkStripStats;
 
 /// Collect the boundary-rename mapping (vendor-LOCAL binding name → the
 /// distinct, valid export name it is published under) and validate it against
@@ -1475,7 +1474,6 @@ export { b as beta };
             analysis: ChunkAnalysisReport {
                 chunk_id: chunk_id.to_string(),
                 source_path: format!("{chunk_id}.js"),
-                parser: Default::default(),
                 entry_file,
                 counts: Default::default(),
                 files: Vec::new(),

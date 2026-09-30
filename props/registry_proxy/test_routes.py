@@ -10,18 +10,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import socket
+from collections.abc import AsyncIterator
 
 import httpx
 import pytest
 import pytest_bazel
-import uvicorn
 from fastapi import FastAPI, Request
 from starlette.responses import Response
 
 from props.core.agent_types import AgentType
 from props.core.oci_utils import BUILTIN_TAG
 from props.registry_proxy.routes import _is_grader_builtin_push, _proxy_to_upstream
+from util.net import bind_free_port
+from util.testing.asgi import serve_app_in_loop
 
 DOCKER_ACCEPT_TYPES = [
     "application/vnd.docker.distribution.manifest.v2+json",
@@ -31,35 +32,12 @@ DOCKER_ACCEPT_TYPES = [
 ]
 
 
-class _SignalingServer(uvicorn.Server):
-    """Server subclass that signals an event after startup completes."""
-
-    def __init__(self, config: uvicorn.Config) -> None:
-        super().__init__(config)
-        self.startup_event = asyncio.Event()
-
-    async def startup(self, sockets: list[socket.socket] | None = None) -> None:
-        await super().startup(sockets=sockets)
-        self.startup_event.set()
-
-
 @contextlib.asynccontextmanager
-async def _run_server(app: FastAPI):
+async def _run_server(app: FastAPI) -> AsyncIterator[str]:
     """Run a FastAPI app on an ephemeral port, yield the base URL."""
-    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning")
-    server = _SignalingServer(config)
-
-    task = asyncio.create_task(server.serve())
-    await asyncio.wait_for(server.startup_event.wait(), timeout=5.0)
-
-    # Extract the bound port
-    sock = server.servers[0].sockets[0]
-    port = sock.getsockname()[1]
-    try:
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        await task
+    sock = bind_free_port()
+    async with serve_app_in_loop(app, sock=sock):
+        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
 
 
 async def test_proxy_preserves_multi_valued_accept_headers(monkeypatch: pytest.MonkeyPatch) -> None:

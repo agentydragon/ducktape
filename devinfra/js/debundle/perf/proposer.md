@@ -7,44 +7,30 @@ items are deleted.
 
 ## Current state
 
-The gate-ladder cutover (PRs #2087/#2090/#2095/#2102) routed the hot
-boolean merge gate through the `RealizabilityIndex`'s tier ladder and
-deleted the kernel-side Pearce–Kelly walk, cone-DFS fallback, and
-`cached_cycles` machinery.
+The hot boolean merge gate goes through the `RealizabilityIndex`'s tier ladder
+(call tree below).
 
-The historical baseline corpus (a private downstream fixture, 9709
-owners, measured at 3.54s pre-cutover) is not available to public
-CI. The reproducible public stand-in is the synthetic corpus from
-`perf/gen_synth_corpus.py` (10k statements, seed 1; 10051 owners /
-22019 edges — same scale and shape class). Post-cutover validation
-numbers, `-c opt` binaries, interleaved pre/post runs on one host,
-2026-06-11:
+The reproducible public corpus is the synthetic one from
+`perf/gen_synth_corpus.py` (10k statements, seed 1; 10051 owners / 22019
+edges). Baseline, `-c opt` binaries, one host, 2026-06-11:
 
-| Corpus variant                                          | Pre-cutover wall | Post-cutover wall | Proposals |
-| ------------------------------------------------------- | ---------------: | ----------------: | --------: |
-| fully residual (`--claim-blocks 0`)                     |         6.7–8.0s |          3.5–3.8s |      1216 |
-| 62 claimed modules (`--claim-blocks 62`, 2461 bindings) |        9.4–10.7s |          2.2–2.3s |       933 |
+| Corpus variant                                          |     Wall | Proposals |
+| ------------------------------------------------------- | -------: | --------: |
+| fully residual (`--claim-blocks 0`)                     | 3.5–3.8s |      1216 |
+| 62 claimed modules (`--claim-blocks 62`, 2461 bindings) | 2.2–2.3s |       933 |
 
-Proposal output is byte-identical pre↔post on both variants (the
-cutover's semantic fixes only bite on the cataloged corner shapes —
-none occur in either corpus). Gate-ladder tier distribution
-(`DEBUNDLE_TIMING=1`, post-cutover binary):
+Gate-ladder tier distribution (`DEBUNDLE_TIMING=1`):
 
 | Variant  | Queries | Tier 0 accept | Tier 1 reject | Tier 2 accept | Tier 3 | Tier 1+2 wall |
 | -------- | ------: | ------------: | ------------: | ------------: | -----: | ------------: |
 | residual |    8834 |          8834 |             0 |             0 |      0 |        0.000s |
 | claimed  |    9944 |          6644 |           753 |          2547 |      0 |        0.265s |
 
-This is well inside the plan's ship budget (wall within noise of the
-pre-cutover number; tier-3 simulator builds in single digits;
-tier-1+2 cumulative ≤ 2× the old PK-gate hot path): the post-cutover
-proposer is 1.9× faster on the fully-residual shape and 4.3× faster
-on the claimed shape, tier-3 never fired, and overlay simulator
-rebuilds and `scc_containing` calls were both zero.
+Tier 3 never fires on either variant, and overlay simulator rebuilds and
+`scc_containing` calls are both zero.
 
 **Never use `fastbuild` numbers for Rust wall comparisons** — always
-build `-c opt` (a `fastbuild` binary measured 35× slower on the
-historical fixture).
+build `-c opt` (a `fastbuild` binary measured 35× slower on a proposer fixture).
 
 The hot path asks a boolean question and avoids diagnostic-evidence
 generation; the diagnostic path is the same ladder with evidence
@@ -86,7 +72,7 @@ reports, and shadow-graph traversals stay behind `DEBUNDLE_TIMING=1`.
 ## Gate perf counters (reference)
 
 Permanent diagnostic counters for the proposer's realizability gate
-live in `realizability.rs::gate_perf_counters`, exposed through the
+live in `realizability/mod.rs::gate_perf_counters`, exposed through the
 `SccTimingReporter` RAII guard. They cover the path through
 `IncrementalQuotient::verdict_with_overlay_touching` and its no-overlay
 cousin `verdict_touching`:
@@ -161,25 +147,11 @@ A looser check could reuse the base simulator when the overlay's
 `i_delta` adds no new `(from, to)` pair and only references base edges
 that remain positive. Verify against a fresh profile first.
 
-### #6 — `sync_index_after_merge` to the persistent realizability index
+### #6 — Per-merge updates to the persistent realizability index
 
-Every merge pushes deltas to `realizability_index`. Cost depends on the
+Every `contract` pushes deltas to `realizability_index`. Cost depends on the
 index's internal representation. Investigate only if a fresh profile
 shows this material.
-
-### P2 alternatives
-
-- **#7 — KL/FM refinement pass after greedy.** Improves cut quality, not
-  wall. Worth doing if proposal quality becomes the bottleneck.
-- **#8 — Topological-sweep alternative driver.** `O(V + E)` total, no
-  cycle check needed. Different output character than agglomerative
-  greedy; useful as a quality/perf baseline. Removing the outer greedy
-  candidate-pop factor requires this kind of different driver.
-- **#9 — 32-bit ClassId / OwnerIdx.** Halves cache footprint of edge
-  maps and adjacency vecs. Modest expected impact, wide touch surface.
-- **#10 — Replace greedy entirely.** Louvain-with-constraints, spectral,
-  etc. could change the quality/perf tradeoff but are a separate design
-  project.
 
 ## `debundle run` pipeline
 
@@ -191,9 +163,8 @@ from the proposer. Current unmeasured opportunities:
 - **Chunk-level incremental rebuild**: hash `(upstream_bytes, spec_slice,
 ducktape_version)` per chunk and skip lowering, codegen, and reports
   for unchanged chunks.
-- **Opt-in heavy reports**: add `--reports=<list>` so consumers can skip
-  atoms / owner_graph / atomic_units / realizability / factorize /
-  peel_candidates reports they do not need.
+- **Opt-in heavy reports**: add `--reports=<list>` so consumers can skip the
+  per-chunk reports they do not need (`output_layout.rs` lists them).
 
 ### Materialize-stage hot-loop optimizations
 
@@ -231,8 +202,6 @@ Tighten before the next large peel loop:
   analysis, purity, owner-graph construction, atomic-DAG construction,
   quotient construction, validation, lowering, output writing) — useful
   durations should land in the emitted reports.
-- Move repeated timing helpers into one shared Rust module once a second
-  pass needs them outside the current local macro sites.
 - Add focused regression coverage for `ArtifactIndexes` rebuild
   boundaries as more structural artifact mutations are optimized.
 - Profile the debundle action around `materialize_logical_modules` and

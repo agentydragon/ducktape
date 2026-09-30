@@ -12,8 +12,8 @@ from cluster.validation.kyverno.paths import manifest, policy
 
 
 @pytest.fixture
-def service_links_policy() -> Path:
-    return policy("default-disable-service-links.k8s.yaml")
+def service_links_policy(tmp_path: Path) -> Path:
+    return policy("default-disable-service-links", tmp_path)
 
 
 class TestDefaultDisableServiceLinks:

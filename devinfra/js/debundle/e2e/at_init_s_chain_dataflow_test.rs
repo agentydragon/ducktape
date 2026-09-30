@@ -1,106 +1,25 @@
-//! Regression tests (originally RED) for the dataflow-aware
-//! S-chain: emission consults per-statement dataflow before
-//! emitting a `Sequenced` owner edge between two consecutive
-//! impure top-level statements.
+//! Dataflow-aware S-chain (`dataflow_aware_s_chain`, docs/design.md
+//! "Emission modes"): a `Sequenced` owner edge joins two consecutive impure
+//! top-level statements only when the earlier one writes a cell the later
+//! one reads or writes.
 //!
-//! Background. The baseline S-chain emission in `graph/` walks
-//! every impure top-level statement in source order and
-//! unconditionally emits
-//!
-//! ```ignore
-//! raw_edges.push((curr, prev, EdgeReason::sequenced(curr.ord)));
-//! ```
-//!
-//! This is the transitive reduction of the total order over
-//! impure statements. It is sound (every realizable schedule
-//! satisfies it), but it is maximally conservative — it
-//! manufactures an init-order constraint between every adjacent
-//! pair of impure statements regardless of whether they
-//! actually interact via dataflow.
-//!
-//! ESM evaluates modules to completion in some linker-chosen
-//! order. Two impure statements that touch disjoint pieces of
-//! observable state are commutative across that boundary: the
-//! relative source-order between them is irrelevant to anyone
-//! else (no reader observes both an intermediate "after A,
-//! before B" and a "after B, before A" state because there is
-//! no shared cell to observe).
-//!
-//! The refinement under test (the "full dataflow" S-chain,
-//! opt-in via `dataflow_aware_s_chain`): for each impure
-//! top-level statement, compute its write set and read set
-//! (rebinds + global property mutations + property writes;
-//! reads from bindings + global properties); emit
-//! `Sequenced(prev → curr)` only when
-//!
-//! ```text
-//! prev.writes ∩ (curr.reads ∪ curr.writes) ≠ ∅
-//! ```
-//!
-//! This is strictly a relaxation of the existing chain (we
-//! never add an edge that wasn't there before), so soundness is
-//! straightforward: any realizable schedule of the relaxed
-//! graph is also realizable for the strict graph, and any
-//! schedule violated by the strict graph but not the relaxed
-//! one corresponds to a swap of two disjoint impure statements
-//! — observably indistinguishable.
-//!
-//! ## Patterns covered
-//!
-//! Anonymized from a real over-conservative S-chain observed
-//! in a large bundle's quotient cycle: 4 of 10 residual cut
-//! edges were S-chain edges between owners that touched
-//! disjoint state.
-//!
-//! 1. **Disjoint global property writes.** Two impure
-//!    statements that each `globalThis.X = ...` distinct,
-//!    independent property keys. The baseline S-edge chains
-//!    them; the dataflow-aware chain sees `{globalThis.alpha}`
-//!    vs `{globalThis.beta}` — disjoint — no edge.
-//!
-//! 2. **Fresh-local-only allocation after a global write.** A
-//!    `globalThis.tag = ...` followed by a `new LocalClass()`
-//!    or `Object.freeze({...})` call whose effect is confined
-//!    to a fresh local value. Both are impure, so the baseline
-//!    S-edge chains them; under dataflow the fresh-alloc
-//!    statement's write set is just its own binding and its
-//!    read set doesn't intersect `globalThis.tag` — no edge.
-//!
-//! 3. **Independent cross-module inits.** Two modules each
-//!    construct a one-off instance of a local class whose
-//!    constructor only touches `this`. The baseline S-edge
-//!    chains them; under dataflow each statement writes only
-//!    its own binding (plus the fresh instance); read sets are
-//!    disjoint — no edge.
-//!
-//! ## Test shape
-//!
-//! Each test builds a fixture, inspects
-//! `owner_graph.json::edges`, and asserts that no
-//! `Sequenced` owner edge connects the two non-interacting
-//! statements (in either direction). The fixtures themselves
-//! run correctly under the materializer — the S-edge is a
-//! spurious extra constraint, not a cycle-closer in
-//! isolation. Real impact (the gaffer case) is when the
-//! spurious edge happens to land inside an SCC of other
-//! constraining edges and becomes a member of the cut.
+//! Each test builds a fixture, inspects `owner_graph.json::edges`, and
+//! asserts that no `Sequenced` edge connects the two non-interacting
+//! statements in either direction. Patterns: disjoint global property
+//! writes; a fresh-local allocation after a global write; independent
+//! cross-module inits of a local class whose constructor only touches
+//! `this`.
 
 use analysis::{DepKind, OwnerGraphReport};
 use debundle_e2e_support::*;
-
-/// Build a `FixtureOpts` with the dataflow-aware S-chain emission
-/// enabled. Every test in this file opts in — the assertions are
-/// against the relaxed S-edge set, which only appears when the
-/// chunk's `dataflow_aware_s_chain` flag is `true`.
-fn dataflow_opts<'a>(source: &'a str, logical_modules: Vec<LogicalModuleEntry>) -> FixtureOpts<'a> {
-    FixtureOpts::new(source, logical_modules).with_dataflow_aware_s_chain()
-}
 
 fn trusted_dataflow_opts<'a>(
     source: &'a str,
     logical_modules: Vec<LogicalModuleEntry>,
 ) -> FixtureOpts<'a> {
-    dataflow_opts(source, logical_modules).with_trusted_dataflow_summaries()
+    FixtureOpts::new(source, logical_modules)
+        .with_dataflow_aware_s_chain()
+        .with_trusted_dataflow_summaries()
 }
 
 fn sequenced_edges_between<'a>(
@@ -127,21 +46,23 @@ fn s_chain_skips_disjoint_global_property_writes() {
     // sets `{globalThis.alpha}` and `{globalThis.beta}` are
     // disjoint and the read sets are empty, so no S-edge is
     // warranted.
-    let fixture = run_fixture(dataflow_opts(
-        r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const tagB = (globalThis.beta = "beta-val", "tag-b");
 console.log(tagA, tagB, globalThis.alpha, globalThis.beta);
 export { tagA, tagB };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("tagA")]),
-            logical_module("mod_b", &[Member::new("tagB")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("tagA")]),
+                logical_module("mod_b", &[Member::new("tagB")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let owner_a = owner_for_binding(&graph, "tagA");
     let owner_b = owner_for_binding(&graph, "tagB");
     let offending = sequenced_edges_between(&graph, owner_a, owner_b);
@@ -167,21 +88,23 @@ fn s_chain_skips_fresh_local_alloc_after_global_write() {
     //   boxedB.writes = {boxedB}
     //   boxedB.reads  = {Object}
     // No intersection — no S-edge.
-    let fixture = run_fixture(dataflow_opts(
-        r#"const tagA = (globalThis.tag = "first", "tag-a");
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const tagA = (globalThis.tag = "first", "tag-a");
 const boxedB = Object.freeze({ kind: "fresh" });
 console.log(tagA, boxedB.kind, globalThis.tag);
 export { tagA, boxedB };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("tagA")]),
-            logical_module("mod_b", &[Member::new("boxedB")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("tagA")]),
+                logical_module("mod_b", &[Member::new("boxedB")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "tag-a fresh first\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let owner_a = owner_for_binding(&graph, "tagA");
     let owner_b = owner_for_binding(&graph, "boxedB");
     let offending = sequenced_edges_between(&graph, owner_a, owner_b);
@@ -205,23 +128,25 @@ fn unproven_constructor_calls_keep_conservative_s_edge() {
     // behavior: relaxing it requires proving the constructor
     // cell-confined (e.g. a `pure_new` spec annotation), not
     // assuming it.
-    let fixture = run_fixture(dataflow_opts(
-        r#"class Holder1 { constructor() { this.kind = "h1"; } }
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class Holder1 { constructor() { this.kind = "h1"; } }
 class Holder2 { constructor() { this.kind = "h2"; } }
 const instA = new Holder1();
 const instB = new Holder2();
 console.log(instA.kind, instB.kind);
 export { Holder1, Holder2, instA, instB };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("Holder1"), Member::new("instA")]),
-            logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("Holder1"), Member::new("instA")]),
+                logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "h1 h2\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let owner_a = owner_for_binding(&graph, "instA");
     let owner_b = owner_for_binding(&graph, "instB");
     assert_kept_sequenced_between(&graph, owner_a, owner_b);
@@ -252,8 +177,7 @@ export { Holder1, Holder2, instA, instB };
     ));
     assert_entry_output(&fixture, "h1 h2\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let owner_a = owner_for_binding(&graph, "instA");
     let owner_b = owner_for_binding(&graph, "instB");
     let offending = sequenced_edges_between(&graph, owner_a, owner_b);
@@ -272,21 +196,23 @@ fn s_chain_keeps_edge_when_writes_overlap() {
     // Both statements write `globalThis.shared` (the LAST one
     // wins, and any reader of `globalThis.shared` observes the
     // ordering). The edge must remain.
-    let fixture = run_fixture(dataflow_opts(
-        r#"const tagA = (globalThis.shared = "from-a", "tag-a");
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const tagA = (globalThis.shared = "from-a", "tag-a");
 const tagB = (globalThis.shared = "from-b", "tag-b");
 console.log(tagA, tagB, globalThis.shared);
 export { tagA, tagB };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("tagA")]),
-            logical_module("mod_b", &[Member::new("tagB")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("tagA")]),
+                logical_module("mod_b", &[Member::new("tagB")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "tag-a tag-b from-b\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let owner_a = owner_for_binding(&graph, "tagA");
     let owner_b = owner_for_binding(&graph, "tagB");
     let kept = sequenced_edges_between(&graph, owner_a, owner_b);
@@ -324,7 +250,7 @@ fn bail_out_keeps_s_edge_when_statement_uses_direct_eval() {
     // out via the spec override so the per-statement dataflow bail-out
     // stays exercised on its own.
     let fixture = run_fixture(
-        dataflow_opts(
+        FixtureOpts::new(
             r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const tagB = (eval("globalThis.beta = 'beta-val'"), "tag-b");
 console.log(tagA, tagB, globalThis.alpha, globalThis.beta);
@@ -335,12 +261,12 @@ export { tagA, tagB };
                 logical_module("mod_b", &[Member::new("tagB")]),
             ],
         )
+        .with_dataflow_aware_s_chain()
         .with_admission_overrides(&["a1_eval"]),
     );
     assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     assert_kept_sequenced_between(
         &graph,
         owner_for_binding(&graph, "tagA"),
@@ -353,22 +279,24 @@ fn bail_out_keeps_s_edge_when_statement_writes_global_this_with_dynamic_key() {
     // `globalThis[<expr>] = ...` can't be reduced to a statically
     // known property cell — the statement must fall back to the
     // strict S-edge.
-    let fixture = run_fixture(dataflow_opts(
-        r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const keyB = "beta";
 const tagB = (globalThis[keyB] = "beta-val", "tag-b");
 console.log(tagA, tagB, globalThis.alpha, globalThis.beta);
 export { tagA, tagB };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("tagA"), Member::new("keyB")]),
-            logical_module("mod_b", &[Member::new("tagB")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("tagA"), Member::new("keyB")]),
+                logical_module("mod_b", &[Member::new("tagB")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     assert_kept_sequenced_between(
         &graph,
         owner_for_binding(&graph, "tagA"),
@@ -381,22 +309,24 @@ fn bail_out_keeps_s_edge_when_statement_uses_function_constructor() {
     // `Function(...)` (and `new Function(...)`) compile a string to
     // executable code in the global scope — same risk class as
     // direct `eval`.
-    let fixture = run_fixture(dataflow_opts(
-        r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const fnB = new Function("globalThis.beta = 'beta-val'");
 const tagB = (fnB(), "tag-b");
 console.log(tagA, tagB, globalThis.alpha, globalThis.beta);
 export { tagA, tagB };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("tagA")]),
-            logical_module("mod_b", &[Member::new("fnB"), Member::new("tagB")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("tagA")]),
+                logical_module("mod_b", &[Member::new("fnB"), Member::new("tagB")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     assert_kept_sequenced_between(
         &graph,
         owner_for_binding(&graph, "tagA"),

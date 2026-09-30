@@ -5,7 +5,7 @@
 
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome, find_outcome,
-    logical_module, logical_module_with_anon, logical_module_with_anon_alpha_many,
+    logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
     logical_module_with_binding_groups, read_selector_outcomes, run_dry_run_rejection_fixture,
 };
 use serde_json::{Value, json};
@@ -314,7 +314,7 @@ fn keep_going_unmatched_anonymous_statement_does_not_cascade() {
     let opts = FixtureOpts::new(
         r#"console.log("present");
 "#,
-        vec![logical_module_with_anon_alpha_many(
+        vec![logical_module_with_anon_alpha(
             "diagnostics/anon",
             &[],
             &[r#"console.warn("missing");"#, r#"console.log("present");"#],

@@ -13,10 +13,7 @@ use selector_ir::{
     ClaimKind, OwnerTerm, SelectorAtom, SelectorProgram, SelectorProjectedValue, SelectorTargetId,
     SelectorVariableId, StringTerm, VariableDomain,
 };
-use spec::{
-    AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation,
-    MemberSelectorSpec,
-};
+use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation};
 
 /// A projected `source_match` candidate: its place and, per reference column,
 /// the chunk identifier its template bound there.
@@ -26,38 +23,11 @@ pub type ProjectedRow = ((analysis::OwnerId, String), Vec<String>);
 /// per reference column, the chunk identifier its template bound there.
 pub type ProjectedGroupRow = (Vec<(analysis::OwnerId, String)>, Vec<String>);
 
-/// Context shared by every member selector lowered for one logical module.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MemberSelectorLoweringContext {
-    pub logical_module: String,
-}
-
-impl MemberSelectorLoweringContext {
-    pub fn new(logical_module: impl Into<String>) -> Self {
-        Self {
-            logical_module: logical_module.into(),
-        }
-    }
-}
-
-/// Lower one `members[]` selector into a standalone selector program fragment.
-pub fn lower_member_selector(
-    context: &MemberSelectorLoweringContext,
-    export_name: &str,
-    selector: &MemberSelectorSpec,
-) -> Result<LoweredMemberSelector, SelectorIrLoweringError> {
-    let mut builder = MemberSelectorProgramBuilder::new(context.clone());
-    let target = builder.lower_member_selector(export_name, selector)?;
-    let program = builder.into_program()?;
-    Ok(LoweredMemberSelector { target, program })
-}
-
 /// Incremental builder for one joint selector program. Targets are scoped by
 /// logical module plus export name, while relation anchors resolve against the
 /// target set using the selector family's scoping rules.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MemberSelectorProgramBuilder {
-    context: MemberSelectorLoweringContext,
     program: SelectorProgram,
     owners_by_export: BTreeMap<(String, String), SelectorVariableId>,
     /// The binding each projected `source_match` export declares, by
@@ -84,21 +54,6 @@ pub enum MemberSelectorSpecRef<'a> {
     IntrinsicAlias(&'a spec::IntrinsicAliasTarget),
 }
 
-impl<'a> From<&'a MemberSelectorSpec> for MemberSelectorSpecRef<'a> {
-    fn from(selector: &'a MemberSelectorSpec) -> Self {
-        match selector {
-            MemberSelectorSpec::Binding(selector) => Self::Binding(selector),
-            MemberSelectorSpec::SourceMatch(selector) => Self::SourceMatch(selector),
-            MemberSelectorSpec::CrossRef(selector) => Self::CrossRef(selector),
-            MemberSelectorSpec::ReadsMember(selector) => Self::ReadsMember(selector),
-            MemberSelectorSpec::MemberOfModule(selector) => Self::MemberOfModule(selector),
-            MemberSelectorSpec::PassedToCall(selector) => Self::PassedToCall(selector),
-            MemberSelectorSpec::MakesDecorateCall(selector) => Self::MakesDecorateCall(selector),
-            MemberSelectorSpec::IntrinsicAlias(selector) => Self::IntrinsicAlias(selector),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum OwnerInjectivityClass {
     Owner(SelectorVariableId),
@@ -106,66 +61,13 @@ enum OwnerInjectivityClass {
 }
 
 impl MemberSelectorProgramBuilder {
-    pub fn new(context: MemberSelectorLoweringContext) -> Self {
-        Self {
-            context,
-            program: SelectorProgram::default(),
-            owners_by_export: BTreeMap::new(),
-            projected_bindings: BTreeMap::new(),
-            projected_anonymous_owners: BTreeMap::new(),
-            global_owner_by_export: BTreeMap::new(),
-            targeted_owners: BTreeMap::new(),
-            injective_targeted_owners: BTreeSet::new(),
-            owner_injectivity_classes: BTreeMap::new(),
-        }
-    }
-
-    pub fn lower_member_selector(
-        &mut self,
-        export_name: &str,
-        selector: &MemberSelectorSpec,
-    ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
-        let logical_module = self.context.logical_module.clone();
-        self.lower_member_selector_in_module(logical_module, export_name, selector)
-    }
-
-    pub fn lower_member_selector_in_module(
-        &mut self,
-        logical_module: impl Into<String>,
-        export_name: &str,
-        selector: &MemberSelectorSpec,
-    ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
-        let logical_module = logical_module.into();
-        let selector = MemberSelectorSpecRef::from(selector);
-        let target = self.declare_member_target_in_module_ref(
-            logical_module.clone(),
-            export_name,
-            selector,
-        )?;
-        self.lower_member_constraints_in_module_ref(&logical_module, export_name, selector)?;
-        Ok(target)
-    }
-
-    pub fn declare_member_target_in_module(
-        &mut self,
-        logical_module: impl Into<String>,
-        export_name: &str,
-        selector: &MemberSelectorSpec,
-    ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
-        self.declare_member_target_in_module_ref(
-            logical_module,
-            export_name,
-            MemberSelectorSpecRef::from(selector),
-        )
-    }
-
-    pub fn declare_member_target_in_module_ref(
+    pub fn declare_member_target(
         &mut self,
         logical_module: impl Into<String>,
         export_name: &str,
         selector: MemberSelectorSpecRef<'_>,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
-        self.declare_target_in_module_ref(
+        self.declare_target(
             logical_module,
             export_name,
             selector,
@@ -175,13 +77,13 @@ impl MemberSelectorProgramBuilder {
         )
     }
 
-    pub fn declare_binding_group_member_target_in_module_ref(
+    pub fn declare_binding_group_member_target(
         &mut self,
         logical_module: impl Into<String>,
         export_name: &str,
         selector: MemberSelectorSpecRef<'_>,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
-        self.declare_target_in_module_ref(
+        self.declare_target(
             logical_module,
             export_name,
             selector,
@@ -191,7 +93,7 @@ impl MemberSelectorProgramBuilder {
         )
     }
 
-    fn declare_target_in_module_ref(
+    fn declare_target(
         &mut self,
         logical_module: impl Into<String>,
         export_name: &str,
@@ -268,20 +170,7 @@ impl MemberSelectorProgramBuilder {
         });
     }
 
-    pub fn lower_member_constraints_in_module(
-        &mut self,
-        logical_module: &str,
-        export_name: &str,
-        selector: &MemberSelectorSpec,
-    ) -> Result<(), SelectorIrLoweringError> {
-        self.lower_member_constraints_in_module_ref(
-            logical_module,
-            export_name,
-            MemberSelectorSpecRef::from(selector),
-        )
-    }
-
-    pub fn lower_member_constraints_in_module_ref(
+    pub fn lower_member_constraints(
         &mut self,
         logical_module: &str,
         export_name: &str,
@@ -667,12 +556,6 @@ fn statement_kind_str_for_spec(kind: BindingSourceKind) -> &'static str {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoweredMemberSelector {
-    pub target: SelectorTargetId,
-    pub program: SelectorProgram,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectorIrLoweringError {
     Unsupported {
         selector_kind: &'static str,
@@ -737,68 +620,45 @@ impl From<selector_ir::SelectorProgramError> for SelectorIrLoweringError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use selector_ir::{SelectorAtom, StringTerm};
-    use spec::{CrossRefRelation, CrossRefTarget};
+    use spec::CrossRefTarget;
 
-    fn context() -> MemberSelectorLoweringContext {
-        MemberSelectorLoweringContext::new("runtime/widgets")
+    const MODULE: &str = "runtime/widgets";
+
+    fn lower(
+        builder: &mut MemberSelectorProgramBuilder,
+        export_name: &str,
+        selector: MemberSelectorSpecRef<'_>,
+    ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
+        let target = builder.declare_member_target(MODULE, export_name, selector)?;
+        builder.lower_member_constraints(MODULE, export_name, selector)?;
+        Ok(target)
     }
 
-    #[test]
-    fn lowers_binding_name_selector() {
-        let lowered = lower_member_selector(
-            &context(),
-            "Widget",
-            &MemberSelectorSpec::Binding(BindingSelector {
-                name: "a".to_string(),
-                kind: None,
-            }),
-        )
-        .unwrap();
-
-        assert_eq!(lowered.target, SelectorTargetId(0));
-        assert_eq!(lowered.program.targets[0].logical_module, "runtime/widgets");
-        assert_eq!(lowered.program.atoms.len(), 1);
-        assert!(matches!(
-            &lowered.program.atoms[0],
-            SelectorAtom::OwnerDeclaresBinding {
-                binding: StringTerm::Const { value },
-                ..
-            } if value == "a"
-        ));
+    fn binding(name: &str) -> BindingSelector {
+        BindingSelector {
+            name: name.to_string(),
+            kind: None,
+        }
     }
 
-    #[test]
-    fn lowers_binding_kind_constraint() {
-        let lowered = lower_member_selector(
-            &context(),
-            "WidgetFactory",
-            &MemberSelectorSpec::Binding(BindingSelector {
-                name: "f".to_string(),
-                kind: Some(BindingSourceKind::FunctionDeclaration),
-            }),
-        )
-        .unwrap();
-
-        assert_eq!(lowered.program.atoms.len(), 2);
-        assert!(matches!(
-            &lowered.program.atoms[1],
-            SelectorAtom::OwnerKind {
-                statement_kind: StringTerm::Const { value },
-                ..
-            } if value == "fn_decl"
-        ));
+    fn references(anchor: &str) -> CrossRefTarget {
+        CrossRefTarget {
+            relation: CrossRefRelation::References,
+            anchor: anchor.to_string(),
+            kind: Some(BindingSourceKind::FunctionDeclaration),
+        }
     }
 
     #[test]
     fn import_specifier_binding_fails_closed_for_now() {
-        let error = lower_member_selector(
-            &context(),
+        let selector = BindingSelector {
+            name: "a".to_string(),
+            kind: Some(BindingSourceKind::ImportSpecifier),
+        };
+        let error = lower(
+            &mut MemberSelectorProgramBuilder::default(),
             "ImportedWidget",
-            &MemberSelectorSpec::Binding(BindingSelector {
-                name: "a".to_string(),
-                kind: Some(BindingSourceKind::ImportSpecifier),
-            }),
+            MemberSelectorSpecRef::Binding(&selector),
         )
         .unwrap_err();
 
@@ -813,26 +673,19 @@ mod tests {
 
     #[test]
     fn joint_builder_reuses_anchor_owner_variable() {
-        let mut builder = MemberSelectorProgramBuilder::new(context());
-        let anchor = builder
-            .lower_member_selector(
-                "Anchor",
-                &MemberSelectorSpec::Binding(BindingSelector {
-                    name: "a".to_string(),
-                    kind: None,
-                }),
-            )
-            .unwrap();
-        let delegator = builder
-            .lower_member_selector(
-                "Delegator",
-                &MemberSelectorSpec::CrossRef(CrossRefTarget {
-                    relation: CrossRefRelation::References,
-                    anchor: "Anchor".to_string(),
-                    kind: Some(BindingSourceKind::FunctionDeclaration),
-                }),
-            )
-            .unwrap();
+        let mut builder = MemberSelectorProgramBuilder::default();
+        let anchor = lower(
+            &mut builder,
+            "Anchor",
+            MemberSelectorSpecRef::Binding(&binding("a")),
+        )
+        .unwrap();
+        let delegator = lower(
+            &mut builder,
+            "Delegator",
+            MemberSelectorSpecRef::CrossRef(&references("Anchor")),
+        )
+        .unwrap();
 
         let program = builder.into_program().unwrap();
         let anchor_owner = program.targets[anchor.0].owner;
@@ -854,36 +707,25 @@ mod tests {
 
     #[test]
     fn relational_targets_remain_owner_injective_without_binding_anchors() {
-        let mut builder = MemberSelectorProgramBuilder::new(context());
-        let anchor = builder
-            .lower_member_selector(
-                "Anchor",
-                &MemberSelectorSpec::Binding(BindingSelector {
-                    name: "a".to_string(),
-                    kind: None,
-                }),
-            )
-            .unwrap();
-        let first = builder
-            .lower_member_selector(
-                "First",
-                &MemberSelectorSpec::CrossRef(CrossRefTarget {
-                    relation: CrossRefRelation::References,
-                    anchor: "Anchor".to_string(),
-                    kind: Some(BindingSourceKind::FunctionDeclaration),
-                }),
-            )
-            .unwrap();
-        let second = builder
-            .lower_member_selector(
-                "Second",
-                &MemberSelectorSpec::CrossRef(CrossRefTarget {
-                    relation: CrossRefRelation::References,
-                    anchor: "Anchor".to_string(),
-                    kind: Some(BindingSourceKind::FunctionDeclaration),
-                }),
-            )
-            .unwrap();
+        let mut builder = MemberSelectorProgramBuilder::default();
+        let anchor = lower(
+            &mut builder,
+            "Anchor",
+            MemberSelectorSpecRef::Binding(&binding("a")),
+        )
+        .unwrap();
+        let first = lower(
+            &mut builder,
+            "First",
+            MemberSelectorSpecRef::CrossRef(&references("Anchor")),
+        )
+        .unwrap();
+        let second = lower(
+            &mut builder,
+            "Second",
+            MemberSelectorSpecRef::CrossRef(&references("Anchor")),
+        )
+        .unwrap();
 
         let program = builder.into_program().unwrap();
 

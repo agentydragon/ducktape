@@ -6,32 +6,28 @@
 //! clap wiring and the env-var plumbing are covered too.
 
 use std::fs;
-use std::process::Command;
 
 use debundle_cli::module::delete_modules;
-use debundle_e2e_support::{debundler_path, write_file};
+use debundle_e2e_support::{run_debundle, write_text_file};
 use tempfile::TempDir;
 
 #[test]
 fn delete_empty_module_succeeds() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write_file(root, "ui/empty.yaml", "members: []\n");
+    write_text_file(&root.join("ui/empty.yaml"), "members: []\n");
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "delete",
-            "--modules",
-            root.to_str().unwrap(),
-            "ui/empty.yaml",
-            // Stdout is a pipe here, which would default to JSON;
-            // pin the human text rendering explicitly.
-            "--format",
-            "text",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "delete",
+        "--modules",
+        root.to_str().unwrap(),
+        "ui/empty.yaml",
+        // Stdout is a pipe here, which would default to JSON;
+        // pin the human text rendering explicitly.
+        "--format",
+        "text",
+    ]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -50,18 +46,15 @@ fn delete_non_empty_module_without_force_refuses() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
     let body = "members:\n  - selector: { binding: { name: a } }\n";
-    write_file(root, "ui/full.yaml", body);
+    write_text_file(&root.join("ui/full.yaml"), body);
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "delete",
-            "--modules",
-            root.to_str().unwrap(),
-            "ui/full.yaml",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "delete",
+        "--modules",
+        root.to_str().unwrap(),
+        "ui/full.yaml",
+    ]);
     assert!(!out.status.success(), "expected non-zero exit");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -77,26 +70,22 @@ fn delete_non_empty_module_without_force_refuses() {
 fn delete_non_empty_module_with_force_succeeds() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write_file(
-        root,
-        "ui/full.yaml",
+    write_text_file(
+        &root.join("ui/full.yaml"),
         "members:\n  - selector: { binding: { name: a } }\n",
     );
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "delete",
-            "--modules",
-            root.to_str().unwrap(),
-            "ui/full.yaml",
-            "--force",
-            // Skip the gate: this test only exercises the
-            // --force filesystem path, not the gate verdict.
-            "--no-verify",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "delete",
+        "--modules",
+        root.to_str().unwrap(),
+        "ui/full.yaml",
+        "--force",
+        // Skip the gate: this test only exercises the
+        // --force filesystem path, not the gate verdict.
+        "--no-verify",
+    ]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -109,24 +98,21 @@ fn delete_non_empty_module_with_force_succeeds() {
 fn delete_multiple_atomic_all_succeed() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write_file(root, "a.yaml", "members: []\n");
-    write_file(root, "b.yaml", "members: []\n");
-    write_file(root, "c.yaml", "members: []\n");
+    write_text_file(&root.join("a.yaml"), "members: []\n");
+    write_text_file(&root.join("b.yaml"), "members: []\n");
+    write_text_file(&root.join("c.yaml"), "members: []\n");
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "delete",
-            "--modules",
-            root.to_str().unwrap(),
-            "a.yaml",
-            "b.yaml",
-            "c.yaml",
-            "--format",
-            "text",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "delete",
+        "--modules",
+        root.to_str().unwrap(),
+        "a.yaml",
+        "b.yaml",
+        "c.yaml",
+        "--format",
+        "text",
+    ]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -147,21 +133,18 @@ fn dry_run_prints_verdict_without_deleting() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
     let body = "members: []\n";
-    write_file(root, "ui/empty.yaml", body);
+    write_text_file(&root.join("ui/empty.yaml"), body);
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "delete",
-            "--modules",
-            root.to_str().unwrap(),
-            "ui/empty.yaml",
-            "--dry-run",
-            "--format",
-            "text",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "delete",
+        "--modules",
+        root.to_str().unwrap(),
+        "ui/empty.yaml",
+        "--dry-run",
+        "--format",
+        "text",
+    ]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -187,16 +170,13 @@ fn delete_nonexistent_module_clear_error() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "delete",
-            "--modules",
-            root.to_str().unwrap(),
-            "does/not/exist.yaml",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "delete",
+        "--modules",
+        root.to_str().unwrap(),
+        "does/not/exist.yaml",
+    ]);
     assert!(!out.status.success(), "expected non-zero exit");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -213,22 +193,19 @@ fn batch_with_one_non_empty_refuses_atomically() {
     let root = dir.path();
     let empty_body = "members: []\n";
     let full_body = "members:\n  - selector: { binding: { name: a } }\n";
-    write_file(root, "x.yaml", empty_body);
-    write_file(root, "y.yaml", full_body);
-    write_file(root, "z.yaml", empty_body);
+    write_text_file(&root.join("x.yaml"), empty_body);
+    write_text_file(&root.join("y.yaml"), full_body);
+    write_text_file(&root.join("z.yaml"), empty_body);
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "delete",
-            "--modules",
-            root.to_str().unwrap(),
-            "x.yaml",
-            "y.yaml",
-            "z.yaml",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "delete",
+        "--modules",
+        root.to_str().unwrap(),
+        "x.yaml",
+        "y.yaml",
+        "z.yaml",
+    ]);
     assert!(!out.status.success(), "expected non-zero exit");
     // Nothing must be deleted.
     assert!(root.join("x.yaml").exists());
@@ -242,8 +219,8 @@ fn batch_with_one_non_empty_refuses_atomically() {
 fn delete_modules_library_call_deletes_then_reports() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write_file(root, "a.yaml", "members: []\n");
-    write_file(root, "b.yaml", "members: []\n");
+    write_text_file(&root.join("a.yaml"), "members: []\n");
+    write_text_file(&root.join("b.yaml"), "members: []\n");
     let abs = [root.join("a.yaml"), root.join("b.yaml")];
 
     let summary = delete_modules(&abs, false).unwrap();
@@ -258,7 +235,7 @@ fn delete_modules_library_call_deletes_then_reports() {
 fn delete_modules_library_dry_run_leaves_files_in_place() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write_file(root, "a.yaml", "members: []\n");
+    write_text_file(&root.join("a.yaml"), "members: []\n");
     let abs = [root.join("a.yaml")];
 
     let summary = delete_modules(&abs, true).unwrap();

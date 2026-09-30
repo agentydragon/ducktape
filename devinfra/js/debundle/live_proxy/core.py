@@ -89,28 +89,21 @@ class ControlPaths:
 
 @dataclass(frozen=True)
 class LiveProxyConfig:
-    app_asset_prefix: str
     app_manifest_path: Path
     app_root: Path
-    asset_summary_path: Path | None
     bootstrap_url: str
     ca_dir: Path
     control_paths: ControlPaths
     injected_html: str
     internal_prefix: str
-    out_root: Path
     profile_dir: Path
     proxy_host: str
     proxy_port: int
-    source_html_path: Path | None
     state_dir: Path
     target_host: str
     target_origin: str
     target_url: str
-    ui_version: str
-    vendor_manifest_path: Path
     vendor_runtime_index: dict[str, VendorRuntimeEntry]
-    partial_swap_manifest_path: Path
     partial_swap_runtime_index: dict[str, PartialSwapEntry]
 
 
@@ -250,12 +243,8 @@ def load_live_proxy_configuration(raw_options: LiveProxyOptions | dict) -> LiveP
     )
     target_origin = f"{target_parts.scheme}://{target_parts.netloc}"
     return LiveProxyConfig(
-        app_asset_prefix=app_asset_prefix,
         app_manifest_path=app_manifest_path,
         app_root=app_root,
-        asset_summary_path=resolve_relative(reports_root, source_assets_report["source_path"])
-        if source_assets_report.get("source_path")
-        else None,
         bootstrap_url=f"{app_asset_prefix}/bootstrap.js",
         ca_dir=state_dir / "mitm-ca",
         control_paths=ControlPaths(
@@ -269,19 +258,14 @@ def load_live_proxy_configuration(raw_options: LiveProxyOptions | dict) -> LiveP
             import_map=import_map,
         ),
         internal_prefix=internal_prefix,
-        out_root=app_root,
         profile_dir=state_dir / "browser-profile",
         proxy_host=options.proxy_host or DEFAULT_PROXY_HOST,
         proxy_port=options.proxy_port or DEFAULT_PROXY_PORT,
-        source_html_path=source_html_path,
         state_dir=state_dir,
         target_host=target_parts.netloc,
         target_origin=target_origin,
         target_url=target_url,
-        ui_version=ui_version,
-        vendor_manifest_path=vendor_manifest_path,
         vendor_runtime_index=vendor_runtime_index,
-        partial_swap_manifest_path=vendor_manifest_path,
         partial_swap_runtime_index=partial_swap_runtime_index,
     )
 
@@ -410,7 +394,7 @@ def map_local_asset_path(pathname: str, config: LiveProxyConfig) -> LocalAssetMa
     return LocalAssetMapping(
         kind=LocalAssetKind.FILE,
         content_type=content_type_for_path(Path(app_relative_path)),
-        file_path=safe_join(config.app_root or config.out_root, app_relative_path),
+        file_path=safe_join(config.app_root, app_relative_path),
     )
 
 
@@ -445,7 +429,7 @@ def map_snapshot_asset_path(pathname: str, config: LiveProxyConfig) -> LocalAsse
     else:
         app_relative_path = snapshot_relative_path
 
-    file_path = safe_join(config.app_root or config.out_root, app_relative_path)
+    file_path = safe_join(config.app_root, app_relative_path)
     if not file_path.is_file():
         return None
     return LocalAssetMapping(

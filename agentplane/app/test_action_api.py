@@ -17,7 +17,6 @@ import httpx
 import jwt
 import pytest
 import pytest_bazel
-import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
 from sqlalchemy import select
@@ -83,7 +82,7 @@ from agentplane.workload_auth.principal import (
     WorkloadPrincipalResolver,
 )
 from util.net import bind_free_port, pick_free_port
-from util.testing.asgi import serve_app
+from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-sandbox"))
@@ -481,19 +480,9 @@ def _bind_live_sandbox(policies: PolicyIndex) -> None:
 async def _served(app: FastAPI) -> AsyncIterator[str]:
     """The app on a real socket, in this loop: the in-memory transport waits for a body that never
     ends, and another thread's loop could not use the store's connections."""
-    port = pick_free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
-    serving = asyncio.create_task(server.serve())
-    while not server.started:
-        if serving.done():
-            serving.result()
-            raise RuntimeError("uvicorn exited before starting")
-        await asyncio.sleep(0.02)
-    try:
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        await serving
+    sock = bind_free_port()
+    async with serve_app_in_loop(app, sock=sock):
+        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
 
 
 async def _first_snapshot(client: httpx.AsyncClient, path: str, headers: dict[str, str]) -> SandboxSnapshot:

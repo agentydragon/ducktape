@@ -62,7 +62,7 @@ enum GateCommand {
     Describe(GateDescribeArgs),
     /// Just the cut edges for one blocking SCC. The actionable subset —
     /// spec authors read this to pick which back-edge to break.
-    Cut(GateIdArgs),
+    Cut(GateCutArgs),
 }
 
 /// Shared args: paths to `owner_graph.json` (always written; carries
@@ -77,14 +77,6 @@ pub struct GateCommonArgs {
     /// Path to `owner_graph.json` (debundler analysis output).
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub owner_graph_path: PathBuf,
-
-    /// Per-module YAML tree root. Unused today; kept here so every
-    /// `debundle ...` command shares the same env/flag triple
-    /// (`--graph`/`--modules`/`--source-root`) per docs/cli.md.
-    /// Optional: nothing in `gate` reads it yet, so users need not
-    /// pass an ignored path.
-    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
-    pub modules_root: Option<PathBuf>,
 
     /// Override the default `cycles.json` location. Defaults to the
     /// sibling of `--graph`.
@@ -135,7 +127,7 @@ pub struct GateDescribeArgs {
 }
 
 #[derive(Debug, ClapArgs)]
-pub struct GateIdArgs {
+pub struct GateCutArgs {
     /// Blocking-SCC id (zero-based index into `cycles.json`).
     pub id: usize,
 
@@ -202,10 +194,6 @@ fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
         .with_context(|| format!("parsing blocking-SCC report {}", path.display()))
 }
 
-fn load_graph(common: &GateCommonArgs) -> Result<OwnerGraphReport> {
-    crate::load_owner_graph_report(&common.owner_graph_path)
-}
-
 fn run_list(args: GateListArgs) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let report = GateListReport {
@@ -247,7 +235,7 @@ fn find_entry(entries: &[BlockingSccEntry], id: usize) -> Result<&BlockingSccEnt
 fn run_describe(args: GateDescribeArgs) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
-    let graph = load_graph(&args.common)?;
+    let graph = crate::load_owner_graph_report(&args.common.owner_graph_path)?;
 
     let mut evidence = recompute_evidence(&graph, &entry.modules)?;
     if let Some(binding) = &args.binding {
@@ -320,7 +308,7 @@ fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
     }
 }
 
-fn run_cut(args: GateIdArgs) -> Result<()> {
+fn run_cut(args: GateCutArgs) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
     let report = GateCutReport {
@@ -397,15 +385,15 @@ fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
 /// Filters applied to mirror the in-memory build:
 ///
 /// * **Drop intra-module owner edges** (`from == to` after projection).
-///   `ModuleQuotient::record_reason` returns early on these; the
-///   materializer's evidence iteration is over the quotient.
+///   `partition_endpoints` returns `None` for these; the materializer's
+///   evidence iteration is over the quotient.
 /// * **Drop cross-module `PromotedAtInit` edges whose callee
 ///   module differs from the caller**. `EndpointView::Lenient`
 ///   (used by `build_module_quotient`) treats them as redundant
 ///   with the already-recorded `R -> callee` edge.
 /// * **Dedup sequenced edges per `(from_module, to_module)` pair** —
-///   `record_reason` collapses parallel sequenced reasons into one
-///   constraint.
+///   `chunk_constraining_module_edges` collapses parallel sequenced
+///   edges into one constraint.
 ///
 /// The reconstruction is **approximate**: the on-wire owner graph
 /// drops a few sub-edge attributes the in-memory `EdgeReason`
@@ -479,7 +467,7 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
         };
         if from_mod == to_mod {
             // Same-module owner edges never enter the quotient
-            // (`ModuleQuotient::record_reason` returns early when
+            // (`partition_endpoints` returns `None` when
             // `from == to`). The materializer's evidence iteration
             // is over the quotient, so intra-module edges are not
             // evidence — match that here.
@@ -492,7 +480,7 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
         // drops cross-module `PromotedAtInit` edges whose callee
         // module differs from the caller — ESM DFS post-order makes
         // the manufactured `R -> target` redundant with the already-
-        // recorded `R -> callee` edge (see graph.rs `partition_endpoints`).
+        // recorded `R -> callee` edge (see `graph::partition_endpoints`).
         // Match that filter here so the recomputed evidence count
         // agrees with the pre-trim cycles.json output.
         if let Some(EdgeRoleReport::PromotedAtInit { callee_owner }) = &edge.role
@@ -502,10 +490,9 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
             continue;
         }
         if matches!(edge.edge_kind, DepKind::Sequenced) {
-            // Mirror `build_module_quotient`'s sequenced-edge dedup
-            // (graph.rs `record_reason` site): collapse parallel
-            // sequenced edges between the same module pair into one
-            // evidence row.
+            // Mirror `chunk_constraining_module_edges`'s sequenced-edge
+            // dedup: collapse parallel sequenced edges between the same
+            // module pair into one evidence row.
             if !seen_sequenced_pairs.insert((from_mod, to_mod)) {
                 continue;
             }
@@ -753,9 +740,6 @@ mod tests {
     fn cycles_path_defaults_to_graph_sibling() {
         let common = GateCommonArgs {
             owner_graph_path: PathBuf::from("/tmp/reports/static/app/owner_graph.json"),
-            // `--modules` is optional and unread by gate; omitting it
-            // must not affect cycles-path resolution.
-            modules_root: None,
             cycles_path: None,
         };
         assert_eq!(
@@ -768,7 +752,6 @@ mod tests {
     fn cycles_path_override_wins() {
         let common = GateCommonArgs {
             owner_graph_path: PathBuf::from("/tmp/reports/static/app/owner_graph.json"),
-            modules_root: None,
             cycles_path: Some(PathBuf::from("/other/cycles.json")),
         };
         assert_eq!(

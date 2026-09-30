@@ -3,9 +3,8 @@
 //! `chunk_analysis_options.<chunk>.dataflow_aware_s_chain`).
 //!
 //! Each test pins one hole by asserting the owner graph carries the
-//! `Sequenced` edge the bundle's observable semantics require (red
-//! before the fix: edge absent), plus a runtime check that the
-//! emitted bundle preserves the original output once the edge exists.
+//! `Sequenced` edge the bundle's observable semantics require, plus a
+//! runtime check that the emitted bundle preserves the original output.
 //!
 //! Holes covered:
 //!
@@ -24,10 +23,6 @@
 
 use analysis::{DepKind, OwnerGraphReport};
 use debundle_e2e_support::*;
-
-fn dataflow_opts<'a>(source: &'a str, logical_modules: Vec<LogicalModuleEntry>) -> FixtureOpts<'a> {
-    FixtureOpts::new(source, logical_modules).with_dataflow_aware_s_chain()
-}
 
 fn owner_for_ordinal(graph: &OwnerGraphReport, ordinal: usize) -> &str {
     let node = graph
@@ -52,30 +47,29 @@ fn assert_sequenced_edge(graph: &OwnerGraphReport, later: &str, earlier: &str) {
     );
 }
 
-fn read_owner_graph(fixture: &Fixture) -> OwnerGraphReport {
-    read_json(&fixture.report_root.join("static/app/owner_graph.json"))
-}
-
 /// WAR: `limit`'s write of `globalThis.flag` must be sequenced after
 /// `snapshot`'s read of it, even though the last *writer* of the cell
 /// is the earlier statement.
 #[test]
 fn write_after_read_emits_sequenced_edge() {
-    let fixture = run_fixture(dataflow_opts(
-        r#"globalThis.flag = "first";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"globalThis.flag = "first";
 const snapshot = globalThis.flag;
 const limit = (globalThis.flag = "second", "L");
 console.log(snapshot + limit);
 export { snapshot, limit };
 "#,
-        vec![
-            logical_module_with_anon("mod_w", &[], &[r#"globalThis.flag = "first";"#]),
-            logical_module("mod_read", &[Member::new("snapshot")]),
-            logical_module("mod_w2", &[Member::new("limit")]),
-        ],
-    ));
+            vec![
+                logical_module_with_anon("mod_w", &[], &[r#"globalThis.flag = "first";"#]),
+                logical_module("mod_read", &[Member::new("snapshot")]),
+                logical_module("mod_w2", &[Member::new("limit")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "firstL\n");
-    let graph = read_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     assert_sequenced_edge(
         &graph,
         owner_for_binding(&graph, "limit"),
@@ -88,21 +82,28 @@ export { snapshot, limit };
 /// observable and must be preserved via the conservative fallback.
 #[test]
 fn console_log_pair_keeps_conservative_order() {
-    let fixture = run_fixture(dataflow_opts(
-        r#"const seed = "s";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const seed = "s";
 console.log("one");
 const base = "two" + seed;
 console.log(base);
 export { seed, base };
 "#,
-        vec![
-            logical_module("mod_seed", &[Member::new("seed")]),
-            logical_module_with_anon("mod_one", &[], &[r#"console.log("one");"#]),
-            logical_module_with_anon("mod_two", &[Member::new("base")], &["console.log(base);"]),
-        ],
-    ));
+            vec![
+                logical_module("mod_seed", &[Member::new("seed")]),
+                logical_module_with_anon("mod_one", &[], &[r#"console.log("one");"#]),
+                logical_module_with_anon(
+                    "mod_two",
+                    &[Member::new("base")],
+                    &["console.log(base);"],
+                ),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "one\ntwos\n");
-    let graph = read_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     // ordinals: 0 = seed, 1 = log("one"), 2 = base, 3 = log(base)
     assert_sequenced_edge(
         &graph,
@@ -117,20 +118,23 @@ export { seed, base };
 /// the call statement.
 #[test]
 fn at_init_call_writing_global_in_body_is_ordered_before_reader() {
-    let fixture = run_fixture(dataflow_opts(
-        r#"function setup() { globalThis.mode = "ready"; }
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function setup() { globalThis.mode = "ready"; }
 setup();
 const got = globalThis.mode;
 console.log(got);
 export { got };
 "#,
-        vec![
-            logical_module_with_anon("mod_boot", &[], &["setup();"]),
-            logical_module("mod_read", &[Member::new("got")]),
-        ],
-    ));
+            vec![
+                logical_module_with_anon("mod_boot", &[], &["setup();"]),
+                logical_module("mod_read", &[Member::new("got")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "ready\n");
-    let graph = read_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     // ordinals: 0 = setup decl, 1 = setup(), 2 = got, 3 = log
     assert_sequenced_edge(
         &graph,
@@ -144,24 +148,27 @@ export { got };
 /// after it.
 #[test]
 fn member_write_through_binding_is_ordered_before_reader() {
-    let fixture = run_fixture(dataflow_opts(
-        r#"const registry = {};
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const registry = {};
 registry.mode = "on";
 const snap = registry.mode;
 console.log(snap);
 export { registry, snap };
 "#,
-        vec![
-            logical_module_with_anon(
-                "mod_w",
-                &[Member::new("registry")],
-                &[r#"registry.mode = "on";"#],
-            ),
-            logical_module("mod_read", &[Member::new("snap")]),
-        ],
-    ));
+            vec![
+                logical_module_with_anon(
+                    "mod_w",
+                    &[Member::new("registry")],
+                    &[r#"registry.mode = "on";"#],
+                ),
+                logical_module("mod_read", &[Member::new("snap")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "on\n");
-    let graph = read_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     // ordinals: 0 = registry, 1 = member write, 2 = snap, 3 = log
     assert_sequenced_edge(
         &graph,
@@ -175,21 +182,24 @@ export { registry, snap };
 /// initial assignment.
 #[test]
 fn global_prop_update_expr_records_write() {
-    let fixture = run_fixture(dataflow_opts(
-        r#"globalThis.count = 1;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"globalThis.count = 1;
 globalThis.count++;
 const got = globalThis.count;
 console.log(got);
 export { got };
 "#,
-        vec![
-            logical_module_with_anon("mod_a", &[], &["globalThis.count = 1;"]),
-            logical_module_with_anon("mod_b", &[], &["globalThis.count++;"]),
-            logical_module("mod_read", &[Member::new("got")]),
-        ],
-    ));
+            vec![
+                logical_module_with_anon("mod_a", &[], &["globalThis.count = 1;"]),
+                logical_module_with_anon("mod_b", &[], &["globalThis.count++;"]),
+                logical_module("mod_read", &[Member::new("got")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "2\n");
-    let graph = read_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     // ordinals: 0 = init, 1 = increment, 2 = got, 3 = log
     assert_sequenced_edge(
         &graph,
@@ -204,20 +214,23 @@ export { got };
 /// chain so they stay ordered after the direct writer.
 #[test]
 fn global_this_alias_read_is_ordered_after_direct_writer() {
-    let fixture = run_fixture(dataflow_opts(
-        r#"const g = globalThis;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const g = globalThis;
 globalThis.tag = "x";
 const got = g.tag;
 console.log(got);
 export { g, got };
 "#,
-        vec![
-            logical_module_with_anon("mod_w", &[], &[r#"globalThis.tag = "x";"#]),
-            logical_module("mod_read", &[Member::new("got")]),
-        ],
-    ));
+            vec![
+                logical_module_with_anon("mod_w", &[], &[r#"globalThis.tag = "x";"#]),
+                logical_module("mod_read", &[Member::new("got")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "x\n");
-    let graph = read_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     // ordinals: 0 = g, 1 = tag write, 2 = got, 3 = log
     assert_sequenced_edge(
         &graph,
@@ -230,21 +243,24 @@ export { g, got };
 /// `globalThis`; writes through it must hit the same cells.
 #[test]
 fn window_alias_prop_write_orders_reader() {
-    let fixture = run_fixture(dataflow_opts(
-        r#"globalThis.window = globalThis;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"globalThis.window = globalThis;
 window.tag = "w";
 const got = window.tag;
 console.log(got);
 export { got };
 "#,
-        vec![
-            logical_module_with_anon("mod_boot", &[], &["globalThis.window = globalThis;"]),
-            logical_module_with_anon("mod_w", &[], &[r#"window.tag = "w";"#]),
-            logical_module("mod_read", &[Member::new("got")]),
-        ],
-    ));
+            vec![
+                logical_module_with_anon("mod_boot", &[], &["globalThis.window = globalThis;"]),
+                logical_module_with_anon("mod_w", &[], &[r#"window.tag = "w";"#]),
+                logical_module("mod_read", &[Member::new("got")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "w\n");
-    let graph = read_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     // ordinals: 0 = boot, 1 = window.tag write, 2 = got, 3 = log
     assert_sequenced_edge(
         &graph,
@@ -263,7 +279,7 @@ fn indirect_eval_is_a_barrier() {
     // out via the spec override so the per-statement dataflow
     // bail-out stays exercised on its own.
     let fixture = run_fixture(
-        dataflow_opts(
+        FixtureOpts::new(
             r#"globalThis.alpha = "a";
 const tagB = ((0, eval)("globalThis.beta = globalThis.alpha + 'b'"), "t");
 const got = globalThis.beta;
@@ -276,10 +292,11 @@ export { tagB, got };
                 logical_module("mod_read", &[Member::new("got")]),
             ],
         )
+        .with_dataflow_aware_s_chain()
         .with_admission_overrides(&["a1_eval"]),
     );
     assert_entry_output(&fixture, "ab t\n");
-    let graph = read_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     assert_sequenced_edge(
         &graph,
         owner_for_binding(&graph, "got"),

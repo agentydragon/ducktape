@@ -78,6 +78,11 @@ class LiveFollower:
         return len(self._streams)
 
     @property
+    def followed(self) -> frozenset[str]:
+        """The sessions with an event stream open, or being reopened: the stream keeps each one current."""
+        return frozenset(self._streams)
+
+    @property
     def problems(self) -> list[LiveProblem]:
         """What is failing now, most recent first; an entry goes once its source works again."""
         return sorted(self._problems.values(), key=lambda problem: problem.at, reverse=True)

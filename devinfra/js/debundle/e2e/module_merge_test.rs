@@ -4,10 +4,9 @@
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use debundle_cli::module::merge_modules;
-use debundle_e2e_support::{debundler_path, write_file};
+use debundle_e2e_support::{run_debundle, write_text_file};
 use serde_yaml::Value;
 use tempfile::TempDir;
 
@@ -30,19 +29,16 @@ fn merges_two_sources_into_target_and_deletes_sources() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
 
-    write_file(
-        root,
-        "ui/target.yaml",
+    write_text_file(
+        &root.join("ui/target.yaml"),
         "members:\n  - selector: { binding: { name: alpha } }\n",
     );
-    write_file(
-        root,
-        "ui/src1.yaml",
+    write_text_file(
+        &root.join("ui/src1.yaml"),
         "members:\n  - selector: { binding: { name: bravo } }\n",
     );
-    write_file(
-        root,
-        "ui/src2.yaml",
+    write_text_file(
+        &root.join("ui/src2.yaml"),
         "members:\n  - selector: { binding: { name: charlie } }\n",
     );
 
@@ -83,19 +79,16 @@ fn duplicate_member_name_across_sources_errors_and_keeps_sources() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
 
-    write_file(
-        root,
-        "target.yaml",
+    write_text_file(
+        &root.join("target.yaml"),
         "members:\n  - selector: { binding: { name: keep } }\n",
     );
-    write_file(
-        root,
-        "a.yaml",
+    write_text_file(
+        &root.join("a.yaml"),
         "members:\n  - selector: { binding: { name: collide } }\n",
     );
-    write_file(
-        root,
-        "b.yaml",
+    write_text_file(
+        &root.join("b.yaml"),
         "members:\n  - selector: { binding: { name: collide } }\n",
     );
 
@@ -122,14 +115,12 @@ fn duplicate_member_name_between_member_and_source_match_binding_errors() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
 
-    write_file(
-        root,
-        "target.yaml",
+    write_text_file(
+        &root.join("target.yaml"),
         "members:\n  - name: Widget\n    selector: { binding: { name: minifiedWidget } }\n",
     );
-    write_file(
-        root,
-        "src.yaml",
+    write_text_file(
+        &root.join("src.yaml"),
         "source_matches:\n  - match: 'const selected = makeWidget();'\n    bindings:\n      - local: selected\n        name: Widget\n",
     );
 
@@ -148,32 +139,27 @@ fn duplicate_member_name_between_member_and_source_match_binding_errors() {
 fn modules_merge_new_subcommand_path_works_through_binary() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write_file(
-        root,
-        "target.yaml",
+    write_text_file(
+        &root.join("target.yaml"),
         "members:\n  - selector: { binding: { name: a } }\n",
     );
-    write_file(
-        root,
-        "src.yaml",
+    write_text_file(
+        &root.join("src.yaml"),
         "members:\n  - selector: { binding: { name: b } }\n",
     );
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "merge",
-            "--modules",
-            root.to_str().unwrap(),
-            "--target",
-            "target.yaml",
-            "src.yaml",
-            // Skip the gate: this test only exercises the YAML
-            // splice surface, not the realizability gate.
-            "--no-verify",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "merge",
+        "--modules",
+        root.to_str().unwrap(),
+        "--target",
+        "target.yaml",
+        "src.yaml",
+        // Skip the gate: this test only exercises the YAML
+        // splice surface, not the realizability gate.
+        "--no-verify",
+    ]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -190,22 +176,19 @@ fn modules_merge_can_create_missing_target_through_binary() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
     let src_body = "members:\n  - selector: { binding: { name: a } }\n";
-    write_file(root, "src.yaml", src_body);
+    write_text_file(&root.join("src.yaml"), src_body);
 
-    let dry_run = Command::new(debundler_path())
-        .args([
-            "modules",
-            "merge",
-            "--modules",
-            root.to_str().unwrap(),
-            "--target",
-            "new/group",
-            "src",
-            "--dry-run",
-            "--no-verify",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let dry_run = run_debundle(&[
+        "modules",
+        "merge",
+        "--modules",
+        root.to_str().unwrap(),
+        "--target",
+        "new/group",
+        "src",
+        "--dry-run",
+        "--no-verify",
+    ]);
     assert!(
         dry_run.status.success(),
         "stderr: {}",
@@ -219,19 +202,16 @@ fn modules_merge_can_create_missing_target_through_binary() {
     assert!(!root.join("new/group.yaml").exists());
     assert_eq!(fs::read_to_string(root.join("src.yaml")).unwrap(), src_body);
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "merge",
-            "--modules",
-            root.to_str().unwrap(),
-            "--target",
-            "new/group",
-            "src",
-            "--no-verify",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "merge",
+        "--modules",
+        root.to_str().unwrap(),
+        "--target",
+        "new/group",
+        "src",
+        "--no-verify",
+    ]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -249,25 +229,22 @@ fn modules_merge_dry_run_does_not_modify_files() {
     let root = dir.path();
     let src_body = "members:\n  - selector: { binding: { name: b } }\n";
     let target_body = "members:\n  - selector: { binding: { name: a } }\n";
-    write_file(root, "target.yaml", target_body);
-    write_file(root, "src.yaml", src_body);
+    write_text_file(&root.join("target.yaml"), target_body);
+    write_text_file(&root.join("src.yaml"), src_body);
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "merge",
-            "--modules",
-            root.to_str().unwrap(),
-            "--target",
-            "target.yaml",
-            "src.yaml",
-            "--dry-run",
-            // Skip the gate: this test only exercises the YAML
-            // splice surface.
-            "--no-verify",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "merge",
+        "--modules",
+        root.to_str().unwrap(),
+        "--target",
+        "target.yaml",
+        "src.yaml",
+        "--dry-run",
+        // Skip the gate: this test only exercises the YAML
+        // splice surface.
+        "--no-verify",
+    ]);
     assert!(out.status.success());
     assert!(
         String::from_utf8_lossy(&out.stdout).contains("dry-run"),
@@ -289,14 +266,12 @@ fn merge_carries_source_matches_into_target() {
     // owners on the next `debundle run`.
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write_file(
-        root,
-        "target.yaml",
+    write_text_file(
+        &root.join("target.yaml"),
         "members:\n  - selector: { binding: { name: a } }\n",
     );
-    write_file(
-        root,
-        "src.yaml",
+    write_text_file(
+        &root.join("src.yaml"),
         "source_matches:\n  - match: 'const x = 1;'\n    bindings:\n      - local: x\n        name: ExportedX\nmembers: []\n",
     );
 
@@ -322,19 +297,16 @@ fn merge_concatenates_module_comments_with_divider() {
     // with a `--- from <source>:` divider.
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write_file(
-        root,
-        "target.yaml",
+    write_text_file(
+        &root.join("target.yaml"),
         "comment: target overview\nmembers:\n  - selector: { binding: { name: a } }\n",
     );
-    write_file(
-        root,
-        "src1.yaml",
+    write_text_file(
+        &root.join("src1.yaml"),
         "comment: src1 notes\nmembers:\n  - selector: { binding: { name: b } }\n",
     );
-    write_file(
-        root,
-        "src2.yaml",
+    write_text_file(
+        &root.join("src2.yaml"),
         "members:\n  - selector: { binding: { name: c } }\n",
     );
 
@@ -361,14 +333,12 @@ fn merge_concatenates_module_comments_with_divider() {
 fn merge_into_uncommented_target_adopts_source_comment_with_divider() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write_file(
-        root,
-        "target.yaml",
+    write_text_file(
+        &root.join("target.yaml"),
         "members:\n  - selector: { binding: { name: a } }\n",
     );
-    write_file(
-        root,
-        "src.yaml",
+    write_text_file(
+        &root.join("src.yaml"),
         "comment: src notes\nmembers:\n  - selector: { binding: { name: b } }\n",
     );
 
@@ -388,14 +358,12 @@ fn merge_appends_provenance_to_existing_note() {
     // is non-emitting scratch metadata that survives rewriter edits.
     let dir = TempDir::new().unwrap();
     let root = dir.path();
-    write_file(
-        root,
-        "target.yaml",
+    write_text_file(
+        &root.join("target.yaml"),
         "note: hand-authored debt rationale\nmembers:\n  - selector: { binding: { name: a } }\n",
     );
-    write_file(
-        root,
-        "src.yaml",
+    write_text_file(
+        &root.join("src.yaml"),
         "members:\n  - selector: { binding: { name: b } }\n",
     );
 

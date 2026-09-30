@@ -1,11 +1,13 @@
-//! Single source of truth for the three-clause validity predicate
+//! Single source of truth for the validity predicate
 //! (docs/design.md "Valid peels and atomic modules"). The validator and any
 //! hypothetical-move planner checks reach the verdict through this module —
 //! see "Realizability primitive" in `docs/design.md`.
 //!
-//! Scope: clauses 2 (no cross-destination rebinding writes) and 3
-//! (no multi-module SCC in the constraining-edge subgraph of the
-//! quotient). Clause 1 (importability) is policy that lives in
+//! Scope: clauses 2 (no cross-destination rebinding writes) and 3 (the
+//! two-pass gate: Pass 1, no multi-module SCC in the constraining-edge
+//! subgraph of the quotient; Pass 2, no TDZ proved by the ESM evaluation
+//! simulator in any I-graph SCC that carries a constraining edge). Clause 1
+//! (importability) is policy that lives in
 //! `materialize_logical_modules` per "Emit-side responsibilities":
 //! residual-entry bindings are importable by construction via the
 //! auto-grown export pass. Callers that need a private-read blocker
@@ -19,9 +21,8 @@
 //!   start path. `O(N + M)` per call.
 //! - `RealizabilityIndex`: a stateful index that owns a working
 //!   `Partition` and supports `push`/`undo` of `PartitionDelta`s.
-//!   `verdict()` reads the current state. A non-mutating overlay query is
-//!   kept as a tested future optimization path for planner checks that need
-//!   hypothetical owner moves.
+//!   `verdict()` reads the current state. A non-mutating overlay query
+//!   answers hypothetical owner moves for planner checks without pushing.
 //!
 //! The transactional API is backed by a rollbackable quotient index:
 //! owner-graph edges are fixed, so `push`/`undo` only updates quotient
@@ -57,8 +58,9 @@ use incremental_quotient::{IncrementalQuotient, JournalEntry, QuotientOverlay};
 
 /// Canonical in-memory diagnosis of one offending module-quotient
 /// SCC. The presence of any such diagnosis on a
-/// [`RealizabilityVerdict`] violates clause 3 (multi-module SCC in
-/// the constraining-edge subgraph of the quotient).
+/// [`RealizabilityVerdict`] violates clause 3 (Pass 1: multi-module SCC
+/// in the constraining-edge subgraph of the quotient; Pass 2: a TDZ
+/// proved by the ESM evaluation simulator).
 ///
 /// This is the in-memory consumer of the shared [`SccCore`] shape
 /// (typed `ModuleId`s + `OwnerEdgeId` evidence, no rendering) plus one
@@ -227,11 +229,11 @@ pub fn check_realizability(
     // `(at-init forward, lazy back)` candidates: the constraining
     // subgraph alone is acyclic, but the lazy back-edge closes a
     // cycle in the runtime DFS topology. Lemma 2
-    // (`chunk_source_import_order`) reverses entry's import order
-    // within each I-SCC so DFS lands on the dependent first and
-    // unwinds through the dependency; the simulator below checks
-    // whether that reversal actually rescues evaluation given the
-    // spec's full import topology.
+    // (`chunk_source_import_order_from_adjacency`) reverses entry's
+    // import order within each I-SCC so DFS lands on the dependent
+    // first and unwinds through the dependency; the simulator below
+    // checks whether that reversal actually rescues evaluation given
+    // the spec's full import topology.
     let mut i_graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
     for (from, succs) in &canonical.i_successors {
         for to in succs {
@@ -348,9 +350,9 @@ pub fn simulated_evaluation_post_order(
     .post_order
 }
 
-/// Mutable index over a working partition. The single shared
-/// implementation of the three-clause predicate, exposed in the
-/// transactional shape docs/design.md "Realizability primitive" prescribes.
+/// Mutable index over a working partition: the incremental form of the
+/// predicate `check_realizability` computes (docs/design.md
+/// "Realizability primitive").
 ///
 /// Each `push` snapshots the prior assignments of the touched owners,
 /// updates only quotient edge buckets incident to those owners, and
