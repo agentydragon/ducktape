@@ -1685,7 +1685,8 @@ function shapeRow(relation: string, value: Record<string, unknown>) {
   return {
     headers: { relation: ["public", relation] as ["public", string], operation: "insert" as const },
     key: `"public"."${relation}"/${identity.map((part) => JSON.stringify(String(part))).join("/")}`,
-    value,
+    // PostgreSQL JSON columns arrive as their JSON representation; ShapeStream parses this scalar.
+    value: relation === "thread_payload_chunk" ? { ...value, text: JSON.stringify(value.text) } : value,
   };
 }
 

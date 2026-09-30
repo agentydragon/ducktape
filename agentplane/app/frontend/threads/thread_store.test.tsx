@@ -38,7 +38,7 @@ const SCHEMAS: Record<string, Json> = {
     field: { type: "text", not_null: true, pk_index: 4 },
     generation: { type: "int8", not_null: true, pk_index: 5 },
     chunk_index: { type: "int8", not_null: true, pk_index: 6 },
-    text: { type: "text", not_null: true },
+    text: { type: "json", not_null: true },
   },
 };
 
@@ -138,7 +138,8 @@ function chunk(owner: string, index: number, text: string): Json {
     field: "text",
     generation: "1",
     chunk_index: String(index),
-    text,
+    // Electric sends JSON columns as JSON-encoded scalars; its client decodes this to a string.
+    text: JSON.stringify(text),
   };
 }
 
@@ -704,6 +705,24 @@ it("loads the bodies in view in one read, as far as each reference spans, and fo
     change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 4) })),
   ]);
   await vi.waitFor(() => expect(body("item-1")).toBe("Hello there!"));
+});
+
+it("decodes a NUL-containing JSON payload chunk from Electric as the original string", async () => {
+  const sync = stubSync();
+  sync.through = "1";
+  sync.entities = [viewState("1"), item(1, "epoch-1", { text_ref: textRef("nul", 1) })];
+  sync.chunks = [chunk("nul", 0, "before\u0000after")];
+  const container = await renderThread(
+    <Shown>
+      {(rows) =>
+        rows.map((row) => (row.textRef ? <Body key={row.entityId} id={row.entityId} reference={row.textRef} /> : null))
+      }
+    </Shown>
+  );
+
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-body="item-1"]')?.textContent).toBe("before\u0000after")
+  );
 });
 
 it("loads commands by id as a quoted array", async () => {

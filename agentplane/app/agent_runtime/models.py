@@ -195,7 +195,8 @@ class ThreadPayloadChunk(Base):
     field: Mapped[str] = mapped_column(Text, primary_key=True)
     generation: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     chunk_index: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    text: Mapped[str] = mapped_column(Text)
+    # JSON string scalars preserve U+0000 as an escape while decoding back to a string in readers.
+    text: Mapped[str] = mapped_column(JSON)
 
 
 class ThreadEvidence(Base):
