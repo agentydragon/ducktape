@@ -350,134 +350,182 @@ _SEED_CONFIG_SCRIPT = textwrap.dedent(
     """
 )
 
+# `openclaw doctor --fix --non-interactive` once per OpenClaw release, before the gateway starts:
+# the repair upstream's own updater runs after installing a release, and the only tool that
+# performs agent-database migrations the gateway refuses to run itself. Gated on the version
+# because doctor re-reads and snapshots every database, which on this state disk costs about as
+# long as the gateway's own startup preflight; delete .doctor-fix-version to force a rerun.
+#
+# Upstream takes no file copy before migrating, so the SQLite files are copied first. A retry
+# after a failed doctor reuses the *.pending copy rather than overwriting it with half-migrated
+# files, and only the latest successful run's copy is kept.
+_DOCTOR_FIX_SCRIPT = textwrap.dedent(
+    """\
+    set -eu
+    cd "$HOME/.openclaw"
+    version=$(openclaw --version)
+    if [ -f .doctor-fix-version ] && [ "$(cat .doctor-fix-version)" = "$version" ]; then
+      echo "openclaw doctor --fix already completed for $version"
+      exit 0
+    fi
+    mkdir -p doctor-backups
+    backup=$(find doctor-backups -mindepth 1 -maxdepth 1 -name '*.pending')
+    if [ -z "$backup" ]; then
+      rm -rf doctor-backups/*.partial
+      set -- agents/*/agent/*.sqlite* state/*.sqlite*
+      need_kib=$(du -ck "$@" | tail -n 1 | cut -f 1)
+      free_kib=$(df -Pk . | awk 'NR == 2 { print $4 }')
+      if [ "$free_kib" -lt $((2 * need_kib)) ]; then
+        echo "state volume has $free_kib KiB free; backup and migration need 2 x $need_kib KiB" >&2
+        exit 1
+      fi
+      stamp=$(date -u +%Y%m%dT%H%M%SZ)
+      for db in "$@"; do
+        mkdir -p "doctor-backups/$stamp.partial/${db%/*}"
+        cp -p "$db" "doctor-backups/$stamp.partial/$db"
+      done
+      mv "doctor-backups/$stamp.partial" "doctor-backups/$stamp.pending"
+      backup="doctor-backups/$stamp.pending"
+    fi
+    openclaw doctor --fix --non-interactive
+    find doctor-backups -mindepth 1 -maxdepth 1 ! -path "$backup" -exec rm -rf {} +
+    mv "$backup" "${backup%.pending}"
+    echo "$version" > .doctor-fix-version
+    """
+)
+
+
+def _gateway_env() -> list[k8s.EnvVar]:
+    return [
+        # The image does not set HOME to the state dir; without it the gateway looks under
+        # the wrong home directory and exits "Missing config".
+        _env("HOME", _HOME),
+        _env("OPENCLAW_CONFIG_PATH", f"{_HOME}/.openclaw/openclaw.json5"),
+        _env("NPM_CONFIG_PREFIX", f"{_HOME}/.local"),
+        _env("NPM_CONFIG_CACHE", f"{_HOME}/.cache/npm"),
+        # LiteLLM's Gemini embedding route is request-quota limited. Keep a single request
+        # stream and wait long enough for its observed Retry-After windows instead of
+        # compounding throttled requests.
+        _env("OPENCLAW_MEMORY_INDEX_CONCURRENCY", "1"),
+        _env("OPENCLAW_MEMORY_RETRY_BASE_DELAY_MS", "30000"),
+        _env("OPENCLAW_MEMORY_RETRY_MAX_DELAY_MS", "120000"),
+        # Full SQLite integrity checks cross-check every index against its table in
+        # O(N log N) time. On this agent's rotational state disk, the already-current
+        # database took over 20 minutes and outlived OpenClaw's 60-second default startup
+        # migration lease. Even quick_check exceeded that lease on the live 871 MB database,
+        # so skip startup integrity pragmas; schema and canonical-index checks still run, and
+        # full integrity checks remain available offline.
+        _env("OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK", "none"),
+        # Startup migrations hold a synchronous SQLite file-exclusion scope on the rotational
+        # state disk. Keep the maintenance lease alive for that bounded recovery window
+        # instead of letting the 60-second default expire.
+        _env("OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS", "86400000"),
+        # Turn off the gateway's background database integrity verifier. Not an upstream
+        # knob -- openclaw/patch-openclaw-npm-dist.mjs adds it, because upstream guards the
+        # verifier only behind a vitest-only test flag and hardcodes its schedule.
+        #
+        # It forks a worker that copies every registered agent database out of this volume
+        # into the container filesystem and scans the copy: 2.25 GiB read and 1.59 GiB
+        # written per pass against a ~2.1 GB database set, on the rotational disk this agent
+        # already saturates. It runs five minutes after start and then daily -- but this
+        # gateway aborts on the V8 heap limit every ~2h50m, so the daily pass never arrives
+        # and the five-minute one restarts from zero every boot. It has not been observed to
+        # complete.
+        #
+        # Nothing else quarantines a corrupted state or agent database, so this trades a
+        # check that is not finishing for the I/O it costs.
+        #
+        # CLEANUP(added 2026-09-11): restore "on" once the gateway stops aborting on the heap
+        # limit, so the daily pass can actually run.
+        _env("OPENCLAW_DATABASE_VERIFY", "off"),
+        # Keep provider, compaction, and agent-loop debug records on stdout so cluster
+        # logging captures them in Loki. OpenClaw's sensitive-value redaction remains enabled
+        # at its default.
+        _env("OPENCLAW_LOG_LEVEL", "debug"),
+        # A placeholder, not a credential. The real PAT lives in the egress proxy, which swaps
+        # this value into `Authorization` on the way out to GitHub -- in `Bearer <value>` and
+        # inside base64 `Basic user:<value>` alike, so both the REST API and the git transport
+        # work. The agent cannot read the token from its environment or from /proc, which is
+        # what F7 previously left exposed.
+        #
+        # The agent has to be told the contract, because the proxy only acts on requests
+        # carrying the placeholder: authenticate to GitHub with $GH_PAT as if it were a real
+        # token. A request without it is not a failure, just an unauthenticated request.
+        #
+        # Also expose the same inert placeholder under GitHub's standard `GITHUB_TOKEN` name.
+        # OpenClaw's generic exec environment filter treats it as a credential, although its
+        # current local-Gateway path can restore ambient values for native GitHub tooling.
+        # The proxy still sees only the placeholder and replaces it in scoped outbound
+        # Authorization headers. See F7, F10, F16.
+        _env("GITHUB_TOKEN", public_coder_proxy.GITHUB_TOKEN_PLACEHOLDER),
+        _env("GH_PAT", public_coder_proxy.GITHUB_TOKEN_PLACEHOLDER),
+        # Non-secret Haku Console bearer placeholder. The real static-Agent credential exists
+        # only in Haku Console and this agent's iron-proxy, which replaces this value only in
+        # Authorization headers sent to the exact haku.allegedly.works host.
+        _env("HAKU_CONSOLE_TOKEN", public_coder_proxy.HAKU_CONSOLE_TOKEN_PLACEHOLDER),
+        # Native ClickHouse reader credentials for normalized and raw AIQuota history. This
+        # is deliberately a non-secret placeholder: the sibling Iron proxy swaps it only
+        # inside Authorization for the private ClickHouse ClusterIP host.
+        _env("CLICKHOUSE_PUBLIC_CODER_USER", client.PUBLIC_CODER_USER),
+        _env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", public_coder_proxy.CLICKHOUSE_PASSWORD_PLACEHOLDER),
+        # This placeholder grants access only when iron-proxy substitutes it for
+        # aiquota.allegedly.works' two read-only API paths. The actual shared bearer is
+        # mounted only into the proxy container.
+        _env("AIQUOTA_API_BEARER_TOKEN", public_coder_proxy.AIQUOTA_BEARER_PLACEHOLDER),
+        # This is likewise an inert placeholder. The real Brave Search API key is mounted only
+        # in the egress proxy and substituted solely in X-Subscription-Token requests to
+        # api.search.brave.com.
+        _env("BRAVE_API_KEY", public_coder_proxy.BRAVE_API_KEY_PLACEHOLDER),
+        SecretRef(namespace=NAMESPACE, name="litellm-key-public-coder-agent")
+        .key("api-key")
+        .env_var("OPENCLAW_LITELLM_API_KEY"),
+        # Authentik authenticates proxied browser traffic. OpenClaw's subagent completion
+        # path calls the local gateway directly and therefore uses the documented
+        # trusted-proxy local-password fallback instead of proxy identity headers.
+        _GATEWAY_PASSWORD.key("password").env_var("OPENCLAW_GATEWAY_PASSWORD"),
+        # OpenClaw's password login puts this value in the Matrix JSON body. It is a proxy
+        # placeholder: iron-proxy replaces it with the real controller-owned password only
+        # on the Matrix login endpoint.
+        _env("MATRIX_PASSWORD", public_coder_proxy.MATRIX_PASSWORD_PLACEHOLDER),
+        # Node does not honour proxy environment variables by default.
+        _env("NODE_USE_ENV_PROXY", "1"),
+        _env("HTTP_PROXY", _EGRESS_PROXY),
+        _env("HTTPS_PROXY", _EGRESS_PROXY),
+        # LiteLLM is in-cluster and must not go through the proxy. Do not bypass every
+        # Service DNS name or the cluster Service CIDR: ClickHouse is intentionally sent
+        # through Iron so its password placeholder cannot reach the ClusterIP service
+        # unchanged.
+        _env("NO_PROXY", "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"),
+        # The proxy terminates TLS, so its root must be trusted. The proxy's trust Bundle is
+        # mounted over the system trust store below, which covers every OpenSSL and GnuTLS
+        # client at once -- so no per-tool variables are needed.
+        #
+        # That is not tidying. `GIT_SSL_CAINFO` is one of the names OpenClaw strips from the
+        # exec tool's environment, and git links GnuTLS, which reads neither `SSL_CERT_FILE`
+        # (an OpenSSL variable) nor `CURL_CA_BUNDLE` (read by the curl binary, not by
+        # libcurl) -- so git through this proxy could not verify at all. F17.
+        #
+        # Node is the exception: it carries its own roots and ignores the system store. Point
+        # it at the MOUNTED path -- Node ignores a nonexistent file silently and then fails
+        # with SELF_SIGNED_CERT_IN_CHAIN, which reads like a trust problem rather than a
+        # typo. F18.
+        _env("NODE_EXTRA_CA_CERTS", _CA_BUNDLE),
+        # Python is the other runtime that ignores the mounted system bundle: pip trusts only
+        # its vendored certifi, and hermetic interpreters carry their own OpenSSL whose
+        # compiled-in CA path is not Debian's. Without these, pip fetches fail TLS against the
+        # egress proxy even though pypi.org is allowlisted. Mirrors the same vars in
+        # haku-openclaw-spike.
+        _env("SSL_CERT_FILE", _CA_BUNDLE),
+        _env("REQUESTS_CA_BUNDLE", _CA_BUNDLE),
+        _env("PIP_CERT", _CA_BUNDLE),
+    ]
+
 
 def _openclaw_container() -> k8s.Container:
     return k8s.Container(
         name="openclaw",
         image=_IMAGE,
-        env=[
-            # The image does not set HOME to the state dir; without it the gateway looks under
-            # the wrong home directory and exits "Missing config".
-            _env("HOME", _HOME),
-            _env("OPENCLAW_CONFIG_PATH", f"{_HOME}/.openclaw/openclaw.json5"),
-            _env("NPM_CONFIG_PREFIX", f"{_HOME}/.local"),
-            _env("NPM_CONFIG_CACHE", f"{_HOME}/.cache/npm"),
-            # LiteLLM's Gemini embedding route is request-quota limited. Keep a single request
-            # stream and wait long enough for its observed Retry-After windows instead of
-            # compounding throttled requests.
-            _env("OPENCLAW_MEMORY_INDEX_CONCURRENCY", "1"),
-            _env("OPENCLAW_MEMORY_RETRY_BASE_DELAY_MS", "30000"),
-            _env("OPENCLAW_MEMORY_RETRY_MAX_DELAY_MS", "120000"),
-            # Full SQLite integrity checks cross-check every index against its table in
-            # O(N log N) time. On this agent's rotational state disk, the already-current
-            # database took over 20 minutes and outlived OpenClaw's 60-second default startup
-            # migration lease. Even quick_check exceeded that lease on the live 871 MB database,
-            # so skip startup integrity pragmas; schema and canonical-index checks still run, and
-            # full integrity checks remain available offline.
-            _env("OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK", "none"),
-            # Startup migrations hold a synchronous SQLite file-exclusion scope on the rotational
-            # state disk. Keep the maintenance lease alive for that bounded recovery window
-            # instead of letting the 60-second default expire.
-            _env("OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS", "86400000"),
-            # Turn off the gateway's background database integrity verifier. Not an upstream
-            # knob -- openclaw/patch-openclaw-npm-dist.mjs adds it, because upstream guards the
-            # verifier only behind a vitest-only test flag and hardcodes its schedule.
-            #
-            # It forks a worker that copies every registered agent database out of this volume
-            # into the container filesystem and scans the copy: 2.25 GiB read and 1.59 GiB
-            # written per pass against a ~2.1 GB database set, on the rotational disk this agent
-            # already saturates. It runs five minutes after start and then daily -- but this
-            # gateway aborts on the V8 heap limit every ~2h50m, so the daily pass never arrives
-            # and the five-minute one restarts from zero every boot. It has not been observed to
-            # complete.
-            #
-            # Nothing else quarantines a corrupted state or agent database, so this trades a
-            # check that is not finishing for the I/O it costs.
-            #
-            # CLEANUP(added 2026-09-11): restore "on" once the gateway stops aborting on the heap
-            # limit, so the daily pass can actually run.
-            _env("OPENCLAW_DATABASE_VERIFY", "off"),
-            # Keep provider, compaction, and agent-loop debug records on stdout so cluster
-            # logging captures them in Loki. OpenClaw's sensitive-value redaction remains enabled
-            # at its default.
-            _env("OPENCLAW_LOG_LEVEL", "debug"),
-            # A placeholder, not a credential. The real PAT lives in the egress proxy, which swaps
-            # this value into `Authorization` on the way out to GitHub -- in `Bearer <value>` and
-            # inside base64 `Basic user:<value>` alike, so both the REST API and the git transport
-            # work. The agent cannot read the token from its environment or from /proc, which is
-            # what F7 previously left exposed.
-            #
-            # The agent has to be told the contract, because the proxy only acts on requests
-            # carrying the placeholder: authenticate to GitHub with $GH_PAT as if it were a real
-            # token. A request without it is not a failure, just an unauthenticated request.
-            #
-            # Also expose the same inert placeholder under GitHub's standard `GITHUB_TOKEN` name.
-            # OpenClaw's generic exec environment filter treats it as a credential, although its
-            # current local-Gateway path can restore ambient values for native GitHub tooling.
-            # The proxy still sees only the placeholder and replaces it in scoped outbound
-            # Authorization headers. See F7, F10, F16.
-            _env("GITHUB_TOKEN", public_coder_proxy.GITHUB_TOKEN_PLACEHOLDER),
-            _env("GH_PAT", public_coder_proxy.GITHUB_TOKEN_PLACEHOLDER),
-            # Non-secret Haku Console bearer placeholder. The real static-Agent credential exists
-            # only in Haku Console and this agent's iron-proxy, which replaces this value only in
-            # Authorization headers sent to the exact haku.allegedly.works host.
-            _env("HAKU_CONSOLE_TOKEN", public_coder_proxy.HAKU_CONSOLE_TOKEN_PLACEHOLDER),
-            # Native ClickHouse reader credentials for normalized and raw AIQuota history. This
-            # is deliberately a non-secret placeholder: the sibling Iron proxy swaps it only
-            # inside Authorization for the private ClickHouse ClusterIP host.
-            _env("CLICKHOUSE_PUBLIC_CODER_USER", client.PUBLIC_CODER_USER),
-            _env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", public_coder_proxy.CLICKHOUSE_PASSWORD_PLACEHOLDER),
-            # This placeholder grants access only when iron-proxy substitutes it for
-            # aiquota.allegedly.works' two read-only API paths. The actual shared bearer is
-            # mounted only into the proxy container.
-            _env("AIQUOTA_API_BEARER_TOKEN", public_coder_proxy.AIQUOTA_BEARER_PLACEHOLDER),
-            # This is likewise an inert placeholder. The real Brave Search API key is mounted only
-            # in the egress proxy and substituted solely in X-Subscription-Token requests to
-            # api.search.brave.com.
-            _env("BRAVE_API_KEY", public_coder_proxy.BRAVE_API_KEY_PLACEHOLDER),
-            SecretRef(namespace=NAMESPACE, name="litellm-key-public-coder-agent")
-            .key("api-key")
-            .env_var("OPENCLAW_LITELLM_API_KEY"),
-            # Authentik authenticates proxied browser traffic. OpenClaw's subagent completion
-            # path calls the local gateway directly and therefore uses the documented
-            # trusted-proxy local-password fallback instead of proxy identity headers.
-            _GATEWAY_PASSWORD.key("password").env_var("OPENCLAW_GATEWAY_PASSWORD"),
-            # OpenClaw's password login puts this value in the Matrix JSON body. It is a proxy
-            # placeholder: iron-proxy replaces it with the real controller-owned password only
-            # on the Matrix login endpoint.
-            _env("MATRIX_PASSWORD", public_coder_proxy.MATRIX_PASSWORD_PLACEHOLDER),
-            # Node does not honour proxy environment variables by default.
-            _env("NODE_USE_ENV_PROXY", "1"),
-            _env("HTTP_PROXY", _EGRESS_PROXY),
-            _env("HTTPS_PROXY", _EGRESS_PROXY),
-            # LiteLLM is in-cluster and must not go through the proxy. Do not bypass every
-            # Service DNS name or the cluster Service CIDR: ClickHouse is intentionally sent
-            # through Iron so its password placeholder cannot reach the ClusterIP service
-            # unchanged.
-            _env("NO_PROXY", "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"),
-            # The proxy terminates TLS, so its root must be trusted. The proxy's trust Bundle is
-            # mounted over the system trust store below, which covers every OpenSSL and GnuTLS
-            # client at once -- so no per-tool variables are needed.
-            #
-            # That is not tidying. `GIT_SSL_CAINFO` is one of the names OpenClaw strips from the
-            # exec tool's environment, and git links GnuTLS, which reads neither `SSL_CERT_FILE`
-            # (an OpenSSL variable) nor `CURL_CA_BUNDLE` (read by the curl binary, not by
-            # libcurl) -- so git through this proxy could not verify at all. F17.
-            #
-            # Node is the exception: it carries its own roots and ignores the system store. Point
-            # it at the MOUNTED path -- Node ignores a nonexistent file silently and then fails
-            # with SELF_SIGNED_CERT_IN_CHAIN, which reads like a trust problem rather than a
-            # typo. F18.
-            _env("NODE_EXTRA_CA_CERTS", _CA_BUNDLE),
-            # Python is the other runtime that ignores the mounted system bundle: pip trusts only
-            # its vendored certifi, and hermetic interpreters carry their own OpenSSL whose
-            # compiled-in CA path is not Debian's. Without these, pip fetches fail TLS against the
-            # egress proxy even though pypi.org is allowlisted. Mirrors the same vars in
-            # haku-openclaw-spike.
-            _env("SSL_CERT_FILE", _CA_BUNDLE),
-            _env("REQUESTS_CA_BUNDLE", _CA_BUNDLE),
-            _env("PIP_CERT", _CA_BUNDLE),
-        ],
+        env=_gateway_env(),
         ports=[_SERVICE.port.k8s_container_port()],
         # Without this the Deployment reports 1/1 Running whenever a process exists, which hid
         # two different outages during the 2026.8.1 recovery: a gateway crash-looping every ~4
@@ -534,6 +582,20 @@ def _openclaw_container() -> k8s.Container:
     )
 
 
+def _doctor_fix_container(gateway: k8s.Container) -> k8s.Container:
+    """The gateway's image, environment and mounts, so doctor selects the same state and config."""
+    return k8s.Container(
+        name="doctor-fix",
+        image=gateway.image,
+        command=["sh", "-c", _DOCTOR_FIX_SCRIPT],
+        # The Nix wrapper defaults this to 1, under which `doctor --fix` refuses to start
+        # (openclaw/AGENTS.md § Version bumps). "" falls back to the default; only "0" disables it.
+        env=[*_gateway_env(), _env("OPENCLAW_NIX_MODE", "0")],
+        volume_mounts=gateway.volume_mounts,
+        resources=gateway.resources,
+    )
+
+
 def _deployment(scope: Construct) -> None:
     """OpenClaw as a plain Deployment rather than an OpenClawInstance.
 
@@ -547,6 +609,7 @@ def _deployment(scope: Construct) -> None:
     The cost is losing the operator's autoUpdate and CRD ergonomics. Everything else (image,
     config, state layout) is identical to the operator's shape.
     """
+    gateway = _openclaw_container()
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -590,9 +653,12 @@ def _deployment(scope: Construct) -> None:
                                 k8s.VolumeMount(name="cfg", mount_path="/cfg"),
                                 k8s.VolumeMount(name="data", mount_path="/state"),
                             ],
-                        )
+                        ),
+                        # After seed-config: doctor must validate and repair against the config
+                        # the gateway is about to run.
+                        _doctor_fix_container(gateway),
                     ],
-                    containers=[_openclaw_container()],
+                    containers=[gateway],
                     volumes=[
                         k8s.Volume(
                             name="data",
