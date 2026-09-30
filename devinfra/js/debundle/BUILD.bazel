@@ -1,4 +1,7 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
+load(":optimized_cc_library.bzl", "optimized_cc_library")
 load(":pipeline_analysis_test.bzl", "pipeline_analysis_test_suite")
 
 package(default_visibility = ["//visibility:public"])
@@ -1126,6 +1129,51 @@ rust_test(
         ":selector_constraint_model_builder",
         ":selector_ir",
     ],
+)
+
+rust_prost_library(
+    name = "cp_model_rust_proto",
+    proto = "@or-tools//ortools/sat:cp_model_proto",
+)
+
+rust_prost_library(
+    name = "sat_parameters_rust_proto",
+    proto = "@or-tools//ortools/sat:sat_parameters_proto",
+)
+
+# OR-Tools' CP-SAT C API, linked into Rust. The C++ runtime is not implied by a
+# Rust link line.
+cc_library(
+    name = "ortools_cp_solver_impl",
+    linkopts = ["-lstdc++"],
+    tags = ["manual"],
+    visibility = ["//visibility:private"],
+    deps = ["@or-tools//ortools/sat/c_api:cp_solver_c"],
+)
+
+# Link the solver through this target only: it is always built in `opt`.
+optimized_cc_library(
+    name = "ortools_cp_solver",
+    dep = ":ortools_cp_solver_impl",
+)
+
+rust_library(
+    name = "ortools_cpsat_ffi",
+    srcs = ["ortools_cpsat_ffi.rs"],
+    edition = "2024",
+    link_deps = [":ortools_cp_solver"],
+    deps = [
+        ":cp_model_rust_proto",
+        ":sat_parameters_rust_proto",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
+    ],
+)
+
+rust_test(
+    name = "ortools_cpsat_ffi_test",
+    size = "small",
+    crate = ":ortools_cpsat_ffi",
+    edition = "2024",
 )
 
 rust_library(
