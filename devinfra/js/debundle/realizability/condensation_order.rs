@@ -15,9 +15,9 @@
 //! distinct equivalence layers are maintained:
 //!
 //! - **Contraction aliases** (`apply_contract`): committed module
-//!   identifications. Persistent — they survive `invalidate` +
-//!   rebuild, because the base graph may keep edges keyed by either
-//!   pre-contraction node.
+//!   identifications. Persistent — they survive a rebuild, because
+//!   the base graph may keep edges keyed by either pre-contraction
+//!   node.
 //! - **SCC membership**: alias classes that are mutually reachable in
 //!   the base graph. Recomputed on rebuild; coarsened incrementally by
 //!   edge insertions and contractions in between.
@@ -42,17 +42,13 @@
 //!   The base may keep the loser's edges keyed by the loser or be
 //!   relabeled to the winner before the call — traversal maps every
 //!   node through the alias layer either way.
-//! - [`Self::invalidate`] when the base changed out-of-band (the undo
-//!   path): the structure marks itself stale and lazily rebuilds from
-//!   the base on the next query — undo is off the hot path everywhere,
-//!   so no journaled DSU is maintained (plan §4, journal interaction).
 //!
-//! **Monotonicity**: within a committed run, insertions and
-//! contractions only ever coarsen the SCC partition, which is why a
-//! plain (non-rollbackable) union-find suffices. Edge *removals* can
-//! split an SCC; a committed removal internal to a multi-module SCC
-//! marks the structure stale instead of attempting a split, and the
-//! next query rebuilds in `O(|V| + |E|)`.
+//! **Monotonicity**: insertions and contractions only ever coarsen
+//! the SCC partition, which is why a plain union-find (no rollback)
+//! suffices. Edge *removals* can split an SCC; a committed removal
+//! internal to a multi-module SCC marks the structure stale instead
+//! of attempting a split, and the next query rebuilds in
+//! `O(|V| + |E|)`.
 //!
 //! ## Speculative queries
 //!
@@ -141,8 +137,8 @@ pub struct CondensationOrder<N> {
     /// in the current traversal iff it equals `current_epoch`.
     visited_epoch: Vec<u32>,
     current_epoch: u32,
-    /// Set by committed removals inside multi-module SCCs and by
-    /// `invalidate`; cleared by the lazy rebuild.
+    /// Set by committed removals inside multi-module SCCs; cleared by
+    /// the lazy rebuild.
     stale: bool,
 }
 
@@ -176,12 +172,6 @@ where
             current_epoch: 0,
             stale: true,
         }
-    }
-
-    /// Mark the maintained order stale. The next query rebuilds from
-    /// the base graph. Use after out-of-band base mutations (undo).
-    pub fn invalidate(&mut self) {
-        self.stale = true;
     }
 
     /// Whether `n`'s SCC contains at least two modules (alias
@@ -1338,21 +1328,6 @@ mod tests {
         order
             .validate(&base)
             .expect("valid across parallel changes");
-    }
-
-    #[test]
-    fn invalidate_forces_rebuild_reflecting_out_of_band_edits() {
-        let mut base = graph(&[(0, 1)]);
-        let mut order = CondensationOrder::new();
-        assert!(!order.is_in_multi_scc(&base, 0));
-        // Mutate the base without telling the structure (the undo
-        // path), then invalidate.
-        base.increment_edge(1, 0);
-        order.invalidate();
-        assert!(order.is_in_multi_scc(&base, 0), "rebuild sees the cycle");
-        order
-            .validate(&base)
-            .expect("valid after invalidate+rebuild");
     }
 
     #[test]

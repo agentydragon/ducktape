@@ -7,19 +7,7 @@ use petgraph::visit::{
     NodeIndexable,
 };
 
-/// Journal position for [`RollbackDiGraph`]. Rolling back to a mark
-/// restores every edge count changed after the mark was created.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) struct GraphMark(usize);
-
-#[derive(Debug, Clone)]
-struct EdgeJournalEntry<N> {
-    from: N,
-    to: N,
-    old_count: usize,
-}
-
-/// Counted directed graph with LIFO rollback and small graph queries.
+/// Counted directed graph with small graph queries.
 ///
 /// The graph stores one adjacency edge for each `(from, to)` pair
 /// whose count is nonzero. Parallel edge reasons are represented by
@@ -31,7 +19,6 @@ pub struct RollbackDiGraph<N> {
     edge_counts: BTreeMap<(N, N), usize>,
     out_edges: BTreeMap<N, BTreeSet<N>>,
     in_edges: BTreeMap<N, BTreeSet<N>>,
-    journal: Vec<EdgeJournalEntry<N>>,
 }
 
 impl<N> Default for RollbackDiGraph<N>
@@ -52,36 +39,7 @@ where
             edge_counts: BTreeMap::new(),
             out_edges: BTreeMap::new(),
             in_edges: BTreeMap::new(),
-            journal: Vec::new(),
         }
-    }
-
-    pub(crate) fn mark(&self) -> GraphMark {
-        GraphMark(self.journal.len())
-    }
-
-    pub(crate) fn rollback_to(&mut self, mark: GraphMark) {
-        while self.journal.len() > mark.0 {
-            let entry = self
-                .journal
-                .pop()
-                .expect("journal length checked before pop");
-            self.restore_edge_count(entry.from, entry.to, entry.old_count);
-        }
-    }
-
-    /// Discard the rollback journal for everything applied so far.
-    /// Call when the current graph state is committed — i.e. no
-    /// rollback past this point will ever be requested. Without this,
-    /// permanently-applied mutations accumulate journal entries for
-    /// the lifetime of the graph.
-    ///
-    /// Invalidates every outstanding [`GraphMark`]: marks taken
-    /// before `commit` must not be passed to `rollback_to` afterwards
-    /// (the caller contract in `RealizabilityIndex` guarantees this —
-    /// speculative push/undo pairs are balanced before a commit).
-    pub(crate) fn commit(&mut self) {
-        self.journal.clear();
     }
 
     pub(crate) fn edge_count(&self, from: N, to: N) -> usize {
@@ -94,13 +52,7 @@ where
     }
 
     pub(crate) fn increment_edge(&mut self, from: N, to: N) {
-        let old_count = self.edge_count(from, to);
-        self.journal.push(EdgeJournalEntry {
-            from,
-            to,
-            old_count,
-        });
-        self.restore_edge_count(from, to, old_count + 1);
+        self.set_edge_count(from, to, self.edge_count(from, to) + 1);
     }
 
     pub(crate) fn decrement_edge(&mut self, from: N, to: N) {
@@ -109,12 +61,7 @@ where
             old_count > 0,
             "RollbackDiGraph::decrement_edge called for absent edge",
         );
-        self.journal.push(EdgeJournalEntry {
-            from,
-            to,
-            old_count,
-        });
-        self.restore_edge_count(from, to, old_count - 1);
+        self.set_edge_count(from, to, old_count - 1);
     }
 
     pub(crate) fn successors(&self, node: N) -> impl Iterator<Item = N> + '_ {
@@ -186,7 +133,7 @@ where
             .collect()
     }
 
-    fn restore_edge_count(&mut self, from: N, to: N, count: usize) {
+    fn set_edge_count(&mut self, from: N, to: N, count: usize) {
         let old_count = self.edge_count(from, to);
         if old_count == count {
             return;
@@ -385,45 +332,6 @@ mod tests {
     }
 
     #[test]
-    fn rollback_restores_edge_counts_and_adjacency() {
-        let mut graph = RollbackDiGraph::new();
-        graph.increment_edge("a", "b");
-        let mark = graph.mark();
-        graph.increment_edge("a", "b");
-        graph.increment_edge("b", "a");
-        graph.decrement_edge("a", "b");
-
-        assert_eq!(graph.edge_count("a", "b"), 1);
-        assert_eq!(graph.edge_count("b", "a"), 1);
-        assert!(graph.contains_edge("b", "a"));
-
-        graph.rollback_to(mark);
-        assert_eq!(graph.edge_count("a", "b"), 1);
-        assert_eq!(graph.edge_count("b", "a"), 0);
-        assert!(graph.contains_edge("a", "b"));
-        assert!(!graph.contains_edge("b", "a"));
-    }
-
-    #[test]
-    fn commit_truncates_journal_and_keeps_state_rollbackable_from_new_baseline() {
-        let mut graph = RollbackDiGraph::new();
-        graph.increment_edge("a", "b");
-        graph.increment_edge("b", "c");
-        graph.commit();
-        // Committed edges survive; a rollback to a post-commit mark
-        // only unwinds post-commit work.
-        let mark = graph.mark();
-        graph.increment_edge("c", "a");
-        graph.rollback_to(mark);
-        assert_eq!(graph.edge_count("a", "b"), 1);
-        assert_eq!(graph.edge_count("b", "c"), 1);
-        assert_eq!(graph.edge_count("c", "a"), 0);
-        // Rolling back to the post-commit baseline is a no-op.
-        graph.rollback_to(graph.mark());
-        assert_eq!(graph.edge_pairs().count(), 2);
-    }
-
-    #[test]
     fn scc_containing_is_forward_reverse_reachability_intersection() {
         let mut graph = RollbackDiGraph::new();
         graph.increment_edge(1, 2);
@@ -464,12 +372,8 @@ mod tests {
 
         assert_eq!(ours, pet);
 
-        let mark = graph.mark();
         graph.increment_edge(6, 5);
         ours = graph.all_sccs().into_iter().collect();
         assert!(ours.contains(&BTreeSet::from([5, 6])));
-        graph.rollback_to(mark);
-        ours = graph.all_sccs().into_iter().collect();
-        assert_eq!(ours, pet);
     }
 }

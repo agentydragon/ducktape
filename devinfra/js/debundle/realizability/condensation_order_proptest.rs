@@ -1,9 +1,9 @@
 //! Proptest differential suite for [`CondensationOrder`]: random
 //! digraphs driven through proptest-generated interleaved sequences of
-//! edge insertions / removals / contractions / invalidations with
-//! speculative overlay queries, checked **after every operation**
-//! against a petgraph `tarjan_scc` brute-force recompute (the shared
-//! reference implementations in `condensation_order::test_support`).
+//! edge insertions / removals / contractions with speculative overlay
+//! queries, checked **after every operation** against a petgraph
+//! `tarjan_scc` brute-force recompute (the shared reference
+//! implementations in `condensation_order::test_support`).
 //!
 //! The case count is bounded for CI (see [`ci_config`]); for a longer
 //! local run override it via `bbr test //devinfra/js/debundle:gate_test
@@ -31,7 +31,6 @@ enum Op {
     InsertEdge(usize, usize),
     RemoveEdge(usize, usize),
     Contract { winner: usize, loser: usize },
-    Invalidate,
 }
 
 /// Speculative overlay entry: `remove` zeroes the base edge's
@@ -63,7 +62,6 @@ fn arb_op() -> impl Strategy<Value = Op> {
         4 => (arb_node(), arb_node()).prop_map(|(a, b)| Op::InsertEdge(a, b)),
         3 => (arb_node(), arb_node()).prop_map(|(a, b)| Op::RemoveEdge(a, b)),
         2 => (arb_node(), arb_node()).prop_map(|(winner, loser)| Op::Contract { winner, loser }),
-        1 => Just(Op::Invalidate),
     ]
 }
 
@@ -154,7 +152,6 @@ proptest! {
                         alias.union(winner, loser);
                     }
                 }
-                Op::Invalidate => order.invalidate(),
             }
             let context = format!("step {step_index}: {:?}", step.op);
             assert_multi_matches_brute(&mut order, &base, &alias, &universe, &context);

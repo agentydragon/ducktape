@@ -55,8 +55,8 @@
 //! (`check_merge_boolean`) and the evidence-producing diagnostic path
 //! (`would_be_cycles_after_contract`) are the same evaluation — one
 //! entry point, two output shapes — so the gate cannot drift from the
-//! materializer's verdict. Per committed contract, the kernel pushes
-//! `PartitionDelta::MoveOwners` deltas onto the index; speculative
+//! materializer's verdict. Per committed contract, the kernel applies
+//! `PartitionDelta::MoveOwners` deltas to the index; speculative
 //! queries read it non-mutatingly through the overlay path (every
 //! speculative merge delta targets the single post-merge module,
 //! asserted in `realizability_cycles_after_contract`).
@@ -771,19 +771,12 @@ impl QuotientGraph {
             self.classes[winner.0].is_pre_existing_module = true;
         }
         self.update_class_adjacency_after_merge(winner, loser);
-        // Commit the realizability-index deltas. These are pushed
-        // permanently (no undo) because the kernel mutation just
-        // landed. Update the class -> module map: winner gets
+        // Apply the realizability-index deltas: the kernel mutation
+        // just landed. Update the class -> module map: winner gets
         // post_module, loser is dropped.
         for delta in deltas {
-            self.realizability_index.push(&self.owner_graph, delta);
+            self.realizability_index.apply(&self.owner_graph, delta);
         }
-        // The deltas above are committed — nothing will undo them —
-        // so drop their rollback state. Without this, the index's
-        // journals grow without bound across the greedy's committed
-        // merges (speculative queries read through the non-mutating
-        // overlay and never touch the journal).
-        self.realizability_index.commit();
         // If `post_module` was freshly minted, bump the counter so
         // subsequent merges don't collide.
         if post_module.0.0 >= self.next_module_idx {
@@ -1541,16 +1534,13 @@ impl QuotientGraph {
             .map(|m| OwnerId(m.0))
             .collect();
         if !owners_to_move.is_empty() {
-            self.realizability_index.push(
+            self.realizability_index.apply(
                 &self.owner_graph,
                 PartitionDelta::MoveOwners {
                     owners: owners_to_move,
                     to: new_module,
                 },
             );
-            // Permanent push — drop its rollback state (see
-            // `merge_classes_unchecked`).
-            self.realizability_index.commit();
         }
         self.class_module_id.insert(c, new_module);
     }

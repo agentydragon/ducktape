@@ -98,7 +98,7 @@ that remain positive. Verify against a fresh profile first.
 
 ### #6 — Per-merge updates to the persistent realizability index
 
-Every `contract` pushes deltas to `realizability_index`. Cost depends on the
+Every `contract` applies deltas to `realizability_index`. Cost depends on the
 index's internal representation. Investigate only if a fresh profile
 shows this material.
 
@@ -128,17 +128,12 @@ corpus or pipeline shape has changed materially.
 2. **`vendor::strip::sweep_unreachable_top_level`.** 6.40% Children % in
    the prior profile. Likely amenable to indexed reachability or
    per-chunk caching.
-3. **Use the overlay realizability fast path where hypothetical moves
-   remain.** Candidate-style evaluation should use `RealizabilityIndex`'
-   `verdict_after_moving_owners_touching` where possible instead of the
-   rollbacking push/scope path, avoiding mutation of the maintained
-   quotient during repeated what-if checks.
-4. **Keep harness emission proportional to the work.** Most remaining
+3. **Keep harness emission proportional to the work.** Most remaining
    `emit_browser_harness` cost is `materialize_artifact_scripts` →
    `write_tree_reports` (item 1), not the harness JS emission. Split
    browser-harness generation from non-browser runs where practical, and
    avoid recopying unchanged non-JS assets.
-5. **AST visit churn in `prepare_js_chunks`.** SWC parser / lexer /
+4. **AST visit churn in `prepare_js_chunks`.** SWC parser / lexer /
    `visit_children_with` still occupy ~10–15% summed across many
    sub-2.5%-self entries. No single parser symbol is over the priority
    threshold; revisit after items 1–2.

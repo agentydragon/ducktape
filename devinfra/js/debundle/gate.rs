@@ -21,8 +21,8 @@ pub use chunk_analysis::ChunkAnalysis;
 pub use chunk_factorization::ChunkFactorization;
 pub use esm_import_order::EsmImportOrder;
 pub use realizability::{
-    CondensationOrder, CrossRebindEdge, DeltaHandle, LadderDecision, PartitionDelta,
-    RealizabilityIndex, RealizabilityVerdict, SccDiagnosis, SccRejection, check_realizability,
+    CondensationOrder, CrossRebindEdge, LadderDecision, PartitionDelta, RealizabilityIndex,
+    RealizabilityVerdict, SccDiagnosis, SccRejection, check_realizability,
     check_realizability_touching, simulated_evaluation_post_order,
 };
 pub use rollback_graph::RollbackDiGraph;
