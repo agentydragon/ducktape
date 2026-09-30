@@ -34,7 +34,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
 )
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import copy_source_file, render_source_file
+from cluster.cdk8s.generation import copy_source_file
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.secret_ref import SecretRef
@@ -58,7 +58,7 @@ _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
 _SETUP_SCRIPT = "setup-gpt-oss-v2.sh"
 _LINK_SCRIPT = "link-ssd-models.sh"
 _NGINX_CONF = "nginx.conf"
-# Container-side mount paths, which the scripts name too.
+# Container-side mount paths; link-ssd-models.sh and setup-gpt-oss-v2.sh spell them too.
 _MODELS_DIR = "/models"
 _SSD_MODELS_DIR = "/ssd-models"
 _SCRIPTS_DIR = "/scripts"
@@ -216,7 +216,12 @@ def _auth_proxy_container() -> k8s.Container:
         name="auth-proxy",
         image="nginx:1.31-alpine",
         ports=[_AUTH_PROXY.port.k8s_container_port()],
-        env=[_DIRECT_TOKEN.env_var("OLLAMA_DIRECT_TOKEN")],
+        # nginx-auth-proxy.conf.template reads all three.
+        env=[
+            _DIRECT_TOKEN.env_var("OLLAMA_DIRECT_TOKEN"),
+            k8s.EnvVar(name="AUTH_PROXY_PORT", value=str(_AUTH_PROXY.pod_port)),
+            k8s.EnvVar(name="OLLAMA_API_PORT", value=str(SERVICE.pod_port)),
+        ],
         volume_mounts=[
             k8s.VolumeMount(name="nginx-templates", mount_path="/etc/nginx/templates"),
             k8s.VolumeMount(name="nginx-config", mount_path=f"/etc/nginx/{_NGINX_CONF}", sub_path=_NGINX_CONF),
@@ -459,15 +464,8 @@ def write_config_maps(root: Path) -> list[ConfigMapArgs]:
             namespace=_NAMESPACE,
             options=fixed_name,
             files=[
-                render_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_SETUP_SCRIPT}", scripts=_SCRIPTS_DIR),
-                render_source_file(
-                    root,
-                    OUTPUT_DIR,
-                    f"{_SOURCE_DIR}/{_LINK_SCRIPT}",
-                    models=_MODELS_DIR,
-                    ssd_models=_SSD_MODELS_DIR,
-                    scripts=_SCRIPTS_DIR,
-                ),
+                copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_SETUP_SCRIPT}"),
+                copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_LINK_SCRIPT}"),
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/qwen38-ssd-shards.tsv"),
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/qwen38-ssd-derived-shards.tsv"),
             ],
@@ -478,15 +476,10 @@ def write_config_maps(root: Path) -> list[ConfigMapArgs]:
             options=fixed_name,
             files=[
                 # The nginx image renders `/etc/nginx/templates/*.template` into `conf.d`,
-                # substituting environment variables; `default.conf` replaces the image's own.
+                # substituting the auth-proxy container's environment variables; `default.conf`
+                # replaces the image's own.
                 "default.conf.template="
-                + render_source_file(
-                    root,
-                    OUTPUT_DIR,
-                    f"{_SOURCE_DIR}/nginx-auth-proxy.conf.template",
-                    listen_port=_AUTH_PROXY.pod_port,
-                    ollama_port=SERVICE.pod_port,
-                ),
+                + copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/nginx-auth-proxy.conf.template"),
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_NGINX_CONF}"),
             ],
         ),

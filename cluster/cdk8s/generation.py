@@ -5,7 +5,6 @@ from __future__ import annotations
 import posixpath
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path, PurePosixPath
-from string import Template
 
 from cdk8s import ApiObjectMetadata, App, Chart, Names, Yaml
 from cdk8s_plus_34 import ConfigMap
@@ -57,25 +56,6 @@ def copy_source_file(root: Path, directory: str, source: str) -> str:
     out_dir = root / directory
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / name).write_bytes(get_required_path(own_repo_rlocation(source)).read_bytes())
-    return name
-
-
-class _SourceTemplate(Template):
-    # Not `$`, which shell and nginx payloads spend on their own variables.
-    delimiter = "@"
-
-
-def render_source_file(root: Path, directory: str, source: str, /, **values: object) -> str:
-    """Render `source`, a repo-relative native file shipped as this generator's runfiles data,
-    into `directory` under its own name; return that name for the `kustomization.yaml`.
-    Each `@{name}` placeholder takes the keyword `name`, a value a generator module owns."""
-    name = PurePosixPath(source).name
-    template = _SourceTemplate(get_required_path(own_repo_rlocation(source)).read_text())
-    if unused := values.keys() - set(template.get_identifiers()):
-        raise ValueError(f"{source=} has no placeholder for {unused=}")
-    out_dir = root / directory
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / name).write_text(template.substitute(values))
     return name
 
 

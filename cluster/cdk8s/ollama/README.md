@@ -1,6 +1,6 @@
 # Ollama
 
-`app.py` renders Ollama's ConfigMaps from the files beside it: `setup-gpt-oss-v2.sh`,
+`app.py` packages Ollama's ConfigMaps from the files beside it: `setup-gpt-oss-v2.sh`,
 `link-ssd-models.sh` and the two shard manifests (`gpt-oss-scripts`), and the nginx
 bearer proxy's configuration (`ollama-auth-proxy`). `qwen38-chat-template.jinja` is
 not deployed; it is the derivation input below.

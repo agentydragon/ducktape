@@ -24,7 +24,7 @@ echo "=== registering SSD Qwen3.8 IQ4_XS ==="
 # Creating the manifest does not load the model or copy weights onto HDD.
 # The derived first shard changes only the GGUF chat-template metadata. Keep the
 # original split filenames as /api/create keys, so Ollama groups all three shards.
-derived_digest=$(awk 'NR == 1 { print $1 } END { if (NR != 1) exit 1 }' @{scripts}/qwen38-ssd-derived-shards.tsv)
+derived_digest=$(awk 'NR == 1 { print $1 } END { if (NR != 1) exit 1 }' /scripts/qwen38-ssd-derived-shards.tsv)
 create_request=$(awk -v derived_digest="$derived_digest" '
   BEGIN {
     printf "{\"model\":\"qwen3.8-flash-next-iq4xs\",\"files\":{"
@@ -41,7 +41,7 @@ create_request=$(awk -v derived_digest="$derived_digest" '
     if (replaced != 1) exit 1
     print "},\"parameters\":{\"num_ctx\":131072,\"num_thread\":6,\"temperature\":0.6,\"min_p\":0.05},\"stream\":false}"
   }
-' @{scripts}/qwen38-ssd-shards.tsv)
+' /scripts/qwen38-ssd-shards.tsv)
 if ! create_response=$(curl -sS --fail-with-body --max-time 120 \
   -H 'Content-Type: application/json' \
   --data-binary "$create_request" "$OLLAMA_HOST/api/create"); then
