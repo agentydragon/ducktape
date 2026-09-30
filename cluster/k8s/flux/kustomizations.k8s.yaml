@@ -3227,10 +3227,6 @@ metadata:
   name: study-casino
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   deletionPolicy: Orphan
   dependsOn:
     - name: cnpg

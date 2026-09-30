@@ -32,12 +32,12 @@ spec:
   instances: 3
   managed:
     roles:
-      - comment: Read-only access for sandbox agents (see cluster/k8s/study-casino/readonly-role.sql)
+      - comment: Read-only access for sandbox agents; object GRANTs come from the study-casino-db-readonly-provisioner Job.
         ensure: present
         login: true
         name: study_casino_ro
         passwordSecret:
-          name: study-casino-db-readonly
+          name: study-casino-db-ro
   monitoring:
     enablePodMonitor: true
   probes:
@@ -47,6 +47,52 @@ spec:
   storage:
     size: 1Gi
     storageClass: local-path-ovh-ssd
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: study-casino-db-ro-generator
+  namespace: study-casino
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: study-casino-db-ro
+  namespace: study-casino
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: study-casino-db-ro-generator
+  refreshInterval: 8760h
+  target:
+    name: study-casino-db-ro
+    template:
+      data:
+        DATABASE_URL: postgresql://study_casino_ro:{{ .password }}@study-casino-db-rw.study-casino.svc:5432/studycasino
+        dbname: studycasino
+        host: study-casino-db-rw.study-casino.svc
+        password: "{{ .password }}"
+        port: "5432"
+        username: study_casino_ro
+      metadata:
+        annotations:
+          description: Read-only Postgres credentials for sandbox agents. CNPG sets the study_casino_ro password from this Secret; Reflector mirrors it into claude-sandbox.
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: claude-sandbox
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: claude-sandbox
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
 ---
 apiVersion: batch/v1
 kind: Job
