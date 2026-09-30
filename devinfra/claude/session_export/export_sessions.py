@@ -10,6 +10,7 @@ Usage:
     bb run //devinfra/claude/session_export:export_sessions_bin -- verify --out DIR
     SESSION_SYNC_DATABASE_URL=postgresql://... \\
         bb run //devinfra/claude/session_export:export_sessions_bin -- sync --credentials-file F
+    bb run //devinfra/claude/session_export:export_sessions_bin -- serve   # settings from SESSION_SYNC_*
 """
 
 import argparse
@@ -21,21 +22,21 @@ from contextlib import asynccontextmanager
 from enum import StrEnum
 
 import httpx
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import uvicorn
 
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
 from devinfra.claude.session_export.archive import export_all, verify_archive
 from devinfra.claude.session_export.database_migrate import RUNNER
 from devinfra.claude.session_export.models import SessionSummary, canonical_id
-from devinfra.claude.session_export.oauth import CALLBACK_PORT, CredentialStore, OAuthTokenSource, pair
+from devinfra.claude.session_export.oauth import CALLBACK_PORT, DEFAULT_SCOPES, CredentialStore, OAuthTokenSource, pair
+from devinfra.claude.session_export.settings import ServeSettings, SyncSettings
 from devinfra.claude.session_export.store import SessionStore, make_engine
+from devinfra.claude.session_export.supervisor import SyncSupervisor
 from devinfra.claude.session_export.sync import sync_once
+from devinfra.claude.session_export.web import create_app
 from util.bazel.workspace import get_build_working_directory
 
 logger = logging.getLogger(__name__)
-
-# The narrowest scopes worth trying first; `--scope` overrides.
-DEFAULT_SCOPES = ("user:profile", "user:sessions:claude_code")
 
 
 class Command(StrEnum):
@@ -44,14 +45,7 @@ class Command(StrEnum):
     COUNT = "count"
     VERIFY = "verify"
     SYNC = "sync"
-
-
-class SyncSettings(BaseSettings):
-    """The connection string is a secret, so it comes from the environment rather than the command line."""
-
-    model_config = SettingsConfigDict(env_prefix="SESSION_SYNC_")
-
-    database_url: str
+    SERVE = "serve"
 
 
 def announce(url: str) -> None:
@@ -99,8 +93,6 @@ async def open_api(args: argparse.Namespace) -> AsyncIterator[SessionsApi]:
 async def run_sync(args: argparse.Namespace) -> None:
     database_url = SyncSettings().database_url
     await asyncio.to_thread(RUNNER.apply, database_url)
-    # A deployment starts before anyone has paired, and pairs inside the running container.
-    await CredentialStore(get_build_working_directory() / args.credentials_file).wait_until_stored()
     engine = make_engine(database_url)
     store = SessionStore(engine)
     try:
@@ -110,6 +102,40 @@ async def run_sync(args: argparse.Namespace) -> None:
                 if args.once:
                     return
                 await asyncio.sleep(args.interval)
+    finally:
+        await engine.dispose()
+
+
+async def run_serve() -> None:
+    """The sync and the page that pairs it, in one process: it owns the credential the page mints."""
+    settings = ServeSettings()
+    await asyncio.to_thread(RUNNER.apply, settings.database_url)
+    engine = make_engine(settings.database_url)
+    try:
+        async with httpx.AsyncClient(timeout=30) as token_client:
+            supervisor = SyncSupervisor(
+                credentials=CredentialStore(settings.credentials_file),
+                store=SessionStore(engine),
+                token_client=token_client,
+                interval=settings.interval_seconds,
+                workers=settings.workers,
+            )
+            server = uvicorn.Server(
+                uvicorn.Config(
+                    create_app(supervisor=supervisor, settings=settings),
+                    host=settings.host,
+                    port=settings.port,
+                    log_level="info",
+                )
+            )
+
+            async def serve_then_stop_syncing(syncing: asyncio.Task[None]) -> None:
+                await server.serve()
+                syncing.cancel()
+
+            # If the loop dies the process must too, so the pod restarts rather than serving a page over nothing.
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(serve_then_stop_syncing(tasks.create_task(supervisor.run())))
     finally:
         await engine.dispose()
 
@@ -126,6 +152,9 @@ async def async_main(command: Command, args: argparse.Namespace) -> None:
         return
     if command is Command.SYNC:
         await run_sync(args)
+        return
+    if command is Command.SERVE:
+        await run_serve()
         return
     async with open_api(args) as api:
         if command is Command.EXPORT:
@@ -161,6 +190,7 @@ def main() -> None:
     count = commands.add_parser(Command.COUNT, help="print how many events the account holds; downloads nothing")
     verify = commands.add_parser(Command.VERIFY, help="re-read --out and check it; no network")
     verify.add_argument("--out", required=True)
+    commands.add_parser(Command.SERVE, help="run the sync with a login-protected page that pairs it and shows status")
     sync = commands.add_parser(
         Command.SYNC, help="keep a Postgres database level with every session's events, until stopped"
     )

@@ -11,21 +11,23 @@ import os
 import secrets
 from collections.abc import AsyncIterator, Callable, Sequence, Set
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Self
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer
-from tenacity import AsyncRetrying, retry_if_exception_type, wait_fixed
 
 from devinfra.claude.claude_api.oauth_client import AUTHORIZE_URL, CLIENT_ID, TOKEN_URL
 
 logger = logging.getLogger(__name__)
 
 CALLBACK_PORT = 54545  # the port of the redirect URI registered for the public client
+# The narrowest scopes worth trying first; enough to list sessions and read events.
+DEFAULT_SCOPES = ("user:profile", "user:sessions:claude_code")
 REFRESH_SKEW = timedelta(minutes=5)
-STORE_POLL_SECONDS = 5
 
 
 class Organization(BaseModel):
@@ -71,15 +73,8 @@ class CredentialStore:
     def load(self) -> OAuthCredential:
         return OAuthCredential.model_validate_json(self._path.read_text())
 
-    async def wait_until_stored(self) -> None:
-        """Returns once `pair` has written the file. Polls, since the writer is another process."""
-        if not self._path.exists():
-            logger.info("no credential at %s: run `pair --credentials-file %s` here; waiting", self._path, self._path)
-        async for attempt in AsyncRetrying(
-            retry=retry_if_exception_type(FileNotFoundError), wait=wait_fixed(STORE_POLL_SECONDS)
-        ):
-            with attempt:
-                self._path.stat()
+    def exists(self) -> bool:
+        return self._path.exists()
 
     def save(self, credential: OAuthCredential) -> None:
         partial = self._path.with_name(f"{self._path.name}.part")
@@ -203,6 +198,58 @@ async def callback_listener(*, state: str, port: int) -> AsyncIterator[asyncio.F
         yield outcome
 
 
+@dataclass(frozen=True)
+class PairingAttempt:
+    """One authorization-code + PKCE attempt: the verifier and state its redemption has to present."""
+
+    verifier: str
+    state: str
+    scopes: tuple[str, ...]
+    port: int
+
+    @classmethod
+    def start(cls, *, scopes: Sequence[str], port: int) -> Self:
+        return cls(verifier=secrets.token_urlsafe(64), state=secrets.token_urlsafe(32), scopes=tuple(scopes), port=port)
+
+    @property
+    def url(self) -> str:
+        return authorization_url(
+            state=self.state, challenge=pkce_challenge(self.verifier), scopes=self.scopes, port=self.port
+        )
+
+    def code_from_redirect(self, redirect_url: str) -> str:
+        """The authorization code in the URL the browser was sent to after approval. Nothing listens on the loopback
+        redirect, so the page fails to load and the URL is read from the address bar. Errors do not echo the URL."""
+        query = parse_qs(urlsplit(redirect_url.strip()).query)
+        if not secrets.compare_digest(query.get("state", [""])[0].encode(), self.state.encode()):
+            raise ValueError("the pasted URL is not from this pairing attempt: its state differs")
+        if "code" not in query:
+            raise ValueError(f"authorization refused: {query.get('error', ['no code returned'])[0]}")
+        return query["code"][0]
+
+
+async def redeem(client: httpx.AsyncClient, attempt: PairingAttempt, code: str) -> OAuthCredential:
+    response = await _post_token(
+        client,
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri(attempt.port),
+            "client_id": CLIENT_ID,
+            "code_verifier": attempt.verifier,
+            "state": attempt.state,
+        },
+    )
+    tokens = PairedTokens.model_validate_json(response.content)
+    return OAuthCredential(
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        expires_at=datetime.now(UTC) + timedelta(seconds=tokens.expires_in),
+        scopes=frozenset(tokens.scope.split()) if tokens.scope else frozenset(attempt.scopes),
+        organization_uuid=tokens.organization.uuid,
+    )
+
+
 async def pair(
     client: httpx.AsyncClient,
     store: CredentialStore,
@@ -211,35 +258,16 @@ async def pair(
     port: int,
     announce: Callable[[str], None],
 ) -> OAuthCredential:
-    """Run the authorization-code + PKCE flow once and save the resulting credential.
+    """Run the authorization-code + PKCE flow once through a loopback listener and save the credential.
 
     `announce` receives the URL the human must open; the listener is already serving when it is called.
     Waits for the browser without limit: bound it with `asyncio.timeout`.
     """
-    verifier = secrets.token_urlsafe(64)
-    state = secrets.token_urlsafe(32)
-    async with callback_listener(state=state, port=port) as code_future:
-        announce(authorization_url(state=state, challenge=pkce_challenge(verifier), scopes=scopes, port=port))
+    attempt = PairingAttempt.start(scopes=scopes, port=port)
+    async with callback_listener(state=attempt.state, port=port) as code_future:
+        announce(attempt.url)
         code = await code_future
-    response = await _post_token(
-        client,
-        {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri(port),
-            "client_id": CLIENT_ID,
-            "code_verifier": verifier,
-            "state": state,
-        },
-    )
-    tokens = PairedTokens.model_validate_json(response.content)
-    credential = OAuthCredential(
-        access_token=tokens.access_token,
-        refresh_token=tokens.refresh_token,
-        expires_at=datetime.now(UTC) + timedelta(seconds=tokens.expires_in),
-        scopes=frozenset(tokens.scope.split()) if tokens.scope else frozenset(scopes),
-        organization_uuid=tokens.organization.uuid,
-    )
+    credential = await redeem(client, attempt, code)
     store.save(credential)
     logger.info(
         "paired organization=%s scopes=%s expires_at=%s",

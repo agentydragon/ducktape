@@ -1,5 +1,6 @@
+import json
 import re
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -9,7 +10,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncEngine
-from tenacity import wait_none
+from tenacity import AsyncRetrying, stop_after_delay, wait_fixed, wait_none
 from testcontainers.postgres import PostgresContainer
 
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
@@ -23,6 +24,29 @@ from util.testing.postgres_fixtures import postgres_container
 TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid="test-org-uuid")
 TEST_ACCESS_TOKEN = "test-access-token"
 TEST_EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+PAIRED_RESPONSE = {
+    "access_token": TEST_ACCESS_TOKEN,
+    "refresh_token": "test-refresh-1",
+    "expires_in": 3600,
+    "scope": "user:profile",
+    "organization": {"uuid": TEST_COOKIE.org_uuid},
+}
+
+
+class FakeTokenEndpoint:
+    """Answers every request with `response`, or with `status` and no body when that is not 200."""
+
+    def __init__(self, response: dict[str, Any], *, status: int = 200) -> None:
+        self.response = response
+        self.status = status
+        self.bodies: list[dict[str, str]] = []
+        self.client = httpx.AsyncClient(transport=httpx.MockTransport(self._handle))
+
+    def _handle(self, request: httpx.Request) -> httpx.Response:
+        self.bodies.append(json.loads(request.content))
+        return httpx.Response(self.status, json=self.response)
 
 
 def make_credential(*, expires_in: timedelta = timedelta(hours=1)) -> OAuthCredential:
@@ -115,6 +139,13 @@ class FakeSessionsService:
         if more:
             events_body["next_cursor"] = page[-1]["sequence_num"]
         return httpx.Response(200, json=events_body)
+
+
+async def eventually(condition: Callable[[], Awaitable[bool]]) -> None:
+    """Returns once `condition` holds: the wait for a background loop's progress, bounded so a wedge fails the test."""
+    async for attempt in AsyncRetrying(wait=wait_fixed(0.01), stop=stop_after_delay(30), reraise=True):
+        with attempt:
+            assert await condition()
 
 
 @pytest.fixture

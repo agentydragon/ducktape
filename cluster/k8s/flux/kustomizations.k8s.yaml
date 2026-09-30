@@ -2881,7 +2881,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Mirror of every Claude Code cloud session's events into a CNPG database.
+    description: Mirror of every Claude Code cloud session's events into a CNPG database, and its pairing page.
   name: claude-session-sync
   namespace: ducktape-flux
 spec:
