@@ -63,7 +63,7 @@ away. Worth doing on the VM regardless of what happens with the pod.
 ## Fit / open questions for our setup
 
 - **Which repo does comin poll?** ducktape is the NixOS SSOT
-  (`cluster/k8s/parked/agent-box/nix/nixos.nix`). Point comin at our Forgejo mirror
+  (`cluster/parked/agent-box/nix/nixos.nix`). Point comin at our Forgejo mirror
   of ducktape (+ optionally a second remote to avoid SPOF). Confirm the hostname
   matches the `nixosConfigurations` attr.
 - **Auth** to a private repo from the box — see comin's `docs/authentication.md`.

@@ -18,7 +18,7 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console_config
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
@@ -48,7 +48,8 @@ def chart(app: App) -> Chart:
         chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None, labels={"name": NAMESPACE}
     )
     # Intentionally sparse, like flux-system's public-repository source: the source roots
-    # the ArtifactGenerator consumes, and the paths public Kustomizations read directly.
+    # the ArtifactGenerator consumes, and the paths public Kustomizations read directly,
+    # including the suspended ones' under the parked tree.
     GitRepository(
         chart,
         "source",
@@ -58,6 +59,7 @@ def chart(app: App) -> Chart:
         sparse_checkout=[
             f"{HAND_WRITTEN_ROOT}/",
             f"{GENERATED_ROOT}/",
+            f"{PARKED_ROOT}/",
             "cluster/charts/browsertrix/",
             "haku/x/dispatch/deploy/",
             "haku/runtime/managed_agent/self_hosted/deploy/",

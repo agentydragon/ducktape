@@ -40,6 +40,13 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
+# Generator output kept beside hand-written files in the parked tree, for the parity test.
+filegroup(
+    name = "parked_generated_manifests",
+    srcs = glob(["parked/**/*.k8s.yaml"]),
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)
+
 py_library(
     name = "network_readiness",
     srcs = ["network_readiness.py"],

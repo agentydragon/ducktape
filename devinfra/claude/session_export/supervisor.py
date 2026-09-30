@@ -8,7 +8,7 @@ credential this saves replaces whatever the loop was using.
 import asyncio
 import contextlib
 import logging
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Self
@@ -17,7 +17,8 @@ import httpx
 from pydantic import BaseModel, Field
 
 from devinfra.claude.session_export.api import SessionsApi
-from devinfra.claude.session_export.live import LiveFollower
+from devinfra.claude.session_export.failures import describe_failure
+from devinfra.claude.session_export.live import LiveFollower, LiveProblem
 from devinfra.claude.session_export.oauth import (
     CALLBACK_PORT,
     DEFAULT_SCOPES,
@@ -58,9 +59,9 @@ class FailureStatus(BaseModel):
 
 class LiveStatus(BaseModel):
     following: bool = Field(description="Live following is on and has a credential to run with.")
-    watching: bool = Field(description="A session watch is open, or being reopened.")
     streams: int = Field(description="Sessions with an event stream open, or being reopened.")
-    last_frame_at: datetime | None = Field(description="When a watch or event frame last arrived.")
+    last_event_at: datetime | None = Field(description="When an event last arrived over a stream.")
+    problems: list[LiveProblem] = Field(description="What is failing now and retrying; empty when all is well.")
     failure: FailureStatus | None = Field(description="Why following stopped; the polling cycle carries on.")
 
 
@@ -73,18 +74,6 @@ class SyncStatus(BaseModel):
     last_cycle: CycleStatus | None
     last_failure: FailureStatus | None = Field(description="The latest cycle's error; cleared by the next success.")
     live: LiveStatus
-
-
-def _leaves(failure: BaseException) -> Iterator[BaseException]:
-    if isinstance(failure, BaseExceptionGroup):
-        for member in failure.exceptions:
-            yield from _leaves(member)
-    else:
-        yield failure
-
-
-def describe_failure(failure: BaseException) -> str:
-    return "; ".join(f"{type(leaf).__name__}: {leaf}" for leaf in _leaves(failure))
 
 
 class SyncSupervisor:
@@ -179,9 +168,9 @@ class SyncSupervisor:
             last_failure=self._last_failure,
             live=LiveStatus(
                 following=self._follower is not None,
-                watching=self._follower is not None and self._follower.watching,
                 streams=self._follower.streams if self._follower else 0,
-                last_frame_at=self._follower.last_frame_at if self._follower else None,
+                last_event_at=self._follower.last_event_at if self._follower else None,
+                problems=self._follower.problems if self._follower else [],
                 failure=self._live_failure,
             ),
         )
@@ -206,9 +195,7 @@ class SyncSupervisor:
         if not self._live_streams:
             await self._poll(api, version, follower=None)
             return
-        follower = LiveFollower(
-            api, self._store, max_streams=self._live_streams, window=self._live_window, on_resync=self.sync_now
-        )
+        follower = LiveFollower(api, self._store, max_streams=self._live_streams, window=self._live_window)
         self._follower, self._live_failure = follower, None
         try:
             async with asyncio.TaskGroup() as tasks:

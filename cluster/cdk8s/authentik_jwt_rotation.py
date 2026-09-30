@@ -35,7 +35,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on,
 )
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.rotators.authentik_jwt_rotation.config import Config, K8sSecretOutput, Probe, Rotation
@@ -112,7 +112,7 @@ ROTATIONS = Config(
             #   manifests; it won't synthesize a Secret from a bare jwt: file). Revisit if
             #   Flux/an operator grows a "SOPS data file -> Secret" path.
             k8s_secret=K8sSecretOutput(
-                path=Path("cluster/k8s/parked/cloud-agent-tf/haku-kube-token.sops.yaml"),
+                path=Path(f"{PARKED_ROOT}/cloud-agent-tf/haku-kube-token.sops.yaml"),
                 name="haku-cloud-kube-token",
                 namespace=_FLUX_SYSTEM,
             ),

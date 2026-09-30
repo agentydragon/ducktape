@@ -21,6 +21,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
     check_egress_bindings_resolve_policies,
@@ -199,16 +200,14 @@ def test_flux_kustomizations_chart_is_root_wired(cluster: ParsedCluster, k8s_dir
 
 
 def test_flux_kustomizations_under_parked_path_are_annotated(k8s_dir: Path) -> None:
-    """A local Flux source path under cluster/k8s/parked must carry the parked annotation."""
+    """A Flux Kustomization whose path is under the parked tree must carry the parked annotation."""
     errors = []
     chart = k8s_dir / "flux/kustomizations.k8s.yaml"
     for name, spec in parse_flux_kustomizations(chart).items():
-        flux_path = Path(spec.path.removeprefix("./"))
-        under_parked = flux_path.parts[:3] == ("cluster", "k8s", "parked")
-        if under_parked and not spec.parked:
+        if Path(spec.path.removeprefix("./")).is_relative_to(PARKED_ROOT) and not spec.parked:
             errors.append(
                 f"{name} ({spec.path}): ducktape.org/parked annotation={spec.parked}, "
-                "but its source path is under cluster/k8s/parked/"
+                f"but its source path is under {PARKED_ROOT}/"
             )
     assert not errors, "\n".join(errors)
 

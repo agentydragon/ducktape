@@ -42,6 +42,7 @@ gotk-sync.yaml linguist-generated=true
 # files still need path-scoped lines because that filename is shared with hand-written
 # directories. Every file under cluster/generated is generated.
 cluster/k8s/**/*.k8s.yaml linguist-generated=true
+cluster/parked/**/*.k8s.yaml linguist-generated=true
 cluster/generated/** linguist-generated=true
 cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/kustomization.yaml linguist-generated=true
@@ -129,7 +130,7 @@ nix/nixos/hosts/cpap-gateway/** filename-conventions-ignored=true
 # (pygit2) and skips the file from orphan detection + resource parsing.
 cluster/k8s/**/trixie_*.yaml cluster-manifest-ignored=true
 # Parked manifests are retained for possible revival but are not active cluster config.
-cluster/k8s/parked/** cluster-manifest-ignored=true
+cluster/parked/** cluster-manifest-ignored=true
 # The retired Codex pod's manifests are kept beside their source, not active cluster config.
 x/codex_pod_image/deploy/** cluster-manifest-ignored=true
 # rotate.py's token list, mounted via configMapGenerator — not a K8s manifest.

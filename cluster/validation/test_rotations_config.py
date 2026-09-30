@@ -50,7 +50,7 @@ def test_sops_files_have_creation_rules() -> None:
 
     `sops --encrypt` refuses a path it has no recipients for, so the omission
     surfaces as a failed hourly CronJob rather than as anything in CI. The
-    published k8s Secret paths are covered by the generic `cluster/k8s/.*` rule
+    published k8s Secret paths are covered by the generic cluster deployment-secrets rule
     and are checked here for the same reason.
     """
     config = yaml.safe_load(get_required_path(_SOPS_CONFIG).read_text())

@@ -101,16 +101,17 @@ The same session is `session_<x>` in `claude.ai/code/` URLs; both prefixes are a
 
 Also seen in the web UI, unused here: `POST .../events` (send a user message), `POST .../client/presence`.
 
-## Event stream and session watch
+## Event stream
 
-Read from the web client's code (capture `2026-09-29-c20643cea8`); **not yet observed on the wire**. The client
-sends the same headers as for the routes above, plus `Accept: text/event-stream`.
+Read from the web client's code (capture `2026-09-29-c20643cea8`), and partly observed. The client sends the same
+headers as for the routes above, plus `Accept: text/event-stream`.
 
 `GET /v1/code/sessions/<cse_id>/events/stream[?from_sequence_num=<n>]` carries `last-event-id: <n>` as well, both
 omitted for a client with no position. Frames, by `event:`:
 
 | Frame                | Data                                                        | The client                                            |
 | -------------------- | ----------------------------------------------------------- | ----------------------------------------------------- |
+| none                 | sent as the stream opens (observed)                         | nothing but its idle timer: a keepalive               |
 | `client_event`       | an event as the events route sends it; `id: <sequence_num>` | stores it; a frame with no data only moves its cursor |
 | `catch_up_truncated` | none                                                        | pages for what the stream did not replay              |
 | `session_update`     | session metadata                                            | applies it                                            |
@@ -121,11 +122,17 @@ An open answered 410 means the position is gone: the client restarts from nothin
 it; 429 honors `Retry-After`. It restarts a stream that delivered nothing for 35 s, backs off 1 s doubling to 30 s
 with jitter, and after two connections that delivered no frame polls `GET .../events?sort_order=asc&cursor=<n>`.
 
-`GET /v1/code/sessions/watch?exclude_tags=-&resume_token=<token>` streams changes to the account's sessions. The
-token is the list route's `resume_token`, and each frame's `id` is the next one to resume from. Frames: `added` and
-`changed` carry a session as the list route sends it, `removed` carries `{id}`, and `sync` carries nothing. 400
-means no token was sent, 410 that the token expired; the client then lists again. The web client also sends
-`anthropic-client-platform: web_claude_ai` on this request; this sync does not.
+Observed on 2026-09-30, with the OAuth bearer against `api.anthropic.com`: the stream opens and sends a frame with
+no `event:` name. No `client_event` frame has been seen yet.
+
+## Session watch: not reachable here
+
+The web client watches the account's sessions with `GET /v1/code/sessions/watch?exclude_tags=-&resume_token=<token>`
+(the token is the list route's `resume_token`; frames `added`, `changed`, `removed`, `sync`). With the OAuth bearer
+against `api.anthropic.com` it answers **404** every time, for a token the list route had just issued. The web
+client's version is same-origin on `claude.ai` with the cookie session, and also sends
+`anthropic-client-platform: web_claude_ai`; whether the route exists on the first-party API host at all is unknown.
+The sync finds new sessions by listing the newest page instead ([sync.md](sync.md) § Live following).
 
 ## Event
 

@@ -161,8 +161,9 @@ its parameters. `generate_manifests.py` is the topological order, written out by
 - **Output routing is by `spec.path`**, with the handful of Kustomizations whose `path`
   is not their own directory listed explicitly in the writer. Keep those explicit.
 - **A directory's root is written once**: its module's `OUTPUT_DIR` (or a named constant
-  like `BASE_DIR`) is `f"{GENERATED_ROOT}/..."` or `f"{HAND_WRITTEN_ROOT}/..."`
-  (`manifest_roots.py`), and the artifact in `generate_manifests.py` takes that constant,
+  like `BASE_DIR`) is `f"{GENERATED_ROOT}/..."` or `f"{HAND_WRITTEN_ROOT}/..."`, or
+  `f"{PARKED_ROOT}/..."` for a parked one (`manifest_roots.py`), and the artifact in
+  `generate_manifests.py` takes that constant,
   never the path spelled again. Moving a directory between roots is that one edit, plus
   the committed files; `GENERATED_ROOT` is right exactly when the generator writes every
   file the directory holds.

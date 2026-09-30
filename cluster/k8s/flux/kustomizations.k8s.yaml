@@ -292,13 +292,13 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   interval: 10m
-  path: ./cluster/k8s/parked/buildbuddy-executor
+  path: ./cluster/parked/buildbuddy-executor
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   suspend: true
   timeout: 5m
   wait: true
@@ -312,7 +312,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/parked/gecko/namespace
+  path: ./cluster/parked/gecko/namespace
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1384,7 +1384,7 @@ spec:
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/parked/docker-ci
+  path: ./cluster/parked/docker-ci
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2460,7 +2460,7 @@ spec:
     - name: tofu-controller
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/parked/cloud-agent-tf
+  path: ./cluster/parked/cloud-agent-tf
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2585,7 +2585,7 @@ spec:
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/parked/agent-box
+  path: ./cluster/parked/agent-box
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2616,7 +2616,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/parked/gecko/app
+  path: ./cluster/parked/gecko/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3161,7 +3161,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/parked/sdr
+  path: ./cluster/parked/sdr
   prune: true
   retryInterval: 1m
   sourceRef:

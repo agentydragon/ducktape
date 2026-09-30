@@ -123,7 +123,6 @@ py_test(
     deps = [
         ":api",
         ":conftest",
-        ":models",
         ":oauth",
         "//:conftest",
         "//devinfra/claude:conftest",
@@ -262,6 +261,7 @@ py_library(
     srcs = ["supervisor.py"],
     deps = [
         ":api",
+        ":failures",
         ":live",
         ":oauth",
         ":settings",
@@ -362,9 +362,10 @@ py_library(
     srcs = ["live.py"],
     deps = [
         ":api",
-        ":models",
+        ":failures",
         ":store",
         ":sync",
+        "@pypi//pydantic",
         "@pypi//tenacity",
     ],
 )
@@ -384,5 +385,24 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "failures",
+    srcs = ["failures.py"],
+    deps = ["@pypi//httpx"],
+)
+
+py_test(
+    name = "test_failures",
+    srcs = ["test_failures.py"],
+    deps = [
+        ":conftest",
+        ":failures",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
     ],
 )

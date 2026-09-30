@@ -54,6 +54,11 @@ export function Overview({ status, now, onSyncNow }: Props): JSX.Element {
           The last cycle failed {ago(failure.at, now)}: {failure.message}
         </p>
       )}
+      {live.problems.map((problem) => (
+        <p key={problem.source} role="alert" className="error">
+          {problem.source} last failed {ago(problem.at, now)} and is retrying: {problem.message}
+        </p>
+      ))}
       {live.failure !== null && (
         <p role="alert" className="error">
           Live following stopped {ago(live.failure.at, now)}, and polling carries on: {live.failure.message}

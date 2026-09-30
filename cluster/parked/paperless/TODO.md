@@ -1,6 +1,6 @@
 # Paperless TODO
 
-> **Status: parked.** The manifests are suspended under `cluster/k8s/parked/` and the
+> **Status: parked.** The manifests are suspended under `cluster/parked/` and the
 > former `paperless-app` artifact generator was removed when Paperless was parked.
 > Re-establish and verify the source, artifact, and Flux wiring before implementing
 > this revival backlog.
@@ -14,7 +14,7 @@ the first account via SSO is to hit allauth's endpoint directly
 (`/accounts/oidc/authentik/login/?process=login`). This is a manual, out-of-band step —
 it violates the cluster's "declarative turnkey bootstrap" directive — and it leaves a
 window where local signup is open to anyone who reaches the URL. Background:
-<../../../docs/lessons_learned/2026_06_22_paperless_servicelinks_and_fresh_install_sso.md>.
+<../../docs/lessons_learned/2026_06_22_paperless_servicelinks_and_fresh_install_sso.md>.
 
 **Goal.** Bring up Paperless with no manual claim step and no open-signup window: after
 Flux reconciles, agentydragon's SSO-linked account already exists.

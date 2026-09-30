@@ -11,16 +11,15 @@ rewrite; deployed databases are disposable.
 
 ## Observe live following against the real API
 
-`live.py` follows the two streams as the web client's code describes them ([docs/api.md](docs/api.md) § Event stream
-and session watch); none of it has run against Anthropic. With a paired credential, check that:
+Observed so far: the bearer token opens the event stream, which sends a frame with no `event:` name as it opens
+([docs/api.md](docs/api.md) § Event stream). Still to check on a running session:
 
-- the bearer token opens both streams (the list and events routes accept it; the streams are untested), and the
-  watch does not also need `anthropic-client-platform: web_claude_ai`;
-- a quiet stream is kept alive within `STREAM_IDLE_TIMEOUT` (35 s, the web client's own limit) rather than reconnecting
-  every time, and how long the watch stays silent;
-- a `changed` frame arrives when a session gets events, and carries a complete session (the upsert needs `title`,
-  `status` and the timestamps);
+- `client_event` frames arrive and store cleanly (the page's "last event" moves and no page read follows the connect);
+- a quiet stream stays open past `STREAM_IDLE_TIMEOUT` (35 s, the web client's own limit) instead of reconnecting
+  each time, which says how often the keepalive comes;
 - the worker stamps (`received_at`, `processing_at`, `processed_at`) reach a stream event unset or complete, and a
-  frame is re-sent when they change.
+  frame is re-sent when they change;
+- whether the first-party API host offers any feed of session changes (the web client's `sessions/watch` answers
+  404), which would replace the 30 s discovery poll.
 
 Delete this entry once each is confirmed, correcting the docs where it is not.
