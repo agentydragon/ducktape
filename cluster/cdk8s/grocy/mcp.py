@@ -3,10 +3,10 @@
 OAuth-state DSN, the public HTTPRoute, and the `grocy-mcp-config` settings file the directory's
 `kustomization.yaml` renders.
 
-The server's image tag is the placeholder "unset"; the hand-written
-`mcp-base/image-pins/kustomization.yaml`, a Component each household's kustomization
-includes, overrides it at `kustomize build` time via Flux's image-automation marker
-(cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
+The server's image tag is the placeholder "unset"; the hand-written `PINS_DIR` Component,
+which each household's kustomization includes across the roots, overrides it at
+`kustomize build` time via Flux's image-automation marker (cluster/cdk8s/AGENTS.md § the
+`:tag` Setters marker).
 """
 
 from __future__ import annotations
@@ -36,8 +36,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from grocy_mcp.mcp_types import CONFIG_FILE_ENV, ServerSettings
 from util.settings_contract import env_name, settings_file
 
-# Holds only `image-pins/`, the Component both households' kustomizations include.
-BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-base"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-image-pins"
 _NAME = "grocy-mcp-server"
 _LABELS = (("app.kubernetes.io/name", "grocy-mcp"), ("app.kubernetes.io/component", "server"))
 _IMAGE = "git.allegedly.works/ducktape-ci/grocy-mcp:unset"
@@ -243,7 +242,7 @@ def write_manifests(root: Path) -> None:
             root / directory / "kustomization.yaml",
             kustomize_kustomization(
                 resources=write_charts(root, directory, partial(household_chart, household=household)),
-                components=[posixpath.relpath(f"{BASE_DIR}/image-pins", directory)],
+                components=[posixpath.relpath(PINS_DIR, directory)],
                 config_map_generator=[_config_map(household)],
             ),
         )

@@ -3,7 +3,7 @@ kind: Kustomization
 resources:
   - grocy-mcp-sf.k8s.yaml
 components:
-  - ../../mcp-base/image-pins
+  - ../../../../k8s/grocy/mcp-image-pins
 configMapGenerator:
   - name: grocy-mcp-config
     namespace: grocy-sf

@@ -3,7 +3,7 @@ kind: Kustomization
 resources:
   - grocy-user-perms.k8s.yaml
 components:
-  - image-pins
+  - ../../../k8s/grocy/user-perms-image-pins
 configMapGenerator:
   - name: grocy-user-perms-policy
     literals:

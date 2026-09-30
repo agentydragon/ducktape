@@ -5,7 +5,10 @@ A directory every file of which the generator writes lives under `GENERATED_ROOT
 does not write fails it). A directory holding any hand-written file (a SOPS secret, an
 `image-pins` component, a hand-written `kustomization.yaml`) lives under
 `HAND_WRITTEN_ROOT`, generated files beside the hand-written ones. A Kustomization's
-directory is never split across the two.
+directory is never split across the two; one whose only hand-written file would be its
+`image-pins` Component lives under `GENERATED_ROOT` and includes the Component, a directory
+of its own under `HAND_WRITTEN_ROOT`, across the roots (cluster/docs/cdk8s_remainder.md
+§ Mixed-directory layout).
 
 Dependency-free so `cluster/validation` can walk both without loading cdk8s.
 """

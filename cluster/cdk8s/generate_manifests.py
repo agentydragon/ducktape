@@ -1127,7 +1127,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         grafana_operator_kustomization,
     )
-    grocy_sf_artifact = artifact("grocy-sf", grocy_app.output_dir("sf"), grocy_mcp.output_dir("sf"), grocy_mcp.BASE_DIR)
+    grocy_sf_artifact = artifact("grocy-sf", grocy_app.output_dir("sf"), grocy_mcp.output_dir("sf"), grocy_mcp.PINS_DIR)
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
         flux_chart,
         grocy_sf_artifact,
@@ -1138,7 +1138,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     grocy_vallejo_artifact = artifact(
-        "grocy-vallejo", grocy_app.output_dir("vallejo"), grocy_mcp.output_dir("vallejo"), grocy_mcp.BASE_DIR
+        "grocy-vallejo", grocy_app.output_dir("vallejo"), grocy_mcp.output_dir("vallejo"), grocy_mcp.PINS_DIR
     )
     grocy_vallejo_kustomization = grocy_flux_kustomizations.grocy_vallejo(
         flux_chart,
@@ -1238,11 +1238,14 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     grocy_sf_user_perms_artifact = artifact(
-        "grocy-sf-user-perms", grocy_user_perms.output_dir("sf"), grocy_user_perms.BASE_DIR
+        "grocy-sf-user-perms", grocy_user_perms.output_dir("sf"), grocy_user_perms.BASE_DIR, grocy_user_perms.PINS_DIR
     )
     grocy_flux_kustomizations.grocy_sf_user_perms(flux_chart, grocy_sf_user_perms_artifact, grocy_sf_kustomization)
     grocy_vallejo_user_perms_artifact = artifact(
-        "grocy-vallejo-user-perms", grocy_user_perms.output_dir("vallejo"), grocy_user_perms.BASE_DIR
+        "grocy-vallejo-user-perms",
+        grocy_user_perms.output_dir("vallejo"),
+        grocy_user_perms.BASE_DIR,
+        grocy_user_perms.PINS_DIR,
     )
     grocy_flux_kustomizations.grocy_vallejo_user_perms(
         flux_chart, grocy_vallejo_user_perms_artifact, grocy_vallejo_kustomization
