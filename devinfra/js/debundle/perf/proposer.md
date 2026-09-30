@@ -19,17 +19,6 @@ edges). Baseline, `-c opt` binaries, one host, 2026-06-11:
 | fully residual (`--claim-blocks 0`)                     | 3.5–3.8s |      1216 |
 | 62 claimed modules (`--claim-blocks 62`, 2461 bindings) | 2.2–2.3s |       933 |
 
-Gate-ladder tier distribution on the same corpus (recorded with counters no
-longer in the tree):
-
-| Variant  | Queries | Tier 0 accept | Tier 1 reject | Tier 2 accept | Tier 3 | Tier 1+2 wall |
-| -------- | ------: | ------------: | ------------: | ------------: | -----: | ------------: |
-| residual |    8834 |          8834 |             0 |             0 |      0 |        0.000s |
-| claimed  |    9944 |          6644 |           753 |          2547 |      0 |        0.265s |
-
-Tier 3 never fires on either variant, and overlay simulator rebuilds and
-`scc_containing` calls are both zero.
-
 **Never use `fastbuild` numbers for Rust wall comparisons** — always
 build `-c opt` (a `fastbuild` binary measured 35× slower on a proposer fixture).
 
@@ -58,7 +47,7 @@ contract / explicit diagnostic query
 
 ## Optimization policy
 
-Do not implement more proposer gate machinery from old profiles. If
+Add no more proposer gate machinery without a fresh measurement. If
 proposer latency becomes important again:
 
 1. Build and run an optimized binary (`-c opt`, with debug info).
