@@ -50,27 +50,6 @@ spec:
     name: authentik-db-backup-s3
     secretKeyField: AWS_SECRET_ACCESS_KEY
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: authentik-authentik-db-backups
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: authentik
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: authentik
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: authentik
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
 apiVersion: barmancloud.cnpg.io/v1
 kind: ObjectStore
 metadata:

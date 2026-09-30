@@ -590,7 +590,6 @@ def _backup_bucket(scope: Construct) -> None:
         adopt_existing=True,
         description="Haku OpenClaw spike VolSync backup bucket.",
     )
-    s3.cluster_grant(scope, "backup-grant", name=_NAME, namespace=_NAMESPACE, kinds=["Bucket", "S3Credentials"])
     s3.credentials(
         scope,
         "backup-credentials",

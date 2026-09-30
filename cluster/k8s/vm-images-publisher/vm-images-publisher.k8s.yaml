@@ -36,27 +36,6 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: vm-images
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: vm-images-publisher
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: vm-images-publisher
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: vm-images-publisher
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: vm-images-ci-writer

@@ -87,27 +87,6 @@ spec:
     secretKeyField: AWS_SECRET_ACCESS_KEY
 ---
 apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: loki-loki
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: loki
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: loki
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: loki
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   name: loki

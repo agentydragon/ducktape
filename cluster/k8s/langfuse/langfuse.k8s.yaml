@@ -98,27 +98,6 @@ spec:
     name: langfuse-seaweedfs-credentials
     secretKeyField: s3-secret-access-key
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: langfuse-langfuse
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: langfuse
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: langfuse
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: langfuse
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

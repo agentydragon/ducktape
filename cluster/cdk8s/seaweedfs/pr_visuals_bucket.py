@@ -1,5 +1,5 @@
 """The anonymously readable `pr-visuals` bucket in `flux-system` and its writer identity and
-credentials, plus the grant letting them reference the SeaweedFS cluster."""
+credentials."""
 
 from __future__ import annotations
 
@@ -38,7 +38,6 @@ def chart(app: App) -> Chart:
         ],
         adopt_existing=True,
     )
-    s3.cluster_grant(chart, "grant", name=NAME, namespace=_TENANT, kinds=["Bucket", "S3Identity", "S3Credentials"])
     writer = s3.identity(chart, "writer", name=_WRITER, namespace=_TENANT)
     s3.credentials(
         chart,

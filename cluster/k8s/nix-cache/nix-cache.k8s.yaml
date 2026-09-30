@@ -104,27 +104,6 @@ spec:
     name: attic-s3-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: nix-cache-attic
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: nix-cache
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: nix-cache
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: nix-cache
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:

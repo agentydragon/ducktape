@@ -22,27 +22,6 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: pr-visuals
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: flux-system
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: flux-system
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: flux-system
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: pr-visuals-writer

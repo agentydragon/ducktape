@@ -53,7 +53,6 @@ def _storage(chart: Chart) -> None:
     # The old seaweedfs-namespace resources remain until the consumer cutover and
     # data-path verification are complete.
     identity = s3.identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
-    s3.cluster_grant(chart, "grant", name=NAME, namespace=_NAMESPACE, kinds=["S3Identity", "Bucket", "S3Credentials"])
     for bucket, description in (("mimir-blocks", "Mimir blocks."), ("mimir-ruler", "Mimir ruler state.")):
         s3.bucket(
             chart,

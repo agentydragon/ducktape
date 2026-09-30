@@ -50,27 +50,6 @@ spec:
     name: forgejo-s3-credentials
     secretKeyField: secretKey
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: forgejo-forgejo
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: forgejo
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: forgejo
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: forgejo
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:

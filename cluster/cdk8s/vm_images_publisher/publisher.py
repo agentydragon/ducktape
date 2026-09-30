@@ -61,7 +61,6 @@ def _storage(scope: Construct) -> None:
         # namespace without deleting or recreating its data.
         adopt_existing=True,
     )
-    s3.cluster_grant(scope, "grant", name=_BUCKET, namespace=NAME, kinds=["Bucket", "S3Identity", "S3Credentials"])
     _identity(scope, _WRITER)
     _identity(scope, _READER)
 

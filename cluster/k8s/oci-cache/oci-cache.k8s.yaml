@@ -57,27 +57,6 @@ spec:
   secretRef:
     name: registry-cache-s3-credentials
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: oci-cache-registry-cache
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: oci-cache
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: oci-cache
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: oci-cache
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
