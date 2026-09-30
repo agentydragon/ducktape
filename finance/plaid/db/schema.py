@@ -198,9 +198,9 @@ class SyncRunRow(Base):
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class TransactionSyncQueueRow(Base):
-    __tablename__ = "transaction_sync_queue"
-    __table_args__ = (Index("idx_transaction_sync_queue_requested", "requested_at"),)
+class ItemSyncQueueRow(Base):
+    __tablename__ = "item_sync_queue"
+    __table_args__ = (Index("idx_item_sync_queue_requested", "requested_at"),)
 
     item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), primary_key=True)
     generation: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -208,6 +208,7 @@ class TransactionSyncQueueRow(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     retry_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    full_sync: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class PlaidWebhookDeliveryRow(Base):

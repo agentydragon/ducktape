@@ -3,7 +3,7 @@
 Plaid link-management runtime package.
 
 The deployed image now runs [`app.py`](app.py): a FastAPI web UI for Plaid Link
-management, a signed webhook receiver, and a queued transaction sync worker. The agent-facing
+management, a signed webhook receiver, and a queued Item sync worker. The agent-facing
 read path is not this package; it is EnterpriseDB Pg Airman MCP pointed at the
 synced Postgres database with a read-only role.
 
@@ -94,13 +94,16 @@ FROM plaid_webhook_deliveries
 ORDER BY received_at DESC;
 ```
 
-The audit row is retained when an Item is removed. The endpoint
-durably queues `TRANSACTIONS / SYNC_UPDATES_AVAILABLE` events; the background
-worker coalesces duplicate notifications and runs `/transactions/sync`.
-Other webhook event types are recorded, acknowledged, and ignored. The cursor and all
-added, modified, and removed transactions commit together after pagination
-completes. If Plaid reports a mutation during pagination, the sync restarts
-from the saved cursor.
+The audit row is retained when an Item is removed. The endpoint durably queues
+`TRANSACTIONS / SYNC_UPDATES_AVAILABLE`, `HOLDINGS / DEFAULT_UPDATE`, and
+`INVESTMENTS_TRANSACTIONS / DEFAULT_UPDATE`, and `LIABILITIES / DEFAULT_UPDATE`
+events. The background worker coalesces duplicate notifications per Item.
+Transaction events run `/transactions/sync`; Holdings, investment transaction,
+and Liabilities events run the existing full Item sync so all selected product
+snapshots refresh. Other webhook event types are recorded, acknowledged, and
+ignored. The cursor and all added, modified, and removed transactions commit
+together after pagination completes. If Plaid reports a mutation during
+pagination, the sync restarts from the saved cursor.
 
 The daily CronJob is the missed-webhook backstop. It also refreshes accounts,
 holdings, investment transactions, and liabilities; only investment
