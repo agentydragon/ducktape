@@ -2268,15 +2268,14 @@ fn collect_declared_bindings_from_pat(pat: &Pat, names: &mut Vec<String>) {
     }
 }
 
-/// Parse `source` and assert exactly one `export { ... }` specifier has
-/// `orig.sym == expected_orig`, with its `exported` either absent (when
-/// `expected_exported_as` is `None`) or `Ident { sym: expected_exported_as }`.
-/// Walks the parsed specifier tree so a corrupted `export { aH$1 as aH$1 }`
-/// fails — a substring check on `aH$1 as aH` would accept both shapes.
-pub fn assert_export_named_specifier(
+/// Parse `source` and assert the named export specifiers for `expected_orig` match
+/// the supplied set of exported names. `None` means the `as` clause is absent.
+/// Walking the parsed specifier tree rejects near-matches such as
+/// `export { aH$1 as aH$1 }` that substring assertions can accept.
+pub fn assert_export_named_specifiers(
     source: &str,
     expected_orig: &str,
-    expected_exported_as: Option<&str>,
+    expected_exported_as: &[Option<&str>],
 ) {
     let module = parse_module(source);
     let matched: Vec<_> = module
@@ -2300,18 +2299,36 @@ pub fn assert_export_named_specifier(
         .collect();
     assert_eq!(
         matched.len(),
-        1,
-        "expected exactly one `export {{ {expected_orig} ... }}` specifier; got {} in:\n{source}",
+        expected_exported_as.len(),
+        "expected {} `export {{ {expected_orig} ... }}` specifiers; got {} in:\n{source}",
+        expected_exported_as.len(),
         matched.len(),
     );
-    let actual = match &matched[0].exported {
-        Some(ModuleExportName::Ident(ident)) => Some(ident.sym.to_string()),
-        Some(ModuleExportName::Str(_)) => panic!("unexpected string export in:\n{source}"),
-        None => None,
-    };
+    let mut actual: Vec<Option<String>> = matched
+        .iter()
+        .map(|spec| match &spec.exported {
+            Some(ModuleExportName::Ident(ident)) => Some(ident.sym.to_string()),
+            Some(ModuleExportName::Str(_)) => panic!("unexpected string export in:\n{source}"),
+            None => None,
+        })
+        .collect();
+    let mut expected: Vec<Option<String>> = expected_exported_as
+        .iter()
+        .map(|name| name.map(str::to_owned))
+        .collect();
+    actual.sort();
+    expected.sort();
     assert_eq!(
-        actual.as_deref(),
-        expected_exported_as,
-        "export {{ {expected_orig} ... }} `as` clause mismatch in:\n{source}",
+        actual, expected,
+        "export {{ {expected_orig} ... }} `as` clauses mismatch in:\n{source}",
     );
+}
+
+/// Assert exactly one `export { ... }` specifier has the requested shape.
+pub fn assert_export_named_specifier(
+    source: &str,
+    expected_orig: &str,
+    expected_exported_as: Option<&str>,
+) {
+    assert_export_named_specifiers(source, expected_orig, &[expected_exported_as]);
 }

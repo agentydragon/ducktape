@@ -70,8 +70,7 @@ pub fn naturalize_cross_chunk_imports(
                 let Some(src) = import.src.value.as_str() else {
                     continue;
                 };
-                let Some((target_chunk, _, _)) =
-                    resolver.resolve(src, chunk.chunk_id, &file.path)?
+                let Some((target_chunk, _, _)) = resolver.resolve(src, chunk.chunk_id, &file.path)
                 else {
                     continue;
                 };

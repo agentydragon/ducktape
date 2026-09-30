@@ -713,9 +713,7 @@ fn validate_body_scope(
     let captured_non_heuristic: BTreeSet<(String, String)> = winners
         .iter()
         .filter(|(_, (_, priority))| *priority != RenamePriority::Heuristic)
-        .filter(|&(from, (to, _))| {
-            captured.contains(&(from.0.to_string(), to.to_string()))
-        })
+        .filter(|&(from, (to, _))| captured.contains(&(from.0.to_string(), to.to_string())))
         .map(|(from, (to, _))| (from.0.to_string(), to.to_string()))
         .collect();
     if !captured_non_heuristic.is_empty() {

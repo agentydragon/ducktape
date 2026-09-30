@@ -11,12 +11,19 @@ fn named_provider_modules() -> Vec<LogicalModuleEntry> {
 }
 
 fn setup_named_provider(opts: &mut FixtureOpts<'_>) {
-    opts.extra_chunks = &[("static/provider", "function p() { return 7; }\nexport { p as h };\n")];
+    opts.extra_chunks = &[(
+        "static/provider",
+        "function p() { return 7; }\nexport { p as h };\n",
+    )];
+}
+
+fn importer_opts<'a>(source: &'a str, logical_modules: Vec<LogicalModuleEntry>) -> FixtureOpts<'a> {
+    FixtureOpts::new(source, logical_modules).with_chunk_id("static/importer")
 }
 
 #[test]
 fn named_cross_chunk_import_is_readable_and_legacy_consumers_still_work() {
-    let mut opts = FixtureOpts::new(
+    let mut opts = importer_opts(
         r#"import "./outside.js";
 import { h as x } from "./provider.js";
 console.log(x());
@@ -60,40 +67,38 @@ import("../provider/entry.js").then(dynamic => console.log(dynamic.h()));
         &fixture.out_root,
         "static/importer/outside.js",
         &[
-            "import { readable }",
+            "import { h }",
             "import * as ns",
             "ns.h()",
             "import(\"../provider/entry.js\")",
             "dynamic.h()",
         ],
-        &["import { h }"],
+        &["import { readable }"],
     );
     assert_all_emitted_js_checks(&fixture);
 }
 
 #[test]
 fn unprocessed_chunk_consumers_keep_legacy_named_namespace_and_dynamic_exports() {
-    let mut opts = FixtureOpts::new(
+    let mut opts = importer_opts(
         r#"import "../external.js";
 console.log("entry");
 "#,
         vec![],
     );
     opts.unassigned_mode = unassigned_mode_inline();
-    opts.extra_chunks = &[
-        (
-            "static/provider",
-            "function p() { return 7; }\nexport { p as h };\n",
-        ),
-        (
-            "static/external",
-            r#"import { h } from "./provider.js";
-import * as ns from "./provider.js";
+    opts.extra_chunks = &[(
+        "static/provider",
+        "function p() { return 7; }\nexport { p as h };\n",
+    )];
+    opts.extra_files = &[(
+        "static/external.js",
+        r#"import { h } from "./provider/entry.js";
+import * as ns from "./provider/entry.js";
 console.log(h(), ns.h());
-import("./provider.js").then(dynamic => console.log(dynamic.h()));
+import("./provider/entry.js").then(dynamic => console.log(dynamic.h()));
 "#,
-        ),
-    ];
+    )];
     let provider_modules = named_provider_modules();
     let extra_modules = [("static/provider", provider_modules)];
     opts.extra_chunk_logical_modules = &extra_modules;
@@ -111,7 +116,7 @@ import("./provider.js").then(dynamic => console.log(dynamic.h()));
 
 #[test]
 fn source_match_binding_name_is_used_for_cross_chunk_import() {
-    let mut opts = FixtureOpts::new(
+    let mut opts = importer_opts(
         r#"import { h as x } from "./provider.js";
 console.log(x());
 const guard = 0;
@@ -124,7 +129,7 @@ export { x, guard };
         "static/provider",
         "function p() { return 6; }\nexport { p as h };\n",
     )];
-    let provider_modules = vec![logical_module_with_source_matches(
+    let provider_modules = vec![logical_module_with_binding_groups(
         "provider",
         &[],
         &[BindingGroup::source_alpha(
@@ -152,10 +157,9 @@ export { x, guard };
     assert_all_emitted_js_checks(&fixture);
 }
 
-
 #[test]
 fn conflicting_existing_public_name_does_not_impersonate_a_readable_alias() {
-    let mut opts = FixtureOpts::new(
+    let mut opts = importer_opts(
         r#"import { h as x } from "./provider.js";
 console.log(x());
 const guard = 0;
@@ -197,7 +201,7 @@ export { p as h, q as readable };
 
 #[test]
 fn unnamed_target_keeps_its_original_cross_chunk_import_shape() {
-    let mut opts = FixtureOpts::new(
+    let mut opts = importer_opts(
         r#"import { h as x } from "./provider.js";
 console.log(x());
 const guard = 0;
@@ -208,9 +212,9 @@ export { x, guard };
     opts.unassigned_mode = unassigned_mode_inline();
     opts.extra_chunks = &[(
         "static/provider",
-        "function p() { return 5; }\nexport { p as h };\n",
+        "function p() { return 5; }\nfunction q() { return 9; }\nexport { p as h, q };\n",
     )];
-    let provider_modules = vec![logical_module("provider", &[Member::new("p")])];
+    let provider_modules = vec![logical_module("provider", &[Member::new("q")])];
     let extra_modules = [("static/provider", provider_modules)];
     opts.extra_chunk_logical_modules = &extra_modules;
     let fixture = run_fixture(opts);
@@ -225,7 +229,7 @@ export { x, guard };
     assert_module_exports(
         &fixture.out_root,
         "static/provider/entry.js",
-        &["h"],
+        &["h", "q"],
         &["p"],
     );
     assert_all_emitted_js_checks(&fixture);
@@ -233,7 +237,7 @@ export { x, guard };
 
 #[test]
 fn top_level_name_collision_keeps_import_unchanged() {
-    let mut opts = FixtureOpts::new(
+    let mut opts = importer_opts(
         r#"import { h as x } from "./provider.js";
 const readable = 100;
 console.log(x(), readable);
@@ -261,7 +265,7 @@ export { x, readable, guard };
 
 #[test]
 fn nested_capture_keeps_import_unchanged() {
-    let mut opts = FixtureOpts::new(
+    let mut opts = importer_opts(
         r#"import { h as x } from "./provider.js";
 function call(readable) { return x() + readable; }
 console.log(call(3));
@@ -289,7 +293,7 @@ export { call, guard };
 
 #[test]
 fn two_targets_competing_for_one_readable_local_both_fall_back() {
-    let mut opts = FixtureOpts::new(
+    let mut opts = importer_opts(
         r#"import { h as x } from "./provider-a.js";
 import { q as y } from "./provider-b.js";
 console.log(x() + y());
@@ -336,7 +340,7 @@ export { x, y, guard };
 
 #[test]
 fn imports_through_unprocessed_reexport_chunk_keep_legacy_name() {
-    let mut opts = FixtureOpts::new(
+    let mut opts = importer_opts(
         r#"import { h as x } from "./relay.js";
 console.log(x());
 const guard = 0;

@@ -653,7 +653,7 @@ export { aH };
         entry.contains("console.log(readableA)"),
         "expected entry body to use readableA; entry was:\n{entry}",
     );
-    assert_export_named_specifier(&entry, "readableA", Some("aH"));
+    assert_export_named_specifiers(&entry, "readableA", &[Some("aH"), None]);
     assert!(
         !entry.contains("aH$1"),
         "no fresh-suffix should appear when there is no collision; entry was:\n{entry}",
