@@ -73,6 +73,10 @@ def _in_cluster(service: ServiceRef) -> str:
     return f"http://{service.fqdn}:{service.port.number}"
 
 
+# Endpoint names key Gatus' stored results, so each household keeps its established label.
+_GROCY_LABELS = {"sf": "SF", "vallejo": "Vallejo"}
+
+
 def _endpoints() -> list[Endpoint]:
     (litellm,) = litellm_proxy.proxy_specs()
     litellm_url = _in_cluster(litellm_proxy.service(litellm))
@@ -213,13 +217,13 @@ def _endpoints() -> list[Endpoint]:
         ),
         *(
             Endpoint(
-                name=f"Grocy {label}",
+                name=f"Grocy {_GROCY_LABELS[household]}",
                 group=Group.SERVICES,
                 url=f"{_in_cluster(grocy_app.service(household))}/login",
                 interval="60s",
                 conditions=[_STATUS_OK],
             )
-            for household, label in grocy_app.HOUSEHOLDS
+            for household in grocy_app.HOUSEHOLDS
         ),
         Endpoint(
             name="kubectl-passthrough-mcp",
