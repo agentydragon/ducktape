@@ -2,9 +2,8 @@
 //! the `QuotientOverlay` scratch layer, and the `IncrementalQuotient`
 //! the `RealizabilityIndex` queries. Split from `realizability/mod.rs`.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::Instant;
 
 use analysis::OwnerId;
 use analysis::graph::{OwnerEdge, OwnerEdgeId, OwnerGraph};
@@ -17,8 +16,8 @@ use crate::rollback_graph::{GraphMark, RollbackDiGraph};
 use super::condensation_order::CondensationOrder;
 use super::esm_simulator::EsmEvaluationSimulator;
 use super::{
-    CrossRebindEdge, RealizabilityVerdict, SccDiagnosis, SccRejection, gate_perf_counters,
-    impacted_owner_edges, overlay_is_simulator_noop,
+    CrossRebindEdge, RealizabilityVerdict, SccDiagnosis, SccRejection, impacted_owner_edges,
+    overlay_is_simulator_noop,
 };
 
 /// A reversible mutation of a `Partition`. Planner checks can construct
@@ -323,44 +322,6 @@ impl<'a> OverlayGraphView<'a> {
     }
 
     pub(super) fn scc_containing(&self, node: ModuleId) -> BTreeSet<ModuleId> {
-        // Cheap counts and bounded histograms are always recorded.
-        // Wall-clock timing is only useful when reporting is enabled,
-        // so keep `Instant` calls behind `DEBUNDLE_TIMING`.
-        let start = if gate_perf_counters::enabled() {
-            Some(Instant::now())
-        } else {
-            None
-        };
-
-        let result = self.scc_containing_inner(node);
-
-        let nanos = start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed()));
-        let overlay_empty = self.delta.is_empty();
-        // Classify each overlay entry as addition vs removal in
-        // the effective graph. Cheap: linear in `delta.len()`
-        // which is small by design (<50 in practice; see the
-        // corpus-shape notes in `perf/proposer.md`).
-        let mut additions = 0usize;
-        let mut removals = 0usize;
-        for &(from, to) in self.delta.keys() {
-            if self.effective_count(from, to) > 0 {
-                additions += 1;
-            } else {
-                removals += 1;
-            }
-        }
-        gate_perf_counters::record_call(
-            nanos,
-            overlay_empty,
-            self.delta.len(),
-            additions,
-            removals,
-        );
-
-        result
-    }
-
-    pub(super) fn scc_containing_inner(&self, node: ModuleId) -> BTreeSet<ModuleId> {
         if !self.has_neighbor(node, WalkDirection::Forward)
             || !self.has_neighbor(node, WalkDirection::Reverse)
         {
@@ -502,15 +463,6 @@ pub(super) struct IncrementalQuotient {
     /// Lazily-computed snapshot of the constraining pairs set
     /// (`constraining_buckets.keys()`). See `ConstrainingPairs`.
     pub(super) cached_base_constraining_pairs: RefCell<Option<ConstrainingPairs>>,
-    /// `DEBUNDLE_TIMING=1` shadow-state: did the committed graphs
-    /// change since the last time the gate path queried an SCC? Set
-    /// in every `invalidate_cached_simulator` (push/undo/commit
-    /// funnel) and cleared by `gate_perf_counters::shadow_snapshot_if_stale`
-    /// after emulating one base-tarjan-scc rebuild. Stays at `false`
-    /// when timing is disabled — no real cost in the normal path.
-    /// `Cell` (not `RefCell`) because the value is `Copy` and we only
-    /// read/write a single bool.
-    pub(super) base_snapshot_stale: Cell<bool>,
     /// Tier-1 structure of the gate ladder (plan §3/§4): SCC
     /// condensation order maintained over `constraining_graph`.
     /// Updated in the same `add_current_edge` / `remove_current_edge`
@@ -539,10 +491,6 @@ impl IncrementalQuotient {
             cached_base_simulator: RefCell::new(None),
             cached_base_i_successors: RefCell::new(None),
             cached_base_constraining_pairs: RefCell::new(None),
-            // Start dirty so the first gate query emulates a fresh
-            // base-snapshot rebuild — matches what a real
-            // snapshot-per-push design would do on startup.
-            base_snapshot_stale: Cell::new(true),
             // Both orders start stale and lazily rebuild from their
             // base graph on the first ladder query.
             constraining_order: RefCell::new(CondensationOrder::new()),
@@ -566,32 +514,6 @@ impl IncrementalQuotient {
         // Every path that invalidates the simulator also changed the
         // graphs/buckets the tier-0 touching verdict reads.
         self.cached_touching_clean.get_mut().clear();
-        // DEBUNDLE_TIMING=1 only: the next gate query will emulate a
-        // fresh base-SCC snapshot rebuild. The flag costs one
-        // unconditional store per invalidation (a few thousand per
-        // proposer run); cheap.
-        self.base_snapshot_stale.set(true);
-    }
-
-    /// `DEBUNDLE_TIMING=1` only: if the committed graphs changed since
-    /// the last gate query, run `tarjan_scc` on each base graph once
-    /// (constraining and I) and record shape + time. This emulates
-    /// the per-push cost a snapshot+clone design would pay. Cleared
-    /// after the emulated rebuild so subsequent queries within the
-    /// same delta window don't double-count.
-    ///
-    /// Disabled path: a single atomic-bool load followed by a
-    /// `Cell::get` branch. Negligible overhead.
-    pub(super) fn maybe_record_base_snapshot(&self) {
-        if !gate_perf_counters::enabled() {
-            return;
-        }
-        if !self.base_snapshot_stale.get() {
-            return;
-        }
-        gate_perf_counters::record_base_snapshot(&self.constraining_graph);
-        gate_perf_counters::record_base_snapshot(&self.i_graph);
-        self.base_snapshot_stale.set(false);
     }
 
     /// Borrow the base simulator, building it on demand if the cache
@@ -603,20 +525,12 @@ impl IncrementalQuotient {
         {
             let mut slot = self.cached_base_simulator.borrow_mut();
             if slot.is_none() {
-                let start = if gate_perf_counters::enabled() {
-                    Some(Instant::now())
-                } else {
-                    None
-                };
                 let (i_successors, constraining_pairs) = self.effective_simulator_inputs(None);
                 *slot = Some(EsmEvaluationSimulator::build(
                     &i_successors,
                     &constraining_pairs,
                     self.residual,
                 ));
-                gate_perf_counters::record_simulator_base_rebuild(
-                    start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed())),
-                );
             }
         }
         std::cell::Ref::map(self.cached_base_simulator.borrow(), |opt| {
@@ -851,14 +765,8 @@ impl IncrementalQuotient {
             cross_rebinds: self.cross_rebinds_touching(module),
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
-        let mut i_scc_had_constraining_pair = false;
-
-        // `DEBUNDLE_TIMING=1` shadow path: see
-        // `verdict_with_overlay_touching` for the rationale.
-        self.maybe_record_base_snapshot();
 
         let constraining_modules = self.constraining_graph.scc_containing(module);
-        let constraining_scc_size = constraining_modules.len();
         if constraining_modules.len() >= 2 {
             let constraining_owner_edges = self.constraining_edges_inside(&constraining_modules);
             reported.insert(constraining_modules.clone());
@@ -872,40 +780,31 @@ impl IncrementalQuotient {
         }
 
         let i_modules = self.i_graph.scc_containing(module);
-        let i_scc_size = i_modules.len();
-        if i_modules.len() >= 2 && !reported.contains(&i_modules) {
-            let any_constraining = self
+        if i_modules.len() >= 2
+            && !reported.contains(&i_modules)
+            && self
                 .constraining_buckets
                 .keys()
-                .any(|(from, to)| i_modules.contains(from) && i_modules.contains(to));
-            i_scc_had_constraining_pair = any_constraining;
-            if any_constraining {
-                let simulation = self.build_simulator(None);
-                let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> =
-                    self.constraining_buckets.keys().copied().collect();
-                let tdz_pairs: Vec<(ModuleId, ModuleId)> = simulation
-                    .tdz_pairs(&i_modules, &constraining_pairs)
-                    .collect();
-                if !tdz_pairs.is_empty() {
-                    let constraining_owner_edges = self.tdz_constraining_edges(&tdz_pairs, None);
-                    verdict.unrealizable_sccs.push(SccDiagnosis {
-                        core: SccCore {
-                            modules: i_modules,
-                            constraining_owner_edges,
-                        },
-                        rejection: SccRejection::EsmEvaluationTdz,
-                    });
-                }
+                .any(|(from, to)| i_modules.contains(from) && i_modules.contains(to))
+        {
+            let simulation = self.build_simulator(None);
+            let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> =
+                self.constraining_buckets.keys().copied().collect();
+            let tdz_pairs: Vec<(ModuleId, ModuleId)> = simulation
+                .tdz_pairs(&i_modules, &constraining_pairs)
+                .collect();
+            if !tdz_pairs.is_empty() {
+                let constraining_owner_edges = self.tdz_constraining_edges(&tdz_pairs, None);
+                verdict.unrealizable_sccs.push(SccDiagnosis {
+                    core: SccCore {
+                        modules: i_modules,
+                        constraining_owner_edges,
+                    },
+                    rejection: SccRejection::EsmEvaluationTdz,
+                });
             }
         }
 
-        gate_perf_counters::record_verdict_touching(
-            false,
-            constraining_scc_size,
-            i_scc_size,
-            i_scc_had_constraining_pair,
-            !verdict.is_realizable(),
-        );
         verdict
     }
 
@@ -919,18 +818,10 @@ impl IncrementalQuotient {
             cross_rebinds: self.cross_rebinds_touching_with_overlay(module, overlay),
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
-        let mut i_scc_had_constraining_pair = false;
-
-        // `DEBUNDLE_TIMING=1` shadow path: if the base graphs changed
-        // since the last gate query, emulate the snapshot-per-push
-        // design by running `tarjan_scc` on each base graph once and
-        // recording shape + time. Cleared after the emulated rebuild.
-        self.maybe_record_base_snapshot();
 
         let constraining_graph =
             OverlayGraphView::new(&self.constraining_graph, &overlay.constraining_delta);
         let constraining_modules = constraining_graph.scc_containing(module);
-        let constraining_scc_size = constraining_modules.len();
         if constraining_modules.len() >= 2 {
             let constraining_owner_edges =
                 self.constraining_edges_inside_with_overlay(&constraining_modules, overlay);
@@ -946,33 +837,24 @@ impl IncrementalQuotient {
 
         let i_graph_view = OverlayGraphView::new(&self.i_graph, &overlay.i_delta);
         let i_modules = i_graph_view.scc_containing(module);
-        let i_scc_size = i_modules.len();
-        if i_modules.len() >= 2 && !reported.contains(&i_modules) {
-            let any_inside_scc = self.overlay_constraining_pair_inside(&i_modules, overlay);
-            i_scc_had_constraining_pair = any_inside_scc;
-            if any_inside_scc {
-                let tdz_pairs = self.overlay_tdz_pairs(&i_modules, overlay);
-                if !tdz_pairs.is_empty() {
-                    let constraining_owner_edges =
-                        self.tdz_constraining_edges(&tdz_pairs, Some(overlay));
-                    verdict.unrealizable_sccs.push(SccDiagnosis {
-                        core: SccCore {
-                            modules: i_modules,
-                            constraining_owner_edges,
-                        },
-                        rejection: SccRejection::EsmEvaluationTdz,
-                    });
-                }
+        if i_modules.len() >= 2
+            && !reported.contains(&i_modules)
+            && self.overlay_constraining_pair_inside(&i_modules, overlay)
+        {
+            let tdz_pairs = self.overlay_tdz_pairs(&i_modules, overlay);
+            if !tdz_pairs.is_empty() {
+                let constraining_owner_edges =
+                    self.tdz_constraining_edges(&tdz_pairs, Some(overlay));
+                verdict.unrealizable_sccs.push(SccDiagnosis {
+                    core: SccCore {
+                        modules: i_modules,
+                        constraining_owner_edges,
+                    },
+                    rejection: SccRejection::EsmEvaluationTdz,
+                });
             }
         }
 
-        gate_perf_counters::record_verdict_touching(
-            true,
-            constraining_scc_size,
-            i_scc_size,
-            i_scc_had_constraining_pair,
-            !verdict.is_realizable(),
-        );
         verdict
     }
 
@@ -1074,70 +956,38 @@ impl IncrementalQuotient {
         // Tier 0: delta-free move — post-state == pre-state, so the
         // (cached) committed-state touching verdict decides.
         if overlay.is_empty() {
-            let decision = if self.touching_is_clean(module) {
+            return if self.touching_is_clean(module) {
                 LadderDecision::DeltaFreeAccept
             } else {
                 LadderDecision::DeltaFreeReject
             };
-            gate_perf_counters::record_ladder_decision(decision, None, None, None);
-            return decision;
         }
-
-        // `DEBUNDLE_TIMING=1` shadow path; see
-        // `verdict_with_overlay_touching` for the rationale.
-        self.maybe_record_base_snapshot();
 
         // Tier 1: clause 2 (cross-rebinds touching `module`) and
         // Pass 1 — is `module`'s post-move constraining SCC
         // multi-module? — on the maintained constraining condensation.
-        let tier1_start = if gate_perf_counters::enabled() {
-            Some(Instant::now())
-        } else {
-            None
-        };
-        let tier1 = if self.constraining_order.borrow_mut().would_join_multi_scc(
+        if self.constraining_order.borrow_mut().would_join_multi_scc(
             &self.constraining_graph,
             &overlay.constraining_delta,
             module,
             module,
         ) {
-            Some(LadderDecision::ConstrainingCycleReject)
-        } else if self.any_cross_rebind_touching_with_overlay(module, overlay) {
-            Some(LadderDecision::CrossRebindReject)
-        } else {
-            None
-        };
-        let tier1_nanos =
-            tier1_start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed()));
-        if let Some(decision) = tier1 {
-            gate_perf_counters::record_ladder_decision(decision, tier1_nanos, None, None);
-            return decision;
+            return LadderDecision::ConstrainingCycleReject;
+        }
+        if self.any_cross_rebind_touching_with_overlay(module, overlay) {
+            return LadderDecision::CrossRebindReject;
         }
 
         // Tier 2: Pass-2 vacuity on the I-condensation. Overlay
         // removals inside a multi-module I-SCC route through the
         // exact bidirectional fallback inside `would_join_multi_scc`
         // (plan §3, tier-2 exactness caveat).
-        let tier2_start = if gate_perf_counters::enabled() {
-            Some(Instant::now())
-        } else {
-            None
-        };
-        let multi_i_scc = self.i_order.borrow_mut().would_join_multi_scc(
+        if !self.i_order.borrow_mut().would_join_multi_scc(
             &self.i_graph,
             &overlay.i_delta,
             module,
             module,
-        );
-        if !multi_i_scc {
-            let tier2_nanos =
-                tier2_start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed()));
-            gate_perf_counters::record_ladder_decision(
-                LadderDecision::NoMultiModuleISccAccept,
-                tier1_nanos,
-                tier2_nanos,
-                None,
-            );
+        ) {
             return LadderDecision::NoMultiModuleISccAccept;
         }
         // Multi-module I-SCC (rare): materialize its member set —
@@ -1145,35 +995,17 @@ impl IncrementalQuotient {
         // `verdict_with_overlay_touching` computes it.
         let i_modules =
             OverlayGraphView::new(&self.i_graph, &overlay.i_delta).scc_containing(module);
-        let pair_inside = self.overlay_constraining_pair_inside(&i_modules, overlay);
-        let tier2_nanos =
-            tier2_start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed()));
-        if !pair_inside {
-            gate_perf_counters::record_ladder_decision(
-                LadderDecision::NoConstrainingPairAccept,
-                tier1_nanos,
-                tier2_nanos,
-                None,
-            );
+        if !self.overlay_constraining_pair_inside(&i_modules, overlay) {
             return LadderDecision::NoConstrainingPairAccept;
         }
 
         // Tier 3: exact Pass 2 — the shared scoped-simulator
         // evaluation.
-        let tier3_start = if gate_perf_counters::enabled() {
-            Some(Instant::now())
-        } else {
-            None
-        };
-        let decision = if self.overlay_tdz_pairs(&i_modules, overlay).is_empty() {
+        if self.overlay_tdz_pairs(&i_modules, overlay).is_empty() {
             LadderDecision::SimulatorAccept
         } else {
             LadderDecision::SimulatorReject
-        };
-        let tier3_nanos =
-            tier3_start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed()));
-        gate_perf_counters::record_ladder_decision(decision, tier1_nanos, tier2_nanos, tier3_nanos);
-        decision
+        }
     }
 
     /// Resolve a list of TDZ-violating `(from, to)` pairs to their
@@ -1215,9 +1047,7 @@ impl IncrementalQuotient {
         &self,
         overlay: Option<&QuotientOverlay>,
     ) -> EsmEvaluationSimulator {
-        let structural_noop = overlay_is_simulator_noop(overlay);
-        gate_perf_counters::record_simulator_request(structural_noop);
-        if structural_noop {
+        if overlay_is_simulator_noop(overlay) {
             return self.base_simulator().clone();
         }
         self.build_simulator_from_scratch(overlay)
@@ -1236,18 +1066,8 @@ impl IncrementalQuotient {
         &self,
         overlay: Option<&QuotientOverlay>,
     ) -> EsmEvaluationSimulator {
-        let start = if gate_perf_counters::enabled() {
-            Some(Instant::now())
-        } else {
-            None
-        };
         let (i_successors, constraining_pairs) = self.effective_simulator_inputs(overlay);
-        let simulator =
-            EsmEvaluationSimulator::build(&i_successors, &constraining_pairs, self.residual);
-        gate_perf_counters::record_simulator_overlay_rebuild(
-            start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed())),
-        );
-        simulator
+        EsmEvaluationSimulator::build(&i_successors, &constraining_pairs, self.residual)
     }
 
     /// Materialize `(i_successors, constraining_pairs)` — the inputs
