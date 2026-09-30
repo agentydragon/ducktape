@@ -403,7 +403,7 @@ pub(super) fn finish_logical_chunk(
     // Chunk analysis: hint-sensitive facts, owner graph, and structural
     // atomic units. See `stage_one/mod.rs` for the current implementation.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
-    let chunk_analysis = compute_chunk_analysis_from_structural(
+    let chunk_analysis = compute_chunk_analysis(
         chunk_id,
         &runtime_ast.module,
         structural_analysis,

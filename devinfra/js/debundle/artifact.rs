@@ -675,7 +675,6 @@ pub struct ChunkFileRecord {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ImportRecord {
-    pub id: String,
     pub line: Option<usize>,
     pub source: String,
     pub specifiers: Vec<ImportSpecifierRecord>,
@@ -687,8 +686,6 @@ pub struct ImportSpecifierRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub imported: Option<String>,
     pub local: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -731,7 +728,6 @@ pub struct ExportAliasRecord {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct KeptTopLevelDeclarationRecord {
-    pub id: String,
     pub line: Option<usize>,
     pub names: Vec<String>,
     pub kind: TopLevelDeclarationKind,

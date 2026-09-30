@@ -1087,24 +1087,26 @@ impl ChunkPlanBuilder {
     /// preserves any existing entry under that name.
     pub(super) fn apply_rebind_folds(&mut self, folds: Vec<RebindFold>) {
         let residual_plan_index = self.residual_plan_index;
-        for fold in folds {
-            let RebindFold {
-                binding,
-                name,
-                dest,
-                owned_kind,
-                previous,
-            } = fold;
+        for RebindFold {
+            binding,
+            dest,
+            from_residual,
+        } in folds
+        {
+            let name = binding.0.as_ref().to_string();
             self.binding_assignment.insert(binding.clone(), dest);
-            self.bindings_catalogue.insert(binding, owned_kind);
+            self.bindings_catalogue.insert(
+                binding,
+                BindingKind::Owned {
+                    module: ModuleId::logical(dest),
+                },
+            );
             self.module_plans[dest]
                 .bindings
                 .entry(name.clone())
                 .or_insert_with(|| name.clone());
-            if let Some(prev_idx) = previous
-                && Some(prev_idx) == residual_plan_index
-            {
-                self.module_plans[prev_idx].bindings.remove(&name);
+            if from_residual && let Some(residual) = residual_plan_index {
+                self.module_plans[residual].bindings.remove(&name);
             }
         }
     }

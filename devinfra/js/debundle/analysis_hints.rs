@@ -68,19 +68,3 @@ pub struct AnalysisHints {
     /// `ChunkCodeGraph::fluent_bindings`.
     pub fluent_bindings: BTreeSet<String>,
 }
-
-impl AnalysisHints {
-    pub fn from_declared_pure(declared_pure: &BTreeSet<String>) -> Self {
-        Self {
-            declared_pure: declared_pure.clone(),
-            declared_pure_new: BTreeSet::new(),
-            declared_pure_members: BTreeMap::new(),
-            no_sync_callback_members: BTreeMap::new(),
-            known_effects: BTreeMap::new(),
-            local_effect_policy: LocalEffectPolicy::KnownEffectsOnly,
-            trusted_dataflow_summaries: false,
-            imported_purities: BTreeMap::new(),
-            fluent_bindings: BTreeSet::new(),
-        }
-    }
-}

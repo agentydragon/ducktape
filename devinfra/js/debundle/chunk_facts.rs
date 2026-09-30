@@ -22,7 +22,6 @@
 use std::collections::{BTreeMap, HashMap};
 
 use js_ast::statement_ordinal_for_body_index;
-use serde::{Deserialize, Serialize};
 use swc_ecma_ast::{
     ArrayPat, ArrowFunctionBody, AssignTarget, AssignTargetPat, BlockStmt, Callee, Class,
     ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, FunctionBody,
@@ -41,12 +40,9 @@ pub type NodeId = u32;
 /// up front (see the module docstring), so this enum is exhaustive by
 /// construction rather than carrying a catch-all.
 ///
-/// Each variant's PascalCase serde spelling is byte-identical to the kind tag the
-/// extractor previously emitted as a `&'static str`. `as_tag` exposes that
-/// spelling for the string-keyed views (`Index`, root-kind prefilters) the
-/// downstream resolver and near-miss diagnostics still read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+/// `as_tag` exposes each variant's name for the string-keyed views (`Index`,
+/// root-kind prefilters) the downstream resolver and near-miss diagnostics read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::IntoStaticStr)]
 pub enum NodeKind {
     Array,
     ArrayPat,
@@ -144,105 +140,11 @@ pub enum NodeKind {
 }
 
 impl NodeKind {
-    /// The kind tag's stable spelling, identical to the variant's PascalCase serde
-    /// form. Feeds the string-keyed [`Index`] kind vector and the root-kind
-    /// prefilters consumed by `source_match` (the resolver and near-miss walk).
+    /// The variant's name. Feeds the string-keyed [`Index`] kind vector and the
+    /// root-kind prefilters consumed by `source_match` (the resolver and
+    /// near-miss walk).
     pub fn as_tag(self) -> &'static str {
-        match self {
-            Self::Array => "Array",
-            Self::ArrayPat => "ArrayPat",
-            Self::Arrow => "Arrow",
-            Self::Assign => "Assign",
-            Self::AssignPat => "AssignPat",
-            Self::AssignProp => "AssignProp",
-            Self::AsyncArrow => "AsyncArrow",
-            Self::AsyncFunction => "AsyncFunction",
-            Self::AsyncGeneratorFunction => "AsyncGeneratorFunction",
-            Self::Await => "Await",
-            Self::BigIntLit => "BigIntLit",
-            Self::Bin => "Bin",
-            Self::BindingIdent => "BindingIdent",
-            Self::Block => "Block",
-            Self::BoolLit => "BoolLit",
-            Self::Break => "Break",
-            Self::Call => "Call",
-            Self::Catch => "Catch",
-            Self::Class => "Class",
-            Self::ClassDecl => "ClassDecl",
-            Self::ClassExpr => "ClassExpr",
-            Self::ClassMemberEmpty => "ClassMemberEmpty",
-            Self::ClassProp => "ClassProp",
-            Self::ComputedKey => "ComputedKey",
-            Self::Cond => "Cond",
-            Self::Constructor => "Constructor",
-            Self::Continue => "Continue",
-            Self::Debugger => "Debugger",
-            Self::DoWhile => "DoWhile",
-            Self::Elision => "Elision",
-            Self::Empty => "Empty",
-            Self::ExportAll => "ExportAll",
-            Self::ExportDecl => "ExportDecl",
-            Self::ExportDefault => "ExportDefault",
-            Self::ExportDefaultDecl => "ExportDefaultDecl",
-            Self::ExportNamed => "ExportNamed",
-            Self::ExprStmt => "ExprStmt",
-            Self::FnDecl => "FnDecl",
-            Self::FnExpr => "FnExpr",
-            Self::For => "For",
-            Self::ForIn => "ForIn",
-            Self::ForOf => "ForOf",
-            Self::Function => "Function",
-            Self::GeneratorFunction => "GeneratorFunction",
-            Self::Getter => "Getter",
-            Self::Ident => "Ident",
-            Self::If => "If",
-            Self::Import => "Import",
-            Self::ImportCallee => "ImportCallee",
-            Self::ImportSpecifier => "ImportSpecifier",
-            Self::KeyValue => "KeyValue",
-            Self::Labeled => "Labeled",
-            Self::Member => "Member",
-            Self::MetaPropImportMeta => "MetaPropImportMeta",
-            Self::MetaPropNewTarget => "MetaPropNewTarget",
-            Self::Method => "Method",
-            Self::New => "New",
-            Self::NullLit => "NullLit",
-            Self::NumLit => "NumLit",
-            Self::Object => "Object",
-            Self::ObjectMethod => "ObjectMethod",
-            Self::ObjectPat => "ObjectPat",
-            Self::OptCall => "OptCall",
-            Self::OptChain => "OptChain",
-            Self::PatAssign => "PatAssign",
-            Self::PatKeyValue => "PatKeyValue",
-            Self::PropName => "PropName",
-            Self::RegexLit => "RegexLit",
-            Self::RestPat => "RestPat",
-            Self::Return => "Return",
-            Self::Seq => "Seq",
-            Self::Setter => "Setter",
-            Self::Shorthand => "Shorthand",
-            Self::Spread => "Spread",
-            Self::StaticBlock => "StaticBlock",
-            Self::StrLit => "StrLit",
-            Self::Super => "Super",
-            Self::SuperProp => "SuperProp",
-            Self::Switch => "Switch",
-            Self::SwitchCase => "SwitchCase",
-            Self::TaggedTpl => "TaggedTpl",
-            Self::This => "This",
-            Self::Throw => "Throw",
-            Self::Tpl => "Tpl",
-            Self::TplQuasi => "TplQuasi",
-            Self::Try => "Try",
-            Self::Unary => "Unary",
-            Self::UpdatePostfix => "UpdatePostfix",
-            Self::UpdatePrefix => "UpdatePrefix",
-            Self::VarDecl => "VarDecl",
-            Self::VarDeclarator => "VarDeclarator",
-            Self::While => "While",
-            Self::Yield => "Yield",
-        }
+        self.into()
     }
 }
 
@@ -1320,14 +1222,9 @@ impl Extractor {
 }
 
 /// Project a parsed chunk's top-level statements into AST facts, or fail loudly
-/// at the first construct not yet modeled.
-pub fn extract_facts(module: &Module) -> Result<ChunkFacts, Unsupported> {
-    extract_facts_items(&module.body)
-}
-
-/// Like [`extract_facts`], but over a borrowed item slice — so a caller projecting
-/// one statement at a time (the resolver's per-needle facts) need not clone the
-/// item into a one-item [`Module`] first.
+/// at the first construct not yet modeled. Takes a borrowed item slice so a
+/// caller projecting one statement at a time (the resolver's per-needle facts)
+/// need not clone the item into a one-item [`Module`] first.
 pub fn extract_facts_items(items: &[ModuleItem]) -> Result<ChunkFacts, Unsupported> {
     let mut extractor = Extractor::default();
     for (body_idx, item) in items.iter().enumerate() {
@@ -1354,7 +1251,7 @@ pub struct MemberReadFact {
 ///
 /// Derived from the per-statement AST facts ([`Member`]/[`PropName`]/[`Ident`]
 /// projection). **Per-statement-tolerant** like [`coverage_report`] (and unlike
-/// [`extract_facts`], which fails the whole chunk at the first unmodeled node): a
+/// [`extract_facts_items`], which fails the whole chunk at the first unmodeled node): a
 /// statement whose subtree hits an [`Unsupported`] construct contributes no
 /// member-read rows rather than aborting the chunk. That tolerance is sound for a
 /// *selector* primitive — a missing member-read can only make a `reads_member`
@@ -2034,7 +1931,7 @@ pub struct CoverageReport {
 }
 
 /// Attempt extraction of each top-level statement independently and tally the
-/// outcome. Unlike [`extract_facts`], one statement's `Unsupported` does not
+/// outcome. Unlike [`extract_facts_items`], one statement's `Unsupported` does not
 /// abort the others — the point is to measure how far coverage reaches.
 pub fn coverage_report(module: &Module) -> CoverageReport {
     let mut report = CoverageReport::default();
@@ -2057,7 +1954,7 @@ mod tests {
 
     fn extract(src: &str) -> Result<ChunkFacts, Unsupported> {
         js_ast::with_swc_globals(|| {
-            extract_facts(&js_ast::parse_js_module_ast("<test>", src).unwrap())
+            extract_facts_items(&js_ast::parse_js_module_ast("<test>", src).unwrap().body)
         })
     }
 
@@ -2843,29 +2740,5 @@ mod tests {
                 property: "defineProperty".to_string(),
             }],
         );
-    }
-
-    #[test]
-    fn node_kind_serde_spelling_matches_tag() {
-        // The migration's load-bearing invariant: a `NodeKind`'s serde form is
-        // byte-identical to the `as_tag` spelling (the old `&'static str` tag), so
-        // `rename_all = "PascalCase"` is a faithful no-op for these already-PascalCase
-        // multi-word/multi-capital variants and any serialized form stays stable.
-        for kind in [
-            NodeKind::VarDecl,
-            NodeKind::ExportDefaultDecl,
-            NodeKind::MetaPropImportMeta,
-            NodeKind::MetaPropNewTarget,
-            NodeKind::AsyncGeneratorFunction,
-            NodeKind::UpdatePostfix,
-            NodeKind::ClassMemberEmpty,
-            NodeKind::BindingIdent,
-            NodeKind::OptCall,
-            NodeKind::TplQuasi,
-        ] {
-            let json = serde_json::to_string(&kind).unwrap();
-            assert_eq!(json, format!("\"{}\"", kind.as_tag()));
-            assert_eq!(serde_json::from_str::<NodeKind>(&json).unwrap(), kind);
-        }
     }
 }

@@ -29,8 +29,7 @@ pub mod reports;
 
 pub use analysis_hints::{AnalysisHints, KnownEffect, LocalEffectPolicy};
 pub use atomic_units::{
-    AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units,
-    compute_owner_graph_and_units_with,
+    AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units_with,
 };
 pub use factor_assembly::{
     AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_partition,
@@ -39,7 +38,7 @@ pub use facts::{
     ChunkFactAnalysis, ChunkFactsReport, EffectCell, IdReport, PositionBucketed,
     StatementEffectSummary, StatementFacts, StatementFactsReport, StatementKind,
     StructuralChunkAnalysis, StructuralStatementFacts, analyze_chunk, analyze_chunk_structural,
-    analyze_chunk_with_policy, find_top_level_await, local_namespace_iife_target,
+    analyze_chunk_with_policy, local_namespace_iife_target,
 };
 pub use graph::{
     ChunkConstrainingEdgeSet, DepKind, DuplicateTopLevelDeclaration, EdgeMetadata, EdgeReason,
