@@ -261,7 +261,7 @@ def generate_manifests(root: Path) -> None:
         root, staging.ENV, staging.chart
     )
     agentplane_testing_resource_chart = agentplane_generation.write_environment_manifests(
-        root, testing.ENV, testing.chart, write_kustomization=False
+        root, testing.ENV, testing.chart
     )
     agentplane_staging_health_checks = agentplane_generation.environment_health_checks(
         agentplane_staging_resource_chart, staging.ENV.namespace
@@ -329,7 +329,7 @@ def generate_manifests(root: Path) -> None:
     activitywatch_app.write_manifests(root)
     study_casino_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
-    litellm_credentials.write_agentplane_testing_manifests(root)
+    litellm_credentials.write_agentplane_testing_manifests(root, testing.ENV.output_dir)
     ducktape_flux.write_manifests(root)
     flux_sources.write_manifests(root)
 
@@ -1341,7 +1341,7 @@ def generate_manifests(root: Path) -> None:
         haku_rbac_kustomization,
         haku_egress_proxy_kustomization,
     )
-    agentplane_testing_artifact = artifact("agentplane-testing", agentplane_generation.output_dir(testing.ENV))
+    agentplane_testing_artifact = artifact("agentplane-testing", testing.ENV.output_dir, testing.ENV.image_pins)
     testing.agentplane_testing(
         flux_chart,
         agentplane_testing_artifact,
@@ -1394,7 +1394,7 @@ def generate_manifests(root: Path) -> None:
     public_coder_devbox.public_coder_agent_devbox(
         flux_chart, public_coder_agent_devbox_artifact, kubevirt_kustomization, external_secrets_operator_kustomization
     )
-    agentplane_staging_artifact = artifact("agentplane-staging", agentplane_generation.output_dir(staging.ENV))
+    agentplane_staging_artifact = artifact("agentplane-staging", staging.ENV.output_dir)
     staging.agentplane_staging(
         flux_chart,
         agentplane_staging_artifact,
