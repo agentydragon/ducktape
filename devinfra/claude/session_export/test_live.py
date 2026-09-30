@@ -20,6 +20,7 @@ from devinfra.claude.session_export.conftest import (
     make_event,
     make_events,
     make_session,
+    make_stream_event,
 )
 from devinfra.claude.session_export.live import DISCOVERY, WATCH, LiveFollower
 from devinfra.claude.session_export.store import EventRow, SessionStore
@@ -97,7 +98,7 @@ async def test_pushed_events_are_stored_as_they_arrive(
     [stream] = service.event_streams(ONE)
     assert stream.request.url.params["from_sequence_num"] == "3"
 
-    stream.send("client_event", make_event(4), frame_id="4")
+    stream.send("client_event", make_stream_event(4), frame_id="4")
     stream.send("client_event", make_event(5), frame_id="5")
 
     async def stored_through_five() -> bool:
