@@ -10,12 +10,14 @@ from urllib.parse import parse_qsl, urlsplit
 import httpx
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from devinfra.claude.claude_api.oauth_client import AUTHORIZE_URL, CLIENT_ID
 from devinfra.claude.session_export.conftest import make_credential
 from devinfra.claude.session_export.oauth import (
     CredentialStore,
     OAuthTokenSource,
+    PairedTokens,
     authorization_url,
     pair,
     pkce_challenge,
@@ -53,6 +55,19 @@ PAIRED_RESPONSE = {
 async def browse(port: int, *targets: str) -> list[int]:
     async with httpx.AsyncClient() as browser:
         return [(await browser.get(f"http://127.0.0.1:{port}{target}")).status_code for target in targets]
+
+
+def test_validation_errors_do_not_echo_tokens(tmp_path: Path) -> None:
+    tokens = json.dumps({"access_token": "test-access-secret", "refresh_token": "test-refresh-secret"})
+    with pytest.raises(ValidationError) as rejected_response:
+        PairedTokens.model_validate_json(tokens)  # lacks expires_in and organization
+    corrupt = tmp_path / "credential.json"
+    corrupt.write_text(tokens)
+    with pytest.raises(ValidationError) as rejected_file:
+        CredentialStore(corrupt).load()
+    for failure in (rejected_response, rejected_file):
+        assert "test-access-secret" not in str(failure.value)
+        assert "test-refresh-secret" not in str(failure.value)
 
 
 def test_pkce_challenge_matches_the_rfc_7636_example() -> None:

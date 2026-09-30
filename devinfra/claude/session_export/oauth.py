@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
-from pydantic import BaseModel, Field, SecretStr, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer
 
 from devinfra.claude.claude_api.oauth_client import AUTHORIZE_URL, CLIENT_ID, TOKEN_URL
 
@@ -30,13 +30,19 @@ class Organization(BaseModel):
     uuid: str
 
 
-class RefreshedTokens(BaseModel):
+class TokenBearer(BaseModel):
+    """Models that hold tokens: a validation error must not echo the rejected input into a terminal or a paste."""
+
+    model_config = ConfigDict(hide_input_in_errors=True)
+
+
+class RefreshedTokens(TokenBearer):
     access_token: SecretStr
     refresh_token: SecretStr | None = Field(default=None, description="Absent when the server did not rotate it.")
     expires_in: int
 
 
-class PairedTokens(BaseModel):
+class PairedTokens(TokenBearer):
     access_token: SecretStr
     refresh_token: SecretStr
     expires_in: int
@@ -44,7 +50,7 @@ class PairedTokens(BaseModel):
     organization: Organization
 
 
-class OAuthCredential(BaseModel, frozen=True):
+class OAuthCredential(TokenBearer, frozen=True):
     access_token: SecretStr
     refresh_token: SecretStr
     expires_at: datetime

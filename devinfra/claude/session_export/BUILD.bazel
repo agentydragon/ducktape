@@ -113,6 +113,7 @@ py_test(
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api:oauth_client",
         "@pypi//httpx",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
