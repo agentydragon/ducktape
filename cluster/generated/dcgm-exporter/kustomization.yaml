@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dcgm-exporter
+resources:
+  - dcgm-exporter.k8s.yaml
+configMapGenerator:
+  - name: dcgm-counters
+    namespace: dcgm-exporter
+    literals:
+      - |
+        counters.csv=DCGM_FI_DEV_XID_ERRORS,gauge,Value of the last XID error encountered.
+        DCGM_FI_DEV_PCIE_REPLAY_COUNTER,gauge,Total number of PCIe retries.
+        DCGM_FI_DEV_POWER_USAGE,gauge,Power draw (in W).
+        DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION,counter,Total energy consumption since boot (in mJ).
+        DCGM_FI_DEV_GPU_TEMP,gauge,GPU temperature (in C).
+        DCGM_FI_DEV_MEMORY_TEMP,gauge,Memory temperature (in C).
+        DCGM_FI_DEV_THERMAL_VIOLATION,counter,Throttling duration due to thermal constraints (in us).
+        DCGM_FI_DEV_POWER_VIOLATION,counter,Throttling duration due to power constraints (in us).
+        DCGM_FI_DEV_SM_CLOCK,gauge,SM clock frequency (in MHz).
+        DCGM_FI_DEV_MEM_CLOCK,gauge,Memory clock frequency (in MHz).
+        DCGM_FI_DEV_GPU_UTIL,gauge,GPU utilization (in %).
+        DCGM_FI_DEV_MEM_COPY_UTIL,gauge,Memory utilization (in %).
+        DCGM_FI_DEV_FB_FREE,gauge,Framebuffer memory free (in MiB).
+        DCGM_FI_DEV_FB_USED,gauge,Framebuffer memory used (in MiB).
+        DCGM_FI_DEV_ECC_SBE_VOL_TOTAL,counter,Total single-bit volatile ECC errors.
+        DCGM_FI_DEV_ECC_DBE_VOL_TOTAL,counter,Total double-bit volatile ECC errors.
