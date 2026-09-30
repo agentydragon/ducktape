@@ -17,15 +17,15 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "kubectl-passthrough-mcp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/kubectl-passthrough-mcp/app"
-_LABELS = {"app.kubernetes.io/name": NAME}
-_PORT = 8080
 SERVICE = ServiceRef(
-    name=NAME, port=Port(name="http", number=_PORT), pods=Pods(namespace=NAME, labels=tuple(_LABELS.items()))
+    name=NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAME, labels=(("app.kubernetes.io/name", NAME),)),
 )
 _CONFIG_MAP = "kubectl-passthrough-mcp-public"
 _CONFIG_FILE = "00-public.toml"
 _CONFIG_DIR = "/etc/kubectl-passthrough-mcp"
-_PUBLIC_CONFIG = """\
+_PUBLIC_CONFIG = f"""\
 require_oauth = true
 authorization_url = "https://auth.allegedly.works/application/o/kubectl-passthrough-mcp/"
 oauth_audience = "kubectl-passthrough-mcp"
@@ -34,13 +34,13 @@ oauth_audience = "kubectl-passthrough-mcp"
 cluster_auth_mode = "passthrough"
 cluster_provider_strategy = "in-cluster"
 server_url = "https://kubectl-passthrough-mcp.allegedly.works"
-port = "8080"
+port = "{SERVICE.pod_port}"
 """
 
 
 def _healthz(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
     return k8s.Probe(
-        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_PORT)),
+        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(SERVICE.pod_port)),
         initial_delay_seconds=initial_delay_seconds,
         period_seconds=period_seconds,
     )
@@ -53,7 +53,7 @@ def _deployment(chart: Chart) -> None:
         metadata=k8s.ObjectMeta(
             name=NAME,
             namespace=NAME,
-            labels=_LABELS,
+            labels=SERVICE.pods.selector,
             annotations={
                 "description": (
                     "containers/kubernetes-mcp-server in OAuth passthrough mode. Caller's Authentik JWT is"
@@ -63,9 +63,9 @@ def _deployment(chart: Chart) -> None:
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     service_account_name=NAME,
                     containers=[
@@ -76,7 +76,7 @@ def _deployment(chart: Chart) -> None:
                             # Config is public-only — the OAuth2 provider is public (PKCE),
                             # and passthrough mode does no token exchange, so no secrets needed.
                             args=[f"--config={_CONFIG_DIR}/{_CONFIG_FILE}"],
-                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            ports=[SERVICE.port.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="public",
@@ -133,12 +133,8 @@ def chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[k8s.ServicePort(name="http", port=_PORT, target_port=k8s.IntOrString.from_string("http"))],
-            type="ClusterIP",
-        ),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAME),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()], type="ClusterIP"),
     )
     # NOT behind the Authentik outpost — the MCP server drives the full OAuth dance
     # (DCR, PKCE, resource metadata) internally using containers/kubernetes-mcp-server's

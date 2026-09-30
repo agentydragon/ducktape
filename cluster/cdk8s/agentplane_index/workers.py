@@ -24,23 +24,23 @@ from agentplane.indexing.main import Settings
 from cluster.cdk8s import cnpg, forgejo_images, namespaces, node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs
+from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cnpg.database import Database
 from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-index"
-_DB_CLUSTER = f"{NAME}-db"
-# CNPG owns this Secret (username/password).
-_DB_APP = SecretRef(namespace=NAME, name=f"{_DB_CLUSTER}-app")
+DATABASE = cnpg.PostgresRef.generated(name=f"{NAME}-db", namespace=NAME)
 _DB_OWNER = "indexer"
 _READ_TOKEN = SecretRef(namespace=NAME, name=f"{NAME}-read-token").key("token")
 _HAKU_FORGEJO_GIT = SecretRef(namespace=NAME, name="haku-forgejo-git")
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-index:unset"
 # The worker listens on its Settings default; nothing passes `--port`.
-_PORT = Settings.model_fields["port"].default
+_HTTP = Port(name="http", number=Settings.model_fields["port"].default)
 _REPOSITORY_MOUNT = "/var/lib/agentplane-index"
 # The workers' shared settings, rendered by the kustomization.yaml's configMapGenerator.
 CONFIG_MAP = ConfigMapArgs(
@@ -66,6 +66,15 @@ CONFIG_MAP = ConfigMapArgs(
 )
 
 
+def _service(instance: str) -> ServiceRef:
+    """One repository's index worker."""
+    return ServiceRef(
+        name=instance,
+        port=_HTTP,
+        pods=Pods(namespace=NAME, labels=(("app.kubernetes.io/name", NAME), ("app.kubernetes.io/instance", instance))),
+    )
+
+
 def _read_token(chart: Chart) -> None:
     mint_bearer_secret(
         chart,
@@ -81,18 +90,18 @@ def _database(chart: Chart) -> None:
     cnpg.cluster(
         chart,
         "database-cluster",
-        name=_DB_CLUSTER,
-        namespace=NAME,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh-ssd",
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),
+        wal_archive=False,
     )
 
 
 def _health_probe(*, period_seconds: int | None = None, failure_threshold: int | None = None) -> k8s.Probe:
     return k8s.Probe(
-        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string("http")),
+        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(_HTTP.name)),
         timeout_seconds=5,
         period_seconds=period_seconds,
         failure_threshold=failure_threshold,
@@ -107,14 +116,14 @@ def _worker(
         chart,
         f"{instance}-database",
         metadata=ApiObjectMetadata(name=f"{NAME}-{instance}", namespace=NAME),
-        cluster=DatabaseSpecCluster(name=_DB_CLUSTER),
+        cluster=DatabaseSpecCluster(name=DATABASE.name),
         name=database,
         owner=_DB_OWNER,
         database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
         extensions=[DatabaseSpecExtensions(name="vector", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
     )
 
-    labels = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/instance": instance}
+    worker = _service(instance)
     k8s.KubeServiceAccount(chart, f"{instance}-service-account", metadata=k8s.ObjectMeta(name=instance, namespace=NAME))
     k8s.KubeDeployment(
         chart,
@@ -122,9 +131,9 @@ def _worker(
         metadata=k8s.ObjectMeta(name=instance, namespace=NAME),
         spec=k8s.DeploymentSpec(
             replicas=replicas,
-            selector=k8s.LabelSelector(match_labels=labels),
+            selector=k8s.LabelSelector(match_labels=worker.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=labels),
+                metadata=k8s.ObjectMeta(labels=worker.pods.selector),
                 spec=k8s.PodSpec(
                     service_account_name=instance,
                     image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
@@ -146,13 +155,13 @@ def _worker(
                             ),
                             env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=CONFIG_MAP.name))],
                             env=[
-                                _DB_APP.key("username").env_var("DB_USERNAME"),
-                                _DB_APP.key("password").env_var("DB_PASSWORD"),
+                                DATABASE.app_secret.key("username").env_var("DB_USERNAME"),
+                                DATABASE.app_secret.key("password").env_var("DB_PASSWORD"),
                                 k8s.EnvVar(
                                     name=env_name(Settings, "database_url"),
                                     value=(
                                         "postgresql+asyncpg://$(DB_USERNAME):$(DB_PASSWORD)"
-                                        f"@{_DB_CLUSTER}-rw.{NAME}.svc/{database}"
+                                        f"@{DATABASE.rw.host}/{database}"
                                     ),
                                 ),
                                 k8s.EnvVar(name=env_name(Settings, "repository_url"), value=url),
@@ -160,7 +169,7 @@ def _worker(
                                 *env,
                                 _READ_TOKEN.env_var(env_name(Settings, "read_token")),
                             ],
-                            ports=[k8s.ContainerPort(name="http", container_port=_PORT)],
+                            ports=[worker.port.k8s_container_port()],
                             volume_mounts=[k8s.VolumeMount(name="repository", mount_path=_REPOSITORY_MOUNT)],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -188,11 +197,8 @@ def _worker(
     k8s.KubeService(
         chart,
         f"{instance}-service",
-        metadata=k8s.ObjectMeta(name=instance, namespace=NAME),
-        spec=k8s.ServiceSpec(
-            selector=labels,
-            ports=[k8s.ServicePort(name="http", port=_PORT, target_port=k8s.IntOrString.from_string("http"))],
-        ),
+        metadata=k8s.ObjectMeta(name=worker.name, namespace=worker.pods.namespace),
+        spec=k8s.ServiceSpec(selector=worker.pods.selector, ports=[worker.port.k8s_service_port()]),
     )
 
 
@@ -238,7 +244,7 @@ def chart(app: App) -> Chart:
         chart,
         instance="haku-state",
         database="haku_state",
-        url="http://forgejo-http.forgejo:3000/haku/haku-state.git",
+        url=f"{forgejo.HTTP.url}/haku/haku-state.git",
         branch="main",
         env=(
             _HAKU_FORGEJO_GIT.key("username").env_var(env_name(Settings, "git_username")),

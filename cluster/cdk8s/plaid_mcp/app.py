@@ -1,5 +1,5 @@
-"""plaid-mcp's `app/`: the Plaid link web UI Deployment, the full-refresh sync CronJob, their
-shared config, the Secret-managing RBAC, the Service and the ingress policy.
+"""plaid-mcp's `app/`: the Plaid link web UI Deployment, webhook receiver and daily sync CronJob,
+their shared config, the Secret-managing RBAC, the Service and ingress policy.
 
 The images' tags are the placeholder "unset"; the hand-written `app/image-pins/kustomization.yaml`
 overrides them at `kustomize build` time via Flux's image-automation markers
@@ -12,28 +12,46 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ServiceAccount, k8s
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetDeletionPolicy,
+)
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.plaid_mcp.db import NAMESPACE, POSTGRES
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/app"
-NAMESPACE = "plaid-mcp"
 _NAME = "plaid-mcp"
-_LABELS = {"app.kubernetes.io/name": _NAME}
 _CONFIG_MAP = "plaid-mcp-config"
 _SECRET_MANAGER = "plaid-mcp-secret-manager"
 _CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-client-credentials")
+_OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-link-oidc-config")
 _CREDENTIALS_FILE = "plaid-client-credentials.sops.yaml"
-_HTTP_PORT = 8080
+# The link web UI authenticates browser sessions with Authentik OIDC.
+_WEB = ServiceRef(
+    name=_NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+)
+_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-link/"
+_OIDC_CREDENTIALS_NAME = "plaid-link-oidc-config"
+_OIDC_READER = "plaid-link-oidc-reader"
+_WEBHOOK_HOST = "plaid-mcp.allegedly.works"
+_WEBHOOK_URL = f"https://{_WEBHOOK_HOST}/webhooks/plaid"
 _CONFIG = {
     "PLAID_MCP_PLAID_ENV": "production",
     "PLAID_MCP_PUBLIC_BASE_URL": "https://plaid-mcp.allegedly.works",
+    "PLAID_MCP_WEBHOOK_URL": _WEBHOOK_URL,
     "PLAID_MCP_TRANSACTION_DAYS": "730",
     "PLAID_MCP_INVESTMENT_TRANSACTION_DAYS": "730",
 }
@@ -49,8 +67,7 @@ def _env() -> list[k8s.EnvVar]:
             )
             for key in _CONFIG
         ),
-        # CNPG generates this Secret for the plaid-mcp-db Cluster (db.py).
-        SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-app").key("uri").env_var("DATABASE_URL"),
+        POSTGRES.app_secret.key("uri").env_var("DATABASE_URL"),
         _CREDENTIALS.key("client_id").env_var("PLAID_MCP_CLIENT_ID"),
         _CREDENTIALS.key("client_secret").env_var("PLAID_MCP_CLIENT_SECRET"),
     ]
@@ -70,6 +87,34 @@ def _resources() -> k8s.ResourceRequirements:
     return k8s.ResourceRequirements(
         requests={"memory": k8s.Quantity.from_string("128Mi"), "cpu": k8s.Quantity.from_string("50m")},
         limits={"memory": k8s.Quantity.from_string("512Mi"), "cpu": k8s.Quantity.from_string("500m")},
+    )
+
+
+def _oidc_credentials(chart: Chart) -> None:
+    """Read only the app's Authentik client Secret from the Authentik namespace through ESO."""
+    reader = ServiceAccount(
+        chart,
+        "oidc-secret-reader",
+        metadata=ApiObjectMetadata(name=_OIDC_READER, namespace=NAMESPACE),
+        automount_token=False,
+    )
+    store = single_secret_store(
+        chart,
+        "plaid-link-oidc",
+        reader=reader,
+        source_namespace="authentik",
+        source_secret=_OIDC_CREDENTIALS_NAME,
+        consumer_namespace=NAMESPACE,
+    )
+    ExternalSecret(
+        chart,
+        "oidc-external-secret",
+        metadata=ApiObjectMetadata(name=_OIDC_CREDENTIALS_NAME, namespace=NAMESPACE),
+        refresh_interval="10m",
+        secret_store_ref=SecretStoreRef.cluster(store),
+        data_from=[DataFrom.from_extract(_OIDC_CREDENTIALS_NAME)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
     )
 
 
@@ -100,27 +145,26 @@ def _rbac(chart: Chart) -> None:
 
 
 def _deployment(chart: Chart) -> None:
-    health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_HTTP_PORT))
+    health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_WEB.pod_port))
     k8s.KubeDeployment(
         chart,
         "deployment",
         metadata=k8s.ObjectMeta(
             name=_NAME,
             namespace=NAMESPACE,
-            labels=_LABELS,
+            labels=_WEB.pods.selector,
             annotations={
                 "description": (
-                    "Plaid self-contained link web UI. Authentik proxy outpost protects browser access; no"
-                    " bespoke Plaid MCP tools are exposed in v0. The app writes access-token Secrets and syncs"
-                    " linked Items into the plaid-mcp Postgres database."
+                    "Plaid Link UI authenticates users with Authentik OIDC; verified webhooks queue transaction"
+                    " syncs, with the daily Cron catching up the mirror."
                 )
             },
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_WEB.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_WEB.pods.selector),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     service_account_name=_NAME,
@@ -131,8 +175,14 @@ def _deployment(chart: Chart) -> None:
                             image="git.allegedly.works/ducktape-ci/plaid-mcp-server:unset",
                             image_pull_policy="Always",
                             security_context=_container_security_context(),
-                            ports=[k8s.ContainerPort(name="http", container_port=_HTTP_PORT, protocol="TCP")],
-                            env=_env(),
+                            ports=[_WEB.port.k8s_container_port()],
+                            env=[
+                                *_env(),
+                                k8s.EnvVar(name="PLAID_MCP_OIDC_ISSUER", value=_OIDC_ISSUER),
+                                _OIDC_CREDENTIALS.key("client_id").env_var("PLAID_MCP_OIDC_CLIENT_ID"),
+                                _OIDC_CREDENTIALS.key("client_secret").env_var("PLAID_MCP_OIDC_CLIENT_SECRET"),
+                                _OIDC_CREDENTIALS.key("session_secret").env_var("PLAID_MCP_OIDC_SESSION_SECRET"),
+                            ],
                             resources=_resources(),
                             readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=k8s.Probe(http_get=health, initial_delay_seconds=20, period_seconds=20),
@@ -153,13 +203,13 @@ def _sync_cronjob(chart: Chart) -> None:
             namespace=NAMESPACE,
             annotations={
                 "description": (
-                    "v0 synchronous full-refresh Plaid sync. Keeps Postgres fresh within 12 hours; no real-time"
-                    " balance endpoint calls."
+                    "Daily catch-up sync for transactions, accounts, holdings and liabilities. Transaction history"
+                    " uses Plaid cursors; no real-time balance endpoint calls."
                 )
             },
         ),
         spec=k8s.CronJobSpec(
-            schedule="17 */12 * * *",
+            schedule="17 0 * * *",
             concurrency_policy="Forbid",
             successful_jobs_history_limit=3,
             failed_jobs_history_limit=3,
@@ -197,21 +247,26 @@ def chart(app: App) -> Chart:
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     k8s.KubeConfigMap(chart, "config", metadata=k8s.ObjectMeta(name=_CONFIG_MAP, namespace=NAMESPACE), data=_CONFIG)
     _rbac(chart)
+    _oidc_credentials(chart)
     _deployment(chart)
     _sync_cronjob(chart)
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name="http", port=_HTTP_PORT, target_port=k8s.IntOrString.from_string("http"), protocol="TCP"
-                )
-            ],
-            type="ClusterIP",
+        metadata=k8s.ObjectMeta(name=_WEB.name, namespace=NAMESPACE, labels=_WEB.labels),
+        spec=k8s.ServiceSpec(selector=_WEB.pods.selector, ports=[_WEB.port.k8s_service_port()], type="ClusterIP"),
+    )
+    https_route(
+        chart,
+        "public-route",
+        metadata=ApiObjectMetadata(
+            name=_NAME,
+            namespace=NAMESPACE,
+            annotations={"description": "Plaid Link UI; browser access authenticates with Authentik OIDC."},
         ),
+        hostnames=["plaid-mcp.allegedly.works"],
+        backend=_WEB,
+        listener=None,
     )
     NetworkPolicy(
         chart,
@@ -221,13 +276,13 @@ def chart(app: App) -> Chart:
             namespace=NAMESPACE,
             annotations={
                 "description": (
-                    "Default-deny ingress for plaid-mcp pods. Only the Authentik embedded proxy outpost can"
-                    " reach the v0 web UI."
+                    "Default-deny ingress for plaid-mcp pods. Only the cluster Gateway can reach the public"
+                    " Link UI and Plaid webhook routes."
                 )
             },
         ),
-        endpoint_selector=_LABELS,
-        ingress=[IngressRule.from_endpoints(cilium.endpoint_labels("authentik", "authentik"), ports=[_HTTP_PORT])],
+        endpoint_selector=_WEB.pods.selector,
+        ingress=[IngressRule.from_gateway(_WEB.pod_port)],
     )
     return chart
 
@@ -236,7 +291,7 @@ def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            namespace=NAMESPACE, resources=[f"{_NAME}.k8s.yaml", _CREDENTIALS_FILE], components=["./image-pins"]
-        ),
+        # No `namespace:` override: the OIDC reader's Role and RoleBinding live in authentik,
+        # and every other object here, including the SOPS Secret, already names plaid-mcp.
+        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", _CREDENTIALS_FILE], components=["./image-pins"]),
     )

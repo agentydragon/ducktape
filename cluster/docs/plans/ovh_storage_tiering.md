@@ -1,18 +1,9 @@
-# Plan: OVH data-disk mount rename (storage tiering — Stage 2 remainder)
+# Plan: rename the remaining OVH SSD data-disk mounts
 
-**Status: active — Stage 3 is complete; the former HDD control-plane is now a worker.** The etcd-onto-NVMe
-control-plane reshuffle and all three KS-5 HDD-node data-disk renames are done (2026-07-05):
-control plane `{104952, 104963, 1001419}`, etcd on 3× NVMe; `103656`/`102453`/`103711`
-are workers. The foundation is live — media-scoped StorageClasses
-(`local-path-ovh-{hdd,ssd}`), the SeaweedFS `volumeTopology` layer (`hdd` 3× KS-5, `ssd` 3×
-OVH NVMe; operator 1.0.30), Forgejo git + both SSD-destined DBs on SSD, and the per-node rename
-mechanism (`data_disk_mount_renamed_nodes` opt-in + `nodePathMap` flip).
-
-**What's left:** rename the **2 SSD control-plane nodes** (`104952`, `104963`) off
-`/var/mnt/seaweedfs-data` → `/var/mnt/local-path-ovh-ssd`. The third NVMe node is now
-provisioned and the SSD SeaweedFS group is being expanded to three servers, restoring an
-evacuation buffer before those cosmetic renames. The rename is **cosmetic** (naming the mount
-for the disk/tier instead of the leftover `seaweedfs-data`), so deferring it is fine.
+Rename the two SSD control-plane nodes (`104952`, `104963`) from
+`/var/mnt/seaweedfs-data` to `/var/mnt/local-path-ovh-ssd`. The three-server SSD
+SeaweedFS group allows evacuation while retaining two-copy durability. The rename
+is cosmetic and can wait for a useful maintenance window.
 
 Reference material:
 <../lessons_learned/2026_07_04_seaweedfs_volumetopology_and_operator.md>,
@@ -23,11 +14,10 @@ OVH inter-node moves are slow/flaky), <../runbooks/seaweedfs_pvc_storageclass_mi
 
 ## The 2 SSD nodes
 
-| Node            | Box     | Role          | etcd disk  | Data disk (rename target)                |
-| --------------- | ------- | ------------- | ---------- | ---------------------------------------- |
-| `ovh-ns104952`  | KS-GAME | control-plane | NVMe#1 SSD | NVMe#2 → `/var/mnt/local-path-ovh-ssd`   |
-| `ovh-ns104963`  | KS-GAME | control-plane | NVMe#1 SSD | NVMe#2 → `/var/mnt/local-path-ovh-ssd`   |
-| `ovh-ns1001419` | SYS-1   | control-plane | NVMe#1 SSD | NVMe#2 → `/var/mnt/seaweedfs-data` (new) |
+| Node           | Box     | Role          | etcd disk  | Data disk (rename target)              |
+| -------------- | ------- | ------------- | ---------- | -------------------------------------- |
+| `ovh-ns104952` | KS-GAME | control-plane | NVMe#1 SSD | NVMe#2 → `/var/mnt/local-path-ovh-ssd` |
+| `ovh-ns104963` | KS-GAME | control-plane | NVMe#1 SSD | NVMe#2 → `/var/mnt/local-path-ovh-ssd` |
 
 - **etcd rides NVMe#1** (the install disk), not the data disk — the rename repartitions NVMe#2
   only, no reboot, etcd untouched (as proven on the `103656` anchor).
@@ -35,7 +25,7 @@ OVH inter-node moves are slow/flaky), <../runbooks/seaweedfs_pvc_storageclass_mi
   `ssd` SeaweedFS volume server, VM roots `gecko`/`agent-box`) + a few-GiB small-CNPG footprint;
   no hot DB depends on the data disk staying put.
 
-## The rename mechanism (built)
+## Rename mechanism
 
 Two per-node surfaces flip in the **same commit**, per node:
 
@@ -56,35 +46,13 @@ cache); the exceptions are handled explicitly (G-losable below).
 against `cluster/terraform/main/`, read the diff, `tofu apply -target=<addr>` for the one node,
 re-plan to confirm the residual is empty.
 
-## The hard part: no evacuation buffer
+## Evacuation and cutover constraints
 
-The HDD tier had 3 servers, so a node's volume server could evacuate to the other two and stay
-2-copy. The SSD tier now has **3** servers at repl `001`, so a volume's two copies can evacuate
-from one node while retaining 2-copy durability on the other two.
-
-**The previously accepted approach (decided 2026-07-05, user-OK'd) was to ride a bounded
-single-copy window, one node at a time.** Stage 3 now removes that need for the SSD volume
-server and PVC evacuation steps.
-
-- **Back up first** — insurance for the one fatal case (the _surviving_ SSD node dying mid
-  window): snapshot the SSD SeaweedFS data (Forgejo git) to **off the SSD tier** (HDD or
-  external). 1-copy is accepted; a double-failure with no backup is not.
-- **One SSD node at a time.** With the third server available, evacuate one node → node returns
-  → `volume.fix.replication -apply` back to 2 → **verify 2-copy (G-swfs) before touching the
-  next node.**
-- **SSD-pinned CNPG** (`forgejo-db-ssd`, `seaweedfs-filer-db-ssd`) likewise ride a
-  single-healthy-instance window — the third SSD node now provides a landing zone for the
-  re-clone, but the cutovers remain one-at-a-time.
-- These are **control planes** — respect **G-etcd** on the drain (data-disk repartition is
-  NVMe#2, no reboot, etcd on NVMe#1 untouched). **No Forgejo downtime without approval** — the
-  SSD tier is Forgejo git's hot tier, so confirm before the cutover.
-- **Alternative — do Stage 3 first** (3rd NVMe box → `ssd` group `replicas: 3`): then the SSD
-  nodes evacuate exactly like the HDD ones did, zero single-copy window. Costs hardware, buys
-  back the safety margin.
-
-**Finalize (after both SSD nodes):** every OVH data disk at `/var/mnt/local-path-ovh-{hdd,ssd}`,
-`nodePathMap` pointing there, `seaweedfs-data` name retired; re-check Nebula lighthouse
-placement.
+The SSD tier has three servers at repl `001`; move one node at a time so volumes
+retain two-copy durability on the other two servers. Back up SSD SeaweedFS data
+before maintenance, verify replication after each node, and wait for SSD-pinned CNPG
+instances to re-clone and return to streaming. These are control planes, so gate each
+drain on healthy etcd and do not cut over Forgejo without approval.
 
 ## Procedure the SSD rename reuses (proven on the HDD roll)
 
@@ -184,19 +152,8 @@ CP membership is the per-host `role` in `nebula-mesh.json` (leave `lighthouse`/`
 EndpointSlice (`cluster/generated/platform-monitoring/etcd-monitoring.k8s.yaml`, or
 `ControlPlaneLeasePutLatency` alerts point nowhere) and the `api.allegedly.works` A records
 (`tf/gitops/dns-records`) are all derived from it — `bb run //cluster/cdk8s:generate_manifests`
-after the edit. Any CP add/remove (Stage 3's `103656` removal + new-box addition) also updates,
-in the same change:
+after the edit. Any control-plane add/remove also updates in the same change:
 
 - `cluster/terraform/main/infrastructure.tf` — `primary_controlplane_ip` + the
   `talos_machine_bootstrap`/`talos_cluster_kubeconfig` `ignore_changes` guards, if the anchor moves.
 - `cluster/README.md` — the "Node Types" table (human-facing CP/worker roster).
-
-## Stage 3 — third SSD node and HDD control-plane demotion (complete 2026-09-18)
-
-The SYS-1 `ovh-ns1001419` is provisioned as a control-plane, joined etcd as a learner and
-auto-promoted to a healthy voter. Its second WDC SN720 NVMe is mounted as the SeaweedFS data
-UserVolume, and the declarative SSD group is being raised to `replicas: 3`. The old
-`ovh-ns103656` was removed from etcd and converted to a worker in place after the SYS-1
-node joined as the third NVMe-backed control plane. Its HDD UserVolume and local-PV
-workloads remain on the node; no drain or disk reset was part of the transition. This
-leaves no HDD-backed OVH control plane.

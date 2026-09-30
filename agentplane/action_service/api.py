@@ -64,6 +64,7 @@ from agentplane.action_service.mcp_linkage import (
 )
 from agentplane.action_service.models import (
     ActionEventView,
+    ActionHistoryPage,
     ActionRequestInput,
     ActionRequestView,
     ActionState,
@@ -216,11 +217,13 @@ def create_app(
     push_identity: PushIdentity | None = None,
     push_subscriptions: PushSubscriptionStore | None = None,
     mcp_linkage: McpLinkageAuthority | None = None,
+    direct_wait_seconds: float,
+    max_wait_seconds: float,
 ) -> FastAPI:
     verifier = CallerTokenVerifier(workload_resolver, callers=callers, oauth=oauth)
-    mcp_app = create_server(service, catalog, updates, verifier).http_app(
-        path="/mcp", stateless_http=True, json_response=False, host_origin_protection="auto"
-    )
+    mcp_app = create_server(
+        service, catalog, updates, verifier, direct_wait_seconds=direct_wait_seconds, max_wait_seconds=max_wait_seconds
+    ).http_app(path="/mcp", stateless_http=True, json_response=False, host_origin_protection="auto")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -412,6 +415,19 @@ def create_app(
             principal, states=tuple(state_filter or ()), idempotency_key=idempotency_key
         )
 
+    @app.get("/v1/operator/action-requests/history", response_model=ActionHistoryPage)
+    async def operator_history(
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
+        action_service: Annotated[ActionService, Depends(_service)],
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+        cursor: str | None = None,
+    ) -> ActionHistoryPage:
+        try:
+            items, next_cursor = await action_service.history(principal, limit=limit, cursor=cursor)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        return ActionHistoryPage(items=items, next_cursor=next_cursor)
+
     @app.get("/v1/operator/action-requests/stream")
     async def operator_stream(
         principal: Annotated[OperatorPrincipal, Depends(_operator)],
@@ -419,6 +435,7 @@ def create_app(
         action_updates: Annotated[ActionUpdates, Depends(_updates)],
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
+        state: Annotated[ActionState | None, Query()] = None,
     ) -> StreamingResponse:
         async def body() -> AsyncIterator[bytes]:
             # Subscribe before reading; clear before each read, never after it.
@@ -428,9 +445,8 @@ def create_app(
                     action_updates.check_available()
                     if credentials is None or await authenticator.authenticate(credentials.credentials) != principal:
                         return
-                    yield (
-                        b"event: snapshot\ndata: " + _sse_json(await action_service.list_requests(principal)) + b"\n\n"
-                    )
+                    snapshot = await action_service.list_requests(principal, states=(state,) if state else ())
+                    yield b"event: snapshot\ndata: " + _sse_json(snapshot) + b"\n\n"
                     while not changed.is_set():
                         try:
                             async with asyncio.timeout(5):
@@ -443,6 +459,7 @@ def create_app(
                             ):
                                 return
                             yield b": keepalive\n\n"
+                    yield b"event: changed\ndata: {}\n\n"
 
         return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
@@ -603,6 +620,14 @@ def _error(status_code: int, detail: str) -> JSONResponse:
 
 
 def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
+    @app.get("/oauth/client-metadata.json")
+    async def client_metadata_document() -> JSONResponse:
+        document = authority.client_metadata_document()
+        return JSONResponse(
+            content=document.model_dump(mode="json", exclude_none=True),
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
     @app.exception_handler(McpLinkageError)
     async def mcp_linkage_failed(request: Request, error: McpLinkageError) -> JSONResponse:
         # A provider that refused or could not answer the token exchange; the more specific

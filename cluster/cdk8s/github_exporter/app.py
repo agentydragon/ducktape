@@ -1,18 +1,12 @@
 """GitHub API rate-limit exporters for the human and agent accounts: the upstream REST
 exporter and our GraphQL one, their Services, ServiceMonitors, token ExternalSecrets and
-the Grafana dashboard.
+the Grafana dashboard (`dashboard.json` beside this module).
 
-Hand-written beside the generated output: `dashboard.json` (rendered into the
-`github-exporter-dashboard` ConfigMap by the directory's `configMapGenerator`),
-`kustomizeconfig` (which points the dashboard's `configMapRef` at the generated,
-hash-suffixed ConfigMap name), the `kustomization.yaml` that wires both, and
-`image-pins/`, whose Flux image-automation marker sets the GraphQL exporter's tag over
-the placeholder below.
+Hand-written beside the generated output: `image-pins/`, whose Flux image-automation marker
+sets the GraphQL exporter's tag over the placeholder below.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -21,10 +15,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboardSpecConfigMapRef,
-    GrafanaDashboardSpecInstanceSelector,
-)
+from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecInstanceSelector
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsRelabelings,
@@ -33,11 +24,13 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s import external_creds, forgejo_images
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/github-exporter"
 _NAMESPACE = "monitoring"
@@ -46,20 +39,32 @@ _ACCOUNTS = ("agentydragon", "agentydragon-agent")
 _TOKEN_SOURCES = {"agentydragon": "github-agentydragon-2", "agentydragon-agent": "github-agentydragon-agent"}
 _REST = "github-exporter"
 _GRAPHQL = "github-graphql-rate-exporter"
-_REST_PORT = 9171
-_GRAPHQL_PORT = 9172
+_REST_HTTP = Port(name="http", number=9171)
+_GRAPHQL_HTTP = Port(name="http", number=9172)
 # The tag is a placeholder: image-pins/kustomization.yaml sets the real one.
 _GRAPHQL_IMAGE = "git.allegedly.works/ducktape-ci/github-graphql-rate-exporter:unset"
 _TOKEN_DIR = "/var/run/secrets/github"
-_HTTP = k8s.IntOrString.from_string("http")
+DASHBOARD = DashboardFile(
+    source="cluster/cdk8s/github_exporter/dashboard.json", config_map="github-exporter-dashboard", namespace=_NAMESPACE
+)
 
 
 def _token_secret(account: str) -> str:
     return f"github-exporter-{account}-token"
 
 
-def _labels(app: str, account: str) -> dict[str, str]:
-    return {"app.kubernetes.io/name": app, "app.kubernetes.io/component": "quota", "github_account": account}
+def _app_labels(app: str) -> dict[str, str]:
+    """Every account's exporter of `app`: its ServiceMonitor selects these."""
+    return {"app.kubernetes.io/name": app, "app.kubernetes.io/component": "quota"}
+
+
+def _service(app: str, port: Port, account: str) -> ServiceRef:
+    """One account's exporter of `app`."""
+    return ServiceRef(
+        name=f"{app}-{account}",
+        port=port,
+        pods=Pods(namespace=_NAMESPACE, labels=(*_app_labels(app).items(), ("github_account", account))),
+    )
 
 
 def _token_external_secret(chart: Chart, account: str) -> None:
@@ -78,19 +83,19 @@ def _token_external_secret(chart: Chart, account: str) -> None:
 
 def _deployment(
     chart: Chart,
+    service: ServiceRef,
     *,
-    app: str,
     account: str,
     description: str,
     container: k8s.Container,
     image_pull_secrets: list[k8s.LocalObjectReference] | None = None,
 ) -> None:
-    labels = _labels(app, account)
+    labels = service.pods.selector
     k8s.KubeDeployment(
         chart,
-        f"{app}-{account}",
+        service.name,
         metadata=k8s.ObjectMeta(
-            name=f"{app}-{account}",
+            name=service.name,
             namespace=_NAMESPACE,
             labels=labels,
             annotations={"description": description, "secret.reloader.stakater.com/reload": _token_secret(account)},
@@ -137,11 +142,11 @@ def _resources(memory_request: str, memory_limit: str) -> k8s.ResourceRequiremen
     )
 
 
-def _rest_exporter(chart: Chart, account: str) -> None:
-    tcp_probe = k8s.TcpSocketAction(port=_HTTP)
+def _rest_exporter(chart: Chart, service: ServiceRef, account: str) -> None:
+    tcp_probe = k8s.TcpSocketAction(port=k8s.IntOrString.from_string(service.port.name))
     _deployment(
         chart,
-        app=_REST,
+        service,
         account=account,
         description=f"GitHub API rate-limit exporter for the {account} account.",
         container=k8s.Container(
@@ -157,10 +162,10 @@ def _rest_exporter(chart: Chart, account: str) -> None:
                 k8s.EnvVar(name="GITHUB_TOKEN_FILE", value=f"{_TOKEN_DIR}/token"),
                 k8s.EnvVar(name="GITHUB_RATE_LIMIT_ENABLED", value="true"),
                 k8s.EnvVar(name="FETCH_REPO_RELEASES_ENABLED", value="false"),
-                k8s.EnvVar(name="LISTEN_PORT", value=str(_REST_PORT)),
+                k8s.EnvVar(name="LISTEN_PORT", value=str(service.pod_port)),
                 k8s.EnvVar(name="LOG_LEVEL", value="info"),
             ],
-            ports=[k8s.ContainerPort(name="http", container_port=_REST_PORT, protocol="TCP")],
+            ports=[service.port.k8s_container_port()],
             volume_mounts=[k8s.VolumeMount(name="github-token", mount_path=_TOKEN_DIR, read_only=True)],
             liveness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=10, period_seconds=30),
             readiness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=5, period_seconds=30),
@@ -169,12 +174,12 @@ def _rest_exporter(chart: Chart, account: str) -> None:
     )
 
 
-def _graphql_exporter(chart: Chart, account: str) -> None:
+def _graphql_exporter(chart: Chart, service: ServiceRef, account: str) -> None:
     # /healthz answers locally; probing /metrics would call GitHub on every probe.
-    healthz = k8s.HttpGetAction(path="/healthz", port=_HTTP)
+    healthz = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(service.port.name))
     _deployment(
         chart,
-        app=_GRAPHQL,
+        service,
         account=account,
         description=f"GitHub GraphQL rate-limit exporter for the {account} account.",
         # The upstream exporter beside this one pulls from Docker Hub; this image comes
@@ -196,7 +201,7 @@ def _graphql_exporter(chart: Chart, account: str) -> None:
                 k8s.EnvVar(name="GITHUB_ACCOUNT", value=account),
                 k8s.EnvVar(name="GITHUB_TOKEN_FILE", value=f"{_TOKEN_DIR}/token"),
             ],
-            ports=[k8s.ContainerPort(name="http", container_port=_GRAPHQL_PORT, protocol="TCP")],
+            ports=[service.port.k8s_container_port()],
             volume_mounts=[k8s.VolumeMount(name="github-token", mount_path=_TOKEN_DIR, read_only=True)],
             liveness_probe=k8s.Probe(http_get=healthz, initial_delay_seconds=10, period_seconds=30),
             readiness_probe=k8s.Probe(http_get=healthz, initial_delay_seconds=5, period_seconds=30),
@@ -205,15 +210,12 @@ def _graphql_exporter(chart: Chart, account: str) -> None:
     )
 
 
-def _service(chart: Chart, app: str, account: str, port: int) -> None:
-    labels = _labels(app, account)
+def _kube_service(chart: Chart, service: ServiceRef) -> None:
     k8s.KubeService(
         chart,
-        f"{app}-{account}-service",
-        metadata=k8s.ObjectMeta(name=f"{app}-{account}", namespace=_NAMESPACE, labels=labels),
-        spec=k8s.ServiceSpec(
-            selector=labels, ports=[k8s.ServicePort(name="http", port=port, target_port=_HTTP, protocol="TCP")]
-        ),
+        f"{service.name}-service",
+        metadata=k8s.ObjectMeta(name=service.name, namespace=_NAMESPACE, labels=service.labels),
+        spec=k8s.ServiceSpec(selector=service.pods.selector, ports=[service.port.k8s_service_port()]),
     )
 
 
@@ -222,9 +224,7 @@ def _service_monitor(chart: Chart, app: str, endpoint: ServiceMonitorSpecEndpoin
         chart,
         f"{app}-monitor",
         metadata=ApiObjectMetadata(name=app, namespace=_NAMESPACE),
-        selector=ServiceMonitorSpecSelector(
-            match_labels={"app.kubernetes.io/name": app, "app.kubernetes.io/component": "quota"}
-        ),
+        selector=ServiceMonitorSpecSelector(match_labels=_app_labels(app)),
         endpoints=[endpoint],
     )
 
@@ -239,8 +239,9 @@ def chart(app: App) -> Chart:
     )
     for account in _ACCOUNTS:
         _token_external_secret(chart, account)
-        _rest_exporter(chart, account)
-        _service(chart, _REST, account, _REST_PORT)
+        rest = _service(_REST, _REST_HTTP, account)
+        _rest_exporter(chart, rest, account)
+        _kube_service(chart, rest)
     # REST /rate_limit misreports the GraphQL bucket: it served
     # `graphql: {remaining: 5000, used: 0}` in the same second that GraphQL itself
     # reported `remaining: 0, used: 10783` and every GraphQL call returned 403. So
@@ -253,13 +254,14 @@ def chart(app: App) -> Chart:
     # every minute neither consumes the quota it measures nor goes blind at the
     # moment the quota runs out.
     for account in _ACCOUNTS:
-        _graphql_exporter(chart, account)
-        _service(chart, _GRAPHQL, account, _GRAPHQL_PORT)
+        graphql = _service(_GRAPHQL, _GRAPHQL_HTTP, account)
+        _graphql_exporter(chart, graphql, account)
+        _kube_service(chart, graphql)
     _service_monitor(
         chart,
         _REST,
         ServiceMonitorSpecEndpoints(
-            port="http",
+            port=_REST_HTTP.name,
             path="/metrics",
             scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
             scrape_timeout="15s",
@@ -274,7 +276,10 @@ def chart(app: App) -> Chart:
         chart,
         _GRAPHQL,
         ServiceMonitorSpecEndpoints(
-            port="http", path="/metrics", scheme=ServiceMonitorSpecEndpointsScheme.HTTP, scrape_timeout="15s"
+            port=_GRAPHQL_HTTP.name,
+            path="/metrics",
+            scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
+            scrape_timeout="15s",
         ),
     )
     GrafanaDashboard(
@@ -283,10 +288,29 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="github-exporter", namespace=_NAMESPACE),
         instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
         folder="GitHub",
-        config_map_ref=GrafanaDashboardSpecConfigMapRef(name="github-exporter-dashboard", key="dashboard.json"),
+        config_map_ref=DASHBOARD.config_map_ref(),
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+def github_exporter(
+    flux_chart: Chart,
+    directory: RenderedDirectory,
+    monitoring_crds: Kustomization,
+    external_secrets_operator: Kustomization,
+    grafana_operator: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        flux_chart,
+        "github-exporter",
+        directory,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(
+            # ServiceMonitor
+            monitoring_crds,
+            external_secrets_operator,
+            # GrafanaDashboard
+            grafana_operator,
+        ),
+        description="GitHub API rate-limit metrics for the human and agent accounts.",
+    )

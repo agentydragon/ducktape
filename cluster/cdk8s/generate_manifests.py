@@ -1,6 +1,7 @@
 """Dispatch manifest generation to each component's local cdk8s helpers."""
 
 import functools
+import posixpath
 from pathlib import Path
 
 from cdk8s import App
@@ -34,6 +35,7 @@ from cluster.cdk8s import (
     github_tf,
     goldilocks,
     google_mcp,
+    grafana_dashboards,
     ha_mcp,
     haku_egress_proxy,
     haku_openclaw_spike_backup,
@@ -111,10 +113,7 @@ from cluster.cdk8s.clickhouse import (
     schema as clickhouse_schema,
 )
 from cluster.cdk8s.cpap_sync import app as cpap_sync_app
-from cluster.cdk8s.dcgm_exporter import (
-    exporter as dcgm_exporter_exporter,
-    flux_kustomizations as dcgm_exporter_flux_kustomizations,
-)
+from cluster.cdk8s.dcgm_exporter import exporter as dcgm_exporter_exporter
 from cluster.cdk8s.external_secrets import (
     config as external_secrets_config,
     flux_kustomizations as external_secrets_flux_kustomizations,
@@ -137,21 +136,18 @@ from cluster.cdk8s.gaffer_private_source import (
     flux_kustomizations as gaffer_private_source_flux_kustomizations,
     source as gaffer_private_source,
 )
-from cluster.cdk8s.gatus import app as gatus_app, flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
+from cluster.cdk8s.gatus import app as gatus_app, sso as gatus_sso
 from cluster.cdk8s.generation import write_directory, write_generated_readme
 from cluster.cdk8s.github_api_proxy import (
     flux_kustomizations as github_api_proxy_flux_kustomizations,
     proxy as github_api_proxy,
 )
-from cluster.cdk8s.github_exporter import (
-    app as github_exporter_app,
-    flux_kustomizations as github_exporter_flux_kustomizations,
-)
+from cluster.cdk8s.github_exporter import app as github_exporter_app
 from cluster.cdk8s.github_secrets_sync import (
     gitops_module as github_secrets_sync_gitops_module,
     secrets as github_secrets_sync_secrets,
 )
-from cluster.cdk8s.grafana import app as grafana_app, flux_kustomizations as grafana_flux_kustomizations
+from cluster.cdk8s.grafana import app as grafana_app
 from cluster.cdk8s.grocy import (
     app as grocy_app,
     flux_kustomizations as grocy_flux_kustomizations,
@@ -212,13 +208,18 @@ from cluster.cdk8s.monitoring import (
 )
 from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
-from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollama_flux_kustomizations
+from cluster.cdk8s.ollama import app as ollama_app
 from cluster.cdk8s.openebs_lvm import storage as openebs_lvm_storage
 from cluster.cdk8s.parked import (
     augur_evidence as parked_augur_evidence,
     flux_kustomizations as parked_flux_kustomizations,
 )
-from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, reader as plaid_mcp_reader
+from cluster.cdk8s.plaid_mcp import (
+    app as plaid_mcp_app,
+    db as plaid_mcp_db,
+    pgweb as plaid_mcp_pgweb,
+    reader as plaid_mcp_reader,
+)
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
@@ -258,7 +259,7 @@ def generate_manifests(root: Path) -> None:
         root, staging.ENV, staging.chart
     )
     agentplane_testing_resource_chart = agentplane_generation.write_environment_manifests(
-        root, testing.ENV, testing.chart, write_kustomization=False
+        root, testing.ENV, testing.chart
     )
     agentplane_staging_health_checks = agentplane_generation.environment_health_checks(
         agentplane_staging_resource_chart, staging.ENV.namespace
@@ -300,19 +301,17 @@ def generate_manifests(root: Path) -> None:
     home_assistant_namespace.write_manifests(root)
     nix_cache_attic.write_manifests(root)
     vm_images_publisher_publisher.write_manifests(root)
-    alloy.write_manifests(root)
-    grafana_instance.write_manifests(root)
-    grafana_app.write_manifests(root)
-    github_exporter_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     home_assistant_app.write_manifests(root)
     home_assistant_backup.write_manifests(root)
-    grocy_app.write_manifests(root)
     grocy_mcp.write_manifests(root)
+    for household in grocy_app.HOUSEHOLDS:
+        grocy_app.write_manifests(root, household, mcp_dir=grocy_mcp.output_dir(household))
     grocy_user_perms.write_manifests(root)
     oci_cache_zot.write_manifests(root)
     plaid_mcp_app.write_manifests(root)
     plaid_mcp_db.write_manifests(root)
+    plaid_mcp_pgweb.write_manifests(root)
     plaid_mcp_reader.write_manifests(root)
     tana_mcp.write_manifests(root)
     haku_egress_proxy.write_manifests(root)
@@ -320,16 +319,12 @@ def generate_manifests(root: Path) -> None:
     authentik_jwt_rotation.write_manifests(root)
     forgejo_token_rotation.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
-    ollama_app.write_manifests(root)
-    gatus_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
     study_casino_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
-    litellm_credentials.write_agentplane_testing_manifests(root)
+    litellm_credentials.write_agentplane_testing_manifests(root, testing.ENV.output_dir)
     ducktape_flux.write_manifests(root)
     flux_sources.write_manifests(root)
-    gaffer_private_source.write_manifests(root)
-    dcgm_exporter_exporter.write_manifests(root)
 
     flux_output = root / f"{HAND_WRITTEN_ROOT}/flux"
     flux_output.mkdir(parents=True, exist_ok=True)
@@ -425,8 +420,11 @@ def generate_manifests(root: Path) -> None:
     )
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
     valkey_kustomization = valkey.valkey(flux_chart, write_directory(root, valkey_artifact, valkey.chart))
-    gaffer_private_source_flux_kustomizations.gaffer_private_source(
-        flux_chart, flux_image_automation_ghcr_kustomization
+    gaffer_private_source_artifact = artifact("gaffer-private-source", gaffer_private_source.OUTPUT_DIR)
+    gaffer_private_source.gaffer_private_source(
+        flux_chart,
+        write_directory(root, gaffer_private_source_artifact, gaffer_private_source.chart),
+        flux_image_automation_ghcr_kustomization,
     )
     kubevirt_artifact = artifact("kubevirt", kubevirt_app.OUTPUT_DIR)
     kubevirt_kustomization = kubevirt_app.kubevirt(
@@ -529,7 +527,17 @@ def generate_manifests(root: Path) -> None:
         clickhouse_operator_kustomization,
     )
     dcgm_exporter_artifact = artifact("dcgm-exporter", dcgm_exporter_exporter.OUTPUT_DIR)
-    dcgm_exporter_flux_kustomizations.dcgm_exporter(flux_chart, dcgm_exporter_artifact, monitoring_crds_kustomization)
+    dcgm_exporter_exporter.dcgm_exporter(
+        flux_chart,
+        write_directory(
+            root,
+            dcgm_exporter_artifact,
+            dcgm_exporter_exporter.chart,
+            namespace=dcgm_exporter_exporter.NAMESPACE,
+            config_map_generator=[dcgm_exporter_exporter.COUNTERS_CONFIG_MAP],
+        ),
+        monitoring_crds_kustomization,
+    )
     cert_manager_trust_artifact = artifact("cert-manager-trust", cert_manager_trust.OUTPUT_DIR)
     cert_manager_trust_kustomization = cert_manager_trust.cert_manager_trust(
         flux_chart,
@@ -674,7 +682,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, atuin_artifact, atuin_server.chart), cnpg_kustomization
     )
     authentik_artifact = artifact("authentik", f"{HAND_WRITTEN_ROOT}/authentik")
-    authentik_flux_kustomizations.authentik(
+    authentik_kustomization = authentik_flux_kustomizations.authentik(
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
     )
     gaffer_private_source_flux_kustomizations.gaffer_private_bridge(
@@ -722,8 +730,14 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     ollama_app_artifact = artifact("ollama-app", ollama_app.OUTPUT_DIR)
-    ollama_flux_kustomizations.ollama(
-        flux_chart, ollama_app_artifact, external_secrets_operator_kustomization, kyverno_kustomization
+    ollama_app.ollama(
+        flux_chart,
+        # No `namespace=`: that transformer would also rewrite the RoleBinding's `claude-sandbox` subject.
+        write_directory(
+            root, ollama_app_artifact, ollama_app.chart, config_map_generator=ollama_app.write_config_maps(root)
+        ),
+        external_secrets_operator_kustomization,
+        kyverno_kustomization,
     )
     seaweedfs_cluster_artifact = artifact("seaweedfs-cluster", seaweedfs_cluster.OUTPUT_DIR)
     seaweedfs_flux_kustomizations.seaweedfs_cluster(
@@ -740,7 +754,7 @@ def generate_manifests(root: Path) -> None:
         atuin_kustomization,
     )
     authentik_tf_artifact = artifact(authentik_tf.NAME, authentik_tf.OUTPUT_DIR)
-    authentik_tf.authentik_tf(
+    authentik_tf_kustomization = authentik_tf.authentik_tf(
         flux_chart,
         write_directory(
             root,
@@ -905,11 +919,27 @@ def generate_manifests(root: Path) -> None:
     headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
     headlamp.headlamp(flux_chart, write_directory(root, headlamp_app_artifact, headlamp.chart))
     grafana_instance_artifact = artifact("grafana-instance", grafana_instance.OUTPUT_DIR)
-    monitoring_flux_kustomizations.grafana_instance(
-        flux_chart, grafana_instance_artifact, grafana_operator_kustomization, cnpg_kustomization
+    grafana_instance.grafana_instance(
+        flux_chart,
+        write_directory(
+            root,
+            grafana_instance_artifact,
+            grafana_instance.chart,
+            config_map_generator=grafana_dashboards.config_map_generator(
+                root, grafana_instance.OUTPUT_DIR, grafana_instance.DASHBOARDS
+            ),
+            configurations=[grafana_dashboards.write_kustomize_config(root, grafana_instance.OUTPUT_DIR)],
+        ),
+        grafana_operator_kustomization,
+        cnpg_kustomization,
     )
     gatus_artifact = artifact("gatus", gatus_app.OUTPUT_DIR)
-    gatus_flux_kustomizations.gatus(flux_chart, gatus_artifact, cnpg_kustomization, monitoring_crds_kustomization)
+    gatus_app.gatus(
+        flux_chart,
+        write_directory(root, gatus_artifact, gatus_app.chart, config_map_generator=[gatus_app.CONFIG_MAP]),
+        cnpg_kustomization,
+        monitoring_crds_kustomization,
+    )
     flux_webhook_artifact = artifact("flux-webhook", flux_webhook_chart.OUTPUT_DIR)
     flux_webhook_chart.flux_webhook(
         flux_chart,
@@ -937,7 +967,17 @@ def generate_manifests(root: Path) -> None:
         ),
     )
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
-    monitoring_flux_kustomizations.alloy(flux_chart, monitoring_alloy_artifact, monitoring_crds_kustomization)
+    alloy.alloy(
+        flux_chart,
+        write_directory(
+            root,
+            monitoring_alloy_artifact,
+            alloy.chart,
+            namespace=alloy.NAMESPACE,
+            config_map_generator=[alloy.write_config_map(root)],
+        ),
+        monitoring_crds_kustomization,
+    )
     public_coder_agent_backup_artifact = artifact("public-coder-agent-backup", public_coder_backup.OUTPUT_DIR)
     public_coder_backup.public_coder_agent_backup(
         flux_chart,
@@ -985,8 +1025,18 @@ def generate_manifests(root: Path) -> None:
         grafana_operator_kustomization,
     )
     clickhouse_grafana_artifact = artifact("clickhouse-grafana", grafana_app.OUTPUT_DIR)
-    grafana_flux_kustomizations.clickhouse_grafana(
-        flux_chart, clickhouse_grafana_artifact, grafana_operator_kustomization
+    grafana_app.clickhouse_grafana(
+        flux_chart,
+        write_directory(
+            root,
+            clickhouse_grafana_artifact,
+            grafana_app.chart,
+            config_map_generator=grafana_dashboards.config_map_generator(
+                root, grafana_app.OUTPUT_DIR, [grafana_app.DASHBOARD]
+            ),
+            configurations=[grafana_dashboards.write_kustomize_config(root, grafana_app.OUTPUT_DIR)],
+        ),
+        grafana_operator_kustomization,
     )
     agent_box_artifact = artifact("agent-box", f"{HAND_WRITTEN_ROOT}/parked/agent-box")
     parked_flux_kustomizations.agent_box(
@@ -1024,10 +1074,15 @@ def generate_manifests(root: Path) -> None:
     agents_flux_kustomizations.authentik_jwt_rotation(
         flux_chart, authentik_jwt_rotation_artifact, external_secrets_operator_kustomization
     )
-    loki_read_proxy_artifact = artifact("loki-read-proxy", loki_read_proxy.OUTPUT_DIR)
+    loki_read_proxy_artifact = artifact("loki-read-proxy", loki_read_proxy.OUTPUT_DIR, loki_read_proxy.PINS_DIR)
     loki_read_proxy.loki_read_proxy(
         flux_chart,
-        write_directory(root, loki_read_proxy_artifact, loki_read_proxy.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            loki_read_proxy_artifact,
+            loki_read_proxy.chart,
+            components=[posixpath.relpath(loki_read_proxy.PINS_DIR, loki_read_proxy.OUTPUT_DIR)],
+        ),
         external_secrets_operator_kustomization,
     )
     plaid_mcp_artifact = artifact("plaid-mcp", f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp")
@@ -1036,6 +1091,8 @@ def generate_manifests(root: Path) -> None:
         plaid_mcp_artifact,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
+        authentik_kustomization,
+        authentik_tf_kustomization,
         mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,
     )
@@ -1091,16 +1148,23 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     github_exporter_artifact = artifact("github-exporter", github_exporter_app.OUTPUT_DIR)
-    github_exporter_flux_kustomizations.github_exporter(
+    github_exporter_app.github_exporter(
         flux_chart,
-        github_exporter_artifact,
+        write_directory(
+            root,
+            github_exporter_artifact,
+            github_exporter_app.chart,
+            components=["./image-pins"],
+            config_map_generator=grafana_dashboards.config_map_generator(
+                root, github_exporter_app.OUTPUT_DIR, [github_exporter_app.DASHBOARD]
+            ),
+            configurations=[grafana_dashboards.write_kustomize_config(root, github_exporter_app.OUTPUT_DIR)],
+        ),
         monitoring_crds_kustomization,
         external_secrets_operator_kustomization,
         grafana_operator_kustomization,
     )
-    grocy_sf_artifact = artifact(
-        "grocy-sf", f"{HAND_WRITTEN_ROOT}/grocy/sf/app", f"{HAND_WRITTEN_ROOT}/grocy/sf/mcp", grocy_mcp.BASE_DIR
-    )
+    grocy_sf_artifact = artifact("grocy-sf", grocy_app.output_dir("sf"), grocy_mcp.output_dir("sf"), grocy_mcp.PINS_DIR)
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
         flux_chart,
         grocy_sf_artifact,
@@ -1111,10 +1175,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     grocy_vallejo_artifact = artifact(
-        "grocy-vallejo",
-        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/app",
-        f"{HAND_WRITTEN_ROOT}/grocy/vallejo/mcp",
-        grocy_mcp.BASE_DIR,
+        "grocy-vallejo", grocy_app.output_dir("vallejo"), grocy_mcp.output_dir("vallejo"), grocy_mcp.PINS_DIR
     )
     grocy_vallejo_kustomization = grocy_flux_kustomizations.grocy_vallejo(
         flux_chart,
@@ -1149,11 +1210,16 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
     )
-    matrix_user_provisioner_artifact = artifact("matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR)
+    matrix_user_provisioner_artifact = artifact(
+        "matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR, matrix_user_provisioner.PINS_DIR
+    )
     matrix_user_provisioner.matrix_user_provisioner(
         flux_chart,
         write_directory(
-            root, matrix_user_provisioner_artifact, matrix_user_provisioner.chart, components=["./image-pins"]
+            root,
+            matrix_user_provisioner_artifact,
+            matrix_user_provisioner.chart,
+            components=[posixpath.relpath(matrix_user_provisioner.PINS_DIR, matrix_user_provisioner.OUTPUT_DIR)],
         ),
         external_secrets_operator_kustomization,
         matrix_kustomization,
@@ -1181,10 +1247,15 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
     )
-    google_mcp_artifact = artifact("google-mcp", google_mcp.OUTPUT_DIR)
+    google_mcp_artifact = artifact("google-mcp", google_mcp.OUTPUT_DIR, google_mcp.PINS_DIR)
     google_mcp.google_mcp(
         flux_chart,
-        write_directory(root, google_mcp_artifact, google_mcp.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            google_mcp_artifact,
+            google_mcp.chart,
+            components=[posixpath.relpath(google_mcp.PINS_DIR, google_mcp.OUTPUT_DIR)],
+        ),
         external_secrets_operator_kustomization,
     )
     study_casino_artifact = artifact("study-casino", study_casino_app.OUTPUT_DIR)
@@ -1214,19 +1285,24 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     grocy_sf_user_perms_artifact = artifact(
-        "grocy-sf-user-perms", f"{HAND_WRITTEN_ROOT}/grocy/sf/user-perms", grocy_user_perms.BASE_DIR
+        "grocy-sf-user-perms", grocy_user_perms.output_dir("sf"), grocy_user_perms.BASE_DIR, grocy_user_perms.PINS_DIR
     )
     grocy_flux_kustomizations.grocy_sf_user_perms(flux_chart, grocy_sf_user_perms_artifact, grocy_sf_kustomization)
     grocy_vallejo_user_perms_artifact = artifact(
-        "grocy-vallejo-user-perms", f"{HAND_WRITTEN_ROOT}/grocy/vallejo/user-perms", grocy_user_perms.BASE_DIR
+        "grocy-vallejo-user-perms",
+        grocy_user_perms.output_dir("vallejo"),
+        grocy_user_perms.BASE_DIR,
+        grocy_user_perms.PINS_DIR,
     )
     grocy_flux_kustomizations.grocy_vallejo_user_perms(
         flux_chart, grocy_vallejo_user_perms_artifact, grocy_vallejo_kustomization
     )
-    ha_mcp_artifact = artifact("ha-mcp", ha_mcp.OUTPUT_DIR)
+    ha_mcp_artifact = artifact("ha-mcp", ha_mcp.OUTPUT_DIR, ha_mcp.PINS_DIR)
     ha_mcp.ha_mcp(
         flux_chart,
-        write_directory(root, ha_mcp_artifact, ha_mcp.chart, components=["./image-pins"]),
+        write_directory(
+            root, ha_mcp_artifact, ha_mcp.chart, components=[posixpath.relpath(ha_mcp.PINS_DIR, ha_mcp.OUTPUT_DIR)]
+        ),
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
     )
@@ -1267,10 +1343,15 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
     )
-    haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
+    haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR, haku_workspaces.PINS_DIR)
     haku_workspaces.haku_workspaces(
         flux_chart,
-        write_directory(root, haku_workspaces_app_artifact, haku_workspaces.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            haku_workspaces_app_artifact,
+            haku_workspaces.chart,
+            components=[posixpath.relpath(haku_workspaces.PINS_DIR, haku_workspaces.OUTPUT_DIR)],
+        ),
         agent_sandbox_controller_kustomization,
         haku_egress_proxy_kustomization,
         kyverno_policies_kustomization,
@@ -1283,7 +1364,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         haku_egress_proxy_kustomization,
     )
-    agentplane_testing_artifact = artifact("agentplane-testing", agentplane_generation.output_dir(testing.ENV))
+    agentplane_testing_artifact = artifact("agentplane-testing", testing.ENV.output_dir, testing.ENV.image_pins)
     testing.agentplane_testing(
         flux_chart,
         agentplane_testing_artifact,
@@ -1294,10 +1375,17 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
     )
-    agent_workspaces_app_artifact = artifact("agent-workspaces-app", agent_workspaces.OUTPUT_DIR)
+    agent_workspaces_app_artifact = artifact(
+        "agent-workspaces-app", agent_workspaces.OUTPUT_DIR, agent_workspaces.PINS_DIR
+    )
     agent_workspaces.agent_workspaces_app(
         flux_chart,
-        write_directory(root, agent_workspaces_app_artifact, agent_workspaces.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            agent_workspaces_app_artifact,
+            agent_workspaces.chart,
+            components=[posixpath.relpath(agent_workspaces.PINS_DIR, agent_workspaces.OUTPUT_DIR)],
+        ),
         external_secrets_operator_kustomization,
         agent_sandbox_controller_kustomization,
         kyverno_policies_kustomization,
@@ -1336,7 +1424,7 @@ def generate_manifests(root: Path) -> None:
     public_coder_devbox.public_coder_agent_devbox(
         flux_chart, public_coder_agent_devbox_artifact, kubevirt_kustomization, external_secrets_operator_kustomization
     )
-    agentplane_staging_artifact = artifact("agentplane-staging", agentplane_generation.output_dir(staging.ENV))
+    agentplane_staging_artifact = artifact("agentplane-staging", staging.ENV.output_dir)
     staging.agentplane_staging(
         flux_chart,
         agentplane_staging_artifact,
@@ -1441,6 +1529,7 @@ def generate_manifests(root: Path) -> None:
             flux_webhook_artifact,
             forgejo_gitops_artifact,
             budget_namespace_artifact,
+            gaffer_private_source_artifact,
             gatus_artifact,
             github_api_proxy_artifact,
             github_tf_artifact,

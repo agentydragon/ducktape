@@ -30,7 +30,6 @@ GITHUB_CLONE_POLICY = "github-clone"
 GITHUB_ACTIONS_LOGS_POLICY = "github-actions-logs"
 FORGEJO_HAKU_POLICY = "forgejo-haku"
 PACKAGES_POLICY = "packages"
-KUBERNETES_POLICY = "kubernetes"
 GOOGLE_READONLY_POLICY = "google-readonly"
 GROCY_SF_READONLY_POLICY = "grocy-sf-readonly"
 HOME_ASSISTANT_READONLY_POLICY = "home-assistant-readonly"
@@ -39,6 +38,7 @@ AIQUOTA_READ_POLICY = "aiquota-read"
 HAKU_MAILBOX_POLICY = "haku-mailbox"
 COINBASE_POLICY = "coinbase"
 BUILDBUDDY_POLICY = "buildbuddy"
+PLAID_PGWEB_POLICY = "plaid-pgweb"
 
 
 def settings(
@@ -138,7 +138,6 @@ def settings(
                         # caller/ServiceAccount stamps it.
                         policies=[
                             BASIC_POLICY,
-                            KUBERNETES_POLICY,
                             FORGEJO_HAKU_POLICY,
                             PACKAGES_POLICY,
                             GOOGLE_READONLY_POLICY,
@@ -148,6 +147,7 @@ def settings(
                             AIQUOTA_READ_POLICY,
                             HAKU_MAILBOX_POLICY,
                             COINBASE_POLICY,
+                            PLAID_PGWEB_POLICY,
                             GITHUB_CLONE_POLICY,
                             GITHUB_AGENTYDRAGON_AGENT_POLICY,
                             GITHUB_ACTIONS_LOGS_POLICY,

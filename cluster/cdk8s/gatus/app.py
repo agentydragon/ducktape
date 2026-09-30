@@ -1,13 +1,7 @@
-"""Gatus: the Helm release, its Postgres, network policies, route and ServiceMonitor.
-
-Hand-written beside the generated output: `config.yaml` (Gatus's own config, rendered into
-the `gatus-config` ConfigMap by the directory's `configMapGenerator`) and the
-`kustomization.yaml` that generates it.
-"""
+"""Gatus: the Helm release, its Postgres, network policies, route and ServiceMonitor, and its
+own configuration (`config.py`) in the `gatus-config` ConfigMap."""
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -21,27 +15,45 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeStrategy,
     HelmReleaseSpecUpgradeStrategyName,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import cilium, cnpg, namespaces, node_scheduling
+from cluster.cdk8s.flux import (
+    ConfigMapArgs,
+    GeneratorOptions,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.gatus import config
 from cluster.cdk8s.helm import helm_release, https_helm_repository
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gatus"
+OUTPUT_DIR = f"{GENERATED_ROOT}/gatus"
 _NAME = "gatus"
 _NAMESPACE = "gatus"
-_DB_NAME = "gatus-db"
+_HOSTNAME = "status.allegedly.works"
+DATABASE = cnpg.PostgresRef.generated(name="gatus-db", namespace=_NAMESPACE)
 _HELM_REPOSITORY = "twin"
 # The chart's Service: port 80 to the Pods' `http` (8080), selecting `app.kubernetes.io/name`.
 SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=80), pods=cilium.PROBER, target_port=8080)
 _LITELLM_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("api-key")
+CONFIG_MAP = ConfigMapArgs(
+    name="gatus-config",
+    namespace=_NAMESPACE,
+    # The Helm values name it, and kustomize cannot rewrite a reference inside a HelmRelease's values.
+    options=GeneratorOptions(disable_name_suffix_hash=True),
+    # The chart mounts the ConfigMap at /config; config/config.yaml is Gatus's default path.
+    literals=[f"config.yaml={config.render(hostname=_HOSTNAME)}"],
+)
 
 
 def _namespace(scope: Construct) -> None:
@@ -52,13 +64,12 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "database",
-        name=_DB_NAME,
-        namespace=_NAMESPACE,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="1Gi",
-        # CNPG auto-generates credentials in secret gatus-db-app
         initdb=cnpg.same_owner_initdb("gatus"),
+        wal_archive=False,
     )
 
 
@@ -83,12 +94,10 @@ def _helm_release(scope: Construct) -> None:
             strategy=HelmReleaseSpecUpgradeStrategy(name=HelmReleaseSpecUpgradeStrategyName.RETRY_ON_FAILURE)
         ),
         values={
-            "externalConfigMap": "gatus-config",
+            "externalConfigMap": CONFIG_MAP.name,
             "env": {
-                "GATUS_DB_URI": {
-                    "valueFrom": SecretRef(namespace=_NAMESPACE, name=f"{_DB_NAME}-app").key("uri").value_from()
-                },
-                "LITELLM_API_KEY": {"valueFrom": _LITELLM_KEY.value_from()},
+                config.DB_URI_ENV: {"valueFrom": DATABASE.app_secret.key("uri").value_from()},
+                config.LITELLM_API_KEY_ENV: {"valueFrom": _LITELLM_KEY.value_from()},
             },
             "envFrom": [{"secretRef": {"name": "gatus-oidc-secret"}}],
             "ingress": {"enabled": False},
@@ -171,7 +180,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        hostnames=["status.allegedly.works"],
+        hostnames=[_HOSTNAME],
         backend=SERVICE,
         hsts=False,
         listener=None,
@@ -186,5 +195,14 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+def gatus(
+    flux_chart: Chart, directory: RenderedDirectory, cnpg: Kustomization, monitoring_crds: Kustomization
+) -> Kustomization:
+    return flux_kustomization(
+        flux_chart,
+        _NAME,
+        directory,
+        timeout="10m",
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        depends_on=flux_kustomization_depends_on_many(cnpg, monitoring_crds),
+    )

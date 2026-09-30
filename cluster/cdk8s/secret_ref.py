@@ -39,9 +39,10 @@ class SecretKey:
         """Tier-2 raw `k8s.EnvVar`, for a module building `k8s.Container`/`k8s.PodSpec` directly."""
         return k8s.EnvVar(name=name, value_from=self.value_from(optional=optional))
 
-    def env_value(self, scope: Construct, id: str) -> EnvValue:
+    def env_value(self, scope: Construct, id: str, *, optional: bool = False) -> EnvValue:
         """Tier-1 `EnvValue`, for `add_container(env_variables={...})`; `id` names the Secret
-        reference construct under `scope`."""
+        reference construct under `scope`. `optional` as on `value_from`."""
         return EnvValue.from_secret_value(
-            SecretValue(secret=Secret.from_secret_name(scope, id, self.secret.name), key=self.key)
+            SecretValue(secret=Secret.from_secret_name(scope, id, self.secret.name), key=self.key),
+            optional=True if optional else None,
         )

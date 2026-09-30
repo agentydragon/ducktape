@@ -25,6 +25,7 @@ from finance.augur.model.historical_windows import (
     HistoricalWindowsProviderConfig,
     MacroHistory,
     load_macro_history,
+    load_macro_history_with_ex_us,
     macro_history_from_levels,
     splice_at_seam,
 )
@@ -516,6 +517,74 @@ def test_a_spread_still_adjusts_the_named_curve() -> None:
     payout = bundle.level_matrix(SecurityDistributionKey(symbol=BOND), rollout_count=1, horizon_months=horizon)
 
     assert float(payout[0, 1]) * 12.0 / 100.0 == pytest.approx(0.02 - 0.004)
+
+
+def _ex_us_levels(start: date, end: date) -> list[tuple[date, float]]:
+    """A strictly increasing ex-US index, so each value names its month, as `_history` does."""
+
+    months = [month for month in _month_seq(2400, 1900) if start <= month <= end]
+    return [(month, 50.0 + index) for index, month in enumerate(months)]
+
+
+def test_the_ex_us_record_keeps_every_series_month_for_month() -> None:
+    """US and ex-US equity must come from the same months, so a replay window or bootstrap block
+    carries one month's world. The ex-US span here starts inside the record and runs past its
+    end, so the record is cut at the front only."""
+
+    history = _history(600)
+    ex_us = _ex_us_levels(date(1980, 1, 1), date(2030, 12, 1))
+    joint = history.with_ex_us_equity(ex_us)
+
+    assert joint.months == history.months[120:]
+    np.testing.assert_array_equal(joint.short_rate, history.short_rate[120:])
+    np.testing.assert_array_equal(joint.equity_level, history.equity_level[120:])
+    assert joint.ex_us_equity_level is not None
+    np.testing.assert_array_equal(joint.ex_us_equity_level, [value for _, value in ex_us[: len(joint.months)]])
+
+    cut = joint.restricted_to(start=date(1990, 1, 1), end=None)
+    assert cut.ex_us_equity_level is not None
+    assert cut.ex_us_equity_level[0] == dict(ex_us)[date(1990, 1, 1)]
+
+
+def test_a_hole_in_the_ex_us_series_is_rejected() -> None:
+    """Cutting the record around a missing month would join two distant months as neighbours,
+    and every growth ratio across the join would be fiction."""
+
+    ex_us = [level for level in _ex_us_levels(date(1980, 1, 1), date(1990, 12, 1)) if level[0] != date(1985, 6, 1)]
+    with pytest.raises(ValueError, match="not all of them"):
+        _history(600).with_ex_us_equity(ex_us)
+
+
+def test_an_ex_us_series_outside_the_record_is_rejected() -> None:
+    with pytest.raises(ValueError, match="shares no month"):
+        _history(600).with_ex_us_equity(_ex_us_levels(date(2050, 1, 1), date(2051, 1, 1)))
+
+
+def _write_ex_us_evidence(directory: Path, *, start_year: int, months: int, percent: float) -> None:
+    title = "     Value-Weight Dollar Returns      All 4 Data Items Not Reqd\r\n          Mkt   High    Low\r\n"
+    rows = "".join(f"{m.year}{m.month:02d}  {percent:5.2f}   0.00   0.00\r\n" for m in _month_seq(months, start_year))
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("Ind_all.Dat", f"\r\n{title}{rows}\r\n")
+    (directory / sources.FRENCH_INTERNATIONAL_INDICES.output_filename).write_bytes(buffer.getvalue())
+
+
+def test_the_ex_us_record_is_opt_in_and_compounds_the_ex_us_returns(tmp_path: Path) -> None:
+    """The US-only record keeps its length when the ex-US file is present; the joint one starts
+    where the ex-US series does and compounds its returns the way the US leg does."""
+
+    _write_evidence(tmp_path)
+    _write_ex_us_evidence(tmp_path, start_year=1975, months=120, percent=2.0)
+
+    us_only = load_macro_history(tmp_path)
+    joint = load_macro_history_with_ex_us(tmp_path)
+
+    assert len(us_only.months) == 400
+    assert us_only.ex_us_equity_level is None
+    assert (joint.months[0], joint.months[-1]) == (date(1975, 1, 1), date(1984, 12, 1))
+    assert joint.ex_us_equity_level is not None
+    np.testing.assert_allclose(joint.ex_us_equity_level[1:] / joint.ex_us_equity_level[:-1], 1.02)
+    np.testing.assert_allclose(joint.equity_level[1:] / joint.equity_level[:-1], 1.013)
 
 
 if __name__ == "__main__":

@@ -47,7 +47,6 @@ cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/keys-tf/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/aiquota/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/public-coder-agent/devbox/kustomization.yaml linguist-generated=true
 cluster/k8s/cpap-sync/kustomization.yaml linguist-generated=true
@@ -67,7 +66,6 @@ cluster/k8s/agents/public-coder-agent/sshpiper/kustomization.yaml linguist-gener
 cluster/k8s/forgejo/db/kustomization.yaml linguist-generated=true
 cluster/k8s/langfuse/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/claude-sandbox-secrets/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/loki-read-proxy/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/db/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/external-credentials/kustomization.yaml linguist-generated=true
@@ -76,24 +74,22 @@ cluster/k8s/forgejo-images/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/stack/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/db/kustomization.yaml linguist-generated=true
-cluster/k8s/grocy/mcp-base/kustomization.yaml linguist-generated=true
 cluster/k8s/cli-proxy-api/kustomization.yaml linguist-generated=true
 cluster/k8s/matrix/kustomization.yaml linguist-generated=true
-cluster/k8s/matrix/user-provisioner/kustomization.yaml linguist-generated=true
 cluster/k8s/user-agentydragon/kustomization.yaml linguist-generated=true
 cluster/k8s/ssh-mcp/kustomization.yaml linguist-generated=true
-cluster/k8s/google-mcp/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/agent-sandbox/workspaces/kustomization.yaml linguist-generated=true
-cluster/k8s/haku/workspaces/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/alloy-otlp-bearer/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/haku-openclaw-spike/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/public-coder-agent/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/home-assistant/app/kustomization.yaml linguist-generated=true
 cluster/k8s/home-assistant/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/app/kustomization.yaml linguist-generated=true
-cluster/k8s/flux-image-automation-ghcr/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/forgejo-tea/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/shared-secrets/kustomization.yaml linguist-generated=true
+cluster/k8s/github-exporter/kustomization.yaml linguist-generated=true
+# Copied beside github-exporter's bot-owned image-pins Component from cluster/cdk8s/github_exporter.
+cluster/k8s/github-exporter/dashboard.json linguist-generated=true
+cluster/k8s/github-exporter/kustomizeconfig linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
 # output, pinned by //agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true
@@ -145,8 +141,6 @@ x/codex_pod_image/deploy/** cluster-manifest-ignored=true
 cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignored=true
 # rotate.py's token list, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=true
-# provision.py's user→permission policy, mounted via configMapGenerator — not a K8s manifest.
-cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
 haku/x/dispatch/deploy/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.

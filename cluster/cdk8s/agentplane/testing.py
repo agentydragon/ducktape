@@ -1,5 +1,10 @@
 """agentplane-testing: one replica of everything, its own Dex for operator login, and
 credentialless MCP fixtures in place of the real action groups.
+
+One Flux Kustomization (`agentplane_testing`) applies the whole environment:
+`agentplane.k8s.yaml`, the `litellm-credentials.k8s.yaml` that `litellm/credentials.py`
+writes beside it, and the hand-written `image_pins` Component its root Kustomization
+includes across the roots.
 """
 
 from __future__ import annotations
@@ -43,7 +48,8 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 
 _NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
@@ -62,7 +68,7 @@ _FEDERATION_TARGET = OperatorOidcSettings(
 )
 _ACTION_FEDERATION = DirectFederationSettings(
     mode="direct",
-    service_url=f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions.CONTAINER_PORT}",
+    service_url=actions.service(_NAMESPACE).url,
     login_jwks_uri=f"{_DEX_ISSUER}/keys",
     login_token_profile=OperatorTokenProfile.DEX,
     target=_FEDERATION_TARGET,
@@ -71,6 +77,8 @@ _ACTION_FEDERATION = DirectFederationSettings(
 _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
     operator_oidc=_FEDERATION_TARGET,
     allowed_service_account_namespaces=frozenset({_NAMESPACE}),
+    direct_wait_seconds=30,
+    max_wait_seconds=180,
     mcp_servers={
         "example": McpOAuthServer(
             server_id="example",
@@ -122,7 +130,9 @@ ENV = Environment(
         "Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, "
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
-    extra_resources=(),
+    output_dir=f"{GENERATED_ROOT}/{_NAMESPACE}",
+    image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
+    extra_resources=("litellm-credentials.k8s.yaml",),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config=testing_config.config(action_federation=_ACTION_FEDERATION),
     db=DbProps(instances=1),
@@ -152,16 +162,13 @@ def chart(app: App) -> Chart:
     rbac.AcceptanceToken(chart, "acceptance-token", ENV)
     # claude-ai's boxes reach this app through staging's egress proxy, by its Service rather than its
     # public name, which would hairpin out through the Gateway and back.
+    app_service = app_component.service(ENV.namespace)
     NetworkPolicy(
         chart,
         "networkpolicy-app-from-staging-egress",
-        metadata=ApiObjectMetadata(name=f"{app_component.NAME}-from-staging-egress", namespace=ENV.namespace),
-        endpoint_selector={"app.kubernetes.io/name": app_component.NAME},
-        ingress=[
-            IngressRule.from_endpoints(
-                cilium.endpoint_labels("agentplane-staging", egress.NAME), ports=[app_component.CONTAINER_PORT]
-            )
-        ],
+        metadata=ApiObjectMetadata(name=f"{app_service.name}-from-staging-egress", namespace=ENV.namespace),
+        endpoint_selector=app_service.pods.selector,
+        ingress=[egress.proxy("agentplane-staging").pods.admit(app_service.pod_port)],
     )
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")

@@ -135,6 +135,7 @@ spec:
       labels:
         app.kubernetes.io/name: attic
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - -f
@@ -222,7 +223,7 @@ spec:
     - name: http
       port: 8080
       protocol: TCP
-      targetPort: http
+      targetPort: 8080
   selector:
     app.kubernetes.io/name: attic
   type: ClusterIP
@@ -336,6 +337,7 @@ spec:
       backoffLimit: 2
       template:
         spec:
+          automountServiceAccountToken: true
           containers:
             - args:
                 - rotate
@@ -394,6 +396,7 @@ spec:
       labels:
         app: attic-bootstrap-caches
     spec:
+      automountServiceAccountToken: true
       containers:
         - args:
             - bootstrap-caches

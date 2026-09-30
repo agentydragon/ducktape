@@ -160,7 +160,7 @@ config-shaped lever is target collection — `resolveOpenClawStateSqlitePath` pl
 `listOpenClawRegisteredAgentDatabases`, filtered by `existsSync` — so exempting
 an agent database means deregistering the agent.
 
-<../patches/openclaw-2026.9.4-dist.patch> therefore adds
+<../patches/openclaw-2026.9.5-dist.patch> therefore adds
 `OPENCLAW_DATABASE_VERIFY` (`on`, the upstream behaviour, or `off`) and
 `OPENCLAW_DATABASE_VERIFY_INTERVAL_MS`, guarding the initial `schedule()` call
 and logging the disable. The conventional patch targets exact generated paths

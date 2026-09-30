@@ -9,7 +9,6 @@ import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mj
 import IconBox from "@tabler/icons-react/dist/esm/icons/IconBox.mjs";
 import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
-import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
 import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
 import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
@@ -473,15 +472,6 @@ export function Sidebar({
             onClick={() => goTo("/actions")}
           >
             <IconListCheck size={15} />
-          </ActionIcon>
-        </Tooltip>
-        <Tooltip label="Action history" withArrow>
-          <ActionIcon
-            variant={location.pathname === "/actions/history" ? "light" : "subtle"}
-            aria-label="Action history"
-            onClick={() => goTo("/actions/history")}
-          >
-            <IconHistory size={15} />
           </ActionIcon>
         </Tooltip>
         <Tooltip label="Settings" withArrow>

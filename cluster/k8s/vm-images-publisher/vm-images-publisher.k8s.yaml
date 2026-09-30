@@ -130,6 +130,7 @@ spec:
                   - matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
                         operator: DoesNotExist
+          automountServiceAccountToken: false
           containers:
             - command:
                 - bash

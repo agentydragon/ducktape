@@ -21,29 +21,6 @@ configuration typed.
 
 ## Convert: configuration with an existing application contract
 
-### Grocy household overlays and policy
-
-`cluster/k8s/grocy/{sf,vallejo}/mcp/{config,kustomization}.yaml` configures two
-instances and patches household-specific OIDC Secret references into the generated
-`mcp-base` Deployment. `cluster/cdk8s/grocy/mcp.py` already has household builders;
-`grocy_mcp/mcp_types.py:ServerSettings` owns the runtime settings contract.
-
-Proposed: pass household values into direct per-household resource construction and
-render non-secret settings from that contract. Remove the generated-base/YAML-patch
-round trip. Keep the shared bot-owned image pin until image ownership changes explicitly.
-Use the same treatment for the app/user-perms overlays where they express household
-variation.
-
-`grocy/user-perms-base/policy.yaml` uses a YAML anchor for the human users' permission
-set and an explicit empty set for Haku. Its consumer already has
-`cluster/provisioners/grocy_user_perms/provision.py:Policy`. A typed generated policy
-can share the human permission set while preserving Haku's empty set. Keep live
-permission-name validation: the installed Grocy API owns that vocabulary.
-
-Done: both households render from parameters without Secret-reference patches; policy
-meaning is unchanged after anchor expansion, serialization is deterministic, and
-ConfigMap name rewriting/rollout behavior is preserved.
-
 ### Airlock
 
 `cluster/k8s/agents/airlock/config.yaml` is non-secret broker configuration.
@@ -86,21 +63,6 @@ unchanged, and generated ConfigMaps contain no credentials.
 
 ## Model selectively: third-party configuration
 
-### Gatus
-
-`cluster/k8s/gatus/config.yaml` combines endpoint identity with monitoring intent:
-health URLs, expected statuses, body predicates and an inference request.
-Proposed: derive owned hostnames, service addresses and model names from exported
-values while retaining explicit probe selection and assertions. Do not automatically
-turn every HTTPRoute into a health check or infer that a 200 response is sufficient.
-
-Preserve application-expanded `${GATUS_CLIENT_SECRET}`, `${GATUS_DB_URI}` and
-`${LITELLM_API_KEY}` literally. Validate with the pinned consumer/schema; do not use
-whole-resource Flux substitution to inject these runtime values.
-
-Done: shared identities come from their owners, and probes retain their authentication
-and behavioral meaning.
-
 ### Authentik blueprints: ownership first
 
 `cluster/k8s/authentik/app/blueprints/*.yaml` uses `!Find`, `!KeyOf`, object
@@ -130,7 +92,7 @@ verified against Authentik.
 Keep SQL, Nginx/Caddy configuration, Alloy, dashboard JSON, shell scripts and
 static known-hosts files in their native form unless shared values or repeated
 structures justify generation. Examples remain under `activitywatch`, `monitoring`,
-`haku/mailbox`, `nix-cache`, `oci-cache`, `ollama` and `seaweedfs/cluster`.
+`haku/mailbox`, `nix-cache`, `oci-cache` and `seaweedfs/cluster`.
 `home-assistant/app/configuration.yaml.conf` is YAML despite its suffix.
 
 Similarly, `headlamp.py:_PLUGINS_CONFIG` is still YAML embedded in a Python string,
@@ -167,19 +129,33 @@ Extend the small Kustomize model for an actually used field (`patches`,
   archived experiments and documentation examples are outside the active conversion
   target. Their presence must not inflate an active-manifest completion percentage.
 
-## Mixed-directory layout: preserved mechanism findings
+## Mixed-directory layout
 
-These are findings recorded by the prior plan's 2026-09-24 investigation, not experiments
-rerun by this source review. Pins then: kustomize-controller v1.9.5,
-`fluxcd/pkg/kustomize` v1.35.6, source-watcher v2.2.4,
-image-automation-controller v1.2.5, kustomize v5.5.0. Recheck on implementation.
+**Rule: image pins cross the roots; nothing else does.** A directory whose only
+hand-written file is an `image-pins` Component lives under `cluster/generated`. The
+Component stays under `cluster/k8s`, inside image automation's writable checkout and
+`update.path`, as a directory of its own (`cluster/k8s/grocy/mcp-image-pins`) at no
+sub-path a generated directory occupies, so no directory is split across the roots. The
+generated `kustomization.yaml` names it as a relative `components:` entry, and the
+directory's artifact copies it at its repo path after the generated directories.
+`cluster/cdk8s/grocy` is the instance. A directory holding SOPS ciphertext or another
+hand-written file keeps colocation under `cluster/k8s`; moving SOPS Secrets across the
+roots is an open design decision.
 
-- Cross-root resource/Component references built when both paths were in the artifact.
+Mechanism findings from the 2026-09-24 investigation, at kustomize-controller v1.9.5,
+`fluxcd/pkg/kustomize` v1.35.6, source-watcher v2.2.4, image-automation-controller
+v1.2.5 and kustomize v5.5.0. Those marked _rechecked_ were re-verified on the grocy
+directories by the check named; recheck the others before relying on them.
+
+- Cross-root resource/Component references build when both paths are in the artifact.
   Flux uses `LoadRestrictionsNone` inside the extracted artifact boundary; a local
-  cross-root file needs that flag too, while a Component directory built with RootOnly.
-  A cpap-sync split preserved its eight rendered objects in the recorded experiment.
-- Artifacts preserve repo paths. The current helper's `directory/**` copy is suitable.
-  A general `*.sops.yaml` glob retains its full path in source-watcher, while
+  cross-root file needs that flag too, while a Component directory builds with the
+  default `LoadRestrictionsRootOnly` (_rechecked_: `kustomize build` of the grocy
+  directories in `//cluster/validation:test_cluster_integration`).
+- Artifacts preserve repo paths, so a relative cross-root reference resolves the same in
+  the checkout and in the artifact (_rechecked_: `render_diff.py` renders the moved grocy
+  artifacts to identical objects). The helper's `directory/**` copy is suitable. A
+  general `*.sops.yaml` glob retains its full path in source-watcher, while
   `render_diff.py:apply_copy` strips the non-glob prefix for all globs. Repair/test that
   mismatch before relying on such globs.
 - Copies are ordered; a later one can overwrite an earlier file. A missing required
@@ -188,8 +164,8 @@ image-automation-controller v1.2.5, kustomize v5.5.0. Recheck on implementation.
 - Decryption applies to built resources, so cross-root SOPS resources still need the
   consumer's decryption configuration.
 - Flux image automation rewrites marked YAML under `update.path`, including kind-less
-  YAML and ConfigMap data. Its writable source and update path currently cover
-  `cluster/k8s`. A generated file cannot share byte ownership with the bot.
+  YAML and ConfigMap data. Its writable source and update path cover `cluster/k8s`. A
+  generated file cannot share byte ownership with the bot.
 - Flux postBuild substitution reaches ConfigMap strings and decrypted Secret values.
   The recorded non-strict experiment turned an undefined `${HOME}` into empty text
   and `p${ass}word` into `pword`. App-owned interpolation makes this an unsuitable
@@ -198,11 +174,6 @@ image-automation-controller v1.2.5, kustomize v5.5.0. Recheck on implementation.
   creates the directory's Kustomization. Kustomize replacements from a local-config
   ConfigMap can target image fields and env metadata without an applied ConfigMap;
   the recorded experiment verified the local-config object was omitted from output.
-
-Recommendation: keep current colocation while converting useful seams. If tree purity
-later has a concrete benefit, trial one per-app hand-written Component holding SOPS and
-image pins, copied into the artifact and referenced by the generated directory. This
-would change the current whole-directory rule and remains an open design decision.
 
 Alternatives already considered: separate Secret Flux nodes add owners/readiness edges;
 ciphertext copying adds regeneration on rotation; exempting SOPS makes the generated

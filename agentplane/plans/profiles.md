@@ -1,7 +1,7 @@
 # Profiles
 
-Status: **deferred after the launch-presets first slice landed**. The scoped implementation is
-documented in [`../docs/launch_presets.md`](../docs/launch_presets.md); this file remains as the record of why a broad
+Status: **deferred**. The scoped launch-presets design is documented in
+[`../docs/launch_presets.md`](../docs/launch_presets.md); this file records why a broad
 capability profile is not the first abstraction.
 
 A broad profile would be the preset a sandbox runs under — "public coder", "Haku" — including
@@ -43,10 +43,9 @@ Thread consumers use them. A broader capability profile still waits for a design
 future consumers — egress, approvals, MCP reachability, and other tool permissions — share one
 authority. Do not widen the launch-presets slice to settle that question.
 
-The narrower Action-policy reuse requirement is met by [action policies](../docs/action_policies.md):
-many `public-coder` Sandboxes and a separate external caller reference one `ActionPolicySet`,
-sharing Action permissions without copying configuration or sharing identity. It does not require a cross-authority capability profile; a future broad profile
-must reuse that Action policy authority rather than duplicate its rules.
+A future broad profile must reuse the existing Action-policy authority rather than duplicate
+its rules; the profile should coordinate egress, approvals, MCP reachability, and other tool
+permissions without taking ownership away from their current enforcement services.
 
 ## Meanwhile
 

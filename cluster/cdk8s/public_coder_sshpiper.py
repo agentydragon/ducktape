@@ -19,20 +19,25 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, public_coder_devbox
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "public-coder-agent-sshpiper"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/sshpiper"
 _NAMESPACE = "public-coder-agent"
-LABELS = {"app.kubernetes.io/name": NAME}
-PORT = 2222
+# The Agent's route to the devbox; its hand-written app/ssh_config dials this Service.
+SERVICE = ServiceRef(
+    name=NAME,
+    port=Port(name="ssh", number=2222),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+)
 _HOST_KEY_SECRET_NAME = "public-coder-agent-sshpiper-host-key"
 _RECORDINGS_CLAIM_NAME = "public-coder-agent-sshpiper-recordings"
-# Match MODULE.bazel's sshpiper_pipe_crd tag.
+# Match MODULE.bazel's sshpiper_pipe_crd tag and flux_sources.py's sshpiper-source tag.
 _IMAGE = "farmer1992/sshpiperd:v1.6.1@sha256:9ddc25422cc2d7236d7704230b7a706d4c39518edfd211275186b725bf9d3da1"
 _RESOURCES = [
     "host-key.sops.yaml",
@@ -109,7 +114,7 @@ def _env(name: str, value: str) -> k8s.EnvVar:
 
 
 def _container() -> k8s.Container:
-    ssh_port = k8s.IntOrString.from_string("ssh")
+    ssh_port = k8s.IntOrString.from_string(SERVICE.port.name)
     return k8s.Container(
         name="sshpiperd",
         image=_IMAGE,
@@ -137,7 +142,7 @@ def _container() -> k8s.Container:
             _env("SSHPIPERD_SCREEN_RECORDING_FORMAT", "asciicast"),
             _env("SSHPIPERD_SCREEN_RECORDING_DIR", "/recordings"),
         ],
-        ports=[k8s.ContainerPort(name="ssh", container_port=PORT)],
+        ports=[SERVICE.port.k8s_container_port()],
         security_context=k8s.SecurityContext(
             allow_privilege_escalation=False,
             capabilities=k8s.Capabilities(drop=["ALL"]),
@@ -163,16 +168,16 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=_NAMESPACE, labels=LABELS),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=_NAMESPACE, labels=SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             # One replica, and not only because the recordings PVC is RWO: two pipers would each
             # need the host key, and a client reconnecting to the other one is indistinguishable
             # from a MITM.
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=LABELS),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=LABELS),
+                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     service_account_name=NAME,
                     # Unlike the proxy, this Pod does need its API token: the kubernetes plugin
@@ -218,9 +223,9 @@ def _service(scope: Construct) -> None:
         scope,
         "service",
         metadata=k8s.ObjectMeta(
-            name=NAME,
+            name=SERVICE.name,
             namespace=_NAMESPACE,
-            labels=LABELS,
+            labels=SERVICE.labels,
             annotations={
                 "description": (
                     "ClusterIP for the Agent's SSH route to the devbox. Not published outside the cluster; "
@@ -228,13 +233,7 @@ def _service(scope: Construct) -> None:
                 )
             },
         ),
-        spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            selector=LABELS,
-            ports=[
-                k8s.ServicePort(name="ssh", protocol="TCP", port=PORT, target_port=k8s.IntOrString.from_number(PORT))
-            ],
-        ),
+        spec=k8s.ServiceSpec(type="ClusterIP", selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()]),
     )
 
 
@@ -250,14 +249,14 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
         scope,
         "ingress",
         metadata=ApiObjectMetadata(name="allow-public-coder-agent-sshpiper-ingress", namespace=_NAMESPACE),
-        endpoint_selector=LABELS,
+        endpoint_selector=SERVICE.pods.selector,
         ingress=[
             IngressRule.from_endpoints(
                 {
                     "k8s:io.kubernetes.pod.namespace": app_namespace,
                     **{f"k8s:{key}": value for key, value in app_labels.items()},
                 },
-                ports=[PORT],
+                ports=[SERVICE.pod_port],
             )
         ],
     )
@@ -268,7 +267,7 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
         scope,
         "egress",
         metadata=ApiObjectMetadata(name="allow-public-coder-agent-sshpiper-egress", namespace=_NAMESPACE),
-        endpoint_selector=LABELS,
+        endpoint_selector=SERVICE.pods.selector,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
             # The kubernetes plugin watches Pipes and resolves the upstream key Secret through the
@@ -276,9 +275,7 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
             EgressRule.to_entities(Entity.KUBE_APISERVER),
             # The one upstream. KubeVirt gives the VM an ordinary Pod identity, so the guest's sshd
             # is selectable by the VM's domain label.
-            EgressRule.to_endpoints(
-                {"k8s:io.kubernetes.pod.namespace": _NAMESPACE, "k8s:kubevirt.io/domain": "public-coder-devbox"}, 22
-            ),
+            public_coder_devbox.SSH.egress(),
         ],
     )
 

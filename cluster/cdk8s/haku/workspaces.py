@@ -1,8 +1,8 @@
 """haku-workspaces: the Haku exec-target sandbox template in haku-sandbox, the credentials its
 pods and runtimes read, the claim/exec Role Console hands sandboxes out with, and the janitor.
 
-Also the warm pool. Hand-written beside the output: `image-pins/kustomization.yaml`, which
-overrides the workspace image's `unset` tag.
+Also the warm pool. The hand-written `PINS_DIR` Component, which the kustomization includes
+across the roots, overrides the workspace image's `unset` tag.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     DataFrom,
@@ -54,7 +54,8 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
 )
 
 NAME = "haku-workspaces"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/workspaces/app"
+OUTPUT_DIR = f"{GENERATED_ROOT}/haku/workspaces/app"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/haku/workspaces/app-image-pins"
 TEMPLATE_NAME = "haku"
 
 _CONSOLE_ROLE = "haku-console-sandbox"

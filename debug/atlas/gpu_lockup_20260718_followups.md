@@ -139,7 +139,7 @@ So there is no clean rate to compute — treat it as one long-standing flaky-GPU
 **Instrument forward (the durable fix):**
 
 1. **[DONE — formal metrics in Mimir] Replaced the local CSV poller with a Prometheus path.**
-   **DCGM exporter** landed in `cluster/k8s/dcgm-exporter/` — an nvidia-runtime DaemonSet on
+   **DCGM exporter** landed in `cluster/cdk8s/dcgm_exporter/` — an nvidia-runtime DaemonSet on
    wyrm2 → Alloy PodMonitor auto-discovery → **Mimir (365 d)**, with the gnetId 12239 Grafana
    dashboard. DCGM gives power/temp/clocks, **PCIe replay counters**, and **XID-as-a-metric**
    (`DCGM_FI_DEV_XID_ERRORS`) — graphable and correlatable, unlike the local CSV.

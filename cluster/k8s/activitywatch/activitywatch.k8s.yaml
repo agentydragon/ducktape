@@ -195,6 +195,7 @@ spec:
   ports:
     - name: http
       port: 5600
+      protocol: TCP
       targetPort: 5601
   selector:
     app.kubernetes.io/name: activitywatch
@@ -210,6 +211,7 @@ spec:
   ports:
     - name: http
       port: 5600
+      protocol: TCP
       targetPort: 5602
   selector:
     app.kubernetes.io/name: activitywatch
@@ -225,6 +227,7 @@ spec:
   ports:
     - name: http
       port: 5600
+      protocol: TCP
       targetPort: 5603
   selector:
     app.kubernetes.io/name: activitywatch

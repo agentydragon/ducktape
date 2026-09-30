@@ -115,7 +115,7 @@ def test_image_policy_markers_resolve(cluster: ParsedCluster, k8s_dir: Path) -> 
 
 
 def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
-    cluster: ParsedCluster, k8s_dir: Path
+    cluster: ParsedCluster, k8s_dir: Path, generated_dir: Path
 ) -> None:
     """A Namespace opt-in for Kubernetes pod logs must also permit its Loki logs.
 
@@ -125,7 +125,7 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
     """
     deployment = one(
         obj
-        for obj in yaml.safe_load_all((k8s_dir / "agents/loki-read-proxy/loki-read-proxy.k8s.yaml").read_text())
+        for obj in yaml.safe_load_all((generated_dir / "agents/loki-read-proxy/loki-read-proxy.k8s.yaml").read_text())
         if obj["kind"] == "Deployment"
     )
     container = next(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "proxy")

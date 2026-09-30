@@ -100,7 +100,11 @@ class Environment:
     # The Namespace's `description` annotation and the Flux Kustomization's.
     description: str
     flux_description: str
-    # Hand-written files the root Kustomization lists beside the generated one.
+    # The root Kustomization's directory and the hand-written image-pins Component it
+    # includes, repo-relative (manifest_roots.py).
+    output_dir: str
+    image_pins: str
+    # Files the root Kustomization lists beside the generated `agentplane.k8s.yaml`.
     extra_resources: Sequence[str]
     replicas: ReplicaProfile
     # The ConfigMap-authored portion of agentplane/app/main.py's `Settings`.

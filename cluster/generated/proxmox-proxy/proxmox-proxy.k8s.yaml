@@ -26,6 +26,7 @@ spec:
       labels:
         app.kubernetes.io/name: proxmox-proxy
     spec:
+      automountServiceAccountToken: false
       containers:
         - image: docker.io/library/nginx:alpine
           livenessProbe:
@@ -37,6 +38,7 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+              protocol: TCP
           readinessProbe:
             initialDelaySeconds: 2
             periodSeconds: 5

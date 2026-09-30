@@ -49,6 +49,8 @@ async def test_signed_operator_admission(
         catalog,
         callers=admitted_callers(),
         updates=ActionUpdates("postgresql://unused-test-listener"),
+        direct_wait_seconds=30,
+        max_wait_seconds=30,
     )
     now = int(time.time())
     claims: dict[str, Any] = {

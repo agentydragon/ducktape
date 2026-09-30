@@ -1,18 +1,12 @@
 """The Grafana instance (run by grafana-operator), its Postgres, route, datasources and
-dashboards.
-
-Hand-written beside the generated output: the dashboard JSON files (each rendered into a
-`<name>-dashboard` ConfigMap by the directory's `configMapGenerator`), `kustomizeconfig`
-(which points a GrafanaDashboard's `configMapRef` at the generated, hash-suffixed
-ConfigMap name) and the `kustomization.yaml` that wires both.
+dashboards. A dashboard authored here is `dashboards/<name>.json` beside this module plus its
+line in `_FILE_DASHBOARDS`.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecBootstrapInitdb, ClusterSpecBootstrapInitdbSecret
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpecClient,
     GrafanaSpecDeployment,
@@ -25,7 +19,6 @@ from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpecDeploymentSpecTemplateSpecContainersEnvValueFromSecretKeyRef,
 )
 from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboardSpecConfigMapRef,
     GrafanaDashboardSpecDatasources,
     GrafanaDashboardSpecGrafanaCom,
     GrafanaDashboardSpecInstanceSelector,
@@ -36,9 +29,11 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
 )
 
 from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.grafana_dashboards import DashboardFile
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
@@ -47,30 +42,50 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
+HOSTNAME = "grafana.allegedly.works"
 # The Service grafana-operator creates for the Grafana named `_NAME`.
 _SERVICE = ServiceRef(
     name=f"{_NAME}-service",
     port=Port(name="grafana", number=3000),
     pods=Pods(namespace=_NAMESPACE, labels=(("app", _NAME),)),
 )
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/grafana-instance"
-_DB_NAME = "grafana-db-ovh"
-# The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
-# from; the role's password came with the clone.
-_DB_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="grafana-db-app")
+OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/grafana-instance"
+DATABASE = cnpg.PostgresRef(
+    name="grafana-db-ovh",
+    namespace=_NAMESPACE,
+    # The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
+    # from; the role's password came with the clone.
+    app_secret=SecretRef(namespace=_NAMESPACE, name="grafana-db-app"),
+)
 _ADMIN = SecretRef(namespace=_NAMESPACE, name="grafana-admin-password")
 _OIDC = SecretRef(namespace=_NAMESPACE, name="grafana-oidc-config")
 # The label the Grafana CR carries and every dashboard and datasource selects.
 _INSTANCE_LABELS = {"dashboards": _NAME}
+# `dashboards/<name>.json` beside this module, deployed as the `<name>-dashboard` ConfigMap, and
+# the datasource each of its inputs binds to.
+_FILE_DASHBOARDS = {
+    "flux-cluster": {},
+    "interface-flap-frequency": {"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"},
+    "rugged-power": {"DS_PROMETHEUS": "Mimir"},
+    "cluster-storage-io": {"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"},
+}
+
+
+def _dashboard_file(name: str) -> DashboardFile:
+    return DashboardFile(
+        source=f"cluster/cdk8s/monitoring/dashboards/{name}.json", config_map=f"{name}-dashboard", namespace=_NAMESPACE
+    )
+
+
+DASHBOARDS = [_dashboard_file(name) for name in _FILE_DASHBOARDS]
 
 
 def _database(chart: Chart) -> None:
     cnpg.cluster(
         chart,
         "database",
-        name=_DB_NAME,
-        namespace=_NAMESPACE,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        ref=DATABASE,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="2Gi",
         # Created by pg_basebackup from the retired grafana-db, so this never initializes
@@ -78,9 +93,8 @@ def _database(chart: Chart) -> None:
         # exporter's default queries run against the database, and CNPG keeps the role's
         # password in sync with the Secret Grafana also authenticates with. Without it CNPG
         # defaults to `app`, which does not exist here.
-        initdb=ClusterSpecBootstrapInitdb(
-            database=_NAME, owner=_NAME, secret=ClusterSpecBootstrapInitdbSecret(name=_DB_CREDENTIALS.name)
-        ),
+        initdb=cnpg.same_owner_initdb(_NAME, secret=DATABASE.app_secret),
+        wal_archive=False,
     )
 
 
@@ -103,7 +117,7 @@ def _grafana(chart: Chart) -> None:
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=_INSTANCE_LABELS),
         client=GrafanaSpecClient(use_kube_auth=True),
         config={
-            "server": {"root_url": "https://grafana.allegedly.works"},
+            "server": {"root_url": f"https://{HOSTNAME}"},
             "security": {
                 # Expanded at runtime from GF_SECURITY_ADMIN_{USER,PASSWORD} env vars below.
                 # init-time only: Grafana writes the admin user to PostgreSQL on first boot.
@@ -112,7 +126,7 @@ def _grafana(chart: Chart) -> None:
             },
             "database": {
                 "type": "postgres",
-                "host": f"{_DB_NAME}-rw.monitoring.svc.cluster.local:5432",
+                "host": f"{DATABASE.rw.host}:{DATABASE.rw.port.number}",
                 "name": _NAME,
                 "user": _NAME,
                 "password": "${GF_DATABASE_PASSWORD}",
@@ -167,7 +181,7 @@ def _grafana(chart: Chart) -> None:
                                     # Secret key names don't match GF_* env var names — explicit mapping.
                                     _secret_env("GF_SECURITY_ADMIN_USER", _ADMIN.key("admin-user")),
                                     _secret_env("GF_SECURITY_ADMIN_PASSWORD", _ADMIN.key("admin-password")),
-                                    _secret_env("GF_DATABASE_PASSWORD", _DB_CREDENTIALS.key("password")),
+                                    _secret_env("GF_DATABASE_PASSWORD", DATABASE.app_secret.key("password")),
                                     *(
                                         _secret_env(key, _OIDC.key(key))
                                         for key in (
@@ -187,7 +201,7 @@ def _grafana(chart: Chart) -> None:
         chart,
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        hostnames=["grafana.allegedly.works"],
+        hostnames=[HOSTNAME],
         backend=_SERVICE,
         hsts=False,
         listener=None,
@@ -213,7 +227,7 @@ def _datasources(chart: Chart) -> None:
             uid="mimir",
             type="prometheus",
             access="proxy",
-            url="http://mimir-gateway.monitoring.svc.cluster.local/prometheus",
+            url=f"{mimir.GATEWAY_URL}/prometheus",
             is_default=True,
             editable=True,
         ),
@@ -278,11 +292,10 @@ def _dashboard(
     name: str,
     *,
     datasources: dict[str, str] | None = None,
-    config_map: bool = False,
+    config_map: DashboardFile | None = None,
     grafana_com: GrafanaDashboardSpecGrafanaCom | None = None,
 ) -> None:
-    """`datasources` maps each dashboard input to a datasource name. A `config_map`
-    dashboard reads `<name>.json` from the `<name>-dashboard` ConfigMap."""
+    """`datasources` maps each dashboard input to a datasource name."""
     GrafanaDashboard(
         chart,
         f"dashboard-{name}",
@@ -294,15 +307,14 @@ def _dashboard(
         ]
         if datasources
         else None,
-        config_map_ref=GrafanaDashboardSpecConfigMapRef(name=f"{name}-dashboard", key=f"{name}.json")
-        if config_map
-        else None,
+        config_map_ref=config_map.config_map_ref() if config_map else None,
         grafana_com=grafana_com,
     )
 
 
 def _dashboards(chart: Chart) -> None:
-    _dashboard(chart, "flux-cluster", config_map=True)
+    for name, datasources in _FILE_DASHBOARDS.items():
+        _dashboard(chart, name, datasources=datasources, config_map=_dashboard_file(name))
     _dashboard(
         chart,
         "cert-manager",
@@ -334,15 +346,12 @@ def _dashboards(chart: Chart) -> None:
         grafana_com=GrafanaDashboardSpecGrafanaCom(id=3070, revision=3),
     )
     # NVIDIA DCGM Exporter dashboard (power/temp/clocks, PCIe, XID). Backed by the
-    # DCGM metrics from cluster/k8s/dcgm-exporter/ via Mimir.
+    # DCGM metrics from dcgm_exporter/exporter.py via Mimir.
     _dashboard(
         chart,
         "gpu",
         datasources={"DS_PROMETHEUS": "Mimir"},
         grafana_com=GrafanaDashboardSpecGrafanaCom(id=12239, revision=2),
-    )
-    _dashboard(
-        chart, "interface-flap-frequency", datasources={"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"}, config_map=True
     )
     # Upstream Node Exporter Full dashboard. Its Hardware Misc row includes
     # hwmon temperature thresholds and fan-speed panels for every node-exporter
@@ -353,8 +362,6 @@ def _dashboards(chart: Chart) -> None:
         datasources={"ds_prometheus": "Mimir"},
         grafana_com=GrafanaDashboardSpecGrafanaCom(id=1860, revision=45),
     )
-    _dashboard(chart, "rugged-power", datasources={"DS_PROMETHEUS": "Mimir"}, config_map=True)
-    _dashboard(chart, "cluster-storage-io", datasources={"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}, config_map=True)
 
 
 def chart(app: App) -> Chart:
@@ -366,5 +373,23 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+def grafana_instance(
+    flux_chart: Chart, directory: RenderedDirectory, grafana_operator: Kustomization, cnpg: Kustomization
+) -> Kustomization:
+    return flux_kustomization(
+        flux_chart,
+        "grafana-instance",
+        directory,
+        wait=None,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="postgresql.cnpg.io/v1", kind="Cluster", name=DATABASE.name, namespace=_NAMESPACE
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="apps/v1", kind="Deployment", name=f"{_NAME}-deployment", namespace=_NAMESPACE
+            ),
+        ],
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(grafana_operator, cnpg),
+    )

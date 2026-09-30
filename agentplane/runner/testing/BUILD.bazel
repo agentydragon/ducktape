@@ -15,6 +15,7 @@ py_library(
         "//agentplane/harness_tests/claude:harness",
         "//agentplane/harness_tests/claude:messages",
         "//agentplane/harness_tests/claude:requests",
+        "//agentplane/native/claude:blocks",
     ],
 )
 

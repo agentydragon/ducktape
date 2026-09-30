@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import Pods, Protocol, Service, ServicePort, ServiceType, k8s
+from cdk8s_plus_34 import Pods, Service, ServiceType, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -35,7 +35,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import external_creds, node_scheduling
+from cluster.cdk8s import external_creds, node_scheduling, service_ref
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -50,12 +50,16 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 
 NAMESPACE = "public-coder-agent"
-SERVICE_NAME = "public-coder-devbox-ssh"
 VM_NAME = "public-coder-devbox"
-SSH_PORT = 22
+# The VM's sshd, which ssh-mcp and sshpiper dial. `service_ref` stays qualified because
+# cdk8s-plus's `Pods` is imported bare.
+SSH = service_ref.ServiceRef(
+    name="public-coder-devbox-ssh",
+    port=service_ref.Port(name="ssh", number=22),
+    pods=service_ref.Pods(namespace=NAMESPACE, labels=tuple(domain_labels(VM_NAME).items())),
+)
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/devbox"
 _SERVICE_LABELS = {"app.kubernetes.io/name": VM_NAME}
-POD_LABELS = domain_labels(VM_NAME)
 _BAZEL_CACHE_CLAIM = "public-coder-devbox-bazel-cache"
 _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
 # The tag comes from image-pins/kustomization.yaml.
@@ -69,8 +73,8 @@ def ssh_service(scope: Construct) -> Service:
         scope,
         "ssh-service",
         metadata=ApiObjectMetadata(
-            name=SERVICE_NAME,
-            namespace=NAMESPACE,
+            name=SSH.name,
+            namespace=SSH.pods.namespace,
             labels=_SERVICE_LABELS,
             annotations={
                 "description": (
@@ -80,8 +84,8 @@ def ssh_service(scope: Construct) -> Service:
                 )
             },
         ),
-        selector=Pods.select(scope, "devbox-pods", labels=POD_LABELS),
-        ports=[ServicePort(name="ssh", port=SSH_PORT, target_port=SSH_PORT, protocol=Protocol.TCP)],
+        selector=Pods.select(scope, "devbox-pods", labels=SSH.pods.selector),
+        ports=[SSH.port.service_port()],
         type=ServiceType.CLUSTER_IP,
     )
 
@@ -176,7 +180,7 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
                 )
             )
         ),
-        ports=[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(name="ssh", port=SSH_PORT)],
+        ports=[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(name=SSH.port.name, port=SSH.pod_port)],
         disks={
             "pcbazelcache": VirtualMachineSpecTemplateSpecVolumes(
                 name="bazel-cache",

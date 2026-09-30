@@ -168,6 +168,7 @@ spec:
         app.kubernetes.io/name: public-s3
         app.kubernetes.io/part-of: seaweedfs
     spec:
+      automountServiceAccountToken: false
       containers:
         - command:
             - /bin/sh
@@ -239,11 +240,11 @@ spec:
     - name: s3-http
       port: 8333
       protocol: TCP
-      targetPort: s3-http
+      targetPort: 8333
     - name: s3-metrics
       port: 9327
       protocol: TCP
-      targetPort: s3-metrics
+      targetPort: 9327
   selector:
     app.kubernetes.io/component: s3
     app.kubernetes.io/name: public-s3

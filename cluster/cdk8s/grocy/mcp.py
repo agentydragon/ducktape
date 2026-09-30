@@ -1,78 +1,130 @@
-"""The Grocy MCP server: the household-independent `mcp-base` (Deployment, Service,
-ServiceMonitor), and each household's `<household>/mcp` (pull credentials and
-the public HTTPRoute).
+"""The Grocy MCP server, one directory per household (`<household>/mcp`, which the household's
+`app/` directory includes): the Deployment, Service and ServiceMonitor, pull credentials, the
+OAuth-state DSN, the public HTTPRoute, and the `grocy-mcp-config` settings file the directory's
+`kustomization.yaml` renders.
 
-The server's image tag is the placeholder "unset"; the hand-written
-`mcp-base/image-pins/kustomization.yaml` overrides it at `kustomize build` time via Flux's
-image-automation marker (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
-
-Hand-written beside the generated output in each household's `mcp/`: the
-`kustomization.yaml` (its configMapGenerator renders `config.yaml`, its patch points the
-secret env at the household's OIDC Secret).
+The server's image tag is the placeholder "unset"; the hand-written `PINS_DIR` Component,
+which each household's kustomization includes across the roots, overrides it at
+`kustomize build` time via Flux's image-automation marker (cluster/cdk8s/AGENTS.md § the
+`:tag` Setters marker).
 """
 
 from __future__ import annotations
 
+import posixpath
 from functools import partial
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.flux import kustomize_kustomization
+from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
+from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.mcp_oauth_state import (
-    CONSUMER_SECRET,
-    GROCY_SF,
-    GROCY_VALLEJO,
-    OAuthStateStore,
-    add_consumer_credentials,
-)
+from cluster.cdk8s.mcp_oauth_state import CONSUMER_SECRET, GROCY_SF, GROCY_VALLEJO, add_consumer_credentials
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from grocy_mcp.mcp_types import CONFIG_FILE_ENV, ServerSettings
+from util.settings_contract import env_name, settings_file
 
-BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-base"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/grocy/mcp-image-pins"
 _NAME = "grocy-mcp-server"
-_LABELS = {"app.kubernetes.io/name": "grocy-mcp", "app.kubernetes.io/component": "server"}
+_LABELS = (("app.kubernetes.io/name", "grocy-mcp"), ("app.kubernetes.io/component", "server"))
 _IMAGE = "git.allegedly.works/ducktape-ci/grocy-mcp:unset"
-_HTTP_PORT = 8765
-_METRICS_PORT = 9090
+_OAUTH_STORES = {"sf": GROCY_SF, "vallejo": GROCY_VALLEJO}
+_CONFIG_MAP = "grocy-mcp-config"
+_CONFIG_DIR = "/etc/grocy-mcp"
+_CONFIG_FILE = "config.yaml"
 
-# The base's placeholder; each household's kustomization.yaml patches in its own OIDC Secret.
-_OIDC_SECRET = "grocy-mcp-oidc"
+
+def output_dir(household: str) -> str:
+    return f"{grocy.ROOT}/{household}/mcp"
+
+
+def _application(household: str) -> str:
+    """The slug of the Authentik application OIDCProxy logs users in against, and the first
+    label of the server's public host: tf/gitops/agent-machine-access/grocy-<household>.tf
+    registers both."""
+    return f"grocy-mcp-{household}"
+
+
+def _hostname(household: str) -> str:
+    return f"{_application(household)}.allegedly.works"
 
 
 def _service(household: str) -> ServiceRef:
-    """The Service base_chart renders, as the household overlay places it."""
     return ServiceRef(
         name=_NAME,
-        port=Port(name="http", number=_HTTP_PORT),
-        pods=Pods(namespace=grocy.service(household).pods.namespace, labels=tuple(_LABELS.items())),
+        port=Port(name="http", number=8765),
+        pods=Pods(namespace=grocy.service(household).pods.namespace, labels=_LABELS),
     )
 
 
-def _secret_env(name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=_OIDC_SECRET, key=key))
+def _oidc(household: str) -> SecretRef:
+    """Reflector's copy of the OIDC client Terraform writes into authentik
+    (tf/gitops/agent-machine-access/grocy-<household>.tf)."""
+    return SecretRef(namespace=_service(household).pods.namespace, name=f"grocy-mcp-oidc-{household}")
+
+
+def _secret_settings(household: str) -> dict[tuple[str, ...], SecretKey]:
+    """The `ServerSettings` fields Secrets supply through env, completing the settings file."""
+    oidc = _oidc(household)
+    return {
+        ("auth", "oidc_client_id"): oidc.key("client_id"),
+        ("auth", "oidc_client_secret"): oidc.key("client_secret"),
+        ("auth", "proxy_client_id"): oidc.key("grocy_proxy_client_id"),
+        ("persistence", "url"): SecretRef(namespace=oidc.namespace, name=CONSUMER_SECRET).key("uri"),
+    }
+
+
+def _config_map(household: str) -> ConfigMapArgs:
+    """The settings file, whose content hash in the ConfigMap's name rolls the server on a change."""
+    settings = settings_file(
+        ServerSettings,
+        {
+            "grocy_url": f"https://{grocy.hostname(household)}",
+            "auth": {
+                "oidc_issuer": authentik.oidc_issuer(_application(household)),
+                "public_base_url": f"https://{_hostname(household)}",
+            },
+            "persistence": {"kind": "postgres"},
+        },
+        supplied=_secret_settings(household).keys(),
+    )
+    oidc = _oidc(household)
+    header = (
+        f"# Non-secret config for the {oidc.namespace} MCP server, mounted at {CONFIG_FILE_ENV}.\n"
+        f"# Secrets (oidc client_id/secret, proxy client_id) come from env ({oidc.name}\n"
+        "# k8s Secret), so no single field here is secret.\n"
+    )
+    return ConfigMapArgs(
+        name=_CONFIG_MAP, namespace=oidc.namespace, literals=[f"{_CONFIG_FILE}={header}{yaml_config(settings)}"]
     )
 
 
-def base_chart(app: App) -> Chart:
-    """The server every household runs; the household overlay supplies the namespace."""
-    chart = Chart(app, "grocy-mcp", disable_resource_name_hashes=True)
-    http_port = k8s.IntOrString.from_number(_HTTP_PORT)
+def _server(scope: Construct, household: str) -> None:
+    """The household's server: its Deployment, and the Service and ServiceMonitor in front of it."""
+    http = _service(household)
+    # Prometheus metrics, cluster-internal only (not on the HTTPRoute).
+    metrics = ServiceRef(name=http.name, port=Port(name="metrics", number=9090), pods=http.pods)
+    namespace = http.pods.namespace
+    probe_port = k8s.IntOrString.from_number(http.pod_port)
     k8s.KubeDeployment(
-        chart,
+        scope,
         "deployment",
         metadata=k8s.ObjectMeta(
             name=_NAME,
-            labels=_LABELS,
+            namespace=namespace,
+            labels=http.pods.selector,
             annotations={
                 "description": (
                     "FastMCP server generating Grocy tools from Grocy's OpenAPI spec. Per-request token"
@@ -83,10 +135,11 @@ def base_chart(app: App) -> Chart:
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=http.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=http.pods.selector),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     # Both this workload and its shared CNPG OAuth-state database are pinned to
                     # hil-ovh, avoiding cross-site database traffic.
@@ -101,27 +154,14 @@ def base_chart(app: App) -> Chart:
                             name="server",
                             image=_IMAGE,
                             image_pull_policy="Always",
-                            ports=[
-                                k8s.ContainerPort(name="http", container_port=_HTTP_PORT, protocol="TCP"),
-                                # Prometheus metrics, cluster-internal only (not on the HTTPRoute).
-                                k8s.ContainerPort(name="metrics", container_port=_METRICS_PORT, protocol="TCP"),
-                            ],
+                            ports=[http.port.k8s_container_port(), metrics.port.k8s_container_port()],
                             env=[
-                                k8s.EnvVar(name="LOG_LEVEL", value="INFO"),
-                                # Non-secret structured config (grocy_url, auth issuer/URLs/
-                                # direct_jwt_trusts, persistence) comes from this YAML file, supplied
-                                # per household by the overlay's grocy-mcp-config configMap. Secrets
-                                # stay in env below (per-household secret via overlay patch).
-                                k8s.EnvVar(name="GROCY_MCP_CONFIG_FILE", value="/etc/grocy-mcp/config.yaml"),
-                                _secret_env("GROCY_MCP_AUTH__OIDC_CLIENT_ID", "client_id"),
-                                _secret_env("GROCY_MCP_AUTH__OIDC_CLIENT_SECRET", "client_secret"),
-                                _secret_env("GROCY_MCP_AUTH__PROXY_CLIENT_ID", "grocy_proxy_client_id"),
-                                k8s.EnvVar(
-                                    name="GROCY_MCP_PERSISTENCE__URL",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(name=CONSUMER_SECRET, key="uri")
-                                    ),
+                                *(
+                                    key.env_var(env_name(ServerSettings, *path))
+                                    for path, key in _secret_settings(household).items()
                                 ),
+                                k8s.EnvVar(name="LOG_LEVEL", value="INFO"),
+                                k8s.EnvVar(name=CONFIG_FILE_ENV, value=f"{_CONFIG_DIR}/{_CONFIG_FILE}"),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -131,70 +171,62 @@ def base_chart(app: App) -> Chart:
                                 limits={
                                     # TODO(vpa-memory-audit): 256Mi -> 768Mi. VPA observed 335Mi
                                     # request / 355Mi upper in grocy-sf (256Mi/256Mi in vallejo),
-                                    # both at or over the old limit. This base is shared by both
-                                    # overlays, so the higher of the two governs.
+                                    # both at or over the old limit. Both households take this
+                                    # limit, so the higher of the two governs.
                                     "memory": k8s.Quantity.from_string("768Mi"),
                                     "cpu": k8s.Quantity.from_string("200m"),
                                 },
                             ),
-                            volume_mounts=[k8s.VolumeMount(name="config", mount_path="/etc/grocy-mcp", read_only=True)],
+                            volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True)],
                             readiness_probe=k8s.Probe(
-                                tcp_socket=k8s.TcpSocketAction(port=http_port),
+                                tcp_socket=k8s.TcpSocketAction(port=probe_port),
                                 initial_delay_seconds=3,
                                 period_seconds=10,
                             ),
                             liveness_probe=k8s.Probe(
-                                tcp_socket=k8s.TcpSocketAction(port=http_port),
+                                tcp_socket=k8s.TcpSocketAction(port=probe_port),
                                 initial_delay_seconds=15,
                                 period_seconds=20,
                             ),
                         )
                     ],
-                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name="grocy-mcp-config"))],
+                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP))],
                 ),
             ),
         ),
     )
     k8s.KubeService(
-        chart,
+        scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=http.name, namespace=namespace, labels=http.labels),
         spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(name="http", port=_HTTP_PORT, target_port=http_port, protocol="TCP"),
-                k8s.ServicePort(
-                    name="metrics",
-                    port=_METRICS_PORT,
-                    target_port=k8s.IntOrString.from_string("metrics"),
-                    protocol="TCP",
-                ),
-            ],
+            selector=http.pods.selector,
+            ports=[http.port.k8s_service_port(), metrics.port.k8s_service_port()],
             type="ClusterIP",
         ),
     )
     ServiceMonitor(
-        chart,
+        scope,
         "servicemonitor",
-        metadata=ApiObjectMetadata(name=_NAME),
-        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
-        endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
+        metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
+        selector=ServiceMonitorSpecSelector(match_labels=http.labels),
+        endpoints=[Endpoint.plain(port=metrics.port.name, scrape_timeout="10s")],
     )
-    return chart
 
 
-def household_chart(app: App, *, household: str, oauth_store: OAuthStateStore) -> Chart:
+def household_chart(app: App, *, household: str) -> Chart:
     namespace = _service(household).pods.namespace
     chart = Chart(app, f"grocy-mcp-{household}", disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=namespace)
-    add_consumer_credentials(chart, oauth_store)
+    add_consumer_credentials(chart, _OAUTH_STORES[household])
+    _server(chart, household)
     # NOT behind the Authentik outpost — OIDCProxy runs inside the pod and drives the full MCP
     # OAuth dance (DCR, PKCE, resource metadata).
     https_route(
         chart,
         "httproute",
         metadata=ApiObjectMetadata(name=f"grocy-mcp-{household}-server", namespace=namespace),
-        hostnames=[f"grocy-mcp-{household}.allegedly.works"],
+        hostnames=[_hostname(household)],
         backend=_service(household),
         timeout="60s",
         hsts=False,
@@ -204,14 +236,13 @@ def household_chart(app: App, *, household: str, oauth_store: OAuthStateStore) -
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, BASE_DIR, base_chart)
-    write_yaml(
-        root / BASE_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["grocy-mcp.k8s.yaml"], components=["./image-pins"]),
-    )
-    for household, oauth_store in (("sf", GROCY_SF), ("vallejo", GROCY_VALLEJO)):
-        write_charts(
-            root,
-            f"{HAND_WRITTEN_ROOT}/grocy/{household}/mcp",
-            partial(household_chart, household=household, oauth_store=oauth_store),
+    for household in grocy.HOUSEHOLDS:
+        directory = output_dir(household)
+        write_yaml(
+            root / directory / "kustomization.yaml",
+            kustomize_kustomization(
+                resources=write_charts(root, directory, partial(household_chart, household=household)),
+                components=[posixpath.relpath(PINS_DIR, directory)],
+                config_map_generator=[_config_map(household)],
+            ),
         )

@@ -103,6 +103,7 @@ spec:
       labels:
         app.kubernetes.io/name: home-assistant
     spec:
+      automountServiceAccountToken: false
       containers:
         - env:
             - name: TZ
@@ -121,6 +122,7 @@ spec:
           ports:
             - containerPort: 8124
               name: backend
+              protocol: TCP
           readinessProbe:
             httpGet:
               host: 127.0.0.1
@@ -237,6 +239,7 @@ spec:
       labels:
         app.kubernetes.io/name: home-assistant-onboarding
     spec:
+      automountServiceAccountToken: false
       containers:
         - command:
             - /homeassistant/provisioner/onboarding/onboard_bin

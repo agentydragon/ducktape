@@ -46,6 +46,15 @@ class Command(Base):
     __table_args__ = (Index("pending_command_admission", "terminal_cursor", "admitted_cursor"),)
 
 
+class TurnBoundary(Base):
+    __tablename__ = "turn_boundary"
+
+    turn_id: Mapped[str] = mapped_column(primary_key=True)
+    start_cursor: Mapped[int] = mapped_column(index=True)
+    end_cursor: Mapped[int | None]
+    status: Mapped[int | None]
+
+
 class Checkpoint(Base):
     __tablename__ = "checkpoint"
 
@@ -417,6 +426,13 @@ class Journal:
         if checkpoint is None or checkpoint.source_id != self.source_id or checkpoint.through_cursor != cursor - 1:
             raise JournalStorageError("journal recovery checkpoint changed outside its owner")
         _apply_checkpoint(checkpoint, entry)
+        if event.HasField("turn_started"):
+            session.add(TurnBoundary(turn_id=event.turn_started.turn_id, start_cursor=cursor))
+        if event.HasField("turn_completed"):
+            boundary = await session.get(TurnBoundary, event.turn_completed.turn_id)
+            if boundary is not None:
+                boundary.end_cursor = cursor
+                boundary.status = event.turn_completed.status
         if event.HasField("debug_checkpoint"):
             debug = event.debug_checkpoint
             if await session.get(DebugCheckpoint, (debug.name, debug.command_id)) is None:
@@ -471,6 +487,45 @@ class Journal:
             if command.terminal_cursor is None:
                 command.dispatch_planned = True
                 command.native_correlation = {**command.native_correlation, **(native_correlation or {})}
+
+    async def recovery_turns(self) -> list[str]:
+        async with self._reading() as session:
+            latest = (
+                select(func.coalesce(func.max(TurnBoundary.start_cursor), 0))
+                .where(TurnBoundary.status == event_pb2.TURN_STATUS_COMPLETED)
+                .scalar_subquery()
+            )
+            return list(
+                await session.scalars(
+                    select(TurnBoundary.turn_id)
+                    .where(TurnBoundary.start_cursor >= latest)
+                    .order_by(TurnBoundary.start_cursor)
+                )
+            )
+
+    async def turn_events(self, turn_id: str) -> AsyncIterator[event_log_pb2.EventEntry]:
+        async with self._reading() as session:
+            boundary = await session.get(TurnBoundary, turn_id)
+            if boundary is None:
+                raise ValueError(f"unknown recovery turn {turn_id!r}")
+            after = boundary.start_cursor - 1
+            through = boundary.end_cursor or self.last_cursor
+        while after < through:
+            async with self._reading() as session:
+                payloads = list(
+                    await session.scalars(
+                        select(EventEntry.payload)
+                        .where(EventEntry.cursor > after, EventEntry.cursor <= through)
+                        .order_by(EventEntry.cursor)
+                        .limit(128)
+                    )
+                )
+            for payload in payloads:
+                entry = event_log_pb2.EventEntry.FromString(payload)
+                after = entry.cursor
+                yield entry
+            if not payloads:
+                raise ValueError(f"missing journal events for recovery turn {turn_id!r}")
 
     async def pending_commands(self) -> list[command_pb2.Command]:
         async with self._reading() as session:

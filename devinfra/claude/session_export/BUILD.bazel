@@ -1,0 +1,203 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "api",
+    srcs = ["api.py"],
+    deps = [
+        ":models",
+        ":oauth",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "archive",
+    srcs = ["archive.py"],
+    deps = [
+        ":api",
+        ":models",
+        ":progress",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "export_sessions",
+    srcs = ["export_sessions.py"],
+    deps = [
+        ":api",
+        ":archive",
+        ":database_migrate",
+        ":models",
+        ":oauth",
+        ":store",
+        ":sync",
+        "//util/bazel:workspace",
+        "@pypi//httpx",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_binary(
+    name = "export_sessions_bin",
+    main_module = "devinfra.claude.session_export.export_sessions",
+    deps = [":export_sessions"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":api",
+        ":database_migrate",
+        ":models",
+        ":oauth",
+        ":store",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_api",
+    srcs = ["test_api.py"],
+    deps = [
+        ":api",
+        ":conftest",
+        ":oauth",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_archive",
+    srcs = ["test_archive.py"],
+    deps = [
+        ":api",
+        ":archive",
+        ":conftest",
+        ":progress",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "oauth",
+    srcs = ["oauth.py"],
+    deps = [
+        "//devinfra/claude/claude_api:oauth_client",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_oauth",
+    srcs = ["test_oauth.py"],
+    deps = [
+        ":conftest",
+        ":oauth",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api:oauth_client",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
+    data = ["//devinfra/claude/session_export/migrations:files"],
+    deps = [
+        ":store",
+        "//util:db_migrations",
+    ],
+)
+
+py_library(
+    name = "progress",
+    srcs = ["progress.py"],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    visibility = ["//devinfra/claude/session_export/migrations:__pkg__"],
+    deps = [
+        ":models",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "sync",
+    srcs = ["sync.py"],
+    deps = [
+        ":api",
+        ":models",
+        ":progress",
+        ":store",
+    ],
+)
+
+py_test(
+    name = "test_store",
+    srcs = ["test_store.py"],
+    deps = [
+        ":conftest",
+        ":store",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_sync",
+    size = "medium",
+    srcs = ["test_sync.py"],
+    requires_docker = True,
+    deps = [
+        ":api",
+        ":conftest",
+        ":models",
+        ":store",
+        ":sync",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//alembic",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

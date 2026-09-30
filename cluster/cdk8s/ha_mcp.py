@@ -4,9 +4,8 @@ and the ConfigMap/Deployment/Service/CiliumNetworkPolicy/ServiceMonitor for the 
 cdk8s generates all of it, so there's no real need to keep the Namespace/credentials/app split
 into separate directories the way hand-written manifests once did -- see cluster/docs/cdk8s.md.
 
-The facade container's image tag is a deliberate placeholder ("unset") --
-image-pins/kustomization.yaml (hand-written, see
-cluster/k8s/agents/ha-mcp/app/image-pins/kustomization.yaml) overrides it at
+The facade container's image tag is a deliberate placeholder ("unset") -- the hand-written
+`PINS_DIR` Component, which the directory includes across the roots, overrides it at
 `kustomize build` time via Flux's image-automation marker. The ha-mcp container's own
 image is pinned by digest directly and isn't Flux-managed.
 
@@ -22,7 +21,6 @@ from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
     ConfigMap,
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     ContainerSecutiryContextCapabilities,
@@ -30,12 +28,8 @@ from cdk8s_plus_34 import (
     CpuResources,
     Deployment,
     EnvFrom,
-    EnvValue,
     ImagePullPolicy,
     MemoryResources,
-    Protocol,
-    Secret,
-    SecretValue,
     Service,
     ServiceAccount,
     Volume,
@@ -51,26 +45,30 @@ from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "ha-mcp"
 _NAMESPACE = "ha-mcp"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/ha-mcp/app"
-_HOME_ASSISTANT_TOKEN_SECRET_NAME = "ha-mcp-home-assistant-token"
-_BEARER_SECRET_NAME = "ha-mcp-bearer"
-_BEARER_SECRET_KEY = "bearer-token"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/ha-mcp/app"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/ha-mcp/app-image-pins"
+# The ESO copy of the token the Home Assistant provisioner keeps valid.
+_HOME_ASSISTANT_TOKEN = SecretRef(namespace=_NAMESPACE, name="ha-mcp-home-assistant-token").key("token")
+# The facade's static client bearer; agentplane-staging copies it.
+BEARER = SecretRef(namespace=_NAMESPACE, name="ha-mcp-bearer").key("bearer-token")
 _PLACEHOLDER_TAG = "unset"
 
 _APP_NAME = "ha-mcp"
 _APP_FACADE_IMAGE_NAME = "git.allegedly.works/ducktape-ci/mcp-oauth-facade"
 _APP_CONFIG_MAP_NAME = "ha-mcp-config"
-_APP_UPSTREAM_PORT = 8086
+# The ha-mcp server, which the facade reaches over the Pod's loopback.
+_UPSTREAM = Port(name="upstream", number=8086)
 # The facade clients call, and its metrics port on the same Service and Pods.
 FACADE = ServiceRef(
     name=_APP_NAME,
@@ -92,7 +90,9 @@ def _home_assistant_token(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "home-assistant-token",
-        metadata=ApiObjectMetadata(name=_HOME_ASSISTANT_TOKEN_SECRET_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(
+            name=_HOME_ASSISTANT_TOKEN.secret.name, namespace=_HOME_ASSISTANT_TOKEN.secret.namespace
+        ),
         refresh_interval="1h",
         secret_store_ref=SecretStoreRef.cluster(
             single_secret_store(
@@ -104,7 +104,7 @@ def _home_assistant_token(scope: Construct) -> None:
                 consumer_namespace=_NAMESPACE,
             )
         ),
-        data=[remote_data(home_assistant.HA_MCP_TOKEN.secret_name, "token")],
+        data=[remote_data(home_assistant.HA_MCP_TOKEN.secret_name, "token", secret_key=_HOME_ASSISTANT_TOKEN.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
 
@@ -125,9 +125,9 @@ class HaMcpApp(Construct):
         mint_bearer_secret(
             self,
             "bearer-external-secret",
-            name=_BEARER_SECRET_NAME,
-            namespace=_NAMESPACE,
-            key=_BEARER_SECRET_KEY,
+            name=BEARER.secret.name,
+            namespace=BEARER.secret.namespace,
+            key=BEARER.key,
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         )
         config_map = self._add_config_map()
@@ -144,7 +144,7 @@ class HaMcpApp(Construct):
             data={
                 "HOMEASSISTANT_URL": home_assistant.SERVICE.url,
                 "MCP_HOST": "0.0.0.0",
-                "MCP_PORT": str(_APP_UPSTREAM_PORT),
+                "MCP_PORT": str(_UPSTREAM.number),
                 "MCP_SECRET_PATH": "/mcp",
                 "MCP_HEALTHZ": "true",
                 "MCP_SERVER_NAME": "Home Assistant",
@@ -163,7 +163,7 @@ class HaMcpApp(Construct):
                 "ENABLE_TOOL_SECURITY_POLICIES": "false",
                 "MCP_FACADE_FACADE_NAME": "Home Assistant MCP Facade",
                 "MCP_FACADE_UPSTREAM__KIND": "http",
-                "MCP_FACADE_UPSTREAM__URL": f"http://localhost:{_APP_UPSTREAM_PORT}/mcp",
+                "MCP_FACADE_UPSTREAM__URL": f"http://localhost:{_UPSTREAM.number}/mcp",
                 # Client auth is a cluster-internal static bearer (MCP_FACADE_CLIENT_AUTH__STATIC_BEARER,
                 # injected from the ha-mcp-bearer Secret below), not the public Authentik OAuth gate.
                 # FacadeSettings requires exactly one of `auth` / `client_auth`, so the MCP_FACADE_AUTH__*
@@ -203,24 +203,17 @@ class HaMcpApp(Construct):
             image="ghcr.io/homeassistant-ai/ha-mcp:8.4.3@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456",
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             args=["ha-mcp-web"],
-            ports=[ContainerPort(name="upstream", number=_APP_UPSTREAM_PORT, protocol=Protocol.TCP)],
+            ports=[_UPSTREAM.container_port()],
             env_from=[EnvFrom(config_map=config_map)],
             env_variables={
-                "HOMEASSISTANT_TOKEN": EnvValue.from_secret_value(
-                    SecretValue(
-                        secret=Secret.from_secret_name(
-                            self, "ha-mcp-home-assistant-token-ref", _HOME_ASSISTANT_TOKEN_SECRET_NAME
-                        ),
-                        key="token",
-                    )
-                )
+                "HOMEASSISTANT_TOKEN": _HOME_ASSISTANT_TOKEN.env_value(self, "ha-mcp-home-assistant-token-ref")
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
             ),
-            readiness=http_probe("/healthz", port=_APP_UPSTREAM_PORT, initial_delay_seconds=5),
-            liveness=http_probe("/healthz", port=_APP_UPSTREAM_PORT, initial_delay_seconds=20, period_seconds=20),
+            readiness=http_probe("/healthz", port=_UPSTREAM.number, initial_delay_seconds=5),
+            liveness=http_probe("/healthz", port=_UPSTREAM.number, initial_delay_seconds=20, period_seconds=20),
             security_context=ContainerSecurityContextProps(
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), user=999, group=999
             ),
@@ -237,12 +230,7 @@ class HaMcpApp(Construct):
             env_variables={
                 # The same token agentplane-staging's Action Service presents (its ESO copy of
                 # this Secret) -- one source of truth, no drift.
-                "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": EnvValue.from_secret_value(
-                    SecretValue(
-                        secret=Secret.from_secret_name(self, "ha-mcp-bearer-ref", _BEARER_SECRET_NAME),
-                        key=_BEARER_SECRET_KEY,
-                    )
-                )
+                "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": BEARER.env_value(self, "ha-mcp-bearer-ref")
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(200)),

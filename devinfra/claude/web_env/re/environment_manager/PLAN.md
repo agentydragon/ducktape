@@ -145,14 +145,6 @@ All CLI flags and subcommands verified unchanged from a6f96673 via `--help` outp
 
 These come from updated gRPC and OTel dependency versions, not application-level changes.
 
-## Phase Status
-
-### Phase 1: Census & Diff -- COMPLETE
-
-### Phase 2: Source Updates -- COMPLETE
-
-- [ ] DWARF-based reconstruction (IMPOSSIBLE -- binary is garble-obfuscated)
-
 ## Open Items
 
 1. **New deploy mechanism**: `filestore_url` and `filesystem_id` replace Vercel/Antspace.

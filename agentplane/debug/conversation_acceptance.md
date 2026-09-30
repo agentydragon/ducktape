@@ -26,14 +26,17 @@ live-data reset, or a final assembled-stack run.
 
 ## Open gates
 
-- The functional scroll/window baseline is covered by `a3b3c07fe2` and [3f50db38](https://app.buildbuddy.io/invocation/3f50db38). The final assembled visual/WAL regression is still pending.
-- The finite Electric resource probes do not demonstrate container-wide memory bounds or post-compaction behavior. This server-side gate is separate from the accepted browser cache growth under D6.
-- Focused epoch replacement, long-offline recovery, and the current visual fixture run do not substitute for the final assembled-stack regression run.
+- At merged source `e6eb5229c6`, repository-wide `test //...` passed at [7f324367](https://app.buildbuddy.io/invocation/7f324367-78b9-5154-be2c-eb7ce4402ca9). The invocation includes passing `test_thread_sync`, `test_thread_browser`, `test_thread_window_browser`, `test_electric_wal_recovery`, `test_electric_subset_window`, and `frontend:visual` targets. `github/devel` has no later Agentplane app changes. This is same-revision component coverage, not a deployed-ingress assembled acceptance run.
+- The dedicated assembled runs did not pass: #7564's [75c05dbc](https://app.buildbuddy.io/invocation/75c05dbc-eb9a-4063-ad7a-a0d96945893f) run failed `test_bridge`; its later [45320c5d](https://app.buildbuddy.io/invocation/45320c5d-df45-4561-ad0b-ff9d3a2bde70) run failed `test_pending_command_browser` and `test_thread_browser`. #7567 remains open/draft; its pending-command, visual, and WAL targets passed, but `test_thread_browser` failed in two of four shards at [51563749](https://app.buildbuddy.io/invocation/51563749-c9d8-59b0-ad8a-7c6fcf24e2b9).
+- The [62751af6](https://app.buildbuddy.io/invocation/62751af6-c9b3-427b-a533-f8b7f13e345d) workflow cited above for `f77ee736` failed overall. Its child passed `test_electric` and `test_thread_sync`, but the child metadata identifies commit `67cd21cc`, not `f77ee736`; a separate `frontend:vitest_test` target failed.
+- The finite Electric resource probes passed their individual scenarios but do not demonstrate container-wide memory bounds or post-compaction behavior. The latest saved probe recorded cgroup growth of 536,506,368 bytes and file-cache growth from 56.3 to 561.6 MB; this is not by itself proof of unreclaimable memory. The server-side bound remains open and is separate from the accepted browser cache growth under D6.
+- E5 traffic for updates outside the selected window while scrolled away from a busy tail has not been measured on the Electric path. The plan and integrated acceptance evidence require this measurement; the archive/SSE replay measurement is not evidence for Electric.
+- O2 has partial app-tier evidence: `test_thread_sync` passes with two app processes sharing one Electric fixture. The live staging snapshot has 2/2 app replicas and 1/1 Electric replica; this does not establish Electric failover or horizontal Electric scaling. Resolve the topology or record an owner-approved exception.
 
 ## Stack review
 
-Runner #7535, fold #7523, batching #7546, storage #7540, debug #7555, backend
-#7563, and frontend #7537 remain independently reviewable where their content permits.
-The current assembled follow-up is #7564. WAL #7560 and visual #7561 are peers above
-#7564. Until predecessors land, ancestry makes their complete diffs visible; retargeting
-cannot honestly hide prerequisite commits.
+Status refreshed 2026-09-28: the older runner/fold/batching/storage/debug/backend/frontend stack
+has landed. #7560, #7561, #7564, #7565, and #7566 are closed; #7567 remains open and draft with
+failing Bazel CI. The #7564 and #7567 invocations above are not successful assembled acceptance
+runs. The merged-source `test //...` pass establishes that the landed component targets pass; it
+does not include the unmerged #7567 paging change or prove deployed-ingress acceptance.

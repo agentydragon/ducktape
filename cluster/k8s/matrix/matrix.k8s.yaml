@@ -240,6 +240,7 @@ spec:
       labels:
         app.kubernetes.io/name: element-web
     spec:
+      automountServiceAccountToken: false
       containers:
         - image: vectorim/element-web:v1.12.27
           livenessProbe:
@@ -290,7 +291,7 @@ spec:
     - name: http
       port: 80
       protocol: TCP
-      targetPort: http
+      targetPort: 80
   selector:
     app.kubernetes.io/name: element-web
   type: ClusterIP

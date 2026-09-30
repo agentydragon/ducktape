@@ -18,13 +18,17 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.scripts import nebula_mesh
 
 NAME = "proxmox-proxy"
 NAMESPACE = "proxmox-proxy"
 OUTPUT_DIR = f"{GENERATED_ROOT}/proxmox-proxy"
-_PORT = 8080
-_LABELS = {"app.kubernetes.io/name": NAME}
+SERVICE = ServiceRef(
+    name=NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+)
 _CONFIG_MAP_NAME = "proxmox-proxy-config"
 _PROXMOX_HOST = "atlas"
 _PROXMOX_UI_PORT = 8006
@@ -45,7 +49,7 @@ def config_map(mesh: nebula_mesh.Mesh) -> ConfigMapArgs:
             }}
 
             server {{
-                listen {_PORT};
+                listen {SERVICE.pod_port};
 
                 location / {{
                     proxy_pass https://proxmox;
@@ -69,7 +73,7 @@ def config_map(mesh: nebula_mesh.Mesh) -> ConfigMapArgs:
 
 def _tcp_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
     return k8s.Probe(
-        tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_number(_PORT)),
+        tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_number(SERVICE.pod_port)),
         initial_delay_seconds=initial_delay_seconds,
         period_seconds=period_seconds,
     )
@@ -81,20 +85,21 @@ def chart(app: App) -> Chart:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     node_selector={"topology.kubernetes.io/region": "proxmox"},
                     containers=[
                         k8s.Container(
                             name="nginx",
                             image="docker.io/library/nginx:alpine",
-                            ports=[k8s.ContainerPort(container_port=_PORT, name="http")],
+                            ports=[SERVICE.port.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="config",
@@ -125,13 +130,8 @@ def chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(port=_PORT, target_port=k8s.IntOrString.from_number(_PORT), protocol="TCP", name="http")
-            ],
-        ),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()]),
     )
     return chart
 
