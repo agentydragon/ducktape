@@ -52,26 +52,6 @@ def haku_egress_proxy(
     )
 
 
-def haku_openclaw_spike_app(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    seaweedfs_operator: Kustomization,
-) -> Kustomization:
-    name = "haku-openclaw-spike-app"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        timeout="10m",
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, seaweedfs_operator),
-        description=(
-            "Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy."
-        ),
-    )
-
-
 def plaid_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,

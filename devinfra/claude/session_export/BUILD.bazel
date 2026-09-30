@@ -170,6 +170,7 @@ py_test(
         "//:conftest",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api:oauth_client",
+        "//util:net",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -216,14 +217,19 @@ py_library(
 
 py_test(
     name = "test_store",
+    size = "medium",
     srcs = ["test_store.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
+        ":models",
         ":store",
         "//:conftest",
         "//devinfra/claude:conftest",
+        "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -240,8 +246,6 @@ py_test(
         ":sync",
         "//:conftest",
         "//devinfra/claude:conftest",
-        "@pypi//alembic",
-        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -365,6 +369,7 @@ py_test(
         ":api",
         ":conftest",
         ":live",
+        ":models",
         ":store",
         ":sync",
         "//:conftest",
@@ -417,6 +422,7 @@ py_test(
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//httpx",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

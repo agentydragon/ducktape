@@ -262,7 +262,6 @@ def generate_manifests(root: Path) -> None:
     agentplane_testing_health_checks = agentplane_generation.environment_health_checks(
         agentplane_testing_resource_chart, testing.ENV.namespace
     )
-    haku_openclaw_spike_config.write_manifests(root)
     public_coder_agent_config.write_manifests(root)
     public_coder_proxy.write_manifests(
         root,
@@ -1412,11 +1411,20 @@ def generate_manifests(root: Path) -> None:
         tofu_controller_kustomization,
     )
     haku_openclaw_spike_app_artifact = artifact(
-        "haku-openclaw-spike-app", f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app"
+        "haku-openclaw-spike-app", haku_openclaw_spike_config.OUTPUT_DIR, haku_openclaw_spike_config.PINS_DIR
     )
-    agents_flux_kustomizations.haku_openclaw_spike_app(
+    haku_openclaw_spike_config.haku_openclaw_spike_app(
         flux_chart,
-        haku_openclaw_spike_app_artifact,
+        write_directory(
+            root,
+            haku_openclaw_spike_app_artifact,
+            haku_openclaw_spike_config.namespace_chart,
+            haku_openclaw_spike_config.chart,
+            haku_openclaw_spike_config.app_chart,
+            components=[posixpath.relpath(haku_openclaw_spike_config.PINS_DIR, haku_openclaw_spike_config.OUTPUT_DIR)],
+            generator_options=haku_openclaw_spike_config.GENERATOR_OPTIONS,
+            config_map_generator=[haku_openclaw_spike_config.write_kubeconfig_config_map(root)],
+        ),
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
     )

@@ -1,9 +1,6 @@
-import asyncio
-import contextlib
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -12,18 +9,22 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from devinfra.claude.session_export.conftest import (
     LIVE_WINDOW,
+    ONE,
     PAIRED_RESPONSE,
+    SESSION_STATUS_ACTIVE,
+    TEST_ORG_UUID,
     FakeSessionsService,
     FakeTokenEndpoint,
+    authorization_state,
+    background,
     eventually,
     make_event,
     make_events,
+    redirect_url,
 )
 from devinfra.claude.session_export.oauth import CredentialStore
 from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.supervisor import LiveStatus, SyncState, SyncSupervisor
-
-ONE = "session_test0001"
 
 
 @dataclass
@@ -34,8 +35,7 @@ class Running:
 
     async def approve(self) -> None:
         """What the human does: open the URL, approve, and paste back where the browser was sent."""
-        state = parse_qs(urlsplit(self.supervisor.start_pairing()).query)["state"][0]
-        await self.supervisor.finish_pairing(f"http://localhost:54545/callback?code=test-code&state={state}")
+        await self.supervisor.finish_pairing(redirect_url(authorization_state(self.supervisor.start_pairing())))
 
     async def cycle_read(self, events: int) -> bool:
         cycle = (await self.supervisor.status()).last_cycle
@@ -69,11 +69,8 @@ async def running(
     service: FakeSessionsService, store: SessionStore, engine: AsyncEngine, tmp_path: Path
 ) -> AsyncIterator[Running]:
     running = supervisor_for(service, store, tmp_path / "credential.json", FakeTokenEndpoint(PAIRED_RESPONSE))
-    loop = asyncio.create_task(running.supervisor.run())
-    yield running
-    loop.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await loop
+    async with background(running.supervisor.run()):
+        yield running
 
 
 async def test_the_loop_waits_unpaired_and_syncs_once_a_redirect_is_pasted(
@@ -92,7 +89,7 @@ async def test_the_loop_waits_unpaired_and_syncs_once_a_redirect_is_pasted(
     assert after.state is SyncState.IDLE
     assert (after.sessions, after.sessions_behind, after.pairing_started) == (1, 0, False)
     assert after.credential is not None
-    assert (after.credential.organization_uuid, after.credential.scopes) == ("test-org-uuid", ["user:profile"])
+    assert (after.credential.organization_uuid, after.credential.scopes) == (TEST_ORG_UUID, ["user:profile"])
 
 
 async def test_pairing_again_switches_the_loop_to_the_new_credential(
@@ -136,13 +133,13 @@ async def test_pasting_without_an_attempt_or_with_another_attempts_url_saves_not
 ) -> None:
     idle = supervisor_for(service, store, tmp_path / "credential.json", FakeTokenEndpoint(PAIRED_RESPONSE))
     with pytest.raises(ValueError, match="start one first"):
-        await idle.supervisor.finish_pairing("http://localhost:54545/callback?code=test-code&state=any")
+        await idle.supervisor.finish_pairing(redirect_url("any"))
 
     idle.supervisor.start_pairing()
     with pytest.raises(ValueError, match="state differs"):
-        await idle.supervisor.finish_pairing("http://localhost:54545/callback?code=test-code&state=another-attempt")
+        await idle.supervisor.finish_pairing(redirect_url("another-attempt"))
     with pytest.raises(ValueError, match="start one first"):  # the mismatch spent the attempt
-        await idle.supervisor.finish_pairing("http://localhost:54545/callback?code=test-code&state=any")
+        await idle.supervisor.finish_pairing(redirect_url("any"))
 
     assert not idle.credentials.exists()
     assert not idle.token_endpoint.bodies
@@ -160,7 +157,7 @@ async def test_a_code_anthropic_refuses_spends_the_attempt_and_saves_nothing(
 
 async def test_without_live_streams_the_sync_only_polls(service: FakeSessionsService, running: Running) -> None:
     service.events = {ONE: make_events(3)}
-    service.statuses = {ONE: "active"}
+    service.statuses = {ONE: SESSION_STATUS_ACTIVE}
     await running.approve()
     await eventually(lambda: running.cycle_read(3))
     assert (await running.supervisor.status()).live == LiveStatus(
@@ -175,10 +172,9 @@ async def test_live_following_stores_a_pushed_event_and_reports_itself(
     live = supervisor_for(
         service, store, tmp_path / "credential.json", FakeTokenEndpoint(PAIRED_RESPONSE), live_streams=1
     )
-    loop = asyncio.create_task(live.supervisor.run())
-    try:
+    async with background(live.supervisor.run()):
         service.events = {ONE: make_events(3)}
-        service.statuses = {ONE: "active"}
+        service.statuses = {ONE: SESSION_STATUS_ACTIVE}
         await live.approve()
 
         async def stream_opened() -> bool:
@@ -194,10 +190,6 @@ async def test_live_following_stores_a_pushed_event_and_reports_itself(
         status = (await live.supervisor.status()).live
         assert (status.following, status.streams, status.problems, status.failure) == (True, 1, [], None)
         assert status.last_event_at is not None
-    finally:
-        loop.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await loop
 
 
 async def test_a_refused_stream_shows_on_the_page_with_its_reason(
@@ -207,10 +199,9 @@ async def test_a_refused_stream_shows_on_the_page_with_its_reason(
         service, store, tmp_path / "credential.json", FakeTokenEndpoint(PAIRED_RESPONSE), live_streams=1
     )
     service.stream_refusals = [403] * 1000
-    loop = asyncio.create_task(live.supervisor.run())
-    try:
+    async with background(live.supervisor.run()):
         service.events = {ONE: make_events(3)}
-        service.statuses = {ONE: "active"}
+        service.statuses = {ONE: SESSION_STATUS_ACTIVE}
         await live.approve()
 
         async def stream_reported() -> bool:  # the watch is refused too, and reported first
@@ -220,10 +211,6 @@ async def test_a_refused_stream_shows_on_the_page_with_its_reason(
         problem = {p.source: p for p in (await live.supervisor.status()).live.problems}[ONE]
         assert "403 Forbidden from GET /v1/code/sessions/cse_test0001/events/stream" in problem.message
         assert "refused" in problem.message
-    finally:
-        loop.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await loop
 
 
 if __name__ == "__main__":

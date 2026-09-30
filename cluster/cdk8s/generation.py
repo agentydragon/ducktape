@@ -15,6 +15,7 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     ConfigMapArgs,
+    GeneratorOptions,
     Json6902Patch,
     PatchFile,
     RenderedDirectory,
@@ -87,6 +88,7 @@ def write_directory(
     remote_resources: Sequence[str] = (),
     namespace: str | None = None,
     components: Sequence[str] = (),
+    generator_options: GeneratorOptions | None = None,
     config_map_generator: Sequence[ConfigMapArgs] = (),
     configurations: Sequence[str] = (),
     patch_charts: Sequence[Callable[[App], Chart]] = (),
@@ -96,8 +98,8 @@ def write_directory(
     `kustomization.yaml` listing them, then `siblings`: the hand-written files beside them,
     then `remote_resources`: URLs kustomize fetches at build time, such as an upstream release
     manifest. `patch_charts` are synthesized beside them and listed as strategic-merge patches,
-    before `json6902_patches`. `namespace`, `components`, `config_map_generator` and
-    `configurations` are `kustomize_kustomization`'s.
+    before `json6902_patches`. `namespace`, `components`, `generator_options`,
+    `config_map_generator` and `configurations` are `kustomize_kustomization`'s.
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
@@ -120,6 +122,7 @@ def write_directory(
             resources=[*files[: len(chart_builders)], *siblings, *remote_resources],
             namespace=namespace,
             components=components,
+            generator_options=generator_options,
             config_map_generator=config_map_generator,
             configurations=configurations,
             patches=[*(PatchFile(path=name) for name in files[len(chart_builders) :]), *json6902_patches],

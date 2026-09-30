@@ -15,9 +15,7 @@ from devinfra.claude.session_export.archive import (
     sessions_to_export,
     verify_archive,
 )
-from devinfra.claude.session_export.conftest import FakeSessionsService, make_events, make_session
-
-SESSION_ID = "session_test0001"
+from devinfra.claude.session_export.conftest import ONE, FakeSessionsService, make_events, make_session
 
 
 def read_lines(path: Path) -> list[str]:
@@ -29,10 +27,10 @@ async def test_export_session_archives_every_event_losslessly(
     service: FakeSessionsService, api: SessionsApi, tmp_path: Path
 ) -> None:
     events = make_events(1203)
-    service.events[SESSION_ID] = events
+    service.events[ONE] = events
     # A `cse_` id names the same session as the `session_` one the archive files use.
     record = await export_session(api, make_session("cse_test0001"), tmp_path)
-    assert [json.loads(line) for line in read_lines(tmp_path / f"{SESSION_ID}.jsonl.gz")] == events
+    assert [json.loads(line) for line in read_lines(tmp_path / f"{ONE}.jsonl.gz")] == events
     assert record.event_count == 1203
     assert record.is_complete
 
@@ -45,13 +43,13 @@ async def test_export_session_reports_progress_against_the_expected_total(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setattr(progress, "REPORT_INTERVAL_SECONDS", 0)  # report after every page
-    service.events[SESSION_ID] = make_events(1203)
+    service.events[ONE] = make_events(1203)
     with caplog.at_level(logging.INFO, logger=progress.logger.name):
-        await export_session(api, make_session(SESSION_ID), tmp_path)
+        await export_session(api, make_session(ONE), tmp_path)
     reports = [record.getMessage() for record in caplog.records]
     assert len(reports) == 3  # pages of 500, 500 and 203
-    assert reports[0].startswith(f"{SESSION_ID}: 500/1203 events")
-    assert reports[-1].startswith(f"{SESSION_ID}: 1203/1203 events (100%)")
+    assert reports[0].startswith(f"{ONE}: 500/1203 events")
+    assert reports[-1].startswith(f"{ONE}: 1203/1203 events (100%)")
 
 
 async def test_export_session_leaves_no_finished_file_when_a_sequence_gap_aborts_it(
@@ -59,10 +57,10 @@ async def test_export_session_leaves_no_finished_file_when_a_sequence_gap_aborts
 ) -> None:
     events = make_events(5)
     del events[2]
-    service.events[SESSION_ID] = events
+    service.events[ONE] = events
     with pytest.raises(ValueError, match="sequence_num"):
-        await export_session(api, make_session(SESSION_ID), tmp_path)
-    assert not (tmp_path / f"{SESSION_ID}.jsonl.gz").exists()
+        await export_session(api, make_session(ONE), tmp_path)
+    assert not (tmp_path / f"{ONE}.jsonl.gz").exists()
 
 
 def test_sessions_to_export_skips_only_complete_unchanged_sessions() -> None:
@@ -87,10 +85,10 @@ def test_sessions_to_export_skips_only_complete_unchanged_sessions() -> None:
 async def test_export_all_is_resumable(service: FakeSessionsService, api: SessionsApi, tmp_path: Path) -> None:
     service.events = {f"session_test{i:04d}": make_events(n) for i, n in enumerate((3, 700, 0))}
     await export_all(api, tmp_path, workers=2, session_ids=None, limit=None)
-    event_requests = [r for r in service.requests if r.url.path.endswith("/events")]
+    first_run = service.event_requests()
 
     await export_all(api, tmp_path, workers=2, session_ids=None, limit=None)
-    assert [r for r in service.requests if r.url.path.endswith("/events")] == event_requests
+    assert service.event_requests() == first_run
 
 
 async def test_verify_accepts_a_fresh_archive_and_flags_a_truncated_file(

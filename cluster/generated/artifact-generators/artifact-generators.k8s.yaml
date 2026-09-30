@@ -314,8 +314,10 @@ spec:
       name: ha-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/app/**"
-          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/app/"
+        - from: "@repo/cluster/generated/agents/haku-openclaw-spike/app/**"
+          to: "@artifact/cluster/generated/agents/haku-openclaw-spike/app/"
+        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/app-image-pins/**"
+          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/app-image-pins/"
       name: haku-openclaw-spike-app
       originRevision: "@repo"
     - copy:
