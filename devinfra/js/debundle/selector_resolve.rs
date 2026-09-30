@@ -600,10 +600,6 @@ pub fn solve(chunks: Vec<(&Chunk<'_>, &[SpecModule], Projection)>) -> Result<Vec
         let (index, result) = solved?;
         let decided = &mut decided[index];
         decided.claims.extend(result.claims);
-        decided.global_diagnostic = decided
-            .global_diagnostic
-            .take()
-            .or(result.global_diagnostic);
     }
     chunks
         .into_iter()
@@ -640,7 +636,11 @@ fn add_nearest_unclaimed(
         .filter(|body_idx| !claimed.contains(body_idx))
         .collect::<Vec<_>>();
     for entity in &mut resolution.outcomes {
-        let Outcome::NoMatch { nearest_unclaimed } = &mut entity.outcome.outcome else {
+        let Outcome::NoMatch {
+            nearest_unclaimed,
+            reason: None,
+        } = &mut entity.outcome.outcome
+        else {
             continue;
         };
         let module = &modules[entity.module];
@@ -754,9 +754,6 @@ fn in_program_targets(
             .map(|claim| SolverClaim {
                 target: target(claim.target),
                 outcome: match claim.outcome {
-                    ClaimOutcome::Conflict { with } => ClaimOutcome::Conflict {
-                        with: with.into_iter().map(target).collect(),
-                    },
                     ClaimOutcome::Duplicate {
                         owner,
                         conflicting_targets,
@@ -768,7 +765,6 @@ fn in_program_targets(
                 },
             })
             .collect(),
-        global_diagnostic: result.global_diagnostic,
     }
 }
 
@@ -1707,7 +1703,6 @@ impl Projection {
         let resolved_by = self.resolved_by(result);
         let Self {
             ids,
-            program,
             mut outcomes,
             members,
             anonymous,
@@ -1731,7 +1726,7 @@ impl Projection {
                      duplicate owner {owner:?} shared by targets {conflicting_targets:?}",
                     ids[module_index],
                 ),
-                Some(outcome) => claim_outcome(module, &program, outcome)?,
+                Some(outcome) => claim_outcome(module, outcome)?,
                 None => bail!(
                     "logical_module {}: global selector solver returned no outcome for anonymous \
                      statement selector",
@@ -1770,7 +1765,7 @@ impl Projection {
                     ids[module_index],
                     member.export_name,
                 ),
-                Some(outcome) => claim_outcome(module, &program, outcome)?,
+                Some(outcome) => claim_outcome(module, outcome)?,
                 None => bail!(
                     "logical_module {}: global selector solver returned no outcome for selector \
                      member `{}`",
@@ -2297,15 +2292,12 @@ fn claim_candidate(module: &Module, claim: &ResolvedClaim) -> Result<Candidate> 
 }
 
 /// The outcome of a target the solve did not resolve.
-fn claim_outcome(
-    module: &Module,
-    program: &SelectorProgram,
-    outcome: &ClaimOutcome,
-) -> Result<Outcome> {
+fn claim_outcome(module: &Module, outcome: &ClaimOutcome) -> Result<Outcome> {
     Ok(match outcome {
         ClaimOutcome::NoMatch => Outcome::no_match(),
-        ClaimOutcome::Conflict { with } => Outcome::Conflict {
-            with: target_entity_refs(program, with),
+        ClaimOutcome::Unsatisfiable { reason } => Outcome::NoMatch {
+            nearest_unclaimed: Vec::new(),
+            reason: Some(reason.clone()),
         },
         ClaimOutcome::Ambiguous {
             candidates,

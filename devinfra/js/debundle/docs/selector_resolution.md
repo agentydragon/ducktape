@@ -92,8 +92,7 @@ the solver's alternative search (`MAX_ALTERNATIVES_PER_VARIABLE`), so an
 `undecided` means the sidecar stopped (its
 `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS` limit, per request) before
 deciding the entity. The sidecar reports which projected variables it had proven fixed by
-then; an entity all of whose variables are among them still resolves, and a
-conflict set found before the stop still stands.
+then; an entity all of whose variables are among them still resolves.
 
 ## Template references
 
@@ -158,45 +157,37 @@ place might share the anchor, so none is given.
 ## Unsatisfiable programs
 
 A contradiction stays inside its group, since each group is its own request.
-Within the group it must not hide every other result either, so an
-unsatisfiable request is localized to the targets that cause it
-(`selector_backend_solver::solve_localizing_conflicts`).
+A group's program is unsatisfiable when compile-time presolve proves it
+(`all_different` propagates fixed values and a relation table narrows both of
+its variables until a domain or table is empty) or the sidecar answers
+`UNSATISFIABLE` (`selector_backend_solver::solve_with_backend`). Every target of
+the group then comes out `no_match` with one fixed `reason`: two or more of the
+group's selectors claim the same place or contradict a relation, and which ones
+is not determined. Other groups resolve as usual.
 
-The first compile presolves across targets
-(`PresolveScope::AcrossTargets`): `all_different` propagates fixed values and a
-relation table narrows both of its variables. That is what keeps requests small,
-but a contradiction then surfaces as an empty domain wherever propagation met
-it, not where it started. When that compile or its solve is unsatisfiable, the
-program is recompiled within targets (`PresolveScope::WithinTargets`) and solved
-again with every constraint attributed:
+A `conflict` outcome is not a solver result: an entity whose rows all disagree
+with a reference is rejected before the solve (§ Template references).
 
-- **Ownership.** A target owns its owner variable and its binding variable. A
-  constraint is attributed to every target owning one of its variables: a
-  candidate table to its own target, a relation table to its owner and anchor,
-  a `source_matches[]` group table to every target in the group, and each
-  `all_different` entry to the target(s) owning that variable.
-- **Hard constraints.** A constraint over variables no target owns carries no
-  attribution and stays hard.
-- **Presolve within targets** narrows a variable only from constraints attributed
-  solely to targets owning it, and `all_different` propagates nothing. A target
-  whose own constraints empty its domain gets an empty table instead of an empty
-  domain.
+### Rejected: localizing a contradiction with assumption cores
 
-The sidecar gives each target an assumption literal and enforces a constraint
-only while every target it is attributed to is enabled; a disabled
-`all_different` entry takes a value no other entry can. It takes CP-SAT's
-sufficient assumptions for infeasibility as one conflict set, disables those
-targets, and repeats until the rest is feasible, then solves the rest with the
-conflicting targets disabled. CP-SAT's cores are not necessarily minimal, so a
-conflict set may name a target that is not strictly needed for the
-contradiction.
+Attributing every constraint to the targets owning its variables, presolving
+within targets only, and re-solving with one assumption literal per target
+reported each contradiction as a `conflict` among the targets of a CP-SAT core
+(sufficient assumptions for infeasibility) while the rest of the group
+resolved. It was dropped because each round is a full CP-SAT solve of a model
+that presolve across targets no longer shrinks, and CP-SAT returns one core per
+solve: the cost is (conflicts + 1) × the model's load time, not search.
 
-Each target in a conflict set of two or more comes out `conflict`, naming the
-others; a set of one is that target's own constraints failing and comes out
-`no_match`. Every other target resolves as usual. A target that depends on a
-conflicting one, such as a relation anchored on it, loses that relation with it
-and may come out ambiguous. Only when the hard constraints alone are
-unsatisfiable does every target of the group come out `no_match`.
+Measured with the optimized sidecar on one real 96 KB request, 216 targets in
+one group, infeasible because two pairs of entities claimed the same
+declaration: proving the plain across-targets program infeasible took 22 ms.
+Localization ran three full solves, about 28 s each with presolve on (86 s in
+all, finding the same two size-2 cores) and about 3 s each with
+`cp_model_presolve:false` (9.4 s in all). Stack samples put the time in model
+expansion and loading (`ExpandCpModel`, `FullyCompressTuples`, `LoadBaseModel`,
+probing), not in search, and the `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS`
+limit is not honoured inside presolve. Duplicate claims are not a rare path:
+authoring specs in parallel produces several at once.
 
 ## Landing a new relation
 
