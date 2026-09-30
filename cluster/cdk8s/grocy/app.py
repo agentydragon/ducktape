@@ -42,7 +42,7 @@ from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.volsync.replication_destination import ReplicationDestination
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
@@ -56,9 +56,9 @@ _BACKUP = "grocy-config-ovh-backup"
 _HTTP = Port(name="http", number=80)
 # grocy/mcp.py and grocy/user_perms.py render one of theirs per household too.
 HOUSEHOLDS = ("sf", "vallejo")
-# Every grocy directory: `<household>/{app,mcp,user-perms}`, `user-perms-base` and the
-# image-pins Components.
-ROOT = f"{HAND_WRITTEN_ROOT}/grocy"
+# Every grocy directory but the hand-written image-pins Components: `<household>/{app,mcp,user-perms}`
+# and `user-perms-base`.
+ROOT = f"{GENERATED_ROOT}/grocy"
 _BACKUP_SCHEDULE = "23 */6 * * *"
 
 

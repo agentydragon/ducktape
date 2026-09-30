@@ -4,9 +4,9 @@ to Grocy, and the policy they apply. Each household's `<household>/user-perms` p
 in its namespace.
 
 The base's `kustomization.yaml` hash-suffixes the policy's ConfigMap, so a policy edit changes
-the Job spec and the `force` annotation makes Flux recreate it. Its hand-written
-`image-pins/kustomization.yaml` Component overrides the reconciler's "unset" placeholder tag
-(cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
+the Job spec and the `force` annotation makes Flux recreate it. It includes the hand-written
+`PINS_DIR` Component across the roots, which overrides the reconciler's "unset" placeholder
+tag (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
 """
 
 from __future__ import annotations
@@ -22,9 +22,11 @@ from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.provisioners.grocy_user_perms.provision import Policy
 
 BASE_DIR = f"{grocy.ROOT}/user-perms-base"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/grocy/user-perms-image-pins"
 _NAME = "grocy-user-perms-provisioner"
 # Shared by the Job's and the CronJob's pods: the NetworkPolicy admits them to grocy:80.
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -199,7 +201,7 @@ def write_manifests(root: Path) -> None:
         root / BASE_DIR / "kustomization.yaml",
         kustomize_kustomization(
             resources=write_charts(root, BASE_DIR, base_chart),
-            components=[posixpath.relpath(f"{BASE_DIR}/image-pins", BASE_DIR)],
+            components=[posixpath.relpath(PINS_DIR, BASE_DIR)],
             config_map_generator=[
                 ConfigMapArgs(
                     name=_POLICY_CONFIG_MAP,

@@ -124,7 +124,10 @@ py_library(
 py_library(
     name = "loki",
     srcs = ["loki.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
+    ],
     deps = [
         ":grafana_helmrepository",
         "//cluster/cdk8s:cilium",
@@ -147,7 +150,10 @@ py_library(
 py_library(
     name = "mimir",
     srcs = ["mimir.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
+    ],
     deps = [
         ":grafana_helmrepository",
         "//cluster/cdk8s:flux",
@@ -180,7 +186,10 @@ py_library(
 py_library(
     name = "grafana_instance",
     srcs = ["grafana_instance.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
+    ],
     deps = [
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:gateway",

@@ -19,6 +19,8 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/mimir"
 _NAMESPACE = "monitoring"
 _CREDENTIALS_SECRET = "mimir-seaweedfs-credentials"
 _S3_ENDPOINT = "seaweedfs-s3.seaweedfs.svc:8333"
+# The chart's nginx gateway Service, on port 80.
+GATEWAY_URL = f"http://{NAME}-gateway.{_NAMESPACE}.svc.cluster.local"
 
 
 def _s3(bucket: str) -> dict[str, object]:

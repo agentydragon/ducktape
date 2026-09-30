@@ -79,6 +79,7 @@ py_library(
     visibility = [
         "//agentplane/acceptance:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
         "//cluster/cdk8s/litellm:__pkg__",
         "//haku/x/dispatch/deploy/litellm:__pkg__",
     ],
@@ -679,6 +680,7 @@ py_library(
 py_library(
     name = "kubectl_passthrough_mcp",
     srcs = ["kubectl_passthrough_mcp.py"],
+    visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
         ":artifact_generators",
         ":flux",
@@ -1287,6 +1289,7 @@ py_library(
 py_library(
     name = "hubble_ui",
     srcs = ["hubble_ui.py"],
+    visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
         ":cilium",
         "@pypi//cdk8s",
@@ -1390,6 +1393,7 @@ py_library(
 py_library(
     name = "headlamp",
     srcs = ["headlamp.py"],
+    visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
         ":artifact_generators",
         ":flux",
@@ -1406,6 +1410,7 @@ py_library(
 py_library(
     name = "proxmox_proxy",
     srcs = ["proxmox_proxy.py"],
+    visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
         ":artifact_generators",
         ":flux",
@@ -1655,7 +1660,6 @@ py_library(
         "//cluster/cdk8s/gaffer_private_source:flux_kustomizations",
         "//cluster/cdk8s/gaffer_private_source:source",
         "//cluster/cdk8s/gatus:app",
-        "//cluster/cdk8s/gatus:flux_kustomizations",
         "//cluster/cdk8s/gatus:sso",
         "//cluster/cdk8s/github_api_proxy:flux_kustomizations",
         "//cluster/cdk8s/github_api_proxy:proxy",

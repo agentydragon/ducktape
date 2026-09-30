@@ -37,6 +37,7 @@ from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "authentik"
 NAMESPACE = "authentik"
+HOSTNAME = "auth.allegedly.works"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/app"
 HOSTNAME = "auth.allegedly.works"
 _HOST_CONFIG_MAP = "authentik-host"

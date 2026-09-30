@@ -46,6 +46,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
+HOSTNAME = "grafana.allegedly.works"
 # The Service grafana-operator creates for the Grafana named `_NAME`.
 _SERVICE = ServiceRef(
     name=f"{_NAME}-service",
@@ -103,7 +104,7 @@ def _grafana(chart: Chart) -> None:
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=_INSTANCE_LABELS),
         client=GrafanaSpecClient(use_kube_auth=True),
         config={
-            "server": {"root_url": "https://grafana.allegedly.works"},
+            "server": {"root_url": f"https://{HOSTNAME}"},
             "security": {
                 # Expanded at runtime from GF_SECURITY_ADMIN_{USER,PASSWORD} env vars below.
                 # init-time only: Grafana writes the admin user to PostgreSQL on first boot.
@@ -187,7 +188,7 @@ def _grafana(chart: Chart) -> None:
         chart,
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        hostnames=["grafana.allegedly.works"],
+        hostnames=[HOSTNAME],
         backend=_SERVICE,
         hsts=False,
         listener=None,

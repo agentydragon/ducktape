@@ -20,6 +20,7 @@ py_library(
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/authentik:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
         "//cluster/cdk8s:cilium",
@@ -76,6 +77,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
         "//cluster/provisioners/grocy_user_perms:provision",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

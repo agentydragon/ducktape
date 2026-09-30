@@ -16,6 +16,8 @@ from cluster.cdk8s.namespaces import Vpa
 NAME = "headlamp"
 NAMESPACE = "headlamp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/headlamp"
+# The chart's Service.
+URL = f"http://{NAME}.{NAMESPACE}.svc.cluster.local:80"
 _PLUGINS_CONFIG = """\
 plugins:
   - name: headlamp_flux
