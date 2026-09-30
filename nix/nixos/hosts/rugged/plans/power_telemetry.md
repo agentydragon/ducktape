@@ -11,20 +11,6 @@ This is observability, not a power-policy change. `power-profiles-daemon` and
 GNOME remain the sole owners of CPU policy; do not add TLP or auto-cpufreq
 without evidence for a specific corrective change.
 
-## Landed
-
-- **RAPL access:** Rugged's non-root node-exporter can read the Intel RAPL
-  energy counters through a dedicated Nix-managed reader group. It retains its
-  non-root UID and no added capabilities. Live Mimir evidence showed
-  `node_scrape_collector_success{collector="rapl"} == 1` and increasing package,
-  DRAM, core, and platform joule counters.
-- **Battery and RAPL dashboard:** `Rugged Power` is GitOps-merged. It adapts
-  Grafana dashboard 12542 to the actual battery, AC, and USB-PD metrics from
-  Rugged and derives RAPL watts from counter rates. Package and DRAM queries
-  select canonical `intel-rapl` paths, excluding identical `intel-rapl-mmio`
-  series. The dashboard is awaiting Flux reconciliation; do not call it
-  deployed until its `GrafanaDashboard` resource is Ready.
-
 The existing node-exporter scrape already supplies battery capacity, current,
 voltage, temperature, cycle count, health, charge state, AC/USB-PD state, CPU
 frequency, thermal/hwmon/cooling state, disk I/O, network counters, and
@@ -102,7 +88,7 @@ invent battery-health or drain thresholds first.
    wiring; separately add the Rugged drain-gated Loki capture after validating
    retention and output volume.
 3. **PowerTOP PR:** explicit bounded command and privilege proof.
-4. **Dashboard/alerts PR:** extend panels from the landed collectors, then add
+4. **Dashboard/alerts PR:** extend panels from the new collectors, then add
    only baseline-derived rules.
 
 For each slice, prove the full path: rendered Nix/Helm configuration, exporter

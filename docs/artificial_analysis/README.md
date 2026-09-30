@@ -8,9 +8,11 @@ scope when refreshing; API access does not itself grant redistribution rights.
 
 <cited_models_2026_09_24.csv> refreshes the model/effort slugs cited in
 <../ai_subscription_comparison.md> and adds all published GPT-6 Luna, Sol, and Astra
-efforts. It contains **56 measured rows: 39 from the historical cohort and 17 GPT-6
-rows**. Fourteen historical slugs no longer have a measured current index and are
-excluded, not filled with their August scores:
+efforts plus `qwen3-8-flash-next` (added same-day from the same leaderboard fetch for
+an agent-routing question; not cited in the subscription analysis). It contains
+**57 measured rows: 39 from the historical cohort, 17 GPT-6 rows, and
+Qwen3.8-Flash-Next**. Fourteen historical slugs no longer have a measured current
+index and are excluded, not filled with their August scores:
 
 ```text
 claude-sonnet-5-non-reasoning
@@ -86,8 +88,8 @@ argument of each `self.__next_f.push([1, ...])`. Concatenate those strings, pars
 the JSON payload after each Flight record's colon, and recursively decode nested
 JSON strings. Model rows have `slug` and `intelligenceIndex`; exclude null indices
 and `intelligenceIndexIsEstimated: true`. Select the 53 August CSV slugs plus
-`gpt-6-*`, then sort by slug. Do not decode strings with `unicode_escape` or split
-CSV rows naively on commas: names can contain commas.
+`gpt-6-*` plus `qwen3-8-flash-next`, then sort by slug. Do not decode strings with
+`unicode_escape` or split CSV rows naively on commas: names can contain commas.
 
 | CSV field                                             | Leaderboard field                                |
 | ----------------------------------------------------- | ------------------------------------------------ |

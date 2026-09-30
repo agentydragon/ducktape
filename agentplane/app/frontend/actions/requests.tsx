@@ -136,20 +136,27 @@ function PendingActionCard({
 }
 
 /** The primary, actionable view: ActionRequests still awaiting an operator decision. Decided and
- * terminal requests live on the separate `ActionHistory` view (`history.tsx`) instead of
- * alongside these. */
-export function ActionRequests({ service = actionService }: { service?: ActionService }): JSX.Element {
+ * terminal requests follow these in the unified Actions view. */
+export function ActionRequests({
+  service = actionService,
+  embedded = false,
+}: {
+  service?: ActionService;
+  embedded?: boolean;
+}): JSX.Element {
   const { requests, error, loading, stream, deciding, decide } = useActionRequests(service);
   const pending = requests.filter((request) => request.state === "decision_pending");
 
   return (
     <Stack>
-      <div>
-        <Title order={2}>Actions</Title>
-        <Text c="dimmed" size="sm">
-          Review pending ActionRequests. Allow dispatches the single permitted Execution automatically.
-        </Text>
-      </div>
+      {!embedded && (
+        <div>
+          <Title order={2}>Actions</Title>
+          <Text c="dimmed" size="sm">
+            Review pending ActionRequests. Allow dispatches the single permitted Execution automatically.
+          </Text>
+        </div>
+      )}
       <StaleNotice streams={[stream]} />
       {error && <Text c="red">{error}</Text>}
       {loading && <Text role="status">Loading actions…</Text>}

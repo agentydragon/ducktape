@@ -1,6 +1,7 @@
 """Dispatch manifest generation to each component's local cdk8s helpers."""
 
 import functools
+import posixpath
 from pathlib import Path
 
 from cdk8s import App
@@ -207,7 +208,7 @@ from cluster.cdk8s.monitoring import (
 )
 from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
-from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollama_flux_kustomizations
+from cluster.cdk8s.ollama import app as ollama_app
 from cluster.cdk8s.openebs_lvm import storage as openebs_lvm_storage
 from cluster.cdk8s.parked import (
     augur_evidence as parked_augur_evidence,
@@ -258,7 +259,7 @@ def generate_manifests(root: Path) -> None:
         root, staging.ENV, staging.chart
     )
     agentplane_testing_resource_chart = agentplane_generation.write_environment_manifests(
-        root, testing.ENV, testing.chart, write_kustomization=False
+        root, testing.ENV, testing.chart
     )
     agentplane_staging_health_checks = agentplane_generation.environment_health_checks(
         agentplane_staging_resource_chart, staging.ENV.namespace
@@ -300,7 +301,6 @@ def generate_manifests(root: Path) -> None:
     home_assistant_namespace.write_manifests(root)
     nix_cache_attic.write_manifests(root)
     vm_images_publisher_publisher.write_manifests(root)
-    alloy.write_manifests(root)
     forgejo_app.write_manifests(root)
     home_assistant_app.write_manifests(root)
     home_assistant_backup.write_manifests(root)
@@ -319,11 +319,10 @@ def generate_manifests(root: Path) -> None:
     authentik_jwt_rotation.write_manifests(root)
     forgejo_token_rotation.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
-    ollama_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
     study_casino_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
-    litellm_credentials.write_agentplane_testing_manifests(root)
+    litellm_credentials.write_agentplane_testing_manifests(root, testing.ENV.output_dir)
     ducktape_flux.write_manifests(root)
     flux_sources.write_manifests(root)
 
@@ -743,8 +742,14 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     ollama_app_artifact = artifact("ollama-app", ollama_app.OUTPUT_DIR)
-    ollama_flux_kustomizations.ollama(
-        flux_chart, ollama_app_artifact, external_secrets_operator_kustomization, kyverno_kustomization
+    ollama_app.ollama(
+        flux_chart,
+        # No `namespace=`: that transformer would also rewrite the RoleBinding's `claude-sandbox` subject.
+        write_directory(
+            root, ollama_app_artifact, ollama_app.chart, config_map_generator=ollama_app.write_config_maps(root)
+        ),
+        external_secrets_operator_kustomization,
+        kyverno_kustomization,
     )
     seaweedfs_cluster_artifact = artifact("seaweedfs-cluster", seaweedfs_cluster.OUTPUT_DIR)
     seaweedfs_flux_kustomizations.seaweedfs_cluster(
@@ -977,7 +982,17 @@ def generate_manifests(root: Path) -> None:
         ),
     )
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
-    monitoring_flux_kustomizations.alloy(flux_chart, monitoring_alloy_artifact, monitoring_crds_kustomization)
+    alloy.alloy(
+        flux_chart,
+        write_directory(
+            root,
+            monitoring_alloy_artifact,
+            alloy.chart,
+            namespace=alloy.NAMESPACE,
+            config_map_generator=[alloy.write_config_map(root)],
+        ),
+        monitoring_crds_kustomization,
+    )
     public_coder_agent_backup_artifact = artifact("public-coder-agent-backup", public_coder_backup.OUTPUT_DIR)
     public_coder_backup.public_coder_agent_backup(
         flux_chart,
@@ -1078,10 +1093,15 @@ def generate_manifests(root: Path) -> None:
     agents_flux_kustomizations.authentik_jwt_rotation(
         flux_chart, authentik_jwt_rotation_artifact, external_secrets_operator_kustomization
     )
-    loki_read_proxy_artifact = artifact("loki-read-proxy", loki_read_proxy.OUTPUT_DIR)
+    loki_read_proxy_artifact = artifact("loki-read-proxy", loki_read_proxy.OUTPUT_DIR, loki_read_proxy.PINS_DIR)
     loki_read_proxy.loki_read_proxy(
         flux_chart,
-        write_directory(root, loki_read_proxy_artifact, loki_read_proxy.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            loki_read_proxy_artifact,
+            loki_read_proxy.chart,
+            components=[posixpath.relpath(loki_read_proxy.PINS_DIR, loki_read_proxy.OUTPUT_DIR)],
+        ),
         external_secrets_operator_kustomization,
     )
     plaid_mcp_artifact = artifact("plaid-mcp", f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp")
@@ -1210,11 +1230,16 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
         monitoring_crds_kustomization,
     )
-    matrix_user_provisioner_artifact = artifact("matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR)
+    matrix_user_provisioner_artifact = artifact(
+        "matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR, matrix_user_provisioner.PINS_DIR
+    )
     matrix_user_provisioner.matrix_user_provisioner(
         flux_chart,
         write_directory(
-            root, matrix_user_provisioner_artifact, matrix_user_provisioner.chart, components=["./image-pins"]
+            root,
+            matrix_user_provisioner_artifact,
+            matrix_user_provisioner.chart,
+            components=[posixpath.relpath(matrix_user_provisioner.PINS_DIR, matrix_user_provisioner.OUTPUT_DIR)],
         ),
         external_secrets_operator_kustomization,
         matrix_kustomization,
@@ -1242,10 +1267,15 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
     )
-    google_mcp_artifact = artifact("google-mcp", google_mcp.OUTPUT_DIR)
+    google_mcp_artifact = artifact("google-mcp", google_mcp.OUTPUT_DIR, google_mcp.PINS_DIR)
     google_mcp.google_mcp(
         flux_chart,
-        write_directory(root, google_mcp_artifact, google_mcp.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            google_mcp_artifact,
+            google_mcp.chart,
+            components=[posixpath.relpath(google_mcp.PINS_DIR, google_mcp.OUTPUT_DIR)],
+        ),
         external_secrets_operator_kustomization,
     )
     study_casino_artifact = artifact("study-casino", study_casino_app.OUTPUT_DIR)
@@ -1287,10 +1317,12 @@ def generate_manifests(root: Path) -> None:
     grocy_flux_kustomizations.grocy_vallejo_user_perms(
         flux_chart, grocy_vallejo_user_perms_artifact, grocy_vallejo_kustomization
     )
-    ha_mcp_artifact = artifact("ha-mcp", ha_mcp.OUTPUT_DIR)
+    ha_mcp_artifact = artifact("ha-mcp", ha_mcp.OUTPUT_DIR, ha_mcp.PINS_DIR)
     ha_mcp.ha_mcp(
         flux_chart,
-        write_directory(root, ha_mcp_artifact, ha_mcp.chart, components=["./image-pins"]),
+        write_directory(
+            root, ha_mcp_artifact, ha_mcp.chart, components=[posixpath.relpath(ha_mcp.PINS_DIR, ha_mcp.OUTPUT_DIR)]
+        ),
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
     )
@@ -1331,10 +1363,15 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
     )
-    haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
+    haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR, haku_workspaces.PINS_DIR)
     haku_workspaces.haku_workspaces(
         flux_chart,
-        write_directory(root, haku_workspaces_app_artifact, haku_workspaces.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            haku_workspaces_app_artifact,
+            haku_workspaces.chart,
+            components=[posixpath.relpath(haku_workspaces.PINS_DIR, haku_workspaces.OUTPUT_DIR)],
+        ),
         agent_sandbox_controller_kustomization,
         haku_rbac_kustomization,
         haku_egress_proxy_kustomization,
@@ -1350,7 +1387,7 @@ def generate_manifests(root: Path) -> None:
         haku_rbac_kustomization,
         haku_egress_proxy_kustomization,
     )
-    agentplane_testing_artifact = artifact("agentplane-testing", agentplane_generation.output_dir(testing.ENV))
+    agentplane_testing_artifact = artifact("agentplane-testing", testing.ENV.output_dir, testing.ENV.image_pins)
     testing.agentplane_testing(
         flux_chart,
         agentplane_testing_artifact,
@@ -1361,10 +1398,17 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
     )
-    agent_workspaces_app_artifact = artifact("agent-workspaces-app", agent_workspaces.OUTPUT_DIR)
+    agent_workspaces_app_artifact = artifact(
+        "agent-workspaces-app", agent_workspaces.OUTPUT_DIR, agent_workspaces.PINS_DIR
+    )
     agent_workspaces.agent_workspaces_app(
         flux_chart,
-        write_directory(root, agent_workspaces_app_artifact, agent_workspaces.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            agent_workspaces_app_artifact,
+            agent_workspaces.chart,
+            components=[posixpath.relpath(agent_workspaces.PINS_DIR, agent_workspaces.OUTPUT_DIR)],
+        ),
         external_secrets_operator_kustomization,
         agent_sandbox_controller_kustomization,
         kyverno_policies_kustomization,
@@ -1403,7 +1447,7 @@ def generate_manifests(root: Path) -> None:
     public_coder_devbox.public_coder_agent_devbox(
         flux_chart, public_coder_agent_devbox_artifact, kubevirt_kustomization, external_secrets_operator_kustomization
     )
-    agentplane_staging_artifact = artifact("agentplane-staging", agentplane_generation.output_dir(staging.ENV))
+    agentplane_staging_artifact = artifact("agentplane-staging", staging.ENV.output_dir)
     staging.agentplane_staging(
         flux_chart,
         agentplane_staging_artifact,

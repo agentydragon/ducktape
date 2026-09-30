@@ -13,7 +13,8 @@ import { command, getThread, models, resumeThread, type ThreadView } from "../cl
 import { historyRows, rowKey } from "./history_rows";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../markdown";
-import { EntityCard, HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
+import { HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
+import { EntityCard } from "./thread_cards";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
 import { testItem } from "./thread_entity_fixture";

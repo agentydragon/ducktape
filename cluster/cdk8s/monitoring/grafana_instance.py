@@ -33,6 +33,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
@@ -226,7 +227,7 @@ def _datasources(chart: Chart) -> None:
             uid="mimir",
             type="prometheus",
             access="proxy",
-            url="http://mimir-gateway.monitoring.svc.cluster.local/prometheus",
+            url=f"{mimir.GATEWAY_URL}/prometheus",
             is_default=True,
             editable=True,
         ),

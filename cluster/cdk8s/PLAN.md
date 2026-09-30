@@ -1,12 +1,5 @@
 # cdk8s adoption: remaining work
 
-Review baseline: `origin/devel` at `f84301e72c` (2026-09-28). This is a source
-audit, not a fresh synthesis, CI result, or live-cluster health report.
-
-The central chart contains 171 Flux Kustomizations. The broad resource conversion,
-ArtifactGenerator wiring, two output roots, and removal of redundant single-file
-Kustomize wrappers are implemented. They are no longer migration waves.
-
 Adoption is not complete: mixed directories still contain hand-written overlays and
 configuration, project-owned deployment packages remain outside that conversion, and
 some Python constructs still encode relationships as independent strings or patches.

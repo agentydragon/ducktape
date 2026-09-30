@@ -21,8 +21,10 @@ spec:
       name: ntfy
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/"
+        - from: "@repo/cluster/generated/agentplane-testing/**"
+          to: "@artifact/cluster/generated/agentplane-testing/"
+        - from: "@repo/cluster/k8s/agentplane-testing-image-pins/**"
+          to: "@artifact/cluster/k8s/agentplane-testing-image-pins/"
       name: agentplane-testing
       originRevision: "@repo"
     - copy:
@@ -299,8 +301,10 @@ spec:
       name: forgejo-token-rotation
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/ha-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/ha-mcp/app/"
+        - from: "@repo/cluster/generated/agents/ha-mcp/app/**"
+          to: "@artifact/cluster/generated/agents/ha-mcp/app/"
+        - from: "@repo/cluster/k8s/agents/ha-mcp/app-image-pins/**"
+          to: "@artifact/cluster/k8s/agents/ha-mcp/app-image-pins/"
       name: ha-mcp
       originRevision: "@repo"
     - copy:
@@ -324,8 +328,10 @@ spec:
       name: kubectl-passthrough-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/loki-read-proxy/**"
-          to: "@artifact/cluster/k8s/agents/loki-read-proxy/"
+        - from: "@repo/cluster/generated/agents/loki-read-proxy/**"
+          to: "@artifact/cluster/generated/agents/loki-read-proxy/"
+        - from: "@repo/cluster/k8s/agents/loki-read-proxy-image-pins/**"
+          to: "@artifact/cluster/k8s/agents/loki-read-proxy-image-pins/"
       name: loki-read-proxy
       originRevision: "@repo"
     - copy:
@@ -353,8 +359,10 @@ spec:
       name: activitywatch
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces/**"
-          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces/"
+        - from: "@repo/cluster/generated/agents/agent-sandbox/workspaces/**"
+          to: "@artifact/cluster/generated/agents/agent-sandbox/workspaces/"
+        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces-image-pins/**"
+          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces-image-pins/"
       name: agent-workspaces-app
       originRevision: "@repo"
     - copy:
@@ -498,8 +506,10 @@ spec:
       name: goldilocks
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/google-mcp/**"
-          to: "@artifact/cluster/k8s/google-mcp/"
+        - from: "@repo/cluster/generated/google-mcp/**"
+          to: "@artifact/cluster/generated/google-mcp/"
+        - from: "@repo/cluster/k8s/google-mcp-image-pins/**"
+          to: "@artifact/cluster/k8s/google-mcp-image-pins/"
       name: google-mcp
       originRevision: "@repo"
     - copy:
@@ -546,8 +556,10 @@ spec:
       name: haku-workloads
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/haku/workspaces/app/**"
-          to: "@artifact/cluster/k8s/haku/workspaces/app/"
+        - from: "@repo/cluster/generated/haku/workspaces/app/**"
+          to: "@artifact/cluster/generated/haku/workspaces/app/"
+        - from: "@repo/cluster/k8s/haku/workspaces/app-image-pins/**"
+          to: "@artifact/cluster/k8s/haku/workspaces/app-image-pins/"
       name: haku-workspaces-app
       originRevision: "@repo"
     - copy:
@@ -601,8 +613,10 @@ spec:
       name: matrix-app
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/matrix/user-provisioner/**"
-          to: "@artifact/cluster/k8s/matrix/user-provisioner/"
+        - from: "@repo/cluster/generated/matrix/user-provisioner/**"
+          to: "@artifact/cluster/generated/matrix/user-provisioner/"
+        - from: "@repo/cluster/k8s/matrix/user-provisioner-image-pins/**"
+          to: "@artifact/cluster/k8s/matrix/user-provisioner-image-pins/"
       name: matrix-user-provisioner
       originRevision: "@repo"
     - copy:
@@ -616,8 +630,8 @@ spec:
       name: agents-mitmproxy
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/monitoring/alloy/**"
-          to: "@artifact/cluster/k8s/monitoring/alloy/"
+        - from: "@repo/cluster/generated/monitoring/alloy/**"
+          to: "@artifact/cluster/generated/monitoring/alloy/"
       name: monitoring-alloy
       originRevision: "@repo"
     - copy:
@@ -651,8 +665,8 @@ spec:
       name: oci-cache
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/ollama/**"
-          to: "@artifact/cluster/k8s/ollama/"
+        - from: "@repo/cluster/generated/ollama/**"
+          to: "@artifact/cluster/generated/ollama/"
       name: ollama-app
       originRevision: "@repo"
     - copy:

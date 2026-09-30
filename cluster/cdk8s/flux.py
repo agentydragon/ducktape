@@ -60,9 +60,10 @@ class RenderedDirectory:
     decryption: KustomizationSpecDecryption | None
 
 
-def artifact_directory(artifact: ArtifactGeneratorSpecArtifacts) -> str:
-    """The repo-relative directory `artifact` copies first: its consumer's Kustomization directory.
-    Later copies are shared bases the Kustomization references.
+def artifact_directories(artifact: ArtifactGeneratorSpecArtifacts) -> list[str]:
+    """The repo-relative directories `artifact` copies, in copy order. The first is its consumer's
+    Kustomization directory; later ones are shared bases and Components that Kustomization
+    references.
 
     Raises on any shape `artifact_generators.artifact` does not build -- no copies, or a copy
     that is not one whole directory copied to the same path -- since the Kustomization's `path`
@@ -82,7 +83,12 @@ def artifact_directory(artifact: ArtifactGeneratorSpecArtifacts) -> str:
         directories.append(directory)
     if not directories:
         raise ValueError(f"{artifact.name=} copies nothing")
-    return directories[0]
+    return directories
+
+
+def artifact_directory(artifact: ArtifactGeneratorSpecArtifacts) -> str:
+    """The directory `artifact` copies first: its consumer's Kustomization directory."""
+    return artifact_directories(artifact)[0]
 
 
 @jsii.implements(IValidation)

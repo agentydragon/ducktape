@@ -1,10 +1,9 @@
-"""The Loki read proxy (cluster/k8s/agents/loki-read-proxy): a read-only,
-namespace-filtering Loki query proxy for agents, its Service, pull credentials and the
-CiliumNetworkPolicy that is the whole access control for anonymous requests. The proxy's
-source and image build live in //cluster/proxies/loki_read_proxy.
+"""The Loki read proxy: a read-only, namespace-filtering Loki query proxy for agents, its
+Service, pull credentials and the CiliumNetworkPolicy that is the whole access control for
+anonymous requests. The proxy's source and image build live in //cluster/proxies/loki_read_proxy.
 
-The image tag is the placeholder "unset"; the hand-written `image-pins/kustomization.yaml`
-beside the output overrides it via Flux's image-automation marker.
+The image tag is the placeholder "unset"; the hand-written `PINS_DIR` Component, which the
+directory includes across the roots, overrides it via Flux's image-automation marker.
 """
 
 from __future__ import annotations
@@ -15,13 +14,14 @@ from cdk8s_plus_34 import k8s
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "loki-read-proxy"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/loki-read-proxy"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/loki-read-proxy"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/loki-read-proxy-image-pins"
 _IMAGE = "git.allegedly.works/ducktape-ci/loki-read-proxy:unset"
 SERVICE = ServiceRef(
     name=NAME,

@@ -403,11 +403,10 @@ another route replaces it.
   `argument_schema` set over a `grants` ActionGroup; but the grant model itself is console-owned,
   so this waits on the Action Service having its own grant surface, not on a kind.
 
-  **Do not confuse this with policy introspection, which is already done.** An agent can read the
-  policy that applies to it today -- `get_action_policy(target=SELF)` on the MCP frontend, built
-  from the same `resolve_bindings` admission uses, so what it reports and what a Decision
-  auto-decides cannot drift. What the console's `grants` tools introspect is something else: grants,
-  meaning access that expires. `grants_whoami`, `grant_self_list`, `kubernetes_can_i`, `get_grant`
+  **Keep policy introspection separate from grant introspection.**
+  `get_action_policy(target=SELF)` reports the policy applied to the caller using the same
+  `resolve_bindings` source admission uses, so reported and enforced decisions cannot drift.
+  The console's `grants` tools inspect something else: expiring access. `grants_whoami`, `grant_self_list`, `kubernetes_can_i`, `get_grant`
   and `revoke_grants` are all that surface, and what they wait on is **temporary grants**, which is
   `ELEVATE` -- a caller asking for a set plus an `expiresAt`, approval writing the
   `ActionPolicyBinding` with that expiry. `BindingSpec.expires_at` already exists, so what is

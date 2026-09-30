@@ -11,14 +11,12 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 _LITELLM_NAMESPACE = "litellm"
 _AGENTPLANE_NAMESPACE = "agentplane-testing"
 _KEY_SECRET_NAME = "litellm-key-cheap-experiments"
 _READER_SERVICE_ACCOUNT_NAME = "external-creds-reader"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-testing"
 
 
 class CheapExperimentsCredentials(Construct):
@@ -52,8 +50,9 @@ class CheapExperimentsCredentials(Construct):
         )
 
 
-def write_agentplane_testing_manifests(root: Path) -> None:
-    credentials_dir = root / OUTPUT_DIR
+def write_agentplane_testing_manifests(root: Path, directory: str) -> None:
+    """Write `litellm-credentials.k8s.yaml` into Agentplane testing's root `directory`."""
+    credentials_dir = root / directory
     credentials_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(credentials_dir))
     chart = Chart(app, "litellm-credentials", disable_resource_name_hashes=True)

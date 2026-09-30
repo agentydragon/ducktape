@@ -357,20 +357,20 @@ export const SCENARIOS: Record<string, Scenario> = {
   // Each history viewport is tall enough to keep the last card in frame.
   actions_history: {
     element: "#app",
-    route: "/actions/history",
+    route: "/actions",
     viewport: { width: 1200, height: 2560 },
     readySelectors: ["details", 'img[src^="data:image/"]'],
   },
   actions_history_more: {
     element: "#app",
-    route: "/actions/history",
+    route: "/actions",
     viewport: { width: 1200, height: 1100 },
     historyPaged: true,
     readySelectors: ["details", '[data-testid="action-history-load-more"]'],
   },
   actions_history_phone: {
     element: "#app",
-    route: "/actions/history",
+    route: "/actions",
     viewport: { width: 390, height: 3200 },
     readySelectors: ["details", 'img[src^="data:image/"]'],
   },
@@ -378,7 +378,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   // CallToolResult, image data and all.
   actions_history_raw: {
     element: "#app",
-    route: "/actions/history",
+    route: "/actions",
     viewport: { width: 1200, height: 3720 },
     readySelectors: ["details", 'input[type="checkbox"]:checked'],
     openRaw: true,
@@ -386,7 +386,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   // Without the groups nothing says which results are MCP ones: each shows as its stored JSON.
   actions_history_groups_unavailable: {
     element: "#app",
-    route: "/actions/history",
+    route: "/actions",
     viewport: { width: 1200, height: 3760 },
     actionGroupsUnavailable: true,
     readySelectors: ["details", '[role="alert"]'],

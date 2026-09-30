@@ -1618,7 +1618,7 @@ spec:
       name: ollama-direct-token
       namespace: ollama
   interval: 10m
-  path: ./cluster/k8s/ollama
+  path: ./cluster/generated/ollama
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2352,7 +2352,7 @@ spec:
       name: alloy
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/alloy
+  path: ./cluster/generated/monitoring/alloy
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2754,7 +2754,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/loki-read-proxy
+  path: ./cluster/generated/agents/loki-read-proxy
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3087,7 +3087,7 @@ spec:
       name: matrix-synapse
       namespace: matrix
   interval: 10m
-  path: ./cluster/k8s/matrix/user-provisioner
+  path: ./cluster/generated/matrix/user-provisioner
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3186,7 +3186,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/google-mcp
+  path: ./cluster/generated/google-mcp
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3333,7 +3333,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/ha-mcp/app
+  path: ./cluster/generated/agents/ha-mcp/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3491,7 +3491,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku/workspaces/app
+  path: ./cluster/generated/haku/workspaces/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3628,7 +3628,7 @@ spec:
       name: agentplane-testing-egress-upstream-ca
       namespace: agentplane-testing
   interval: 10m
-  path: ./cluster/k8s/agentplane-testing
+  path: ./cluster/generated/agentplane-testing
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3653,7 +3653,7 @@ spec:
     - name: kyverno-policies
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/agent-sandbox/workspaces
+  path: ./cluster/generated/agents/agent-sandbox/workspaces
   prune: true
   retryInterval: 1m
   sourceRef:

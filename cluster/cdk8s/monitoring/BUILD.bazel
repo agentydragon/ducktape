@@ -25,7 +25,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -110,12 +109,18 @@ py_library(
 py_library(
     name = "alloy",
     srcs = ["alloy.py"],
+    data = ["config.alloy"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_helmrepository",
+        ":loki",
+        ":mimir",
+        ":tempo",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -173,6 +178,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_helmrepository",
+        ":mimir",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
@@ -192,6 +198,7 @@ py_library(
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
+        ":mimir",
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",

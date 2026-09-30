@@ -131,8 +131,8 @@ def config() -> dict[str, Any]:
         # authoritative even if a client constructs a wider duration than the tool schema
         # recommends.
         "kubernetes_grant_max_lifetime_seconds": 3600,
-        # The one Agent Sandbox environment the `sandbox` server hands out: the Haku pool in
-        # cluster/k8s/haku/workspaces/ and the reviewed bootstrap each claim runs. Each claim
+        # The one Agent Sandbox environment the `sandbox` server hands out: the Haku pool
+        # (haku/workspaces.py) and the reviewed bootstrap each claim runs. Each claim
         # records the pod-describing fields it was created for, so editing one leaves live
         # claims usable and flags them in `warnings`; the budgets are read live and never
         # recorded (haku/sandbox/README.md).
