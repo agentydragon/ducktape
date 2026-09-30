@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
-import os
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from airlock.oauth.config import OAuthConfig, client_credentials_env_prefix
+from airlock.oauth.config import OAuthConfig
 from airlock.oauth.provider import GenericOAuth2Provider
+
+
+class _ProviderClientCredentials(BaseSettings):
+    model_config = SettingsConfigDict(case_sensitive=False)
+
+    client_id: str
+    client_secret: SecretStr
 
 
 def build_oauth_providers(oauth_config: OAuthConfig, default_redirect_uri: str) -> dict[str, GenericOAuth2Provider]:
@@ -16,9 +24,10 @@ def build_oauth_providers(oauth_config: OAuthConfig, default_redirect_uri: str) 
     """
     providers: dict[str, GenericOAuth2Provider] = {}
     for p in oauth_config.providers:
-        # `google-write` reads GOOGLE_WRITE_*: a hyphen is not valid in a POSIX env var name.
-        prefix = client_credentials_env_prefix(p.name)
-        client_id = os.environ[f"{prefix}_CLIENT_ID"]
-        client_secret = os.environ[f"{prefix}_CLIENT_SECRET"]
-        providers[p.name] = GenericOAuth2Provider(p, client_id, client_secret, default_redirect_uri)
+        # Pydantic Settings handles env lookup and field suffixes. Provider IDs allow
+        # hyphens, which the existing POSIX environment-variable names spell as underscores.
+        credentials = _ProviderClientCredentials(_env_prefix=f"{p.name.replace('-', '_')}_")
+        providers[p.name] = GenericOAuth2Provider(
+            p, credentials.client_id, credentials.client_secret.get_secret_value(), default_redirect_uri
+        )
     return providers

@@ -18,7 +18,7 @@ from cilium_crds.io.cilium import (
 )
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretConfig, client_credentials_env_prefix
+from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretConfig
 from airlock.settings import Settings
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.config_format import yaml_config
@@ -169,7 +169,7 @@ def _provider_client_credentials(provider_name: str) -> SecretRef:
 
 def _provider_client_credential_env(provider_name: str) -> list[k8s.EnvVar]:
     credentials = _provider_client_credentials(provider_name)
-    prefix = client_credentials_env_prefix(provider_name)
+    prefix = provider_name.upper().replace("-", "_")
     return [
         credentials.key("client_id").env_var(f"{prefix}_CLIENT_ID"),
         credentials.key("client_secret").env_var(f"{prefix}_CLIENT_SECRET"),

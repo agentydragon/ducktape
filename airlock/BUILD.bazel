@@ -33,6 +33,8 @@ py_library(
     deps = [
         "//airlock/oauth:config",
         "//airlock/oauth:provider",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
     ],
 )
 

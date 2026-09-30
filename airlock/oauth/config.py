@@ -45,8 +45,3 @@ class OAuthConfig(BaseModel):
         default="airlock", description="Value for app.kubernetes.io/managed-by label on managed secrets"
     )
     providers: list[OAuth2ProviderConfig] = Field(description="Provider configurations")
-
-
-def client_credentials_env_prefix(provider_name: str) -> str:
-    """Return the POSIX environment-variable prefix used for a provider's client credentials."""
-    return provider_name.upper().replace("-", "_")
