@@ -157,12 +157,24 @@ rust_test(
 )
 
 rust_test(
+    name = "standalone_binary_test",
+    size = "small",
+    srcs = ["standalone_binary_test.rs"],
+    crate_root = "standalone_binary_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
+rust_test(
     name = "module_trees_test",
     srcs = ["module_trees_test.rs"],
     crate_root = "module_trees_test.rs",
     data = [
         "//devinfra/js/debundle",
-        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",

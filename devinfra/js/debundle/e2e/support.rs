@@ -2156,6 +2156,30 @@ pub fn debundler_path() -> PathBuf {
         .unwrap_or_else(|| panic!("could not resolve debundler runfile: {DEBUNDLER_RLOCATION}"))
 }
 
+/// `debundle` as a release download runs it: a copy of the binary alone in an
+/// otherwise empty directory, spawned with an empty environment (no runfiles).
+pub struct StandaloneDebundle {
+    dir: TempDir,
+}
+
+impl StandaloneDebundle {
+    pub fn install() -> Self {
+        let dir = TempDir::with_prefix(current_test_prefix()).expect("create install dir");
+        fs::copy(debundler_path(), dir.path().join("debundle")).expect("copy debundle binary");
+        Self { dir }
+    }
+
+    pub fn run(&self, args: &[&str]) -> CommandResult {
+        let bin = self.dir.path().join("debundle");
+        let output = Command::new(&bin)
+            .args(args)
+            .env_clear()
+            .output()
+            .unwrap_or_else(|e| panic!("spawn debundle {}: {e}", bin.display()));
+        command_result(output)
+    }
+}
+
 fn node_path() -> PathBuf {
     let r = Runfiles::create().expect("create runfiles");
     rlocation!(r, NODE_RLOCATION)

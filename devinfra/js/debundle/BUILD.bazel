@@ -2,7 +2,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
 load(":optimized_cc_library.bzl", "optimized_cc_library")
-load(":pipeline_analysis_test.bzl", "pipeline_analysis_test_suite")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -11,8 +10,6 @@ exports_files([
     "SPEC.md",
     "perf_wrapper.sh",
 ])
-
-pipeline_analysis_test_suite(name = "pipeline_analysis_test")
 
 rust_library(
     name = "js_ast",
@@ -967,9 +964,6 @@ rust_library(
 rust_test(
     name = "pipeline_test",
     crate = ":pipeline",
-    data = [
-        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
-    ],
     edition = "2024",
     deps = ["@crates//:tempfile"],
 )
@@ -1022,9 +1016,6 @@ rust_library(
 rust_test(
     name = "cli_test",
     crate = ":cli",
-    data = [
-        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
-    ],
     edition = "2024",
     deps = [
         ":js_ast",
@@ -1282,19 +1273,10 @@ label_flag(
     visibility = ["//visibility:public"],
 )
 
-label_flag(
-    name = "ortools_cpsat_solver",
-    build_setting_default = "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
-    visibility = ["//visibility:public"],
-)
-
 rust_binary(
     name = "debundle",
     srcs = ["main.rs"],
     crate_root = "main.rs",
-    data = [
-        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
-    ],
     edition = "2024",
     deps = [
         ":cli",
