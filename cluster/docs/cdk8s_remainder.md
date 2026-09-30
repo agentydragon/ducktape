@@ -21,25 +21,6 @@ configuration typed.
 
 ## Convert: configuration with an existing application contract
 
-### Airlock
-
-`cluster/k8s/agents/airlock/config.yaml` is non-secret broker configuration.
-`airlock/config.py:Settings` and `airlock/oauth/provider.py:OAuthConfig` already
-model it. The latter currently lives beside runtime HTTP code.
-
-Proposed: extract the lightweight contract, then render the config and related
-Secret names, provider env bindings and distribution references from shared values.
-Use the existing settings-contract mechanism for runtime-supplied secrets; do not
-instantiate Settings using ambient credentials during synthesis.
-
-Keep `google` and `google-write` as separate grants and consumers. Preserve the
-explicit Oura/BSC callback URIs until their external client registrations change.
-The generator can define desired broker configuration; token exchange/refresh and
-writing runtime token Secrets remain the broker's responsibility.
-
-Done: no independently written provider/Secret roster across config and deployment,
-no secret material in generated output, unchanged OAuth scopes and registered callbacks.
-
 ### Authentik, Forgejo and Attic rotator rosters
 
 Inputs: `nix-cache/rotators.yaml`. `cluster/rotators/attic_jwt_rotation/rotate.py` already

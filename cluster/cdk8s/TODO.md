@@ -50,7 +50,7 @@ live Secret existence or service readiness.
 Agentplane constructs import Settings from `agentplane/{app,egress,llm_ingress,
 action_service,indexing}/main.py`; aiquota imports `aiquota/api.py`. Move schema
 definitions and their required submodels into application-owned modules, updating all
-callers. Use the same approach for Airlock/rotators when converting their config.
+callers. Use the same approach for the rotators when converting their config.
 
 Done: synthesis imports the deployment contract without importing service runtimes.
 Measure before changing Bazel test sizes; removing an import is not timing evidence.

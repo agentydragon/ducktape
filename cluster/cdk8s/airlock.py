@@ -1,14 +1,11 @@
-"""Airlock's namespace, identity, session secret, Deployment, Service, route and ingress policy
+"""Airlock's namespace, identity, settings, Deployment, Service, route and ingress policy
 (cluster/k8s/agents/airlock).
 
-Hand-written beside the output: the SOPS client credentials; `config.yaml`, rendered into the
-Deployment's ConfigMap by `kustomization.yaml`; and `image-pins/kustomization.yaml`, which pins
-the image tag and copies it into `AIRLOCK_IMAGE_TAG`.
+The SOPS client credentials and `image-pins/kustomization.yaml` remain hand-written beside the
+generated resources. Kustomize hashes the settings ConfigMap and rewrites the Deployment reference.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -21,11 +18,14 @@ from cilium_crds.io.cilium import (
 )
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
+from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretConfig, client_credentials_env_prefix
+from airlock.settings import Settings
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
@@ -36,9 +36,16 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
 )
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from util.settings_contract import settings_file
 
 NAME = "airlock"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/airlock"
+PINS_DIR = f"{OUTPUT_DIR}/image-pins"
+SOPS_FILES = (
+    "oura-client-credentials.sops.yaml",
+    "google-client-credentials.sops.yaml",
+    "bsc-client-credentials.sops.yaml",
+)
 SERVICE = ServiceRef(
     name=NAME,
     port=Port(name="http", number=8765),
@@ -46,13 +53,104 @@ SERVICE = ServiceRef(
 )
 _SESSION = SecretRef(namespace=NAME, name="airlock-session-secret").key("session-secret")
 _OIDC = SecretRef(namespace=NAME, name="airlock-oidc-config")
-_OURA = SecretRef(namespace=NAME, name="oura-client-credentials")
-_GOOGLE = SecretRef(namespace=NAME, name="google-client-credentials")
-_BSC = SecretRef(namespace=NAME, name="bsc-client-credentials")
 _SECRET_WRITER = "airlock-secret-writer"
 # image-pins/ overrides the tag and copies it into AIRLOCK_IMAGE_TAG.
 _PLACEHOLDER_TAG = "unset"
 _CONFIG_MOUNT = "/etc/airlock"
+_CONFIG_FILE = "config.yaml"
+
+OAUTH_CONFIG = OAuthConfig(
+    target_namespace=NAME,
+    managed_by=NAME,
+    providers=[
+        OAuth2ProviderConfig(
+            name="oura",
+            provider_type="oauth2",
+            display_name="Oura Ring",
+            authorize_url="https://cloud.ouraring.com/oauth/authorize",
+            token_url="https://api.ouraring.com/oauth/token",
+            scopes=["daily", "email", "heartrate", "personal", "session", "spo2", "tag", "workout"],
+            # TODO(shared-callback): register the shared callback on the Oura OAuth app, then remove this legacy URL.
+            redirect_uri="https://airlock.allegedly.works/oauth/callback/oura",
+            refresh_secret=TokenSecretConfig(name="oura-tokens"),
+            access_secret=TokenSecretConfig(name="oura-access-token"),
+            refresh_margin_seconds=3600,
+        ),
+        OAuth2ProviderConfig(
+            name="google",
+            provider_type="oauth2",
+            display_name="Google",
+            authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
+            token_url="https://oauth2.googleapis.com/token",
+            scopes=[
+                "https://www.googleapis.com/auth/calendar.readonly",
+                "https://www.googleapis.com/auth/contacts.readonly",
+                "https://www.googleapis.com/auth/documents.readonly",
+                "https://www.googleapis.com/auth/drive.activity.readonly",
+                "https://www.googleapis.com/auth/drive.readonly",
+                "https://www.googleapis.com/auth/gmail.readonly",
+                "https://www.googleapis.com/auth/presentations.readonly",
+                "https://www.googleapis.com/auth/spreadsheets.readonly",
+                "https://www.googleapis.com/auth/tasks.readonly",
+                "https://www.googleapis.com/auth/youtube.readonly",
+            ],
+            refresh_secret=TokenSecretConfig(name="google-tokens"),
+            access_secret=TokenSecretConfig(name="google-access-token"),
+            refresh_margin_seconds=300,
+            extra_auth_params={"access_type": "offline", "prompt": "consent"},
+        ),
+        # This write-scoped grant stays separate from the read-only Google token. Both use the
+        # same OAuth client; only google-write's token is mirrored into google-mcp below. Gmail's
+        # restricted scopes keep the consent app in Testing status until it passes Google's review,
+        # so its refresh token expires after seven days.
+        OAuth2ProviderConfig(
+            name="google-write",
+            provider_type="oauth2",
+            display_name="Google (write access)",
+            authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
+            token_url="https://oauth2.googleapis.com/token",
+            scopes=[
+                "https://www.googleapis.com/auth/gmail.modify",
+                "https://www.googleapis.com/auth/gmail.compose",
+                "https://www.googleapis.com/auth/gmail.settings.basic",
+                "https://www.googleapis.com/auth/calendar.events",
+            ],
+            refresh_secret=TokenSecretConfig(name="google-write-tokens"),
+            access_secret=TokenSecretConfig(name="google-write-access-token"),
+            refresh_margin_seconds=300,
+            extra_auth_params={"access_type": "offline", "prompt": "consent"},
+        ),
+        OAuth2ProviderConfig(
+            name="bsc",
+            provider_type="oauth2",
+            display_name="Blue Shield of California (FHIR sandbox)",
+            authorize_url="https://dev-ext.blueshieldca.com/as/authorization.oauth2",
+            token_url="https://dev-ext.blueshieldca.com/as/token.oauth2/",
+            use_pkce=True,
+            aud="https://api-dev.blueshieldca.com/bsc/fhir-sandbox/fhir-server/api/v4/cloud/",
+            # PingFederate's FHIR sandbox client also issues refresh tokens without an offline_access scope.
+            scopes=["openid", "interop", "PatientEOB", "PatientRead"],
+            # TODO(shared-callback): register the shared callback on the BSC OAuth app, then remove this legacy URL.
+            redirect_uri="https://airlock.allegedly.works/oauth/callback/bsc",
+            refresh_secret=TokenSecretConfig(name="bsc-tokens"),
+            access_secret=TokenSecretConfig(name="bsc-access-token"),
+            refresh_margin_seconds=300,
+        ),
+    ],
+)
+_CONFIG_DATA = settings_file(
+    Settings,
+    {
+        "public_base_url": "https://airlock.allegedly.works",
+        "oidc_issuer": "https://auth.allegedly.works/application/o/airlock-server/",
+        "port": SERVICE.port.number,
+        "oauth": OAUTH_CONFIG.model_dump(mode="json", exclude_unset=True),
+    },
+    supplied=[("oidc_client_id",), ("oidc_client_secret",), ("oidc_session_secret",)],
+)
+CONFIG_MAP = ConfigMapArgs(
+    name="airlock-config", namespace=NAME, literals=[f"{_CONFIG_FILE}={yaml_config(_CONFIG_DATA)}"]
+)
 
 
 def _probe(path: str, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -61,6 +159,21 @@ def _probe(path: str, initial_delay_seconds: int, period_seconds: int) -> k8s.Pr
         initial_delay_seconds=initial_delay_seconds,
         period_seconds=period_seconds,
     )
+
+
+def _provider_client_credentials(provider_name: str) -> SecretRef:
+    # `google-write` intentionally shares the Google OAuth client; every other provider uses its own.
+    credential_provider = "google" if provider_name == "google-write" else provider_name
+    return SecretRef(namespace=NAME, name=f"{credential_provider}-client-credentials")
+
+
+def _provider_client_credential_env(provider_name: str) -> list[k8s.EnvVar]:
+    credentials = _provider_client_credentials(provider_name)
+    prefix = client_credentials_env_prefix(provider_name)
+    return [
+        credentials.key("client_id").env_var(f"{prefix}_CLIENT_ID"),
+        credentials.key("client_secret").env_var(f"{prefix}_CLIENT_SECRET"),
+    ]
 
 
 def _deployment(chart: Chart) -> None:
@@ -89,17 +202,11 @@ def _deployment(chart: Chart) -> None:
                                 _OIDC.key("client-id").env_var("AIRLOCK_OIDC_CLIENT_ID"),
                                 _OIDC.key("client-secret").env_var("AIRLOCK_OIDC_CLIENT_SECRET"),
                                 _SESSION.env_var("AIRLOCK_OIDC_SESSION_SECRET"),
-                                _OURA.key("client_id").env_var("OURA_CLIENT_ID"),
-                                _OURA.key("client_secret").env_var("OURA_CLIENT_SECRET"),
-                                _GOOGLE.key("client_id").env_var("GOOGLE_CLIENT_ID"),
-                                _GOOGLE.key("client_secret").env_var("GOOGLE_CLIENT_SECRET"),
-                                # The `google-write` provider reuses this same GCP OAuth client
-                                # (config.yaml); scope is a per-authorize-flow parameter, not fixed to
-                                # the client registration.
-                                _GOOGLE.key("client_id").env_var("GOOGLE_WRITE_CLIENT_ID"),
-                                _GOOGLE.key("client_secret").env_var("GOOGLE_WRITE_CLIENT_SECRET"),
-                                _BSC.key("client_id").env_var("BSC_CLIENT_ID"),
-                                _BSC.key("client_secret").env_var("BSC_CLIENT_SECRET"),
+                                *[
+                                    env_var
+                                    for provider in OAUTH_CONFIG.providers
+                                    for env_var in _provider_client_credential_env(provider.name)
+                                ],
                             ],
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_MOUNT, read_only=True)],
                             resources=k8s.ResourceRequirements(
@@ -260,7 +367,3 @@ def chart(app: App) -> Chart:
     # directly. See plans/personal_agents/personal_data_agent.md and docs/personal_agents/verdicts.md.
     _mirror(chart, "google-write-access-token", ["google-mcp"])
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)

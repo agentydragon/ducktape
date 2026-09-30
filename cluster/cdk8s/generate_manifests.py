@@ -301,7 +301,6 @@ def generate_manifests(root: Path) -> None:
     plaid_mcp_pgweb.write_manifests(root)
     tana_mcp.write_manifests(root)
     haku_egress_proxy.write_manifests(root)
-    airlock.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
     activitywatch_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
@@ -1087,8 +1086,16 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kyverno_kustomization,
     )
-    airlock_artifact = artifact("airlock", airlock.OUTPUT_DIR)
-    agents_flux_kustomizations.airlock(flux_chart, airlock_artifact, external_secrets_operator_kustomization)
+    airlock_artifact = artifact("airlock", airlock.OUTPUT_DIR, airlock.PINS_DIR)
+    airlock_directory = write_directory(
+        root,
+        airlock_artifact,
+        airlock.chart,
+        siblings=airlock.SOPS_FILES,
+        components=[posixpath.relpath(airlock.PINS_DIR, airlock.OUTPUT_DIR)],
+        config_map_generator=[airlock.CONFIG_MAP],
+    )
+    agents_flux_kustomizations.airlock(flux_chart, airlock_directory, external_secrets_operator_kustomization)
     authentik_jwt_rotation_artifact = artifact(
         "authentik-jwt-rotation", authentik_jwt_rotation.OUTPUT_DIR, authentik_jwt_rotation.PINS_DIR
     )

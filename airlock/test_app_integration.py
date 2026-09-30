@@ -17,15 +17,10 @@ from itsdangerous import TimestampSigner
 
 from airlock.app import create_app
 from airlock.auth import session_cookie_name
-from airlock.config import Settings
+from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretConfig
 from airlock.oauth.k8s_client import K8sTokenStore
-from airlock.oauth.provider import (
-    GenericOAuth2Provider,
-    OAuth2ProviderConfig,
-    OAuthConfig,
-    TokenData,
-    TokenSecretConfig,
-)
+from airlock.oauth.provider import GenericOAuth2Provider, TokenData
+from airlock.settings import Settings
 from util.net import bind_free_port
 from util.testing.asgi import serve_app
 

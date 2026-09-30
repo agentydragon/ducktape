@@ -20,7 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import HTMLResponse
 
 from airlock.auth import create_auth_router, require_operator_session, session_cookie_name
-from airlock.config import Settings, build_oauth_providers
+from airlock.config import build_oauth_providers
 from airlock.deployment import build_deployment_info
 from airlock.models import (
     ConnectedOAuthStatus,
@@ -34,6 +34,7 @@ from airlock.oauth.k8s_client import K8sTokenStore
 from airlock.oauth.provider import GenericOAuth2Provider
 from airlock.oauth.refresh import token_refresh_loop
 from airlock.oauth.routes import create_oauth_router
+from airlock.settings import Settings
 from util.oidc_login import build_oauth
 
 # SessionMiddleware imports itsdangerous lazily; keep it a direct runtime dependency.

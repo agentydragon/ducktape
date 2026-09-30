@@ -376,6 +376,8 @@ spec:
     - copy:
         - from: "@repo/cluster/k8s/agents/airlock/**"
           to: "@artifact/cluster/k8s/agents/airlock/"
+        - from: "@repo/cluster/k8s/agents/airlock/image-pins/**"
+          to: "@artifact/cluster/k8s/agents/airlock/image-pins/"
       name: airlock
       originRevision: "@repo"
     - copy:

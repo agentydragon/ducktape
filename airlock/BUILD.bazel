@@ -31,7 +31,18 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":settings",
+        "//airlock/oauth:config",
         "//airlock/oauth:provider",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//airlock/oauth:config",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//pyyaml",
@@ -43,7 +54,7 @@ py_library(
     srcs = ["auth.py"],
     visibility = ["//airlock:__subpackages__"],
     deps = [
-        ":config",
+        ":settings",
         "//util:oidc_login",
         "@pypi//authlib",
         "@pypi//fastapi",
@@ -73,6 +84,7 @@ py_library(
         ":config",
         ":deployment",
         ":models",
+        ":settings",
         "//airlock/oauth:k8s_client",
         "//airlock/oauth:provider",
         "//airlock/oauth:refresh",
@@ -130,7 +142,9 @@ py_test(
         ":app",
         ":auth",
         ":config",
+        ":settings",
         "//:conftest",
+        "//airlock/oauth:config",
         "//airlock/oauth:k8s_client",
         "//airlock/oauth:provider",
         "//util:net",
@@ -148,7 +162,7 @@ py_test(
     deps = [
         ":config",
         "//:conftest",
-        "//airlock/oauth:provider",
+        "//airlock/oauth:config",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

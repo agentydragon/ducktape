@@ -20,7 +20,7 @@ from joserfc.errors import JoseError
 from pydantic import BaseModel, ConfigDict, ValidationError
 from starlette import status
 
-from airlock.config import Settings
+from airlock.settings import Settings
 from util.oidc_login import CLIENT_NAME, valid_claims
 
 logger = logging.getLogger(__name__)

@@ -16,17 +16,14 @@ from cluster.cdk8s.flux import (
 )
 
 
-def airlock(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
-) -> Kustomization:
+def airlock(chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization) -> Kustomization:
     name = "airlock"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         suspend=False,
         timeout="5m",
-        decryption=SOPS_DECRYPTION,
         depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
     )
 
