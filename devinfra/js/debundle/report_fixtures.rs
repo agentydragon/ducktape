@@ -99,6 +99,7 @@ pub fn owner(
             source_path: "x.js".to_string(),
             start_line: ordinal * 100,
             end_line: ordinal * 100 + lines.saturating_sub(1),
+            start_column: None,
         }),
         destination,
     )

@@ -226,7 +226,7 @@ pub(super) fn prepare_logical_chunk(
     let structural_analysis = analysis::facts::analyze_chunk_structural(
         &runtime_ast.module,
         Some(&source_path),
-        |span| line_index.line_range_for_span(span),
+        |span| line_index.line_range_and_start_column_for_span(span),
     );
     emit_debundle_progress(chunk_id, "analyze_chunk_structural", "end");
     // `add_explicit_request` left deferred selector members unclaimed; the
@@ -405,7 +405,7 @@ pub(super) fn finish_logical_chunk(
         structural_analysis,
         &analysis_hints,
         Some(&source_path),
-        |span| line_index.line_range_for_span(span),
+        |span| line_index.line_range_and_start_column_for_span(span),
         owner_graph_options,
         &resolve_dynamic_import,
     )?;
@@ -817,6 +817,7 @@ fn validate_and_emit_reports(
             let wire = ::analysis::AtomicUnitConflictReport::from_conflicts(
                 &factorization_report.atomic_unit_conflicts,
                 &|id| factorization.analysis.module_path(id),
+                factorization.analysis.owner_graph(),
             );
             write_chunk_report_json(
                 report_out_dir,
@@ -828,6 +829,7 @@ fn validate_and_emit_reports(
         let summary = render_atomic_unit_conflict_summary(
             &factorization_report.atomic_unit_conflicts,
             &|id| factorization.analysis.module_path(id),
+            factorization.analysis.owner_graph(),
         );
         let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
         bail!(

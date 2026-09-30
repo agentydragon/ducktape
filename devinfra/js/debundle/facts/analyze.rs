@@ -49,7 +49,7 @@ pub fn analyze_chunk_structural<'a, F>(
     mut line_range_for_span: F,
 ) -> StructuralChunkAnalysis<'a>
 where
-    F: FnMut(Span) -> Option<(usize, usize)>,
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
@@ -77,10 +77,11 @@ where
             );
             item.visit_with(&mut collector);
             let source_location = source_path.and_then(|source_path| {
-                line_range_for_span(item.span()).map(|(start_line, end_line)| SourceLocation {
+                line_range_for_span(item.span()).map(|(start_line, end_line, start_column)| SourceLocation {
                     source_path: source_path.to_string(),
                     start_line,
                     end_line,
+                    start_column: Some(start_column),
                 })
             });
             StructuralStatementFacts {
@@ -126,7 +127,7 @@ pub fn analyze_chunk_with_policy<F>(
     mut line_range_for_span: F,
 ) -> ChunkFactAnalysis
 where
-    F: FnMut(Span) -> Option<(usize, usize)>,
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
     let StructuralChunkAnalysis {
         body,
@@ -171,11 +172,12 @@ where
             {
                 for reason in reasons.iter_mut() {
                     reason.source_location =
-                        line_range_for_span(reason.span).map(|(start_line, end_line)| {
+                        line_range_for_span(reason.span).map(|(start_line, end_line, start_column)| {
                             SourceLocation {
                                 source_path: source_path.to_string(),
                                 start_line,
                                 end_line,
+                                start_column: Some(start_column),
                             }
                         });
                 }
@@ -211,7 +213,7 @@ pub fn analyze_chunk<F>(
     mut line_range_for_span: F,
 ) -> ChunkFactAnalysis
 where
-    F: FnMut(Span) -> Option<(usize, usize)>,
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
     let structural = analyze_chunk_structural(module, source_path, &mut line_range_for_span);
     analyze_chunk_with_policy(structural, hints, source_path, line_range_for_span)

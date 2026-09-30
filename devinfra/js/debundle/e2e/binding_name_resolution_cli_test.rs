@@ -47,6 +47,7 @@ fn owner(
             source_path: "static/index.js".to_string(),
             start_line: ordinal + 1,
             end_line: ordinal + 1,
+            start_column: None,
         }),
         declared_bindings: vec![member(binding, export)],
         statement_kind: StatementKind::VarDecl,

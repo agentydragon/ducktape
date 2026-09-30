@@ -332,6 +332,11 @@ what's wrong:
 **Atom split** (refused by the realizability gate). Lists each split atom:
 which owners it covers, which modules its members would land in, and the
 `DepKind` causes from the unit (same data shape as `AtomicUnitConflict`).
+When a sequenced side-effect edge is involved, the existing conflict/cycle
+records also include each impure initializer owner, its binding name, source
+path and 1-based line/column, plus the `PurityRule`, optional detail, and any
+author guidance. Unknown calls point to the member-level `purity` annotation;
+imported fluent chains point to `chunk_export_purity.<chunk>.fluent_exports`.
 The diagnostic does **not** auto-compute the minimal extra-moves completion
 — it names the owners and destinations so the author can read the
 completion off the printed atom membership.

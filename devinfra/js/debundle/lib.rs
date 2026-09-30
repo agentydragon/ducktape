@@ -56,7 +56,8 @@ pub use purity::{
 };
 pub use reports::schema::{
     AtomicGraphReport, AtomicUnitConflictReport, AtomicUnitEdgeReport, AtomicUnitReport,
-    BindingReport, ConflictingClaimReport, EdgeRoleReport, LineRange, ModuleEntry, ModuleKey,
-    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
-    QuotientEdgeReport, QuotientSccReport, SourceLocation,
+    BindingReport, ConflictingClaimReport, EdgeRoleReport, FactorizeDiagnosticReason, LineRange,
+    ModuleEntry, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
+    OwnerGraphReport, PeelCandidateStatus, QuotientEdgeReport, QuotientSccReport,
+    SequencedOwnerCause, SourceLocation,
 };
