@@ -315,7 +315,6 @@ def generate_manifests(root: Path) -> None:
     haku_egress_proxy.write_manifests(root)
     airlock.write_manifests(root)
     authentik_jwt_rotation.write_manifests(root)
-    forgejo_token_rotation.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
     activitywatch_app.write_manifests(root)
     study_casino_app.write_manifests(root)
@@ -1340,9 +1339,19 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
     )
-    forgejo_token_rotation_artifact = artifact("forgejo-token-rotation", forgejo_token_rotation.OUTPUT_DIR)
-    agents_flux_kustomizations.forgejo_token_rotation(
-        flux_chart, forgejo_token_rotation_artifact, external_secrets_operator_kustomization
+    forgejo_token_rotation_artifact = artifact(
+        "forgejo-token-rotation", forgejo_token_rotation.OUTPUT_DIR, forgejo_token_rotation.PINS_DIR
+    )
+    forgejo_token_rotation.forgejo_token_rotation(
+        flux_chart,
+        write_directory(
+            root,
+            forgejo_token_rotation_artifact,
+            forgejo_token_rotation.chart,
+            components=[posixpath.relpath(forgejo_token_rotation.PINS_DIR, forgejo_token_rotation.OUTPUT_DIR)],
+            config_map_generator=[forgejo_token_rotation.CONFIG_MAP],
+        ),
+        external_secrets_operator_kustomization,
     )
     haku_egress_proxy_artifact = artifact("haku-egress-proxy", haku_egress_proxy.OUTPUT_DIR)
     haku_egress_proxy_kustomization = agents_flux_kustomizations.haku_egress_proxy(

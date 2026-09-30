@@ -298,8 +298,10 @@ spec:
       name: claude-sandbox-secrets
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/forgejo-token-rotation/**"
-          to: "@artifact/cluster/k8s/agents/forgejo-token-rotation/"
+        - from: "@repo/cluster/generated/agents/forgejo-token-rotation/**"
+          to: "@artifact/cluster/generated/agents/forgejo-token-rotation/"
+        - from: "@repo/cluster/k8s/agents/forgejo-token-rotation-image-pins/**"
+          to: "@artifact/cluster/k8s/agents/forgejo-token-rotation-image-pins/"
       name: forgejo-token-rotation
       originRevision: "@repo"
     - copy:
