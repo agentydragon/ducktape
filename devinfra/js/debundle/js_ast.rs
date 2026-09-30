@@ -538,7 +538,12 @@ fn attach_leading_item_comments(
 
 /// Walk `module.body` and, for each top-level item whose declared
 /// binding names overlap `binding_comments`, attach one `Line` comment
-/// per source line of the comment text to the item's span lo position.
+/// per source line of each matching comment text to the item's span lo
+/// position. An item that declares several commented bindings (a
+/// destructuring pattern) carries all their comments, in declaration order.
+///
+/// Comments are keyed by span lo, so top-level items that should carry
+/// different comments need distinct lo positions.
 ///
 /// Each source-text line is trimmed of trailing whitespace and emitted
 /// as `// <text>`; empty lines emit as `//` so paragraph structure
@@ -552,34 +557,30 @@ fn attach_binding_comments(
     storage: &SingleThreadedComments,
 ) {
     for item in &module.body {
-        let names = item_declared_names(item);
-        let comment_text = names
-            .iter()
-            .find_map(|name| binding_comments.get(name.as_str()));
-        let Some(comment_text) = comment_text else {
-            continue;
-        };
-        // Empty `comment:` text emits nothing — matches the spec's
-        // "absent / empty string emit nothing" rule.
-        if comment_text.is_empty() {
-            continue;
-        }
-        let span = item.span();
-        if span.lo() == BytePos(0) {
+        let lo = item.span().lo();
+        if lo == BytePos(0) {
             // Synthesized item without a source-anchored lo (e.g. an
             // injected import). SWC keys comments by span lo, so we
             // cannot anchor here. Skip rather than corrupt the map.
             continue;
         }
-        for line in format_member_comment_line_texts(comment_text) {
-            storage.add_leading(
-                span.lo(),
-                Comment {
-                    kind: CommentKind::Line,
-                    span: DUMMY_SP,
-                    text: Atom::from(line),
-                },
-            );
+        // Empty `comment:` text emits nothing — matches the spec's
+        // "absent / empty string emit nothing" rule.
+        for comment_text in item_declared_names(item)
+            .iter()
+            .filter_map(|name| binding_comments.get(name.as_str()))
+            .filter(|text| !text.is_empty())
+        {
+            for line in format_member_comment_line_texts(comment_text) {
+                storage.add_leading(
+                    lo,
+                    Comment {
+                        kind: CommentKind::Line,
+                        span: DUMMY_SP,
+                        text: Atom::from(line),
+                    },
+                );
+            }
         }
     }
 }
@@ -630,7 +631,7 @@ fn format_member_comment_line_texts(text: &str) -> Vec<String> {
 /// Covers the top-level declaration shapes the debundler lowerer
 /// emits: `function`, `class`, `var`/`let`/`const` (named patterns
 /// only — destructured names are also returned so a `comment:` on
-/// any one binding of a destructure anchors above the whole
+/// any binding of a destructure anchors above the whole
 /// statement), and the matching `export` variants. Returns an empty
 /// vec for statements that bind no top-level name (expression
 /// statements, side-effect calls, etc.).

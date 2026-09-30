@@ -87,10 +87,11 @@ fn two_trees_share_one_chunk() {
     );
 }
 
-/// Two trees of one chunk whose selectors can only take the same place: one
-/// program, so `all_different` holds across the trees.
+/// Two trees of one chunk whose `source_matches[]` entries can only take the
+/// same place: one program, so `all_different` holds across the trees and
+/// neither entity resolves. Another chunk is unaffected.
 #[test]
-fn trees_sharing_a_chunk_conflict_on_one_place() {
+fn trees_sharing_a_chunk_claim_one_place() {
     let selector = r#"source_matches:
   - match: |
       function f(name) {
@@ -100,58 +101,65 @@ fn trees_sharing_a_chunk_conflict_on_one_place() {
       - local: f
         name: pickProvider
 "#;
+    let (routes_path, routes) = routes_module("cli");
     let run = run_tree_fixture(
         &TreeFixture {
-            chunks: &[("main", MAIN), ("routing", ROUTING)],
-            module_roots: &[("cli/routing", "routing"), ("print/routing", "routing")],
+            chunks: &[("main", MAIN), ("routing", ROUTING), ("cli", CLI)],
+            module_roots: &[
+                ("cli/routing", "routing"),
+                ("print/routing", "routing"),
+                ("chunks/cli", "cli"),
+            ],
             modules: &[
                 ("cli/routing/provider.yaml", selector),
                 ("print/routing/provider_copy.yaml", selector),
+                (&routes_path, &routes),
             ],
         },
         &[],
     );
     assert_failed(&run);
     let outcomes = read_chunk_selector_outcomes(&run.report_root, "routing");
-    let conflicts = outcomes
+    let modules_and_kinds = outcomes
         .iter()
         .map(|record| {
             (
                 record["placement"]["logical_module"].clone(),
-                record["outcome"].clone(),
+                record["outcome"]["kind"].clone(),
             )
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        conflicts,
+        modules_and_kinds,
         [
-            (
-                json!("provider"),
-                json!({"kind": "conflict", "with": [
-                    {"logical_module": "provider_copy", "entity": {"export": "pickProvider"}},
-                ]}),
-            ),
-            (
-                json!("provider_copy"),
-                json!({"kind": "conflict", "with": [
-                    {"logical_module": "provider", "entity": {"export": "pickProvider"}},
-                ]}),
-            ),
+            (json!("provider"), json!("no_match")),
+            (json!("provider_copy"), json!("no_match")),
         ],
         "{outcomes:#?}"
     );
+    for record in &outcomes {
+        assert!(
+            record["outcome"]["reason"]
+                .as_str()
+                .is_some_and(|reason| reason.contains("admit no joint assignment")),
+            "{record:#}"
+        );
+    }
+    assert_eq!(
+        outcome_kinds(&read_chunk_selector_outcomes(&run.report_root, "cli")),
+        [eliminated("cli")],
+    );
 }
 
-/// Per chunk: a broad selector unique only by elimination beside a specific
-/// one, and in `print` a selector that matches nothing.
-fn multi_chunk_fixture() -> Vec<(String, String)> {
-    ["cli", "print"]
-        .into_iter()
-        .flat_map(|chunk| {
-            let mut modules = vec![(
-                format!("chunks/{chunk}/routes.yaml"),
-                format!(
-                    r#"source_matches:
+const CLI: &str = "function cliBroad() { return 'common-cli'; }\nfunction cliSpecific() { return 'specific-cli'; }\nconsole.log(cliBroad(), cliSpecific());\n";
+
+/// A broad selector unique only by elimination beside a specific one, in the
+/// tree rooted at `chunks/<chunk>`.
+fn routes_module(chunk: &str) -> (String, String) {
+    (
+        format!("chunks/{chunk}/routes.yaml"),
+        format!(
+            r#"source_matches:
   - match: |
       function selected() {{
         return ANYTHING;
@@ -167,8 +175,17 @@ fn multi_chunk_fixture() -> Vec<(String, String)> {
       - local: selected
         name: Specific{chunk}
 "#
-                ),
-            )];
+        ),
+    )
+}
+
+/// Per chunk, a `routes` module; in `print` also a selector that matches
+/// nothing.
+fn multi_chunk_fixture() -> Vec<(String, String)> {
+    ["cli", "print"]
+        .into_iter()
+        .flat_map(|chunk| {
+            let mut modules = vec![routes_module(chunk)];
             if chunk == "print" {
                 modules.push((
                     "chunks/print/missing.yaml".to_string(),
@@ -198,10 +215,7 @@ fn run_multi_chunk(extra_args: &[&str]) -> TreeRun {
     run_tree_fixture(
         &TreeFixture {
             chunks: &[
-                (
-                    "cli",
-                    "function cliBroad() { return 'common-cli'; }\nfunction cliSpecific() { return 'specific-cli'; }\nconsole.log(cliBroad(), cliSpecific());\n",
-                ),
+                ("cli", CLI),
                 (
                     "print",
                     "function printBroad() { return 'common-print'; }\nfunction printSpecific() { return 'specific-print'; }\nconsole.log(printBroad(), printSpecific());\n",

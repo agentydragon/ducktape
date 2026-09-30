@@ -3,7 +3,7 @@ kind: Kustomization
 resources:
   - github-exporter.k8s.yaml
 components:
-  - ./image-pins
+  - ../../k8s/github-exporter-image-pins
 configMapGenerator:
   - name: github-exporter-dashboard
     namespace: monitoring

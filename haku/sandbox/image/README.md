@@ -1,6 +1,6 @@
 # Haku sandbox image
 
-The toolchain haku-console's `sandbox` server (<../../../../../haku/sandbox/>) hands out:
+The toolchain haku-console's `sandbox` server (<../>) hands out:
 an in-cluster **exec target** where an agent runs `bazel run //cli:…` / `bazel test //…`
 against a git-synced `haku-state` checkout. Not an agent-loop runtime — the agent loop lives
 in the harness and drives this box through `exec_sandbox`.
@@ -15,7 +15,7 @@ Two builds of the same image exist right now:
 Both bake the same `haku-sandbox-setup.sh`, so the per-claim bootstrap cannot drift between
 them. The Nix build exists to end the recurring "the image is missing X" bug (`kubectl`,
 then a `python3-minimal` with no `json`, then `jq`/`gh`/`tea`) by making the tool set one
-reviewable list that shares a substrate with <../../../../../x/codex_pod_image/default.nix>.
+reviewable list that shares a substrate with <../../../x/codex_pod_image/default.nix>.
 
 ## Probe results (2026-07-26) — Bazel works, 25/26
 
@@ -33,7 +33,7 @@ Three fixes got there, none of them guessable from a green CI build:
 
 ### Why those three, and what was tried first
 
-Recorded once, in [the NixOS Bazel notes](../../../../../devinfra/debug/nixos_bazel_bash/README.md) —
+Recorded once, in [the NixOS Bazel notes](../../../devinfra/debug/nixos_bazel_bash/README.md) —
 "Two substrates" and "Issue 4" — because it applies to anything running Bazel on Nix glibc,
 not just this image. The short version: Bazel renders actions as `exec env - …`, so a tool
 that needs configuration must get it from the **filesystem**, not the environment. An earlier
@@ -51,7 +51,7 @@ The `haku` SandboxTemplate (`cluster/cdk8s/haku/workspaces.py`) sets `command: [
 ## Cutting over to the Nix image
 
 The risk is entirely **runtime**, so a green CI build proves nothing about it — the
-[Nix RBE container image experiment notes](../../../../../devinfra/rbe_container_image/x/nix/README.md) explain why. Re-run this
+[Nix RBE container image experiment notes](../../../devinfra/rbe_container_image/x/nix/README.md) explain why. Re-run this
 checklist against any candidate image before switching the `haku` SandboxTemplate.
 (Bracketed link, not `<...>`: an autolink containing `_` gets parsed as emphasis and
 prettier rewrites the path — it silently turned this into `nix*rbe_image` once already.)

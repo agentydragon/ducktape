@@ -20,7 +20,7 @@ to, creds already wired, Claude CLI installed) minus the persistence.
   from the pinned upstream release asset (SHA-256
   `aaa9d931acb8af90a0a458b6d72bd245d224faac7117e8a241f9e7086acc24e9`).
 
-- `workspace-image/` — the dedicated
+- <../../../images/agent-workspace/> — the dedicated
   `git.allegedly.works/ducktape-ci/agent-workspace` image (Claude Code + Codex
   CLIs, dev basics, no baked credentials, no haku coupling). WebFetch/WebSearch
   are denied in baked Claude settings. Built by
@@ -162,7 +162,7 @@ no budget caps; deleting a lane's `litellm_key.*` TF resource is that lane's
 LLM kill switch.
 
 - `codex`: the image bakes `~/.codex/config.toml`
-  (`workspace-image/codex-config.toml`) with a LiteLLM provider over the
+  (<../../../images/agent-workspace/codex-config.toml>) with a LiteLLM provider over the
   Responses API; the template supplies `LITELLM_API_KEY` from
   `litellm-key-agent-workspaces-codex` (`chatgpt/oai-responses/*`
   Codex-account models, same allowlist as codex-pod).

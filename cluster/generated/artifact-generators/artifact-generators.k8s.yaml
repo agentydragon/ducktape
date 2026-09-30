@@ -178,8 +178,10 @@ spec:
       name: kubevirt
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agentplane-index/**"
-          to: "@artifact/cluster/k8s/agentplane-index/"
+        - from: "@repo/cluster/generated/agentplane-index/**"
+          to: "@artifact/cluster/generated/agentplane-index/"
+        - from: "@repo/cluster/k8s/agentplane-index-image-pins/**"
+          to: "@artifact/cluster/k8s/agentplane-index-image-pins/"
       name: agentplane-index
       originRevision: "@repo"
     - copy:
@@ -416,6 +418,13 @@ spec:
       name: authentik-db-backups
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/claude-session-sync/**"
+          to: "@artifact/cluster/generated/claude-session-sync/"
+        - from: "@repo/cluster/k8s/claude-session-sync-image-pins/**"
+          to: "@artifact/cluster/k8s/claude-session-sync-image-pins/"
+      name: claude-session-sync
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/cli-proxy-api/**"
           to: "@artifact/cluster/k8s/cli-proxy-api/"
       name: cli-proxy-api
@@ -496,8 +505,10 @@ spec:
       name: github-tf
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/github-exporter/**"
-          to: "@artifact/cluster/k8s/github-exporter/"
+        - from: "@repo/cluster/generated/github-exporter/**"
+          to: "@artifact/cluster/generated/github-exporter/"
+        - from: "@repo/cluster/k8s/github-exporter-image-pins/**"
+          to: "@artifact/cluster/k8s/github-exporter-image-pins/"
       name: github-exporter
       originRevision: "@repo"
     - copy:

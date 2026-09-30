@@ -54,7 +54,6 @@ cluster/k8s/authentik/app/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/cluster/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/operator/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/schema/kustomization.yaml linguist-generated=true
-cluster/k8s/agentplane-index/kustomization.yaml linguist-generated=true
 cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
 # Agentplane testing's root Kustomization is hand-maintained because Flux image
 # automation updates its inline `images:` pins.
@@ -86,10 +85,6 @@ cluster/k8s/home-assistant/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/app/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/forgejo-tea/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/shared-secrets/kustomization.yaml linguist-generated=true
-cluster/k8s/github-exporter/kustomization.yaml linguist-generated=true
-# Copied beside github-exporter's bot-owned image-pins Component from cluster/cdk8s/github_exporter.
-cluster/k8s/github-exporter/dashboard.json linguist-generated=true
-cluster/k8s/github-exporter/kustomizeconfig linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
 # output, pinned by //agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true

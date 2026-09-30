@@ -64,7 +64,6 @@ exports_files(
         "clickhouse/cluster/clickhouse.k8s.yaml",
         "clickhouse/cluster/public-coder-credentials.sops.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
-        "haku/workspaces/image/haku-sandbox-setup.sh",
         "kustomization.yaml",
     ],
     visibility = [

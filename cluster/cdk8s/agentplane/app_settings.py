@@ -155,7 +155,7 @@ def settings(
                         thread_preset=_THREAD_PRESET_HAKU_CLAUDE,
                         # Shallow clone of haku-state over the in-cluster Forgejo, the way
                         # haku-sandbox-setup.sh clones it for Haku's own sandboxes
-                        # (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh): --depth 1
+                        # (haku/sandbox/image/haku-sandbox-setup.sh): --depth 1
                         # because the box only needs the HEAD checkout, not full history. The
                         # URL's userinfo carries the literal placeholder string as the password
                         # half; git turns that into a Basic Authorization header, and the

@@ -54,6 +54,60 @@ export { a, b };
 }
 
 #[test]
+fn member_comments_land_above_their_own_declarator_of_a_split_comma_list() {
+    // One source statement, two claimed declarators: the lowerer splits it
+    // into one statement per declarator, and each keeps its own comment.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"var a = 1, b = 2;
+console.log(a, b);
+export { a, b };
+"#,
+        vec![logical_module(
+            "x",
+            &[
+                Member::new("a").with_comment("Comment for a."),
+                Member::new("b").with_comment("Comment for b."),
+            ],
+        )],
+    ));
+    assert_line_directly_above(&fixture.out_root, MODULE_PATH, "// Comment for a.", "var a");
+    assert_line_directly_above(&fixture.out_root, MODULE_PATH, "// Comment for b.", "var b");
+    assert_entry_output(&fixture, "1 2\n");
+}
+
+#[test]
+fn member_comments_of_one_destructuring_declarator_all_land_above_it() {
+    // Both bindings are owned by the one destructuring statement, which cannot
+    // be split, so both comments stack above it.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const { a, b } = { a: 1, b: 2 };
+console.log(a, b);
+export { a, b };
+"#,
+        vec![logical_module(
+            "x",
+            &[
+                Member::new("a").with_comment("Comment for a."),
+                Member::new("b").with_comment("Comment for b."),
+            ],
+        )],
+    ));
+    assert_line_directly_above(
+        &fixture.out_root,
+        MODULE_PATH,
+        "// Comment for a.",
+        "// Comment for b.",
+    );
+    assert_line_directly_above(
+        &fixture.out_root,
+        MODULE_PATH,
+        "// Comment for b.",
+        "const {",
+    );
+    assert_entry_output(&fixture, "1 2\n");
+}
+
+#[test]
 fn multi_line_member_comment_preserves_paragraph_structure() {
     let comment = "Line one of the doc.\n\nLine three after a blank.\nLine four.";
     let fixture = run_fixture(FixtureOpts::new(

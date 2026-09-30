@@ -89,8 +89,9 @@ of re-deriving the fact in another stage.
 Read <docs/selector_resolution.md> before touching `selector_resolve.rs`,
 `source_match/`, `selector_ir_lowering` or `selector_constraint_model_builder`.
 A command never decides exactly-one itself; it calls `selector_resolve`. Its
-§ "Rejected: tree matching as solver constraints" is a measured dead end: do not
-reopen it without a new measurement.
+§ "Rejected: tree matching as solver constraints" and § "Rejected: localizing a
+contradiction with assumption cores" are measured dead ends: do not reopen
+either without a new measurement.
 
 ## Soundness over completeness
 

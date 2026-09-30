@@ -21,7 +21,7 @@ Scope: Claude Code 2.1.252 and Codex 0.152.0 (the `MODULE.bazel` `claude_code_cl
 ### How the existing consumers handle names
 
 - Laptop Claude Code gateways: `nix/home/claude_code/gateway.nix:49-57` set `ANTHROPIC_MODEL=<route>`, optionally `ANTHROPIC_DEFAULT_HAIKU_MODEL=<route>` and `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`; the comment at 28-33 records that non-Claude route names (`chatgpt/ant-messages/gpt-5.6-luna`, Gemini) make Claude Code assume 200k and need `CLAUDE_CODE_MAX_CONTEXT_TOKENS`.
-- `codex-pod` / agent-workspaces: `cluster/k8s/agents/agent-sandbox/workspace-image/codex-config.toml:10,17` uses `model = "gpt-6-astra"` with a custom `model_providers.litellm` — the bare slug the hidden router alias serves, so Codex 0.153+ matches its bundled Astra metadata instead of falling back (inferred from the matching logic below, not captured).
+- `codex-pod` / agent-workspaces: `cluster/images/agent-workspace/codex-config.toml:10,17` uses `model = "gpt-6-astra"` with a custom `model_providers.litellm` — the bare slug the hidden router alias serves, so Codex 0.153+ matches its bundled Astra metadata instead of falling back (inferred from the matching logic below, not captured).
 - Laptop gateways (`codex-clients`, `gemini-clients`, `tana-clients` teams, `main.tf:379,440,493`) rely on team-level `router_settings.fallbacks` (`model: "*"`) so that Claude Code's hard-coded background model slugs (`claude-haiku-4-5-20251001` etc.) get routed somewhere instead of 403ing. A fallback, not a rename.
 
 ### What LiteLLM supports (read from the 1.90.2 `litellm` package; the deployed 1.100.0 has not been re-read)

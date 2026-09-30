@@ -398,7 +398,7 @@ resource "litellm_key" "antigravity_clients" {
 
 # Disposable agent workspaces (cluster/k8s/agents/agent-sandbox/): operator-
 # codex workspace lane: the codex CLI's baked LiteLLM provider
-# (cluster/k8s/agents/agent-sandbox/workspace-image/codex-config.toml) uses
+# (cluster/images/agent-workspace/codex-config.toml) uses
 # the GPT-6 `chatgpt/oai-responses/*` Codex-account models, same allowlist as codex-pod.
 resource "litellm_key" "agent_workspaces_codex" {
   key_alias = "agent-workspaces-codex"
