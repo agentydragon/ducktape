@@ -333,28 +333,24 @@ The agent-box VM and its `codex` user are live (see
       refresh token that rotates on use, so a static plant could go stale; check
       whether the Codex CLI rewrites `auth.json` after refresh.
 
-## Alloy `allow_arbitrary_file_access`: decide the residual components
+## Alloy `allow_arbitrary_file_access`: decide the residual component
 
-Native scrapes in `monitoring/alloy/config.alloy` cover apiserver and kubelet,
-and clearing the spurious token fixes coredns. Three consumers of
-`bearerTokenFile` are still rejected by Alloy and therefore still unscraped:
-`monitoring-kube-controller-manager`, `monitoring-kube-scheduler`, and
-`volsync-system/volsync`. The last one is emitted by the volsync chart, so
+Native scrapes in `monitoring/alloy/config.alloy` cover apiserver and kubelet;
+`monitoring/alloy/control-plane.alloy` covers controller-manager and scheduler;
+clearing the spurious token fixes coredns.
+The `volsync-system/volsync` ServiceMonitor is still rejected by Alloy because
+it references `bearerTokenFile`. It is emitted by the volsync chart, so
 kube-prometheus-stack values cannot reach it.
 
 The alternative is `allow_arbitrary_file_access = true` on
-`prometheus.operator.servicemonitors`, which fixes the token rejection for all three (though
-the control-plane two are now loopback-only, below) but grants
-file access to every ServiceMonitor in the cluster rather than to named jobs.
+`prometheus.operator.servicemonitors`, which fixes the VolSync token rejection
+but grants file access to every ServiceMonitor in the cluster rather than to
+named jobs.
 Today that is close to free — only `monitoring-operator`, `kubevirt-operator`
-and `seaweedfs-operator-manager-role` can write ServiceMonitors, and Alloy
-mounts nothing but its own ConfigMap and service-account token — so the flag
+and `seaweedfs-operator-manager-role` can write ServiceMonitors, and central
+Alloy mounts only its ConfigMap and service-account token — so the flag
 would hand a hostile author only a credential they could already obtain.
 
-- [ ] controller-manager and scheduler: since the #7918 fix they bind to
-      loopback only, so neither a native scrape nor the flag reaches 10257/10259
-      over the network. Either a host-network scraper on each control-plane node
-      reads `localhost`, or their ServiceMonitors (`monitoring/stack.py`) go.
 - [ ] `volsync`: a `postRenderers` patch on its HelmRelease, an upstream values
       knob, or the flag.
 - [ ] Re-evaluate if Alloy ever mounts a Secret. The flag's low cost rests on

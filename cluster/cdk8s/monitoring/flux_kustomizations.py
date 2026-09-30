@@ -21,7 +21,13 @@ def alloy(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crd
         health_checks=[
             KustomizationSpecHealthChecks(
                 api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="alloy", namespace="monitoring"
-            )
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="helm.toolkit.fluxcd.io/v2",
+                kind="HelmRelease",
+                name="alloy-control-plane",
+                namespace="monitoring",
+            ),
         ],
         timeout="5m",
         # the chart's serviceMonitor

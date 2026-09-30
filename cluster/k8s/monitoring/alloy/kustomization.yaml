@@ -10,3 +10,8 @@ configMapGenerator:
       disableNameSuffixHash: true
     files:
       - config.alloy
+  - name: alloy-control-plane-config
+    options:
+      disableNameSuffixHash: true
+    files:
+      - control-plane.alloy

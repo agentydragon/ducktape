@@ -38,6 +38,104 @@ spec:
     serviceMonitor:
       enabled: true
 ---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy-control-plane
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      chart: alloy
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      version: 1.x
+  interval: 30m
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              apiVersion: apps/v1
+              kind: DaemonSet
+              metadata:
+                name: alloy-control-plane
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: alloy
+                        readinessProbe:
+                          httpGet:
+                            host: 127.0.0.1
+            target:
+              kind: DaemonSet
+              name: alloy-control-plane
+  values:
+    alloy:
+      configMap:
+        create: false
+        key: control-plane.alloy
+        name: alloy-control-plane-config
+      extraEnv:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+      listenAddr: 127.0.0.1
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+    controller:
+      dnsPolicy: ClusterFirstWithHostNet
+      hostNetwork: true
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      type: daemonset
+    fullnameOverride: alloy-control-plane
+    rbac:
+      create: false
+    service:
+      enabled: false
+    serviceAccount:
+      automountServiceAccountToken: true
+      name: alloy-control-plane
+    serviceMonitor:
+      enabled: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy-control-plane-metrics
+rules:
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-control-plane-metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: alloy-control-plane-metrics
+subjects:
+  - kind: ServiceAccount
+    name: alloy-control-plane
+    namespace: monitoring
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -58,6 +156,7 @@ spec:
           protocol: TCP
   podSelector:
     matchLabels:
+      app.kubernetes.io/instance: alloy
       app.kubernetes.io/name: alloy
   policyTypes:
     - Ingress

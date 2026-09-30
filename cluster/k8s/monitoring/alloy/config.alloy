@@ -44,8 +44,9 @@ prometheus.remote_write "mimir" {
 
 // kube-prometheus-stack's API-server and kubelet ServiceMonitors are disabled in
 // ../stack/helmrelease.yaml because Alloy scrapes those surfaces natively below.
-// The chart-managed controller-manager and scheduler monitors use the
-// Alloy-owned Secret, while CoreDNS is chart-managed without authentication.
+// kube-controller-manager and kube-scheduler are scraped from node loopback by
+// the CP-scoped Alloy DaemonSet; their chart ServiceMonitors are disabled.
+// CoreDNS is chart-managed without authentication.
 //
 // `job` and `metrics_path` are load-bearing, not cosmetic: the deployed
 // kubernetes-mixin rules select on job="kubelet" (35 rules), job="apiserver"

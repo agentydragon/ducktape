@@ -1,0 +1,46 @@
+// Scrape the secure control-plane metrics listeners from the host network
+// namespace on each CP node. A node label makes otherwise-identical loopback
+// targets distinct in Mimir.
+prometheus.scrape "kube_controller_manager" {
+  targets = [{
+    "__address__" = "127.0.0.1:10257"
+    "instance"    = sys.env("NODE_NAME")
+    "node"        = sys.env("NODE_NAME")
+  }]
+
+  job_name          = "kube-controller-manager"
+  scheme            = "https"
+  metrics_path       = "/metrics"
+  scrape_interval    = "60s"
+  bearer_token_file  = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.scrape "kube_scheduler" {
+  targets = [{
+    "__address__" = "127.0.0.1:10259"
+    "instance"    = sys.env("NODE_NAME")
+    "node"        = sys.env("NODE_NAME")
+  }]
+
+  job_name          = "kube-scheduler"
+  scheme            = "https"
+  metrics_path       = "/metrics"
+  scrape_interval    = "60s"
+  bearer_token_file  = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = "http://mimir-gateway.monitoring.svc.cluster.local/api/v1/push"
+  }
+}
