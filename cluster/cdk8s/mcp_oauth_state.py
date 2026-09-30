@@ -17,7 +17,11 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesEnsure,
     ClusterSpecManagedRolesPasswordSecret,
 )
-from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecCluster, DatabaseSpecDatabaseReclaimPolicy
+from cnpg_database_crds.io.cnpg.postgresql import (
+    DatabaseSpecCluster,
+    DatabaseSpecDatabaseReclaimPolicy,
+    DatabaseSpecEnsure,
+)
 from external_secret_store_crds.io.external_secrets import ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -76,6 +80,12 @@ GROCY_VALLEJO = OAuthStateStore(
 )
 TANA = OAuthStateStore(id="tana", namespace="tana-mcp", database="mcp_oauth_tana", role="mcp_oauth_tana")
 STORES = (GROCY_SF, GROCY_VALLEJO, TANA)
+# PR #8568 removes the Plaid MCP and its OAuth store from normal management. Its Database CR used
+# databaseReclaimPolicy=retain, so these tombstones explicitly drop the retained database and its
+# owner role. The database must be gone before CNPG can drop the role.
+_RETIRED_PLAID_DB = OAuthStateStore(
+    id="plaid-db", namespace="plaid-mcp", database="mcp_oauth_plaid_db", role="mcp_oauth_plaid_db"
+)
 
 
 def _namespace_chart(app: App) -> Chart:
@@ -170,6 +180,7 @@ def _db_chart(app: App) -> Chart:
                 )
                 for store in STORES
             ]
+            + [ClusterSpecManagedRoles(name=_RETIRED_PLAID_DB.role, ensure=ClusterSpecManagedRolesEnsure.ABSENT)]
         ),
     )
 
@@ -188,6 +199,16 @@ def _db_chart(app: App) -> Chart:
             database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
         )
         _consumer_secret_access(chart, store)
+
+    Database(
+        chart,
+        "database-plaid-db-tombstone",
+        metadata=ApiObjectMetadata(name=f"mcp-oauth-{_RETIRED_PLAID_DB.id}-database", namespace=NAMESPACE),
+        cluster=DatabaseSpecCluster(name=DATABASE.name),
+        name=_RETIRED_PLAID_DB.database,
+        owner=_RETIRED_PLAID_DB.role,
+        ensure=DatabaseSpecEnsure.ABSENT,
+    )
     return chart
 
 

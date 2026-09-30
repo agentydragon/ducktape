@@ -145,6 +145,8 @@ spec:
         name: mcp_oauth_tana
         passwordSecret:
           name: mcp-oauth-tana-credentials
+      - ensure: absent
+        name: mcp_oauth_plaid_db
   monitoring:
     enablePodMonitor: true
   probes:
@@ -373,3 +375,15 @@ spec:
           name: kube-root-ca.crt
           namespace: default
           type: ConfigMap
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: mcp-oauth-plaid-db-database
+  namespace: mcp-oauth-state
+spec:
+  cluster:
+    name: mcp-oauth-state-db
+  ensure: absent
+  name: mcp_oauth_plaid_db
+  owner: mcp_oauth_plaid_db
