@@ -109,7 +109,7 @@ resource "forgejo_collaborator" "claude" {
 #     constrained SA (cluster/generated/haku/workloads). Read-only pull — Flux never
 #     pushes; the haku user is just the only principal on the repo.
 #   - agentplane-index: the haku-state index worker keeps its own bare clone of the repo
-#     and fetches with these credentials (cluster/k8s/agentplane-index). Read-only pull.
+#     and fetches with these credentials (cluster/generated/agentplane-index). Read-only pull.
 # Agentplane staging reads only the password through ESO, with an exact-name source grant
 # in cluster/cdk8s/agentplane/egress_staging_credentials.py; it is not a Reflector target.
 # The haku-sandbox copy serves in-cluster scan runs / the self-hosted worker + the

@@ -79,10 +79,7 @@ from cluster.cdk8s.activitywatch import (
 )
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
 from cluster.cdk8s.agentplane_crds import flux_kustomizations as agentplane_crds_flux_kustomizations
-from cluster.cdk8s.agentplane_index import (
-    flux_kustomizations as agentplane_index_flux_kustomizations,
-    workers as agentplane_index_workers,
-)
+from cluster.cdk8s.agentplane_index import workers as agentplane_index_workers
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
 from cluster.cdk8s.artifact_generators import (
     artifact,
@@ -1073,14 +1070,16 @@ def generate_manifests(root: Path) -> None:
     activitywatch_flux_kustomizations.activitywatch(
         flux_chart, activitywatch_artifact, external_secrets_operator_kustomization
     )
-    agentplane_index_artifact = artifact("agentplane-index", agentplane_index_workers.OUTPUT_DIR)
-    agentplane_index_flux_kustomizations.agentplane_index(
+    agentplane_index_artifact = artifact(
+        "agentplane-index", agentplane_index_workers.OUTPUT_DIR, agentplane_index_workers.PINS_DIR
+    )
+    agentplane_index_workers.agentplane_index(
         flux_chart,
         write_directory(
             root,
             agentplane_index_artifact,
             agentplane_index_workers.chart,
-            components=["./image-pins"],
+            components=[posixpath.relpath(agentplane_index_workers.PINS_DIR, agentplane_index_workers.OUTPUT_DIR)],
             config_map_generator=[agentplane_index_workers.CONFIG_MAP],
         ),
         cnpg_kustomization,
@@ -1166,14 +1165,14 @@ def generate_manifests(root: Path) -> None:
         cert_manager_kustomization,
         monitoring_crds_kustomization,
     )
-    github_exporter_artifact = artifact("github-exporter", github_exporter_app.OUTPUT_DIR)
+    github_exporter_artifact = artifact("github-exporter", github_exporter_app.OUTPUT_DIR, github_exporter_app.PINS_DIR)
     github_exporter_app.github_exporter(
         flux_chart,
         write_directory(
             root,
             github_exporter_artifact,
             github_exporter_app.chart,
-            components=["./image-pins"],
+            components=[posixpath.relpath(github_exporter_app.PINS_DIR, github_exporter_app.OUTPUT_DIR)],
             config_map_generator=grafana_dashboards.config_map_generator(
                 root, github_exporter_app.OUTPUT_DIR, [github_exporter_app.DASHBOARD]
             ),
