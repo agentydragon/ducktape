@@ -193,7 +193,7 @@ class SessionStore:
         self, *, limit: int, statuses: Collection[str] | None, before: tuple[datetime, str] | None
     ) -> tuple[list[dict[str, Any]], bool, tuple[datetime, str] | None]:
         """Read sessions newest-first, with a stable cursor over `(last_event_at, session_id)`."""
-        query = select(SessionRow)
+        query = select(SessionRow.last_event_at, SessionRow.session_id, SessionRow.raw)
         if statuses is not None:
             query = query.where(SessionRow.status.in_(statuses))
         if before is not None:
@@ -206,11 +206,11 @@ class SessionStore:
             )
         query = query.order_by(SessionRow.last_event_at.desc(), SessionRow.session_id.desc()).limit(limit + 1)
         async with self._engine.connect() as connection:
-            rows = list((await connection.execute(query)).scalars())
+            rows = list((await connection.execute(query)).mappings())
         has_more = len(rows) > limit
         rows = rows[:limit]
-        next_cursor = (rows[-1].last_event_at, rows[-1].session_id) if has_more and rows else None
-        return [row.raw for row in rows], has_more, next_cursor
+        next_cursor = (rows[-1]["last_event_at"], rows[-1]["session_id"]) if has_more and rows else None
+        return [row["raw"] for row in rows], has_more, next_cursor
 
     async def session(self, session_id: str) -> dict[str, Any] | None:
         async with self._engine.connect() as connection:
@@ -220,7 +220,7 @@ class SessionStore:
         self, session_id: str, *, limit: int, sort_order: str, after: int | None, before: int | None
     ) -> tuple[list[dict[str, Any]], bool]:
         """Read events in sequence order; `after` and `before` make cursors stable across concurrent writes."""
-        query = select(EventRow).where(EventRow.session_id == session_id)
+        query = select(EventRow.__table__).where(EventRow.session_id == session_id)
         if sort_order == "asc":
             if after is not None:
                 query = query.where(EventRow.sequence_num > after)
@@ -230,22 +230,22 @@ class SessionStore:
                 query = query.where(EventRow.sequence_num < before)
             query = query.order_by(EventRow.sequence_num.desc())
         async with self._engine.connect() as connection:
-            rows = list((await connection.execute(query.limit(limit + 1))).scalars())
+            rows = list((await connection.execute(query.limit(limit + 1))).mappings())
         has_more = len(rows) > limit
         rows = rows[:limit]
         return [
             {
-                "event_id": str(row.event_id),
-                "sequence_num": str(row.sequence_num),
-                "event_type": row.event_type,
-                "source": row.source,
-                "created_at": row.created_at.isoformat(),
-                "received_at": row.received_at.isoformat() if row.received_at else None,
-                "processing_at": row.processing_at.isoformat() if row.processing_at else None,
-                "processed_at": row.processed_at.isoformat() if row.processed_at else None,
+                "event_id": str(row["event_id"]),
+                "sequence_num": str(row["sequence_num"]),
+                "event_type": row["event_type"],
+                "source": row["source"],
+                "created_at": row["created_at"].isoformat(),
+                "received_at": row["received_at"].isoformat() if row["received_at"] else None,
+                "processing_at": row["processing_at"].isoformat() if row["processing_at"] else None,
+                "processed_at": row["processed_at"].isoformat() if row["processed_at"] else None,
                 "device_attestation_status": DEFAULT_ATTESTATION_STATUS,
                 "sent_by_account_id": None,
-                "payload": row.payload,
+                "payload": row["payload"],
             }
             for row in rows
         ], has_more
