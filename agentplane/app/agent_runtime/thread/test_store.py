@@ -68,30 +68,57 @@ async def test_threads_list_with_their_progress(
     assert any("ix_event_thread_at" in line for line in plan)
 
 
-async def test_threads_list_reflects_the_attached_feed_s_harness_state(
+async def test_threads_list_reflects_attached_harness_and_active_turn_state(
     store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
 ) -> None:
-    """`list_threads`/`get_thread` expose `FeedState.attached.harness_state` per thread — the live
-    running/idle signal the sidebar's per-thread status dot reads (`agentplane/app/README.md`
-    § Sidebar inventory updates), not a value derived from the historical event log."""
+    """The sidebar snapshot carries the latest attached harness and turn state, not just history."""
     thread = await event_logs.open("sb-1", "s-1", SPEC)
     running_attached = protocol_pb2.Attached(
         session_id="s-1", spec=SPEC, harness_state=protocol_pb2.HARNESS_STATE_RUNNING
     )
     await ingestion.set_attached(thread, running_attached, lease=lease)
+    await ingestion.record(thread, [event_entry(1, turn_started=event_pb2.TurnStarted(turn_id="turn-1"))], lease=lease)
 
     (running,) = await store.list_threads()
     assert running.harness_state == "HARNESS_STATE_RUNNING"
+    assert running.active_turn_id == "turn-1"
     got_thread = await store.get_thread(thread)
     assert got_thread is not None
     assert got_thread.harness_state == "HARNESS_STATE_RUNNING"
+    assert got_thread.active_turn_id == "turn-1"
+
+    await ingestion.record(
+        thread,
+        [
+            event_entry(
+                2, turn_completed=event_pb2.TurnCompleted(turn_id="turn-1", status=event_pb2.TURN_STATUS_COMPLETED)
+            )
+        ],
+        lease=lease,
+    )
+    (idle,) = await store.list_threads()
+    assert idle.harness_state == "HARNESS_STATE_RUNNING"
+    assert idle.active_turn_id is None
+
+    await ingestion.record(
+        thread,
+        [
+            event_entry(3, turn_started=event_pb2.TurnStarted(turn_id="turn-2")),
+            event_entry(4, harness_lost=event_pb2.HarnessLost()),
+        ],
+        lease=lease,
+    )
+    (lost,) = await store.list_threads()
+    assert lost.harness_state == "HARNESS_STATE_STOPPED"
+    assert lost.active_turn_id is None
 
     stopped_attached = protocol_pb2.Attached(
-        session_id="s-1", spec=SPEC, harness_state=protocol_pb2.HARNESS_STATE_STOPPED
+        session_id="s-1", spec=SPEC, last_cursor=4, harness_state=protocol_pb2.HARNESS_STATE_STOPPED
     )
     await ingestion.set_attached(thread, stopped_attached, lease=lease)
     (stopped,) = await store.list_threads()
     assert stopped.harness_state == "HARNESS_STATE_STOPPED"
+    assert stopped.active_turn_id is None
 
 
 async def test_a_thread_is_unnamed_until_renamed_and_keeps_its_progress(

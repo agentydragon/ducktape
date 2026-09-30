@@ -396,3 +396,27 @@ as of 2026-08-04 (operator-facing summary: `haku/docs/security.md`):
 - [ ] Verify which pod is routed through which proxy. The force-proxy
       `CiliumClusterwideNetworkPolicy` selectors are unverified, and one that matches
       nothing bypasses the fence entirely.
+
+## Jobs, CronJobs and init containers: when do they rerun?
+
+Each one-shot task picked its primitive and its rerun trigger ad hoc, and nobody has
+checked whether each reruns exactly when its inputs change. Reloader never reruns them
+(`cluster/cdk8s/reloader.py` ignores Jobs and CronJobs).
+
+- [ ] Inventory every Job, CronJob and init container with its inputs (image, ConfigMaps,
+      Secrets, external state) and which of them must trigger a rerun.
+- [ ] Check which rerun mechanism each actually has against what it needs:
+  - a template change, with `kustomize.toolkit.fluxcd.io/force` recreating the Job:
+    reruns on a hash-suffixed ConfigMap or image change, never on an unhashed Secret;
+  - a versioned name (`clickhouse-aiquota-schema-v11`, `setup-gpt-oss-v8`): reruns only
+    when someone remembers to bump it;
+  - `ttlSecondsAfterFinished` plus Flux recreating the missing Job (the atuin and matrix
+    provisioners): reruns every TTL whether or not anything changed;
+  - a CronJob schedule; an init container, which reruns on every pod start.
+- [ ] Choose the primitive per task: one-shot on change, periodic reconcile, per-pod
+      precondition, or controller. Suspects: provisioners that must reapply a rotated
+      Secret but only rerun by TTL or not at all; TTL reruns of work that only needs to
+      happen on change; a task split across a Job and a CronJob (grocy's user-perms
+      provisioner and reconciler).
+- [ ] Check failure handling: idempotence, `backoffLimit`, `activeDeadlineSeconds`,
+      history limits, and which failures page (`KubeJobFailed` on kept history).

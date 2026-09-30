@@ -401,6 +401,7 @@ const THREADS: ThreadView[] = [
     last_cursor: 23,
     last_event_at: ago(10_000),
     harness_state: "HARNESS_STATE_RUNNING",
+    active_turn_id: "t2",
   },
 ];
 

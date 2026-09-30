@@ -709,7 +709,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 900 },
     outputName: "session-states",
-    readySelectors: ['[data-thread-anchor="16"]'],
+    readySelectors: ['[data-thread-anchor="16"]', ".agentplane-thread-status-dot-pulsing"],
     captureViewport: true,
   },
   session_streaming_interleaved: {

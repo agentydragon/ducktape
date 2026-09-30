@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import HTMLResponse
 
-from airlock.auth import build_oauth, create_auth_router, require_operator_session, session_cookie_name
+from airlock.auth import create_auth_router, require_operator_session, session_cookie_name
 from airlock.config import Settings, build_oauth_providers
 from airlock.deployment import build_deployment_info
 from airlock.models import (
@@ -34,6 +34,7 @@ from airlock.oauth.k8s_client import K8sTokenStore
 from airlock.oauth.provider import GenericOAuth2Provider
 from airlock.oauth.refresh import token_refresh_loop
 from airlock.oauth.routes import create_oauth_router
+from util.oidc_login import build_oauth
 
 # SessionMiddleware imports itsdangerous lazily; keep it a direct runtime dependency.
 # gazelle:include_dep @pypi//itsdangerous
@@ -97,7 +98,9 @@ def create_app(settings: Settings, *, include_static: bool = True) -> FastAPI:
         https_only=settings.public_base_url.startswith("https://"),
         path="/",
     )
-    app.state.oauth = build_oauth(settings)
+    app.state.oauth = build_oauth(
+        issuer=settings.oidc_issuer, client_id=settings.oidc_client_id, client_secret=settings.oidc_client_secret
+    )
     app.include_router(create_auth_router(settings))
 
     @app.get("/healthz")

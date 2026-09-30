@@ -31,8 +31,10 @@ async def test_the_probe_reports_each_variant_with_its_status_and_reveals_no_sec
     def script(stream: SseConnection) -> None:  # the first stream to open is the first variant that is let in
         stream.send(None, {"keepalive": True})
         stream.send("added", {"id": "cse_x", "title": "a private title"})
+        stream.send("changed", {"id": "cse_x", "title": "a private title"}, frame_id="cursor-1")
+        stream.send("changed", {"id": "cse_x", "title": "a private title"}, frame_id="cursor-1")
 
-    service.on_open = [script]
+    service.on_open = [script, SseConnection.close]  # the second variant let in is ended by the server
     lines: list[str] = []
     await probe(
         credential_store(),
@@ -49,7 +51,11 @@ async def test_the_probe_reports_each_variant_with_its_status_and_reveals_no_sec
     assert as_the_sync_sends_it.startswith("404 ")
     assert "endpoint not enabled" in as_the_sync_sends_it
     assert line_for(lines, one(v for v in VARIANTS if v.headers == CLIENT_PLATFORM)).startswith("200 ")
-    assert any("[added: keys ['id', 'title']]" in line for line in lines)
+    [first_stream] = [line for line in lines if "4 frame(s)" in line]
+    assert "1 id(s) sent again, open at the end" in first_stream
+    assert "[added x1: keys ['id', 'title']]" in first_stream
+    assert "[changed x2: keys ['id', 'title']]" in first_stream
+    assert any("0 frame(s)" in line and "closed by the server" in line for line in lines)
     assert lines[-1].startswith("200 event stream of session_test0001 from sequence_num 3: ")
     output = "\n".join(lines)
     assert TEST_ACCESS_TOKEN not in output

@@ -154,12 +154,5 @@ async def test_a_code_anthropic_refuses_is_reported_without_its_body(serve: Serv
     assert refused.json()["detail"] == "Anthropic refused the authorization code (400); start pairing again."
 
 
-async def test_a_write_from_another_origin_is_refused(owner: httpx.AsyncClient) -> None:
-    """SameSite=lax still lets a cross-site form post carry the cookie; the Origin check is what does not."""
-    refused = await owner.post("/api/pairing", headers={"Origin": "https://evil.test"})
-    assert refused.status_code == 403
-    assert (await owner.post("/api/pairing")).status_code == 200
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

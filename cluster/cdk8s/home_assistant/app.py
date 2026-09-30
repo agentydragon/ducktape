@@ -351,13 +351,8 @@ def _onboarding_job(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(
             name=_ONBOARDING,
             namespace=_NAMESPACE,
-            annotations={
-                # Flux re-runs this Job, replacing it whenever its template changes. Reloader's
-                # cluster-wide reload would also recreate it when a ConfigMap or Secret it reads
-                # changes, and in an apply that changes both, the two replacements race.
-                "kustomize.toolkit.fluxcd.io/force": "enabled",
-                "reloader.stakater.com/auto": "false",
-            },
+            # Flux re-runs this Job, replacing it whenever its template changes.
+            annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"},
         ),
         spec=k8s.JobSpec(
             backoff_limit=3,

@@ -123,8 +123,10 @@ it; 429 honors `Retry-After`. It restarts a stream that delivered nothing for 35
 with jitter, and after two connections that delivered no frame polls `GET .../events?sort_order=asc&cursor=<n>`.
 
 Observed on 2026-09-30, with the OAuth bearer against `api.anthropic.com`: the stream opens, and sends a frame with
-no `event:` name and, for a session that was running, a `session_update` carrying `connection_status`. No
-`client_event` frame has been seen yet, in 10 s of a session in use.
+no `event:` name and, for a session that was running, a `session_update` carrying `connection_status`. In 60 s on a
+session in use it sent 124 frames, among them `client_event` frames whose `id` is their `sequence_num`. The first four
+carried exactly `created_at`, `event_id`, `event_type`, `payload`, `sequence_num` and `source`: no worker stamps, no
+`device_attestation_status`, no `sent_by_account_id`, which the events route sends and `Event` defaults.
 
 ## Session watch
 

@@ -15,7 +15,6 @@ py_library(
         "link.js",
     ],
     deps = [
-        ":auth",
         ":webhooks",
         "//finance/plaid/db:client",
         "//finance/plaid/db:config",
@@ -23,24 +22,10 @@ py_library(
         "//finance/plaid/db:products",
         "//finance/plaid/db:secret_store",
         "//finance/plaid/db:sync",
+        "//util:oidc_login",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//uvicorn",
-    ],
-)
-
-py_library(
-    name = "auth",
-    srcs = ["auth.py"],
-    deps = [
-        "//finance/plaid/db:config",
-        "@pypi//authlib",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//itsdangerous",
-        "@pypi//joserfc",
-        "@pypi//pydantic",
-        "@pypi//starlette",
     ],
 )
 
@@ -85,7 +70,6 @@ py_test(
     srcs = ["test_app.py"],
     deps = [
         ":app",
-        ":auth",
         "//:conftest",
         "//finance/plaid/db:client",
         "//finance/plaid/db:config",

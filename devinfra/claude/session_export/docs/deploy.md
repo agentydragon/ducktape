@@ -35,8 +35,8 @@ on ([sync.md](sync.md) § A cycle).
 
 `probe` tries the session watch and, with `--session`, one session's event stream against the real API. It only reads
 and never refreshes the token, so it is safe beside the running sync (a refresh rotates the token the sync owns); it
-stops if the access token has lapsed. It prints the status of each request and the shape of any frames, never their
-values. Findings so far: [api.md](api.md) § Session watch.
+stops if the access token has lapsed. It prints the status of each request and, for a stream, its frames counted by
+name and data shape (keys only, never values), the ids sent more than once, and whether the server ended it. Findings so far: [api.md](api.md) § Session watch.
 
 ```bash
 kubectl -n claude-session-sync exec deploy/claude-session-sync -- cat /data/credentials.json > /tmp/claude-credential.json

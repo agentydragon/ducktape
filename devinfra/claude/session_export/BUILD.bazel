@@ -298,27 +298,12 @@ py_test(
 )
 
 py_library(
-    name = "login",
-    srcs = ["login.py"],
-    deps = [
-        ":settings",
-        "@pypi//authlib",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//itsdangerous",
-        "@pypi//joserfc",
-        "@pypi//pydantic",
-        "@pypi//starlette",
-    ],
-)
-
-py_library(
     name = "web",
     srcs = ["web.py"],
     deps = [
-        ":login",
         ":settings",
         ":supervisor",
+        "//util:oidc_login",
         "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//httpx",
