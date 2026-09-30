@@ -132,6 +132,7 @@ def chart(app: App) -> Chart:
             "agentplane-testing",
             "agents-infra",
             "airlock",
+            "claude-session-sync",
             "cli-proxy-api",
             "cpap-sync",
             "flux-system",

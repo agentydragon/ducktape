@@ -99,8 +99,33 @@ The same session is `session_<x>` in `claude.ai/code/` URLs; both prefixes are a
 - `resume_cursor` is always present; it is the last returned `sequence_num`. Use it to poll a live session.
 - A session can have zero events.
 
-Also seen in the web UI, unused here: `GET .../events/stream?from_sequence_num=<n>` (server-sent events for the
-live tail), `POST .../events` (send a user message), `POST .../client/presence`.
+Also seen in the web UI, unused here: `POST .../events` (send a user message), `POST .../client/presence`.
+
+## Event stream and session watch
+
+Read from the web client's code (capture `2026-09-29-c20643cea8`); **not yet observed on the wire**. The client
+sends the same headers as for the routes above, plus `Accept: text/event-stream`.
+
+`GET /v1/code/sessions/<cse_id>/events/stream[?from_sequence_num=<n>]` carries `last-event-id: <n>` as well, both
+omitted for a client with no position. Frames, by `event:`:
+
+| Frame                | Data                                                        | The client                                            |
+| -------------------- | ----------------------------------------------------------- | ----------------------------------------------------- |
+| `client_event`       | an event as the events route sends it; `id: <sequence_num>` | stores it; a frame with no data only moves its cursor |
+| `catch_up_truncated` | none                                                        | pages for what the stream did not replay              |
+| `session_update`     | session metadata                                            | applies it                                            |
+| `ephemeral_event`    | a transient event, not persisted                            | shows it                                              |
+| `delivery_update`    | delivery status of a sent message                           | applies it                                            |
+
+An open answered 410 means the position is gone: the client restarts from nothing. Other 4xx except 429 are fatal to
+it; 429 honors `Retry-After`. It restarts a stream that delivered nothing for 35 s, backs off 1 s doubling to 30 s
+with jitter, and after two connections that delivered no frame polls `GET .../events?sort_order=asc&cursor=<n>`.
+
+`GET /v1/code/sessions/watch?exclude_tags=-&resume_token=<token>` streams changes to the account's sessions. The
+token is the list route's `resume_token`, and each frame's `id` is the next one to resume from. Frames: `added` and
+`changed` carry a session as the list route sends it, `removed` carries `{id}`, and `sync` carries nothing. 400
+means no token was sent, 410 that the token expired; the client then lists again. The web client also sends
+`anthropic-client-platform: web_claude_ai` on this request; this sync does not.
 
 ## Event
 

@@ -6,7 +6,7 @@
 #
 # The egress proxy's CA comes from the pod, not from this image: nothing here sets
 # SSL_CERT_FILE, for the reason the Haku image records beside its own `Env`
-# (<../../cluster/k8s/haku/workspaces/image/default.nix>).
+# (<../../haku/sandbox/image/default.nix>).
 #
 # Build:  nix build .#agentplane-sandbox-image
 # Load:   docker load < result

@@ -83,7 +83,7 @@ def test_declared_policies_set_controlled_values(repo_root: Path) -> None:
             continue
         text = path.read_text()
         # Gate on content: Namespace objects are not confined to namespace.yaml
-        # (namespace-patch.yaml, gotk-components.yaml and some HelmReleases
+        # (namespace-patch.k8s.yaml, gotk-components.yaml and some HelmReleases
         # declare them too), and parsing every YAML here would pull in Authentik
         # blueprints with their custom tags.
         if "kind: Namespace" not in text:
