@@ -601,24 +601,6 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: haku-openclaw-spike
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: haku-openclaw-spike
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: haku-openclaw-spike
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   annotations:

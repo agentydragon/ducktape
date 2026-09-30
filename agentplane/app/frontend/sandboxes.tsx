@@ -103,6 +103,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [thread, setThread] = useState<ThreadDefaults>(EMPTY_THREAD);
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
   const modelOptions = thread.harness && modelCatalog ? modelsForHarness(modelCatalog, thread.harness) : [];
+  const reasoningEfforts = modelOptions.find((option) => option.model === thread.model)?.reasoning_efforts ?? [];
   // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -166,7 +167,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       if (!current.harness) return current;
       const offered = modelsForHarness(modelCatalog, current.harness);
       if (current.model && offered.some((option) => option.model === current.model)) return current;
-      return { ...current, model: offered[0]?.model ?? null };
+      return { ...current, model: offered[0]?.model ?? null, reasoning_effort: undefined };
     });
   }, [modelCatalog, thread.harness, thread.model]);
 
@@ -309,17 +310,26 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             allowDeselect={false}
             data={modelOptions.map((option) => ({ value: option.model, label: option.display_name }))}
             value={thread.model ?? null}
-            onChange={(model) => setThread({ ...thread, model })}
+            onChange={(model) => {
+              const efforts = modelOptions.find((option) => option.model === model)?.reasoning_efforts ?? [];
+              setThread({
+                ...thread,
+                model,
+                reasoning_effort: efforts.includes(thread.reasoning_effort ?? "") ? thread.reasoning_effort : undefined,
+              });
+            }}
             disabled={modelOptions.length === 0}
             placeholder={modelCatalog ? "No models available" : "Loading models…"}
             style={{ flex: "1 1 20rem" }}
           />
-          <Select
-            label="Reasoning effort"
-            data={["low", "medium", "high"]}
-            value={thread.reasoning_effort ?? null}
-            onChange={(effort) => setThread({ ...thread, reasoning_effort: effort ?? undefined })}
-          />
+          {reasoningEfforts.length > 0 && (
+            <Select
+              label="Reasoning effort"
+              data={reasoningEfforts}
+              value={thread.reasoning_effort ?? null}
+              onChange={(effort) => setThread({ ...thread, reasoning_effort: effort ?? undefined })}
+            />
+          )}
         </Group>
         <TextInput
           label="Working directory"

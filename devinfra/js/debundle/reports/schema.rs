@@ -115,6 +115,18 @@ pub struct OwnerGraphNodeReport {
     pub destination: ModuleKey,
 }
 
+impl OwnerGraphNodeReport {
+    /// Inclusive line span of the owner's statement; 0 without a
+    /// source location.
+    pub fn line_count(&self) -> usize {
+        self.source_location.as_ref().map_or(0, |loc| {
+            loc.end_line
+                .saturating_sub(loc.start_line)
+                .saturating_add(1)
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OwnerGraphEdgeReport {
     pub id: String,

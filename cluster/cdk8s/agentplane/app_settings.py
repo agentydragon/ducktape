@@ -48,6 +48,16 @@ _PUBLIC_CODER_INSTRUCTIONS = (
 )
 
 
+def reasoning_efforts(model: str) -> list[str]:
+    """Documented reasoning effort values for the configured direct Anthropic/OpenAI routes."""
+    if model.startswith(("anthropic-max20/ant-messages/", "antigravity/ant-messages/claude-")):
+        return ["low", "medium", "high", "max"]
+    if model.startswith("chatgpt/oai-responses/gpt-"):
+        return ["minimal", "low", "medium", "high", "xhigh"]
+    # Other providers/routes in this roster do not expose these reasoning effort parameters.
+    return []
+
+
 def settings(
     *,
     namespace: str,
@@ -64,7 +74,10 @@ def settings(
     all_models = dict.fromkeys((*harness_claude, *harness_codex))
     return AppSettingsConfig(
         models=ModelCatalog(
-            models=[ModelOption(model=model, display_name=display_name(model)) for model in all_models],
+            models=[
+                ModelOption(model=model, display_name=display_name(model), reasoning_efforts=reasoning_efforts(model))
+                for model in all_models
+            ],
             harnesses={Harness.CLAUDE: harness_claude, Harness.CODEX: harness_codex},
         ),
         # Rendered into the image-owned agent-instruction template; deployments may use

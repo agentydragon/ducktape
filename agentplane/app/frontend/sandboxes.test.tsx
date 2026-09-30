@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
+import { TEST_REASONING_EFFORTS } from "./test_model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
@@ -36,9 +37,9 @@ const CREATED: SandboxView = {
 };
 
 async function render(
-  codexModels: { model: string; display_name: string }[] = [
-    { model: "test-codex-a", display_name: "Test Codex A" },
-    { model: "test-codex-b", display_name: "Test Codex B" },
+  codexModels: { model: string; display_name: string; reasoning_efforts: string[] }[] = [
+    { model: "test-codex-a", display_name: "Test Codex A", reasoning_efforts: TEST_REASONING_EFFORTS },
+    { model: "test-codex-b", display_name: "Test Codex B", reasoning_efforts: TEST_REASONING_EFFORTS },
   ]
 ) {
   const onOpen = vi.fn();
@@ -64,7 +65,10 @@ async function render(
     const data =
       path === "/models"
         ? {
-            models: [{ model: "test-claude", display_name: "Test Claude" }, ...codexModels],
+            models: [
+              { model: "test-claude", display_name: "Test Claude", reasoning_efforts: TEST_REASONING_EFFORTS },
+              ...codexModels,
+            ],
             harnesses: {
               HARNESS_CLAUDE: ["test-claude"],
               HARNESS_CODEX: codexModels.map((option) => option.model),

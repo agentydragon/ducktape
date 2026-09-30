@@ -5,7 +5,6 @@ SOPS-encrypted Restic password beside the output stays hand-written.
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from constructs import Construct
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecResticMoverAffinity,
     ReplicationSourceSpecResticMoverAffinityNodeAffinity,
@@ -26,28 +25,17 @@ _BUCKET_NAME = "public-coder-agent-backups"
 _S3_CREDENTIALS_SECRET_NAME = "public-coder-agent-seaweedfs-credentials"
 
 
-def _bucket(scope: Construct) -> None:
-    bucket = s3.Bucket(
-        scope,
-        "bucket",
-        name=_BUCKET_NAME,
-        namespace=_NAMESPACE,
-        adopt_existing=True,
-        description="Public Coder's tenant-local SeaweedFS backup bucket.",
-    )
-    identity = s3.Identity(scope, "identity", name=_BUCKET_NAME, namespace=_NAMESPACE)
-    bucket.grant_read_write(identity)
-    identity.credentials(
-        namespace=_NAMESPACE,
-        secret=_S3_CREDENTIALS_SECRET_NAME,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        description="Public Coder's tenant-local SeaweedFS backup credentials.",
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    _bucket(chart)
+    s3.PrivateBucket(
+        chart,
+        "storage",
+        name=_BUCKET_NAME,
+        tenant=_NAMESPACE,
+        adopt_existing=True,
+        description="Public Coder's tenant-local SeaweedFS backup bucket.",
+        secret_name=_S3_CREDENTIALS_SECRET_NAME,
+    )
     # The worker-local OpenClaw state. Run and retain a restore drill before treating these
     # snapshots as a replacement for the old PVC/rescue archive.
     ResticBackup(

@@ -1,6 +1,5 @@
-"""Home Assistant's backup bucket: the tenant-local SeaweedFS identity, Bucket and S3Credentials,
-the grant letting them reference the SeaweedFS cluster, and the ESO wiring that composes the
-Restic repository Secret.
+"""Home Assistant's backup bucket, a tenant-local SeaweedFS `PrivateBucket`, and the ESO wiring
+that composes the Restic repository Secret.
 
 Hand-written beside the generated output: `credentials-secret.sops.yaml`.
 """
@@ -88,21 +87,14 @@ def _repository(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    identity = s3.Identity(chart, "identity", name=_NAME, namespace=_NAMESPACE)
-    bucket = s3.Bucket(
+    s3.PrivateBucket(
         chart,
-        "bucket",
+        "storage",
         name=_NAME,
-        namespace=_NAMESPACE,
+        tenant=_NAMESPACE,
         adopt_existing=True,
         description="Home Assistant's tenant-local SeaweedFS backup bucket.",
-    )
-    bucket.grant_read_write(identity)
-    identity.credentials(
-        namespace=_NAMESPACE,
-        secret=_S3_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        description="Home Assistant's tenant-local SeaweedFS backup credentials.",
+        secret_name=_S3_CREDENTIALS_SECRET,
     )
     _repository(chart)
     return chart

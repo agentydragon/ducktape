@@ -27,7 +27,7 @@ from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
-from agentplane.app.conftest import Replica, stored_login
+from agentplane.app.conftest import TEST_REASONING_EFFORTS, Replica, stored_login
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -79,8 +79,12 @@ from util.net import pick_free_port
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 MODELS = ModelCatalog(
     models=[
-        ModelOption(model="test-claude-model", display_name="Test Claude Model"),
-        ModelOption(model="test-codex-model", display_name="Test Codex Model"),
+        ModelOption(
+            model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
+        ModelOption(
+            model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
     ],
     harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
 )

@@ -27,7 +27,7 @@ from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
-from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
+from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
@@ -48,8 +48,12 @@ SESSION_SECRET = "test-session-secret"  # a test literal, not a real credential
 ACTIVITY_STEP = timedelta(minutes=5)
 MODELS = ModelCatalog(
     models=[
-        ModelOption(model="test-claude-model", display_name="Test Claude Model"),
-        ModelOption(model="test-codex-model", display_name="Test Codex Model"),
+        ModelOption(
+            model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
+        ModelOption(
+            model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
     ],
     harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
 )

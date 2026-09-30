@@ -1,6 +1,6 @@
-"""The Zot OCI pull-through cache: its Namespace, Deployment (Zot plus the nginx basic-auth
-sidecar for the public endpoint), Service, HTTPRoute, ServiceMonitor and dedupe-cache
-`RedisReplication`.
+"""The Zot OCI pull-through cache: its Namespace, the `registry-cache` SeaweedFS `PrivateBucket`
+holding its content, the Deployment (Zot plus the nginx basic-auth sidecar for the public
+endpoint), Service, HTTPRoute, ServiceMonitor and dedupe-cache `RedisReplication`.
 
 Hand-written beside the generated output (cluster/k8s/oci-cache): `kustomization.yaml`
 (its configMapGenerator renders `config.json` and `public-auth-proxy.conf`) and
@@ -21,7 +21,7 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
-from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
@@ -34,8 +34,6 @@ HTTP = ServiceRef(name=_NAMESPACE, port=Port(name="http", number=80), pods=_PODS
 # The nginx sidecar's authenticated port on the same Service.
 _PUBLIC_AUTH = ServiceRef(name=_NAMESPACE, port=Port(name="public-auth", number=8080), pods=_PODS)
 _VALKEY = "oci-cache-valkey"
-# The operator mints the registry-cache bucket's key pair here (seaweedfs/registry_cache_bucket.py).
-_S3_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="registry-cache-s3-credentials")
 
 
 def _tcp_probe(port: str, *, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -46,7 +44,20 @@ def _tcp_probe(port: str, *, initial_delay_seconds: int, period_seconds: int) ->
     )
 
 
-def _deployment(chart: Chart) -> None:
+def _storage(chart: Chart) -> s3.PrivateBucket:
+    return s3.PrivateBucket(
+        chart,
+        "storage",
+        name="registry-cache",
+        tenant=_NAMESPACE,
+        # The existing cache bucket was handed to the tenant-local CR.
+        adopt_existing=True,
+        description="Zot's OCI pull-through cache: manifests and blobs.",
+        key_fields=None,
+    )
+
+
+def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
@@ -89,8 +100,8 @@ def _deployment(chart: Chart) -> None:
                             # docker/distribution S3 driver reads the AWS default credential
                             # chain when accesskey/secretkey are omitted from config.json.
                             env=[
-                                _S3_CREDENTIALS.key("accessKey").env_var("AWS_ACCESS_KEY_ID"),
-                                _S3_CREDENTIALS.key("secretKey").env_var("AWS_SECRET_ACCESS_KEY"),
+                                storage.access_key.env_var("AWS_ACCESS_KEY_ID"),
+                                storage.secret_key.env_var("AWS_SECRET_ACCESS_KEY"),
                             ],
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/etc/zot", read_only=True),
@@ -179,7 +190,7 @@ def _deployment(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAMESPACE, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
-    _deployment(chart)
+    _deployment(chart, storage=_storage(chart))
     k8s.KubeService(
         chart,
         "service",

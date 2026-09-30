@@ -119,7 +119,7 @@ class AppSettingsConfig(BaseSettings):
 
     models: ModelCatalog = Field(
         description="Every model agentplane can open a session with and which harnesses accept it, as JSON: "
-        '{"models": [{"model": "...", "display_name": "..."}], '
+        '{"models": [{"model": "...", "display_name": "...", "reasoning_efforts": [...]}], '
         '"harnesses": {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}}.'
     )
     agent_egress_api_url: str | None = Field(

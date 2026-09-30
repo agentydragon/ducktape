@@ -10,7 +10,11 @@ from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomizatio
 
 
 def oci_cache(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, valkey: Kustomization, monitoring_crds: Kustomization
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    valkey: Kustomization,
+    monitoring_crds: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     name = "oci-cache"
     return flux_kustomization(
@@ -25,6 +29,8 @@ def oci_cache(
             # Namespace, app, and ServiceMonitor are managed together here.
             valkey,
             monitoring_crds,
+            # The registry-cache Bucket, S3Identity, S3Credentials and grant CRDs.
+            seaweedfs_operator,
         ),
         description="Zot OCI pull-through cache and its namespace-local monitoring.",
     )

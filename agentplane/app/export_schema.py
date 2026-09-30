@@ -53,7 +53,11 @@ def openapi_document() -> dict[str, Any]:
         ),
         ThreadStore(engine),
         ModelCatalog(
-            models=[ModelOption(model="schema-model", display_name="Schema Model")],
+            models=[
+                ModelOption(
+                    model="schema-model", display_name="Schema Model", reasoning_efforts=["low", "medium", "high"]
+                )
+            ],
             harnesses={harness: ["schema-model"] for harness in Harness},
         ),
         EgressInventory(namespace="schema", custom_objects=cast(Any, None)),

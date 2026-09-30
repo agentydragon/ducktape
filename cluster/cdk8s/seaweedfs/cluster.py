@@ -107,7 +107,7 @@ TENANTS = frozenset(
         "loki",  # monitoring/loki.py
         "monitoring",  # monitoring/mimir.py, monitoring/tempo.py
         "nix-cache",  # nix_cache/attic.py
-        "oci-cache",  # seaweedfs/registry_cache_bucket.py
+        "oci-cache",  # oci_cache/zot.py
         "public-coder-agent",  # public_coder_backup.py
         "vm-images-publisher",  # vm_images_publisher/publisher.py
     }

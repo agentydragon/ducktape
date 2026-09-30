@@ -43,7 +43,6 @@ WEB = ServiceRef(
         labels=(("app.kubernetes.io/name", _NAME), ("app.kubernetes.io/instance", _NAME), ("app", "web")),
     ),
 )
-_S3_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="langfuse-seaweedfs-credentials")
 # The SOPS sibling.
 _SECRETS = SecretRef(namespace=_NAMESPACE, name="langfuse-secrets")
 _OIDC = SecretRef(namespace=_NAMESPACE, name="langfuse-oidc-config")
@@ -68,7 +67,7 @@ def _database(scope: Construct) -> None:
     )
 
 
-def _storage(scope: Construct) -> None:
+def _storage(scope: Construct) -> s3.PrivateBucket:
     # Retain the previous credential Secret during the staged handoff. The old
     # S3Credentials resource is retired separately; revoking its retained key and
     # removing this rollback Secret is an explicit follow-up.
@@ -82,23 +81,17 @@ def _storage(scope: Construct) -> None:
         ),
         type="Opaque",
     )
-    bucket = s3.Bucket(
+    return s3.PrivateBucket(
         scope,
-        "bucket",
+        "storage",
         name=_NAME,
-        namespace=_NAMESPACE,
+        tenant=_NAMESPACE,
         adopt_existing=True,
         description="Langfuse event, export, and media objects.",
-    )
-    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
-    bucket.grant_read_write(identity)
-    identity.credentials(
-        namespace=_NAMESPACE,
-        # A new Secret during the staged handoff: the existing one is populated by the old
-        # cross-namespace S3Credentials object and cannot be adopted here.
-        secret=_S3_CREDENTIALS.name,
+        # Not the default `langfuse-s3-credentials`: that is the legacy Secret above, populated by
+        # the old cross-namespace S3Credentials, which this one cannot adopt.
+        secret_name="langfuse-seaweedfs-credentials",
         key_fields=s3.SecretKeyFields(access_key="s3-access-key-id", secret_key="s3-secret-access-key"),
-        description="Langfuse's tenant-local SeaweedFS credentials.",
     )
 
 
@@ -129,7 +122,7 @@ def _log_reader(scope: Construct) -> None:
     )
 
 
-def _values() -> dict[str, object]:
+def _values(storage: s3.PrivateBucket) -> dict[str, object]:
     resources = {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "1", "memory": "2Gi"}}
     return {
         "langfuse": {
@@ -272,8 +265,8 @@ def _values() -> dict[str, object]:
             "region": "auto",
             "endpoint": "http://seaweedfs-s3.seaweedfs.svc:8333",
             "forcePathStyle": True,
-            "accessKeyId": _S3_CREDENTIALS.key("s3-access-key-id").value_from(),
-            "secretAccessKey": _S3_CREDENTIALS.key("s3-secret-access-key").value_from(),
+            "accessKeyId": storage.access_key.value_from(),
+            "secretAccessKey": storage.secret_key.value_from(),
             "eventUpload": {"prefix": "events/"},
             "batchExport": {"prefix": "exports/"},
             "mediaUpload": {"prefix": "media/"},
@@ -283,7 +276,7 @@ def _values() -> dict[str, object]:
     }
 
 
-def _helm_release(scope: Construct) -> None:
+def _helm_release(scope: Construct, *, storage: s3.PrivateBucket) -> None:
     helm_release(
         scope,
         _NAME,
@@ -299,7 +292,7 @@ def _helm_release(scope: Construct) -> None:
         upgrade=HelmReleaseSpecUpgrade(
             strategy=HelmReleaseSpecUpgradeStrategy(name=HelmReleaseSpecUpgradeStrategyName.RETRY_ON_FAILURE)
         ),
-        values=_values(),
+        values=_values(storage),
     )
 
 
@@ -307,7 +300,7 @@ def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _namespace(chart)
     _database(chart)
-    _storage(chart)
+    storage = _storage(chart)
     https_route(
         chart,
         "route",
@@ -330,7 +323,7 @@ def chart(app: App) -> Chart:
         storage_class="local-path-ovh",
         storage_size=Size.gibibytes(2),
     )
-    _helm_release(chart)
+    _helm_release(chart, storage=storage)
     return chart
 
 

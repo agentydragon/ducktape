@@ -52,7 +52,7 @@ class ThreadPreset(BaseModel):
     harness: Harness
     model: str
     cwd: str = "/state/workspaces/{session_id}"
-    reasoning_effort: str = "low"
+    reasoning_effort: str | None = None
     instructions: str = ""
 
     def defaults(self) -> ThreadDefaults:
