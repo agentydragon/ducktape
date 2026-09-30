@@ -12,6 +12,11 @@ defaults, batch atomicity, gate queries). Workflow docs: `docs/selectors.md` (po
 selector authoring), `docs/spec_editing.md` (module/binding editing).
 How selectors actually resolve: `docs/selector_resolution.md`.
 
+Selector implementation is grouped under `selectors/`: AST matching and
+`source_match` live in `matching/`, selector solving in `resolution/`, selector
+generation and minimization in `authoring/`, and selector-debt reporting in
+`diagnostics/`. Bazel target names remain stable.
+
 Cheat sheet of the most-used commands:
 
 - `debundle run` — execute the transform pipeline (parse + facts +

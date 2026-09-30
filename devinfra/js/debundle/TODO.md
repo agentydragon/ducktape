@@ -229,7 +229,7 @@ _d.{name};` by string interpolation, so a string-literal export name in a vendor
   same identifier in a genuine at-init unresolved call in one statement, so it is
   contrived.
 - **Class member facts drop method kind, `static` and decorators.** Status:
-  reported, not re-checked. `chunk_facts.rs` extraction projects `static x = 1`
+  reported, not re-checked. `selectors/matching/chunk_facts.rs` extraction projects `static x = 1`
   and `x = 1`, and `get a(){}` and `a(){}`, to identical facts despite the
   "faithful, fail-closed" claim. A `static` needle could match a non-static
   subject. Confirm with a selector-matcher test case pairing the two.
@@ -284,7 +284,7 @@ _d.{name};` by string interpolation, so a string-literal export name in a vendor
   distinct non-UTF-8 string export names can collide; `binding_targets`
   `module_export_name` does not do this (STYLE.md § General, no silent fallbacks).
 - **Anonymous-statement uniqueness scan is quadratic.** Status: reported, not
-  measured. `anonymous_resolution.rs`
+  measured. `selectors/resolution/anonymous_resolution.rs`
   `addressable_anonymous_statement_owner_ids_in_globals` compares each item
   against the whole body with `eq_ignore_span` (`.take(2)` only short-circuits
   after two matches), which is O(N²) for `modules propose --source-root` on a large
@@ -296,7 +296,7 @@ _d.{name};` by string interpolation, so a string-literal export name in a vendor
   `purity/classifier_tests.rs` `regexp_constructor_stays_unknown_even_with_literal_args`
   asserts the opposite. Both cannot hold; the RegExp half of the ignored test is
   the wrong one.
-- **`selector_minimizer_proptest.rs` ignores `PROPTEST_CASES`.** Status: reported.
+- **`selectors/authoring/selector_minimizer_proptest.rs` ignores `PROPTEST_CASES`.** Status: reported.
   The config hard-codes `cases: 96`; `condensation_order_proptest.rs` `ci_config`
   is the pattern that honours the variable.
 

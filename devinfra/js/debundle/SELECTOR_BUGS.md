@@ -23,7 +23,7 @@ implement is then `invalid` with "unsupported selector hole", on every command.
 ## Regex Predicate Prefix Pruning Can Drop Matches
 
 Status: unreproduced (code review 2026-09-30; the function was read, no selector
-was run). `selector_match.rs` `regex_required_literal_prefix` pushes each literal
+was run). `selectors/matching/selector_match.rs` `regex_required_literal_prefix` pushes each literal
 character of a `^literal...` pattern up to the first metacharacter, so a
 quantifier that binds the last pushed character is ignored: `^foo*` yields the
 prefix `foo` but matches `fo` and `fox`; `^ab?` yields `ab` but matches `ac`.
@@ -37,35 +37,35 @@ test each quantifier form.
 ## Invalid Regex Predicate Matches Nothing
 
 Status: unreproduced (code review 2026-09-30, not verified).
-`selector_match.rs` compiles a `STR_LITERAL_MATCHING_RE` pattern with
+`selectors/matching/selector_match.rs` compiles a `STR_LITERAL_MATCHING_RE` pattern with
 `if let Ok(compiled) = Regex::new(pattern)`, so a pattern that fails to compile
 makes the predicate match nothing with no diagnostic (a silent fallback, STYLE.md
-§ General, Exceptions). Not checked: whether `source_match/parse_validate.rs`
+§ General, Exceptions). Not checked: whether `selectors/matching/source_match/parse_validate.rs`
 rejects an invalid pattern earlier. If it does not, reject it there as `invalid`.
 
 ## Hole Keyword Sets Can Drift
 
 Status: unreproduced (code review 2026-09-30). Hole-ness is implemented three
-times: AST-level in `source_match/holes.rs`, fact-level in `selector_match.rs`,
-and a local `is_hole_keyword` in `match_selector.rs`, kept in sync by "mirrors"
-comments. The `match_selector.rs` copy omits `ARRAY_ELEMENTS`, unlike
-`selector_match.rs`. No input was found where this changes output. Fix: one
-`is_hole_keyword` in `source_match_holes.rs`.
+times: AST-level in `selectors/matching/source_match/holes.rs`, fact-level in `selectors/matching/selector_match.rs`,
+and a local `is_hole_keyword` in `selectors/authoring/match_selector.rs`, kept in sync by "mirrors"
+comments. The `selectors/authoring/match_selector.rs` copy omits `ARRAY_ELEMENTS`,
+unlike `selectors/matching/selector_match.rs`. No input was found where this changes output. Fix: one
+`is_hole_keyword` in `selectors/matching/source_match_holes.rs`.
 
 ## Synthesized-Selector Replacement Count Can Under-Report
 
 Status: unreproduced (code review 2026-09-30; `holes_present` was read, the
-renderer's `ARGS`/`CASE_REST` output was not re-checked). `render.rs`
+renderer's `ARGS`/`CASE_REST` output was not re-checked). `selectors/authoring/render.rs`
 `holes_present` tests for only `ANYTHING`, `STMT_LIST` and `DECLARATORS`, while
 the renderer also emits `ARGS` and `CASE_REST`. `rewritten_holes`, and the
-`replacement_count` that `selector_codemod.rs` derives from
+`replacement_count` that `selectors/authoring/selector_codemod.rs` derives from
 `rewritten_holes.len()`, would then omit them. Fix: one keyword list shared with
 the renderer, and a test that a selector holing each keyword reports it.
 
 ## Solver Domain Encoding Ignores Id Gaps
 
 Status: unreproduced (code review 2026-09-30, not verified).
-`selector_constraint_backend.rs` `ensure_full_domain_contains` returns silently
+`selectors/resolution/selector_constraint_backend.rs` `ensure_full_domain_contains` returns silently
 when `usize::try_from` fails or when `index > values.len()`, and appends only when
 `index == values.len()`. A gap in encoded ids drops the value from the full
 domain instead of raising. Fix: treat both branches as invariant violations.
@@ -73,7 +73,7 @@ domain instead of raising. Fix: treat both branches as invariant violations.
 ## Too-Broad Count Can Overstate Places
 
 Status: unreproduced (code review 2026-09-30, not verified). `Rejection::check_count`
-in `selector_resolve.rs` caps and reports `rows.len()`, but `narrow_by_references`
+in `selectors/resolution/selector_resolve.rs` caps and reports `rows.len()`, but `narrow_by_references`
 calls it on collected rows that `project_collected` dedupes only later (`distinct`),
 and rows can repeat one place with different `free_bindings`. The `too_broad`
 message "matches N places" can overcount. Fix: count distinct places.
