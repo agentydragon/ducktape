@@ -577,17 +577,35 @@ ordered by identifier only. For Claude-specific behavior, start from the partial
 reverse engineering in the sibling `gaffer-private` repository and extend it where a candidate
 needs evidence that work does not already provide.
 
-| Candidate | Expected user win | Expected work | Scope and acceptance direction |
-| --------- | ----------------- | ------------- | ------------------------------ |
-| `DT` (existing P2) | High | Medium–high | Surface Action-backed tools through Claude driver MCP and Codex dynamic tools, plus the existing list/status and per-task stop floor for background work. Reuse Action Service decisions, execution, idempotency, and provenance; still deferred pending a named consumer. See [driver tools and background work](driver_tools_and_background.md). |
-| `HARNESS_INTERACTIVE_CONTROLS` | High | High | Support questions and permission requests that park a turn, survive reconnect/restart, accept or reject a durable decision, and resume safely. Keep user decisions distinct from Action Service authorization. |
-| `HARNESS_PLUGINS` | Medium | High | Enable project plugin/skill packages with explicit source trust and capability grants. Define install/update behavior and test that plugin tools cannot exceed the Thread's authority. |
-| `HARNESS_PROJECT_HOOKS` | Medium | High | Run project hooks only behind an explicit trust boundary; support bounded execution, hook replies, timeout/cancellation, and evidence in the Thread. Do not inherit arbitrary host hooks. |
-| `HARNESS_PROMPT_SUGGESTIONS` | Low | Low | Consider Claude's prompt suggestions only if user research shows meaningful composer value; keep optional and avoid extra model work without evidence. |
-| `HARNESS_SKILLS` | High | Low–medium | Enable project-scoped skills and custom commands for Claude and Codex. Prove the project catalog is available in a Thread while host-global settings and unrelated user configuration stay out. |
-| `HARNESS_VISUAL_INPUT` | High | High | Carry image attachments through composer, request protocol, storage, and replay/rendering; enable Codex image viewing and prove Claude's image input path. Text-only transcripts are insufficient acceptance. |
-| `HARNESS_WEB_SEARCH` | High | Medium | Route native search through an approved, observable egress path; retain source evidence and links in the Thread. Confirm provider/tool availability before wiring either harness. |
-| `NATIVE_SUBAGENT_THREADS` | High | High | Enable Claude Task and Codex multi-agent features; discover child identity, output, completion, and restart/resume, then expose linked child Threads with parent/child provenance and reconnect deduplication. Start with read-only inspection; child control is a separate evidence-gated extension. |
+- **`DT` (existing P2) — high win, medium–high work:** Surface Action-backed tools through
+  Claude driver MCP and Codex dynamic tools, plus the existing list/status and per-task stop floor
+  for background work. Reuse Action Service decisions, execution, idempotency, and provenance; it
+  remains deferred pending a named consumer. See [driver tools and background work](driver_tools_and_background.md).
+- **`HARNESS_INTERACTIVE_CONTROLS` — high win, high work:** Support questions and permission
+  requests that park a turn, survive reconnect/restart, accept or reject a durable decision, and
+  resume safely. Keep user decisions distinct from Action Service authorization.
+- **`HARNESS_PLUGINS` — medium win, high work:** Enable project plugin/skill packages with
+  explicit source trust and capability grants. Define install/update behavior and test that plugin
+  tools cannot exceed the Thread's authority.
+- **`HARNESS_PROJECT_HOOKS` — medium win, high work:** Run project hooks only behind an explicit
+  trust boundary; support bounded execution, hook replies, timeout/cancellation, and evidence in
+  the Thread. Do not inherit arbitrary host hooks.
+- **`HARNESS_PROMPT_SUGGESTIONS` — low win, low work:** Consider Claude's prompt suggestions only
+  if user research shows meaningful composer value; keep optional and avoid extra model work
+  without evidence.
+- **`HARNESS_SKILLS` — high win, low–medium work:** Enable project-scoped skills and custom
+  commands for Claude and Codex. Prove the project catalog is available in a Thread while
+  host-global settings and unrelated user configuration stay out.
+- **`HARNESS_VISUAL_INPUT` — high win, high work:** Carry image attachments through composer,
+  request protocol, storage, and replay/rendering; enable Codex image viewing and prove Claude's
+  image input path. Text-only transcripts are insufficient acceptance.
+- **`HARNESS_WEB_SEARCH` — high win, medium work:** Route native search through an approved,
+  observable egress path; retain source evidence and links in the Thread. Confirm provider/tool
+  availability before wiring either harness.
+- **`NATIVE_SUBAGENT_THREADS` — high win, high work:** Enable Claude Task and Codex multi-agent
+  features; discover child identity, output, completion, and restart/resume, then expose linked
+  child Threads with parent/child provenance and reconnect deduplication. Start with read-only
+  inspection; child control is a separate evidence-gated extension.
 
 #### `HARNESS_CONFIG_ISOLATION` — separate hosted features from capture configuration
 
