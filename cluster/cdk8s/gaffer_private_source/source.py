@@ -3,21 +3,18 @@ ImageUpdateAutomation that commits image-tag bumps back to it.
 
 The `gaffer-private` bridge Flux Kustomization that reconciles `gaffer-private/k8s/`
 from this source is a node in the central chart (`flux_kustomizations.gaffer_private_bridge`).
-Only this directory's `kustomization.yaml` stays hand-written beside the generated output.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.image_automation import ImageUpdatePush
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "gaffer-private"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/gaffer-private-source"
+OUTPUT_DIR = f"{GENERATED_ROOT}/gaffer-private-source"
 
 
 def chart(app: App) -> Chart:
@@ -38,5 +35,15 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+def gaffer_private_source(
+    flux_chart: Chart, directory: RenderedDirectory, flux_image_automation_ghcr: Kustomization
+) -> Kustomization:
+    return flux_kustomization(
+        flux_chart,
+        "gaffer-private-source",
+        directory,
+        namespace="flux-system",
+        wait=None,
+        timeout="10m",
+        depends_on=[flux_kustomization_depends_on(flux_image_automation_ghcr)],
+    )

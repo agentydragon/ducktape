@@ -1,12 +1,5 @@
 # cdk8s adoption: remaining work
 
-Review baseline: `origin/devel` at `f84301e72c` (2026-09-28). This is a source
-audit, not a fresh synthesis, CI result, or live-cluster health report.
-
-The central chart contains 171 Flux Kustomizations. The broad resource conversion,
-ArtifactGenerator wiring, two output roots, and removal of redundant single-file
-Kustomize wrappers are implemented. They are no longer migration waves.
-
 Adoption is not complete: mixed directories still contain hand-written overlays and
 configuration, project-owned deployment packages remain outside that conversion, and
 some Python constructs still encode relationships as independent strings or patches.
@@ -33,9 +26,9 @@ passes the generation gate, and leaves no independently editable duplicate pin.
 
 ### C. Convert useful YAML seams
 
-Start with Grocy's household overlays, then Airlock's typed configuration and the
-rotator rosters. The remainder backlog names the existing models, semantic hazards, and acceptance
-conditions. Authentik blueprints need a separate ownership decision consistent with
+Start with Airlock's typed configuration, then the rotator rosters. The remainder
+backlog names the existing models, semantic hazards, and acceptance conditions.
+Authentik blueprints need a separate ownership decision consistent with
 `cluster/docs/sso.md`; embedding their text in Python is not completion.
 
 Generate non-secret configuration through the application's existing model where one

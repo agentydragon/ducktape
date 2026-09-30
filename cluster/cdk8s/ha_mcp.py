@@ -4,9 +4,8 @@ and the ConfigMap/Deployment/Service/CiliumNetworkPolicy/ServiceMonitor for the 
 cdk8s generates all of it, so there's no real need to keep the Namespace/credentials/app split
 into separate directories the way hand-written manifests once did -- see cluster/docs/cdk8s.md.
 
-The facade container's image tag is a deliberate placeholder ("unset") --
-image-pins/kustomization.yaml (hand-written, see
-cluster/k8s/agents/ha-mcp/app/image-pins/kustomization.yaml) overrides it at
+The facade container's image tag is a deliberate placeholder ("unset") -- the hand-written
+`PINS_DIR` Component, which the directory includes across the roots, overrides it at
 `kustomize build` time via Flux's image-automation marker. The ha-mcp container's own
 image is pinned by digest directly and isn't Flux-managed.
 
@@ -46,7 +45,7 @@ from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
@@ -57,7 +56,8 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "ha-mcp"
 _NAMESPACE = "ha-mcp"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/ha-mcp/app"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/ha-mcp/app"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/ha-mcp/app-image-pins"
 # The ESO copy of the token the Home Assistant provisioner keeps valid.
 _HOME_ASSISTANT_TOKEN = SecretRef(namespace=_NAMESPACE, name="ha-mcp-home-assistant-token").key("token")
 # The facade's static client bearer; agentplane-staging copies it.

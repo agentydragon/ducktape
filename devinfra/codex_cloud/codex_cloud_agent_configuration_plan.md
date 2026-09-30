@@ -2,13 +2,6 @@
 
 _Last updated: 2026-04-27_
 
-## Status
-
-Initial implementation scaffolding now exists under `devinfra/codex_cloud/`:
-
-- `devinfra/codex_cloud/setup.sh` (`--mode=install|maintenance`)
-- `devinfra/codex_cloud/README.md`
-
 ## 1) What is known (documented) about Codex Cloud environments
 
 Primary source: OpenAI Codex Cloud docs and changelog.
@@ -123,9 +116,8 @@ Goal: make Codex Cloud behave as close as feasible to our canonical Nix/devshell
 
 ## 4.2 Agent behavior controls
 
-1. Keep authoritative repository guidance in `AGENTS.md` (already done).
-2. Add a repo-local document dedicated to Codex Cloud operational expectations (this file plus a short runbook link).
-3. Prefer deterministic command recipes in AGENTS over implicit hook behavior.
+- Keep authoritative repository guidance in `AGENTS.md`.
+- Maintain deterministic command recipes in AGENTS over implicit hook behavior.
 
 Reasoning: AGENTS.md behavior in Cloud is documented; hooks behavior in Cloud is not.
 
@@ -179,7 +171,6 @@ Use this as the operator checklist for Codex Cloud environment config:
 - [ ] Required non-secret env vars declared
 - [ ] SOPS decryption inputs declared (for encrypted repo-managed secrets)
 - [ ] Internet policy set to least privilege needed
-- [ ] AGENTS.md up to date for lint/test/build norms
 - [ ] Cache reset procedure documented for bad state
 - [ ] Hook support experimentally verified (optional; do not block rollout)
 

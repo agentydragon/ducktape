@@ -1,8 +1,8 @@
-"""Grafana Alloy: the HelmRelease and the NetworkPolicy admitting OTLP from Authentik's outpost.
+"""Grafana Alloy: the HelmRelease, the NetworkPolicy admitting OTLP from Authentik's outpost, and
+the `alloy-config` ConfigMap.
 
-Hand-written beside the generated output: `config.alloy` (rendered into the `alloy-config`
-ConfigMap by the directory's `configMapGenerator`) and the `kustomization.yaml` that
-generates it.
+Its `config.alloy` is the file of that name beside this module. It reads the addresses other
+modules own through `sys.env`, from the environment the HelmRelease sets.
 """
 
 from __future__ import annotations
@@ -11,16 +11,47 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import (
+    ConfigMapArgs,
+    GeneratorOptions,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
+from cluster.cdk8s.generation import copy_source_file
 from cluster.cdk8s.helm import helm_release
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.monitoring import grafana_helmrepository, loki, mimir, tempo
 
 _NAME = "alloy"
-_NAMESPACE = "monitoring"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/alloy"
+NAMESPACE = "monitoring"
+OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/alloy"
 _OTLP_HTTP_PORT = 4318
+_CONFIG_MAP = "alloy-config"
+_CONFIG_KEY = "config.alloy"
+# What config.alloy's `sys.env` calls read.
+_CONFIG_ENV = {
+    "MIMIR_PUSH_URL": mimir.PUSH_URL,
+    "MIMIR_GATEWAY_URL": mimir.GATEWAY_URL,
+    "LOKI_PUSH_URL": loki.PUSH_URL,
+    "TEMPO_OTLP_GRPC_ENDPOINT": tempo.OTLP_GRPC_ENDPOINT,
+    "OTLP_HTTP_LISTEN_ADDRESS": f"0.0.0.0:{_OTLP_HTTP_PORT}",
+}
+
+
+def write_config_map(root: Path) -> ConfigMapArgs:
+    """Copy `config.alloy` into `OUTPUT_DIR`; return the `configMapGenerator` entry packaging it."""
+    return ConfigMapArgs(
+        name=_CONFIG_MAP,
+        namespace=NAMESPACE,
+        # The Helm values name the ConfigMap, and kustomize cannot rewrite a reference inside a
+        # HelmRelease's values.
+        options=GeneratorOptions(disable_name_suffix_hash=True),
+        files=[copy_source_file(root, OUTPUT_DIR, f"cluster/cdk8s/monitoring/{_CONFIG_KEY}")],
+    )
 
 
 def chart(app: App) -> Chart:
@@ -28,7 +59,7 @@ def chart(app: App) -> Chart:
     helm_release(
         chart,
         _NAME,
-        _NAMESPACE,
+        NAMESPACE,
         repository=grafana_helmrepository.SOURCE_REF,
         chart=_NAME,
         # renovate: datasource=helm depName=alloy registryUrl=https://grafana.github.io/helm-charts
@@ -37,8 +68,8 @@ def chart(app: App) -> Chart:
         chart_interval="12h",
         values={
             "alloy": {
-                # Config lives in config.alloy; generated into alloy-config ConfigMap by kustomization.yaml.
-                "configMap": {"name": "alloy-config", "key": "config.alloy", "create": False},
+                "configMap": {"name": _CONFIG_MAP, "key": _CONFIG_KEY, "create": False},
+                "extraEnv": [{"name": name, "value": value} for name, value in _CONFIG_ENV.items()],
                 # The Grafana Alloy chart reads extraPorts from .Values.alloy and reuses
                 # them for both the Service and the container port list.
                 "extraPorts": [
@@ -60,7 +91,7 @@ def chart(app: App) -> Chart:
     k8s.KubeNetworkPolicy(
         chart,
         "otlp-ingress",
-        metadata=k8s.ObjectMeta(name="alloy-otlp-ingress", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="alloy-otlp-ingress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": _NAME}),
             policy_types=["Ingress"],
@@ -88,5 +119,18 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+def alloy(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        _NAME,
+        directory,
+        wait=None,
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=_NAME, namespace=NAMESPACE
+            )
+        ],
+        timeout="5m",
+        # the chart's serviceMonitor
+        depends_on=flux_kustomization_depends_on_many(monitoring_crds),
+    )

@@ -15,6 +15,9 @@ from cdk8s_plus_34 import k8s
 from cluster.cdk8s import cilium
 
 NAME = "hubble-ui"
+_NAMESPACE = "kube-system"
+# The Service Cilium's Helm chart creates.
+URL = f"http://{NAME}.{_NAMESPACE}.svc.cluster.local:80"
 _PORT = 8081
 
 
@@ -35,7 +38,7 @@ def chart(app: App) -> Chart:
     k8s.KubeNetworkPolicy(
         chart,
         "ingress",
-        metadata=k8s.ObjectMeta(name="hubble-ui-ingress", namespace="kube-system"),
+        metadata=k8s.ObjectMeta(name="hubble-ui-ingress", namespace=_NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": NAME}),
             policy_types=["Ingress"],

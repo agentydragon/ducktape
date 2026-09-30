@@ -47,6 +47,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
 _NAME = "forgejo"
 _NAMESPACE = "forgejo"
+HOSTNAME = "git.allegedly.works"
 _S3_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="forgejo-s3-credentials")
 _METRICS_TOKEN = SecretRef(namespace=_NAMESPACE, name="forgejo-metrics-token").key("token")
 _GIT_CLAIM = "forgejo-git-rwx-ssd"
@@ -189,9 +190,9 @@ def _values() -> dict[str, object]:
                 "APP_NAME": "Forgejo: Beyond coding. We forge.",
                 "RUN_MODE": "prod",
                 "server": {
-                    "DOMAIN": "git.allegedly.works",
-                    "SSH_DOMAIN": "git.allegedly.works",
-                    "ROOT_URL": "https://git.allegedly.works",
+                    "DOMAIN": HOSTNAME,
+                    "SSH_DOMAIN": HOSTNAME,
+                    "ROOT_URL": f"https://{HOSTNAME}",
                     "HTTP_PORT": HTTP.pod_port,
                     "SSH_PORT": 2222,
                     "DISABLE_SSH": False,
@@ -412,7 +413,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        hostnames=["git.allegedly.works"],
+        hostnames=[HOSTNAME],
         backend=HTTP,
         hsts=False,
         listener=None,

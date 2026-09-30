@@ -333,7 +333,7 @@ def _values() -> dict[str, object]:
                 "retention": "120h",
             },
         },
-        # Grafana disabled — managed by grafana-operator (cluster/k8s/monitoring/grafana-instance/).
+        # Grafana disabled — managed by grafana-operator (grafana_instance.py).
         # Dashboards, datasources, and service accounts are GrafanaDashboard/GrafanaDatasource/
         # GrafanaServiceAccount CRs. JWT auth eliminates admin password bootstrap dependency.
         "grafana": {"enabled": False},
@@ -416,11 +416,11 @@ def _values() -> dict[str, object]:
             "resources": {"requests": {"cpu": "10m", "memory": "128Mi"}, "limits": {"cpu": "100m", "memory": "512Mi"}},
         },
         "kubeApiServer": {
-            # Scraped natively from cluster/k8s/monitoring/alloy/config.alloy instead,
+            # Scraped natively from cluster/cdk8s/monitoring/config.alloy instead,
             # preserving the explicit auth and rule labels used by that configuration.
             "enabled": False
         },
-        # Same as kubeApiServer: scraped natively in cluster/k8s/monitoring/alloy/config.alloy.
+        # Same as kubeApiServer: scraped natively in cluster/cdk8s/monitoring/config.alloy.
         "kubelet": {"enabled": False},
         "kubeControllerManager": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # `serviceMonitor.authorization: null` is patched in below.

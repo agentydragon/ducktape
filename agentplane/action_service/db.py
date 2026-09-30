@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+import json
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from binascii import Error as Base64Error
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue, TypeAdapter
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Text, UniqueConstraint, event, func, select
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Text,
+    UniqueConstraint,
+    event,
+    func,
+    select,
+    tuple_,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert as pg_insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -129,6 +143,7 @@ class ActionRequestRow(Base):
     version: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    history_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ActionEventRow(Base):
@@ -478,6 +493,33 @@ class ActionStore:
         async with self._sessions() as session:
             rows = list(await session.scalars(query))
             return [await self._view(session, row, principal) for row in rows]
+
+    async def history(
+        self, principal: OperatorPrincipal, *, limit: int, cursor: str | None
+    ) -> tuple[list[ActionRequestView], str | None]:
+        query = select(ActionRequestRow).where(ActionRequestRow.history_at.is_not(None))
+        if cursor is not None:
+            if len(cursor) > 1024:
+                raise ValueError("invalid history cursor")
+            try:
+                timestamp, identifier = json.loads(urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+                before = (datetime.fromisoformat(timestamp), UUID(identifier))
+                if before[0].tzinfo is None:
+                    raise ValueError("naive cursor")
+            except (ValueError, TypeError, UnicodeDecodeError, Base64Error) as error:
+                raise ValueError("invalid history cursor") from error
+            query = query.where(tuple_(ActionRequestRow.history_at, ActionRequestRow.id) < before)
+        query = query.order_by(ActionRequestRow.history_at.desc(), ActionRequestRow.id.desc()).limit(limit + 1)
+        async with self._sessions() as session:
+            rows = list(await session.scalars(query))
+            page = rows[:limit]
+            last = page[-1] if len(rows) > limit else None
+            next_cursor = (
+                urlsafe_b64encode(json.dumps([last.history_at.isoformat(), str(last.id)]).encode()).decode().rstrip("=")
+                if last is not None and last.history_at is not None
+                else None
+            )
+            return [await self._view(session, row, principal) for row in page], next_cursor
 
     async def get(self, request_id: UUID, principal: Principal) -> ActionRequestView:
         async with self._sessions() as session:
@@ -864,6 +906,8 @@ def _may_read(row: ActionRequestRow, principal: Principal) -> bool:
 def _record_event(
     session: AsyncSession, row: ActionRequestRow, at: datetime, *, actor: Principal | None = None
 ) -> None:
+    if row.state != ActionState.DECISION_PENDING.value and row.history_at is None:
+        row.history_at = at
     session.add(
         ActionEventRow(
             request_id=row.id,

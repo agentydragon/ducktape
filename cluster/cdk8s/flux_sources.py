@@ -27,6 +27,7 @@ _PROMETHEUS_OPERATOR_TAG = "v0.94.0"
 # Also the snapshot-controller image tag, which must match the manifests it patches.
 # renovate: datasource=github-tags depName=kubernetes-csi/external-snapshotter
 EXTERNAL_SNAPSHOTTER_TAG = "v8.6.0"
+# Match the sshpiperd image tag in public_coder_sshpiper.py.
 # renovate: datasource=github-tags depName=tg123/sshpiper
 _SSHPIPER_TAG = "v1.6.1"
 

@@ -9,7 +9,7 @@ py_binary(
     name = "verify_dashboard",
     srcs = ["verify_dashboard.py"],
     data = [
-        "//cluster/k8s:grafana_dashboard_json_files",
+        "//cluster/cdk8s/monitoring:dashboards",
         "@playwright_browsers//:chromium-headless-shell",
     ],
     env = {

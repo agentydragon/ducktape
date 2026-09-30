@@ -54,6 +54,10 @@ function historySummary(link) {
 }
 async function apiFetch(url, options) {
   const response = await fetch(url, options);
+  if (response.status === 401) {
+    window.location.assign("/auth/login");
+    throw new Error("Your Plaid Link session expired. Redirecting to sign in.");
+  }
   const contentType = response.headers.get("content-type") || "";
   const body = contentType.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {
@@ -153,7 +157,7 @@ async function selectInstitution(institutionId) {
   // "not synced by this institution" or "not synced by this app" — opposite claims. And it is
   // about products this app does not *request*, not data it lacks: `balance` and
   // `transactions_refresh` are on-demand re-pull products, while balances and transactions are
-  // already mirrored from /accounts/get and /transactions/get.
+  // already mirrored from /accounts/get and /transactions/sync.
   if (detail.syncable_products.length === 0) {
     hint.textContent = `${detail.name} offers no Plaid product this app knows how to sync.`;
   } else if (detail.unsupported_products.length > 0) {

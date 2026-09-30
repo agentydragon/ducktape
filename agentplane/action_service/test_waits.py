@@ -78,7 +78,7 @@ async def waiting(engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog)
     updates = ActionUpdates(db_url)
     await updates.start()
     try:
-        yield Waiting(writer, reader, updates, ActionWaiter(reader, updates), request)
+        yield Waiting(writer, reader, updates, ActionWaiter(reader, updates, max_wait_seconds=30), request)
     finally:
         await updates.close()
 

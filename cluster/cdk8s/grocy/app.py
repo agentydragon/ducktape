@@ -1,15 +1,13 @@
-"""Grocy itself, rendered into each household's `<household>/app`: the household-independent
-`grocy.k8s.yaml` (Deployment, Service, settings overrides, ingress NetworkPolicy), namespaced
-by the household's kustomization, and `grocy-<household>.k8s.yaml` (Namespace, config PVC,
-and the VolSync backup, migration and verification objects around it).
-
-Hand-written beside the generated output: each household's `app/kustomization.yaml`, the
-household's Flux Kustomization directory, which also includes its MCP server (`../mcp`,
-cluster/cdk8s/grocy/mcp.py) and whose patch moves the Deployment onto the hil-ovh zone.
+"""Grocy itself, one directory per household (`<household>/app`, the household's Flux
+Kustomization directory): its Namespace, the Deployment, Service, settings overrides and
+ingress NetworkPolicy, the config PVC, and the VolSync backup, migration and verification
+objects around it. The directory's `kustomization.yaml` also includes the household's MCP
+server (`../mcp`, cluster/cdk8s/grocy/mcp.py).
 """
 
 from __future__ import annotations
 
+import posixpath
 from functools import partial
 from pathlib import Path
 
@@ -42,8 +40,9 @@ from volsync_replicationsource_crds.backube.volsync import (
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.flux import kustomize_kustomization
+from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.volsync.replication_destination import ReplicationDestination
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
@@ -56,14 +55,26 @@ _IMAGE = "lscr.io/linuxserver/grocy:v4.6.0-ls318"
 _CONFIG_CLAIM = "grocy-config-ovh"
 _BACKUP = "grocy-config-ovh-backup"
 _HTTP = Port(name="http", number=80)
-# The households; grocy/mcp.py renders one MCP server per entry too.
-HOUSEHOLDS = (("sf", "SF"), ("vallejo", "Vallejo"))
+# grocy/mcp.py and grocy/user_perms.py render one of theirs per household too.
+HOUSEHOLDS = ("sf", "vallejo")
+# Every grocy directory but the hand-written image-pins Components: `<household>/{app,mcp,user-perms}`
+# and `user-perms-base`.
+ROOT = f"{GENERATED_ROOT}/grocy"
 _BACKUP_SCHEDULE = "23 */6 * * *"
 
 
+def output_dir(household: str) -> str:
+    return f"{ROOT}/{household}/app"
+
+
 def service(household: str) -> ServiceRef:
-    """The Service base_chart renders, as the household overlay places it."""
     return ServiceRef(name=_NAME, port=_HTTP, pods=Pods(namespace=f"grocy-{household}", labels=tuple(_LABELS.items())))
+
+
+def hostname(household: str) -> str:
+    """The household's public host, served through Authentik's proxy outpost
+    (cluster/cdk8s/authentik/proxy_routes.py)."""
+    return f"grocy-{household}.allegedly.works"
 
 
 def _from_namespace_pod(namespace: str, pod_labels: dict[str, str]) -> k8s.NetworkPolicyIngressRule:
@@ -78,14 +89,12 @@ def _from_namespace_pod(namespace: str, pod_labels: dict[str, str]) -> k8s.Netwo
     )
 
 
-def base_chart(app: App) -> Chart:
-    """The objects every household runs; the household overlay supplies the namespace."""
-    chart = Chart(app, _NAME, disable_resource_name_hashes=True)
+def _server(chart: Chart, namespace: str) -> None:
     login_probe = k8s.HttpGetAction(path="/login", port=k8s.IntOrString.from_number(_HTTP.number))
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=namespace, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -93,7 +102,8 @@ def base_chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
-                    node_selector={"topology.kubernetes.io/region": "hil"},
+                    automount_service_account_token=False,
+                    node_selector={"topology.kubernetes.io/region": "hil", **node_scheduling.HIL_OVH_NODE_SELECTOR},
                     containers=[
                         k8s.Container(
                             name=_NAME,
@@ -156,13 +166,13 @@ def base_chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=namespace),
         spec=k8s.ServiceSpec(selector=_LABELS, ports=[_HTTP.k8s_service_port()], type="ClusterIP"),
     )
     k8s.KubeConfigMap(
         chart,
         "settingoverrides",
-        metadata=k8s.ObjectMeta(name="grocy-settingoverrides"),
+        metadata=k8s.ObjectMeta(name="grocy-settingoverrides", namespace=namespace),
         data={
             # Trust X-authentik-username header from Authentik outpost proxy.
             # Grocy reads this via PSR-7 getHeader(), which uses the raw HTTP header name.
@@ -183,7 +193,7 @@ def base_chart(app: App) -> Chart:
     k8s.KubeNetworkPolicy(
         chart,
         "networkpolicy",
-        metadata=k8s.ObjectMeta(name="grocy-ingress"),
+        metadata=k8s.ObjectMeta(name="grocy-ingress", namespace=namespace),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels=_LABELS),
             policy_types=["Ingress"],
@@ -194,7 +204,6 @@ def base_chart(app: App) -> Chart:
             ],
         ),
     )
-    return chart
 
 
 _MOVER_UID = 1000  # Matches the linuxserver.io image's PUID/PGID, so movers own the files they copy.
@@ -258,6 +267,7 @@ def household_chart(app: App, *, household: str) -> Chart:
     namespace = service(household).pods.namespace
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=namespace, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
+    _server(chart, namespace)
     k8s.KubePersistentVolumeClaim(
         chart,
         "config-claim",
@@ -275,6 +285,9 @@ def household_chart(app: App, *, household: str) -> Chart:
         spec=k8s.JobSpec(
             backoff_limit=0,
             template=k8s.PodTemplateSpec(
+                # TODO: state automount_service_account_token=False once this Job is renamed or
+                # removed; a Job's pod template is immutable, and without Flux's force annotation
+                # changing it in place fails the apply.
                 spec=k8s.PodSpec(
                     restart_policy="Never",
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
@@ -363,11 +376,15 @@ def household_chart(app: App, *, household: str) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    for household, _display in HOUSEHOLDS:
-        write_charts(
-            root,
-            f"{HAND_WRITTEN_ROOT}/grocy/{household}/app",
-            base_chart,
-            partial(household_chart, household=household),
-        )
+def write_manifests(root: Path, household: str, *, mcp_dir: str) -> None:
+    """The household's chart, and a `kustomization.yaml` that also includes its MCP server's `mcp_dir`."""
+    directory = output_dir(household)
+    write_yaml(
+        root / directory / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=[
+                posixpath.relpath(mcp_dir, directory),
+                *write_charts(root, directory, partial(household_chart, household=household)),
+            ]
+        ),
+    )

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from finance.plaid.db.sync import SyncWindows
@@ -14,7 +14,13 @@ _NS_PATH = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 MAX_TRANSACTION_DAYS = 730
 
 
-class PlaidWebSettings(BaseSettings):
+class PlaidSettings(BaseSettings):
+    """Plaid and database settings shared by the Link app and sync process.
+
+    OIDC credentials are deliberately absent so the scheduled sync never needs
+    access to the web app's Authentik client secret or session key.
+    """
+
     model_config = SettingsConfigDict(env_prefix="PLAID_MCP_")
 
     plaid_env: str = Field(description="Plaid environment: sandbox or production.")
@@ -22,6 +28,7 @@ class PlaidWebSettings(BaseSettings):
     client_secret: str
     database_url: str = Field(validation_alias="DATABASE_URL")
     public_base_url: str
+    webhook_url: str = Field(description="Public HTTPS URL for Plaid webhook delivery.")
     target_namespace: str | None = None
     managed_by: str = "plaid-mcp"
     host: str = "0.0.0.0"
@@ -32,6 +39,13 @@ class PlaidWebSettings(BaseSettings):
     @field_validator("public_base_url", mode="after")
     @classmethod
     def _strip_trailing_slash(cls, value: str) -> str:
+        return value.rstrip("/")
+
+    @field_validator("webhook_url", mode="after")
+    @classmethod
+    def _require_https_webhook_url(cls, value: str) -> str:
+        if not value.startswith("https://"):
+            raise ValueError("webhook_url must use HTTPS")
         return value.rstrip("/")
 
     @property
@@ -48,6 +62,14 @@ class PlaidWebSettings(BaseSettings):
 
     @property
     def sync_windows(self) -> SyncWindows:
-        return SyncWindows(
-            transaction_days=self.transaction_days, investment_transaction_days=self.investment_transaction_days
-        )
+        return SyncWindows(investment_transaction_days=self.investment_transaction_days)
+
+
+class PlaidWebSettings(PlaidSettings):
+    """All Link app settings, including its confidential Authentik OIDC client."""
+
+    oidc_issuer: str
+    oidc_client_id: str
+    oidc_client_secret: SecretStr
+    oidc_session_secret: SecretStr
+    oidc_session_seconds: int = Field(default=28_800, gt=0)

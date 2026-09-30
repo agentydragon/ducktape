@@ -58,6 +58,11 @@ class _CatalogSettings(_Catalog, BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CONTRACT_TEST_", env_nested_delimiter="__")
 
 
+class _Gateway(BaseModel):
+    # A plain (not PEP 695) alias: pydantic moves the discriminator off the annotation.
+    auth: Annotated[_Bearer | _Anonymous, Field(discriminator="kind")]
+
+
 class _AliasedSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CONTRACT_TEST_")
 
@@ -125,6 +130,12 @@ def test_a_discriminated_union_member_is_checked_by_its_tag() -> None:
         settings_file(_Catalog, {"backends": {"tana": {"url": "u", "auth": {"kind": "bearer", "tokn": "t"}}}})
     with pytest.raises(KeyError, match="token"):
         settings_file(_Catalog, {"backends": {"tana": {"url": "u", "auth": {"kind": "anonymous", "token": "t"}}}})
+
+
+def test_a_discriminated_union_declared_on_the_field_itself_is_checked_by_its_tag() -> None:
+    settings_file(_Gateway, {"auth": {"kind": "bearer"}})
+    with pytest.raises(KeyError, match="tokn"):
+        settings_file(_Gateway, {"auth": {"kind": "bearer", "tokn": "t"}})
 
 
 def test_supplied_leaves_complete_the_file_so_its_cross_field_rules_run() -> None:

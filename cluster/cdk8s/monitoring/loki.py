@@ -46,7 +46,8 @@ _LEGACY_CREDENTIALS_SECRET = "loki-s3-credentials"
 # Written by the tenant-local S3Credentials; what the Loki pods read.
 _CREDENTIALS_SECRET = "loki-seaweedfs-credentials"
 WRITE_URL = "http://loki-write.loki.svc.cluster.local:3100"
-_PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
+READ_URL = "http://loki-read.loki.svc.cluster.local:3100"
+PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
 _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
@@ -284,7 +285,7 @@ def _promtail_values() -> dict[str, object]:
                 # SimpleScalable: push to the write StatefulSet's service.
                 # The single-binary `loki` Service was removed when we switched
                 # off SingleBinary mode.
-                {"url": _PUSH_URL}
+                {"url": PUSH_URL}
             ],
             "snippets": {
                 # Drop `filename`. It is the chart default and carries the full
@@ -336,7 +337,7 @@ def _promtail_journal_values() -> dict[str, object]:
         # clamps it, and no roaming node should ever gate a journal rollout.
         "updateStrategy": _ROAMING_SAFE_UPDATE_STRATEGY,
         "config": {
-            "clients": [{"url": _PUSH_URL}],
+            "clients": [{"url": PUSH_URL}],
             "snippets": {
                 # Disable the chart's default Kubernetes pod-log scrape — the main promtail
                 # already collects pod logs on every node; this release must not double-collect.

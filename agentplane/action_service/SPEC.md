@@ -124,8 +124,11 @@ submission idempotency key; an intentional new attempt requires a new key.
 
 ## Bounded receipt waits
 
-A receipt wait can return immediately or wait up to 30 seconds for either a resolved Decision or
-an Execution outcome. Allowed but undispatched/running work satisfies the Decision predicate only.
+A receipt wait can return immediately or wait up to the Action Service instance's configured
+`max_wait_seconds` (30 seconds by default) for either a resolved Decision or an Execution outcome.
+Direct tools initially wait for `direct_wait_seconds` (30 seconds by default), bounded by that same
+maximum, before returning a request ID for a still-running Action.
+Allowed but undispatched/running work satisfies the Decision predicate only.
 Denied, cancelled, succeeded, failed, and execution-unknown receipts satisfy both predicates.
 Execution-unknown is a returnable outcome, not proof of success or permission to replay.
 

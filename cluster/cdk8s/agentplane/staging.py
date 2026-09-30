@@ -47,6 +47,7 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
@@ -99,6 +100,8 @@ _ACTION_FEDERATION = ExchangeFederationSettings(
 _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
     operator_oidc=_FEDERATION_TARGET,
     allowed_service_account_namespaces=frozenset({_NAMESPACE}),
+    direct_wait_seconds=30,
+    max_wait_seconds=180,
     web_push=WebPushDeploymentSettings(
         subject="mailto:agentydragon@gmail.com",
         public_base_url=f"https://{_HOSTNAME}",
@@ -281,6 +284,8 @@ ENV = Environment(
         "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
         "Actions, app, runner template, and operator RBAC."
     ),
+    output_dir=f"{HAND_WRITTEN_ROOT}/{_NAMESPACE}",
+    image_pins=f"{HAND_WRITTEN_ROOT}/{_NAMESPACE}/image-pins",
     extra_resources=(_WEB_PUSH_SECRET_FILE,),
     replicas=ReplicaProfile(
         count=2,

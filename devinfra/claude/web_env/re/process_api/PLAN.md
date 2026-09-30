@@ -33,26 +33,6 @@ annotations in the source point at this binary.
 | `platform/unix/mod.rs` | strings verified  | stale            | No application-string delta                                         |
 | `trace.rs`             | **not recovered** | —                | Exists in the binary; no source file yet                            |
 
-## Completed
-
-- [x] `ws_compression.rs` — new module; zstd level 3 / windowLog 15 /
-      d_windowLogMax 15 / 32 KiB buffers / 64 MiB decompression cap, and the six
-      panic line numbers (69, 71, 87, 104, 106, 120)
-- [x] `CreateProcess.cpu_timeout` (serde element count 10 -> 11)
-- [x] `ProcessConnection.accept_zstd` (serde element count 4 -> 5)
-- [x] `ConnectionCapabilities.supports_zstd`
-- [x] `ServerMessage::ProcessCpuTimedOut { cpu_timeout_secs, details }`
-- [x] `ProcessInfo.cpu_timeout` (FIELDS array at `.data.rel.ro` 0x422c30, 14 entries)
-- [x] `EtcFiles.ca_cert` (serde element count 2 -> 3)
-- [x] CPU-time enforcement from `<cgroup>/cpu.stat` `usage_usec`
-- [x] Egress-CA fan-out in `firecracker_init.rs` — path tables, argv, log
-      templates and the twelve helper function boundaries
-- [x] Shutdown grace period + `[WARN] N task(s) still alive ...`
-- [x] `/container_info.json` (was `../container_info.json`)
-- [x] `fuse_spawn ok` status fragment removed from the init status line
-- [x] Dependency versions re-read from the binary's panic paths
-- [x] Recovered source builds clean (rustc + clippy via `bbr build`)
-
 ## Open Items
 
 - [ ] `trace.rs` — recover the module. Evidence available: source-path panic

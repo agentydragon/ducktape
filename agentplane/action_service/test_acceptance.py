@@ -112,6 +112,8 @@ async def _client(service: ActionService, *, catalog: ActionCatalog | None = Non
         catalog or ActionCatalog(),
         callers=admitted_callers(ACCOUNT_A, ACCOUNT_B),
         updates=ActionUpdates("postgresql://unused-test-listener"),
+        direct_wait_seconds=30,
+        max_wait_seconds=30,
     )
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://actions.test")
 
@@ -884,3 +886,65 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+async def test_operator_history_pages_exclude_pending_and_require_operator(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    service = ActionService(ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()})
+    await service.start()
+    client = await _client(service)
+    path = "/v1/operator/action-requests/history"
+    try:
+        requests = []
+        for index in range(4):
+            submitted = await client.post(
+                "/v1/action-requests",
+                headers=_workload("workload-a"),
+                json={
+                    "idempotency_key": f"history-{index}",
+                    "title": f"history {index}",
+                    "action": {"group": "agentplane", "name": "echo"},
+                    "arguments": {"text": "test"},
+                    "origin": {},
+                    "correlation": {},
+                },
+            )
+            assert submitted.status_code == 202
+            requests.append(submitted.json())
+        for index in (0, 1):
+            response = await client.post(
+                _operator_path(requests[index]["id"], "/decision"),
+                headers=_operator(),
+                json={
+                    "verdict": "deny",
+                    "expected_version": requests[index]["version"],
+                    "idempotency_key": f"history-decision-{index}",
+                },
+            )
+            assert response.status_code == 200
+        cancelled = await client.post(
+            f"/v1/action-requests/{requests[2]['id']}/cancel", headers=_workload("workload-a")
+        )
+        assert cancelled.status_code == 200
+        assert (await client.get(path, headers=_workload("workload-a"))).status_code == 401
+        assert (await client.get(path, params={"limit": 101}, headers=_operator())).status_code == 422
+        assert (await client.get(path, params={"cursor": "invalid"}, headers=_operator())).status_code == 400
+        seen: list[str] = []
+        cursor = None
+        for _ in range(3):
+            page = await client.get(
+                path, params={"limit": 1, **({"cursor": cursor} if cursor else {})}, headers=_operator()
+            )
+            assert page.status_code == 200
+            assert len(page.json()["items"]) == 1
+            seen.append(page.json()["items"][0]["id"])
+            cursor = page.json()["next_cursor"]
+        assert set(seen) == {request["id"] for request in requests[:3]}
+        assert cursor is None
+        assert (
+            await client.get("/v1/operator/action-requests", params={"state": "decision_pending"}, headers=_operator())
+        ).json()[0]["id"] == requests[3]["id"]
+    finally:
+        await client.aclose()
+        await service.close()

@@ -13,7 +13,7 @@ import {
 } from "./client";
 import { ActionHistory } from "./history";
 import { stateLabel } from "./requests";
-import { render, request, sshExec, unmountLast, type View } from "./testing";
+import { button, render, request, sshExec, unmountLast, type View } from "./testing";
 
 /** The view reading its Action groups from `list` rather than the real `/action-groups`. */
 function historyOver(list: ActionGroupService["list"]): View {
@@ -152,36 +152,37 @@ describe("ActionHistory", () => {
     expect(container.textContent).toContain("fixture-auto-allow");
   });
 
-  it("renders server-pushed decided state without list polling and closes the stream", async () => {
+  it("loads a bounded history page, follows invalidations, and pages on demand", async () => {
     let stream: EventTarget | undefined;
     const close = vi.fn();
     class Stream extends EventTarget {
-      onerror = null;
+      readyState = 1;
       close = close;
       constructor(url: string) {
         super();
-        expect(url).toBe("/actions/stream");
+        expect(url).toBe("/actions/stream?state=decision_pending");
         stream = this;
       }
     }
     vi.stubGlobal("EventSource", Stream);
     const list = vi.spyOn(actionService, "list").mockResolvedValue([]);
+    const history = vi
+      .spyOn(actionService, "history")
+      .mockResolvedValueOnce({ items: [request("denied", 1)], next_cursor: "page2" })
+      .mockResolvedValueOnce({ items: [request("denied", 1)], next_cursor: "page2" })
+      .mockResolvedValueOnce({ items: [request("succeeded", 2)], next_cursor: null });
     try {
       const container = await render(actionService, withoutGroups);
-      expect(container.textContent).toContain("Loading actions");
-      await act(async () => {
-        stream?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" }));
-      });
-      expect(container.textContent).toContain("No decided requests");
-      await act(async () => {
-        stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("denied", 1)]) }));
-      });
-      expect(container.textContent).not.toContain("No decided requests");
       expect(container.textContent).toContain("Denied");
+      await act(async () => stream?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" })));
+      await act(async () => button(container, "Load more").click());
+      expect(container.textContent).toContain("succeeded");
+      expect(history).toHaveBeenCalledWith("page2");
       expect(list).not.toHaveBeenCalled();
       await unmountLast();
       expect(close).toHaveBeenCalledOnce();
     } finally {
+      history.mockRestore();
       list.mockRestore();
       vi.unstubAllGlobals();
     }
