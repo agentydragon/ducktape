@@ -44,6 +44,30 @@ action tool and passes its execroot path to the debundler. The materializer uses
 that OR-Tools CP-SAT sidecar for global selector assignment. Consumers can
 override the solver tool with the matching label flag when needed.
 
+## Solver sidecar build
+
+`//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver`, the
+default of the `ortools_cpsat_solver` label flag, is always built with
+`--compilation_mode=opt`, whatever mode the invoking command selects. CP-SAT
+compiled without `NDEBUG` runs extra checks on every solve and logs
+`CP-SAT is running in debug mode`. On a 216-target request one `fastbuild`
+presolve took 31 s regardless of `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS`,
+while `opt` honored a 5 s limit and finished the whole localization in 83 s
+(1 search worker, 4-core host, 2026-09-30).
+
+`optimized_binary` re-exports the `cc_binary` `:selector_cpsat_solver_impl`
+through a configuration transition, so OR-Tools, protobuf, Abseil and the solver
+sources are all compiled `opt` (a whole-subtree switch: `NDEBUG`-dependent inline
+code must not mix across libraries within one binary). Every consumer depends on
+`:selector_cpsat_solver`, never the `_impl`: `debundle_pipeline`'s exec-config
+tool attr, the `debundle` binary's `data`, and the Rust and e2e tests. The
+re-export keeps the `selector_cpsat_solver` runfiles path that
+`selector_runtime.rs` resolves.
+
+`solver_test` links `:solver` in the test's own configuration, so its assertions
+stay enabled. Deviation: a downstream repo that points `ortools_cpsat_solver` at
+its own binary chooses that binary's build mode itself.
+
 ## Profiling
 
 `debundle_pipeline` creates the normal pipeline target plus local profiling

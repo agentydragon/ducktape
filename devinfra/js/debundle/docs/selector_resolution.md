@@ -267,3 +267,5 @@ Always record the compilation mode with a selector timing. A `fastbuild` binary
 measured 5.1× slower than `-c opt` on the same `match-selector` probe, and 35×
 slower on a historical proposer fixture — `fastbuild` numbers are not
 comparable to anything.
+The CP-SAT sidecar is the exception: it is always built `opt`
+(<bazel_integration.md> § Solver sidecar build).

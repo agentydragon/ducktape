@@ -2,6 +2,8 @@ load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load(":optimized_binary.bzl", "optimized_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -42,14 +44,42 @@ cc_library(
     ],
 )
 
+# Built only through `:selector_cpsat_solver`, which configures it and its
+# whole dependency subtree in `opt`; `manual` keeps `//...` from also building a
+# fastbuild copy.
 cc_binary(
-    name = "selector_cpsat_solver",
+    name = "selector_cpsat_solver_impl",
     srcs = ["main.cc"],
     copts = COPTS,
+    tags = ["manual"],
+    visibility = ["//visibility:private"],
     deps = [
         ":selector_cp_sat_cc_proto",
         ":solver",
         "@abseil-cpp//absl/log:check",
+    ],
+)
+
+# The sidecar every consumer uses. CP-SAT built without `NDEBUG` runs an order
+# of magnitude slower (it says so on every solve), so the sidecar is optimized
+# whatever compilation mode the invoking command selects.
+optimized_binary(
+    name = "selector_cpsat_solver",
+    binary = ":selector_cpsat_solver_impl",
+)
+
+sh_test(
+    name = "selector_cpsat_solver_test",
+    srcs = ["selector_cpsat_solver_test.sh"],
+    args = [
+        "$(rootpath @protobuf//:protoc)",
+        "$(rootpath selector_cp_sat.proto)",
+        "$(rootpath :selector_cpsat_solver)",
+    ],
+    data = [
+        "selector_cp_sat.proto",
+        ":selector_cpsat_solver",
+        "@protobuf//:protoc",
     ],
 )
 
