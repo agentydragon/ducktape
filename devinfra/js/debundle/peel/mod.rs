@@ -2,6 +2,11 @@ pub mod factorize;
 pub mod plan;
 pub mod quotient;
 
+#[cfg(test)]
+mod gate_differential_test;
+#[cfg(test)]
+mod quotient_integration_test;
+
 pub use plan::{
     CommonArgs, ExplainArgs, ExplainReport, GraphSummaryArgs, GraphSummaryReport, OutputFormat,
     PatchPlanArgs, PatchPlanReport, PlanWorkArgs, PlanWorkReport, SelectionKind, SourceSliceArgs,

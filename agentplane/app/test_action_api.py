@@ -62,7 +62,7 @@ from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
-from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
 from agentplane.app.database_updates import DatabaseUpdates
@@ -322,7 +322,11 @@ async def review(
             bridge,
             store,
             ModelCatalog(
-                models=[ModelOption(model="test-model", display_name="Test Model")],
+                models=[
+                    ModelOption(
+                        model="test-model", display_name="Test Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+                    )
+                ],
                 harnesses={harness: ["test-model"] for harness in Harness},
             ),
             egress,
@@ -350,7 +354,11 @@ async def review(
             bridge,
             ThreadStore(replica_engine),
             ModelCatalog(
-                models=[ModelOption(model="test-model", display_name="Test Model")],
+                models=[
+                    ModelOption(
+                        model="test-model", display_name="Test Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+                    )
+                ],
                 harnesses={harness: ["test-model"] for harness in Harness},
             ),
             egress,

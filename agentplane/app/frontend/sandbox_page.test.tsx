@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
+import { TEST_REASONING_EFFORTS } from "./test_model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
@@ -77,7 +78,7 @@ async function render(
     if (path === "/models") {
       return Promise.resolve(
         Response.json({
-          models: [{ model: "test-model", display_name: "Test Model" }],
+          models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
           harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
         })
       );

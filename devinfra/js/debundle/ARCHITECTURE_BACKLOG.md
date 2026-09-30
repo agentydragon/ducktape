@@ -116,12 +116,7 @@ Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
    visibility; `SourceImportResolution = Option<(String, String, String)>`
    (`plan_references.rs`) needs a named struct.
 6. Tests: `e2e/comma_list_owner_split_test.rs` asserts emitted shapes via
-   whitespace OR-chains — parse or normalize instead;
-   `peel/quotient_integration_test.rs` references share too much code with the
-   system under test (most verdicts compare against the kernel's own
-   `project_partition`; only `replay_partition` rebuilds independently, and
-   compares only `cycle_set()`), and randomized merge/partition sequences and
-   gate-residual promotion transitions are uncovered.
+   whitespace OR-chains — parse or normalize instead.
 7. `ChunkBundle` ownership ping-pong through every stage
    (`artifact = result.artifact`) — cosmetic now that each stage is a pure
    function.

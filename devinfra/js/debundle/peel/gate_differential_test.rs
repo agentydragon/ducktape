@@ -6,7 +6,7 @@
 //! `check_realizability_touching(owner_graph, post_partition, M)` is
 //! realizable, where `M` is the post-merge module and
 //! `post_partition` is built by an independent reference projection
-//! (NOT the kernel's own `project_partition`).
+//! over the kernel's public class-membership surface.
 //!
 //! Since the §8 PR 4 cutover, `check_merge_boolean` routes through
 //! the index's tier ladder, so the harness asserts **strict
@@ -23,11 +23,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use analysis::ids::{LogicalModuleIndex, ModuleId};
 use analysis::partition::Partition;
 use analysis::{DepKind, OwnerGraphNodeReport, OwnerGraphReport};
-use gate::{LadderDecision, RealizabilityVerdict, SccRejection, check_realizability_touching};
-use peel::quotient::{ClassId, QuotientGraph, SpecModuleGroup, build_seed_quotient, greedy_step};
-use report_fixtures::{
-    active_owner, atomic_unit_for, graph_of, module_group, owner_edge, residual_owner,
+use gate::{
+    LadderDecision, RealizabilityVerdict, SccRejection, check_realizability,
+    check_realizability_touching,
 };
+use report_fixtures::{active_owner, atomic_unit_for, graph_of, owner_edge, residual_owner};
+
+use crate::quotient::testing::{greedy_step, module_group};
+use crate::quotient::{ClassId, QuotientGraph, SpecModuleGroup, build_seed_quotient};
 
 const CAP_LINES: usize = 10_000;
 
@@ -39,9 +42,9 @@ fn module_id(index: usize) -> ModuleId {
 // Independent reference projection.
 //
 // Rebuilds the module-level partition from the kernel's *public*
-// class-membership surface plus the report's own residual flags —
-// per the Track F note, deliberately not the kernel's
-// `project_partition`. Projection rules (docs/design.md / plan §2):
+// class-membership surface plus the report's own residual flags, so
+// it shares no projection code with the kernel. Projection rules
+// (docs/design.md / plan §2):
 //   * a class maps to the residual module `logical(0)` iff it is the
 //     marked residual catch-all, or it is not anchored to a
 //     pre-existing module and every member owner is residual-destined
@@ -133,7 +136,7 @@ fn reference_partition(
     overlay: Option<(ClassId, ClassId, ModuleId)>,
 ) -> Partition {
     let residual = module_id(0);
-    let mut of = vec![residual; q.owner_graph_for_tests().num_nodes()];
+    let mut of = vec![residual; q.owner_graph().num_nodes()];
     for class in q.iter_classes() {
         let module = match overlay {
             Some((c1, c2, post)) if class == c1 || class == c2 => post,
@@ -144,6 +147,23 @@ fn reference_partition(
         }
     }
     Partition::from_assignments(of, residual)
+}
+
+/// The index's committed verdict must agree with a from-scratch
+/// `check_realizability` over the reference projection of the same
+/// class membership: the index's maintained partition stays in step
+/// with the class projection across committed mutations.
+fn assert_committed_verdict_matches_reference(report: &OwnerGraphReport, q: &QuotientGraph) {
+    let (class_modules, _) = reference_class_modules(q, &residual_owner_ids(report));
+    let reference = check_realizability(
+        q.owner_graph(),
+        &reference_partition(q, &class_modules, None),
+    );
+    assert_eq!(
+        q.realizability_verdict().is_realizable(),
+        reference.is_realizable(),
+        "committed index verdict diverges from the reference: {reference:#?}",
+    );
 }
 
 // ---------------------------------------------------------------------
@@ -233,7 +253,7 @@ fn compare_gate_to_reference(
     let (pre_modules, next_fresh) = reference_class_modules(q, &residual_ids);
     let post_module = reference_post_module(q, &residual_ids, &pre_modules, next_fresh, c1, c2);
     let post_partition = reference_partition(q, &pre_modules, Some((c1, c2, post_module)));
-    let owner_graph = q.owner_graph_for_tests();
+    let owner_graph = q.owner_graph();
     let reference = check_realizability_touching(owner_graph, &post_partition, post_module);
     let gate_accepts = q.merge_preserves_invariants(c1, c2);
     let ladder = q.ladder_decision_for_merge(c1, c2);
@@ -276,12 +296,12 @@ fn gate_matches_reference_on_clean_chain() {
         vec![],
     );
     let groups = vec![
-        module_group("ui/a", vec![0]),
-        module_group("ui/h", vec![1]),
-        module_group("ui/b", vec![2]),
+        module_group(vec![0]),
+        module_group(vec![1]),
+        module_group(vec![2]),
     ];
     let (mut q, _) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
+        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
     let live: Vec<ClassId> = q.iter_classes().collect();
     for i in 0..live.len() {
         for j in (i + 1)..live.len() {
@@ -348,9 +368,9 @@ fn gate_rejects_pass2_tdz_merge() {
         ],
         vec![],
     );
-    let groups = vec![module_group("ui/x", vec![0])];
+    let groups = vec![module_group(vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
+        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
     let cx = group_ids[0];
     let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, cx, ch).unwrap();
@@ -386,9 +406,9 @@ fn gate_rejects_module_granularity_pass1_cycle() {
         ],
         vec![],
     );
-    let groups = vec![module_group("ui/a", vec![0])];
+    let groups = vec![module_group(vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
+        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
     let ca = group_ids[0];
     let cb = q.class_of(q.owner_idx_of("owner:b").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
@@ -424,9 +444,9 @@ fn gate_rejects_promotion_created_cross_rebind() {
         ],
         vec![],
     );
-    let groups = vec![module_group("ui/a", vec![0])];
+    let groups = vec![module_group(vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
+        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
     let ca = group_ids[0];
     let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, ch).unwrap();
@@ -559,6 +579,7 @@ fn randomized_gate_equals_reference() {
         let (mut q, _rejected) =
             build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, CAP_LINES).unwrap();
         for _round in 0..6 {
+            assert_committed_verdict_matches_reference(&report, &q);
             let live: Vec<ClassId> = q.iter_classes().collect();
             let mut accepted_pair: Option<(ClassId, ClassId)> = None;
             for i in 0..live.len() {

@@ -972,7 +972,6 @@ impl IncrementalQuotient {
             &self.constraining_graph,
             &overlay.constraining_delta,
             module,
-            module,
         ) {
             return LadderDecision::ConstrainingCycleReject;
         }
@@ -984,12 +983,11 @@ impl IncrementalQuotient {
         // removals inside a multi-module I-SCC route through the
         // exact bidirectional fallback inside `would_join_multi_scc`
         // (plan §3, tier-2 exactness caveat).
-        if !self.i_order.borrow_mut().would_join_multi_scc(
-            &self.i_graph,
-            &overlay.i_delta,
-            module,
-            module,
-        ) {
+        if !self
+            .i_order
+            .borrow_mut()
+            .would_join_multi_scc(&self.i_graph, &overlay.i_delta, module)
+        {
             return LadderDecision::NoMultiModuleISccAccept;
         }
         // Multi-module I-SCC (rare): materialize its member set —

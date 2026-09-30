@@ -33,8 +33,8 @@ greedy_merge_to_convergence
         └── ladder_decision_for_merge
             └── realizability_index::ladder_decision_after_moving_owners_touching
                 ├── tier 0: delta-free → cached pre-state verdict
-                ├── tier 1: constraining CondensationOrder (DSU + PK window-DFS)
-                ├── tier 2: I-graph CondensationOrder (scc_containing fallback
+                ├── tier 1: constraining CondensationOrder (DSU + cone DFS)
+                ├── tier 2: I-graph CondensationOrder (exact_multi_scc fallback
                 │           on removal-inside-SCC overlays)
                 └── tier 3: shared EsmEvaluationSimulator over the I-SCC
 
@@ -167,5 +167,5 @@ Tighten before the next large peel loop:
   edges are incident to `to`, so the overlay touches the queried SCC in
   the representative workload. The landed `CondensationOrder` ladder
   (tiers 1–2) is the maintained-SCC design that works here — it answers
-  the gate from the condensation and only falls back to
-  `OverlayGraphView::scc_containing` on removal-inside-SCC overlays.
+  the gate from the condensation and only takes its exact fallback
+  (`exact_multi_scc`) on removal-inside-SCC overlays.

@@ -525,13 +525,12 @@ asymmetric `(eager forward, lazy back)` I-cycles that the
    `ModuleId`, except that classes made only of residual-destined owners
    (and not anchored to an existing module) share the residual
    `ModuleId::logical(0)`. Every committed mutation — `contract`, the
-   partition-driven group merges in `from_report_with_partition_extended`, the
    `is_pre_existing_module` promotion in `set_class_pre_existing_module` —
    pushes the matching `PartitionDelta::MoveOwners` onto the index.
 3. The speculative queries — the boolean `merge_preserves_invariants` and the
    evidence-producing `would_be_cycles_after_contract` — are one evaluation
-   through the index's tier ladder (below). `cycle_set()` reads the index's
-   maintained verdict.
+   through the index's tier ladder (below). `realizability_verdict()` reads the
+   index's maintained verdict.
 
 #### Cost and the tier ladder
 
@@ -556,9 +555,10 @@ post-merge module — or escalates:
   `CondensationOrder` over the module-level constraining graph (a
   union-find of SCC membership plus a Pearce–Kelly topological
   order over the condensation DAG): reject iff the post-merge
-  module's constraining SCC is multi-module — an `O(α)` find, or a
-  PK window-DFS over the overlay-patched effective adjacency,
-  `O(|Δ|)` — or a clause-2 cross-rebind touches it. A tier-1
+  module's constraining SCC is multi-module — an `O(α)` find, or,
+  when the overlay adds an adjacency pair, a cone-bounded DFS over
+  the overlay-patched effective adjacency — or a clause-2
+  cross-rebind touches it. A tier-1
   reject is exactly the `MutualConstrainingCycle` clause of the
   full verdict; a pass establishes Pass 1 is clean and escalates.
 - **Tier 2 — I-graph condensation order.** A second
@@ -567,8 +567,10 @@ post-merge module — or escalates:
   no effective constraining pair, Pass 2 is vacuous — accept.
   When the overlay removes an edge internal to a multi-module
   I-SCC (the one case where the maintained union-find is
-  stale-coarse), the tier falls back to the exact per-query
-  `OverlayGraphView::scc_containing` bidirectional DFS.
+  stale-coarse), the order answers through its exact bidirectional
+  reachability fallback (`exact_multi_scc`); a multi-module verdict
+  then has `OverlayGraphView::scc_containing` materialize the I-SCC
+  for the constraining-pair check.
 - **Tier 3 — scoped ESM simulator.** The shared
   `EsmEvaluationSimulator` over the overlay-patched I-SCC: reject
   iff any TDZ pair. This is the same code `check_realizability`'s
@@ -635,17 +637,17 @@ algorithms from pointer-analysis literature (Fähndrich–Foster–
 Su–Aiken; Hardekopf–Lin).
 
 Pearce–Kelly's core does survive — as the heart of the
-`gate` crate's `CondensationOrder` (window DFS, window Kahn,
-epoch visited-marks), re-keyed from kernel classes to condensation
+`gate` crate's `CondensationOrder` (window Kahn, epoch
+visited-marks), re-keyed from kernel classes to condensation
 nodes of the index's maintained module graphs, with a union-find
 for SCC membership so the PK order lives over a structure that
 stays a DAG by construction even when the underlying graph is
-cyclic. Contraction monotonicity — vertex identification only ever
-coarsens the SCC partition — is what licenses a plain
-non-rollbackable union-find instead of full dynamic-SCC machinery
-(kernel-side index mutation is commit-only); committed removals
-internal to a multi-module SCC mark the membership stale-coarse and
-trigger tier 2's exact-DFS fallback rather than an eager split.
+cyclic. Insertion monotonicity — edge insertion only ever coarsens
+the SCC partition — is what licenses a plain non-rollbackable
+union-find instead of full dynamic-SCC machinery (kernel-side index
+mutation is commit-only); a committed removal internal to an SCC
+marks the structure stale and the next query rebuilds it rather than
+splitting eagerly.
 
 The kernel itself maintains **no** decision-making derived order or
 cycle state: the gate ladder lives inside the index ("Cost and the

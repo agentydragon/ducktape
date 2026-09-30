@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { create, equals, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { TEST_REASONING_EFFORTS } from "../test_model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
@@ -73,7 +74,7 @@ beforeEach(() => {
   inventoryDrops = false;
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
-    models: [{ model: "test-model", display_name: "Test Model" }],
+    models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
     harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
   });
   vi.mocked(command).mockReturnValue(new Promise(() => {}));

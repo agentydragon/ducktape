@@ -237,8 +237,15 @@ export function SandboxPage({
       setModel((current) =>
         current && offered.some((option) => option.model === current) ? current : (offered[0]?.model ?? null)
       );
+      const options = offered[0]?.reasoning_efforts ?? [];
+      setEffort((current) => (options.includes(current) ? current : (options[0] ?? "")));
     })();
   }, [harness]);
+
+  useEffect(() => {
+    const efforts = models.find((option) => option.model === model)?.reasoning_efforts ?? [];
+    if (!efforts.includes(effort)) setEffort(efforts[0] ?? "");
+  }, [effort, model, models]);
 
   useEffect(() => {
     const binding = sandbox?.binding;
@@ -412,12 +419,14 @@ export function SandboxPage({
                 value={model}
                 onChange={setModel}
               />
-              <Select
-                label="Reasoning effort"
-                data={["low", "medium", "high"]}
-                value={effort}
-                onChange={(v) => v && setEffort(v)}
-              />
+              {(models.find((option) => option.model === model)?.reasoning_efforts ?? []).length > 0 && (
+                <Select
+                  label="Reasoning effort"
+                  data={models.find((option) => option.model === model)?.reasoning_efforts ?? []}
+                  value={effort}
+                  onChange={(v) => v && setEffort(v)}
+                />
+              )}
               <Button
                 onClick={() => void createSession()}
                 loading={creatingSession}
