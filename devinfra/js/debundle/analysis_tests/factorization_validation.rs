@@ -36,6 +36,25 @@ fn render(id: ModuleId) -> spec::ModulePath {
     spec::ModulePath::parse(&raw, "").unwrap()
 }
 
+/// Each owner lands in the module of its first declared binding present
+/// in `binding_assignment`, else in `residual()`.
+fn partition_for(
+    owner_graph: &OwnerGraph,
+    binding_assignment: &HashMap<swc_ecma_ast::Id, ModuleId>,
+) -> Partition {
+    let mut partition = Partition::new(owner_graph, residual());
+    for node in owner_graph.iter_nodes() {
+        if let Some(&module) = node
+            .declared
+            .iter()
+            .find_map(|id| binding_assignment.get(id))
+        {
+            partition.set(node.id, module);
+        }
+    }
+    partition
+}
+
 fn member_bindings(members: &[BindingReport]) -> Vec<String> {
     members
         .iter()
@@ -55,8 +74,7 @@ fn cycle_detected_between_two_modules() {
     binding_assignment.insert(test_id("A"), logical(0));
     binding_assignment.insert(test_id("B"), logical(1));
     let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition =
-        Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
+    let partition = partition_for(&owner_graph, &binding_assignment);
     let report = validate_factorization(&owner_graph, &partition, &render);
     assert_eq!(report.cycles.len(), 1);
     assert_eq!(report.cycles[0].modules.len(), 2);
@@ -71,8 +89,7 @@ fn dag_has_no_cycles() {
     binding_assignment.insert(test_id("B"), logical(1));
     binding_assignment.insert(test_id("C"), logical(2));
     let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition =
-        Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
+    let partition = partition_for(&owner_graph, &binding_assignment);
     let report = validate_factorization(&owner_graph, &partition, &render);
     assert!(
         report.cycles.is_empty(),
@@ -102,8 +119,7 @@ fn mixed_cycle_without_at_init_call_is_realizable() {
     binding_assignment.insert(test_id("readB"), logical(0));
     binding_assignment.insert(test_id("B"), logical(1));
     let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition =
-        Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
+    let partition = partition_for(&owner_graph, &binding_assignment);
     let report = validate_factorization(&owner_graph, &partition, &render);
     assert!(
         report.cycles.is_empty(),
@@ -174,8 +190,7 @@ fn at_init_call_promotion_closes_otherwise_relaxed_cycle() {
     binding_assignment.insert(test_id("A"), logical(0));
     binding_assignment.insert(test_id("B"), logical(1));
     let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition =
-        Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
+    let partition = partition_for(&owner_graph, &binding_assignment);
     let report = validate_factorization(&owner_graph, &partition, &render);
     assert_eq!(
         report.cycles.len(),
@@ -208,8 +223,7 @@ fn cut_emits_side_effect_edges_for_s_only_cycle() {
     binding_assignment.insert(test_id("a2"), logical(0));
     binding_assignment.insert(test_id("b1"), logical(1));
     let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition =
-        Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
+    let partition = partition_for(&owner_graph, &binding_assignment);
     let report = validate_factorization(&owner_graph, &partition, &render);
     assert_eq!(report.cycles.len(), 1);
     let cycle = &report.cycles[0];
@@ -242,8 +256,7 @@ fn cut_is_absent_for_lazy_only_cycle() {
     binding_assignment.insert(test_id("helperB"), logical(1));
     binding_assignment.insert(test_id("B"), logical(1));
     let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition =
-        Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
+    let partition = partition_for(&owner_graph, &binding_assignment);
     let report = validate_factorization(&owner_graph, &partition, &render);
     assert!(
         report.cycles.is_empty(),
@@ -324,6 +337,23 @@ fn resolve_test_module_id(id: ModuleId, residual_idx: usize) -> ModuleId {
     }
 }
 
+fn factorization_from_facts(
+    facts: &[StatementFacts],
+    bindings: HashMap<swc_ecma_ast::Id, BindingKind>,
+    logical_modules: Vec<LogicalModule>,
+    default_destination: ModuleId,
+) -> ChunkFactorization {
+    ChunkFactorization::build_with(
+        "test_chunk".to_string(),
+        compute_owner_graph_and_units_with(facts, OwnerGraphOptions::default())
+            .expect("chunk facts declare a binding twice"),
+        bindings,
+        logical_modules,
+        HashMap::new(),
+        default_destination,
+    )
+}
+
 fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFactorization {
     let module = parse(source);
     let facts = analyze_facts(&module);
@@ -358,12 +388,10 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFacto
         rename_map: HashMap::new(),
         anonymous_statement_ordinals: Vec::new(),
     });
-    ChunkFactorization::build(
-        "test_chunk".to_string(),
+    factorization_from_facts(
         &facts,
         bindings,
         logical_modules,
-        HashMap::new(),
         ModuleId::logical(residual_idx),
     )
 }
@@ -400,14 +428,7 @@ fn factorization_with_residual_module(
             anonymous_statement_ordinals: Vec::new(),
         },
     ];
-    ChunkFactorization::build(
-        "test_chunk".to_string(),
-        &facts,
-        bindings,
-        logical_modules,
-        HashMap::new(),
-        residual,
-    )
+    factorization_from_facts(&facts, bindings, logical_modules, residual)
 }
 
 // --- Owner graph quotient ------------------------------------------------

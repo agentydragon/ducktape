@@ -941,7 +941,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   scope at the call site; the static analyzer cannot see what it
   references; `I` would be incomplete. **Enforced (partially)**: the
   input-chunk admission scan (`chunk_admission`, run by
-  `stage_one::compute_chunk_analysis_from_structural` next to the A2 bail)
+  `stage_one::compute_chunk_analysis` next to the A2 bail)
   rejects direct `eval(...)` and seq-indirect `(0, eval)(...)` calls
   at module top level (looking through parens and comma sequences to
   the callee), with the offending statement ordinal in the
@@ -957,7 +957,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   `facts::analyze_chunk_structural` records the first module-top
   `AwaitExpr`, excluding lazy positions like
   function/arrow/method/getter/setter bodies and instance class
-  fields), and `stage_one::compute_chunk_analysis_from_structural` `bail!`s
+  fields), and `stage_one::compute_chunk_analysis` `bail!`s
   with the offending statement ordinal as soon as fact analysis
   returns — before any quotient or lowering work. Production
   chunks we target are TLA-free in practice; the rejection turns
@@ -1449,9 +1449,7 @@ dependencies:
 - **Chunk analysis** (spec-independent): parse → per-statement facts →
   owner graph → structural atomic units. Pure function of
   `(source bytes, analysis hints, OwnerGraphOptions)`. The composer
-  is `stage_one::compute_chunk_analysis_from_structural`
-  (`compute_chunk_analysis` is its entry from a parsed module),
-  returning a `stage_one::ChunkAnalysis` — distinct from the `gate`
+  is `stage_one::compute_chunk_analysis`, returning a `stage_one::ChunkAnalysis` — distinct from the `gate`
   crate's `ChunkAnalysis` — that bundles `ChunkFactAnalysis` (facts +
   top-level-await detection + redundant-hint warnings) with the
   `OwnerGraphAndUnits` derived from those facts.

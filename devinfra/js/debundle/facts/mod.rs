@@ -65,9 +65,7 @@ pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
 
 // Public API: importable at `facts::<item>` exactly as before the split.
-pub use analyze::{
-    analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy, find_top_level_await,
-};
+pub use analyze::{analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy};
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;
 pub use statement_facts::{

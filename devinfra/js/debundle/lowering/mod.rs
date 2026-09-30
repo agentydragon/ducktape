@@ -15,8 +15,7 @@ use analysis::{
 };
 use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
 use stage_one::{
-    ChunkAnalysis, DynamicImportTarget, RebindFold, compute_chunk_analysis_from_structural,
-    compute_rebind_folds,
+    ChunkAnalysis, DynamicImportTarget, RebindFold, compute_chunk_analysis, compute_rebind_folds,
 };
 
 use artifact::{
