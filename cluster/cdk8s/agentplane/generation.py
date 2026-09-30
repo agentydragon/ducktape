@@ -11,7 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.flux import health_checks as flux_health_checks, kustomize_kustomization
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.generation import write_app, write_yaml
 
 _HEALTH_CHECK_KINDS = ("Namespace", "Cluster", "Database", "Deployment", "Certificate", "Bundle")
 
@@ -31,25 +31,25 @@ def environment_health_checks(chart: Chart, namespace: str) -> list[Kustomizatio
     ]
 
 
-def write_environment_manifests(root: Path, env: Environment, build: Callable[[App], Chart]) -> Chart:
-    """Synthesize the environment's chart into `env.output_dir` as a single
-    `agentplane.k8s.yaml`. Single failure domain by design -- including the CNPG Postgres
+def write_environment_manifests(
+    root: Path, env: Environment, build: Callable[[App], Chart], *more_charts: Callable[[App], Chart]
+) -> Chart:
+    """Synthesize the environment's chart, then `more_charts`, into `env.output_dir`'s one
+    generated file. Single failure domain by design -- including the CNPG Postgres
     `Cluster` -- accepted for both non-production environments.
 
     Writes the root Kustomization: the generated file, the environment's `extra_resources`
-    and its `image_pins` Component. Returns the chart so the per-environment Flux factory
-    can build health checks from these same objects.
+    and its `image_pins` Component. Returns the environment's chart so the per-environment
+    Flux factory can build health checks from these same objects.
     """
-    out_dir = root / env.output_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
+    app = App()
     chart = build(app)
-    app.synth()
-
+    for build_more in more_charts:
+        build_more(app)
     write_yaml(
-        out_dir / "kustomization.yaml",
+        root / env.output_dir / "kustomization.yaml",
         kustomize_kustomization(
-            resources=["agentplane.k8s.yaml", *env.extra_resources],
+            resources=[write_app(root, env.output_dir, app), *env.extra_resources],
             components=[posixpath.relpath(env.image_pins, env.output_dir)],
         ),
     )

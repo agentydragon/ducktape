@@ -288,10 +288,11 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
         # No `namespace:` override: the OIDC reader's Role and RoleBinding live in authentik,
         # and every other object here, including the SOPS Secret, already names plaid-mcp.
-        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", _CREDENTIALS_FILE], components=["./image-pins"]),
+        kustomize_kustomization(
+            resources=[write_charts(root, OUTPUT_DIR, chart), _CREDENTIALS_FILE], components=["./image-pins"]
+        ),
     )

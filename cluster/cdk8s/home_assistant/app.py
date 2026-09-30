@@ -669,11 +669,14 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
     write_yaml(
         root / _OUTPUT_DIR / "kustomization.yaml",
         kustomize_kustomization(
-            resources=[f"{_NAME}.k8s.yaml", "break-glass-credentials.sops.yaml", "home-location.sops.yaml"],
+            resources=[
+                write_charts(root, _OUTPUT_DIR, chart),
+                "break-glass-credentials.sops.yaml",
+                "home-location.sops.yaml",
+            ],
             components=["./image-pins"],
             config_map_generator=[_CONFIGURATION_CONFIG_MAP, _CADDY_CONFIG_MAP, _ONBOARDING_SETTINGS],
         ),

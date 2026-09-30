@@ -16,7 +16,11 @@ py_library(
     name = "paths",
     testonly = True,
     srcs = ["paths.py"],
-    deps = ["//util/bazel:runfiles"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//more_itertools",
+        "@pypi//pyyaml",
+    ],
 )
 
 # One target per policy: a failure names the policy it belongs to, and a single
@@ -136,13 +140,12 @@ py_test(
     srcs = ["test_proxy_injection.py"],
     data = [
         "testdata/pod_self_wired_egress_proxy.yaml",
-        "//cluster:proxy_injection_policy_files",
+        "//cluster:kyverno_policy_files",
         "@multitool//tools/kyverno",
     ],
     deps = [
         ":apply",
         ":paths",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

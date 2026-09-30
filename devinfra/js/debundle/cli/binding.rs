@@ -23,8 +23,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use serde_yaml::{Mapping, Value};
 
-use spec::ModulePath;
-use spec_modules::{collect_module_files, is_residual_module_path, module_path_from_file};
+use spec::{ModulePath, is_residual_module_path};
+use spec_modules::{collect_module_files, module_path_from_file};
 use yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 use crate::edit_gate::{Gate, post_edit_spec_from_docs};

@@ -1,4 +1,7 @@
+use std::fs;
 use std::path::{Path, PathBuf};
+
+use anyhow::{Result, bail};
 
 pub const APP_DIR: &str = "app";
 pub const REPORTS_DIR: &str = "reports";
@@ -32,6 +35,19 @@ impl DebundleOutputLayout {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Create `app/` and `reports/`; bail if `root` exists and is not a directory.
+    pub fn prepare(&self) -> Result<()> {
+        if self.root.exists() && !self.root.is_dir() {
+            bail!(
+                "Output path exists and is not a directory: {}",
+                self.root.display()
+            );
+        }
+        fs::create_dir_all(self.app_root())?;
+        fs::create_dir_all(self.reports_root())?;
+        Ok(())
     }
 
     pub fn app_root(&self) -> PathBuf {

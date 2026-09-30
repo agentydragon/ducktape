@@ -280,18 +280,6 @@ pub(super) fn build_members(
                         m.name.as_deref().unwrap_or(&binding)
                     )
                 }
-                spec::MemberSelectorSpec::SourceMatch(selector) => {
-                    match selector.target_binding.as_deref() {
-                        Some(target) => format!(
-                            "source_matches[].bindings[`{target}`] as `{}`",
-                            m.name.as_deref().unwrap_or("<unnamed>")
-                        ),
-                        None => format!(
-                            "source_matches[] as `{}`",
-                            m.name.as_deref().unwrap_or("<unnamed>")
-                        ),
-                    }
-                }
                 _ => format!(
                     "members[].selector.{kind_label} as `{}`",
                     m.name.as_deref().unwrap_or("<unnamed>")
@@ -300,7 +288,7 @@ pub(super) fn build_members(
             Ok(MemberRequest {
                 binding,
                 export_name,
-                selector: MemberSelector::from_spec(request_id, selected)?,
+                selector: MemberSelector::from_spec(selected),
                 purity: MemberPurity::Default,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),

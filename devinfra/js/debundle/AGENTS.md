@@ -135,8 +135,7 @@ pure functions, or invariants awkward to expose via the CLI.
 
 Internal pipeline types are pure Rust: typed structs and enums, not stringly-typed
 discriminators or `Map<String, Value>` blobs mirroring external JSON. File roles
-are `FileRole`; module extraction metadata is `ModuleExtractionState`.
-Debundler-owned serialized enums use `#[serde(rename_all = "snake_case")]` unless
+are `FileRole`. Debundler-owned serialized enums use `#[serde(rename_all = "snake_case")]` unless
 an external contract requires otherwise. `serde_json::Value` only for genuinely
 polymorphic values (spec args, `#[serde(flatten)]` slots) or raw external input.
 Debundler-owned JSON gets no compatibility envelopes (`kind`, `schema_version`,

@@ -43,7 +43,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
 )
-from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.generation import write_app, write_yaml
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -64,7 +64,6 @@ _BAZEL_CACHE_CLAIM = "public-coder-devbox-bazel-cache"
 _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
 # The tag comes from image-pins/kustomization.yaml.
 _IMAGE = "git.allegedly.works/ducktape-ci/public-coder-devbox:unset"
-_DEVBOX_RESOURCES = ["ssh-host-key.sops.yaml", "public-coder-devbox.k8s.yaml"]
 
 
 def ssh_service(scope: Construct) -> Service:
@@ -206,18 +205,17 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
 
 def write_manifests(root: Path) -> Service:
     """Write the devbox manifests and return the generated SSH Service."""
-    out_dir = root / OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
+    app = App()
     chart = Chart(app, VM_NAME, disable_resource_name_hashes=True)
     service = ssh_service(chart)
     virtual_machine(chart)
     _bazel_cache_claim(chart)
     _buildbuddy_api_key(chart)
-    app.synth()
     write_yaml(
-        out_dir / "kustomization.yaml",
-        kustomize_kustomization(resources=_DEVBOX_RESOURCES, components=["./image-pins"]),
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=["ssh-host-key.sops.yaml", write_app(root, OUTPUT_DIR, app)], components=["./image-pins"]
+        ),
     )
     return service
 

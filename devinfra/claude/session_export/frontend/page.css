@@ -51,6 +51,16 @@ h2 {
   margin: 0 0 12px;
 }
 
+h3 {
+  font-size: 0.95rem;
+  margin: 20px 0 4px;
+}
+
+.hint {
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
 section {
   background: var(--panel);
   border: 1px solid var(--border);

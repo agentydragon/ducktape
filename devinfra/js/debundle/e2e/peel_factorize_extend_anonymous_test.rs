@@ -44,8 +44,7 @@ fn build_report_from_source(
 ) -> OwnerGraphReport {
     let mut opts = FixtureOpts::new(source, logical_modules);
     opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    read_json(&fixture.report_root.join("static/app/owner_graph.json"))
+    run_fixture(opts).owner_graph()
 }
 
 #[test]

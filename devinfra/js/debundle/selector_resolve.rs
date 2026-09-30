@@ -93,26 +93,16 @@ pub enum MemberSelector {
 }
 
 impl MemberSelector {
-    /// A `members[].selector`, with any `source_match` parsed.
-    pub fn from_spec(request_id: &str, selector: MemberSelectorSpec) -> Result<Self> {
-        Ok(match selector {
+    pub fn from_spec(selector: MemberSelectorSpec) -> Self {
+        match selector {
             MemberSelectorSpec::Binding(binding) => Self::Binding(binding),
-            MemberSelectorSpec::SourceMatch(selector) => {
-                Self::SourceMatch(ParsedSourceMatchSelector::parse(
-                    request_id,
-                    "source_match",
-                    format!("<source_match selector in {request_id}>"),
-                    &selector,
-                    "source_match",
-                )?)
-            }
             MemberSelectorSpec::CrossRef(target) => Self::CrossRef(target),
             MemberSelectorSpec::ReadsMember(target) => Self::ReadsMember(target),
             MemberSelectorSpec::MemberOfModule(target) => Self::MemberOfModule(target),
             MemberSelectorSpec::PassedToCall(target) => Self::PassedToCall(target),
             MemberSelectorSpec::MakesDecorateCall(target) => Self::MakesDecorateCall(target),
             MemberSelectorSpec::IntrinsicAlias(target) => Self::IntrinsicAlias(target),
-        })
+        }
     }
 
     pub fn is_import_specifier(&self) -> bool {

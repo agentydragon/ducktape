@@ -1128,7 +1128,7 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
     }
     for file in collect_module_files(modules_root)? {
         let claims = read_module_claims(&file)?;
-        if !claims.has_claims() {
+        if claims.is_empty() {
             continue;
         }
         sets.push(PatchSet {
@@ -1380,7 +1380,7 @@ fn resolve_module_path_owner_ids(
     let yaml_path = common.modules_root.join(format!("{module_path}.yaml"));
     let claims = read_module_claims(&yaml_path)
         .with_context(|| format!("reading module YAML {}", yaml_path.display()))?;
-    if !claims.has_claims() {
+    if claims.is_empty() {
         bail!("module {module_path:?} has no members or anonymous_statements; nothing to describe");
     }
 

@@ -3,5 +3,4 @@ kind: Kustomization
 resources:
   - host-key.sops.yaml
   - devbox-key.sops.yaml
-  - public-coder-agent-sshpiper.k8s.yaml
-  - pipe-devbox.k8s.yaml
+  - sshpiper.k8s.yaml

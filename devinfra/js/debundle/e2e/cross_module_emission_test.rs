@@ -970,38 +970,31 @@ fn residual_public_export_name_does_not_capture_unrelated_chunk_renamed_import()
     // then naturalizes them to `entryHelper` and `vendorHelper`.
     // The entry import must therefore be `B as entryHelper`, not
     // `B as vendorHelper`.
-    let opts = FixtureOpts {
-        local_property_effects: false,
-        trusted_dataflow_summaries: false,
-        chunk_export_purity: &[],
-        extra_chunks: &[],
-        source: r#"import { o as B } from "./vendor.js";
+    let opts = FixtureOpts::new(
+        r#"import { o as B } from "./vendor.js";
 const St = value => "row:" + value;
 function Ite() {
   return St(B("ok"));
 }
 export { St as B, Ite };
 "#,
-        logical_modules: vec![logical_module(
+        vec![logical_module(
             "feature/consumer",
             &[Member::renamed("runConsumer", "Ite")],
         )],
-        chunk_renames: Some(chunk_renames(&[
-            ChunkRenameEntry::new("vendorHelper", "B").with_kind("import_specifier"),
-            ChunkRenameEntry::new("entryHelper", "St"),
-        ])),
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_inline(),
-        dataflow_aware_s_chain: false,
-        admission_overrides: &[],
-        extra_files: &[(
-            "static/app/vendor.js",
-            r#"export function o(value) {
+    )
+    .with_chunk_renames(chunk_renames(&[
+        ChunkRenameEntry::new("vendorHelper", "B").with_kind("import_specifier"),
+        ChunkRenameEntry::new("entryHelper", "St"),
+    ]))
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_extra_files(&[(
+        "static/app/vendor.js",
+        r#"export function o(value) {
   return "wrapped:" + value;
 }
 "#,
-        )],
-    };
+    )]);
     let fixture = run_fixture(opts);
 
     let moved = fs::read_to_string(
