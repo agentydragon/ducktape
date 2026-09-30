@@ -10,8 +10,11 @@ frontier, mixing **measured** local results with **third-party** eval numbers.
 
 ## What's plotted
 
-1. Decode tokens/s we measured (E1–E5) — decode speed tracks active params.
-2. Context we can actually serve — ~256K ceiling; 1M is kernel-blocked.
+1. Decode tokens/s we measured (E1–E5 plus the September Qwen3.8 Ollama run). The
+   Qwen3.8 point is one 1,024-token continuation over a prefix-cached 145K history,
+   so it is indicative and not a matched speed benchmark.
+2. Context we can actually serve — ~256K ceiling; 1M is kernel-blocked. Qwen3.8
+   completed a 145K history with a 256K setting; full 256K input is untested.
 3. Speed × SWE-bench — runnable models placed against the frontier reference lines,
    each point labelled with the setting its SWE number was measured at.
 4. GPQA / AIME / LiveCodeBench — source-verified, no-tools, local models only.
@@ -21,7 +24,7 @@ frontier, mixing **measured** local results with **third-party** eval numbers.
 ## Data provenance
 
 - **`local`** numbers (tok/s, context, VRAM) are measured on 2×5090; see
-  <../runs/> (E1–E8).
+  <../runs/> (E1–E8 and `2026-09-27_ollama_ssd`).
 - **`ext`** eval numbers trace to a URL in the notebook's `SOURCES`, and each is
   **pinned to the reasoning-effort / tools setting its source states** (in the bar
   labels).
@@ -30,12 +33,15 @@ frontier, mixing **measured** local results with **third-party** eval numbers.
   those, not guessed. SWE-bench can't be held to one setting across sources (gpt-oss
   high-effort ceiling vs Sonnet's 10-trial vs vals.ai harness) — read tiers, not
   decimals.
+- Qwen3.8 has a local serving result but no local scored coding task in this run.
+  Its external Terminal-Bench score is not substituted for SWE-bench in the speed ×
+  capability plot.
 
 ## Re-render
 
 ```bash
 LD_LIBRARY_PATH="$(nix eval --raw nixpkgs#stdenv.cc.cc.lib)/lib" \
-  uv run --with jupytext,nbconvert,matplotlib,numpy,ipykernel,nbformat \
+  uv run --no-project --with jupytext,nbconvert,matplotlib,numpy,ipykernel,nbformat \
   bash -c 'jupytext --to notebook model_comparison.py -o model_comparison.ipynb &&
            jupyter nbconvert --execute --to html --no-input model_comparison.ipynb'
 ```
