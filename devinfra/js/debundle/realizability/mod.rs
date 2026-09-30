@@ -48,7 +48,6 @@ mod condensation_order_proptest;
 mod esm_simulator;
 mod incremental_quotient;
 
-pub use condensation_order::CondensationOrder;
 use esm_simulator::EsmEvaluationSimulator;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
 pub use incremental_quotient::{LadderDecision, PartitionDelta};
