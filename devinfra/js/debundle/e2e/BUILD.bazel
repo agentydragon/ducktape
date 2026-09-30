@@ -342,7 +342,6 @@ debundle_e2e_test(name = "intrinsic_alias_lowering_test")
 
 debundle_e2e_test(
     name = "module_merge_test",
-    node = False,
     deps = [
         "//devinfra/js/debundle:cli",
         "@crates//:serde_yaml",
@@ -352,7 +351,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "modules_delete_cli_test",
-    node = False,
     deps = [
         "//devinfra/js/debundle:cli",
         "@crates//:tempfile",
@@ -361,7 +359,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "modules_gate_cli_test",
-    node = False,
     deps = [
         "@crates//:serde_json",
         "@crates//:tempfile",
@@ -370,19 +367,16 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "bindings_assign_gate_cli_test",
-    node = False,
     deps = ["@crates//:tempfile"],
 )
 
 debundle_e2e_test(
     name = "bindings_unassign_gate_cli_test",
-    node = False,
     deps = ["@crates//:tempfile"],
 )
 
 debundle_e2e_test(
     name = "cli_mutation_outcome_test",
-    node = False,
     deps = [
         "@crates//:serde_json",
         "@crates//:tempfile",
@@ -391,7 +385,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "edit_gate_source_match_cli_test",
-    node = False,
     deps = [
         "@crates//:serde_json",
         "@crates//:tempfile",
@@ -400,7 +393,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "modules_list_cli_test",
-    node = False,
     deps = [
         "@crates//:serde_json",
         "@crates//:tempfile",
@@ -409,7 +401,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "spec_stats_cli_test",
-    node = False,
     deps = [
         "@crates//:serde_json",
         "@crates//:tempfile",
@@ -422,7 +413,6 @@ debundle_e2e_test(
     compile_data = glob([
         "testdata/selector_minimizer_expectations/**/*.js",
     ]),
-    node = False,
     deps = [
         "//devinfra/js/debundle:js_ast",
         "@crates//:serde_yaml",
@@ -437,14 +427,35 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "scc_cluster_cli_test",
-    node = False,
     deps = [
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],
 )
 
-# The tests below do not match `debundle_e2e_test`'s `:support` dep or `data`.
+debundle_e2e_test(
+    name = "top_level_query_cli_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:report_fixtures",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
+    name = "binding_name_resolution_cli_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:report_fixtures",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+# The tests below do not build on `:support`.
 rust_test(
     name = "comment_cli_test",
     srcs = ["comment_cli_test.rs"],
@@ -453,21 +464,6 @@ rust_test(
     deps = [
         "//devinfra/js/debundle:cli",
         "@crates//:serde_yaml",
-        "@crates//:tempfile",
-    ],
-)
-
-rust_test(
-    name = "top_level_query_cli_test",
-    srcs = ["top_level_query_cli_test.rs"],
-    crate_root = "top_level_query_cli_test.rs",
-    edition = "2024",
-    deps = [
-        ":support",
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:peel",
-        "//devinfra/js/debundle:report_fixtures",
-        "@crates//:serde_json",
         "@crates//:tempfile",
     ],
 )
@@ -492,21 +488,6 @@ rust_test(
     deps = [
         "//devinfra/js/debundle:cli",
         "@crates//:serde_yaml",
-        "@crates//:tempfile",
-    ],
-)
-
-rust_test(
-    name = "binding_name_resolution_cli_test",
-    srcs = ["binding_name_resolution_cli_test.rs"],
-    crate_root = "binding_name_resolution_cli_test.rs",
-    edition = "2024",
-    deps = [
-        ":support",
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:peel",
-        "//devinfra/js/debundle:report_fixtures",
-        "@crates//:serde_json",
         "@crates//:tempfile",
     ],
 )
