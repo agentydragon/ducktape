@@ -139,7 +139,8 @@ is the list route's `resume_token`. Observed 2026-09-30 with the OAuth bearer ag
   with `anthropic-client-feature: ccr`. With it the answer is 200, and adding `anthropic-client-feature: ccr` changes
   nothing. The web client sends the header on this request. `claude.ai` with the bearer answers the same way.
 - **Frames**, `event:` names and JSON data: `added` for each live session on connect, then `sync` (data `{}`, and
-  the `id` is the next resume token), then `changed` as sessions change. `added` and `changed` carry a session as the
+  the `id` is the next resume token), then `changed` as sessions change. Only `sync` carries an id, and it recurs every
+  100-120 s as a checkpoint; a watch held open for seven minutes kept delivering `changed` throughout. `added` and `changed` carry a session as the
   list route sends it (`id`, `title`, `status`, `created_at`, `updated_at`, `last_event_at`, `config`,
   `worker_status`, …); `removed` carries `{id}` (from the web client's code, not seen). A frame with no `event:` name
   and no data also arrives, seconds after connecting: a keepalive.
