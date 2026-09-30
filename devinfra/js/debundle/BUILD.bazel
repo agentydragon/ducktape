@@ -523,7 +523,6 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":peel",
         ":spec",
     ],
 )
@@ -663,13 +662,18 @@ rust_test(
     deps = ["@crates//:proptest"],
 )
 
+# `peel/gate_differential_test.rs` and `peel/quotient_integration_test.rs` are
+# `#[cfg(test)]` modules: rustc reads them only in `:peel_test`, where they
+# reach the test-only surface in `quotient::testing`.
 rust_library(
     name = "peel",
     srcs = [
         "peel/factorize.rs",
+        "peel/gate_differential_test.rs",
         "peel/mod.rs",
         "peel/plan.rs",
         "peel/quotient.rs",
+        "peel/quotient_integration_test.rs",
     ],
     crate_root = "peel/mod.rs",
     edition = "2024",
@@ -689,52 +693,16 @@ rust_library(
 
 rust_test(
     name = "peel_test",
-    crate = ":peel",
-    edition = "2024",
-    deps = [
-        ":report_fixtures",
-        "@crates//:tempfile",
-    ],
-)
-
-# Integration tests for the QuotientGraph kernel. Compiled as a
-# separate crate so they exercise `:peel`'s public API — the same
-# surface external consumers of the kernel see.
-rust_test(
-    name = "peel_quotient_integration_test",
-    srcs = ["peel/quotient_integration_test.rs"],
     compile_data = [
         "peel/golden/closed_residual_unit.json",
         "peel/golden/extend_active_via_anon.json",
         "peel/golden/residual_singletons.json",
     ],
-    crate_root = "peel/quotient_integration_test.rs",
+    crate = ":peel",
     edition = "2024",
     deps = [
-        ":analysis",
-        ":gate",
-        ":peel",
         ":report_fixtures",
-        ":spec",
-        "@crates//:serde_json",
-    ],
-)
-
-# Differential harness for the gate-ladder unification:
-# compares the kernel's hot boolean merge gate against the
-# touching-filtered `check_realizability` reference and asserts the
-# index's tier ladder strictly equals the reference with per-tier skip
-# soundness.
-rust_test(
-    name = "peel_gate_differential_test",
-    srcs = ["peel/gate_differential_test.rs"],
-    crate_root = "peel/gate_differential_test.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":gate",
-        ":peel",
-        ":report_fixtures",
+        "@crates//:tempfile",
     ],
 )
 

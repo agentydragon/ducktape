@@ -82,8 +82,7 @@ pub struct OwnerIdx(pub usize);
 pub struct ClassId(pub usize);
 
 /// One unrealizable multi-class SCC in the constraining-edge quotient.
-/// Used by both `cycle_set()` and `would_be_cycles_after_contract` as
-/// the evidence shape.
+/// The evidence shape of `would_be_cycles_after_contract`.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 pub struct CycleClassSet {
     /// Sorted, deduplicated class IDs participating in the cycle.
@@ -182,35 +181,6 @@ pub struct SpecModuleGroup {
     pub owner_ids: Vec<String>,
 }
 
-/// One input group for `QuotientGraph::from_report_with_partition_extended`.
-/// Used by the renderer to materialize cells-derived partitions with
-/// per-class metadata the greedy needs.
-#[derive(Debug, Clone)]
-pub struct PartitionGroup {
-    pub owner_idxs: Vec<OwnerIdx>,
-    /// `true` if this group corresponds to a pre-existing active
-    /// spec module (the greedy may extend it by absorbing orphan
-    /// residual classes). `false` if this group is a residual
-    /// atomic-DAG closure or an ad-hoc grouping.
-    pub is_pre_existing_module: bool,
-    /// Optional human-readable label (e.g., module id). Carried by
-    /// the kernel for diagnostic purposes only.
-    pub label: Option<String>,
-}
-
-/// One step of the greedy merge loop. Returned by
-/// `greedy_step` so callers (incremental-invariant property tests,
-/// dry-run diagnostics) can step through one contraction at a time.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct GreedyStep {
-    /// The two classes the step picked, in canonical (lower, higher)
-    /// order. After the contract, only `surviving` remains.
-    pub picked: (ClassId, ClassId),
-    /// The class id that survived the contraction (always equals
-    /// `picked.0.min(picked.1)`).
-    pub surviving: ClassId,
-}
-
 /// Internal: one class's metadata. Class membership is tracked by
 /// `owner_to_class`; this struct caches per-class aggregates that
 /// `merge_preserves_invariants` consults.
@@ -222,13 +192,10 @@ struct ClassData {
     lines: usize,
     /// `true` if this class contains the residual catch-all.
     is_residual: bool,
-    /// `true` if this class was seeded by a `PartitionGroup` with
-    /// `is_pre_existing_module = true`. Sticky across merges (a
+    /// `true` if this class anchors a spec module
+    /// (`set_class_pre_existing_module`). Sticky across merges (a
     /// merge of two pre-existing-module classes produces a class
     /// that is itself pre-existing).
-    /// Default `false` for singletons constructed from
-    /// `from_report` or for residual atomic-DAG-closure classes
-    /// seeded by `from_report_with_partition`.
     is_pre_existing_module: bool,
 }
 
@@ -243,8 +210,8 @@ pub struct QuotientGraph {
     owner_graph: OwnerGraph,
     /// Owners whose `OwnerGraphNodeReport.destination.residual` is
     /// `true`. Set by `from_report` from the JSON wire flag (the
-    /// same residual identification `factorize.rs` uses). Used by
-    /// `project_partition` to decide which class projects to the
+    /// same residual identification `factorize.rs` uses). A class made
+    /// only of these, and not anchored to a module, projects to the
     /// partition's residual `ModuleId` for the realizability gate;
     /// distinct from the `ClassData::is_residual` field
     /// which the rest of the kernel keys off of for residual
@@ -297,17 +264,17 @@ pub struct QuotientGraph {
     in_neighbors: Vec<FxHashSet<ClassId>>,
     /// Persistent-state realizability index over `owner_graph`.
     /// Synced to the kernel's current class projection after every
-    /// committed mutation (`contract`, `from_report*`). Speculative
-    /// queries (`merge_preserves_invariants`,
+    /// committed mutation (`contract`, `set_class_pre_existing_module`).
+    /// Speculative queries (`merge_preserves_invariants`,
     /// `would_be_cycles_after_contract`) read it non-mutatingly via
     /// `verdict_after_moving_owners_touching` (all speculative moves
     /// are single-target). See the module-level docstring's "Cost of
     /// the unified gate" section.
     realizability_index: RealizabilityIndex,
-    /// Cached `class_id -> module_id` mapping mirroring what
-    /// `project_partition(None)` would assign. Maintained alongside
-    /// the realizability index so query deltas can be computed
-    /// without walking every owner per call.
+    /// Cached `class_id -> module_id` mapping: the class projection
+    /// the realizability index's partition holds. Maintained alongside
+    /// the index so query deltas can be computed without walking every
+    /// owner per call.
     class_module_id: BTreeMap<ClassId, ModuleId>,
     /// Next free synthetic `ModuleId` index. Assigned densely from 1
     /// (0 is the residual catch-all). Incremented when a previously
@@ -324,6 +291,66 @@ struct WeightedOwnerEdge {
     from: OwnerIdx,
     to: OwnerIdx,
     weight: u32,
+}
+
+/// `true` if a class projects to the residual `ModuleId`: the residual
+/// catch-all, or a class made only of gate-residual owners and not
+/// anchored to a module.
+fn projects_to_residual<'a>(
+    is_residual: bool,
+    is_pre_existing_module: bool,
+    mut members: impl Iterator<Item = &'a OwnerIdx>,
+    gate_residual_owners: &BTreeSet<OwnerIdx>,
+) -> bool {
+    is_residual || (!is_pre_existing_module && members.all(|m| gate_residual_owners.contains(m)))
+}
+
+/// Project every live class onto a `ModuleId` — the residual
+/// `ModuleId::logical(0)` where `projects_to_residual`, otherwise a
+/// fresh one numbered densely from 1 in ascending `ClassId` order — and
+/// build the realizability index over the resulting owner partition.
+/// Returns the index, the class → module map, and the next free module
+/// index.
+fn project_classes(
+    owner_graph: &OwnerGraph,
+    owner_to_class: &[ClassId],
+    classes: &[ClassData],
+    gate_residual_owners: &BTreeSet<OwnerIdx>,
+) -> (RealizabilityIndex, BTreeMap<ClassId, ModuleId>, usize) {
+    let residual_module = ModuleId::logical(0);
+    let mut class_module_id: BTreeMap<ClassId, ModuleId> = BTreeMap::new();
+    let mut next_module_idx: usize = 1;
+    for (class_idx, data) in classes
+        .iter()
+        .enumerate()
+        .filter(|(_, data)| !data.members.is_empty())
+    {
+        let module = if projects_to_residual(
+            data.is_residual,
+            data.is_pre_existing_module,
+            data.members.iter(),
+            gate_residual_owners,
+        ) {
+            residual_module
+        } else {
+            let m = ModuleId::logical(next_module_idx);
+            next_module_idx += 1;
+            m
+        };
+        class_module_id.insert(ClassId(class_idx), module);
+    }
+    let partition = Partition::from_assignments(
+        owner_to_class
+            .iter()
+            .map(|c| class_module_id.get(c).copied().unwrap_or(residual_module))
+            .collect(),
+        residual_module,
+    );
+    (
+        RealizabilityIndex::from_partition(owner_graph, partition),
+        class_module_id,
+        next_module_idx,
+    )
 }
 
 fn edge_weight(kind: DepKind) -> u32 {
@@ -441,43 +468,12 @@ impl QuotientGraph {
             owner_constraining_edges.push((s, t));
         }
 
-        // Build the initial realizability index from a partition
-        // projection that mirrors `project_partition(None)`'s output
-        // for the singleton-class shape: each non-residual non-gate-
-        // residual owner gets a fresh `ModuleId::logical(N)`, the
-        // residual class plus all gate-residual owners share
-        // `ModuleId::logical(0)`.
-        let residual_module = ModuleId::logical(0);
-        let mut class_module_id: BTreeMap<ClassId, ModuleId> = BTreeMap::new();
-        let mut next_module_idx: usize = 1;
-        for (class_idx, data) in classes.iter().enumerate() {
-            let c = ClassId(class_idx);
-            let module = if data.is_residual {
-                residual_module
-            } else {
-                let only_gate_residual = !data.members.is_empty()
-                    && data
-                        .members
-                        .iter()
-                        .all(|m| gate_residual_owners.contains(m))
-                    && !data.is_pre_existing_module;
-                if only_gate_residual {
-                    residual_module
-                } else {
-                    let m = ModuleId::logical(next_module_idx);
-                    next_module_idx += 1;
-                    m
-                }
-            };
-            class_module_id.insert(c, module);
-        }
-        let partition_assignments: Vec<ModuleId> = owner_to_class
-            .iter()
-            .map(|c| class_module_id.get(c).copied().unwrap_or(residual_module))
-            .collect();
-        let initial_partition = Partition::from_assignments(partition_assignments, residual_module);
-        let realizability_index =
-            RealizabilityIndex::from_partition(&owner_graph, initial_partition);
+        let (realizability_index, class_module_id, next_module_idx) = project_classes(
+            &owner_graph,
+            &owner_to_class,
+            &classes,
+            &gate_residual_owners,
+        );
 
         let num_classes = classes.len();
         let mut q = QuotientGraph {
@@ -498,78 +494,6 @@ impl QuotientGraph {
         };
         q.rebuild_class_adjacency();
         Ok(q)
-    }
-
-    /// Build a quotient over `report.nodes` and immediately contract
-    /// each owner group into a single class. Unlike `contract`, this
-    /// bypasses the realizability gate — the partition is taken as
-    /// authoritative. Returns the quotient plus a list of class IDs,
-    /// one per input group, in the same order as `groups`.
-    ///
-    /// Used by `peel::factorize::emit_proposals` to render off a
-    /// externally supplied partition: the caller may already have
-    /// equivalence classes that should be hosted directly rather than
-    /// replayed as a sequence of gated contractions.
-    ///
-    /// Groups containing owners already implicitly co-located with
-    /// other groups (overlap) are not supported and will panic; the
-    /// caller is expected to pre-coalesce overlapping groups.
-    pub fn from_report_with_partition(
-        report: &OwnerGraphReport,
-        cap_lines: usize,
-        groups: &[Vec<OwnerIdx>],
-    ) -> Result<(Self, Vec<ClassId>), analysis::UnresolvedOwnerEdgeEndpoint> {
-        let extended_groups: Vec<PartitionGroup> = groups
-            .iter()
-            .map(|owner_idxs| PartitionGroup {
-                owner_idxs: owner_idxs.clone(),
-                is_pre_existing_module: false,
-                label: None,
-            })
-            .collect();
-        Self::from_report_with_partition_extended(report, cap_lines, &extended_groups)
-    }
-
-    /// Like `from_report_with_partition`, but each group carries
-    /// per-class metadata (`is_pre_existing_module`, optional
-    /// `label`). The greedy's mergeability check consults
-    /// `is_pre_existing_module` to distinguish extension candidates
-    /// from existing-module merge candidates.
-    pub fn from_report_with_partition_extended(
-        report: &OwnerGraphReport,
-        cap_lines: usize,
-        groups: &[PartitionGroup],
-    ) -> Result<(Self, Vec<ClassId>), analysis::UnresolvedOwnerEdgeEndpoint> {
-        let mut q = Self::from_report(report, cap_lines)?;
-        let mut group_class_ids = Vec::with_capacity(groups.len());
-        for group in groups {
-            let mut winner: Option<ClassId> = None;
-            for &owner in &group.owner_idxs {
-                let c = q.class_of(owner);
-                match winner {
-                    None => winner = Some(c),
-                    Some(w) if c == w => {}
-                    Some(w) => {
-                        let merged = q
-                            .merge_classes_unchecked(w, c)
-                            .expect("partition group owners are pre-coalesced");
-                        winner = Some(merged);
-                    }
-                }
-            }
-            let survivor = winner.expect("partition group must be non-empty");
-            if group.is_pre_existing_module {
-                q.classes[survivor.0].is_pre_existing_module = true;
-            }
-            group_class_ids.push(survivor);
-        }
-        // Partition seeding bypasses the gate, so the cached
-        // adjacency / realizability index can drift from the
-        // per-merge incremental update. Rebuild from scratch so
-        // callers see the correct initial state.
-        q.rebuild_class_adjacency();
-        q.rebuild_realizability_index();
-        Ok((q, group_class_ids))
     }
 
     /// The class an owner currently belongs to.
@@ -604,15 +528,6 @@ impl QuotientGraph {
         self.classes[c.0].is_residual
     }
 
-    /// Designate `c` as the residual catch-all class, which greedy
-    /// refuses to merge into. Seed-time construction
-    /// leaves every class non-residual (the factorizer peels
-    /// residual-destined owners OUT into fresh modules); callers that
-    /// model a sticky residual sink mark it explicitly.
-    pub fn mark_class_residual(&mut self, c: ClassId) {
-        self.classes[c.0].is_residual = true;
-    }
-
     /// Iterator over all live (non-empty) class IDs.
     pub fn iter_classes(&self) -> impl Iterator<Item = ClassId> + '_ {
         self.classes
@@ -621,35 +536,16 @@ impl QuotientGraph {
             .filter_map(|(i, c)| (!c.members.is_empty()).then_some(ClassId(i)))
     }
 
-    /// Current unrealizable cycle evidence. Reads the persistent
-    /// realizability index's maintained state and translates the
-    /// verdict back into the kernel's class/owner-id vocabulary.
-    ///
-    /// Cost is dominated by the verdict's SCC-listing step. Per-call
-    /// overhead is proportional to the number of unrealizable SCCs;
-    /// the underlying constraining/I graphs are maintained
-    /// incrementally on each `contract`.
-    pub fn cycle_set(&self) -> CycleEvidence {
-        let verdict = self.realizability_index.verdict();
-        self.translate_verdict_to_evidence(&verdict)
-    }
-
     /// Public realizability verdict against the kernel's current
     /// class projection. Reads the persistent realizability index
-    /// directly. The verdict's `unrealizable_sccs` carry
-    /// `ModuleId`s; callers consult `class_module_id_of` to map
-    /// them back to `ClassId`s, or call `cycle_set()` instead for a
-    /// kernel-shape evidence.
+    /// directly; the verdict's `unrealizable_sccs` carry `ModuleId`s.
     pub fn realizability_verdict(&self) -> RealizabilityVerdict {
         self.realizability_index.verdict()
     }
 
     /// The partition currently held by the persistent realizability
-    /// index. Equal to `project_partition(None)` modulo bijective
-    /// `ModuleId` renaming (the index's partition reuses the same
-    /// ModuleIds across queries; `project_partition` mints fresh
-    /// densely-numbered IDs per call). Read-only — mutation goes
-    /// through the kernel's contract/query APIs.
+    /// index. Read-only — mutation goes through the kernel's
+    /// contract/query APIs.
     pub fn realizability_partition(&self) -> &Partition {
         self.realizability_index.partition()
     }
@@ -735,9 +631,9 @@ impl QuotientGraph {
     /// survives; the higher is emptied. Returns the survivor.
     ///
     /// `SameClass` is still rejected (caller error). All other gate
-    /// clauses are bypassed — this method is the partition-driven
-    /// entrypoint used by `from_report_with_partition`. External
-    /// callers should prefer `contract`.
+    /// clauses are bypassed; `contract` gates first and then calls
+    /// this, and `testing::from_report_with_partition` uses it to seed
+    /// ungated partitions.
     fn merge_classes_unchecked(
         &mut self,
         c1: ClassId,
@@ -843,183 +739,6 @@ impl QuotientGraph {
         Ok(())
     }
 
-    /// Project the kernel's current class assignment back to an
-    /// `analysis::Partition` so the unified realizability gate
-    /// (`check_realizability`) can run on the typed `OwnerGraph`.
-    ///
-    /// The projection assigns ModuleIds densely:
-    /// - `ModuleId::logical(0)` is the **residual catch-all**.
-    ///   Every owner belonging to the residual class (per
-    ///   `class_is_residual`) maps to this id.
-    /// - Non-residual classes are numbered starting at 1, in
-    ///   ascending `ClassId` order.
-    ///
-    /// The optional `overlay` argument lets the caller ask "what if
-    /// I contracted `(a, b)` first?" — class `b` is projected as if
-    /// it had already been absorbed into `a`. Used by
-    /// `would_be_cycles_after_contract` to ask the gate about a
-    /// hypothetical post-merge state without mutating the kernel.
-    pub fn project_partition_for_tests(&self) -> Partition {
-        self.project_partition(None)
-    }
-
-    /// Borrow the typed `OwnerGraph` IR reconstructed at
-    /// construction time. Used by property tests to compare the
-    /// kernel's incremental verdict to a from-scratch
-    /// `check_realizability(&owner_graph, &project_partition(None))`.
-    pub fn owner_graph_for_tests(&self) -> &OwnerGraph {
-        &self.owner_graph
-    }
-
-    fn project_partition(&self, overlay: Option<(ClassId, ClassId)>) -> Partition {
-        // Walk all classes, assigning each a ModuleId. Residual
-        // (and the absorbed loser side of the overlay) share an
-        // id with their target.
-        let project = |c: ClassId| -> ClassId {
-            if let Some((a, b)) = overlay
-                && (c == a || c == b)
-            {
-                return if a < b { a } else { b };
-            }
-            c
-        };
-        // The synthesized residual module is `ModuleId::logical(0)`.
-        // Only classes whose `ClassData::is_residual` flag is true
-        // map there — i.e., the residual catchall the kernel was
-        // constructed with. Other classes (including those whose
-        // owners have `destination.residual = true` but were pulled
-        // into a spec-module group) get distinct ModuleIds so the
-        // realizability gate sees them as separate modules. The
-        // alternative (any residual-destined owner → residual
-        // ModuleId) collapses spec-module candidate contractions
-        // back into residual, blinding the gate to the cycle they
-        // would create. See the `seed_skips_unrealizable_spec_module_contraction_and_reports`
-        // test for the regression.
-        let residual = ModuleId::logical(0);
-        let mut class_to_module: BTreeMap<ClassId, ModuleId> = BTreeMap::new();
-        let mut next_idx = 1usize;
-        for c in self.iter_classes() {
-            let projected = project(c);
-            if self.classes[projected.0].is_residual {
-                class_to_module.entry(projected).or_insert(residual);
-            } else {
-                class_to_module.entry(projected).or_insert_with(|| {
-                    let m = ModuleId::logical(next_idx);
-                    next_idx += 1;
-                    m
-                });
-            }
-        }
-        // Default-fill of `of` with residual so owners not currently
-        // mapped (e.g., owners that ended up in an empty class via
-        // overlay) land in residual. Then overwrite per owner with
-        // its projected class's ModuleId.
-        let mut of: Vec<ModuleId> = vec![residual; self.owner_graph.num_nodes()];
-        for (owner_idx, slot) in of.iter_mut().enumerate() {
-            if owner_idx >= self.owner_to_class.len() {
-                continue;
-            }
-            let c = self.owner_to_class[owner_idx];
-            let projected = project(c);
-            if let Some(&m) = class_to_module.get(&projected) {
-                *slot = m;
-            }
-        }
-        // Track A: also consider gate-only residual marker — owners
-        // whose `destination.residual = true` should appear as
-        // residual in the projection IF and ONLY IF their class is
-        // not already mapped (i.e., the class wasn't promoted to a
-        // distinct ModuleId). This affects the rare path where the
-        // kernel's `class_is_residual` is false but `factorize.rs`
-        // semantics say the owner is residual (e.g., the production
-        // ModuleReportRef whose `id` is `logical:N` but `residual: true`).
-        // In production, every chunk has at least one residual owner
-        // (the synthesized residual entry), so this guarantees the
-        // simulator's DFS reaches the SCC candidates the gate needs
-        // to evaluate.
-        for &owner in &self.gate_residual_owners {
-            if owner.0 >= self.owner_to_class.len() {
-                continue;
-            }
-            let c = self.owner_to_class[owner.0];
-            let projected = project(c);
-            // Only override if this class's mapping is non-residual
-            // AND the class is purely composed of gate-residual
-            // owners (i.e., it wasn't merged with a spec-module
-            // group via `is_pre_existing_module`). Without this
-            // guard, a spec-module contraction that pulls a
-            // destination.residual=true owner into a class would
-            // demote the class back to residual.
-            if self.classes[projected.0].is_pre_existing_module {
-                continue;
-            }
-            // Check that every member of this class has
-            // `destination.residual = true`. If any member is
-            // non-residual, the class shouldn't be residual either.
-            let all_residual = self.classes[projected.0]
-                .members
-                .iter()
-                .all(|m| self.gate_residual_owners.contains(m));
-            if !all_residual {
-                continue;
-            }
-            // Override the class's mapping to residual.
-            class_to_module.insert(projected, residual);
-            of[owner.0] = residual;
-        }
-        // Re-walk owners to ensure consistency after the override.
-        for (owner_idx, slot) in of.iter_mut().enumerate() {
-            if owner_idx >= self.owner_to_class.len() {
-                continue;
-            }
-            let c = self.owner_to_class[owner_idx];
-            let projected = project(c);
-            if let Some(&m) = class_to_module.get(&projected) {
-                *slot = m;
-            }
-        }
-        Partition::from_assignments(of, residual)
-    }
-
-    /// Translate an `gate::RealizabilityVerdict` (in ModuleId
-    /// space) back into the kernel's `CycleEvidence` shape (in
-    /// ClassId space, with owner-id strings for diagnostics).
-    fn translate_verdict_to_evidence(&self, verdict: &RealizabilityVerdict) -> CycleEvidence {
-        if verdict.is_realizable() {
-            return CycleEvidence::default();
-        }
-        let partition = self.realizability_index.partition();
-        let mut cycles: Vec<CycleClassSet> = Vec::new();
-        for scc in &verdict.unrealizable_sccs {
-            let modules_in_scc: BTreeSet<ModuleId> = scc.core.modules.iter().copied().collect();
-            let mut owner_ids: BTreeSet<String> = BTreeSet::new();
-            let mut class_set: BTreeSet<ClassId> = BTreeSet::new();
-            for (owner_idx, owner_id_str) in self.owner_ids.iter().enumerate() {
-                if owner_idx >= self.owner_graph.num_nodes() {
-                    continue;
-                }
-                let module = partition.of(OwnerId(owner_idx));
-                if !modules_in_scc.contains(&module) {
-                    continue;
-                }
-                owner_ids.insert(owner_id_str.clone());
-                class_set.insert(self.owner_to_class[owner_idx]);
-            }
-            if class_set.len() < 2 {
-                continue;
-            }
-            let mut classes: Vec<ClassId> = class_set.into_iter().collect();
-            classes.sort();
-            cycles.push(CycleClassSet {
-                classes,
-                owner_ids: owner_ids.into_iter().collect(),
-            });
-        }
-        cycles.sort();
-        cycles.dedup();
-        CycleEvidence { cycles }
-    }
-
     /// Incremental hypothetical query: cycle evidence after merging
     /// `(c1, c2)`, without committing the merge. Routes through the
     /// persistent realizability index's
@@ -1096,26 +815,16 @@ impl QuotientGraph {
             .ladder_decision_after_moving_owners_touching(&self.owner_graph, &owners, post_module)
     }
 
-    /// `translate_verdict_to_evidence` parameterized by an explicit
-    /// per-owner ModuleId vector. Used by speculative queries whose
-    /// verdict comes from a non-mutating overlay, so the index's
-    /// partition never reflects the hypothetical move.
+    /// Translate a `RealizabilityVerdict` (in `ModuleId` space) into the
+    /// kernel's `CycleEvidence` shape (`ClassId` space, owner-id
+    /// strings), reading each owner's module from `owner_modules`.
+    /// Speculative queries take their verdict from a non-mutating
+    /// overlay, so the index's own partition never reflects the
+    /// hypothetical move; `overlay` projects the merged pair's classes
+    /// onto the survivor.
     ///
-    /// Perf (#12prime): the naive translation iterated all
-    /// `self.owner_ids` per SCC — O(K * num_owners), ~10% self in
-    /// `modules propose` profiles on tana (9709 owners, many tiny
-    /// SCCs per call). We instead build a per-call inverse index
-    /// `module_to_owners: FxHashMap<ModuleId, Vec<OwnerIdx>>` from
-    /// `owner_modules` in one O(num_owners) pass, then visit only
-    /// the owners actually in each SCC's modules. New cost is
-    /// `num_owners + sum_scc(|scc.modules| * owners_in_those_modules)`,
-    /// which is a strict win whenever the SCCs don't cover most
-    /// owners — the common case for the proposer. We chose the
-    /// per-call inverse over a kernel-maintained `class_to_owners`
-    /// to keep the surface contained: maintaining a kernel field
-    /// would touch every `owner_to_class` write site
-    /// (rebuild_class_adjacency, contract, merge_classes_unchecked,
-    /// etc.) for marginal additional savings.
+    /// One `O(num_owners)` pass builds a module → owners inverse index,
+    /// so each SCC visits only the owners in its own modules.
     fn translate_verdict_with_owner_modules(
         &self,
         verdict: &RealizabilityVerdict,
@@ -1134,10 +843,8 @@ impl QuotientGraph {
             }
             c
         };
-        // One pass over owner_modules to build the inverse index.
-        // Bounded length: we only consider owner indices that exist
-        // in BOTH self.owner_ids and owner_modules — the old code
-        // also skipped `owner_idx >= owner_modules.len()`.
+        // Only owner indices present in both `self.owner_ids` and
+        // `owner_modules` participate.
         let mut module_to_owners: FxHashMap<ModuleId, Vec<usize>> = FxHashMap::default();
         for (owner_idx, &module) in owner_modules.iter().enumerate().take(max_idx) {
             module_to_owners.entry(module).or_default().push(owner_idx);
@@ -1176,8 +883,8 @@ impl QuotientGraph {
     // ---------------------------------------------------------------
 
     /// Rebuild class-level edge adjacency from scratch.
-    /// O(|owner edges|). Called in `from_report*` and as a fallback;
-    /// merges should use `update_class_adjacency_after_merge`.
+    /// O(|owner edges|). Called in `from_report`; merges use
+    /// `update_class_adjacency_after_merge`.
     fn rebuild_class_adjacency(&mut self) {
         for slot in &mut self.out_edges {
             slot.clear();
@@ -1259,108 +966,31 @@ impl QuotientGraph {
         }
     }
 
-    /// Rebuild the persistent realizability index from scratch using
-    /// the current class projection. O(|V| + |E|). Used after
-    /// partition-driven mutations that bypass `contract`
-    /// (`from_report_with_partition_extended`'s group merges,
-    /// `set_class_pre_existing_module` followed by gate-residual
-    /// transitions). After `contract`s, the index is maintained
-    /// incrementally via `sync_index_after_merge`, not via this
-    /// rebuild.
-    fn rebuild_realizability_index(&mut self) {
-        let residual_module = ModuleId::logical(0);
-        let mut class_module_id: BTreeMap<ClassId, ModuleId> = BTreeMap::new();
-        let mut next_module_idx: usize = 1;
-        for c in self.iter_classes() {
-            let data = &self.classes[c.0];
-            let module = if data.is_residual {
-                residual_module
-            } else {
-                let only_gate_residual = !data.members.is_empty()
-                    && data
-                        .members
-                        .iter()
-                        .all(|m| self.gate_residual_owners.contains(m))
-                    && !data.is_pre_existing_module;
-                if only_gate_residual {
-                    residual_module
-                } else {
-                    let m = ModuleId::logical(next_module_idx);
-                    next_module_idx += 1;
-                    m
-                }
-            };
-            class_module_id.insert(c, module);
-        }
-        let partition_assignments: Vec<ModuleId> = (0..self.owner_graph.num_nodes())
-            .map(|owner_idx| {
-                let c = self.owner_to_class[owner_idx];
-                class_module_id.get(&c).copied().unwrap_or(residual_module)
-            })
-            .collect();
-        let partition = Partition::from_assignments(partition_assignments, residual_module);
-        self.realizability_index = RealizabilityIndex::from_partition(&self.owner_graph, partition);
-        self.class_module_id = class_module_id;
-        self.next_module_idx = next_module_idx;
-    }
-
     /// The `ModuleId` the surviving (winner) class would map to after
-    /// `winner` absorbs `loser`. Mirrors `project_partition`'s
-    /// projection logic but evaluated against the **post-merge**
-    /// class composition (members of both winner and loser combined).
+    /// `winner` absorbs `loser`: the same projection as `project_classes`
+    /// evaluated against the **post-merge** class composition (members
+    /// of both combined), except that a non-residual result reuses the
+    /// winner's existing slot, else the loser's, else mints a fresh idx.
     fn projected_winner_module_after_merge(&self, winner: ClassId, loser: ClassId) -> ModuleId {
         let residual_module = ModuleId::logical(0);
         let winner_data = &self.classes[winner.0];
         let loser_data = &self.classes[loser.0];
-        // Residual stickiness: if either side carries the literal
-        // residual catch-all, the merged class is residual.
-        // (`check_merge` only allows the merge when residual matches
-        // on both sides, but we evaluate symmetrically here in case
-        // we're called speculatively.)
-        if winner_data.is_residual || loser_data.is_residual {
+        // Evaluated symmetrically: `check_merge` only allows a merge
+        // when residual matches on both sides, but this is also called
+        // speculatively.
+        if projects_to_residual(
+            winner_data.is_residual || loser_data.is_residual,
+            winner_data.is_pre_existing_module || loser_data.is_pre_existing_module,
+            winner_data.members.iter().chain(&loser_data.members),
+            &self.gate_residual_owners,
+        ) {
             return residual_module;
         }
-        let is_pre_existing =
-            winner_data.is_pre_existing_module || loser_data.is_pre_existing_module;
-        if is_pre_existing {
-            // Pre-existing-module classes get a stable non-residual
-            // ModuleId; reuse the winner's slot if it has one,
-            // otherwise mint a fresh idx.
-            return self
-                .class_module_id
-                .get(&winner)
-                .copied()
-                .filter(|m| *m != residual_module)
-                .or_else(|| {
-                    self.class_module_id
-                        .get(&loser)
-                        .copied()
-                        .filter(|m| *m != residual_module)
-                })
-                .unwrap_or_else(|| ModuleId::logical(self.next_module_idx));
-        }
-        // Both sides are non-pre-existing, non-residual. The
-        // projection collapses a class to residual iff every member
-        // is in `gate_residual_owners`. The post-merge class's
-        // members are winner.members ∪ loser.members.
-        let all_gate_residual = winner_data
-            .members
-            .iter()
-            .chain(loser_data.members.iter())
-            .all(|m| self.gate_residual_owners.contains(m));
-        if all_gate_residual {
-            return residual_module;
-        }
-        // Mixed (some non-gate-residual owner present). Reuse the
-        // winner's non-residual slot if it has one; otherwise reuse
-        // the loser's; otherwise mint a fresh idx.
-        self.class_module_id
-            .get(&winner)
-            .copied()
-            .filter(|m| *m != residual_module)
-            .or_else(|| {
+        [winner, loser]
+            .into_iter()
+            .find_map(|c| {
                 self.class_module_id
-                    .get(&loser)
+                    .get(&c)
                     .copied()
                     .filter(|m| *m != residual_module)
             })
@@ -1495,12 +1125,10 @@ impl QuotientGraph {
         self.debug_assert_edge_invariants();
     }
 
-    /// `true` if a class is **pre-existing module-anchored** —
-    /// i.e., it was constructed from a `PartitionGroup` with
-    /// `is_pre_existing_module = true`, or marked by the seeding
-    /// protocol's spec-module pass. The greedy uses this to
-    /// distinguish "extend module by orphan" from module↔module
-    /// fusions.
+    /// `true` if a class is **pre-existing module-anchored** — marked
+    /// by the seeding protocol's spec-module pass. The greedy uses
+    /// this to distinguish "extend module by orphan" from
+    /// module↔module fusions.
     pub fn class_is_pre_existing_module(&self, c: ClassId) -> bool {
         self.classes[c.0].is_pre_existing_module
     }
@@ -1511,11 +1139,9 @@ impl QuotientGraph {
     ///
     /// Setting this bit can change the class's `ModuleId` projection
     /// — a previously gate-residual-only class is promoted from the
-    /// residual module to a fresh non-residual one (the
-    /// `gate_residual_owners` override in `project_partition`
-    /// short-circuits on `is_pre_existing_module=true`). The
-    /// realizability index is synced via a `MoveOwners` delta when
-    /// the transition fires.
+    /// residual module to a fresh non-residual one (see
+    /// `projects_to_residual`). The realizability index is synced via
+    /// a `MoveOwners` delta when the transition fires.
     pub fn set_class_pre_existing_module(&mut self, c: ClassId) {
         if self.classes[c.0].is_pre_existing_module {
             return;
@@ -1557,7 +1183,7 @@ impl QuotientGraph {
 
     /// Number of owner edges between `a` and `b` (in either
     /// direction), as constraining-edge multiplicities. Used by the
-    /// coupling metric and `mergeable_commit2_preconditions`'s
+    /// coupling metric and `mergeable_preconditions`'s
     /// cross-edge presence check.
     fn cross_edge_count(&self, a: ClassId, b: ClassId) -> u64 {
         let ab = self.out_edges[a.0]
@@ -1603,7 +1229,7 @@ impl QuotientGraph {
     /// in side. The prior 7-field implementation used
     /// `class_out` + `class_in` (both constraining-only). Byte-
     /// identical output depends on preserving this semantic — e.g.,
-    /// `mergeable_commit2_preconditions`' `module_neighbors` count
+    /// `mergeable_preconditions`' `module_neighbors` count
     /// would otherwise pick up weighted-only neighbors and shift the
     /// "unambiguous extension target" verdict.
     fn class_neighbors(&self, c: ClassId) -> impl Iterator<Item = ClassId> + '_ {
@@ -1629,7 +1255,13 @@ impl QuotientGraph {
 // Greedy merge to convergence.
 // ---------------------------------------------------------------------
 
-/// Mergeability gate. Allows two shapes:
+/// Cheap mergeability preconditions: every clause of the greedy's
+/// mergeability gate EXCEPT the final `merge_preserves_invariants`
+/// verdict (line cap and cycle gate). Splitting this out lets the
+/// lazy-PQ driver run the cheap preconditions before the (expensive)
+/// verdict — and lets coupling-drift detection happen between the two.
+///
+/// The gate allows two shapes:
 ///   1. Two pre-existing-module classes (merge modules A and B).
 ///      May happen with or without first absorbing residual orphans
 ///      into either side via successive shape-(2) merges.
@@ -1648,25 +1280,9 @@ impl QuotientGraph {
 /// unrelated residuals based purely on cross-edge presence, which
 /// is over-aggressive on real inputs.
 ///
-/// Common preconditions:
-/// - Distinct classes.
-/// - Neither is the residual catchall.
-/// - At least one cross-edge connects the two.
-/// - Combined lines under the cap (`merge_preserves_invariants`).
-/// - Cycle gate holds (`merge_preserves_invariants`).
-pub fn mergeable_commit2(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
-    if !mergeable_commit2_preconditions(q, c1, c2) {
-        return false;
-    }
-    q.merge_preserves_invariants(c1, c2)
-}
-
-/// Cheap mergeability preconditions: every clause of `mergeable_commit2`
-/// EXCEPT the final `merge_preserves_invariants` verdict. Splitting
-/// this out lets the lazy-PQ driver run the cheap preconditions
-/// before the (expensive) verdict — and lets coupling-drift
-/// detection happen between the two.
-fn mergeable_commit2_preconditions(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
+/// Common preconditions: distinct classes, neither is the residual
+/// catchall, and at least one cross-edge connects the two.
+fn mergeable_preconditions(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
     if c1 == c2 {
         return false;
     }
@@ -1707,25 +1323,6 @@ fn mergeable_commit2_preconditions(q: &QuotientGraph, c1: ClassId, c2: ClassId) 
     true
 }
 
-/// One pass of the greedy: enumerate candidate merges, pick the best,
-/// apply. Returns `None` at convergence (no candidates).
-///
-/// Implementation: full O(|V|+|E|) scan of candidates each call. The
-/// production `greedy_merge_to_convergence` uses the lazy-PQ driver
-/// (`greedy_merge_to_convergence_lazy_pq`); this entrypoint is kept
-/// for callers/tests that want a single-step driver and for the
-/// reference `greedy_merge_to_convergence_full_scan` byte-equality
-/// gate.
-pub fn greedy_step(q: &mut QuotientGraph) -> Option<GreedyStep> {
-    let candidate = pick_best_candidate(q)?;
-    let (a, b) = candidate.pair;
-    let survivor = q.contract(a, b).ok()?;
-    Some(GreedyStep {
-        picked: (a.min(b), a.max(b)),
-        surviving: survivor,
-    })
-}
-
 /// Run the greedy contraction loop to convergence. Returns the
 /// sequence of (c1, c2) contractions in the order they were applied.
 /// Each returned pair uses canonical (lower, higher) ClassId order —
@@ -1736,42 +1333,27 @@ pub fn greedy_step(q: &mut QuotientGraph) -> Option<GreedyStep> {
 /// fresh entries for the winner's new neighborhood and pop-time
 /// staleness checks re-rank entries whose coupling has drifted. See
 /// `devinfra/js/debundle/docs/peel_proposer.md` for the algorithm and
-/// `greedy_merge_to_convergence_full_scan` for the byte-equal
-/// reference driver retained as a correctness gate.
+/// `testing::greedy_merge_to_convergence_full_scan` for the byte-equal
+/// reference driver the tests compare it against.
 pub fn greedy_merge_to_convergence(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
     greedy_merge_to_convergence_lazy_pq(q)
-}
-
-/// Reference implementation of the greedy loop using a per-iteration
-/// full scan. Retained as the load-bearing correctness reference for
-/// the property test
-/// `lazy_pq_greedy_matches_full_scan_greedy_on_corpus`. Do not call
-/// from production code — `O(|V|·|E|)` outer shape is the reason the
-/// lazy-PQ driver exists.
-#[doc(hidden)]
-pub fn greedy_merge_to_convergence_full_scan(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
-    let mut steps: Vec<(ClassId, ClassId)> = Vec::new();
-    while let Some(step) = greedy_step(q) {
-        steps.push(step.picked);
-    }
-    steps
 }
 
 // ---------------------------------------------------------------------
 // Lazy priority-queue greedy driver.
 //
 // See `devinfra/js/debundle/docs/peel_proposer.md` for the spec. The PQ stores one
-// entry per unordered cross-class pair, ordered by the same sort key
-// `pick_best_candidate` uses. On pop we re-check class existence,
-// mergeability, and coupling drift; on a successful contract we push
+// entry per unordered cross-class pair, ordered by `rank_candidate`'s
+// sort key. On pop we re-check class existence, mergeability, and
+// coupling drift; on a successful contract we push
 // fresh entries for the winner's new neighborhood and drain the
 // discard pile (transiently-failing entries from this iteration).
 // ---------------------------------------------------------------------
 
 /// One entry in the lazy-PQ candidate queue. The ordering is on
 /// `Reverse<sort_key>` so `BinaryHeap` (a max-heap) returns the
-/// smallest sort_key first — matching `pick_best_candidate`'s
-/// "lower is better" semantics. `c1`/`c2` are stored in canonical
+/// smallest sort_key first — `rank_candidate`'s key is "lower is
+/// better". `c1`/`c2` are stored in canonical
 /// order (low, high) for class-existence checks; `stored_sort_key`
 /// equals the sort key at push time and is compared to a freshly
 /// computed key on pop to detect coupling/cycle-score drift.
@@ -1812,18 +1394,17 @@ fn classes_alive(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
 
 /// Push one entry per unordered cross-class pair (low, high) with
 /// `low < high` and a non-zero constraining-edge multiplicity. The
-/// candidate space matches `pick_best_candidate`'s iteration: anchored
-/// at pre-existing-module classes, neighbor reached via the
-/// constraining adjacency. Mergeability filtering is deferred to pop
-/// time so non-monotone gate failures (e.g., the "unambiguous
-/// extension target" rule in `mergeable_commit2`) get retried after
-/// later contracts unlock them.
+/// candidate space is anchored at pre-existing-module classes, neighbor
+/// reached via the constraining adjacency. Mergeability filtering is
+/// deferred to pop time so non-monotone gate failures (e.g., the
+/// "unambiguous extension target" rule in `mergeable_preconditions`)
+/// get retried after later contracts unlock them.
 fn initialize_candidate_queue(q: &QuotientGraph) -> BinaryHeap<CandidateEntry> {
     let mut heap: BinaryHeap<CandidateEntry> = BinaryHeap::new();
-    // Pre-existing-module classes are the iteration anchor — same as
-    // `pick_best_candidate`. A pair (a, b) is anchored iff at least
-    // one side is pre-existing-module non-residual; we iterate from
-    // the pre-existing side to avoid double-pushing symmetric pairs.
+    // Pre-existing-module classes are the iteration anchor. A pair
+    // (a, b) is anchored iff at least one side is pre-existing-module
+    // non-residual; we iterate from the pre-existing side to avoid
+    // double-pushing symmetric pairs.
     let anchors: Vec<ClassId> = q
         .iter_classes()
         .filter(|c| q.class_is_pre_existing_module(*c) && !q.class_is_residual(*c))
@@ -1839,9 +1420,8 @@ fn initialize_candidate_queue(q: &QuotientGraph) -> BinaryHeap<CandidateEntry> {
             if !seen.insert((low, high)) {
                 continue;
             }
-            let candidate = rank_candidate(q, low, high);
             heap.push(CandidateEntry {
-                ordering: Reverse(candidate.sort_key),
+                ordering: Reverse(rank_candidate(q, low, high)),
                 c1: low,
                 c2: high,
             });
@@ -1864,18 +1444,17 @@ fn repush_affected_neighborhood(
             continue;
         }
         let (low, high) = if winner < n { (winner, n) } else { (n, winner) };
-        let candidate = rank_candidate(q, low, high);
         heap.push(CandidateEntry {
-            ordering: Reverse(candidate.sort_key),
+            ordering: Reverse(rank_candidate(q, low, high)),
             c1: low,
             c2: high,
         });
     }
 }
 
-/// Lazy-PQ greedy driver. Same output as
-/// `greedy_merge_to_convergence_full_scan` modulo the byte-equality
-/// gate. See `devinfra/js/debundle/docs/peel_proposer.md` for the algorithm.
+/// Lazy-PQ greedy driver. Its output is byte-identical to
+/// `testing::greedy_merge_to_convergence_full_scan`. See
+/// `devinfra/js/debundle/docs/peel_proposer.md` for the algorithm.
 fn greedy_merge_to_convergence_lazy_pq(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
     let mut steps: Vec<(ClassId, ClassId)> = Vec::new();
     let mut heap = initialize_candidate_queue(q);
@@ -1899,7 +1478,7 @@ fn greedy_merge_to_convergence_lazy_pq(q: &mut QuotientGraph) -> Vec<(ClassId, C
             //    module neighbor merges away), so we stash on the
             //    discard pile rather than dropping the entry
             //    permanently.
-            if !mergeable_commit2_preconditions(q, entry.c1, entry.c2) {
+            if !mergeable_preconditions(q, entry.c1, entry.c2) {
                 discard_pile.push(entry);
                 continue;
             }
@@ -1912,10 +1491,10 @@ fn greedy_merge_to_convergence_lazy_pq(q: &mut QuotientGraph) -> Vec<(ClassId, C
             //    the stored value, re-push at the new key and continue
             //    popping. The true max-coupling surfaces because a
             //    stale-high entry cannot sit at the top.
-            let candidate = rank_candidate(q, entry.c1, entry.c2);
-            if candidate.sort_key != entry.ordering.0 {
+            let sort_key = rank_candidate(q, entry.c1, entry.c2);
+            if sort_key != entry.ordering.0 {
                 heap.push(CandidateEntry {
-                    ordering: Reverse(candidate.sort_key),
+                    ordering: Reverse(sort_key),
                     c1: entry.c1,
                     c2: entry.c2,
                 });
@@ -1975,55 +1554,17 @@ fn greedy_merge_to_convergence_lazy_pq(q: &mut QuotientGraph) -> Vec<(ClassId, C
     steps
 }
 
-/// Ranked candidate for `pick_best`.
-#[derive(Debug, Clone, Copy)]
-struct RankedCandidate {
-    /// Canonical pair (lower ClassId, higher ClassId).
-    pair: (ClassId, ClassId),
-    /// `pick_best` sort key (lower is better). Construction:
-    /// - byte 0 (most significant): inverse of "cycle-set
-    ///   reduction" — 0 if the merge strictly reduces the cycle set,
-    ///   1 otherwise. Vestigial in normal flow (seed is realizable);
-    ///   tiebreaker for unrealizable seeds.
-    /// - bytes 1..9: inverse of coupling-numerator (so higher
-    ///   coupling sorts earlier).
-    /// - bytes 9..17: result-size (lines), smaller first.
-    /// - bytes 17..25: canonical pair (a, b) lex.
-    sort_key: [u8; 33],
-}
-
-fn pick_best_candidate(q: &QuotientGraph) -> Option<RankedCandidate> {
-    // Enumerate candidate pairs: any (c, n) where c is a pre-existing
-    // module class and n is a non-pre-existing non-residual neighbor.
-    // The mergeable_commit2 gate is the source of truth; we use the
-    // pre-existing-module side as the iteration anchor so we don't
-    // re-evaluate symmetric pairs twice.
-    let anchors: Vec<ClassId> = q
-        .iter_classes()
-        .filter(|c| q.class_is_pre_existing_module(*c) && !q.class_is_residual(*c))
-        .collect();
-    let mut best: Option<RankedCandidate> = None;
-    for c in anchors {
-        let neighbors: Vec<ClassId> = q.class_neighbors(c).collect();
-        for n in neighbors {
-            if n == c {
-                continue;
-            }
-            if !mergeable_commit2(q, c, n) {
-                continue;
-            }
-            let candidate = rank_candidate(q, c, n);
-            best = match best {
-                None => Some(candidate),
-                Some(prev) if candidate.sort_key < prev.sort_key => Some(candidate),
-                Some(prev) => Some(prev),
-            };
-        }
-    }
-    best
-}
-
-fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> RankedCandidate {
+/// Greedy sort key for merging `a` and `b` (lower is better).
+/// Construction:
+/// - byte 0 (most significant): inverse of "cycle-set
+///   reduction" — 0 if the merge strictly reduces the cycle set,
+///   1 otherwise. Vestigial in normal flow (seed is realizable);
+///   tiebreaker for unrealizable seeds.
+/// - bytes 1..9: inverse of coupling-numerator (so higher
+///   coupling sorts earlier).
+/// - bytes 9..17: result-size (lines), smaller first.
+/// - bytes 17..33: canonical pair (low, high) lex.
+fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> [u8; 33] {
     let (low, high) = if a < b { (a, b) } else { (b, a) };
     let mut key = [0u8; 33];
 
@@ -2062,10 +1603,7 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> RankedCandidate 
     key[17..25].copy_from_slice(&(low.0 as u64).to_be_bytes());
     key[25..33].copy_from_slice(&(high.0 as u64).to_be_bytes());
 
-    RankedCandidate {
-        pair: (low, high),
-        sort_key: key,
-    }
+    key
 }
 
 /// Estimate of one owner's line count from the JSON report node.
@@ -2445,3 +1983,138 @@ fn lowest_owner_idx<'a>(
 // compile-time guarantee (no public method exists)" approach the
 // plan calls for; the test `contract_never_un_contracts` in
 // `quotient_integration_test.rs` exercises the post-condition.
+
+/// Constructors and reference drivers the production pipeline never
+/// calls; the kernel's unit tests (`quotient_integration_test`,
+/// `gate_differential_test`) build and drive quotients through them.
+#[cfg(test)]
+pub(crate) mod testing {
+    use super::*;
+
+    /// One input group for `QuotientGraph::from_report_with_partition`.
+    #[derive(Debug, Clone)]
+    pub struct PartitionGroup {
+        pub owner_idxs: Vec<OwnerIdx>,
+        /// `true` if this group is a pre-existing active spec module
+        /// (the greedy may extend it by absorbing orphan residual
+        /// classes).
+        pub is_pre_existing_module: bool,
+    }
+
+    /// Pre-existing spec module group for fixtures. The owner indexes
+    /// are owner-report positions.
+    pub fn module_group(owner_idxs: Vec<usize>) -> PartitionGroup {
+        PartitionGroup {
+            owner_idxs: owner_idxs.into_iter().map(OwnerIdx).collect(),
+            is_pre_existing_module: true,
+        }
+    }
+
+    impl QuotientGraph {
+        /// Build a quotient over `report.nodes` and immediately
+        /// contract each owner group into a single class. Unlike
+        /// `contract`, this bypasses the realizability gate — the
+        /// partition is taken as authoritative, so tests can seed
+        /// states `contract` would refuse. Returns the quotient plus
+        /// one class ID per group, in `groups` order.
+        ///
+        /// Groups must be pre-coalesced: an owner already co-located
+        /// with another group's owners panics.
+        pub fn from_report_with_partition(
+            report: &OwnerGraphReport,
+            cap_lines: usize,
+            groups: &[PartitionGroup],
+        ) -> Result<(Self, Vec<ClassId>), analysis::UnresolvedOwnerEdgeEndpoint> {
+            let mut q = Self::from_report(report, cap_lines)?;
+            let mut group_class_ids = Vec::with_capacity(groups.len());
+            for group in groups {
+                let mut winner: Option<ClassId> = None;
+                for &owner in &group.owner_idxs {
+                    let c = q.class_of(owner);
+                    match winner {
+                        None => winner = Some(c),
+                        Some(w) if c == w => {}
+                        Some(w) => {
+                            let merged = q
+                                .merge_classes_unchecked(w, c)
+                                .expect("partition group owners are pre-coalesced");
+                            winner = Some(merged);
+                        }
+                    }
+                }
+                let survivor = winner.expect("partition group must be non-empty");
+                if group.is_pre_existing_module {
+                    q.classes[survivor.0].is_pre_existing_module = true;
+                }
+                group_class_ids.push(survivor);
+            }
+            // Partition seeding bypasses the gate, so the cached
+            // adjacency / realizability index can drift from the
+            // per-merge incremental update. Rebuild from scratch so
+            // callers see the correct initial state.
+            q.rebuild_class_adjacency();
+            (q.realizability_index, q.class_module_id, q.next_module_idx) = project_classes(
+                &q.owner_graph,
+                &q.owner_to_class,
+                &q.classes,
+                &q.gate_residual_owners,
+            );
+            Ok((q, group_class_ids))
+        }
+
+        /// Designate `c` as the residual catch-all class, which greedy
+        /// refuses to merge into. Seed-time construction leaves every
+        /// class non-residual (the factorizer peels residual-destined
+        /// owners OUT into fresh modules); tests that model a sticky
+        /// residual sink mark it explicitly.
+        pub fn mark_class_residual(&mut self, c: ClassId) {
+            self.classes[c.0].is_residual = true;
+        }
+
+        /// The typed `OwnerGraph` IR reconstructed at construction
+        /// time, for comparing the kernel's verdicts against
+        /// `check_realizability` over an independently projected
+        /// partition.
+        pub fn owner_graph(&self) -> &OwnerGraph {
+            &self.owner_graph
+        }
+    }
+
+    /// The greedy's mergeability gate: `mergeable_preconditions` plus
+    /// the line cap and cycle gate (`merge_preserves_invariants`).
+    fn mergeable(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
+        mergeable_preconditions(q, c1, c2) && q.merge_preserves_invariants(c1, c2)
+    }
+
+    /// Full-scan best mergeable pair, in canonical (lower, higher)
+    /// order. Pre-existing-module classes anchor the scan so symmetric
+    /// pairs are not evaluated twice.
+    fn pick_best_candidate(q: &QuotientGraph) -> Option<(ClassId, ClassId)> {
+        q.iter_classes()
+            .filter(|c| q.class_is_pre_existing_module(*c) && !q.class_is_residual(*c))
+            .flat_map(|c| q.class_neighbors(c).map(move |n| (c, n)))
+            .filter(|&(c, n)| n != c && mergeable(q, c, n))
+            .map(|(c, n)| (rank_candidate(q, c, n), (c.min(n), c.max(n))))
+            .min_by_key(|(sort_key, _)| *sort_key)
+            .map(|(_, pair)| pair)
+    }
+
+    /// One pass of the reference greedy: pick the best candidate by a
+    /// full `O(|V|+|E|)` scan and contract it. Returns the contracted
+    /// pair in canonical (lower, higher) order, or `None` at
+    /// convergence.
+    pub fn greedy_step(q: &mut QuotientGraph) -> Option<(ClassId, ClassId)> {
+        let (a, b) = pick_best_candidate(q)?;
+        q.contract(a, b).ok()?;
+        Some((a, b))
+    }
+
+    /// Reference implementation of the greedy loop using a
+    /// per-iteration full scan; its `O(|V|·|E|)` outer shape is the
+    /// reason the lazy-PQ driver exists.
+    /// `lazy_pq_greedy_matches_full_scan_greedy_on_corpus` compares the
+    /// two drivers' contraction sequences.
+    pub fn greedy_merge_to_convergence_full_scan(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
+        std::iter::from_fn(|| greedy_step(q)).collect()
+    }
+}
