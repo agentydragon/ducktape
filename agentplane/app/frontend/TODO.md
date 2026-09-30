@@ -13,7 +13,7 @@ build time.
 
 ## Thread view UX
 
-- **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`threads/projected_session.tsx`, the
+- **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`threads/thread_evidence.tsx`, the
   magnifying-glass `IconZoomCode` button) renders unconditionally at every one of its 7 call sites, one per
   message/entity, whether or not a reader is looking at that row. Consider a per-message overflow affordance
   instead -- e.g. a vertical-dots button, shown only on hover (desktop) or tap (mobile), holding this and other
@@ -21,7 +21,7 @@ build time.
   `TopbarActions`, holding "Debug history" / "Shut down harness" / thread id) -- a per-message menu and a
   per-thread menu, not one merged control, even though both would share the dots-icon pattern.
 - **Reasoning disclosure toggle with nothing behind it**: the reasoning branch of `EntityCard`'s body
-  (`threads/projected_session.tsx` ~line 404) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure` -- a
+  (`threads/thread_cards.tsx`) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure` -- a
   `<details>` (`threads/retained_disclosures.tsx`) whose payload isn't fetched until expanded -- whenever `entity.textRef`
   is non-null. A reasoning item can still resolve to empty text once that payload loads, and by then the toggle
   has already invited a click for nothing. Unlike the `textRef === null` case just below it (plain dimmed

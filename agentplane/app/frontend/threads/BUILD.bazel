@@ -87,6 +87,8 @@ ts_library(
         ":local_commands",
         ":projected_session_css",
         ":retained_disclosures",
+        ":thread_cards",
+        ":thread_evidence",
         ":thread_sync",
         ":thread_title",
         "//:node_modules/@bufbuild/protobuf",
@@ -96,9 +98,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:live",
-        "//agentplane/app/frontend:markdown",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:topbar",
         "//agentplane/protocol:command_pb",
@@ -122,6 +122,7 @@ ts_library(
         ":local_commands",
         ":projected_session",
         ":retained_disclosures",
+        ":thread_cards",
         ":thread_entity_fixture",
         ":thread_sync",
         "//:node_modules/@bufbuild/protobuf",
@@ -162,6 +163,44 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "thread_cards",
+    srcs = ["thread_cards.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_rows",
+        ":retained_disclosures",
+        ":thread_evidence",
+        ":thread_sync",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:json_view",
+        "//agentplane/app/frontend:markdown",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "thread_evidence",
+    srcs = [
+        "tabler_icons.d.ts",
+        "thread_evidence.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":chronological_debug",
+        ":retained_disclosures",
+        ":thread_sync",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:json_view",
     ],
 )
 

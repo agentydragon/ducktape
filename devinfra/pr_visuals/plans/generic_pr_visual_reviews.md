@@ -26,16 +26,7 @@ modified or removed — a review pointer, not a merge gate). The remaining
 comparison work is the optional tolerance/noise-model path on top of that
 exact default.
 
-## 1. Exercise the generic path live — done
-
-The generic path carries real traffic. Producers publishing at HEAD:
-`haku/console/frontend` (two renderers), `aiquota/gnome:test_render`,
-`study_casino`, `finance/augur`, and `props/frontend` — all through the shared
-writers `util/visual_review.py` and
-`util/testing/frontend_visual/visual-review-manifest.mjs`, with no
-publisher-side configuration per producer.
-
-## 2. Tolerance-aware comparison
+## Tolerance-aware comparison
 
 Exact comparison is the shipped default. Add an optional per-asset noise model
 so a producer whose visual test already documents sub-pixel drift (font
@@ -56,7 +47,7 @@ Exit criterion: a thresholded producer's no-op runs classify `unchanged` while
 real changes still surface `modified`, with writer parity and fixtures covering
 threshold-tolerated assets.
 
-## 3. Harden publication
+## Harden publication
 
 - Extend manifest validation with media types, file counts, file sizes, decoded
   dimensions, and total decoded-pixel limits.
@@ -77,14 +68,6 @@ threshold-tolerated assets.
 
 Exit criterion: fault-injection tests prove that stale runs and partial
 failures cannot publish a misleading current result.
-
-## 4. Document and expand producer coverage — done
-
-The producer recipe lives in <../README.md> § "Opting a visual test in", and the
-exit criterion (a third component opting in with producer-only changes) is well
-past: five components publish today across both writers. What remains from this
-section is the maintenance question, tracked as open decision 4 below — whether
-two behaviorally identical writers stay justified now that adoption is broad.
 
 ## Verification matrix
 
@@ -119,13 +102,8 @@ image, not merely a successful upload command.
 
 ## Open decisions
 
-1. ~~Retention policy for superseded baseline commit bundles and PR-referenced
-   pages.~~ Decided: keep everything for now — commit bundles are immutable,
-   `baselines/<slug>.json` pointers are the only mutable objects and only ever
-   advance. Garbage-collecting bundles that no pointer or open PR references
-   remains future work.
-2. Diff visualization style and whether a later schema needs per-asset masks.
-3. Whether unchanged-only runs always maintain a short sticky comment or only
+1. Diff visualization style and whether a later schema needs per-asset masks.
+2. Whether unchanged-only runs always maintain a short sticky comment or only
    update an existing comment.
-4. Whether the Python and JavaScript manifest writers remain justified after
+3. Whether the Python and JavaScript manifest writers remain justified after
    repository-wide adoption begins.
