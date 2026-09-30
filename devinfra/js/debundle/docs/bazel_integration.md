@@ -55,27 +55,11 @@ Deviation: a consumer that replaces `debundler` runs that binary's own solver.
 
 ## Profiling
 
-`debundle_pipeline` creates the normal pipeline target plus local profiling
-sibling targets that reuse the exact same action command, inputs, package
-roots, working directory, and debundler binary. For `name = "debundle"`:
-
-- `:debundle`
-- `:debundle_profile_time`
-- `:debundle_profile_perf`
-- `:debundle_profile_massif_heap`
-- `:debundle_profile_heaptrack`
-
-Profile actions are tagged `manual` and use local/no-remote/no-cache/no-sandbox
-execution requirements. Build them with full output downloads when remote
-execution is configured:
-
-```sh
-bazel build //path/to:debundle_profile_perf --remote_download_outputs=all
-```
-
-The standalone `perf_wrapper.sh` helper post-processes `perf` output for
-ad-hoc local runs; its header lists the report files it writes and the `PERF_*`
-knobs:
+`debundle_pipeline` has no profiling targets: `perf` needs the host kernel and
+massif/heaptrack need their own binaries on `PATH`, so sandboxed profile actions
+produced empty or misleading output. Run an `-c opt` debundler binary under
+`perf_wrapper.sh` directly. It writes the reports next to a rerunnable command
+stub; its header lists the report files and the `PERF_*` knobs:
 
 ```sh
 PERF_RECORD_FREQ=49 \

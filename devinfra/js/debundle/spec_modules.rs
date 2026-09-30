@@ -24,7 +24,7 @@ use serde::Deserialize;
 
 use spec::{
     AnonymousStatement, AnonymousStatementSelector, BindingAnnotation, BindingSourceKind, Member,
-    MemberSelectorSpec, ModulePath, SourceMatchClaim,
+    MemberSelectorSpec, ModulePath, SourceMatchClaim, is_residual_module_path,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,7 +52,7 @@ pub struct ModuleFile {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct BindingPatchesFile {
+struct BindingPatchesFile {
     #[serde(default)]
     pub members: Vec<Member>,
 }
@@ -69,13 +69,9 @@ pub struct ModuleClaims {
 
 impl ModuleClaims {
     pub fn is_empty(&self) -> bool {
-        !self.has_claims()
-    }
-
-    pub fn has_claims(&self) -> bool {
-        !self.bindings.is_empty()
-            || !self.anonymous_selectors.is_empty()
-            || !self.source_matches.is_empty()
+        self.bindings.is_empty()
+            && self.anonymous_selectors.is_empty()
+            && self.source_matches.is_empty()
     }
 
     pub fn extend(&mut self, other: ModuleClaims) {
@@ -138,7 +134,7 @@ pub fn read_module_file(path: &Path) -> Result<ModuleFile> {
     .with_context(|| format!("parsing {}", path.display()))
 }
 
-pub fn read_binding_patches_file(path: &Path) -> Result<BindingPatchesFile> {
+fn read_binding_patches_file(path: &Path) -> Result<BindingPatchesFile> {
     serde_yaml::from_str(
         &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
     )
@@ -152,7 +148,6 @@ pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
             MemberSelectorSpec::Binding(binding) => {
                 claims.bindings.insert(binding.name);
             }
-            MemberSelectorSpec::SourceMatch(_) => {}
             MemberSelectorSpec::CrossRef(_)
             | MemberSelectorSpec::ReadsMember(_)
             | MemberSelectorSpec::MemberOfModule(_)
@@ -185,31 +180,6 @@ pub fn load_binding_patch_members(modules_root: &Path) -> Result<Vec<Member>> {
         return Ok(Vec::new());
     }
     Ok(read_binding_patches_file(&path)?.members)
-}
-
-pub fn load_binding_patch_bindings(modules_root: &Path) -> Result<BTreeSet<String>> {
-    let mut bindings = BTreeSet::new();
-    for member in load_binding_patch_members(modules_root)? {
-        let Some(binding) = member.selector.binding else {
-            continue;
-        };
-        if matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)) {
-            continue;
-        }
-        bindings.insert(binding.name);
-    }
-    Ok(bindings)
-}
-
-/// Module path components that hold the spec's residual catch-all
-/// (default emit target [`spec::DEFAULT_RESIDUAL_MODULE_PATH`]
-/// per `spec::UnassignedMode::CatchallFile`). Files under any
-/// directory whose top-level segment is `residual/` are treated as
-/// "the still-to-be-factorized pile". Detection is by module-path
-/// prefix only (matches both the default and any spec author's
-/// custom `residual/<other>.yaml`).
-pub fn is_residual_module_path(module_path: &str) -> bool {
-    module_path == "residual" || module_path.starts_with("residual/")
 }
 
 /// Every chunk-top binding name claimed by an emitted `*.yaml`
@@ -466,33 +436,6 @@ members:
             msg.contains("bad.yaml"),
             "error should include the offending file path, got: {msg}",
         );
-    }
-
-    #[test]
-    fn is_residual_module_path_matches_residual_subtree_only() {
-        assert!(is_residual_module_path("residual"));
-        assert!(is_residual_module_path("residual/unhandled"));
-        assert!(is_residual_module_path("residual/custom/sub"));
-        assert!(!is_residual_module_path("ui/sidebar"));
-        // The substring "residual" inside a path segment shouldn't
-        // match — only the top-level segment counts.
-        assert!(!is_residual_module_path("ui/residual"));
-        assert!(!is_residual_module_path("residualish/foo"));
-    }
-
-    #[test]
-    fn load_binding_patch_bindings_reads_spec_root_patch_file() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path().join("modules");
-        write(
-            dir.path(),
-            "binding_patches.yaml",
-            "members:\n  - selector: { binding: { name: b } }\n  - selector: { binding: { name: c } }\n",
-        );
-
-        let names = load_binding_patch_bindings(&root).unwrap();
-
-        assert_eq!(names, BTreeSet::from(["b".to_string(), "c".to_string()]));
     }
 
     #[test]

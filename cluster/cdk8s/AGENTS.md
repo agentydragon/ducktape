@@ -116,7 +116,8 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   artifact (`artifact_generators.artifact(name, directory, *shared_bases)`) just before
   the call and writes the directory in the node's argument:
   `generation.write_directory(root, artifact, *chart_builders, siblings=[...])`
-  synthesizes the charts and writes a `kustomization.yaml` listing them and the
+  synthesizes the charts into the directory's one generated file (<../docs/cdk8s.md>
+  § Shapes of a directory) and writes a `kustomization.yaml` listing it and the
   hand-written siblings, so a component is written and joined in one statement. It passes
   every artifact to `write_artifact_generators` last; a parked node's artifact is left
   out, since nothing packages a suspended directory. A directory keeping a hand-written

@@ -47,9 +47,8 @@ next-coarsest level, and smoke-test that corpus.
 
 ## Performance Profiling
 
-Use the `debundle_pipeline` profile sibling targets
-(<docs/bazel_integration.md> § Profiling) so the run shares the real Bazel action's
-spec paths and inputs. In `perf` captures, read `perf_record_stderr.txt` for
+Profile an `-c opt` binary against a pre-staged input set with `perf_wrapper.sh`
+(<docs/bazel_integration.md> § Profiling). In `perf` captures, read `perf_record_stderr.txt` for
 progress markers, `perf_report_flat_symbols.txt` for self-cost, and the symbolized
 children report for callgraphs. For timed repros, stop the
 process on timeout and attach `gdb` to inspect live stacks; core-dump only when the
@@ -136,8 +135,7 @@ pure functions, or invariants awkward to expose via the CLI.
 
 Internal pipeline types are pure Rust: typed structs and enums, not stringly-typed
 discriminators or `Map<String, Value>` blobs mirroring external JSON. File roles
-are `FileRole`; module extraction metadata is `ModuleExtractionState`.
-Debundler-owned serialized enums use `#[serde(rename_all = "snake_case")]` unless
+are `FileRole`. Debundler-owned serialized enums use `#[serde(rename_all = "snake_case")]` unless
 an external contract requires otherwise. `serde_json::Value` only for genuinely
 polymorphic values (spec args, `#[serde(flatten)]` slots) or raw external input.
 Debundler-owned JSON gets no compatibility envelopes (`kind`, `schema_version`,

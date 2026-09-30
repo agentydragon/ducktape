@@ -27,8 +27,8 @@ VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
 
 
 @pytest.fixture
-def vpa_policy() -> Path:
-    return policy("default-vpa-requests-only.k8s.yaml")
+def vpa_policy(tmp_path: Path) -> Path:
+    return policy("default-vpa-requests-only", tmp_path)
 
 
 @pytest.fixture(scope="session")
@@ -83,7 +83,7 @@ def test_declared_policies_set_controlled_values(repo_root: Path) -> None:
             continue
         text = path.read_text()
         # Gate on content: Namespace objects are not confined to namespace.yaml
-        # (namespace-patch.k8s.yaml, gotk-components.yaml and some HelmReleases
+        # (patches.k8s.yaml, gotk-components.yaml and some HelmReleases
         # declare them too), and parsing every YAML here would pull in Authentik
         # blueprints with their custom tags.
         if "kind: Namespace" not in text:

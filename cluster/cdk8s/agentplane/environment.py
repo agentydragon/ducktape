@@ -104,7 +104,7 @@ class Environment:
     # includes, repo-relative (manifest_roots.py).
     output_dir: str
     image_pins: str
-    # Files the root Kustomization lists beside the generated `agentplane.k8s.yaml`.
+    # Files the root Kustomization lists beside the generated one.
     extra_resources: Sequence[str]
     replicas: ReplicaProfile
     # The ConfigMap-authored portion of agentplane/app/main.py's `Settings`.

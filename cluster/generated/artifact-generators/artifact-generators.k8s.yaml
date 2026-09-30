@@ -732,8 +732,10 @@ spec:
       name: ssh-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/study-casino/**"
-          to: "@artifact/cluster/k8s/study-casino/"
+        - from: "@repo/cluster/generated/study-casino/**"
+          to: "@artifact/cluster/generated/study-casino/"
+        - from: "@repo/cluster/k8s/study-casino-image-pins/**"
+          to: "@artifact/cluster/k8s/study-casino-image-pins/"
       name: study-casino
       originRevision: "@repo"
     - copy:

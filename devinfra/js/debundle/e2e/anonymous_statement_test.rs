@@ -91,14 +91,10 @@ export { X, Existing };
     );
 }
 
-// Regression test (originally RED) for the anonymous-only-module
-// side-effect drop: a logical module whose only member is an
-// anonymous statement owns no bindings, so the entry used to emit no
-// import for it at all — the emitted file existed but was never
-// loaded, and its side effects silently vanished while the gate
-// accepted the spec. The entry must emit a side-effect-only
-// `import "./<module>.js";` for binding-less modules, placed by the
-// same shared import ordering as every other entry import.
+// A logical module whose only member is an anonymous statement owns no
+// bindings, so the entry must emit a side-effect-only
+// `import "./<module>.js";` for it — placed by the same shared import
+// ordering as every other entry import — or its side effects never run.
 #[test]
 fn anonymous_only_module_side_effects_still_run() {
     let fixture = run_fixture(FixtureOpts::new(
@@ -553,7 +549,7 @@ export { RuntimeSubject, Existing };
                 Member::new("RuntimeToken"),
                 Member::new("RuntimeSubject"),
             ],
-            r#"decorate([token], Subject.prototype, "statusFlag");"#,
+            &[r#"decorate([token], Subject.prototype, "statusFlag");"#],
         )],
     ));
 
@@ -593,12 +589,14 @@ export { selectedValue, existingValue };
             logical_module_with_anon_alpha(
                 "primary_probe",
                 &[Member::new("selectedValue")],
-                r#"console.log(globalThis.primaryService?.enabled ? replacementValue : "off");"#,
+                &[r#"console.log(globalThis.primaryService?.enabled ? replacementValue : "off");"#],
             ),
             logical_module_with_anon_alpha(
                 "secondary_probe",
                 &[Member::new("existingValue")],
-                r#"console.log(globalThis.secondaryService?.enabled ? replacementValue : "off");"#,
+                &[
+                    r#"console.log(globalThis.secondaryService?.enabled ? replacementValue : "off");"#,
+                ],
             ),
         ],
     ));
@@ -825,7 +823,7 @@ const Existing = "existing";
 console.log(runtimeA, runtimeB === null, runtimeC, Existing);
 export { runtimeA, runtimeB, runtimeC, Existing };
 "#,
-        vec![logical_module_with_source_matches(
+        vec![logical_module_with_binding_groups(
             "selected_values",
             &[],
             &[BindingGroup::source_alpha(
@@ -946,7 +944,7 @@ let secondA = 100,
   secondC = `${secondA}:${secondB === null}:bar`;
 export { firstA, firstB, firstC, secondA, secondB, secondC };
 "#,
-        vec![logical_module_with_source_matches(
+        vec![logical_module_with_binding_groups(
             "selected_values",
             &[],
             &[BindingGroup::source_alpha(
@@ -1172,7 +1170,7 @@ export { FirstSubject, SecondSubject };
                 Member::new("FirstToken"),
                 Member::new("FirstSubject"),
             ],
-            r#"applyMetadata([token], Subject.prototype, "statusFlag");"#,
+            &[r#"applyMetadata([token], Subject.prototype, "statusFlag");"#],
         )],
     );
 

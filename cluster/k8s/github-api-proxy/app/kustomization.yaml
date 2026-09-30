@@ -3,7 +3,7 @@ kind: Kustomization
 namespace: github-api-proxy
 resources:
   # cdk8s-generated (cluster/cdk8s/github_api_proxy/proxy.py).
-  - github-api-proxy.k8s.yaml
+  - app.k8s.yaml
   - wyrm2-credentials.sops.yaml
   - rugged-credentials.sops.yaml
 components:

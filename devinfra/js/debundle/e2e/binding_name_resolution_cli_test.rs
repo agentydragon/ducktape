@@ -2,7 +2,7 @@
 //! resolver (`peel::resolve_binding_owners`) used by `debundle
 //! describe`, `show-source`, `cluster`, and `scc --binding`.
 //!
-//! Pins the `CLI_DOGFOOD.md` binding-name-resolution contract: all
+//! Pins the binding-name-resolution contract: all
 //! top-level graph/source query verbs share one helper; minified and
 //! readable forms work, both forms produce the same owner ids, and the
 //! minified form wins on the rare cross-binding spell collision.
@@ -20,7 +20,7 @@ use analysis::{
 };
 use debundle_e2e_support::write_text_file;
 use peel::{
-    CommonArgs, ExplainArgs, SelectionArgs, SourceSliceArgs, resolve_binding_owners,
+    CommonArgs, ExplainArgs, SelectionKind, SourceSliceArgs, resolve_binding_owners,
     run_explain_report, run_source_slice_report,
 };
 use report_fixtures::{module_entry, module_ref};
@@ -148,20 +148,11 @@ fn renamed_fixture() -> (TempDir, CommonArgs) {
 fn explain_with_binding(common: CommonArgs, sym: &str) -> peel::ExplainReport {
     run_explain_report(&ExplainArgs {
         common,
-        selection: SelectionArgs {
-            owner_id: None,
-            module_path: None,
-            module_id: None,
-            binding_id: Some(sym.to_string()),
-            proposal_id: None,
-            unit_id: None,
-            diagnostic_id: None,
-        },
+        selection: SelectionKind::Binding(sym.to_string()),
         size_cap_lines: 10_000,
         source_root: None,
         limit: 0,
         include_proposals: false,
-        format: None,
     })
     .expect("explain report")
 }
@@ -173,27 +164,17 @@ fn show_source_with_binding(
 ) -> peel::SourceSliceReport {
     run_source_slice_report(&SourceSliceArgs {
         common,
-        selection: SelectionArgs {
-            owner_id: None,
-            module_path: None,
-            module_id: None,
-            binding_id: Some(sym.to_string()),
-            proposal_id: None,
-            unit_id: None,
-            diagnostic_id: None,
-        },
+        selection: SelectionKind::Binding(sym.to_string()),
         size_cap_lines: 10_000,
         context_lines: 1,
         source_root: Some(source_root.to_path_buf()),
-        format: None,
     })
     .expect("source slice report")
 }
 
 #[test]
 fn describe_accepts_readable_name() {
-    // CLI_DOGFOOD.md contract: readable names resolve to the same
-    // owner as the minified form.
+    // Readable names resolve to the same owner as the minified form.
     let (_dir, common) = renamed_fixture();
     let report = explain_with_binding(common, "PluginSettingsAccessor");
     assert_eq!(report.owner_ids, vec!["owner:0"]);
@@ -210,9 +191,8 @@ fn describe_accepts_minified_name() {
 
 #[test]
 fn show_source_accepts_readable_name() {
-    // Companion to describe: `show-source` used to reject readable
-    // names with the same error. After the fix it returns the same
-    // source slice the minified form would.
+    // Companion to describe: `show-source` returns the same source slice for
+    // a readable name as for the minified form.
     let (dir, common) = renamed_fixture();
     let report = show_source_with_binding(common, "PluginSettingsAccessor", dir.path());
     assert_eq!(report.slices.len(), 1);
@@ -249,9 +229,8 @@ fn resolve_binding_owners_matches_both_name_forms() {
 fn resolve_binding_owners_prefers_minified_on_name_collision() {
     // Disambiguation contract: if one owner's minified name and a
     // different owner's readable name both spell the same string,
-    // the minified-name match wins the slice ordering (back-compat
-    // with the pre-fix behavior, which never saw readable matches).
-    // Both still appear so callers that want to detect ambiguity can.
+    // the minified-name match wins the slice ordering. Both still appear so
+    // callers that want to detect ambiguity can.
     let dir = TempDir::new().unwrap();
     let graph_path = dir.path().join("owner_graph.json");
     let modules_root = dir.path().join("spec/modules");

@@ -12,11 +12,14 @@ from typing import Self
 
 import httpx
 from httpx_sse import EventSource, ServerSentEvent, aconnect_sse
+from more_itertools import one
 from pydantic import BaseModel, SecretStr
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 from tenacity.wait import wait_base
 
+from devinfra.claude.session_export.failures import raise_for_status_with_body
 from devinfra.claude.session_export.models import (
+    DeliveryUpdate,
     Event,
     EventsPage,
     ResumeTokenPage,
@@ -96,15 +99,6 @@ class SessionCookie(BaseModel, frozen=True):
         if not (session_key and org_uuid):
             raise ValueError(f"{path} must contain sessionKey= and lastActiveOrg= cookies")
         return cls(session_key=SecretStr(session_key.group(1)), org_uuid=org_uuid.group(1))
-
-
-def _raise_for_status(response: httpx.Response) -> None:
-    """`raise_for_status`, with the start of the body attached: it says why (missing header, expired key)."""
-    try:
-        response.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        e.add_note(response.text[:300])
-        raise
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -189,7 +183,7 @@ class SessionsApi:
 
     async def _get_once(self, path: str, params: dict[str, str | int]) -> httpx.Response:
         response = await self._client.get(path, params=params)
-        _raise_for_status(response)
+        raise_for_status_with_body(response)
         return response
 
     async def _get(self, path: str, **params: str | int | None) -> httpx.Response:
@@ -238,6 +232,19 @@ class SessionsApi:
                 return
             cursor = page.next_cursor
 
+    async def read_event(self, session_id: str, sequence_num: int) -> Event:
+        """One event as the events route reports it now: its worker stamps move on after it is first sent."""
+        response = await self._get(
+            f"/v1/code/sessions/{session_id}/events",
+            limit=1,
+            sort_order=SortOrder.ASC,
+            cursor=str(sequence_num - 1) if sequence_num > 1 else None,
+        )
+        event = one(EventsPage.model_validate_json(response.content).data)
+        if event.seq != sequence_num:
+            raise ValueError(f"{session_id=}: expected sequence_num {sequence_num}, got {event.sequence_num}")
+        return event
+
     async def newest_sequence_num(self, session_id: str) -> int:
         response = await self._get(f"/v1/code/sessions/{session_id}/events", limit=1, sort_order=SortOrder.DESC)
         page = EventsPage.model_validate_json(response.content)
@@ -259,7 +266,7 @@ class SessionsApi:
                 raise ResumePointLostError(f"{path}: {response.status_code}")
             if response.is_error:
                 await response.aread()
-                _raise_for_status(response)
+                raise_for_status_with_body(response)
             yield source
 
     def _note_unknown_frame(self, frame: ServerSentEvent) -> None:
@@ -282,8 +289,8 @@ class SessionsApi:
 
     async def stream_events(
         self, session_id: str, *, after: int, on_connected: Callable[[], None] | None = None
-    ) -> AsyncGenerator[Event]:
-        """The live tail of a session's events past `after`, each as the server pushes it.
+    ) -> AsyncGenerator[Event | DeliveryUpdate]:
+        """The live tail of a session's events past `after`, each as the server pushes it, and the delivery updates.
 
         `on_connected` is called once the server has accepted the stream. Ends when the server closes the stream or
         it falls silent for `STREAM_IDLE_TIMEOUT`. Raises `ResumePointLostError` when the server cannot resume from
@@ -307,6 +314,9 @@ class SessionsApi:
                         case EventStreamFrame.CLIENT_EVENT:
                             if frame.data:  # an empty one only advances the client's cursor
                                 yield Event.model_validate_json(frame.data)
+                        case EventStreamFrame.DELIVERY_UPDATE:
+                            if frame.data:
+                                yield DeliveryUpdate.model_validate_json(frame.data)
                         case EventStreamFrame.CATCH_UP_TRUNCATED:
                             raise ResumePointLostError(
                                 f"{session_id=}: the server truncated the catch-up after {after}"
@@ -315,7 +325,6 @@ class SessionsApi:
                             EventStreamFrame.UNNAMED
                             | EventStreamFrame.SESSION_UPDATE
                             | EventStreamFrame.EPHEMERAL_EVENT
-                            | EventStreamFrame.DELIVERY_UPDATE
                         ):
                             pass  # nothing the store keeps: a keepalive, not persisted, or metadata the list carries
                         case _:

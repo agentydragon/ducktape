@@ -53,7 +53,6 @@ mod local_effect_targets;
 mod local_effects;
 mod purity_classification;
 mod statement_facts;
-pub mod wire;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
@@ -75,4 +74,3 @@ pub use statement_facts::{
     ChunkFactAnalysis, EffectCell, PositionBucketed, StatementEffectSummary, StatementFacts,
     StatementKind, StructuralChunkAnalysis, StructuralStatementFacts,
 };
-pub use wire::{ChunkFactsReport, IdReport, StatementFactsReport};

@@ -19,16 +19,26 @@ export function ago(instant: string, now: number): string {
   return elapsed < MINUTE ? "just now" : `${span(elapsed)} ago`;
 }
 
-/** What live following is doing, from the status's `live` block. */
-export function liveSummary(
-  live: { following: boolean; watching: boolean; streams: number; last_event_at: string | null },
-  now: number
-): string {
-  if (!live.following) return "Off; the sync polls only";
-  const watch = live.watching ? "watch connected" : "watch not connected";
-  const streams = `${live.streams} ${live.streams === 1 ? "session" : "sessions"} streaming`;
-  const event = live.last_event_at === null ? "no event yet" : `last event ${ago(live.last_event_at, now)}`;
-  return `${watch}, ${streams}, ${event}`;
+/** A polling interval as prose: "45 seconds", "5 minutes", "2 hours". */
+export function every(seconds: number): string {
+  if (seconds < 60) return plural(Math.round(seconds), "second");
+  if (seconds < 3600) return plural(Math.round(seconds / 60), "minute");
+  return plural(Math.round(seconds / 3600), "hour");
+}
+
+export function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** The poll starts a fixed pause after the last one finished. */
+export function nextPoll(finishedAt: string, intervalSeconds: number, now: number): string {
+  const remaining = Date.parse(finishedAt) + intervalSeconds * 1000 - now;
+  return remaining <= 0 ? "due now" : `in ${span(remaining)}`;
+}
+
+/** When an event last arrived over a stream, or that none has since the sync started. */
+export function lastEvent(instant: string | null, now: number): string {
+  return instant === null ? "none yet" : ago(instant, now);
 }
 
 /** Server messages are written for logs, lower-case; the page shows them as sentences. */

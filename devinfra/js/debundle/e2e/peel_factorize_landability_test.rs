@@ -24,9 +24,8 @@
 //!    whole closure instead of leaving the prerequisite as a
 //!    singleton leaf.
 
-use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
-use peel::factorize::factorize;
+use peel::factorize::{PeelCandidateStatus, factorize};
 use spec::{MemberEffect, ModulePath};
 use std::collections::BTreeMap;
 
@@ -72,16 +71,16 @@ export { anchor, consumer };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     assert!(
-        report.proposals.iter().all(|proposal| proposal.status
-            == analysis::PeelCandidateStatus::PeelableNow
-            && (proposal.landable_today
-                || (!proposal.unaddressable_anonymous_owner_ids.is_empty()
-                    && !proposal.landability_notes.is_empty()))),
+        report.proposals.iter().all(
+            |proposal| proposal.status == PeelCandidateStatus::PeelableNow
+                && (proposal.landable_today
+                    || (!proposal.unaddressable_anonymous_owner_ids.is_empty()
+                        && !proposal.landability_notes.is_empty()))
+        ),
         "factorize proposals must be landable or explicitly advisory: {report:#?}",
     );
     assert!(
@@ -107,8 +106,7 @@ export { anchor, consumer_a, consumer_b };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let report = factorize(&graph, &no_claims(), 10_000).unwrap();
     assert!(
         report
@@ -136,15 +134,14 @@ export { anchor, dep, consumer };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["consumer".to_string()]
                 && proposal.landable_today
-                && proposal.status == analysis::PeelCandidateStatus::PeelableNow
+                && proposal.status == PeelCandidateStatus::PeelableNow
         }),
         "entry-exported lazy provider should not be forced into consumer's proposal: {report:#?}",
     );
@@ -179,8 +176,7 @@ export { a, b, c };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     let chain_cell = report
@@ -234,8 +230,7 @@ export { anchor, consumer };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     let consumer_alone = report
@@ -270,8 +265,7 @@ export { anchor, consumer };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     let consumer_alone = report
@@ -305,8 +299,7 @@ export { anchor, consumer_a, consumer_b };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     let combined = report
@@ -364,8 +357,7 @@ export { anchor, dep, consumer };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let report = factorize(&graph, &no_claims(), 1).unwrap();
 
     let blocked = report
@@ -375,7 +367,7 @@ export { anchor, dep, consumer };
         .expect("factorizer should keep `{consumer}` as its own cell under the tight cap");
     assert_eq!(
         blocked.status,
-        analysis::PeelCandidateStatus::BlockedResidualDependency,
+        PeelCandidateStatus::BlockedResidualDependency,
         "{blocked:?}",
     );
     assert!(
@@ -397,7 +389,7 @@ export { anchor, dep, consumer };
         .expect("factorizer should keep `{dep}` as its own cell under the tight cap");
     assert_eq!(
         landable.status,
-        analysis::PeelCandidateStatus::PeelableNow,
+        PeelCandidateStatus::PeelableNow,
         "{landable:?}",
     );
     assert!(
@@ -420,8 +412,7 @@ export { anchor, impure, pureBrand };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let report = factorize(&graph, &no_claims(), 10_000).unwrap();
     assert!(
         report.proposals.iter().any(|proposal| {
@@ -469,8 +460,7 @@ export { anchor, mutable, peer };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let report = factorize(&graph, &no_claims(), 10_000).unwrap();
     assert!(
         report.proposals.iter().any(|proposal| {
@@ -537,8 +527,7 @@ export { anchor, SearchPopoverState };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     assert!(

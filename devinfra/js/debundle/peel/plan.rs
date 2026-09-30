@@ -140,92 +140,33 @@ pub struct GraphSummaryArgs {
     pub format: Option<OutputFormat>,
 }
 
-#[derive(Debug, Clone, ClapArgs)]
+#[derive(Debug, Clone)]
 pub struct ExplainArgs {
-    #[command(flatten)]
     pub common: CommonArgs,
-
-    #[command(flatten)]
-    pub selection: SelectionArgs,
-
-    /// Hard line ceiling used when resolving `--proposal-id`.
-    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
+    pub selection: SelectionKind,
+    /// Hard line ceiling used when resolving a proposal selection.
     pub size_cap_lines: usize,
-
     /// Root used to resolve relative `source_location.source_path`
     /// values when module-path selections claim anonymous statements.
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub source_root: Option<PathBuf>,
-
     /// Maximum number of rows to emit per report section. Zero means unlimited.
-    #[arg(long, default_value_t = 0)]
     pub limit: usize,
-
     /// Also run the proposal factorizer to annotate matching proposals and
     /// diagnostics. This is intentionally opt-in because it is expensive on
     /// large graphs.
-    #[arg(long = "include-proposals")]
     pub include_proposals: bool,
-
-    /// Output format. Default `text` on tty, `json` on pipe.
-    #[arg(long, value_enum)]
-    pub format: Option<OutputFormat>,
 }
 
-#[derive(Debug, Clone, ClapArgs)]
+#[derive(Debug, Clone)]
 pub struct SourceSliceArgs {
-    #[command(flatten)]
     pub common: CommonArgs,
-
-    #[command(flatten)]
-    pub selection: SelectionArgs,
-
-    /// Hard line ceiling used when resolving `--proposal-id`.
-    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
+    pub selection: SelectionKind,
+    /// Hard line ceiling used when resolving a proposal selection.
     pub size_cap_lines: usize,
-
     /// Extra source lines to include around the selected owner span.
-    #[arg(long = "context-lines", default_value_t = 20)]
     pub context_lines: usize,
-
     /// Root used to resolve relative `source_location.source_path` values.
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub source_root: Option<PathBuf>,
-
-    /// Output format. Default `text` on tty, `json` on pipe.
-    #[arg(long, value_enum)]
-    pub format: Option<OutputFormat>,
-}
-
-#[derive(Debug, Clone, Default, ClapArgs)]
-pub struct SelectionArgs {
-    /// Select one owner id from `owner_graph.json`.
-    #[arg(long = "owner-id")]
-    pub owner_id: Option<String>,
-
-    /// Select every owner claimed by this module path.
-    #[arg(long = "module-path")]
-    pub module_path: Option<String>,
-
-    /// Select every owner assigned to this module id.
-    #[arg(long = "module-id")]
-    pub module_id: Option<String>,
-
-    /// Select the owner that declares this input binding id.
-    #[arg(long = "binding-id")]
-    pub binding_id: Option<String>,
-
-    /// Select a factorizer proposal by `proposed_module_id`.
-    #[arg(long = "proposal-id")]
-    pub proposal_id: Option<String>,
-
-    /// Select one atomic unit id from `owner_graph.json`.
-    #[arg(long = "unit-id")]
-    pub unit_id: Option<String>,
-
-    /// Select one factorizer diagnostic by `diagnostic_id`.
-    #[arg(long = "diagnostic-id")]
-    pub diagnostic_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -245,14 +186,22 @@ pub enum QueryKind {
     Diagnostic,
 }
 
-#[derive(Debug, Clone)]
-enum SelectionKind {
+/// What `describe` / `show-source` select owners by; each variant carries its id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelectionKind {
+    /// One owner id from `owner_graph.json`.
     Owner(String),
+    /// Every owner claimed by this module path.
     ModulePath(String),
+    /// Every owner assigned to this module id.
     Module(String),
+    /// The owner that declares this input binding id.
     Binding(String),
+    /// A factorizer proposal by `proposed_module_id`.
     Proposal(String),
+    /// One atomic unit id from `owner_graph.json`.
     Unit(String),
+    /// One factorizer diagnostic by `diagnostic_id`.
     Diagnostic(String),
 }
 
@@ -317,7 +266,7 @@ pub struct ExplainReport {
     pub incoming_atomic_edges: Vec<AtomicUnitEdgeReport>,
     pub outgoing_atomic_edges: Vec<AtomicUnitEdgeReport>,
     pub quotient_edges: Vec<QuotientEdgeReport>,
-    /// Bindings claimed by a `--module-path` selection that do not
+    /// Bindings claimed by a module-path selection that do not
     /// appear in the owner graph. Always empty for other selections.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unknown_binding_ids: Vec<String>,
@@ -425,7 +374,7 @@ pub enum BindingHomeSourceKind {
 pub struct SourceSliceReport {
     pub query: QueryReport,
     pub owner_ids: Vec<String>,
-    /// Bindings claimed by a `--module-path` selection that do not
+    /// Bindings claimed by a module-path selection that do not
     /// appear in the owner graph. Always empty for other selections.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unknown_binding_ids: Vec<String>,
@@ -691,10 +640,10 @@ macro_rules! apply_limits {
 
 pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
-    let selection = args.selection.selection_kind()?;
-    let query = query_report(&selection);
+    let selection = &args.selection;
+    let query = query_report(selection);
     let selection_needs_factorize = matches!(
-        &selection,
+        selection,
         SelectionKind::Proposal(_) | SelectionKind::Diagnostic(_)
     );
     let factorize = if args.include_proposals || selection_needs_factorize {
@@ -715,7 +664,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         owner_ids,
         unknown_binding_ids,
     } = resolve_owner_ids(
-        &selection,
+        selection,
         &graph,
         &args.common,
         args.size_cap_lines,
@@ -858,13 +807,13 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
 
 pub fn run_source_slice_report(args: &SourceSliceArgs) -> Result<SourceSliceReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
-    let selection = args.selection.selection_kind()?;
-    let query = query_report(&selection);
+    let selection = &args.selection;
+    let query = query_report(selection);
     let ResolvedSelection {
         owner_ids,
         unknown_binding_ids,
     } = resolve_owner_ids(
-        &selection,
+        selection,
         &graph,
         &args.common,
         args.size_cap_lines,
@@ -1179,7 +1128,7 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
     }
     for file in collect_module_files(modules_root)? {
         let claims = read_module_claims(&file)?;
-        if !claims.has_claims() {
+        if claims.is_empty() {
             continue;
         }
         sets.push(PatchSet {
@@ -1247,45 +1196,6 @@ fn matching_proposal_ids(
         })
         .map(|proposal| proposal.proposed_module_id.clone())
         .collect()
-}
-
-impl SelectionArgs {
-    fn selection_kind(&self) -> Result<SelectionKind> {
-        let selected = [
-            self.owner_id.as_ref(),
-            self.module_path.as_ref(),
-            self.module_id.as_ref(),
-            self.binding_id.as_ref(),
-            self.proposal_id.as_ref(),
-            self.unit_id.as_ref(),
-            self.diagnostic_id.as_ref(),
-        ]
-        .into_iter()
-        .filter(|value| value.is_some())
-        .count();
-        if selected != 1 {
-            bail!(
-                "select exactly one of --owner-id, --module-path, --module-id, --binding-id, --proposal-id, --unit-id, or --diagnostic-id (got {selected})"
-            );
-        }
-        if let Some(owner_id) = &self.owner_id {
-            Ok(SelectionKind::Owner(owner_id.clone()))
-        } else if let Some(module_path) = &self.module_path {
-            Ok(SelectionKind::ModulePath(module_path.clone()))
-        } else if let Some(module_id) = &self.module_id {
-            Ok(SelectionKind::Module(module_id.clone()))
-        } else if let Some(binding_id) = &self.binding_id {
-            Ok(SelectionKind::Binding(binding_id.clone()))
-        } else if let Some(proposal_id) = &self.proposal_id {
-            Ok(SelectionKind::Proposal(proposal_id.clone()))
-        } else if let Some(unit_id) = &self.unit_id {
-            Ok(SelectionKind::Unit(unit_id.clone()))
-        } else if let Some(diagnostic_id) = &self.diagnostic_id {
-            Ok(SelectionKind::Diagnostic(diagnostic_id.clone()))
-        } else {
-            unreachable!("selected count already validated")
-        }
-    }
 }
 
 fn query_report(selection: &SelectionKind) -> QueryReport {
@@ -1470,7 +1380,7 @@ fn resolve_module_path_owner_ids(
     let yaml_path = common.modules_root.join(format!("{module_path}.yaml"));
     let claims = read_module_claims(&yaml_path)
         .with_context(|| format!("reading module YAML {}", yaml_path.display()))?;
-    if !claims.has_claims() {
+    if claims.is_empty() {
         bail!("module {module_path:?} has no members or anonymous_statements; nothing to describe");
     }
 
@@ -1890,20 +1800,11 @@ mod tests {
         let (_temp, common) = fixture();
         let report = run_explain_report(&ExplainArgs {
             common,
-            selection: SelectionArgs {
-                owner_id: None,
-                module_path: None,
-                module_id: None,
-                binding_id: Some("ZZ".to_string()),
-                proposal_id: None,
-                unit_id: None,
-                diagnostic_id: None,
-            },
+            selection: SelectionKind::Binding("ZZ".to_string()),
             size_cap_lines: 10_000,
             source_root: None,
             limit: 0,
             include_proposals: true,
-            format: None,
         })
         .unwrap();
         assert_eq!(report.owner_ids, vec!["owner:0"]);
@@ -1925,20 +1826,11 @@ mod tests {
         let (_temp, common) = fixture();
         let report = run_explain_report(&ExplainArgs {
             common,
-            selection: SelectionArgs {
-                owner_id: None,
-                module_path: None,
-                module_id: None,
-                binding_id: Some("ZZ".to_string()),
-                proposal_id: None,
-                unit_id: None,
-                diagnostic_id: None,
-            },
+            selection: SelectionKind::Binding("ZZ".to_string()),
             size_cap_lines: 10_000,
             source_root: None,
             limit: 0,
             include_proposals: false,
-            format: None,
         })
         .unwrap();
 
@@ -1976,20 +1868,11 @@ mod tests {
         let (_temp, common) = fixture_with_graph(graph);
         let report = run_explain_report(&ExplainArgs {
             common,
-            selection: SelectionArgs {
-                owner_id: None,
-                module_path: None,
-                module_id: None,
-                binding_id: Some("ZZ".to_string()),
-                proposal_id: None,
-                unit_id: None,
-                diagnostic_id: None,
-            },
+            selection: SelectionKind::Binding("ZZ".to_string()),
             size_cap_lines: 10_000,
             source_root: None,
             limit: 1,
             include_proposals: false,
-            format: None,
         })
         .unwrap();
 
@@ -2011,19 +1894,10 @@ mod tests {
         let (temp, common) = fixture();
         let report = run_source_slice_report(&SourceSliceArgs {
             common,
-            selection: SelectionArgs {
-                owner_id: Some("owner:0".to_string()),
-                module_path: None,
-                module_id: None,
-                binding_id: None,
-                proposal_id: None,
-                unit_id: None,
-                diagnostic_id: None,
-            },
+            selection: SelectionKind::Owner("owner:0".to_string()),
             size_cap_lines: 10_000,
             context_lines: 1,
             source_root: Some(temp.path().to_path_buf()),
-            format: None,
         })
         .unwrap();
         assert_eq!(report.slices.len(), 1);

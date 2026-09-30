@@ -42,10 +42,9 @@ there).
 2. A session is behind when `synced_last_event_at` differs from the `last_event_at` just listed.
 3. For each behind session, read events after the resume point and store them page by page. The resume point is the
    newest stored `sequence_num`, or just before the earliest event that had `received_at` but no `processed_at` when
-   stored: whether those stamps change after first read is unobserved, and re-reading such an event refreshes them
-   at no cost when they do not. `SessionsApi.iter_event_pages` raises on a page with a gap in `sequence_num` before
-   yielding it, so none is stored: `resume_after` reads the newest stored number, and an event stored past a gap
-   would never be fetched.
+   stored: the stamps do move on after an event is first read, and re-reading it refreshes them.
+   `SessionsApi.iter_event_pages` raises on a page with a gap in `sequence_num` before yielding it, so none is
+   stored: `resume_after` reads the newest stored number, and an event stored past a gap would never be fetched.
 4. Set `synced_last_event_at` to the value listed in step 1, not a newer one: events arriving during the pass leave the
    session behind for the next cycle. A crash before this step leaves it behind, and the next cycle resumes after
    the last stored event.
@@ -77,7 +76,11 @@ Rules that keep the mirror exact:
 - An event is stored only when its `sequence_num` is at most one past the stored position. A frame beyond that, a
   `catch_up_truncated` frame or a 410 sends the session back to paging from its stored position before its stream is
   reopened: `resume_after` reads the newest stored number, so an event stored past a gap would never be fetched.
-- A frame at or below the position is stored again, which refreshes the worker stamps as a page read does.
+- A stream pushes a client-sent event without its worker stamps and does not send it again when they change; a
+  `delivery_update` frame says one did. The follower looks the event up by its `event_id` in the store, reads it from
+  the events route (`SessionsApi.read_event`) and stores it again, which refreshes the stamps. It does not read the
+  frame's status or copy its `timestamp`, which is not the stored stamp. An update for an event that is not stored is
+  logged as a warning and skipped.
 - Streams do not move `synced_last_event_at`. A session they touched is behind until the next cycle reads it, which
   finds nothing new and marks it level.
 - A failing source (discovery, the watch, or one session's stream) retries with jittered backoff from 1 s to 5 min and never

@@ -17,7 +17,6 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
 use debundle_e2e_support::*;
 
@@ -49,15 +48,8 @@ fn graph_path(rejected: &RejectedFixture) -> PathBuf {
     rejected.report_root.join("static/app/owner_graph.json")
 }
 
-fn run_gate(args: &[&str]) -> std::process::Output {
-    Command::new(debundler_path())
-        .args(args)
-        .output()
-        .expect("spawn debundle")
-}
-
 fn gate_json(args: &[&str]) -> serde_json::Value {
-    let out = run_gate(args);
+    let out = run_debundle(args);
     assert!(
         out.status.success(),
         "gate {:?} exit: stderr={}",
@@ -200,7 +192,7 @@ fn gate_cut_returns_the_actionable_edges() {
 #[test]
 fn gate_unknown_id_fails_cleanly() {
     let rejected = rejected_cycle_fixture();
-    let out = run_gate(&[
+    let out = run_debundle(&[
         "gate",
         "describe",
         "99",

@@ -823,6 +823,7 @@ py_library(
         ":manifest_roots",
         ":secret_ref",
         ":service_ref",
+        "//cluster/cdk8s/agents:namespaces",
         "//cluster/cdk8s/cert_manager:interception_ca",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -880,8 +881,7 @@ py_library(
     srcs = ["stateful_infra.py"],
     visibility = ["//cluster/cdk8s/seaweedfs:__pkg__"],
     deps = [
-        ":generation",
-        ":manifest_roots",
+        "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
@@ -992,8 +992,6 @@ py_library(
     visibility = ["//cluster/validation:__pkg__"],
     deps = [
         ":cilium",
-        ":generation",
-        ":manifest_roots",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
@@ -1538,6 +1536,7 @@ py_library(
     deps = [
         ":artifact_generators",
         ":flux",
+        ":generation",
         ":helm",
         ":manifest_roots",
         ":node_scheduling",
@@ -1646,7 +1645,6 @@ py_library(
         ":public_coder_sshpiper",
         ":reflector",
         ":reloader",
-        ":stateful_infra",
         ":talos_cloud_controller_manager",
         ":user_agentydragon",
         ":valkey",
@@ -1784,7 +1782,6 @@ py_library(
         "//cluster/cdk8s/ssh_mcp:generation",
         "//cluster/cdk8s/sshpiper_crds:flux_kustomizations",
         "//cluster/cdk8s/study_casino:app",
-        "//cluster/cdk8s/study_casino:flux_kustomizations",
         "//cluster/cdk8s/tofu_controller:release",
         "//cluster/cdk8s/tofu_state:db",
         "//cluster/cdk8s/tofu_state:namespace",
@@ -1827,6 +1824,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
+        ":generation",
         ":manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",

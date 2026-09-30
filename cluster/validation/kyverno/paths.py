@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+from more_itertools import one
+
 from util.bazel.runfiles import get_required_path
+
+_POLICIES = "_main/cluster/generated/kyverno/policies/policies.k8s.yaml"
 
 
 def manifest(name: str) -> Path:
@@ -17,6 +22,18 @@ def manifest(name: str) -> Path:
     return get_required_path(f"_main/cluster/validation/kyverno/testdata/{name}")
 
 
-def policy(file_name: str) -> Path:
-    """A ClusterPolicy manifest, by file name, from cluster/generated/kyverno/policies/."""
-    return get_required_path(f"_main/cluster/generated/kyverno/policies/{file_name}")
+def policy(name: str, directory: Path) -> Path:
+    """The ClusterPolicy `name` from cluster/generated/kyverno/policies/, alone in a file under
+    `directory`: `kyverno apply` runs every policy a file holds, and that directory's policies
+    share one."""
+    path = directory / f"{name}.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            one(
+                doc
+                for doc in yaml.safe_load_all(get_required_path(_POLICIES).read_text())
+                if doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == name
+            )
+        )
+    )
+    return path

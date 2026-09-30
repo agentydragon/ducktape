@@ -9,10 +9,12 @@ py_library(
     name = "api",
     srcs = ["api.py"],
     deps = [
+        ":failures",
         ":models",
         ":oauth",
         "@pypi//httpx",
         "@pypi//httpx_sse",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//tenacity",
     ],
@@ -155,6 +157,7 @@ py_library(
     name = "oauth",
     srcs = ["oauth.py"],
     deps = [
+        ":failures",
         "//devinfra/claude/claude_api:oauth_client",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -332,7 +335,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -396,6 +398,7 @@ py_test(
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

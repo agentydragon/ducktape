@@ -22,8 +22,8 @@ use spec::TransformSpec;
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
-    ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, ChunkStripStats,
-    VendorPlanOptions, VendorResolution, apply_emission_rewrites, build_partial_swap_resolutions,
+    ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, VendorPlanOptions,
+    VendorResolution, apply_emission_rewrites, build_partial_swap_resolutions,
     build_vendor_resolution_plan, validate_partial_swap_consumers, write_planned_vendor_outputs,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
@@ -48,17 +48,6 @@ pub struct TransformRunOptions {
     /// chunk's selector report, and write the report even when every
     /// selector resolved. For `debundle spec validate`.
     pub list_template_identifiers: bool,
-}
-
-impl Default for TransformRunOptions {
-    fn default() -> Self {
-        Self {
-            dry_run: false,
-            keep_going: true,
-            report_dir_override: None,
-            list_template_identifiers: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,21 +164,13 @@ fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
     ))
 }
 
-pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
-    run_transform_cli_with_options(cli, TransformRunOptions::default())
-}
-
-pub fn run_transform_cli_with_options(
-    cli: &TransformCli,
-    options: TransformRunOptions,
-) -> Result<()> {
+pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Result<()> {
     let spec = load_transform_spec_source(&cli.spec_source)?;
     validate_transform_spec(&spec)?;
     if !options.dry_run {
         preflight_output_roots(&spec)?;
     }
-    let (artifact, _load_manifest) =
-        load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
+    let artifact = load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
     let materialise_chunk_ids: Vec<String> = spec
         .logical_modules
         .keys()
@@ -315,20 +296,15 @@ pub fn run_transform_cli_with_options(
     // Runs after materialize so the per-symbol consumer rewrite cannot
     // erase binding names spec selectors matched on.
     let mut vendor_rewrite_counts = vendor_lowering_rewrites;
-    let emission_outcome;
-    (indexed, emission_outcome) = indexed.update(|artifact, indexes| {
+    let emission_references;
+    (indexed, emission_references) = indexed.update(|artifact, indexes| {
         let emission_result = apply_emission_rewrites(artifact, &vendor_plan, indexes)?;
         Ok((
             emission_result.artifact,
-            (
-                emission_result.references_by_symbol,
-                emission_result.strip_stats,
-            ),
+            emission_result.references_by_symbol,
         ))
     })?;
-    let (emission_references, strip_stats) = emission_outcome;
     merge_rewrite_counts(&mut vendor_rewrite_counts, emission_references);
-    vendor_report.strip_stats = strip_stats;
 
     if vendor_plan.has_partial_swaps() || vendor_plan.has_bundled_partial_swaps() {
         // Post-strip consumer gate: no retained file may still consume
@@ -515,8 +491,6 @@ struct VendorSwapsReport {
     partial: BTreeMap<String, ChunkPartialSwapResolution>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     bundled_partial: BTreeMap<String, ChunkBundledPartialSwapResolution>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    strip_stats: BTreeMap<String, ChunkStripStats>,
 }
 
 fn write_vendor_swaps_report(
@@ -527,21 +501,13 @@ fn write_vendor_swaps_report(
     if !write {
         return Ok(());
     }
-    if report.full.is_empty()
-        && report.partial.is_empty()
-        && report.bundled_partial.is_empty()
-        && report.strip_stats.is_empty()
-    {
+    if report.full.is_empty() && report.partial.is_empty() && report.bundled_partial.is_empty() {
         return Ok(());
     }
     let Some(path) = path else {
         return Ok(());
     };
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    write_json(path, report)?;
-    Ok(())
+    write_json(path, report)
 }
 
 fn preflight_output_roots(spec: &TransformSpec) -> Result<()> {
@@ -602,9 +568,15 @@ fn path_is_within(path: &Path, root: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use artifact::parse_js_list;
     use spec::SwapVendorChunksConfig;
     use std::collections::BTreeMap;
+
+    const KEEP_GOING_RUN: TransformRunOptions = TransformRunOptions {
+        dry_run: false,
+        keep_going: true,
+        report_dir_override: None,
+        list_template_identifiers: false,
+    };
 
     #[derive(Serialize)]
     struct AssetSummaryFixture<'a> {
@@ -634,22 +606,6 @@ mod tests {
         asset_summary_path: &'a Path,
         out_dir: &'a Path,
         snapshot_root: &'a Path,
-    }
-
-    #[test]
-    fn parse_js_list_rejects_duplicates() {
-        js_ast::with_swc_globals(|| {
-            let err = parse_js_list("a.js\na.js\n").expect_err("expected duplicate rejection");
-            assert!(err.to_string().contains("duplicate"));
-        });
-    }
-
-    #[test]
-    fn parse_js_list_ignores_comments_and_blank_lines() {
-        js_ast::with_swc_globals(|| {
-            let parsed = parse_js_list("\n# comment\nfoo.js\nbar.js\n").expect("parse list");
-            assert_eq!(parsed, vec!["foo.js", "bar.js"]);
-        });
     }
 
     #[test]
@@ -711,11 +667,14 @@ mod tests {
                 })?,
             )?;
 
-            run_transform_cli(&TransformCli {
-                spec_source: TransformSpecSource::Flat { path: spec_path },
-                package_roots: HashMap::new(),
-                packages_root: None,
-            })?;
+            run_transform_cli(
+                &TransformCli {
+                    spec_source: TransformSpecSource::Flat { path: spec_path },
+                    package_roots: HashMap::new(),
+                    packages_root: None,
+                },
+                KEEP_GOING_RUN,
+            )?;
 
             assert!(out.join("app/bootstrap.js").exists());
             assert!(out.join("reports/runtime.json").exists());
@@ -861,17 +820,20 @@ unassigned_mode:
             let vendor_marks = root.join("vendor_marks.yaml");
             fs::write(&vendor_marks, "vendor_marks: []\n")?;
 
-            run_transform_cli(&TransformCli {
-                spec_source: TransformSpecSource::Tree(CompileSpecTreeOptions {
-                    config_path: config,
-                    modules_root: modules,
-                    vendor_marks_path: vendor_marks,
-                    source_root: Some(root.to_path_buf()),
-                    out_root: out.clone(),
-                }),
-                package_roots: HashMap::new(),
-                packages_root: None,
-            })?;
+            run_transform_cli(
+                &TransformCli {
+                    spec_source: TransformSpecSource::Tree(CompileSpecTreeOptions {
+                        config_path: config,
+                        modules_root: modules,
+                        vendor_marks_path: vendor_marks,
+                        source_root: Some(root.to_path_buf()),
+                        out_root: out.clone(),
+                    }),
+                    package_roots: HashMap::new(),
+                    packages_root: None,
+                },
+                KEEP_GOING_RUN,
+            )?;
 
             let cli_module = fs::read_to_string(out.join("app/cli/runtime/session.js"))?;
             let print_module = fs::read_to_string(out.join("app/print/protocol/stream.js"))?;
@@ -942,11 +904,14 @@ unassigned_mode:
             let spec_path = root.join("transform-spec.yaml");
             fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
 
-            let err = run_transform_cli(&TransformCli {
-                spec_source: TransformSpecSource::Flat { path: spec_path },
-                package_roots: HashMap::new(),
-                packages_root: None,
-            })
+            let err = run_transform_cli(
+                &TransformCli {
+                    spec_source: TransformSpecSource::Flat { path: spec_path },
+                    package_roots: HashMap::new(),
+                    packages_root: None,
+                },
+                KEEP_GOING_RUN,
+            )
             .expect_err("non-empty output directories should be rejected, not replaced");
             assert!(
                 err.to_string().contains("Output directory is not empty"),
@@ -1009,7 +974,7 @@ unassigned_mode:
             let spec_path = root.join("transform-spec.yaml");
             fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
 
-            run_transform_cli_with_options(
+            run_transform_cli(
                 &TransformCli {
                     spec_source: TransformSpecSource::Flat { path: spec_path },
                     package_roots: HashMap::new(),

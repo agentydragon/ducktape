@@ -5,6 +5,7 @@ Timestamps stay strings as sent, so the archive is lossless; `parse_timestamp` c
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -53,6 +54,16 @@ class Event(BaseModel):
     @property
     def seq(self) -> int:
         return int(self.sequence_num)
+
+
+class DeliveryUpdate(BaseModel):
+    """The `delivery_update` frame: the worker's queue moved a client-sent event to another status.
+
+    The status is not read. A stream pushes the event without its worker stamps, and it is not sent again when they
+    change; this frame is the notice, and the stamps are on the event as the events route reports it.
+    """
+
+    event_id: UUID
 
 
 class EventsPage(BaseModel):

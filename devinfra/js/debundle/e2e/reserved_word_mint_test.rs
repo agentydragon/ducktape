@@ -1,20 +1,16 @@
-//! RED→GREEN test: a mint base / disambiguation target that is a
-//! reserved JS word must not surface verbatim into an emitted import
-//! clause.
+//! A mint base / disambiguation target that is a reserved JS word must not
+//! surface verbatim into an emitted import clause.
 //!
-//! Background. `lowering/rename_ledger.rs::RenameLedger::mint` is the
-//! single name minter behind `disambiguate_import_locals`,
+//! `lowering/rename_ledger.rs::RenameLedger::mint` is the single name minter
+//! behind `disambiguate_import_locals`,
 //! `disambiguate_residual_entry_import_locals`, and
-//! `auto_grown_residual_exports`. It used to return its `base` verbatim
-//! whenever the claim closure accepted it, never consulting
-//! `is_valid_js_identifier`. `disambiguate_import_locals` prefers a
-//! binding's PUBLIC export name as the consumer-side local. So when a
-//! logical module exports a binding under a reserved public name
-//! (`export { impl as default }` — valid JS, `default` is a legal export
-//! alias), the entry that still references the binding mints `default` as
-//! the import local and emits `import { default } from "./mod"` — i.e.
-//! `default as default`, which is NOT valid JS (a reserved word cannot be
-//! an import local). Emitted modules are ESM (always strict mode), so the
+//! `auto_grown_residual_exports`; it must consult `is_valid_js_identifier`
+//! before returning a base. `disambiguate_import_locals` prefers a binding's
+//! PUBLIC export name as the consumer-side local. A reserved public name is
+//! legal JS (`export { impl as default }`), but the entry that still
+//! references the binding would emit `import { default } from "./mod"` —
+//! `default as default`, which is NOT valid JS (a reserved word cannot be an
+//! import local). Emitted modules are ESM (always strict mode), so the
 //! reserved word is a hard parse error with no debundler-side diagnostic.
 //!
 //! ## Fixture
@@ -26,16 +22,12 @@
 //!   must re-import the binding from `mod_x`. The disambiguator mints the
 //!   import local from the preferred (public) name `default`.
 //!
-//! ## Expected outcomes
+//! ## Expected outcome
 //!
-//! - **Today (RED)**: the debundler succeeds but emits `import { default }
-//!   from "./modules/mod_x.js"` into `entry.js`. Node rejects the entry
-//!   with a SyntaxError ("Unexpected reserved word"), so
-//!   `assert_entry_output` fails at the node step.
-//! - **After the fix**: `RenameLedger::mint` rejects the reserved base via
-//!   `is_valid_js_identifier` and suffixes it to `default$1`, emitting
-//!   `import { default$1 as default } from "..."` — a valid identifier
-//!   that parses and runs.
+//! `RenameLedger::mint` rejects the reserved base via
+//! `is_valid_js_identifier` and suffixes it to `default$1`, emitting
+//! `import { default$1 as default } from "..."` — a valid identifier
+//! that parses and runs.
 
 use debundle_e2e_support::*;
 use std::fs;

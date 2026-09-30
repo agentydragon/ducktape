@@ -28,8 +28,8 @@
 //!
 //! Writes preserve key order by mutating the `serde_yaml::Mapping`
 //! in place and re-serializing the same `Value`. `--dry-run` skips
-//! the write but still prints the verdict. `--no-verify` is accepted
-//! and a no-op (comments don't participate in factorization).
+//! the write but still prints the verdict. Comments don't participate in
+//! factorization, so there is no `--no-verify`.
 
 use std::fs;
 use std::io::{Read, Write};
@@ -41,9 +41,9 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 use serde_yaml::Value;
 use spec::ModulePath;
+use yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 use crate::binding::{BindingLocation, resolve_unambiguous};
-use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 /// Args for `debundle bindings comment <sym> [...]`.
 #[derive(Debug, ClapArgs)]
@@ -77,11 +77,6 @@ pub struct BindingCommentArgs {
     /// Validate (or simulate) but do not modify any file.
     #[arg(long)]
     dry_run: bool,
-
-    /// Accepted for symmetry with mutating commands; no-op for
-    /// comment edits (comments do not affect factorization).
-    #[arg(long)]
-    no_verify: bool,
 }
 
 /// Args for `debundle modules comment <module> [...]`.
@@ -115,10 +110,6 @@ pub struct ModuleCommentArgs {
     /// Validate (or simulate) but do not modify any file.
     #[arg(long)]
     dry_run: bool,
-
-    /// Accepted for symmetry; no-op for comment edits.
-    #[arg(long)]
-    no_verify: bool,
 }
 
 /// Mode dispatched by `apply_*_command`.
@@ -164,7 +155,6 @@ pub fn run_module_comment_cmd(args: ModuleCommentArgs) -> Result<()> {
 // ---------------------------------------------------------------------
 
 fn run_binding_comment(args: BindingCommentArgs) -> Result<()> {
-    let _ = args.no_verify; // accepted, no-op
     let mode = CommentMode::from_flags(args.text, args.edit, args.clear)?;
     let outcome = apply_binding_comment(&args.modules_root, &args.sym, mode, args.dry_run)?;
     let format = peel::OutputFormat::resolve(args.format);
@@ -364,7 +354,6 @@ fn set_member_comment(doc: &mut Value, index: usize, value: Option<String>) -> R
 // ---------------------------------------------------------------------
 
 fn run_module_comment(args: ModuleCommentArgs) -> Result<()> {
-    let _ = args.no_verify;
     let mode = CommentMode::from_flags(args.text, args.edit, args.clear)?;
     let outcome = apply_module_comment(&args.modules_root, &args.module, mode, args.dry_run)?;
     let format = peel::OutputFormat::resolve(args.format);

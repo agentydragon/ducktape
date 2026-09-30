@@ -22,8 +22,8 @@ fn main() -> ExitCode {
     // `Globals` instance per process keeps `Mark` identity comparable
     // across chunks.
     let globals = Globals::default();
-    GLOBALS.set(&globals, || match real_main() {
-        Ok(code) => code,
+    GLOBALS.set(&globals, || match run_debundle_cli(DebundleArgs::parse()) {
+        Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             // `{error:#}` prints the full anyhow context chain inline
             // (top + every `with_context` cause separated by `: `).
@@ -36,9 +36,4 @@ fn main() -> ExitCode {
             ExitCode::from(1)
         }
     })
-}
-
-fn real_main() -> anyhow::Result<ExitCode> {
-    run_debundle_cli(DebundleArgs::parse())?;
-    Ok(ExitCode::SUCCESS)
 }

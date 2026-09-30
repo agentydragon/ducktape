@@ -12,8 +12,8 @@ from cluster.validation.kyverno.paths import manifest, policy
 
 
 @pytest.fixture
-def gateway_routes_policy() -> Path:
-    return policy("restrict-agent-gateway-routes.k8s.yaml")
+def gateway_routes_policy(tmp_path: Path) -> Path:
+    return policy("restrict-agent-gateway-routes", tmp_path)
 
 
 class TestRestrictAgentGatewayRoutes:

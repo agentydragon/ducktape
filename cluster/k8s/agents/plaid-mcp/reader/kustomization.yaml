@@ -3,6 +3,6 @@ kind: Kustomization
 namespace: plaid-mcp
 resources:
   # cdk8s-generated (cluster/cdk8s/plaid_mcp/reader.py) -- see cluster/docs/cdk8s.md.
-  - plaid-db-mcp.k8s.yaml
+  - reader.k8s.yaml
 components:
   - ./image-pins

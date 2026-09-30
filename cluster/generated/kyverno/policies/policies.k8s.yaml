@@ -1,0 +1,812 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/description: Enforces that workload resources (Deployments, StatefulSets, DaemonSets) can only be created or modified by Flux GitOps controllers. Direct kubectl apply/create/patch is blocked.
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Deployment, StatefulSet, DaemonSet
+    policies.kyverno.io/title: Require GitOps
+  name: require-gitops
+spec:
+  background: false
+  rules:
+    - exclude:
+        any:
+          - subjects:
+              - kind: ServiceAccount
+                name: kustomize-controller
+                namespace: flux-system
+          - subjects:
+              - kind: ServiceAccount
+                name: helm-controller
+                namespace: flux-system
+          - subjects:
+              - kind: ServiceAccount
+                name: source-controller
+                namespace: flux-system
+          - subjects:
+              - kind: ServiceAccount
+                name: haku-state-reconciler
+                namespace: flux-system
+          - subjects:
+              - kind: ServiceAccount
+                name: kyverno-admission-controller
+                namespace: kyverno
+          - subjects:
+              - kind: ServiceAccount
+                name: monitoring-operator
+                namespace: monitoring
+          - subjects:
+              - kind: ServiceAccount
+                name: grafana-operator
+                namespace: monitoring
+          - subjects:
+              - kind: ServiceAccount
+                name: seaweedfs-operator
+                namespace: seaweedfs
+          - subjects:
+              - kind: ServiceAccount
+                name: authentik
+                namespace: authentik
+          - subjects:
+              - kind: ServiceAccount
+                name: reloader-reloader
+                namespace: kube-system
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - flux-system
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+              operations:
+                - CREATE
+                - UPDATE
+      name: block-direct-workload-changes
+      validate:
+        deny: {}
+        message: "Direct resource creation/modification blocked. All changes must go through GitOps (commit to git repository). Resource: {{request.object.kind}}/{{request.object.metadata.name}} User: {{request.userInfo.username}}"
+  validationFailureAction: audit
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/description: Sets spec.revisionHistoryLimit to 3 on Deployments, StatefulSets, and DaemonSets that do not specify it, to bound accumulated revision history (dead ReplicaSets / ControllerRevisions) and the kube-state-metrics series and memory that track them.
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Deployment, StatefulSet, DaemonSet
+    policies.kyverno.io/title: Default revisionHistoryLimit
+  name: default-revision-history-limit
+spec:
+  admission: true
+  background: false
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+              operations:
+                - CREATE
+                - UPDATE
+      mutate:
+        patchStrategicMerge:
+          spec:
+            revisionHistoryLimit: 3
+      name: default-revision-history-limit
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.revisionHistoryLimit || `-1` }}"
+            operator: Equals
+            value: -1
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/description: Sets enableServiceLinks to false on newly created Pods to prevent legacy Service environment variables from colliding with application settings.
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/title: Default Service Links off
+  name: default-disable-service-links
+spec:
+  admission: true
+  background: false
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              operations:
+                - CREATE
+      mutate:
+        patchStrategicMerge:
+          spec:
+            enableServiceLinks: false
+      name: default-disable-service-links
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/description: "Adds a goldilocks vpa-resource-policy annotation setting controlledValues: RequestsOnly to namespaces running goldilocks VPA in auto mode, so VPA never scales a container's limits down in proportion to its requests. Only applied when the namespace does not already declare its own policy."
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Namespace
+    policies.kyverno.io/title: Default VPA to RequestsOnly
+  name: default-vpa-requests-only
+spec:
+  admission: true
+  background: false
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              operations:
+                - CREATE
+                - UPDATE
+              selector:
+                matchLabels:
+                  goldilocks.fairwinds.com/vpa-update-mode: auto
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            annotations:
+              +(goldilocks.fairwinds.com/vpa-resource-policy): '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
+      name: default-vpa-requests-only
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+    policies.kyverno.io/category: Networking
+    policies.kyverno.io/description: Mutates pods in claude-sandbox to automatically inject mitmproxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS) and mount the mitmproxy trust bundle at /mitmproxy-ca/ca-certificates.crt.
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/title: Inject mitmproxy
+  name: inject-mitmproxy
+spec:
+  mutateExistingOnPolicyUpdate: false
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - claude-sandbox
+              operations:
+                - CREATE
+      mutate:
+        patchesJson6902: |-
+          - op: add
+            path: "/spec/volumes/-"
+            value:
+              name: mitmproxy-ca-cert
+              configMap:
+                name: mitmproxy-ca-cert
+      name: add-proxy-volume
+      preconditions:
+        all:
+          - key: "{{ (request.object.spec.volumes || `[]`)[?name=='mitmproxy-ca-cert'] | length(@) }}"
+            operator: Equals
+            value: 0
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - claude-sandbox
+              operations:
+                - CREATE
+      mutate:
+        foreach:
+          - list: request.object.spec.containers
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTP_PROXY
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTPS_PROXY
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: NO_PROXY
+                  value: "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: SSL_CERT_FILE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: CURL_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: REQUESTS_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: NODE_EXTRA_CA_CERTS
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/volumeMounts/-"
+                value:
+                  name: mitmproxy-ca-cert
+                  mountPath: /mitmproxy-ca
+                  readOnly: true
+            preconditions:
+              all:
+                - key: "{{ (element.volumeMounts || `[]`)[?name=='mitmproxy-ca-cert'] | length(@) }}"
+                  operator: Equals
+                  value: 0
+      name: add-proxy-env-and-mount-containers
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - claude-sandbox
+              operations:
+                - CREATE
+      mutate:
+        foreach:
+          - list: request.object.spec.initContainers
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTP_PROXY
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTPS_PROXY
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: NO_PROXY
+                  value: "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: SSL_CERT_FILE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: CURL_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: REQUESTS_CA_BUNDLE
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: NODE_EXTRA_CA_CERTS
+                  value: /mitmproxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/volumeMounts/-"
+                value:
+                  name: mitmproxy-ca-cert
+                  mountPath: /mitmproxy-ca
+                  readOnly: true
+            preconditions:
+              all:
+                - key: "{{ (element.volumeMounts || `[]`)[?name=='mitmproxy-ca-cert'] | length(@) }}"
+                  operator: Equals
+                  value: 0
+      name: add-proxy-env-and-mount-init-containers
+      preconditions:
+        any:
+          - key: "{{ (request.object.spec.initContainers || `[]`) | length(@) }}"
+            operator: GreaterThanOrEquals
+            value: 1
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+    policies.kyverno.io/category: Networking
+    policies.kyverno.io/description: Mutates pods in haku-sandbox to automatically inject the dedicated haku-egress-proxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS) and mount the haku-egress-proxy trust bundle at /egress-proxy-ca/ca-certificates.crt.
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/title: Inject haku-egress-proxy
+  name: inject-haku-egress-proxy
+spec:
+  mutateExistingOnPolicyUpdate: false
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - haku-sandbox
+              operations:
+                - CREATE
+      mutate:
+        patchesJson6902: |-
+          - op: add
+            path: "/spec/volumes/-"
+            value:
+              name: haku-egress-proxy-ca-cert
+              configMap:
+                name: haku-egress-proxy-ca-cert
+      name: add-proxy-volume
+      preconditions:
+        all:
+          - key: "{{ (request.object.spec.volumes || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
+            operator: Equals
+            value: 0
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - haku-sandbox
+              operations:
+                - CREATE
+      mutate:
+        foreach:
+          - list: request.object.spec.containers
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTP_PROXY
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTPS_PROXY
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: NO_PROXY
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: SSL_CERT_FILE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: CURL_CA_BUNDLE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: REQUESTS_CA_BUNDLE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: NODE_EXTRA_CA_CERTS
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/volumeMounts/-"
+                value:
+                  name: haku-egress-proxy-ca-cert
+                  mountPath: /egress-proxy-ca
+                  readOnly: true
+            preconditions:
+              all:
+                - key: "{{ (element.volumeMounts || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
+                  operator: Equals
+                  value: 0
+      name: add-proxy-env-and-mount-containers
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - haku-sandbox
+              operations:
+                - CREATE
+      mutate:
+        foreach:
+          - list: request.object.spec.initContainers
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTP_PROXY
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: HTTPS_PROXY
+                  value: "http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: NO_PROXY
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: SSL_CERT_FILE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: CURL_CA_BUNDLE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: REQUESTS_CA_BUNDLE
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/env/-"
+                value:
+                  name: NODE_EXTRA_CA_CERTS
+                  value: /egress-proxy-ca/ca-certificates.crt
+              - op: add
+                path: "/spec/initContainers/{{elementIndex}}/volumeMounts/-"
+                value:
+                  name: haku-egress-proxy-ca-cert
+                  mountPath: /egress-proxy-ca
+                  readOnly: true
+            preconditions:
+              all:
+                - key: "{{ (element.volumeMounts || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
+                  operator: Equals
+                  value: 0
+      name: add-proxy-env-and-mount-init-containers
+      preconditions:
+        any:
+          - key: "{{ (request.object.spec.initContainers || `[]`) | length(@) }}"
+            operator: GreaterThanOrEquals
+            value: 1
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Access Control
+    policies.kyverno.io/description: |
+      Restricts agent identities (claude-code-web user, kubectl-sandbox-users group) to only patching the reconcile.fluxcd.io/requestedAt annotation on Flux Kustomization resources. Changes to spec or any other annotation are blocked.
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Kustomization
+    policies.kyverno.io/title: Restrict Agent Kustomization Patches
+  name: restrict-agent-kustomization-patch
+spec:
+  admission: true
+  background: false
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - kustomize.toolkit.fluxcd.io/v1/Kustomization
+              operations:
+                - UPDATE
+            subjects:
+              - kind: User
+                name: claude-code-web
+          - resources:
+              kinds:
+                - kustomize.toolkit.fluxcd.io/v1/Kustomization
+              operations:
+                - UPDATE
+            subjects:
+              - kind: Group
+                name: oidc-ksbx-groups:kubectl-sandbox-users
+      name: only-reconcile-annotation
+      validate:
+        cel:
+          expressions:
+            - expression: object.spec == oldObject.spec
+              message: Changes to spec are not permitted.
+            - expression: |
+                (!has(object.metadata.annotations) ||
+
+                 object.metadata.annotations.all(k,
+                   k == 'reconcile.fluxcd.io/requestedAt' ||
+                   (has(oldObject.metadata.annotations) &&
+                    k in oldObject.metadata.annotations &&
+                    object.metadata.annotations[k] == oldObject.metadata.annotations[k])))
+                && (!has(oldObject.metadata.annotations) ||
+
+                 oldObject.metadata.annotations.all(k,
+                   k == 'reconcile.fluxcd.io/requestedAt' ||
+                   (has(object.metadata.annotations) &&
+                    k in object.metadata.annotations &&
+                    oldObject.metadata.annotations[k] == object.metadata.annotations[k])))
+              message: Only the reconcile.fluxcd.io/requestedAt annotation may be changed.
+        message: |
+          Agent service accounts may only patch the reconcile.fluxcd.io/requestedAt annotation. Changes to spec or other annotations are not permitted.
+  validationFailureAction: enforce
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Access Control
+    policies.kyverno.io/description: "Blocks creation/modification of any Gateway API route (HTTPRoute, TLSRoute, TCPRoute, UDPRoute, GRPCRoute) or Gateway in the agent-writable sandbox namespaces (claude-sandbox, haku-sandbox). The public `cluster-gateway` listeners use `allowedRoutes.namespaces.from: All`, so without this fence an agent that gained `httproutes`/`gateways` RBAC could publish a route that attaches to the public gateway and bypasses the operator-owned Authentik proxy. Agents have no legitimate need to create routes — their sandbox Roles already omit these resources — so a blanket deny in those namespaces closes the latent hole structurally without touching any existing route (none live in a sandbox namespace). This denylist is preferred over per-listener `allowedRoutes` selectors because the public gateway's listener-level `allowedRoutes` is affected by Cilium bug #42159 (see cluster/docs/plan.md), and the Selector approach would require labeling the built-in `default` and `flux-system` namespaces that host critical routes. For Haku this is an enforcement inventory entry in haku/docs/security.md."
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: HTTPRoute, TLSRoute, TCPRoute, UDPRoute, GRPCRoute, Gateway
+    policies.kyverno.io/title: Restrict Agent Gateway API Routes
+  name: restrict-agent-gateway-routes
+spec:
+  admission: true
+  background: false
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - HTTPRoute
+                - GRPCRoute
+                - TLSRoute
+                - TCPRoute
+                - UDPRoute
+                - Gateway
+              namespaces:
+                - claude-sandbox
+                - haku-sandbox
+              operations:
+                - CREATE
+                - UPDATE
+      name: deny-routes-in-agent-namespaces
+      validate:
+        deny: {}
+        message: "Gateway API routes and Gateways may not be created in agent sandbox namespaces. Public ingress is operator-owned: route through the Authentik proxy (HTTPRoutes in the `authentik` namespace) instead. Resource: {{request.object.kind}}/{{request.object.metadata.name}}"
+  validationFailureAction: enforce
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Access Control
+    policies.kyverno.io/description: "A ClusterSecretStore with no `spec.conditions` is usable from every namespace in the cluster. That is not a mild default here: the ESO ServiceAccount holds cluster-wide secret read, so the store — not RBAC — is the only thing bounding what an ExternalSecret can pull out of the store's `remoteNamespace`. An unfenced `kubernetes-flux-system-secret-store` means any namespace can read the GitHub App, the PATs, the AWS Route 53 credentials and `ci-age-key`. This requires every store to name at least one namespace in `conditions[].namespaces`, which rejects the degenerate forms as well: an empty `conditions: []` (ESO treats it exactly like an absent one), a condition carrying no criteria at all, and a bare `namespaceSelector: {}` — an empty LabelSelector matches every namespace by the standard Kubernetes convention, so that one reads as a fence while being the widest setting available. Requiring an explicit list also rules out selector-based fences, which nothing here uses; relax it deliberately if that changes."
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: ClusterSecretStore
+    policies.kyverno.io/title: Require ClusterSecretStore Conditions
+  name: require-secret-store-conditions
+spec:
+  admission: true
+  background: true
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - ClusterSecretStore
+              operations:
+                - CREATE
+                - UPDATE
+      name: require-conditions
+      validate:
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.conditions[].namespaces[] || `[]` | length(@) }}"
+                operator: Equals
+                value: 0
+        message: "ClusterSecretStore must name the namespaces allowed to use it in spec.conditions[].namespaces; without at least one the store is readable from every namespace and the ESO ServiceAccount has cluster-wide secret read. Store: {{request.object.metadata.name}} (remoteNamespace {{request.object.spec.provider.kubernetes.remoteNamespace || 'n/a'}})."
+  validationFailureAction: enforce
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Access Control
+    policies.kyverno.io/description: Generates namespaced, read-only metadata and optional pod-log RoleBindings when a GitOps-managed Namespace opts in.
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Namespace, RoleBinding
+    policies.kyverno.io/title: Generate agent diagnostics readers
+  name: generate-agent-diagnostics-readers
+spec:
+  background: true
+  rules:
+    - generate:
+        apiVersion: rbac.authorization.k8s.io/v1
+        data:
+          metadata:
+            labels:
+              rbac.ducktape.io/access: agent-readable-metadata
+              rbac.ducktape.io/managed-by: kyverno
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: agent-readable-namespace-metadata
+          subjects:
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: oidc-ksbx-groups:haku
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: haku:access-profile:haku
+            - kind: ServiceAccount
+              name: haku
+              namespace: haku-sandbox
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: oidc-ksbx-groups:kubectl-sandbox-users
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: haku:access-profile:public-coder
+            - kind: ServiceAccount
+              name: claude-ai
+              namespace: agentplane-staging
+        generateExisting: true
+        kind: RoleBinding
+        name: agent-readable-metadata
+        namespace: "{{request.object.metadata.name}}"
+        synchronize: true
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  rbac.ducktape.io/agent-readable-metadata: "true"
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  rbac.ducktape.io/agent-readable-logs: "true"
+      name: generate-agent-readable-metadata
+    - generate:
+        apiVersion: rbac.authorization.k8s.io/v1
+        data:
+          metadata:
+            labels:
+              rbac.ducktape.io/access: agent-readable-logs
+              rbac.ducktape.io/managed-by: kyverno
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: agent-readable-namespace-logs
+          subjects:
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: oidc-ksbx-groups:haku
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: haku:access-profile:haku
+            - kind: ServiceAccount
+              name: haku
+              namespace: haku-sandbox
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: oidc-ksbx-groups:kubectl-sandbox-users
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: haku:access-profile:public-coder
+            - kind: ServiceAccount
+              name: claude-ai
+              namespace: agentplane-staging
+        generateExisting: true
+        kind: RoleBinding
+        name: agent-readable-logs
+        namespace: "{{request.object.metadata.name}}"
+        synchronize: true
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  rbac.ducktape.io/agent-readable-logs: "true"
+      name: generate-agent-readable-logs
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    rbac.kyverno.io/aggregate-to-cleanup-controller: "true"
+  name: kyverno-cleanup-controller-jobs
+rules:
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    rbac.kyverno.io/aggregate-to-cleanup-controller: "true"
+  name: kyverno-cleanup-controller-workloads
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - statefulsets
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - batch
+    resources:
+      - cronjobs
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    rbac.kyverno.io/aggregate-to-cleanup-controller: "true"
+  name: kyverno-cleanup-controller-sandboxes
+rules:
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxclaims
+    verbs:
+      - get
+      - list
+      - watch
+      - delete

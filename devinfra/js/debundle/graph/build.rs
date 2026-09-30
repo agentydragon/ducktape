@@ -46,24 +46,14 @@ impl fmt::Display for DuplicateTopLevelDeclaration {
 
 impl std::error::Error for DuplicateTopLevelDeclaration {}
 
-/// Build the fine owner graph from per-statement facts. Pure IR
-/// construction: no module assignment, no quotient. Module-level
-/// dependencies are derived later by [`build_module_quotient`]
-/// given a [`Partition`] mapping owners to destination modules.
-///
-/// Uses default (strictly-conservative) [`OwnerGraphOptions`]. Call
-/// [`build_owner_graph_with`] when the chunk spec opts into
-/// conditionally-correct refinements.
+/// Build the fine owner graph from per-statement facts under the
+/// per-chunk [`OwnerGraphOptions`]. Pure IR construction: no module
+/// assignment, no quotient. Module-level dependencies are derived later
+/// by [`build_module_quotient`] given a [`Partition`] mapping owners to
+/// destination modules.
 ///
 /// [`build_module_quotient`]: super::quotient::build_module_quotient
 /// [`Partition`]: crate::partition::Partition
-pub fn build_owner_graph(
-    facts: &[StatementFacts],
-) -> Result<OwnerGraph, DuplicateTopLevelDeclaration> {
-    build_owner_graph_with(facts, OwnerGraphOptions::default())
-}
-
-/// Like [`build_owner_graph`] but takes per-chunk [`OwnerGraphOptions`].
 pub fn build_owner_graph_with(
     facts: &[StatementFacts],
     options: OwnerGraphOptions,
@@ -254,30 +244,7 @@ pub fn build_owner_graph_with(
             reason,
         })
         .collect();
-    let mut out_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
-    let mut in_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
-    let mut callee_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
-    for edge in &edges {
-        if let Some(slot) = out_edges.get_mut(edge.from.0) {
-            slot.push(edge.id);
-        }
-        if let Some(slot) = in_edges.get_mut(edge.to.0) {
-            slot.push(edge.id);
-        }
-        if let Some(callee) = edge.reason.role.promoted_callee()
-            && let Some(slot) = callee_edges.get_mut(callee.0)
-        {
-            slot.push(edge.id);
-        }
-    }
-
-    Ok(OwnerGraph {
-        nodes,
-        edges,
-        out_edges,
-        in_edges,
-        callee_edges,
-    })
+    Ok(OwnerGraph::from_parts(nodes, edges))
 }
 
 /// Side-effect ordering edges (`S` per docs/design.md "Module dep graphs").

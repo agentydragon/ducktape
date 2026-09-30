@@ -1,21 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::Instant;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use rayon::prelude::*;
-use serde::Serialize;
 use swc_common::GLOBALS;
 
 use analysis::ChunkId;
 use artifact::{
     ArtifactChunkRecord, ArtifactCounts, CANONICAL_CHUNK_ENTRY_FILE, ChunkAnalysisReport,
     ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody,
-    LoadedJsChunks, ParsedJsFileRecord,
+    LoadedJsChunks,
 };
 use js_ast::{ParsedJsModule, parse_js_module_consuming};
-use program_analysis::{
-    ProgramAnalysis, analyze_program_shallow, build_chunk_manifest_from_analysis,
-};
+use program_analysis::{analyze_program_shallow, build_chunk_manifest_from_analysis};
 use spec::TransformSpec;
 
 const CANONICALIZE_HEADER_LINES: &[&str] = &[
@@ -27,19 +23,6 @@ pub struct PrepareJsChunksResult {
     pub artifact: ChunkBundle,
     pub counts: ArtifactCounts,
     pub chunk_records: Vec<ArtifactChunkRecord>,
-    pub parsed_js_files: ParsedJsFilesManifest,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ParsedJsFilesManifest {
-    pub counts: ParsedJsFilesCounts,
-    pub parsed_files: Vec<ParsedJsFileRecord>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ParsedJsFilesCounts {
-    pub parsed: usize,
-    pub files: usize,
 }
 
 pub fn prepare_js_chunks(
@@ -51,16 +34,12 @@ pub fn prepare_js_chunks(
         chunk_table,
     } = loaded;
 
-    // Collect (ChunkId, name) pairs preserving load order.
-    let ordered_ids: Vec<(ChunkId, String)> = chunks
-        .iter()
+    let jobs = chunks
+        .into_iter()
         .enumerate()
-        .map(|(i, _)| (ChunkId(i), chunk_table.name(ChunkId(i)).to_string()))
-        .collect();
-    let jobs = ordered_ids
-        .iter()
-        .zip(chunks)
-        .map(|((chunk_id, chunk_name), mut chunk)| {
+        .map(|(index, mut chunk)| {
+            let chunk_id = ChunkId(index);
+            let chunk_name = chunk_table.name(chunk_id).to_string();
             let entry_file = chunk.entry_file.clone();
             let entry_artifact_file = chunk.remove_file(&entry_file).with_context(|| {
                 format!(
@@ -71,15 +50,14 @@ pub fn prepare_js_chunks(
                 format!("prepare_js_chunks requires content for chunk: {chunk_name}/{entry_file}")
             })?;
             Ok(PrepareChunkJob {
-                chunk_id: *chunk_id,
-                chunk_name: chunk_name.clone(),
+                chunk_id,
+                chunk_name,
                 entry_file,
                 source_path: chunk.metadata.source_path.clone(),
                 entry_source,
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let file_count = jobs.len();
 
     // First pass: parse all chunks and collect imports for vendor caller detection.
     // Source text moves into the SourceMap; no extra copy.
@@ -134,7 +112,7 @@ pub fn prepare_js_chunks(
                 && let Some(pos) = prepared
                     .files
                     .iter()
-                    .position(|f| f.path == prepared.entry_file)
+                    .position(|f| f.path == CANONICAL_CHUNK_ENTRY_FILE)
             {
                 let file = prepared.files.remove(pos);
                 if let Some(rendered) = file.into_rendered_source() {
@@ -146,33 +124,17 @@ pub fn prepare_js_chunks(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // Validate ordering and collect results.
-    for ((_expected_chunk_id, expected_chunk_name), (_, actual_chunk_name, _)) in
-        ordered_ids.iter().zip(&prepared_chunks)
-    {
-        if actual_chunk_name != expected_chunk_name {
-            bail!(
-                "prepare_js_chunks reordered prepared chunks: expected {expected_chunk_name}, got {actual_chunk_name}"
-            );
-        }
-    }
-
-    let mut parsed_files: Vec<ParsedJsFileRecord> = Vec::new();
     let artifact = ChunkBundle {
-        chunks: ordered_ids
+        chunks: prepared_chunks
             .into_iter()
-            .zip(prepared_chunks)
-            .map(|((chunk_id, _), (_, _, prepared))| {
-                parsed_files.extend(prepared.parsed_files);
-                ChunkArtifact {
-                    chunk_id,
-                    js: JsChunk {
-                        entry_file: prepared.entry_file,
-                        files: prepared.files,
-                        metadata: prepared.metadata,
-                    },
-                    analysis: prepared.analysis.clone(),
-                }
+            .map(|(chunk_id, _, prepared)| ChunkArtifact {
+                chunk_id,
+                js: JsChunk {
+                    entry_file: CANONICAL_CHUNK_ENTRY_FILE.to_string(),
+                    files: prepared.files,
+                    metadata: prepared.metadata,
+                },
+                analysis: prepared.analysis,
             })
             .collect(),
         chunk_table,
@@ -188,13 +150,6 @@ pub fn prepare_js_chunks(
         artifact,
         counts,
         chunk_records,
-        parsed_js_files: ParsedJsFilesManifest {
-            counts: ParsedJsFilesCounts {
-                parsed: parsed_files.len(),
-                files: file_count,
-            },
-            parsed_files,
-        },
     })
 }
 
@@ -207,11 +162,9 @@ struct PrepareChunkJob {
 }
 
 struct PreparedChunk {
-    entry_file: String,
     files: Vec<JsFile>,
     metadata: ChunkMetadata,
     analysis: ChunkAnalysisReport,
-    parsed_files: Vec<ParsedJsFileRecord>,
     /// Captured from the fused `analyze_program_shallow` walk so the
     /// second pass can decide AST retention without re-visiting the
     /// AST.
@@ -219,72 +172,28 @@ struct PreparedChunk {
 }
 
 fn prepare_chunk(job: PrepareChunkJob) -> Result<PreparedChunk> {
-    let (analysis, has_rewritable_specifier, prepared_file, prepared_entry_file, parsed_files) =
-        prepare_parsed_entry(
-            &job.chunk_name,
-            &job.entry_file,
-            &job.source_path,
-            job.entry_source,
-        )?;
-    Ok(PreparedChunk {
-        entry_file: prepared_entry_file,
-        files: vec![prepared_file],
-        metadata: ChunkMetadata {
-            source_path: job.source_path.clone(),
-        },
-        analysis,
-        parsed_files,
-        has_rewritable_specifier,
-    })
-}
-
-fn prepare_parsed_entry(
-    chunk_id: &str,
-    entry_file: &str,
-    source_path: &str,
-    entry_source: String,
-) -> Result<(
-    ChunkAnalysisReport,
-    bool,
-    JsFile,
-    String,
-    Vec<ParsedJsFileRecord>,
-)> {
-    let source_bytes = entry_source.len();
-    let source_name = format!("{chunk_id}/{entry_file}");
-
-    let parse_started = Instant::now();
-    let parsed = parse_js_module_consuming(&source_name, entry_source)?;
-    let parse_duration = parse_started.elapsed();
-
-    let analysis_started = Instant::now();
+    let parsed = parse_js_module_consuming(
+        &format!("{}/{}", job.chunk_name, job.entry_file),
+        job.entry_source,
+    )?;
     let analysis = analyze_program_shallow(&parsed);
-    let analysis_duration = analysis_started.elapsed();
-    let has_rewritable_specifier = analysis.has_rewritable_specifier;
-
-    let manifest = build_parsed_chunk_manifest(chunk_id, source_path, &analysis);
-    let file = canonical_parsed_file(chunk_id, source_path, parsed);
-    Ok((
-        manifest,
-        has_rewritable_specifier,
-        file,
-        CANONICAL_CHUNK_ENTRY_FILE.to_string(),
-        vec![ParsedJsFileRecord {
-            chunk_id: chunk_id.to_string(),
-            file: entry_file.to_string(),
-            source_bytes,
-            parse_duration,
-            analysis_duration,
-        }],
-    ))
-}
-
-fn build_parsed_chunk_manifest(
-    chunk_id: &str,
-    source_path: &str,
-    analysis: &ProgramAnalysis,
-) -> ChunkAnalysisReport {
-    build_chunk_manifest_from_analysis(chunk_id, CANONICAL_CHUNK_ENTRY_FILE, source_path, analysis)
+    Ok(PreparedChunk {
+        files: vec![canonical_parsed_file(
+            &job.chunk_name,
+            &job.source_path,
+            parsed,
+        )],
+        analysis: build_chunk_manifest_from_analysis(
+            &job.chunk_name,
+            CANONICAL_CHUNK_ENTRY_FILE,
+            &job.source_path,
+            &analysis,
+        ),
+        has_rewritable_specifier: analysis.has_rewritable_specifier,
+        metadata: ChunkMetadata {
+            source_path: job.source_path,
+        },
+    })
 }
 
 fn canonical_parsed_file(chunk_id: &str, source_path: &str, parsed: ParsedJsModule) -> JsFile {
@@ -295,8 +204,8 @@ fn canonical_parsed_file(chunk_id: &str, source_path: &str, parsed: ParsedJsModu
             .iter()
             .map(|line| (*line).to_string())
             .collect(),
-        binding_comments: std::collections::BTreeMap::new(),
-        leading_item_comments: std::collections::BTreeMap::new(),
+        binding_comments: BTreeMap::new(),
+        leading_item_comments: BTreeMap::new(),
         metadata: FileMetadata {
             chunk_id: chunk_id.to_string(),
             chunk_file: CANONICAL_CHUNK_ENTRY_FILE.to_string(),

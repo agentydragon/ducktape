@@ -3,41 +3,7 @@
 This note tracks reusable debundler purity-analysis work. It excludes
 corpus-specific owner ids, bundle paths, and spec cleanup notes.
 
-## Current Scope
-
-The current purity classifier handles these reusable chunk-local shapes:
-
-- plain-data recognition for chunk-local `const` literals
-- per-declarator owner splitting for comma-list declarations
-- whole-object replacement recognition for `let x = {...}` shapes
-- redundant `purity: pure` hint diagnostics
-- plain-data recognition for chunk-top `var x = {...}` shapes
-- TypeScript enum IIFE recognition for string enums
-- TypeScript enum IIFE recognition for numeric reverse-map enums
-
-These shapes remove the need for many callsite-level purity hints in
-ordinary chunk-local helper chains.
-
 ## Remaining Generic Follow-Ups
-
-### Cross-Chunk Purity Facts
-
-Chunk-local function and plain-data verdicts are available during analysis,
-but imported helper calls from another chunk still look opaque to the
-importing chunk.
-
-Potential shape:
-
-1. Serialize per-chunk function and plain-data purity facts into the
-   analysis manifest.
-2. When analyzing an importer chunk, seed its graph with facts from the
-   imported chunk manifests.
-3. Admit only stable `const` function/arrow and plain-data bindings where
-   importer and exporter agree on binding identity.
-
-This is a manifest-format and consumer change. Do it when a real bundle has a
-cross-chunk pure-helper chain that is not better modeled as an explicit
-author override.
 
 ### Statement-Level Purity Override
 

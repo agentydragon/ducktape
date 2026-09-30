@@ -107,6 +107,15 @@ def make_stream_event(seq: int) -> dict[str, Any]:
     return {key: event[key] for key in ("event_id", "event_type", "source", "sequence_num", "created_at", "payload")}
 
 
+def make_delivery_update(seq: int, status: str) -> dict[str, Any]:
+    """A `delivery_update` frame's data: the client-sent event `seq` moved to `status` (observed 2026-09-30)."""
+    return {
+        "event_id": make_event(seq)["event_id"],
+        "status": status,
+        "timestamp": (TEST_EPOCH + timedelta(seconds=seq)).isoformat(),
+    }
+
+
 def make_events(count: int) -> list[dict[str, Any]]:
     return [make_event(seq) for seq in range(1, count + 1)]
 

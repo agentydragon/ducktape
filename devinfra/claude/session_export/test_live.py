@@ -1,7 +1,9 @@
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from datetime import datetime
 
 import pytest
 import pytest_bazel
@@ -20,12 +22,13 @@ from devinfra.claude.session_export.conftest import (
     SseConnection,
     background,
     eventually,
+    make_delivery_update,
     make_event,
     make_events,
     make_stream_event,
 )
 from devinfra.claude.session_export.live import DISCOVERY, WATCH, LiveFollower
-from devinfra.claude.session_export.models import SESSION_STATUS_ARCHIVED
+from devinfra.claude.session_export.models import SESSION_STATUS_ARCHIVED, parse_timestamp
 from devinfra.claude.session_export.store import EventRow, SessionStore
 from devinfra.claude.session_export.sync import sync_once
 
@@ -88,6 +91,17 @@ async def stored(engine: AsyncEngine, session_id: str) -> list[int]:
         return list(rows.scalars())
 
 
+async def stamps(engine: AsyncEngine, session_id: str, sequence_num: int) -> tuple[datetime | None, ...]:
+    """`received_at`, `processing_at` and `processed_at` of one stored event."""
+    async with engine.connect() as connection:
+        row = await connection.execute(
+            select(EventRow.received_at, EventRow.processing_at, EventRow.processed_at).where(
+                EventRow.session_id == session_id, EventRow.sequence_num == sequence_num
+            )
+        )
+        return tuple(row.one())
+
+
 async def seed_active_session(service: FakeSessionsService, api: SessionsApi, store: SessionStore, count: int) -> None:
     """The session is stored and listed as active, so the next discovery pass follows it."""
     service.events = {ONE: make_events(count)}
@@ -114,7 +128,61 @@ async def test_pushed_events_are_stored_as_they_arrive(
     await eventually(stored_through_five)
     assert page_reads(service) == ["3"]  # the catch-up before the stream opened, and nothing since
     assert following.follower.streams == 1
+    assert following.follower.followed == {ONE}
     assert following.follower.last_event_at is not None
+
+
+async def test_a_delivery_update_stores_the_stamps_the_pushed_event_lacked(
+    service: FakeSessionsService, api: SessionsApi, store: SessionStore, engine: AsyncEngine, follow: Follow
+) -> None:
+    await seed_active_session(service, api, store, count=3)
+    await follow()
+    await eventually(lambda: stream_opened(service, ONE))
+    [stream] = service.event_streams(ONE)
+    received, processing = "2026-02-01T00:01:00+00:00", "2026-02-01T00:02:00+00:00"
+
+    stream.send("client_event", {**make_stream_event(4), "source": "client"}, frame_id="4")
+    service.events[ONE].append(make_event(4, source="client", received_at=received))
+    stream.send("delivery_update", make_delivery_update(4, "DELIVERY_STATUS_RECEIVED"))
+
+    async def received_is_stored() -> bool:
+        return await stamps(engine, ONE, 4) == (parse_timestamp(received), None, None)
+
+    await eventually(received_is_stored)
+
+    service.events[ONE][3] = make_event(4, source="client", received_at=received, processing_at=processing)
+    stream.send("delivery_update", make_delivery_update(4, "DELIVERY_STATUS_PROCESSING"))
+
+    async def processing_is_stored() -> bool:
+        return await stamps(engine, ONE, 4) == (parse_timestamp(received), parse_timestamp(processing), None)
+
+    await eventually(processing_is_stored)
+
+
+async def test_a_delivery_update_for_an_event_that_is_not_stored_is_reported_and_the_stream_goes_on(
+    service: FakeSessionsService,
+    api: SessionsApi,
+    store: SessionStore,
+    engine: AsyncEngine,
+    follow: Follow,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    await seed_active_session(service, api, store, count=3)
+    await follow()
+    await eventually(lambda: stream_opened(service, ONE))
+    [stream] = service.event_streams(ONE)
+
+    stream.send("delivery_update", make_delivery_update(99, "DELIVERY_STATUS_RECEIVED"))
+    stream.send("client_event", make_event(4), frame_id="4")
+
+    async def stored_through_four() -> bool:
+        return await stored(engine, ONE) == [1, 2, 3, 4]
+
+    await eventually(stored_through_four)
+    assert any(
+        record.levelno == logging.WARNING and "an event that is not stored" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 async def test_a_gap_in_the_stream_is_paged_instead_of_stored_out_of_order(

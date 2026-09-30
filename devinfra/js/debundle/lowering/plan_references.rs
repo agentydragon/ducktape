@@ -87,7 +87,7 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
             .resolver
             .as_ref()
             .expect("resolver initialized")
-            .resolve(source, caller_chunk_id_interned, caller_file)?;
+            .resolve(source, caller_chunk_id_interned, caller_file);
         self.resolutions.insert(key, resolved.clone());
         Ok(resolved)
     }

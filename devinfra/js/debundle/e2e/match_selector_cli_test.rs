@@ -3,61 +3,10 @@
 //! binds, whether it is unique, and (by default) how much further it could be
 //! holed.
 
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 
+use debundle_e2e_support::{run_match_selector, write_text_file};
 use serde_json::{Value, json};
-
-fn debundle_binary() -> PathBuf {
-    let runfiles_path = std::env::var("RUNFILES_DIR")
-        .or_else(|_| std::env::var("TEST_SRCDIR"))
-        .expect("runfiles env var");
-    let candidate = Path::new(&runfiles_path).join("_main/devinfra/js/debundle/debundle");
-    assert!(
-        candidate.exists(),
-        "debundle binary not at {}",
-        candidate.display()
-    );
-    candidate
-}
-
-fn write(path: &Path, body: &str) {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
-
-fn match_selector(source: &Path, match_source: &str, extra: &[&str]) -> Value {
-    let mut args = vec![
-        "spec",
-        "match-selector",
-        "--source-file",
-        source.to_str().unwrap(),
-        "--match",
-        match_source,
-        "--format",
-        "json",
-    ];
-    args.extend_from_slice(extra);
-    let out = Command::new(debundle_binary())
-        .args(&args)
-        .output()
-        .expect("spawn debundle");
-    assert!(
-        out.status.success(),
-        "non-zero exit\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    serde_json::from_slice(&out.stdout).unwrap_or_else(|err| {
-        panic!(
-            "stdout is not JSON ({err}):\n{}",
-            String::from_utf8_lossy(&out.stdout)
-        )
-    })
-}
 
 /// The one outcome a match-selector report carries.
 fn outcome(report: &Value) -> &Value {
@@ -81,14 +30,14 @@ function computeTotal(items) {
 fn fixture() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("app.js");
-    write(&source, CHUNK);
+    write_text_file(&source, CHUNK);
     (dir, source)
 }
 
 #[test]
 fn unique_match_reports_the_bound_target() {
     let (_dir, source) = fixture();
-    let report = match_selector(
+    let report = run_match_selector(
         &source,
         "const w = makeWidget(\"widget\", 3, theme);",
         &["--target-binding", "w"],
@@ -112,12 +61,12 @@ fn unique_match_reports_the_bound_target() {
 fn split_declarator_match_reports_pre_split_body_index() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("app.js");
-    write(
+    write_text_file(
         &source,
         "const runtimeFirst = build(\"left\"), runtimeSecond = build(\"right\");\n\
          const after = initAfter();\n",
     );
-    let report = match_selector(
+    let report = run_match_selector(
         &source,
         "const first = build(\"left\"), second = build(\"right\");",
         &["--target-binding", "second", "--no-slack"],
@@ -130,7 +79,7 @@ fn split_declarator_match_reports_pre_split_body_index() {
 #[test]
 fn no_match_is_not_unique() {
     let (_dir, source) = fixture();
-    let report = match_selector(
+    let report = run_match_selector(
         &source,
         "const w = { kind: \"missing\" };",
         &["--target-binding", "w"],
@@ -143,7 +92,7 @@ fn no_match_is_not_unique() {
 #[test]
 fn ambiguous_match_lists_candidates_in_body_order() {
     let (_dir, source) = fixture();
-    let report = match_selector(
+    let report = run_match_selector(
         &source,
         "const p = renderPanel(ANYTHING);",
         &["--target-binding", "p"],
@@ -171,7 +120,7 @@ fn over_pinned_selector_reports_holeable_slack() {
     let (_dir, source) = fixture();
     // The callee + arity already single out the one `makeWidget` call, so the
     // pinned literal arguments are unnecessary precision.
-    let report = match_selector(
+    let report = run_match_selector(
         &source,
         "const w = makeWidget(\"widget\", 3, theme);",
         &["--target-binding", "w"],
@@ -197,7 +146,7 @@ fn minimally_pinned_selector_reports_empty_slack() {
     // The "left" literal is the only thing distinguishing leftPanel from
     // rightPanel; holing it would make the selector ambiguous, so there is no
     // slack to report.
-    let report = match_selector(
+    let report = run_match_selector(
         &source,
         "const p = renderPanel(\"left\");",
         &["--target-binding", "p"],
@@ -210,7 +159,7 @@ fn minimally_pinned_selector_reports_empty_slack() {
 #[test]
 fn no_slack_flag_skips_slack_analysis() {
     let (_dir, source) = fixture();
-    let report = match_selector(
+    let report = run_match_selector(
         &source,
         "const w = makeWidget(\"widget\", 3, theme);",
         &["--target-binding", "w", "--no-slack"],
@@ -225,7 +174,7 @@ fn slack_drops_an_unneeded_object_property() {
     let (_dir, source) = fixture();
     // errorState is the only object literal, so any one of its keys alone pins
     // it — the others are droppable kvps, not just holeable values.
-    let report = match_selector(
+    let report = run_match_selector(
         &source,
         "const e = { kind: \"error\", code: 500, retry: false };",
         &["--target-binding", "e"],
@@ -249,7 +198,7 @@ fn slack_drops_a_statement_from_an_over_pinned_body() {
     let (_dir, source) = fixture();
     // computeTotal is the only function, so its body statements are not needed
     // for uniqueness and collapse to STMT_LIST runs.
-    let report = match_selector(
+    let report = run_match_selector(
         &source,
         "function f(items) { const base = items.length; const tax = base * 2; return base + tax; }",
         &["--target-binding", "f"],
@@ -273,11 +222,11 @@ fn slack_drops_a_destructure_pattern_property() {
     // One object-destructuring statement; the `loadConfig` initializer plus any
     // one destructured key already pin it, so the sibling pattern props are
     // droppable (the destructure analogue of an object-literal property drop).
-    write(
+    write_text_file(
         &source,
         "const lone = initLone();\nconst { primary, secondary, tertiary } = loadConfig();\n",
     );
-    let report = match_selector(
+    let report = run_match_selector(
         &source,
         "const { primary, secondary, tertiary } = loadConfig();",
         &["--target-binding", "primary"],
@@ -305,7 +254,7 @@ fn slack_drops_a_top_level_context_statement() {
     // top-level STMT_LIST is not honored on the member-resolution path). No error:
     // the guard keeps the target's own declaration, which the matcher requires
     // `target_binding` to name.
-    let report = match_selector(
+    let report = run_match_selector(
         &source,
         "const widgetConfig = makeWidget(\"widget\", 3, theme);\nconst rightPanel = renderPanel(\"right\");",
         &["--target-binding", "widgetConfig"],
