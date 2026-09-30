@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - google-mcp.k8s.yaml
 components:
-  - ./image-pins
+  - ../../k8s/google-mcp-image-pins

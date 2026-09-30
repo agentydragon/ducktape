@@ -442,11 +442,6 @@ A bare-tag field (an `*_IMAGE_TAG` env value) takes the placeholder too, and the
 copies the pinned tag into it with a block-style `replacements` rule that splits the
 container `image` on `:` (`images:` runs first); see `agents/airlock/image-pins`.
 
-Agentplane testing keeps its image pins inline in the hand-maintained root
-`kustomization.yaml`, since the Kustomization itself is part of the flat resource
-directory. Flux updates those `newTag:` markers in place; cdk8s generates only the
-separate `agentplane.k8s.yaml` resource file.
-
 The `images:` transformer matches by image `name:` across **every resource in the
 Kustomization's rendered output**, not just one Deployment — relevant when a directory's
 chart shares one image across multiple resources (e.g. `app/`'s runner `SandboxTemplate`

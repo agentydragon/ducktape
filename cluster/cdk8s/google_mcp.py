@@ -16,9 +16,9 @@ recipients). The Google write-token Secret is not minted here: it arrives from A
 Kustomization via a `ClusterExternalSecret` scoped to this namespace only, so this chart only
 ever *references* it by name.
 
-The image tag is a deliberate placeholder ("unset") -- `image-pins/kustomization.yaml`
-(hand-written) overrides it at `kustomize build` time via Flux's image-automation marker
-(cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
+The image tag is a deliberate placeholder ("unset") -- the hand-written `PINS_DIR` Component,
+which the kustomization includes across the roots, overrides it at `kustomize build` time via
+Flux's image-automation marker (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
@@ -58,7 +58,8 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "google-mcp"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{_NAME}"
+OUTPUT_DIR = f"{GENERATED_ROOT}/{_NAME}"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/google-mcp-image-pins"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/google-mcp"
 _PLACEHOLDER_TAG = "unset"
 SERVICE = ServiceRef(

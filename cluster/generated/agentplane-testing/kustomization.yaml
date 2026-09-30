@@ -2,6 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - agentplane.k8s.yaml
-  - web-push-vapid.sops.yaml
+  - litellm-credentials.k8s.yaml
 components:
-  - image-pins
+  - ../../k8s/agentplane-testing-image-pins

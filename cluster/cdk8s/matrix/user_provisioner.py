@@ -1,8 +1,8 @@
 """The Job that registers Matrix users against Synapse's admin API.
 
-The image tag is the placeholder "unset"; the hand-written
-cluster/k8s/matrix/user-provisioner/image-pins/kustomization.yaml overrides it at
-`kustomize build` time via Flux's image-automation marker.
+The image tag is the placeholder "unset"; the hand-written `PINS_DIR` Component, which the
+kustomization includes across the roots, overrides it at `kustomize build` time via Flux's
+image-automation marker.
 """
 
 from __future__ import annotations
@@ -13,11 +13,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.matrix.matrix import NAMESPACE, SYNAPSE
 from cluster.cdk8s.secret_ref import SecretRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix/user-provisioner"
+OUTPUT_DIR = f"{GENERATED_ROOT}/matrix/user-provisioner"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/matrix/user-provisioner-image-pins"
 _NAME = "matrix-user-provisioner"
 # Script baked in via Bazel (//cluster/provisioners/matrix_user_provisioner:image).
 _IMAGE = "git.allegedly.works/ducktape-ci/matrix-user-provisioner:unset"

@@ -7,8 +7,8 @@ one pulls. Delete entries as they ship or get rejected.
 
 ## Priority order
 
-1. <credit_system_v2.md> phases 1–2 (decimal accounting + streak/daily
-   bonus) — the proven retention core.
+1. Existing credit accounting, streaks, and daily bonuses remain the foundation;
+   future milestones and break-time behavior are tracked in <credit_system_v2.md>.
 2. Casino gating on today's study time — cheap; directly converts the
    gambling urge into study sessions.
 3. Lucky-session variable rewards — small; reuses the RNG audit stack.
@@ -79,7 +79,7 @@ studying is minute zero:
 
 ## Guardrails (what keeps this "in a good way")
 
-- Streaks stay forgiving — rest days (credit_system_v2 §3) prevent the
+- Streaks stay forgiving — earned rest days prevent the
   broken-60-day-streak rage-quit.
 - The one-way credits → tokens economy stays inviolate: winnings can
   never be re-gambled, so the casino can't become the point. Any new
