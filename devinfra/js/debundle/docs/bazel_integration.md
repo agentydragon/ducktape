@@ -39,10 +39,19 @@ bazel build //path/to:debundle \
   --@ducktape//devinfra/js/debundle:debundler=@my_debundle_bin//file
 ```
 
-The rule declares `@ducktape//devinfra/js/debundle:ortools_cpsat_solver` as an
-action tool and passes its execroot path to the debundler. The materializer uses
-that OR-Tools CP-SAT sidecar for global selector assignment. Consumers can
-override the solver tool with the matching label flag when needed.
+## Solver build
+
+The debundler links OR-Tools' CP-SAT for selector assignment, so its binary is
+the action's only tool. The solver library, `//devinfra/js/debundle:ortools_cp_solver`,
+is always built with `--compilation_mode=opt`: `optimized_cc_library.bzl` applies
+a configuration transition to it and its whole dependency subtree (OR-Tools,
+protobuf, Abseil), because `NDEBUG`-dependent inline code must not mix across the
+libraries of one binary. Every consumer links it through that target, in
+whatever mode it builds; linking `@or-tools//ortools/sat/c_api:cp_solver_c`
+directly gives a debug-mode solver, which logs `CP-SAT is running in debug mode`.
+<selector_resolution.md> § The solver has the rest.
+
+Deviation: a consumer that replaces `debundler` runs that binary's own solver.
 
 ## Profiling
 

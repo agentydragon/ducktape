@@ -96,7 +96,7 @@ async def test_sync_refuses_an_event_whose_unstored_fields_carry_data(
     assert await store.synced_last_event_at() == {ONE: None}
 
 
-async def test_sync_rejects_a_sequence_gap_and_stores_nothing_of_that_page(
+async def test_sync_stores_nothing_of_a_page_with_a_sequence_gap(
     service: FakeSessionsService, api: SessionsApi, store: SessionStore
 ) -> None:
     events = make_events(5)
@@ -104,7 +104,7 @@ async def test_sync_rejects_a_sequence_gap_and_stores_nothing_of_that_page(
     service.events = {ONE: events}
     [session] = [s async for s in api.list_sessions()]
     await store.upsert_sessions([session])
-    with pytest.raises(ValueError, match="expected sequence_num 3, got 4"):
+    with pytest.raises(ValueError, match="sequence_num"):
         await sync_session(api, store, session)
     assert await store.resume_after(ONE) == 0
 

@@ -640,7 +640,7 @@ def generate_manifests(root: Path) -> None:
             root,
             clickhouse_schema_artifact,
             clickhouse_schema.chart,
-            config_map_generator=[clickhouse_schema.SCHEMA_CONFIG_MAP],
+            config_map_generator=[clickhouse_schema.write_config_map(root)],
         ),
         clickhouse_kustomization,
     )

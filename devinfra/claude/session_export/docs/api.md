@@ -92,7 +92,8 @@ The same session is `session_<x>` in `claude.ai/code/` URLs; both prefixes are a
 | `sort_order` | `asc` or `desc`, else 400. Default `desc`.                                                   |
 | `cursor`     | A `sequence_num`, exclusive: `asc` returns greater, `desc` returns smaller. Default: an end. |
 
-- `asc` without a cursor starts at `sequence_num` 1; sequence numbers are contiguous.
+- `asc` without a cursor starts at `sequence_num` 1; sequence numbers are contiguous. `iter_event_pages` relies on
+  it and raises `ValueError` on a page that skips one, before yielding it.
 - `next_cursor` is present exactly when more events lie beyond this page in the requested direction, so the last
   page needs no empty follow-up request even when it is exactly full. A cursor past the end returns an empty
   `data`.
