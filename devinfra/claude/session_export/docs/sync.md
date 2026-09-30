@@ -42,7 +42,9 @@ there).
 3. For each behind session, read events after the resume point and store them page by page. The resume point is the
    newest stored `sequence_num`, or just before the earliest event that had `received_at` but no `processed_at` when
    stored: whether those stamps change after first read is unobserved, and re-reading such an event refreshes them
-   at no cost when they do not. A gap in `sequence_num` raises.
+   at no cost when they do not. `SessionsApi.iter_event_pages` raises on a page with a gap in `sequence_num` before
+   yielding it, so none is stored: `resume_after` reads the newest stored number, and an event stored past a gap
+   would never be fetched.
 4. Set `synced_last_event_at` to the value listed in step 1, not a newer one: events arriving during the pass leave the
    session behind for the next cycle. A crash before this step leaves it behind, and the next cycle resumes after
    the last stored event.

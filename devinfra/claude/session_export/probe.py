@@ -6,6 +6,7 @@ token from the file and stops if that has lapsed. Nothing secret is printed, and
 """
 
 import asyncio
+import contextlib
 import json
 from collections import deque
 from collections.abc import Callable
@@ -61,12 +62,10 @@ def _frame_shape(event: str, frame_id: str, data: str) -> str:
 
 async def _summarize_frames(response: httpx.Response, seconds: float) -> str:
     shapes: deque[str] = deque()  # appended as they arrive: a comprehension would lose them when the window closes
-    try:
+    with contextlib.suppress(TimeoutError):  # the window is the point: what arrived while it was open is the result
         async with asyncio.timeout(seconds):
             async for frame in EventSource(response).aiter_sse():
                 shapes.append(_frame_shape(frame.event, frame.id, frame.data))
-    except TimeoutError:
-        pass  # the window is the point: what arrived while it was open is the result
     return f"{len(shapes)} frame(s) in {seconds:g}s {' '.join(islice(shapes, _MAX_FRAMES_SHOWN))}"
 
 

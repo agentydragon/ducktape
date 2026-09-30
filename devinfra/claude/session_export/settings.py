@@ -6,6 +6,10 @@ from pathlib import Path
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The defaults of `serve`'s settings and of the `sync` flags.
+DEFAULT_SYNC_INTERVAL_SECONDS = 300
+DEFAULT_SYNC_WORKERS = 3
+
 
 class SyncSettings(BaseSettings):
     """The connection string is a secret, so it comes from the environment rather than the command line."""
@@ -28,8 +32,8 @@ class ServeSettings(SyncSettings):
     oidc_session_seconds: int = Field(default=28_800, gt=0)
     host: str = "0.0.0.0"
     port: int = 8080
-    interval_seconds: float = Field(default=300, gt=0, description="Between sync cycles.")
-    workers: int = Field(default=3, gt=0, description="Sessions read concurrently.")
+    interval_seconds: float = Field(default=DEFAULT_SYNC_INTERVAL_SECONDS, gt=0, description="Between sync cycles.")
+    workers: int = Field(default=DEFAULT_SYNC_WORKERS, gt=0, description="Sessions read concurrently.")
     live_streams: int = Field(
         default=20, ge=0, description="Sessions followed by event stream at once; 0 leaves the sync to its cycles."
     )

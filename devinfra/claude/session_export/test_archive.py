@@ -54,13 +54,13 @@ async def test_export_session_reports_progress_against_the_expected_total(
     assert reports[-1].startswith(f"{SESSION_ID}: 1203/1203 events (100%)")
 
 
-async def test_export_session_rejects_a_sequence_gap_and_leaves_no_finished_file(
+async def test_export_session_leaves_no_finished_file_when_a_sequence_gap_aborts_it(
     service: FakeSessionsService, api: SessionsApi, tmp_path: Path
 ) -> None:
     events = make_events(5)
     del events[2]
     service.events[SESSION_ID] = events
-    with pytest.raises(ValueError, match="expected sequence_num 3, got 4"):
+    with pytest.raises(ValueError, match="sequence_num"):
         await export_session(api, make_session(SESSION_ID), tmp_path)
     assert not (tmp_path / f"{SESSION_ID}.jsonl.gz").exists()
 

@@ -28,18 +28,11 @@ async def read_events_after(
     after: int,
     on_position: Callable[[int], None] | None = None,
 ) -> int:
-    """Store the session's events past `after`, page by page; returns the last `sequence_num` stored.
-
-    A gap in `sequence_num` raises before its page is stored: `resume_after` reads the newest stored, so an event
-    stored past a gap would never be fetched.
-    """
+    """Store the session's events past `after`, page by page; returns the last `sequence_num` stored."""
     position = after
     async for page in api.iter_event_pages(session_id, after=after):
-        for event in page:
-            position += 1
-            if event.seq != position:
-                raise ValueError(f"{session_id=}: expected sequence_num {position}, got {event.sequence_num}")
         await store.append_events(session_id, page)
+        position += len(page)
         if on_position:
             on_position(position)
     return position

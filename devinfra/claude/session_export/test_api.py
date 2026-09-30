@@ -63,6 +63,26 @@ async def test_event_pages_resume_after_a_sequence_num(service: FakeSessionsServ
     assert seqs == list(range(501, 1204))
 
 
+@pytest.mark.parametrize(
+    ("after", "missing", "pages_before_the_gap"),
+    [
+        pytest.param(0, 3, 0, id="first-page"),
+        pytest.param(0, 501, 1, id="page-boundary"),
+        pytest.param(0, 601, 1, id="later-page"),
+        pytest.param(500, 501, 0, id="resumed-after"),
+    ],
+)
+async def test_event_pages_reject_a_sequence_gap_before_yielding_its_page(
+    service: FakeSessionsService, api: SessionsApi, after: int, missing: int, pages_before_the_gap: int
+) -> None:
+    service.events[SESSION_ID] = [e for e in make_events(1203) if int(e["sequence_num"]) != missing]
+    pages = api.iter_event_pages(SESSION_ID, after=after)
+    for _ in range(pages_before_the_gap):
+        await anext(pages)
+    with pytest.raises(ValueError, match=f"expected sequence_num {missing}, got {missing + 1}"):
+        await anext(pages)
+
+
 async def test_newest_sequence_num_is_zero_for_a_session_without_events(
     service: FakeSessionsService, api: SessionsApi
 ) -> None:
