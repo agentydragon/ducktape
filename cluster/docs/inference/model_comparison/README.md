@@ -11,8 +11,9 @@ frontier, mixing **measured** local results with **third-party** eval numbers.
 ## What's plotted
 
 1. Decode tokens/s we measured (E1–E5 plus the September Qwen3.8 Ollama run). The
-   Qwen3.8 point is one 1,024-token continuation over a prefix-cached 145K history,
-   so it is indicative and not a matched speed benchmark.
+   Qwen3.8 chart point is one 1,024-token continuation over a prefix-cached 145K
+   history. Its separate 51-token requests measured 44–60 tok/s across 128K/256K
+   settings; they are called out in the chart and detailed in <../results.md>.
 2. Context we can actually serve — ~256K ceiling; 1M is kernel-blocked. Qwen3.8
    completed a 145K history with a 256K setting; full 256K input is untested.
 3. Speed × SWE-bench — runnable models placed against the frontier reference lines,

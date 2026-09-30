@@ -90,6 +90,7 @@ class Measured:
     vram_gb: float = 0.0  # peak, per GPU (max of the two)
     tools: str = ""  # tool-calling smoke result
     note: str = ""
+    short_decode_range: tuple[float, float] | None = None  # repeated short-request rates, tok/s
 
 
 MEASURED = [
@@ -100,7 +101,15 @@ MEASURED = [
     Measured("Devstral-24B", "vLLM TP2 FP8 dense", {8: 96, 32: 89}, 128, 30.7, "single+parallel+multi ✓"),
     # One 1,024-token continuation over a prefix-cached 145K history; useful as a
     # serving point, but not a matched throughput benchmark against the other runs.
-    Measured("Qwen3.8 Flash Next", "Ollama IQ4_XS", {145: 29.07}, 256, 30.2, "145K history; 24/24 API checks"),
+    Measured(
+        "Qwen3.8 Flash Next",
+        "Ollama IQ4_XS",
+        {145: 29.07},
+        256,
+        30.2,
+        "145K history; 24/24 API checks",
+        short_decode_range=(44.39, 60.01),
+    ),
     Measured("Qwen2.5-7B-1M", "vLLM TP2", {}, 0, 0.0, note="1M blocked: DCA has no sm_120 kernel"),
 ]
 
@@ -247,24 +256,46 @@ REASONING_CLASS = {
 #
 # Decode rate reflects active parameters, quantization, and placement: SSD/offload can
 # be much slower than VRAM-resident MoEs. Ollama vs vLLM is shown for gpt-oss. The
-# Qwen3.8 point is one 145K-history continuation, not a matched benchmark run.
+# Qwen3.8 bar is the 145K-history continuation, not the model's short-request rate.
 
 # %%
 fig, ax = plt.subplots(figsize=(11, 4.8))
 runnable = [m for m in MEASURED if m.decode]
 ctxs = [8, 32, 128, 145]
 x = np.arange(len(runnable))
-w = 0.19
-for i, c in enumerate(ctxs):
+slot_width = 0.15
+bar_width = 0.12
+short_ctx_offset = -2 * slot_width
+for i, c in enumerate(ctxs, start=1):
     vals = [m.decode.get(c, np.nan) for m in runnable]
-    ax.bar(x + (i - (len(ctxs) - 1) / 2) * w, vals, w, label=f"{c}K input")
+    offset = (i - 2) * slot_width
+    ax.bar(x + offset, vals, bar_width, label=f"{c}K input")
+for model_index, model in enumerate(runnable):
+    if model.short_decode_range is not None:
+        low, high = model.short_decode_range
+        ax.bar(
+            x[model_index] + short_ctx_offset,
+            high - low,
+            bar_width,
+            bottom=low,
+            color="#9467bd",
+        )
 ax.set_xticks(x)
 ax.set_xticklabels([f"{m.label}\n{m.runtime}" for m in runnable], fontsize=7.5)
 ax.set_ylabel("decode tokens/s (single request)")
 ax.set_title("Measured decode throughput on 2×5090 (higher = faster)  ·  local")
-ax.legend(title="input context")
-fig.text(0.5, 0.01, "Qwen3.8 145K point: one 1,024-token continuation over a prefix-cached history.", ha="center", fontsize=8, color="#555")
-fig.tight_layout(rect=(0, 0.06, 1, 1))
+context_handles, context_labels = ax.get_legend_handles_labels()
+ax.legend(
+    context_handles
+    + [Patch(facecolor="#9467bd", label="Qwen3.8 short (51-token input)")],
+    context_labels + ["Qwen3.8 short (51-token input)"],
+    title="input context",
+    loc="upper left",
+    fontsize=8,
+)
+fig.text(0.5, 0.045, "Qwen3.8 short 51-token prompts: 50.21 / 60.01 tok/s at 128K; 44.39 / 49.48 tok/s at 256K (first / warm repeat).", ha="center", fontsize=8, color="#555")
+fig.text(0.5, 0.015, "145K-history point: 29.07 tok/s on one 1,024-token continuation over a prefix-cached history.", ha="center", fontsize=8, color="#555")
+fig.tight_layout(rect=(0, 0.09, 1, 1))
 fig.savefig("fig1_decode_tps.svg", bbox_inches="tight", metadata={"Date": None})
 
 # %% [markdown]
