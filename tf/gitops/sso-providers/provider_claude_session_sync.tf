@@ -55,7 +55,7 @@ resource "authentik_policy_binding" "claude_session_sync_owner_only" {
 }
 
 # Reflector mirrors this into the app's namespace. The keys are the environment variables of the
-# app's `ServeSettings` (devinfra/claude/session_export/settings.py), which the Deployment reads
+# web app's `WebSettings` (devinfra/claude/session_export/settings.py), which the Deployment reads
 # from them one by one.
 resource "kubernetes_secret" "claude_session_sync_oidc" {
   metadata {

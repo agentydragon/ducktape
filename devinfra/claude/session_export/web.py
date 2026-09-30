@@ -5,12 +5,12 @@ import logging
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette import status
 
-from devinfra.claude.session_export.settings import ServeSettings
+from devinfra.claude.session_export.settings import OIDCSettings, ServeSettings, WebSettings
 from devinfra.claude.session_export.supervisor import SyncStatus, SyncSupervisor
 from util.bazel.runfiles import find_path
 from util.oidc_login import LoginConfig, install_login
@@ -71,7 +71,7 @@ def _api(supervisor: SyncSupervisor) -> APIRouter:
     return router
 
 
-def _login_config(settings: ServeSettings) -> LoginConfig:
+def _login_config(settings: OIDCSettings) -> LoginConfig:
     return LoginConfig(
         issuer=settings.oidc_issuer,
         client_id=settings.oidc_client_id,
@@ -87,16 +87,13 @@ def _login_config(settings: ServeSettings) -> LoginConfig:
     )
 
 
-def create_app(*, supervisor: SyncSupervisor, settings: ServeSettings, frontend_dir: Path | None = None) -> FastAPI:
-    app = FastAPI(title="claude-session-sync", version="1")
-
+def _health_route(app: FastAPI) -> None:
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    app.include_router(_api(supervisor))
-    install_login(app, _login_config(settings))
 
+def _frontend(app: FastAPI, frontend_dir: Path | None) -> None:
     if frontend_dir is None:
         # Only the server binary packages the SPA. The library is also imported without it: by its own tests,
         # and by the OpenAPI exporter the frontend's types come from, which cannot depend on the bundle.
@@ -107,4 +104,75 @@ def create_app(*, supervisor: SyncSupervisor, settings: ServeSettings, frontend_
             frontend_dir = index.parent
     if frontend_dir is not None:
         app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+
+
+def _proxy_api() -> APIRouter:
+    """The public web tier forwards control calls to the private, single-owner process."""
+    router = APIRouter(prefix="/api")
+
+    async def forward(request: Request, *, method: str, path: str, body: object | None = None) -> Response:
+        client: httpx.AsyncClient = request.app.state.control_client
+        try:
+            upstream = await client.request(method, path, json=body)
+        except httpx.TransportError as unreachable:
+            logger.exception("could not reach the private sync control service")
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "The sync control service is unavailable."
+            ) from unreachable
+        headers = {"Cache-Control": "no-store"}
+        if content_type := upstream.headers.get("content-type"):
+            headers["Content-Type"] = content_type
+        return Response(content=upstream.content, status_code=upstream.status_code, headers=headers)
+
+    @router.get("/status")
+    async def get_status(request: Request) -> Response:
+        return await forward(request, method="GET", path="/api/status")
+
+    @router.post("/pairing")
+    async def start_pairing(request: Request) -> Response:
+        return await forward(request, method="POST", path="/api/pairing")
+
+    @router.post("/pairing/complete")
+    async def finish_pairing(body: PairingFinish, request: Request) -> Response:
+        return await forward(request, method="POST", path="/api/pairing/complete", body=body.model_dump())
+
+    @router.post("/sync", status_code=status.HTTP_202_ACCEPTED)
+    async def sync_now(request: Request) -> Response:
+        return await forward(request, method="POST", path="/api/sync")
+
+    return router
+
+
+def create_control_app(*, supervisor: SyncSupervisor) -> FastAPI:
+    """Internal control API for the one process that owns the Claude OAuth credential.
+
+    The cluster exposes this only through a ClusterIP Service and a Cilium policy that admits the public web Pods.
+    """
+    app = FastAPI(title="claude-session-sync-control", version="1")
+    _health_route(app)
+    app.include_router(_api(supervisor))
+    return app
+
+
+def create_web_app(
+    *, settings: WebSettings, control_client: httpx.AsyncClient, frontend_dir: Path | None = None
+) -> FastAPI:
+    """Stateless, owner-authenticated web tier; control state and the credential stay in the control process."""
+    app = FastAPI(title="claude-session-sync", version="1")
+    app.state.control_client = control_client
+    _health_route(app)
+    app.include_router(_proxy_api(), dependencies=[Depends(_no_store)])
+    install_login(app, _login_config(settings))
+    _frontend(app, frontend_dir)
+    return app
+
+
+def create_app(*, supervisor: SyncSupervisor, settings: ServeSettings, frontend_dir: Path | None = None) -> FastAPI:
+    """Local all-in-one app, retained for development and the OpenAPI type exporter."""
+    app = FastAPI(title="claude-session-sync", version="1")
+    _health_route(app)
+
+    app.include_router(_api(supervisor))
+    install_login(app, _login_config(settings))
+    _frontend(app, frontend_dir)
     return app

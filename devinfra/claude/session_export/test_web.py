@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_bazel
+from starlette.types import Receive, Scope, Send
 
 from devinfra.claude.session_export.conftest import (
     PAIRED_RESPONSE,
@@ -17,10 +18,10 @@ from devinfra.claude.session_export.conftest import (
     redirect_url,
 )
 from devinfra.claude.session_export.oauth import CredentialStore
-from devinfra.claude.session_export.settings import ServeSettings
+from devinfra.claude.session_export.settings import ServeSettings, WebSettings
 from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.supervisor import SyncSupervisor
-from devinfra.claude.session_export.web import create_app
+from devinfra.claude.session_export.web import create_app, create_control_app, create_web_app
 from util.net import bind_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
@@ -118,6 +119,76 @@ async def test_the_owner_pairs_by_pasting_the_redirect_url(owner: httpx.AsyncCli
     assert paired.status_code == 200
     assert paired.json()["credential"]["organization_uuid"] == TEST_ORG_UUID
     assert (await owner.get("/api/status")).json()["pairing_started"] is False
+
+
+async def test_pairing_can_start_on_one_web_replica_and_finish_on_another(store: SessionStore, tmp_path: Path) -> None:
+    """Both public pods proxy to the single control process that owns the PKCE attempt and credential."""
+    private_key, public_key = generate_rsa_keypair()
+    idp_sock, app_sock = bind_free_port(), bind_free_port()
+    idp_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}"
+    app_url = f"http://127.0.0.1:{app_sock.getsockname()[1]}"
+    idp = build_mock_oidc_app(
+        issuer_url=idp_url,
+        private_key=private_key,
+        public_key=public_key,
+        subject=OWNER,
+        extra_id_token_claims={"preferred_username": "test-owner"},
+    )
+    web_settings = WebSettings(
+        database_url="postgresql://unused.invalid/unused",
+        public_base_url=app_url,
+        oidc_issuer=idp_url,
+        oidc_client_id="test-client",
+        oidc_client_secret="test-client-secret",
+        oidc_session_secret="test-session-secret",
+        oidc_allowed_subject=OWNER,
+        control_base_url="http://control",
+    )
+    control_settings = ServeSettings(
+        database_url="postgresql://unused.invalid/unused",
+        credentials_file=tmp_path / "credential.json",
+        public_base_url=app_url,
+        oidc_issuer=idp_url,
+        oidc_client_id="test-client",
+        oidc_client_secret="test-client-secret",
+        oidc_session_secret="test-session-secret",
+        oidc_allowed_subject=OWNER,
+    )
+    supervisor = SyncSupervisor(
+        credentials=CredentialStore(control_settings.credentials_file),
+        store=store,
+        token_client=FakeTokenEndpoint(PAIRED_RESPONSE).client,
+        interval=3600,
+        workers=1,
+        live_streams=0,
+        live_window=timedelta(hours=1),
+    )
+    control_app = create_control_app(supervisor=supervisor)
+    async with (
+        serve_app(idp, sock=idp_sock),
+        httpx.AsyncClient(base_url="http://control", transport=httpx.ASGITransport(app=control_app)) as control_client,
+    ):
+        web_one = create_web_app(settings=web_settings, control_client=control_client, frontend_dir=tmp_path)
+        web_two = create_web_app(settings=web_settings, control_client=control_client, frontend_dir=tmp_path)
+
+        async def route_to_replica(scope: Scope, receive: Receive, send: Send) -> None:
+            app = web_two if scope["path"] == "/api/pairing/complete" else web_one
+            await app(scope, receive, send)
+
+        async with (
+            serve_app_in_loop(route_to_replica, sock=app_sock),
+            httpx.AsyncClient(base_url=app_url, headers={"Origin": app_url}) as owner,
+        ):
+            await owner.get("/auth/login", follow_redirects=True)
+            started = await owner.post("/api/pairing")
+            finished = await owner.post(
+                "/api/pairing/complete",
+                json={"redirect_url": redirect_url(authorization_state(started.json()["authorization_url"]))},
+            )
+
+    assert started.status_code == 200
+    assert finished.status_code == 200
+    assert finished.json()["credential"]["organization_uuid"] == TEST_ORG_UUID
 
 
 async def test_a_pasted_url_from_another_attempt_is_a_client_error(owner: httpx.AsyncClient) -> None:
