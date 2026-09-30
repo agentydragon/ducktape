@@ -474,10 +474,10 @@ export function Sidebar({
             <IconBox size={15} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label="Pending approvals" withArrow>
+        <Tooltip label="Actions" withArrow>
           <ActionIcon
             variant={location.pathname === "/actions" ? "light" : "subtle"}
-            aria-label="Pending approvals"
+            aria-label="Actions"
             onClick={() => goTo("/actions")}
           >
             <IconListCheck size={15} />

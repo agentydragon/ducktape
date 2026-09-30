@@ -1,4 +1,4 @@
-import { ActionIcon, Anchor, Stack, Text } from "@mantine/core";
+import { ActionIcon, Anchor, Stack, Text, Title } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
 import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
@@ -14,7 +14,7 @@ import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
 import { electricThreadSync } from "./threads/thread_store";
 import { ThreadSyncContext } from "./threads/thread_sync";
-import { TopbarContext, type TopbarSlots } from "./topbar";
+import { TopbarContext, TopbarTitle, type TopbarSlots } from "./topbar";
 import "./shell.css";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
@@ -68,14 +68,14 @@ function SandboxRoute(): JSX.Element {
 function ActionsPage(): JSX.Element {
   return (
     <Stack>
-      <div>
-        <Text fw={700} size="lg">
+      <TopbarTitle>
+        <Title order={1} size="h4">
           Actions
-        </Text>
-        <Text c="dimmed" size="sm">
-          Review requests awaiting a decision, then browse completed actions.
-        </Text>
-      </div>
+        </Title>
+      </TopbarTitle>
+      <Text c="dimmed" size="sm">
+        Review requests awaiting a decision, then browse their decision and execution history.
+      </Text>
       <ActionRequests embedded />
       <ActionHistory embedded />
     </Stack>
