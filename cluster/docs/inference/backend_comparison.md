@@ -170,8 +170,11 @@ based on API surface alone.
    for agent traffic.
 3. **llama.cpp** — keep as a side option for Anthropic-native serving and
    GGUF-only models that haven't landed in vLLM yet.
-4. **Ollama** — current setup; keep until we cut over. No good reason to
-   stay long-term given the no-TP ceiling.
+4. **Ollama** — current deployment. The [September SSD run](runs/2026-09-27_ollama_ssd/README.md)
+   served Qwen3.8 IQ4_XS at 145K history (29.07 tok/s on one cached continuation) and
+   passed 24/24 LiteLLM API-shape checks across Chat Completions, Responses, and
+   Anthropic Messages. Its lack of tensor parallelism remains a limit; compare the
+   same model, quant, and workload under another runtime before deciding on a cutover.
 5. **TensorRT-LLM / NIM** — only if benchmarks justify the operator complexity.
 6. **Colibri** — retain the reproducible GLM-5.2 experiment, but do not deploy
    behind LiteLLM at the measured sub-0.5 tok/s throughput.

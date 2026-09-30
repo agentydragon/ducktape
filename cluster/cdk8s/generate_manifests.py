@@ -207,7 +207,7 @@ from cluster.cdk8s.monitoring import (
 )
 from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
-from cluster.cdk8s.ollama import app as ollama_app, flux_kustomizations as ollama_flux_kustomizations
+from cluster.cdk8s.ollama import app as ollama_app
 from cluster.cdk8s.openebs_lvm import storage as openebs_lvm_storage
 from cluster.cdk8s.parked import (
     augur_evidence as parked_augur_evidence,
@@ -318,7 +318,6 @@ def generate_manifests(root: Path) -> None:
     authentik_jwt_rotation.write_manifests(root)
     forgejo_token_rotation.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
-    ollama_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
     study_casino_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
@@ -742,8 +741,14 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     ollama_app_artifact = artifact("ollama-app", ollama_app.OUTPUT_DIR)
-    ollama_flux_kustomizations.ollama(
-        flux_chart, ollama_app_artifact, external_secrets_operator_kustomization, kyverno_kustomization
+    ollama_app.ollama(
+        flux_chart,
+        # No `namespace=`: that transformer would also rewrite the RoleBinding's `claude-sandbox` subject.
+        write_directory(
+            root, ollama_app_artifact, ollama_app.chart, config_map_generator=ollama_app.write_config_maps(root)
+        ),
+        external_secrets_operator_kustomization,
+        kyverno_kustomization,
     )
     seaweedfs_cluster_artifact = artifact("seaweedfs-cluster", seaweedfs_cluster.OUTPUT_DIR)
     seaweedfs_flux_kustomizations.seaweedfs_cluster(
