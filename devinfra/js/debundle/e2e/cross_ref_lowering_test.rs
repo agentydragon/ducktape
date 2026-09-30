@@ -20,7 +20,7 @@ use debundle_e2e_support::*;
 /// `EBt`. Resolves through the full pipeline to `UBt`, with no minified name
 /// written in the spec for the target.
 #[test]
-fn cross_ref_references_resolves_delegator_through_full_pipeline() {
+fn cross_ref_references_resolves_delegator() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"function EBt(x) { return x + 1; }
 function UBt(x) { return EBt(x); }
@@ -84,7 +84,7 @@ export { EBt, UBt };
 /// The re-export shape: `const HI = Acc` pinned as "the var-decl that aliases
 /// `@NodeAttributeAccessor`". Resolves to `HI` through the full pipeline.
 #[test]
-fn cross_ref_aliases_resolves_reexport_through_full_pipeline() {
+fn cross_ref_aliases_resolves_reexport() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"class Acc { tag() { return "acc"; } }
 const HI = Acc;

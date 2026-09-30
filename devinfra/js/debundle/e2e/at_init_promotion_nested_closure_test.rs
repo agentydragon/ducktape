@@ -12,30 +12,11 @@
 //!    *different* destination module is invalid at ANY time, not just
 //!    at init — the emitted module imports the binding, and an
 //!    assignment to an imported binding throws `TypeError` whenever
-//!    it fires. Before the fix, only first-order lazy rebinds emitted
-//!    edges, so a rebind nested two closures deep never reached the
-//!    cross-destination-rebind rejection: the gate accepted the split
-//!    spec and the emitted bundle threw as soon as the stored closure
-//!    ran (verified red with a post-init probe invoking
-//!    `globalThis.__updateState()`).
-//!
-//! The fix adds a `DeferredRebind` edge kind for non-first-order lazy
-//! rebinds: it participates in cross-destination-rebind rejection and
-//! forced co-location (bidirectional `G_atomic`) but does NOT
-//! constrain init order (it is excluded from the constraining-edge
-//! subgraph and the I-graph).
-//!
-//! ## Production observation
-//!
-//! A real production chunk `static/index-EXAMPLE` produced 22
-//! cross-module `eager_rebind` edges all sharing
-//! `statement_ordinal: 9705` (the top-level `try { ... Age(...) ... }`
-//! bootstrap), creating a 690-owner SCC spanning 11 modules. Every
-//! promoted rebind in that SCC traced back to deferred-callback
-//! writes inside event handlers nested in the bootstrap's call graph
-//! — none of them fire at module init. Those writes still force
-//! co-location with the binding declarer (contract 2) but must not
-//! manufacture init-order constraints (contract 1).
+//!    it fires. Non-first-order (nested) lazy rebinds therefore emit a
+//!    `DeferredRebind` edge: it participates in cross-destination-rebind
+//!    rejection and forced co-location (bidirectional `G_atomic`) but does
+//!    NOT constrain init order (it is excluded from the constraining-edge
+//!    subgraph and the I-graph).
 
 use debundle_e2e_support::*;
 
@@ -68,10 +49,9 @@ export { state, setupHandler };
 }
 
 /// Contract 2: a nested-closure *rebind* of a binding assigned to a
-/// different destination module is rejected. Before the fix this
-/// spec was accepted and the emitted bundle threw
-/// `TypeError: Assignment to constant variable.` the moment
-/// `globalThis.__updateState()` ran.
+/// different destination module is rejected (the emitted bundle would throw
+/// `TypeError: Assignment to constant variable.` when
+/// `globalThis.__updateState()` ran).
 #[test]
 fn nested_closure_rebind_across_destinations_is_rejected() {
     expect_rejection(

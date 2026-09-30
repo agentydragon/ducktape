@@ -187,9 +187,6 @@ impl EdgeReason {
         self.role
     }
 
-    pub fn is_eager_use(&self) -> bool {
-        self.kind == DepKind::EagerUse
-    }
     pub fn kind(&self) -> DepKind {
         self.kind
     }
@@ -249,54 +246,6 @@ pub enum DepKind {
     DeferredRebind,
     Sequenced,
     LocalEffect,
-}
-
-/// Per-edge metadata. One physical `(from, to)` ESM `import`
-/// directive can be backed by multiple reasons (e.g. several
-/// at-init reads of bindings owned by the same target module);
-/// they're all kept here so cycle reports can show every
-/// triggering statement.
-#[derive(Debug, Clone, Default)]
-pub struct EdgeMetadata {
-    pub reasons: Vec<EdgeReason>,
-}
-
-impl EdgeMetadata {
-    /// `true` if at least one reason is an at-init read. The
-    /// realizability gate uses this to decide whether an
-    /// `I ∪ S` SCC contains an `R` cross-module edge.
-    pub fn has_eager_use(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_eager_use)
-    }
-
-    /// `true` if at least one reason is a side-effect ordering
-    /// edge. `S` edges in an SCC make it unrealizable: the
-    /// constraint is "predecessor must evaluate before
-    /// successor", and a cycle has no topological emit order
-    /// satisfying every such edge.
-    pub fn has_sequenced(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_sequenced)
-    }
-
-    /// `true` if at least one reason is a rebinding write. These
-    /// edges are rejected outright when they cross destination
-    /// modules because imported ESM bindings are read-only.
-    pub fn has_rebind(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_rebind)
-    }
-
-    /// `true` if this edge constrains realizability — at least one
-    /// of its reasons is realizability-constraining (an at-init
-    /// read `R`, a side-effect ordering `S` edge, or a rebinding
-    /// write). Lazy read-only edges don't, because the reads they
-    /// represent fire after every module in the cycle has finished
-    /// evaluating.
-    ///
-    /// Delegates to `EdgeReason::constrains_init_order` to keep
-    /// the per-edge and per-reason definitions in lockstep.
-    pub fn constrains_init_order(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::constrains_init_order)
-    }
 }
 
 /// Stable per-chunk identity of an owner-graph edge. Equal to the

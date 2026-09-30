@@ -20,13 +20,6 @@
 
 ## Active Features
 
-### High Priority
-
-- [ ] **Add "X runs in progress" indicator**
-  - Show separate count/indicator for how many runs are currently in progress
-  - Stats already exclude in_progress runs (filtered in recall_by_run view)
-  - Frontend already shows full status words (not S/C letters)
-
 ### Lower Priority
 
 - [ ] **Stats display improvements**

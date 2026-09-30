@@ -156,7 +156,7 @@ fn cluster_emits_quotient_neighbors() {
     assert!(out.status.success());
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     // Each module-quotient node carries both its interned id and a
-    // human path label (CLI_DOGFOOD #2). In this synthetic graph the
+    // human path label. In this synthetic graph the
     // interned key already equals the path, so id == label here.
     assert_eq!(parsed["home_module"]["label"].as_str(), Some("ui/plugins"));
     assert_eq!(parsed["home_module"]["id"].as_str(), Some("ui/plugins"));
@@ -172,7 +172,7 @@ fn cluster_emits_quotient_neighbors() {
 
 #[test]
 fn cluster_accepts_binding_flag_alias() {
-    // CLI_DOGFOOD #1: `--binding <sym>` is accepted as an alias for the
+    // `--binding <sym>` is accepted as an alias for the
     // positional `<sym>` (the spelling some operator skills document).
     let dir = tempfile::tempdir().unwrap();
     let graph_path = dir.path().join("owner_graph.json");

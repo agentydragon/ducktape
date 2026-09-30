@@ -123,7 +123,7 @@ fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<Module
     for (_, module) in factorization.partition.iter() {
         modules.insert(module);
     }
-    for (from, to, _) in factorization.dep_graph.all_edges() {
+    for (from, to) in factorization.dep_graph.all_edges() {
         modules.insert(from);
         modules.insert(to);
     }
