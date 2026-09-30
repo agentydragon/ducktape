@@ -31,9 +31,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use swc_common::FileName;
 use swc_common::sync::Lrc;
 use swc_ecma_ast::{
-    ArrowFunctionBody, BindingIdent, Decl, ExportSpecifier, Expr, FnDecl, Function,
-    ImportSpecifier, Module, ModuleDecl, ModuleExportName, ModuleItem, ObjectPatProp, Pat, Stmt,
-    VarDeclKind, VarDeclarator,
+    Decl, ExportSpecifier, Module, ModuleDecl, ModuleExportName, ModuleItem, ObjectPatProp, Pat,
+    Stmt,
 };
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 use tempfile::TempDir;
@@ -46,28 +45,19 @@ static GENERATED_MODULE_SCRIPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// One member of a [`LogicalModuleEntry`].
 ///
-/// `name` is the exported name in the materialized module; `binding` is the
-/// original top-level binding to extract. When `binding` is `None`, the
-/// exported name and the original binding are the same.
+/// `name` is the exported name in the materialized module; `selector` pins the
+/// entity to extract.
+#[derive(Default)]
 pub struct Member {
     pub name: &'static str,
-    pub binding: Option<&'static str>,
-    binding_kind: Option<BindingSourceKind>,
+    selector: MemberSelector,
     source_match: Option<SourceMatch>,
-    cross_ref: Option<CrossRefSelector>,
-    reads_member: Option<ReadsMemberSelector>,
-    member_of_module: Option<MemberOfModuleSelector>,
-    passed_to_call: Option<PassedToCallSelector>,
-    makes_decorate_call: Option<MakesDecorateCallSelector>,
-    intrinsic_alias: Option<IntrinsicAliasSelector>,
     purity: Option<MemberPurity>,
     effect: Option<MemberEffect>,
-    pure_members: Vec<String>,
-    no_sync_callback_members: Vec<String>,
     pub comment: Option<String>,
-    pub note: Option<String>,
 }
 
+#[derive(Default)]
 pub struct BindingGroup {
     match_source: String,
     adopt_names: Option<FixtureAdoptNames>,
@@ -86,20 +76,16 @@ impl BindingGroup {
     ) -> Self {
         Self {
             match_source: match_source.into(),
-            adopt_names: None,
             exports: exports.iter().copied().collect(),
-            comments: BTreeMap::new(),
-            notes: BTreeMap::new(),
+            ..Default::default()
         }
     }
 
     pub fn source_alpha_adopt_all(match_source: impl Into<String>) -> Self {
         Self {
             match_source: match_source.into(),
-            adopt_names: Some(FixtureAdoptNames::All(true)),
-            exports: BTreeMap::new(),
-            comments: BTreeMap::new(),
-            notes: BTreeMap::new(),
+            adopt_names: Some(FixtureAdoptNames::All),
+            ..Default::default()
         }
     }
 
@@ -110,22 +96,7 @@ impl BindingGroup {
         Self {
             match_source: match_source.into(),
             adopt_names: Some(FixtureAdoptNames::Names(names.to_vec())),
-            exports: BTreeMap::new(),
-            comments: BTreeMap::new(),
-            notes: BTreeMap::new(),
-        }
-    }
-
-    pub fn source_alpha_adopt_all_with_exports(
-        match_source: impl Into<String>,
-        exports: &[(&'static str, &'static str)],
-    ) -> Self {
-        Self {
-            match_source: match_source.into(),
-            adopt_names: Some(FixtureAdoptNames::All(true)),
-            exports: exports.iter().copied().collect(),
-            comments: BTreeMap::new(),
-            notes: BTreeMap::new(),
+            ..Default::default()
         }
     }
 
@@ -141,45 +112,17 @@ impl BindingGroup {
 }
 
 impl Member {
-    /// Whether any selector (source-match or a relational form) is set, so the
-    /// fixture binding should not default to `name`.
-    fn has_selector(&self) -> bool {
-        self.source_match.is_some()
-            || self.cross_ref.is_some()
-            || self.reads_member.is_some()
-            || self.member_of_module.is_some()
-            || self.passed_to_call.is_some()
-            || self.makes_decorate_call.is_some()
-            || self.intrinsic_alias.is_some()
+    fn pinned(name: &'static str, selector: MemberSelector) -> Self {
+        Self {
+            name,
+            selector,
+            ..Default::default()
+        }
     }
 
     /// Extract a binding under its original name.
     pub fn new(name: &'static str) -> Self {
-        Self::new_with_kind(name, None)
-    }
-
-    /// Like [`Self::new`] but narrows the binding selector to a specific
-    /// source-declaration kind (`"import_specifier"`, `"class_declaration"`,
-    /// `"function_declaration"`, `"variable_declarator"`).
-    pub fn new_with_kind(name: &'static str, kind: Option<&'static str>) -> Self {
-        Self {
-            name,
-            binding: None,
-            binding_kind: parse_kind(kind),
-            source_match: None,
-            cross_ref: None,
-            reads_member: None,
-            member_of_module: None,
-            passed_to_call: None,
-            makes_decorate_call: None,
-            intrinsic_alias: None,
-            purity: None,
-            effect: None,
-            pure_members: Vec::new(),
-            no_sync_callback_members: Vec::new(),
-            comment: None,
-            note: None,
-        }
+        Self::renamed(name, name)
     }
 
     /// Extract `binding` and re-export it as `name`.
@@ -188,30 +131,23 @@ impl Member {
     }
 
     /// Like [`Self::renamed`] but narrows the binding selector to a specific
-    /// source-declaration kind.
+    /// source-declaration kind (`"import_specifier"`, `"class_declaration"`,
+    /// `"function_declaration"`, `"variable_declarator"`).
     pub fn renamed_with_kind(
         name: &'static str,
         binding: &'static str,
         kind: Option<&'static str>,
     ) -> Self {
-        Self {
+        Self::pinned(
             name,
-            binding: Some(binding),
-            binding_kind: parse_kind(kind),
-            source_match: None,
-            cross_ref: None,
-            reads_member: None,
-            member_of_module: None,
-            passed_to_call: None,
-            makes_decorate_call: None,
-            intrinsic_alias: None,
-            purity: None,
-            effect: None,
-            pure_members: Vec::new(),
-            no_sync_callback_members: Vec::new(),
-            comment: None,
-            note: None,
-        }
+            MemberSelector {
+                binding: Some(BindingSelector {
+                    name: binding.to_string(),
+                    kind: parse_kind(kind),
+                }),
+                ..Default::default()
+            },
+        )
     }
 
     /// Extract a top-level single-binding declaration selected by source shape
@@ -219,25 +155,12 @@ impl Member {
     pub fn source_alpha(name: &'static str, match_source: impl Into<String>) -> Self {
         Self {
             name,
-            binding: None,
-            binding_kind: None,
             source_match: Some(SourceMatch {
                 identifiers: SourceMatchIdentifierMode::AlphaAll,
                 target_binding: None,
                 match_source: match_source.into(),
             }),
-            cross_ref: None,
-            reads_member: None,
-            member_of_module: None,
-            passed_to_call: None,
-            makes_decorate_call: None,
-            intrinsic_alias: None,
-            purity: None,
-            effect: None,
-            pure_members: Vec::new(),
-            no_sync_callback_members: Vec::new(),
-            comment: None,
-            note: None,
+            ..Default::default()
         }
     }
 
@@ -250,25 +173,12 @@ impl Member {
     ) -> Self {
         Self {
             name,
-            binding: None,
-            binding_kind: None,
             source_match: Some(SourceMatch {
                 identifiers: SourceMatchIdentifierMode::AlphaAll,
                 target_binding: Some(target_binding.into()),
                 match_source: match_source.into(),
             }),
-            cross_ref: None,
-            reads_member: None,
-            member_of_module: None,
-            passed_to_call: None,
-            makes_decorate_call: None,
-            intrinsic_alias: None,
-            purity: None,
-            effect: None,
-            pure_members: Vec::new(),
-            no_sync_callback_members: Vec::new(),
-            comment: None,
-            note: None,
+            ..Default::default()
         }
     }
 
@@ -281,55 +191,33 @@ impl Member {
         anchor: &'static str,
         kind: Option<&'static str>,
     ) -> Self {
-        Self {
+        Self::pinned(
             name,
-            binding: None,
-            binding_kind: None,
-            source_match: None,
-            cross_ref: Some(CrossRefSelector {
-                references: Some(anchor.to_string()),
-                aliases: None,
-                kind: parse_kind(kind),
-            }),
-            reads_member: None,
-            member_of_module: None,
-            passed_to_call: None,
-            makes_decorate_call: None,
-            intrinsic_alias: None,
-            purity: None,
-            effect: None,
-            pure_members: Vec::new(),
-            no_sync_callback_members: Vec::new(),
-            comment: None,
-            note: None,
-        }
+            MemberSelector {
+                cross_ref: Some(CrossRefSelector {
+                    references: Some(anchor.to_string()),
+                    aliases: None,
+                    kind: parse_kind(kind),
+                }),
+                ..Default::default()
+            },
+        )
     }
 
     /// Pin a member as the var-decl that **aliases** the anchor member
     /// (`const T = @anchor`), re-exported under `name`.
     pub fn cross_ref_aliases(name: &'static str, anchor: &'static str) -> Self {
-        Self {
+        Self::pinned(
             name,
-            binding: None,
-            binding_kind: None,
-            source_match: None,
-            cross_ref: Some(CrossRefSelector {
-                references: None,
-                aliases: Some(anchor.to_string()),
-                kind: None,
-            }),
-            reads_member: None,
-            member_of_module: None,
-            passed_to_call: None,
-            makes_decorate_call: None,
-            intrinsic_alias: None,
-            purity: None,
-            effect: None,
-            pure_members: Vec::new(),
-            no_sync_callback_members: Vec::new(),
-            comment: None,
-            note: None,
-        }
+            MemberSelector {
+                cross_ref: Some(CrossRefSelector {
+                    references: None,
+                    aliases: Some(anchor.to_string()),
+                    kind: None,
+                }),
+                ..Default::default()
+            },
+        )
     }
 
     /// Pin a member as the entity that **reads member `.member`** off an object,
@@ -344,64 +232,40 @@ impl Member {
         object: Option<&'static str>,
         kind: Option<&'static str>,
     ) -> Self {
-        Self {
+        Self::pinned(
             name,
-            binding: None,
-            binding_kind: None,
-            source_match: None,
-            cross_ref: None,
-            reads_member: Some(ReadsMemberSelector {
-                member: member.to_string(),
-                object: object.map(str::to_string),
-                kind: parse_kind(kind),
-            }),
-            member_of_module: None,
-            passed_to_call: None,
-            makes_decorate_call: None,
-            intrinsic_alias: None,
-            purity: None,
-            effect: None,
-            pure_members: Vec::new(),
-            no_sync_callback_members: Vec::new(),
-            comment: None,
-            note: None,
-        }
+            MemberSelector {
+                reads_member: Some(ReadsMemberSelector {
+                    member: member.to_string(),
+                    object: object.map(str::to_string),
+                    kind: parse_kind(kind),
+                }),
+                ..Default::default()
+            },
+        )
     }
 
     /// Pin a member as the entity **consumed as `module.member`** at a use site
     /// (`module` an import specifier, `member` an export name), re-exported under
-    /// `name`. The first use-site selector — pins by how the entity is consumed,
-    /// not its own body or minified name. `kind` optionally narrows to one
-    /// source-declaration kind (`class_declaration`, …) when several owners
-    /// consume the module member.
+    /// `name`. `kind` optionally narrows to one source-declaration kind
+    /// (`class_declaration`, …) when several owners consume the module member.
     pub fn member_of_module(
         name: &'static str,
         module: &'static str,
         member: &'static str,
         kind: Option<&'static str>,
     ) -> Self {
-        Self {
+        Self::pinned(
             name,
-            binding: None,
-            binding_kind: None,
-            source_match: None,
-            cross_ref: None,
-            reads_member: None,
-            member_of_module: Some(MemberOfModuleSelector {
-                module: module.to_string(),
-                member: member.to_string(),
-                kind: parse_kind(kind),
-            }),
-            passed_to_call: None,
-            makes_decorate_call: None,
-            intrinsic_alias: None,
-            purity: None,
-            effect: None,
-            pure_members: Vec::new(),
-            no_sync_callback_members: Vec::new(),
-            comment: None,
-            note: None,
-        }
+            MemberSelector {
+                member_of_module: Some(MemberOfModuleSelector {
+                    module: module.to_string(),
+                    member: member.to_string(),
+                    kind: parse_kind(kind),
+                }),
+                ..Default::default()
+            },
+        )
     }
 
     /// Pin a member as the entity **passed as an argument** to a call of a known
@@ -419,29 +283,18 @@ impl Member {
         arg_index: Option<usize>,
         kind: Option<&'static str>,
     ) -> Self {
-        Self {
+        Self::pinned(
             name,
-            binding: None,
-            binding_kind: None,
-            source_match: None,
-            cross_ref: None,
-            reads_member: None,
-            member_of_module: None,
-            passed_to_call: Some(PassedToCallSelector {
-                callee_member: callee_member.to_string(),
-                object: object.map(str::to_string),
-                arg_index,
-                kind: parse_kind(kind),
-            }),
-            makes_decorate_call: None,
-            intrinsic_alias: None,
-            purity: None,
-            effect: None,
-            pure_members: Vec::new(),
-            no_sync_callback_members: Vec::new(),
-            comment: None,
-            note: None,
-        }
+            MemberSelector {
+                passed_to_call: Some(PassedToCallSelector {
+                    callee_member: callee_member.to_string(),
+                    object: object.map(str::to_string),
+                    arg_index,
+                    kind: parse_kind(kind),
+                }),
+                ..Default::default()
+            },
+        )
     }
 
     /// Pin a member as the **callee** of an esbuild `__decorate`-style decorator
@@ -457,76 +310,43 @@ impl Member {
         member: Option<&'static str>,
         kind: Option<&'static str>,
     ) -> Self {
-        Self {
+        Self::pinned(
             name,
-            binding: None,
-            binding_kind: None,
-            source_match: None,
-            cross_ref: None,
-            reads_member: None,
-            member_of_module: None,
-            passed_to_call: None,
-            makes_decorate_call: Some(MakesDecorateCallSelector {
-                class: class.to_string(),
-                member: member.map(str::to_string),
-                kind: parse_kind(kind),
-            }),
-            intrinsic_alias: None,
-            purity: None,
-            effect: None,
-            pure_members: Vec::new(),
-            no_sync_callback_members: Vec::new(),
-            comment: None,
-            note: None,
-        }
+            MemberSelector {
+                makes_decorate_call: Some(MakesDecorateCallSelector {
+                    class: class.to_string(),
+                    member: member.map(str::to_string),
+                    kind: parse_kind(kind),
+                }),
+                ..Default::default()
+            },
+        )
     }
 
     /// Pin a member as an **intrinsic-method alias off the unshadowed global
-    /// `Object`** (`var X = Object.<property>`) referenced by a known helper —
-    /// "the `Object.<property>` alias the `@referenced_by` helper reads" —
-    /// re-exported under `name`. The follow-on companion of `makes_decorate_call`:
-    /// pins the byte-identical esbuild decorate-companion copies (which make no
-    /// decorator call of their own) by the helper that reads them, not by their own
-    /// minified name.
+    /// `Object`** (`var X = Object.<property>`) referenced by a known helper,
+    /// re-exported under `name`.
     pub fn intrinsic_alias(
         name: &'static str,
         property: &'static str,
         referenced_by: &'static str,
     ) -> Self {
-        Self {
+        Self::pinned(
             name,
-            binding: None,
-            binding_kind: None,
-            source_match: None,
-            cross_ref: None,
-            reads_member: None,
-            member_of_module: None,
-            passed_to_call: None,
-            makes_decorate_call: None,
-            intrinsic_alias: Some(IntrinsicAliasSelector {
-                property: property.to_string(),
-                referenced_by: referenced_by.to_string(),
-            }),
-            purity: None,
-            effect: None,
-            pure_members: Vec::new(),
-            no_sync_callback_members: Vec::new(),
-            comment: None,
-            note: None,
-        }
+            MemberSelector {
+                intrinsic_alias: Some(IntrinsicAliasSelector {
+                    property: property.to_string(),
+                    referenced_by: referenced_by.to_string(),
+                }),
+                ..Default::default()
+            },
+        )
     }
 
     /// Attach an author comment to be emitted above the binding's owner
     /// statement in the lowered module body. See `spec::Member::comment`.
     pub fn with_comment(mut self, comment: impl Into<String>) -> Self {
         self.comment = Some(comment.into());
-        self
-    }
-
-    /// Attach a YAML-only author note. Unlike [`Self::with_comment`], this is
-    /// preserved in the spec but never emitted into generated JavaScript.
-    pub fn with_note(mut self, note: impl Into<String>) -> Self {
-        self.note = Some(note.into());
         self
     }
 
@@ -541,20 +361,6 @@ impl Member {
     /// `spec::BindingAnnotation::effect`.
     pub fn with_effect(mut self, effect: MemberEffect) -> Self {
         self.effect = Some(effect);
-        self
-    }
-
-    /// Attach `pure_members` to the binding's annotation. See
-    /// `spec::BindingAnnotation::pure_members`.
-    pub fn with_pure_members(mut self, pure_members: Vec<String>) -> Self {
-        self.pure_members = pure_members;
-        self
-    }
-
-    /// Attach `no_sync_callback_members` to the binding's annotation. See
-    /// `spec::BindingAnnotation::no_sync_callback_members`.
-    pub fn with_no_sync_callback_members(mut self, members: Vec<String>) -> Self {
-        self.no_sync_callback_members = members;
         self
     }
 }
@@ -586,17 +392,15 @@ fn source_match_binding(local: impl Into<String>, name: impl Into<String>) -> So
 }
 
 /// Newtype over `spec::AnonymousStatement` so the harness keeps its
-/// `::exact` / `::alpha_all` / `.with_comment` / `.with_note` builder spelling.
-/// Serialization is delegated to the wrapped spec type.
-#[derive(Clone, Serialize)]
-#[serde(transparent)]
+/// `::exact` / `::alpha_all` / `.with_comment` builder spelling.
+#[derive(Clone)]
 struct FixtureAnonymousStatement(AnonymousStatement);
 
 /// Internal-only (never serialized) selector for `fixture_grouped_source_matches`
 /// describing which bindings a `BindingGroup` adopts from its matched source.
 #[derive(Clone)]
 enum FixtureAdoptNames {
-    All(bool),
+    All,
     Names(Vec<&'static str>),
 }
 
@@ -627,11 +431,6 @@ impl FixtureAnonymousStatement {
         self.0.comment = Some(comment.into());
         self
     }
-
-    fn with_note(mut self, note: impl Into<String>) -> Self {
-        self.0.note = Some(note.into());
-        self
-    }
 }
 
 fn fixture_members(members: &[Member]) -> Vec<SpecMember> {
@@ -640,21 +439,7 @@ fn fixture_members(members: &[Member]) -> Vec<SpecMember> {
         .filter(|m| m.source_match.is_none())
         .map(|m| SpecMember {
             name: Some(m.name.to_string()),
-            selector: MemberSelector {
-                binding: m
-                    .binding
-                    .or_else(|| (!m.has_selector()).then_some(m.name))
-                    .map(|name| BindingSelector {
-                        name: name.to_string(),
-                        kind: m.binding_kind,
-                    }),
-                cross_ref: m.cross_ref.clone(),
-                reads_member: m.reads_member.clone(),
-                member_of_module: m.member_of_module.clone(),
-                passed_to_call: m.passed_to_call.clone(),
-                makes_decorate_call: m.makes_decorate_call.clone(),
-                intrinsic_alias: m.intrinsic_alias.clone(),
-            },
+            selector: m.selector.clone(),
         })
         .collect()
 }
@@ -698,10 +483,9 @@ fn fixture_grouped_source_matches(binding_groups: &[BindingGroup]) -> Vec<Source
                 Some(FixtureAdoptNames::Names(names)) => {
                     names.iter().map(|name| (*name).to_string()).collect()
                 }
-                Some(FixtureAdoptNames::All(true)) => {
+                Some(FixtureAdoptNames::All) => {
                     declared_bindings_in_source_match(&group.match_source)
                 }
-                Some(FixtureAdoptNames::All(false)) => Vec::new(),
             };
             SourceMatchClaim {
                 identifiers: SourceMatchIdentifierMode::default(),
@@ -730,22 +514,14 @@ fn fixture_annotations(
 ) -> BTreeMap<String, BindingAnnotation> {
     let mut annotations = BTreeMap::new();
     for member in members {
-        let has_annotation = member.comment.is_some()
-            || member.note.is_some()
-            || member.purity.is_some()
-            || member.effect.is_some()
-            || !member.pure_members.is_empty()
-            || !member.no_sync_callback_members.is_empty();
-        if has_annotation {
+        if member.comment.is_some() || member.purity.is_some() || member.effect.is_some() {
             annotations.insert(
                 member.name.to_string(),
                 BindingAnnotation {
                     purity: member.purity.unwrap_or_default(),
                     effect: member.effect.unwrap_or_default(),
-                    pure_members: member.pure_members.clone(),
-                    no_sync_callback_members: member.no_sync_callback_members.clone(),
                     comment: member.comment.clone(),
-                    note: member.note.clone(),
+                    ..Default::default()
                 },
             );
         }
@@ -775,24 +551,6 @@ fn logical_module_entry(
     anonymous_statements: Vec<FixtureAnonymousStatement>,
     comment: Option<String>,
 ) -> LogicalModuleEntry {
-    logical_module_entry_with_note(
-        path,
-        members,
-        binding_groups,
-        anonymous_statements,
-        comment,
-        None,
-    )
-}
-
-fn logical_module_entry_with_note(
-    path: &str,
-    members: &[Member],
-    binding_groups: &[BindingGroup],
-    anonymous_statements: Vec<FixtureAnonymousStatement>,
-    comment: Option<String>,
-    note: Option<String>,
-) -> LogicalModuleEntry {
     (path.to_string(), {
         let mut source_matches = fixture_member_source_matches(members);
         source_matches.extend(fixture_grouped_source_matches(binding_groups));
@@ -806,7 +564,7 @@ fn logical_module_entry_with_note(
                 .map(|FixtureAnonymousStatement(inner)| inner)
                 .collect(),
             comment,
-            note,
+            note: None,
         })
         .expect("logical module fixture must serialize")
     })
@@ -824,14 +582,6 @@ pub fn logical_module_with_binding_groups(
     logical_module_entry(path, members, binding_groups, Vec::new(), None)
 }
 
-pub fn logical_module_with_source_matches(
-    path: &str,
-    members: &[Member],
-    source_matches: &[BindingGroup],
-) -> LogicalModuleEntry {
-    logical_module_entry(path, members, source_matches, Vec::new(), None)
-}
-
 /// Like [`logical_module`] but attaches a module-level `comment:` block,
 /// emitted at the top of the generated module file (above the lowerer's
 /// pragma block). See `spec::LogicalModule::comment`.
@@ -841,15 +591,6 @@ pub fn logical_module_with_comment(
     comment: impl Into<String>,
 ) -> LogicalModuleEntry {
     logical_module_entry(path, members, &[], Vec::new(), Some(comment.into()))
-}
-
-/// Like [`logical_module`] but attaches a module-level YAML-only `note:` block.
-pub fn logical_module_with_note(
-    path: &str,
-    members: &[Member],
-    note: impl Into<String>,
-) -> LogicalModuleEntry {
-    logical_module_entry_with_note(path, members, &[], Vec::new(), None, Some(note.into()))
 }
 
 /// Like [`logical_module`] but also emits an `anonymous_statements:`
@@ -879,20 +620,6 @@ pub fn logical_module_with_anon(
 pub fn logical_module_with_anon_alpha(
     path: &str,
     members: &[Member],
-    anon_match: &str,
-) -> LogicalModuleEntry {
-    logical_module_entry(
-        path,
-        members,
-        &[],
-        vec![FixtureAnonymousStatement::alpha_all(anon_match)],
-        None,
-    )
-}
-
-pub fn logical_module_with_anon_alpha_many(
-    path: &str,
-    members: &[Member],
     anon_matches: &[&str],
 ) -> LogicalModuleEntry {
     logical_module_entry(
@@ -918,21 +645,6 @@ pub fn logical_module_with_anon_comment(
         members,
         &[],
         vec![FixtureAnonymousStatement::exact(anon_match).with_comment(comment)],
-        None,
-    )
-}
-
-pub fn logical_module_with_anon_note(
-    path: &str,
-    members: &[Member],
-    anon_match: &str,
-    note: impl Into<String>,
-) -> LogicalModuleEntry {
-    logical_module_entry(
-        path,
-        members,
-        &[],
-        vec![FixtureAnonymousStatement::exact(anon_match).with_note(note)],
         None,
     )
 }
@@ -979,9 +691,11 @@ pub struct FixtureOpts<'a> {
     /// (post-run runtime siblings), these are debundled artifact chunks the
     /// transform analyzes — e.g. an import target for cross-chunk tests.
     pub extra_chunks: &'a [(&'a str, &'a str)],
+    /// Extra chunks to process, as `(chunk_id, logical modules)`. They must
+    /// also appear in `extra_chunks`; used for cross-chunk emission tests.
+    pub extra_chunk_logical_modules: &'a [(&'a str, Vec<LogicalModuleEntry>)],
     /// `chunk_export_purity` entries as `(defining chunk_id, assertion)`,
-    /// built via [`chunk_export_purity`] / [`ChunkExportPurityBuilder`]. Default
-    /// empty.
+    /// built via [`ChunkExportPurityBuilder`]. Default empty.
     pub chunk_export_purity: &'a [(&'a str, spec::ChunkExportPurity)],
 }
 
@@ -1005,6 +719,7 @@ impl<'a> FixtureOpts<'a> {
             local_property_effects: false,
             extra_files: &[],
             extra_chunks: &[],
+            extra_chunk_logical_modules: &[],
             chunk_export_purity: &[],
         }
     }
@@ -1099,23 +814,6 @@ pub fn unassigned_mode_mini_factors() -> Value {
     serde_json::json!({ "kind": "mini_factors" })
 }
 
-/// Build a `spec::ChunkExportPurity` author assertion for the defining chunk
-/// `chunk`, starting from `pure_exports`. Chain `.with_pure_members(...)` /
-/// `.with_fluent_exports(...)` for the other assertion surfaces. See
-/// `spec::ChunkExportPurity`.
-pub fn chunk_export_purity(
-    chunk: &'static str,
-    pure_exports: &[&str],
-) -> (&'static str, spec::ChunkExportPurity) {
-    (
-        chunk,
-        spec::ChunkExportPurity {
-            pure_exports: pure_exports.iter().map(|s| (*s).to_string()).collect(),
-            ..Default::default()
-        },
-    )
-}
-
 /// Fluent wrapper for building a `(chunk, ChunkExportPurity)` tuple with the
 /// member-level and fluent surfaces populated.
 pub struct ChunkExportPurityBuilder {
@@ -1129,12 +827,6 @@ impl ChunkExportPurityBuilder {
             chunk,
             purity: spec::ChunkExportPurity::default(),
         }
-    }
-
-    /// Assert the listed export names are pure (see `spec::ChunkExportPurity::pure_exports`).
-    pub fn with_pure_exports(mut self, exports: &[&str]) -> Self {
-        self.purity.pure_exports = exports.iter().map(|s| (*s).to_string()).collect();
-        self
     }
 
     /// Assert member calls on the named namespace exports are pure
@@ -1172,6 +864,7 @@ pub struct Fixture {
 }
 
 pub struct RejectedFixture {
+    pub chunk_id: String,
     pub stderr: String,
     pub report_root: PathBuf,
     /// The `write_js_tree` output root, exposed so dry-run callers can
@@ -1179,6 +872,22 @@ pub struct RejectedFixture {
     pub out_root: PathBuf,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: TempDir,
+}
+
+impl Fixture {
+    pub fn owner_graph(&self) -> OwnerGraphReport {
+        read_owner_graph(&self.report_root, &self.chunk_id)
+    }
+}
+
+impl RejectedFixture {
+    pub fn owner_graph(&self) -> OwnerGraphReport {
+        read_owner_graph(&self.report_root, &self.chunk_id)
+    }
+}
+
+fn read_owner_graph(report_root: &Path, chunk_id: &str) -> OwnerGraphReport {
+    read_json(&report_root.join(chunk_id).join("owner_graph.json"))
 }
 
 pub struct DryRunFixture {
@@ -1282,7 +991,7 @@ pub fn run_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
 
 /// Like [`run_dry_run_rejection_fixture`] but opts out of the default
 /// keep-going diagnostics and stops at the first supported failure.
-pub fn run_fail_fast_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
+fn run_fail_fast_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--dry-run", "--fail-fast"])
 }
 
@@ -1342,7 +1051,7 @@ pub fn run_dry_run_fixture(opts: FixtureOpts<'_>) -> DryRunFixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.root.path().join("transform_spec.yaml");
     write_yaml_file(&spec_path, &build_spec(&opts, &setup));
-    let result = spawn_transform_with_args(&spec_path, &["--dry-run"], &[]);
+    let result = spawn_transform_with_args(&spec_path, &["--dry-run"]);
     assert!(
         result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -1358,20 +1067,12 @@ pub fn run_dry_run_fixture(opts: FixtureOpts<'_>) -> DryRunFixture {
 }
 
 fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> RejectedFixture {
-    run_rejection_fixture_with_args_and_env(opts, extra_args, &[])
-}
-
-fn run_rejection_fixture_with_args_and_env(
-    opts: FixtureOpts<'_>,
-    extra_args: &[&str],
-    env: &[(&str, &str)],
-) -> RejectedFixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.root.path().join("transform_spec.yaml");
     let spec = build_spec(&opts, &setup);
     write_yaml_file(&spec_path, &spec);
 
-    let result = spawn_transform_with_args(&spec_path, extra_args, env);
+    let result = spawn_transform_with_args(&spec_path, extra_args);
     assert!(
         !result.status.success(),
         "expected spec to be rejected\nstdout:\n{}\nstderr:\n{}",
@@ -1379,6 +1080,7 @@ fn run_rejection_fixture_with_args_and_env(
         result.stderr,
     );
     RejectedFixture {
+        chunk_id: opts.chunk_id.to_string(),
         stderr: result.stderr,
         report_root: setup.report_root,
         out_root: setup.out_root,
@@ -1408,29 +1110,77 @@ pub fn write_validate_fixture_spec(opts: FixtureOpts<'_>) -> ValidateFixture {
     }
 }
 
+/// `debundle spec validate --spec --format json` over `opts`, parsed; panics on a
+/// non-zero exit.
+pub fn validate_json(opts: FixtureOpts<'_>) -> Value {
+    let fixture = write_validate_fixture_spec(opts);
+    let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
+    assert!(
+        out.status.success(),
+        "spec validate exited non-zero: stderr={}",
+        out.stderr
+    );
+    serde_json::from_str(&out.stdout)
+        .unwrap_or_else(|err| panic!("parse validate json: {err}\nstdout:\n{}", out.stdout))
+}
+
+/// The `outcomes` array of a selector-outcome report.
+pub fn outcomes(report: &Value) -> &[Value] {
+    report["outcomes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
+}
+
 /// Run `debundle spec validate --spec <path> <extra_args>` and return its
 /// captured stdio + exit status.
 pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult {
     let bin = debundler_path();
-    let mut command = Command::new(&bin);
-    command
-        .arg("spec")
-        .arg("validate")
-        .arg("--spec")
-        .arg(spec_path);
-    command.args(extra_args);
-    let output = command
-        .output()
-        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
-    CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    }
+    command_result(
+        Command::new(&bin)
+            .args(["spec", "validate", "--spec"])
+            .arg(spec_path)
+            .args(extra_args)
+            .output()
+            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+    )
 }
 
 pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
     assert_node_output(&fixture.entry_path, expected_stdout, "");
+}
+
+/// Run `node --check` against every emitted JavaScript file in a fixture.
+pub fn assert_all_emitted_js_checks(fixture: &Fixture) {
+    fn visit(dir: &Path, files: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap_or_else(|err| panic!("read {}: {err}", dir.display()))
+        {
+            let entry = entry.expect("read directory entry");
+            let path = entry.path();
+            if path.is_dir() {
+                visit(&path, files);
+            } else if path.extension().is_some_and(|extension| extension == "js") {
+                files.push(path);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    visit(&fixture.out_root, &mut files);
+    files.sort();
+    let node = node_path();
+    for file in files {
+        let output = Command::new(&node)
+            .arg("--check")
+            .arg(&file)
+            .output()
+            .unwrap_or_else(|err| panic!("spawn node --check {}: {err}", file.display()));
+        assert!(
+            output.status.success(),
+            "node --check failed for {}\nstdout:\n{}\nstderr:\n{}",
+            file.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
 }
 
 pub fn list_module_exports(out_root: &Path, module_path: &str) -> Vec<String> {
@@ -1458,7 +1208,7 @@ pub fn assert_module_exports(
     includes: &[&str],
     excludes: &[&str],
 ) {
-    let exported: std::collections::BTreeSet<String> = list_module_exports(out_root, module_path)
+    let exported: BTreeSet<String> = list_module_exports(out_root, module_path)
         .into_iter()
         .collect();
     let summary = if exported.is_empty() {
@@ -1500,6 +1250,35 @@ pub fn assert_module_source(
             "{module_path} unexpectedly contained {needle:?}\n--- {module_path} ---\n{code}",
         );
     }
+}
+
+/// Asserts that the one line of `module_path` starting with `below_prefix`
+/// is immediately preceded by the line `above` (e.g. a `// comment` line).
+pub fn assert_line_directly_above(
+    out_root: &Path,
+    module_path: &str,
+    above: &str,
+    below_prefix: &str,
+) {
+    let code = fs::read_to_string(out_root.join(module_path))
+        .unwrap_or_else(|e| panic!("read {module_path}: {e}"));
+    let lines: Vec<&str> = code.lines().collect();
+    let below_indices: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.starts_with(below_prefix))
+        .map(|(index, _)| index)
+        .collect();
+    let [below_index] = below_indices[..] else {
+        panic!(
+            "expected exactly one line starting with {below_prefix:?} in {module_path}, found {}\n--- {module_path} ---\n{code}",
+            below_indices.len(),
+        );
+    };
+    assert!(
+        below_index > 0 && lines[below_index - 1] == above,
+        "expected {above:?} directly above {below_prefix:?} in {module_path}\n--- {module_path} ---\n{code}",
+    );
 }
 
 pub fn assert_pure_cycle_break(
@@ -1556,7 +1335,7 @@ pub fn assert_file_ends_with_single_newline(out_root: &Path, module_path: &str) 
     );
 }
 
-pub fn assert_generated_module_script(out_root: &Path, source: &str, expected_stdout: &str) {
+fn assert_generated_module_script(out_root: &Path, source: &str, expected_stdout: &str) {
     let counter = GENERATED_MODULE_SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
     let assertion_path = out_root.join(format!("assert_generated_module_{counter}.mjs"));
     fs::write(&assertion_path, source).unwrap();
@@ -1640,10 +1419,6 @@ pub fn assert_node_output(path: &Path, expected_stdout: &str, expected_stderr: &
     assert_eq!(result.stderr, expected_stderr, "stderr mismatch");
 }
 
-// ---------------------------------------------------------------------------
-// Internals
-// ---------------------------------------------------------------------------
-
 struct FixtureSetup {
     root: TempDir,
     out_root: PathBuf,
@@ -1720,6 +1495,20 @@ fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> TransformSpec {
             .collect();
         logical_modules.insert(chunk_id.to_string(), for_chunk);
     }
+    for (extra_chunk, modules) in opts.extra_chunk_logical_modules {
+        let for_chunk = modules
+            .iter()
+            .map(|(path, body)| {
+                (
+                    path.clone(),
+                    serde_json::from_value(body.clone()).expect(
+                        "extra chunk logical module fixture body deserializes into spec::LogicalModule",
+                    ),
+                )
+            })
+            .collect();
+        logical_modules.insert((*extra_chunk).to_string(), for_chunk);
+    }
 
     let mut chunk_renames = BTreeMap::new();
     if let Some(renames) = &opts.chunk_renames {
@@ -1736,6 +1525,13 @@ fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> TransformSpec {
         serde_json::from_value(opts.unassigned_mode.clone())
             .expect("unassigned_mode fixture deserializes into spec::UnassignedMode"),
     );
+    for (extra_chunk, _) in opts.extra_chunk_logical_modules {
+        unassigned_mode.insert(
+            (*extra_chunk).to_string(),
+            serde_json::from_value(unassigned_mode_catchall_file(None))
+                .expect("unassigned_mode fixture deserializes into spec::UnassignedMode"),
+        );
+    }
 
     let chunk_analysis_options = if opts.dataflow_aware_s_chain
         || opts.trusted_dataflow_summaries
@@ -1805,8 +1601,9 @@ fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> TransformSpec {
 /// each test having to repeat its own name.
 fn current_test_prefix() -> String {
     let thread = std::thread::current();
-    let name = thread.name().unwrap_or("unknown");
-    let slug: String = name
+    let slug: String = thread
+        .name()
+        .unwrap_or("unknown")
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() {
@@ -1816,20 +1613,11 @@ fn current_test_prefix() -> String {
             }
         })
         .collect();
-    let trimmed = slug.trim_matches('-');
-    let mut compact = String::with_capacity(trimmed.len());
-    let mut prev_dash = false;
-    for c in trimmed.chars() {
-        if c == '-' {
-            if !prev_dash {
-                compact.push(c);
-            }
-            prev_dash = true;
-        } else {
-            compact.push(c);
-            prev_dash = false;
-        }
-    }
+    let compact = slug
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
     format!("debundle-e2e-{compact}-")
 }
 
@@ -1838,13 +1626,6 @@ pub fn write_text_file(path: &Path, content: &str) {
         fs::create_dir_all(parent).unwrap();
     }
     fs::write(path, content).unwrap();
-}
-
-/// Write `body` to `root`-relative path `rel`, creating parent dirs. The
-/// root-relative convenience over [`write_text_file`] for CLI tests that
-/// scatter several fixture files under one temp root.
-pub fn write_file(root: &Path, rel: &str, body: &str) {
-    write_text_file(&root.join(rel), body);
 }
 
 /// Parse a CLI invocation's stdout as JSON, panicking with both stdio streams
@@ -1859,6 +1640,14 @@ pub fn parse_stdout_json(out: &std::process::Output) -> Value {
     })
 }
 
+/// Run `debundle <args>` and return its raw output.
+pub fn run_debundle(args: &[&str]) -> std::process::Output {
+    Command::new(debundler_path())
+        .args(args)
+        .output()
+        .expect("spawn debundle")
+}
+
 /// Run `debundle spec synthesize-selectors --modules <dir> [extra...]`, asserting
 /// success and returning the raw output for the caller to parse.
 pub fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process::Output {
@@ -1869,10 +1658,7 @@ pub fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process:
         modules.to_str().unwrap(),
     ];
     args.extend_from_slice(extra);
-    let out = Command::new(debundler_path())
-        .args(&args)
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&args);
     assert!(
         out.status.success(),
         "non-zero exit\nstdout:\n{}\nstderr:\n{}",
@@ -1987,57 +1773,81 @@ pub fn owner_for_binding<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a 
     node.id.as_str()
 }
 
+/// An `owner_graph.json` node for the statement `ordinal`, declaring `binding`
+/// (exported under its own name) and destined for the module `destination`.
+pub fn owner_node(id: &str, ordinal: usize, binding: &str, destination: &str) -> Value {
+    serde_json::json!({
+        "id": id,
+        "statement_ordinal": ordinal,
+        "declared_bindings": [ { "binding": binding, "export_name": binding } ],
+        "statement_kind": "var_decl",
+        "purity": { "kind": "pure" },
+        "destination": destination
+    })
+}
+
+/// An `owner_graph.json` edge of `edge_kind` (`eager_use`, `eager_rebind`) that
+/// constrains init order: `source` depends on `binding` of `target`.
+pub fn owner_edge(
+    id: &str,
+    edge_kind: &str,
+    source: &str,
+    target: &str,
+    binding: &str,
+    ordinal: usize,
+) -> Value {
+    serde_json::json!({
+        "id": id,
+        "source": source,
+        "target": target,
+        "edge_kind": edge_kind,
+        "binding": binding,
+        "statement_ordinal": ordinal,
+        "constrains_init_order": true
+    })
+}
+
+/// An `owner_graph.json` body over `nodes` and `edges`, with empty module and
+/// atomic graphs.
+pub fn owner_graph(chunk_id: &str, nodes: Vec<Value>, edges: Vec<Value>) -> Value {
+    serde_json::json!({
+        "chunk_id": chunk_id,
+        "nodes": nodes,
+        "edges": edges,
+        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
+        "atomic_graph": { "nodes": [], "edges": [] }
+    })
+}
+
 /// Owner graph for a two-statement atomic unit: `alpha` and `beta` mutually
 /// `eager_rebind` each other and share destination `home/atom`, so the
 /// realizability gate must keep them co-located.
 pub fn graph_with_atomic_unit() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "declared_bindings": [
-                    { "binding": "alpha", "export_name": "alpha" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "home/atom"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "declared_bindings": [
-                    { "binding": "beta", "export_name": "beta" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "home/atom"
-            }
+    owner_graph(
+        "test/chunk",
+        vec![
+            owner_node("owner:0", 0, "alpha", "home/atom"),
+            owner_node("owner:1", 1, "beta", "home/atom"),
         ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_rebind",
-                "binding": "beta",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            },
-            {
-                "id": "owner_edge:1",
-                "source": "owner:1",
-                "target": "owner:0",
-                "edge_kind": "eager_rebind",
-                "binding": "alpha",
-                "statement_ordinal": 1,
-                "constrains_init_order": true
-            }
+        vec![
+            owner_edge(
+                "owner_edge:0",
+                "eager_rebind",
+                "owner:0",
+                "owner:1",
+                "beta",
+                0,
+            ),
+            owner_edge(
+                "owner_edge:1",
+                "eager_rebind",
+                "owner:1",
+                "owner:0",
+                "alpha",
+                1,
+            ),
         ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
+    )
     .to_string()
 }
 
@@ -2045,44 +1855,47 @@ pub fn graph_with_atomic_unit() -> String {
 /// `eager_use`s `beta` (module `b`) with no back edge, so the split is
 /// realizable.
 pub fn graph_with_acyclic_cross_module_read() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "declared_bindings": [
-                    { "binding": "alpha", "export_name": "alpha" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "a"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "declared_bindings": [
-                    { "binding": "beta", "export_name": "beta" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "b"
-            }
+    owner_graph(
+        "test/chunk",
+        vec![
+            owner_node("owner:0", 0, "alpha", "a"),
+            owner_node("owner:1", 1, "beta", "b"),
         ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_use",
-                "binding": "beta",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            }
+        vec![owner_edge(
+            "owner_edge:0",
+            "eager_use",
+            "owner:0",
+            "owner:1",
+            "beta",
+            0,
+        )],
+    )
+    .to_string()
+}
+
+/// Owner graph with three owners — alpha (module `a`), beta (`b`), gamma (`c`) —
+/// and the `eager_use` chain alpha → gamma → beta: a DAG quotient `a → c → b`
+/// that closes into the 2-cycle `m ↔ c` when `a` and `b` merge into `m`.
+pub fn graph_with_merge_cycle_potential() -> String {
+    owner_graph(
+        "test/chunk",
+        vec![
+            owner_node("owner:0", 0, "alpha", "a"),
+            owner_node("owner:1", 1, "beta", "b"),
+            owner_node("owner:2", 2, "gamma", "c"),
         ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
+        vec![
+            owner_edge(
+                "owner_edge:0",
+                "eager_use",
+                "owner:0",
+                "owner:2",
+                "gamma",
+                0,
+            ),
+            owner_edge("owner_edge:1", "eager_use", "owner:2", "owner:1", "beta", 2),
+        ],
+    )
     .to_string()
 }
 
@@ -2125,6 +1938,30 @@ pub fn debundler_path() -> PathBuf {
     let r = Runfiles::create().expect("create runfiles");
     rlocation!(r, DEBUNDLER_RLOCATION)
         .unwrap_or_else(|| panic!("could not resolve debundler runfile: {DEBUNDLER_RLOCATION}"))
+}
+
+/// `debundle` as a release download runs it: a copy of the binary alone in an
+/// otherwise empty directory, spawned with an empty environment (no runfiles).
+pub struct StandaloneDebundle {
+    dir: TempDir,
+}
+
+impl StandaloneDebundle {
+    pub fn install() -> Self {
+        let dir = TempDir::with_prefix(current_test_prefix()).expect("create install dir");
+        fs::copy(debundler_path(), dir.path().join("debundle")).expect("copy debundle binary");
+        Self { dir }
+    }
+
+    pub fn run(&self, args: &[&str]) -> CommandResult {
+        let bin = self.dir.path().join("debundle");
+        let output = Command::new(&bin)
+            .args(args)
+            .env_clear()
+            .output()
+            .unwrap_or_else(|e| panic!("spawn debundle {}: {e}", bin.display()));
+        command_result(output)
+    }
 }
 
 fn node_path() -> PathBuf {
@@ -2202,12 +2039,7 @@ pub fn read_selector_outcomes(report_root: &Path) -> Vec<Value> {
 
 /// The `outcomes` of `chunk`'s `selector_diagnostics.json` under a report root.
 pub fn read_chunk_selector_outcomes(report_root: &Path, chunk: &str) -> Vec<Value> {
-    let report_path = report_root.join(chunk).join("selector_diagnostics.json");
-    let report: Value = serde_json::from_str(
-        &fs::read_to_string(&report_path)
-            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
-    )
-    .unwrap_or_else(|error| panic!("parse {}: {error}", report_path.display()));
+    let report: Value = read_json(&report_root.join(chunk).join("selector_diagnostics.json"));
     report["outcomes"]
         .as_array()
         .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
@@ -2229,40 +2061,23 @@ fn spawn_transform(spec_path: &Path) -> CommandResult {
     run_debundler(spec_path, &[])
 }
 
-fn spawn_transform_with_args(
-    spec_path: &Path,
-    extra_args: &[&str],
-    env: &[(&str, &str)],
-) -> CommandResult {
+fn spawn_transform_with_args(spec_path: &Path, extra_args: &[&str]) -> CommandResult {
     let bin = debundler_path();
-    let mut command = Command::new(&bin);
-    command.arg("run").arg("--spec").arg(spec_path);
-    command.args(extra_args);
-    for (name, value) in env {
-        command.env(name, value);
-    }
-    let output = command
-        .output()
-        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
-    CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    }
+    command_result(
+        Command::new(&bin)
+            .arg("run")
+            .arg("--spec")
+            .arg(spec_path)
+            .args(extra_args)
+            .output()
+            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+    )
 }
 
 /// Run `debundle run --spec <path> [--package-root <name>=<dir> ...]` and return its
 /// captured stdio + exit status. Used by tests that exercise pipeline stages
 /// outside the logical-modules harness in [`run_fixture`].
 pub fn run_debundler(spec_path: &Path, package_roots: &[(&str, &Path)]) -> CommandResult {
-    run_debundler_with_env(spec_path, package_roots, &[])
-}
-
-pub fn run_debundler_with_env(
-    spec_path: &Path,
-    package_roots: &[(&str, &Path)],
-    env: &[(&str, &str)],
-) -> CommandResult {
     let bin = debundler_path();
     let mut command = Command::new(&bin);
     command.arg("run").arg("--spec").arg(spec_path);
@@ -2271,17 +2086,11 @@ pub fn run_debundler_with_env(
             .arg("--package-root")
             .arg(format!("{name}={}", dir.display()));
     }
-    for (name, value) in env {
-        command.env(name, value);
-    }
-    let output = command
-        .output()
-        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
-    CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    }
+    command_result(
+        command
+            .output()
+            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+    )
 }
 
 /// A tree-authored spec over several chunks: `chunks` are `(chunk id,
@@ -2361,18 +2170,13 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
 
 fn run_node_script(path: &Path) -> CommandResult {
     let node = node_path();
-    let output = Command::new(&node)
-        .arg(path)
-        .output()
-        .unwrap_or_else(|e| panic!("spawn node {}: {e}", node.display()));
-    CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    }
+    command_result(
+        Command::new(&node)
+            .arg(path)
+            .output()
+            .unwrap_or_else(|e| panic!("spawn node {}: {e}", node.display())),
+    )
 }
-
-// --- AST-walking assertion helpers ---------------------------------------
 
 /// Parse `source` as an ESM module and return the SWC AST. Tests use this
 /// when the substring-on-emit checks aren't precise enough — e.g. when
@@ -2464,39 +2268,14 @@ fn collect_declared_bindings_from_pat(pat: &Pat, names: &mut Vec<String>) {
     }
 }
 
-/// Parse `source` and assert that every named import specifier binds a
-/// distinct local symbol. Mirrors the duplicate-declaration check Node
-/// would perform at module-load time.
-pub fn assert_unique_import_locals(source: &str) {
-    let module = parse_module(source);
-    let mut seen = BTreeSet::new();
-    for item in &module.body {
-        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-            continue;
-        };
-        for specifier in &import.specifiers {
-            let local = match specifier {
-                ImportSpecifier::Named(named) => named.local.sym.to_string(),
-                ImportSpecifier::Default(default) => default.local.sym.to_string(),
-                ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
-            };
-            assert!(
-                seen.insert(local.clone()),
-                "duplicate import local `{local}` in:\n{source}",
-            );
-        }
-    }
-}
-
-/// Parse `source` and assert exactly one `export { ... }` specifier has
-/// `orig.sym == expected_orig`, with its `exported` either absent (when
-/// `expected_exported_as` is `None`) or `Ident { sym: expected_exported_as }`.
-/// Walks the parsed specifier tree so a corrupted `export { aH$1 as aH$1 }`
-/// fails — a substring check on `aH$1 as aH` would accept both shapes.
-pub fn assert_export_named_specifier(
+/// Parse `source` and assert the named export specifiers for `expected_orig` match
+/// the supplied set of exported names. `None` means the `as` clause is absent.
+/// Walking the parsed specifier tree rejects near-matches such as
+/// `export { aH$1 as aH$1 }` that substring assertions can accept.
+pub fn assert_export_named_specifiers(
     source: &str,
     expected_orig: &str,
-    expected_exported_as: Option<&str>,
+    expected_exported_as: &[Option<&str>],
 ) {
     let module = parse_module(source);
     let matched: Vec<_> = module
@@ -2520,136 +2299,36 @@ pub fn assert_export_named_specifier(
         .collect();
     assert_eq!(
         matched.len(),
-        1,
-        "expected exactly one `export {{ {expected_orig} ... }}` specifier; got {} in:\n{source}",
+        expected_exported_as.len(),
+        "expected {} `export {{ {expected_orig} ... }}` specifiers; got {} in:\n{source}",
+        expected_exported_as.len(),
         matched.len(),
     );
-    let actual = match &matched[0].exported {
-        Some(ModuleExportName::Ident(ident)) => Some(ident.sym.to_string()),
-        Some(ModuleExportName::Str(_)) => panic!("unexpected string export in:\n{source}"),
-        None => None,
-    };
+    let mut actual: Vec<Option<String>> = matched
+        .iter()
+        .map(|spec| match &spec.exported {
+            Some(ModuleExportName::Ident(ident)) => Some(ident.sym.to_string()),
+            Some(ModuleExportName::Str(_)) => panic!("unexpected string export in:\n{source}"),
+            None => None,
+        })
+        .collect();
+    let mut expected: Vec<Option<String>> = expected_exported_as
+        .iter()
+        .map(|name| name.map(str::to_owned))
+        .collect();
+    actual.sort();
+    expected.sort();
     assert_eq!(
-        actual.as_deref(),
-        expected_exported_as,
-        "export {{ {expected_orig} ... }} `as` clause mismatch in:\n{source}",
+        actual, expected,
+        "export {{ {expected_orig} ... }} `as` clauses mismatch in:\n{source}",
     );
 }
 
-/// Assert that no function-body scope in `source` declares `target_name`
-/// more than once (counting destructured params and `let`/`const` decls;
-/// `var` is excluded because it allows redeclaration in the same scope).
-/// Mirrors Node's lexical-binding duplicate check.
-pub fn assert_unique_lexical_decls_per_scope(source: &str, target_name: &str) {
-    fn pat_binds(pat: &Pat, target: &str) -> bool {
-        match pat {
-            Pat::Ident(BindingIdent { id, .. }) => id.sym.as_ref() == target,
-            Pat::Object(object) => object.props.iter().any(|prop| match prop {
-                ObjectPatProp::KeyValue(kv) => pat_binds(&kv.value, target),
-                ObjectPatProp::Assign(assign) => assign.key.id.sym.as_ref() == target,
-                ObjectPatProp::Rest(rest) => pat_binds(&rest.arg, target),
-            }),
-            Pat::Array(array) => array
-                .elems
-                .iter()
-                .flatten()
-                .any(|elem| pat_binds(elem, target)),
-            Pat::Assign(assign) => pat_binds(&assign.left, target),
-            Pat::Rest(rest) => pat_binds(&rest.arg, target),
-            _ => false,
-        }
-    }
-
-    fn check_function(function: &Function, target: &str, source: &str) {
-        let Some(body) = &function.body else {
-            return;
-        };
-        let mut count = 0;
-        for param in &function.params {
-            if pat_binds(&param.pat, target) {
-                count += 1;
-            }
-        }
-        for stmt in &body.stmts {
-            // `var` allows redeclaration in the same scope (and `function f(a){var a;}`
-            // is legal); only `let`/`const`/`class`/`function` are subject to the
-            // "Identifier 'X' has already been declared" lexical check.
-            if let Stmt::Decl(Decl::Var(var)) = stmt
-                && matches!(var.kind, VarDeclKind::Let | VarDeclKind::Const)
-            {
-                for declarator in &var.decls {
-                    if pat_binds(&declarator.name, target) {
-                        count += 1;
-                    }
-                }
-            }
-        }
-        assert!(
-            count <= 1,
-            "scope binds `{target}` {count} times in:\n{source}",
-        );
-        for stmt in &body.stmts {
-            descend_stmt(stmt, target, source);
-        }
-    }
-
-    fn descend_stmt(stmt: &Stmt, target: &str, source: &str) {
-        match stmt {
-            Stmt::Decl(Decl::Fn(FnDecl { function, .. })) => {
-                check_function(function, target, source)
-            }
-            Stmt::Decl(Decl::Var(var)) => {
-                for VarDeclarator { init, .. } in &var.decls {
-                    if let Some(init) = init {
-                        descend_expr(init, target, source);
-                    }
-                }
-            }
-            Stmt::Block(block) => {
-                for stmt in &block.stmts {
-                    descend_stmt(stmt, target, source);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn descend_expr(expr: &Expr, target: &str, source: &str) {
-        match expr {
-            Expr::Fn(fn_expr) => check_function(&fn_expr.function, target, source),
-            Expr::Arrow(arrow) => {
-                let mut count = 0;
-                for param in &arrow.params {
-                    if pat_binds(param, target) {
-                        count += 1;
-                    }
-                }
-                if let ArrowFunctionBody::FunctionBody(block) = &*arrow.body {
-                    for stmt in &block.stmts {
-                        if let Stmt::Decl(Decl::Var(var)) = stmt
-                            && matches!(var.kind, VarDeclKind::Let | VarDeclKind::Const)
-                        {
-                            for declarator in &var.decls {
-                                if pat_binds(&declarator.name, target) {
-                                    count += 1;
-                                }
-                            }
-                        }
-                    }
-                }
-                assert!(
-                    count <= 1,
-                    "arrow scope binds `{target}` {count} times in:\n{source}",
-                );
-            }
-            _ => {}
-        }
-    }
-
-    let module = parse_module(source);
-    for item in &module.body {
-        if let ModuleItem::Stmt(stmt) = item {
-            descend_stmt(stmt, target_name, source);
-        }
-    }
+/// Assert exactly one `export { ... }` specifier has the requested shape.
+pub fn assert_export_named_specifier(
+    source: &str,
+    expected_orig: &str,
+    expected_exported_as: Option<&str>,
+) {
+    assert_export_named_specifiers(source, expected_orig, &[expected_exported_as]);
 }

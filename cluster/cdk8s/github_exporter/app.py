@@ -2,8 +2,8 @@
 exporter and our GraphQL one, their Services, ServiceMonitors, token ExternalSecrets and
 the Grafana dashboard (`dashboard.json` beside this module).
 
-Hand-written beside the generated output: `image-pins/`, whose Flux image-automation marker
-sets the GraphQL exporter's tag over the placeholder below.
+The GraphQL exporter's image tag is a placeholder; the hand-written `PINS_DIR` Component,
+which the kustomization includes across the roots, sets it via Flux's image-automation marker.
 """
 
 from __future__ import annotations
@@ -26,13 +26,14 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.cdk8s import external_creds, forgejo_images
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.grafana_dashboards import DashboardFile
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/github-exporter"
+OUTPUT_DIR = f"{GENERATED_ROOT}/github-exporter"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/github-exporter-image-pins"
 _NAMESPACE = "monitoring"
 _ACCOUNTS = ("agentydragon", "agentydragon-agent")
 # The external-creds source Secret each account's token is copied from.
@@ -41,7 +42,7 @@ _REST = "github-exporter"
 _GRAPHQL = "github-graphql-rate-exporter"
 _REST_HTTP = Port(name="http", number=9171)
 _GRAPHQL_HTTP = Port(name="http", number=9172)
-# The tag is a placeholder: image-pins/kustomization.yaml sets the real one.
+# The tag is a placeholder: `PINS_DIR` sets the real one.
 _GRAPHQL_IMAGE = "git.allegedly.works/ducktape-ci/github-graphql-rate-exporter:unset"
 _TOKEN_DIR = "/var/run/secrets/github"
 DASHBOARD = DashboardFile(

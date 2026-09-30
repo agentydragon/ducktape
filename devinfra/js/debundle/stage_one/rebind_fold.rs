@@ -26,35 +26,21 @@ use swc_ecma_ast::Id;
 
 use analysis::atomic_units::OwnerGraphAndUnits;
 use analysis::graph::DepKind;
-use analysis::ids::{BindingKind, LogicalModuleIndex, ModuleId};
 
 /// One rebind-fold decision: a binding that should be (re)routed
-/// from its current plan to `dest`. Carries `previous` so the caller
-/// can clean up the residual plan's binding list when the binding
-/// was parked there by the residual sweep.
+/// from its current plan to `dest`.
 #[derive(Debug, Clone)]
 pub struct RebindFold {
     /// The chunk-top-level binding id to (re)route.
     pub binding: Id,
-    /// Source name (the `binding.0.as_ref()` form) — included so the
-    /// applier can update `ModulePlan::bindings` without cloning the
-    /// `Id`'s atom out separately at every call site.
-    pub name: String,
     /// Plan index this binding folds into.
     pub dest: usize,
-    /// The `BindingKind::Owned { module: dest_module_id }` value the
-    /// caller should mirror into its bindings catalogue. Materialized
-    /// here so the analysis crate owns the `ModuleId`/`BindingKind`
-    /// construction (the caller doesn't need to know that the
-    /// `LogicalModuleIndex` wrapping convention exists).
-    pub owned_kind: BindingKind,
-    /// Plan index this binding was previously routed to, if any.
-    /// `Some(idx)` where `idx == residual_plan_index` signals "remove
-    /// `name` from `module_plans[idx].bindings` while routing it to
-    /// `dest`"; other `Some(_)` values cannot occur because folding
-    /// only applies to unclaimed owners (see filter in
-    /// `compute_rebind_folds`).
-    pub previous: Option<usize>,
+    /// The residual sweep had parked this binding in the residual
+    /// plan, so the caller removes it from that plan's binding list.
+    /// Folding only applies to owners whose bindings are unclaimed or
+    /// residual-swept (see the filter in `compute_rebind_folds`), so
+    /// no other previous plan can occur.
+    pub from_residual: bool,
 }
 
 /// Decide which atomic-unit members should fold into an explicit
@@ -145,21 +131,15 @@ pub fn compute_rebind_folds(
         if owners_to_fold.is_empty() {
             continue;
         }
-        let module_id = ModuleId(LogicalModuleIndex(dest));
-        let owned_kind = BindingKind::Owned { module: module_id };
         for owner_id in owners_to_fold {
             let Some(node) = owner_graph.node(owner_id) else {
                 continue;
             };
             for binding_id in &node.declared {
-                let previous = binding_assignment.get(binding_id).copied();
-                let name = binding_id.0.as_ref().to_string();
                 folds.push(RebindFold {
                     binding: binding_id.clone(),
-                    name,
                     dest,
-                    owned_kind: owned_kind.clone(),
-                    previous,
+                    from_residual: binding_assignment.contains_key(binding_id),
                 });
             }
         }

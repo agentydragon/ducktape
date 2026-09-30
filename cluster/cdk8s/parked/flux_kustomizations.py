@@ -1,4 +1,4 @@
-"""Flux Kustomizations for the cluster/k8s/parked slice."""
+"""Flux Kustomizations for the cluster/parked slice."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 
 
 def agent_box(
@@ -46,13 +46,14 @@ def buildbuddy_executor(chart: Chart) -> Kustomization:
     return flux_kustomization(
         chart,
         name,
+        # Not flux-system's source: its sparse checkout (gotk-sync.yaml) omits the parked tree.
         KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="flux-system", namespace="flux-system"
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
         ),
         annotations={"ducktape.org/parked": "true"},
         suspend=True,
         timeout="5m",
-        path=f"./{HAND_WRITTEN_ROOT}/parked/buildbuddy-executor",
+        path=f"./{PARKED_ROOT}/buildbuddy-executor",
         decryption=SOPS_DECRYPTION,
     )
 

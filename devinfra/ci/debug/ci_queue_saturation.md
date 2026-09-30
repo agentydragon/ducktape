@@ -174,7 +174,7 @@ are superseded; they are not current measurements. Git history retains the old r
 ## Proposed Mimir observability
 
 Repository configuration currently owns GitHub **API quota** exporters under
-`cluster/k8s/github-exporter`; no Actions queue collector was found there. This was a
+`cluster/cdk8s/github_exporter`; no Actions queue collector was found there. This was a
 source inspection, not a live Mimir series census. Keep quota and runner capacity
 separate. Proposed owner: a dedicated Actions observer under `cluster/exporters`,
 GitOps-managed, scraped by ServiceMonitor → Alloy → existing Mimir remote write.

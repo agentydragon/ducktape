@@ -7,13 +7,13 @@ model of it.
 
 ## Layout
 
-| File               | Contents                                                             |
-| ------------------ | -------------------------------------------------------------------- |
-| `apply.py`         | `apply_policy()` wrapping `kyverno apply`, returning a parsed result |
-| `paths.py`         | runfiles lookups: `manifest()` for testdata, `policy()` by file name |
-| `test_<policy>.py` | one module and one `py_test` target per policy                       |
-| `testdata/`        | input manifests, prefixed by the policy that consumes them           |
-| `__snapshots__/`   | syrupy snapshots, one `.ambr` per test module                        |
+| File               | Contents                                                               |
+| ------------------ | ---------------------------------------------------------------------- |
+| `apply.py`         | `apply_policy()` wrapping `kyverno apply`, returning a parsed result   |
+| `paths.py`         | runfiles lookups: `manifest()` for testdata, `policy()` by policy name |
+| `test_<policy>.py` | one module and one `py_test` target per policy                         |
+| `testdata/`        | input manifests, prefixed by the policy that consumes them             |
+| `__snapshots__/`   | syrupy snapshots, one `.ambr` per test module                          |
 
 **One target per policy.** A failure names the policy it belongs to, and a
 single policy can be run alone. `test_proxy_injection` is the deliberate

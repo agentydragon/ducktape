@@ -16,7 +16,7 @@
 //! being consumed as a list carrier) or a malformed predicate returns
 //! [`Unsupported`] rather than a weaker (under-constraining) match. Match
 //! semantics across identifier modes, holes, and declarator alignment are pinned
-//! by `selector_match_differential_test`.
+//! by `selector_match_test`.
 //!
 //! Run-hole placement is a direct greedy-plus-backtracking search. Why matching
 //! is not encoded as solver constraints: <docs/selector_resolution.md>

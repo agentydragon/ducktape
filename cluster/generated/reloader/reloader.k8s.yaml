@@ -37,6 +37,8 @@ spec:
             cpu: 10m
             memory: 64Mi
       enableHA: false
+      ignoreCronJobs: true
+      ignoreJobs: true
       ignoreNamespaces: clickhouse
       reloadOnCreate: true
       reloadOnDelete: true

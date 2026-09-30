@@ -98,10 +98,6 @@ pub(crate) fn anything_hole_name(name: &str) -> Option<&str> {
     hole_name_for(name, ANYTHING_HOLE_KEYWORD)
 }
 
-pub(crate) fn unsupported_selector_hole_name(_name: &str) -> Option<&str> {
-    None
-}
-
 pub(crate) fn is_anything_class_rest_hole(member: &ClassMember) -> bool {
     let ClassMember::ClassProp(prop) = member else {
         return false;

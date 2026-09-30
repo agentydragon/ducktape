@@ -42,15 +42,15 @@ no secret material in generated output, unchanged OAuth scopes and registered ca
 
 ### Authentik, Forgejo and Attic rotator rosters
 
-Inputs: `agents/authentik-jwt-rotation/rotations.yaml`,
-`agents/forgejo-token-rotation/tokens.yaml`, `nix-cache/rotators.yaml`.
-Each consumer under `cluster/rotators/{authentik_jwt_rotation,forgejo_token_rotation,
-attic_jwt_rotation}/rotate.py` already defines its own Config and entry model.
+Inputs: `nix-cache/rotators.yaml`. `cluster/rotators/attic_jwt_rotation/rotate.py` already
+defines its own Config and entry model. Authentik's and Forgejo's rosters are the converted
+instances: `cluster/cdk8s/{authentik_jwt_rotation,forgejo_token_rotation}.py` build `ROTATIONS`
+from their rotator's `config.py`.
 
 Proposed: move these schemas out of runtime modules and build each roster as typed
 application configuration. Derive credential mounts and output Secret names from those
 entries wherever the generator currently repeats them. Keep audiences, scopes and
-consumer grants explicit. These are three reviewable changes, not a generic rotator
+consumer grants explicit. These are separate reviewable changes, not a generic rotator
 framework.
 
 The rotators write SOPS ciphertext and sometimes publish more than one output. cdk8s
@@ -102,19 +102,13 @@ does not validate the chart's arbitrary values. Do not hand-maintain full vendor
 just to eliminate dictionaries.
 
 Generated Kustomize wrappers can package these files without converting their contents.
-Extend the small Kustomize model for an actually used field (`patches`,
-`configurations`, generator options) only where it removes a concrete authoring seam.
+Extend the small Kustomize model for an actually used field only where it removes a
+concrete authoring seam.
 
 ## Kubernetes manifests and deliberate external owners
 
-- **Remote installations:** `agents/agent-sandbox/controller/{kustomization,patches}.yaml`
-  and `kubevirt/{operator,cdi-operator}/{kustomization,namespace-patch}.yaml` compose
-  upstream release bundles with local patches. Keep upstream release ownership.
-  Generate local typed patches/wrappers where worthwhile; check against the actual
-  pinned release render. Do not transcribe upstream controllers/CRDs into local Python.
-- **Other generators:** `flux/flux-system` belongs to Flux bootstrap;
-  `agentplane-crds/crd-*.yaml` belongs to `//agentplane/crds:generate_bin`. Their
-  YAML is not missing hand-written-to-cdk8s work.
+- **Other generators:** `flux/flux-system` belongs to Flux bootstrap. Its YAML is not
+  missing hand-written-to-cdk8s work.
 - **SOPS and image automation:** ciphertext stays with SOPS/key holders or its rotator;
   `image-pins` and Haku's `{image,static}-metadata.yaml` stay bot-owned. cdk8s owns
   references/composition. Zero hand-written YAML is not an appropriate target for them.
@@ -125,7 +119,7 @@ Extend the small Kustomize model for an actually used field (`patches`,
   coverage. Other raw packages (`devinfra/firecracker/deploy`,
   `haku/x/zones/deploy`, `x/codex_pod_image/deploy`) need an owner/use decision;
   no active central node for them was found in this audit.
-- **Parked/vendor/example trees:** `cluster/k8s/parked`, vendored Browsertrix charts,
+- **Parked/vendor/example trees:** `cluster/parked`, vendored Browsertrix charts,
   archived experiments and documentation examples are outside the active conversion
   target. Their presence must not inflate an active-manifest completion percentage.
 

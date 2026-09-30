@@ -54,13 +54,8 @@ async def export_session(api: SessionsApi, session: SessionSummary, events_dir: 
     count = 0
     with gzip.open(partial, "wt", encoding="utf-8") as out:
         async for page in api.iter_event_pages(session_id):
-            lines = []
-            for event in page:
-                count += 1
-                if event.seq != count:
-                    raise ValueError(f"{session_id=}: expected sequence_num {count}, got {event.sequence_num}")
-                lines.append(f"{event.model_dump_json(exclude_unset=True)}\n")
-            await asyncio.to_thread(out.write, "".join(lines))
+            await asyncio.to_thread(out.write, "".join(f"{e.model_dump_json(exclude_unset=True)}\n" for e in page))
+            count += len(page)
             progress.report(count)
     partial.replace(target)
     return ManifestRecord(

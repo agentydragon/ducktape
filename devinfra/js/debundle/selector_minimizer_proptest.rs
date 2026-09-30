@@ -7,11 +7,11 @@
 //!
 //! - same-arity function declarations (exercises `minimize_function_selector_candidates`);
 //! - single `const` declarations with call / object / literal initializers
-//!   (exercises `minimize_var_selector`);
+//!   (the one-declarator case of `minimize_var_group_selector`);
 //! - class declarations whose methods contain calls / literals (exercises
 //!   `minimize_class_selector_candidates`);
 //! - multi-declarator `const`s, where 2+ declarators in one statement are
-//!   selected as a binding group (exercises `minimize_var_group_selector` via
+//!   selected as a binding group (`minimize_var_group_selector` via
 //!   `synthesize_simplest_selector_for_group` with multiple `NameBindingMember`s).
 //!
 //! The chunk is serialized with swc's own codegen and fed into the minimizer —
@@ -20,18 +20,16 @@
 //! the synthesizer proves uniqueness internally, and this verifies that
 //! guarantee end-to-end across the input space the golden fixtures only sample
 //! by hand. Every generated binding is uniquely named so the emitted chunk
-//! always re-parses. Bounded for CI (~96 cases); override with `bbr test
-//! //devinfra/js/debundle:selector_codemod_test --test_env=PROPTEST_CASES=2000`.
+//! always re-parses. Chunks for which the minimizer finds no proving sparse
+//! selector are rejected, not counted: proptest runs until 96 cases synthesized
+//! (and fails if too many are rejected), so the property is never vacuous.
 
 use std::collections::BTreeSet;
 
 use proptest::prelude::*;
 use proptest::sample::Index;
-use swc_common::sync::Lrc;
-use swc_common::{DUMMY_SP, SourceMap, SyntaxContext};
+use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
-use swc_ecma_codegen::text_writer::JsWriter;
-use swc_ecma_codegen::{Config, Emitter};
 
 use super::{
     ChunkSelectorIndex, GroupSelectorOutcome, NameBindingMember, matched_body_indices,
@@ -226,21 +224,6 @@ fn assign_unique_const_names(stmts: &mut [Stmt]) {
     }
 }
 
-fn emit_module(module: &Module) -> String {
-    let cm: Lrc<SourceMap> = Lrc::default();
-    let mut buf = Vec::new();
-    {
-        let mut emitter = Emitter {
-            cfg: Config::default(),
-            cm: cm.clone(),
-            comments: None,
-            wr: JsWriter::new(cm, "\n", &mut buf, None),
-        };
-        emitter.emit_module(module).expect("emit generated module");
-    }
-    String::from_utf8(buf).expect("emitted module is utf-8")
-}
-
 fn arg_strategy() -> impl Strategy<Value = Expr> {
     prop_oneof![
         (0u8..4).prop_map(num),
@@ -281,8 +264,8 @@ fn stmt_strategy() -> impl Strategy<Value = Stmt> {
 }
 
 /// Initializer for a top-level single/grouped `const` binding: a call, an
-/// object literal, or a bare literal — the shapes `minimize_var_selector` and
-/// `minimize_var_group_selector` peel anchors out of.
+/// object literal, or a bare literal — the shapes `minimize_var_group_selector`
+/// peels anchors out of.
 fn var_init_strategy() -> impl Strategy<Value = Expr> {
     prop_oneof![
         (0u8..8).prop_map(num),
@@ -292,14 +275,13 @@ fn var_init_strategy() -> impl Strategy<Value = Expr> {
             prop::collection::vec(arg_strategy(), 0..3)
         )
             .prop_map(|(method, args)| call(ident_expr(METHODS[method]), args)),
-        prop::collection::vec((0usize..KEYS.len(), arg_strategy()), 1..3).prop_map(|entries| {
+        prop::collection::vec(arg_strategy(), 1..3).prop_map(|values| {
             object(
-                entries
+                values
                     .into_iter()
                     .enumerate()
-                    // Dedup keys within one object: re-parsing tolerates dupes,
-                    // but distinct keys keep the generated shapes meaningful.
-                    .map(|(slot, (_key, value))| (KEYS[slot % KEYS.len()], value))
+                    // Distinct keys keep the generated shapes meaningful.
+                    .map(|(slot, value)| (KEYS[slot], value))
                     .collect(),
             )
         }),
@@ -337,28 +319,18 @@ fn single_item_strategy(name: String) -> impl Strategy<Value = GenItem> {
             binding: name.clone(),
         }
     });
-    let class = prop::collection::vec(
-        (
-            0usize..METHODS.len(),
-            prop::collection::vec(stmt_strategy(), 1..3),
-        ),
-        1..3,
-    )
-    .prop_map({
-        let name = name.clone();
-        move |methods| {
-            // Dedup method names within one class so the emitted class re-parses.
-            let methods = methods
-                .into_iter()
-                .enumerate()
-                .map(|(slot, (_method, body))| (slot % METHODS.len(), body))
-                .collect();
-            GenItem::Single {
-                item: class_decl(&name, methods),
-                binding: name.clone(),
+    let class =
+        prop::collection::vec(prop::collection::vec(stmt_strategy(), 1..3), 1..3).prop_map({
+            let name = name.clone();
+            move |bodies| {
+                // One distinct method name per body so the emitted class re-parses.
+                let methods = bodies.into_iter().enumerate().collect();
+                GenItem::Single {
+                    item: class_decl(&name, methods),
+                    binding: name.clone(),
+                }
             }
-        }
-    });
+        });
     prop_oneof![func, var, class]
 }
 
@@ -432,7 +404,7 @@ proptest! {
             }).collect(),
             shebang: None,
         };
-        let source = emit_module(&module);
+        let source = js_ast::emit_module_source(&module).expect("emit generated module");
 
         let outcome: Result<(), TestCaseError> = js_ast::with_swc_globals(|| {
             let parsed = js_ast::parse_js_module_consuming("<proptest>", source.clone())
@@ -459,13 +431,13 @@ proptest! {
                 })
                 .collect();
 
-            // Ambiguous chunks or chunks with no proving sparse selector are
-            // skipped; there is nothing useful for this soundness property to
-            // assert in those cases.
+            // Ambiguous chunks or chunks with no proving sparse selector give
+            // this soundness property nothing to assert: reject them so they
+            // do not count toward the case budget.
             let Ok(GroupSelectorOutcome::Synthesized(group)) =
                 synthesize_simplest_selector_for_group(&index, decl_idx, &members, 1)
             else {
-                return Ok(());
+                return Err(TestCaseError::reject("no proving sparse selector"));
             };
 
             if members.len() == 1 {

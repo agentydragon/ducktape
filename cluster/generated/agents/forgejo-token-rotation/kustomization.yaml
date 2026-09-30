@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - forgejo-token-rotation.k8s.yaml
+components:
+  - ../../../k8s/agents/forgejo-token-rotation-image-pins
+configMapGenerator:
+  - name: forgejo-token-rotations-config
+    namespace: agents-infra
+    literals:
+      - |
+        tokens.yaml=rotations:
+          - name: haku
+            credentials_dir: /var/run/secrets/forgejo/haku
+            sops_file: secrets/haku-forgejo-tea-token.yaml
+            token_prefix: forgejo-tea-haku
+            tea_secret:
+              path: cluster/k8s/haku/forgejo-tea/haku-forgejo-tea.sops.yaml
+              name: haku-forgejo-tea
+              namespace: haku-sandbox
+              annotations:
+                reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+                reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-ci
+                reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+                reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-ci
+          - name: claude
+            credentials_dir: /var/run/secrets/forgejo/claude
+            sops_file: secrets/claude-forgejo-tea-token.yaml
+            token_prefix: forgejo-tea-claude
+            tea_secret:
+              path: cluster/k8s/agents/claude-sandbox-secrets/claude-forgejo-tea.sops.yaml
+              name: claude-forgejo-tea
+              namespace: claude-sandbox
+          - name: agent-box-codex
+            credentials_dir: /var/run/secrets/forgejo/agent-box-codex
+            sops_file: secrets/agent-box-codex-forgejo-tea-token.yaml
+            token_prefix: forgejo-tea-agent-box-codex

@@ -8,7 +8,7 @@ from util.bazel.runfiles import get_required_path
 
 
 def test_ingress_proxy_forwards_to_the_smtp_service_with_proxy_protocol() -> None:
-    mailbox_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/haku-mailbox.k8s.yaml")
+    mailbox_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/mailbox.k8s.yaml")
     ingress_config = get_required_path("_main/cluster/k8s/haku/mailbox/nginx.conf").read_text()
     smtp_service = one(
         doc

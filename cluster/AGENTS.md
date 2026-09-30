@@ -231,20 +231,24 @@ Kustomizations: admitting the HelmRelease does not install its CRDs synchronousl
 An app whose source ducktape does **not** own — a third-party image, Helm chart, or
 tool, as opposed to `<project>/deploy/`-pattern code like `props/deploy/`,
 `loom/wayback/deploy/`, `haku/x/dispatch/deploy/` — moves entirely to
-`cluster/k8s/parked/<name>/` when decommissioned or suspended indefinitely. Keep the
+`cluster/parked/<name>/` when decommissioned or suspended indefinitely. Keep the
 layout it already had (flat, or `namespace/`/`db/`/`app/`/etc.). By default, its Flux
 Kustomization remains in the central chart with `spec.suspend: true` and
 `metadata.annotations.ducktape.org/parked: "true"`; the suspended object does not apply
 the parked workload manifests. `cluster/validation/test_cluster_integration.py`'s
-`test_parked_manifests_location` requires paths under `cluster/k8s/parked/` to carry the
-annotation. A parked ducktape-owned project may keep its manifests in its own `deploy/`
-directory instead.
+`test_flux_kustomizations_under_parked_path_are_annotated` requires paths under
+`cluster/parked/` to carry the annotation. A parked ducktape-owned project may keep its
+manifests in its own `deploy/` directory instead.
+
+`cluster/parked` is outside the manifest roots and the image-automation path:
+`cluster/validation` skips it, and Flux image automation does not update its
+`$imagepolicy` pins.
 
 When explicitly asked to fully unwire a decommissioned app, remove its Kustomization
 constructor and call from the generated central chart; keep the manifests under
-`cluster/k8s/parked/` for manual revival. Revive an unwired app by adding its
+`cluster/parked/` for manual revival. Revive an unwired app by adding its
 Kustomization back to the central chart, dropping the parked annotation and suspension,
-and moving the directory back out of `parked/`.
+and moving the directory back under a manifest root (`cdk8s/manifest_roots.py`).
 
 Ducktape-owned code is never part of this convention — it keeps manifests under its own
 `<project>/deploy/`, active or suspended, right beside the source. Current inventory and
@@ -252,8 +256,8 @@ per-app reasons: <docs/decisions.md> § "Parked application manifests".
 
 ## Generated manifests
 
-Every file under `cluster/generated`, every `*.k8s.yaml` under `cluster/k8s`, and each
-`kustomization.yaml` or copied payload there that `.gitattributes` marks
+Every file under `cluster/generated`, every `*.k8s.yaml` under `cluster/k8s` or `cluster/parked`, and
+each `kustomization.yaml` or copied payload there that `.gitattributes` marks
 `linguist-generated=true` (the list of record), is `bb run //cluster/cdk8s:generate_manifests`
 output. A directory lives under
 `cluster/generated` exactly when the generator writes all of it (<docs/cdk8s.md>). Change the generator under

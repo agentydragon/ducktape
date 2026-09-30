@@ -12,17 +12,15 @@ use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use analysis::facts::StructuralChunkAnalysis;
-use analysis::{ChunkId, DepKind, OwnerId, StatementKind, StatementOrdinal};
+use analysis::{DepKind, OwnerId, StatementKind, StatementOrdinal};
 use anyhow::{Context, Result, bail};
 use js_ast::body_index_for_statement_ordinal;
 use rayon::prelude::*;
 use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
-    SelectorProgramSliceOptions, SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult,
+    SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult,
 };
-use selector_ir_lowering::{
-    MemberSelectorLoweringContext, MemberSelectorProgramBuilder, MemberSelectorSpecRef,
-};
+use selector_ir_lowering::{MemberSelectorProgramBuilder, MemberSelectorSpecRef};
 use selector_outcome::{
     Candidate, Differentiator, Entity, EntityRef, FreeIdentifier, IdentifierMeaning,
     MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome, Placement, ResolvedBy, SelectorKind,
@@ -30,8 +28,8 @@ use selector_outcome::{
 };
 use selector_runtime::solve_global_selector_program;
 use shape_index::ShapeIndex;
-use source_match::ParsedSourceMatchSelector;
-use source_match::chunk_resolver::{ChunkResolver, template_free_identifiers};
+use source_match::chunk_resolver::ChunkResolver;
+use source_match::{ParsedSourceMatchSelector, template_free_identifiers};
 use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec};
 use swc_ecma_ast::{ImportSpecifier, Module, ModuleDecl, ModuleItem};
 
@@ -39,7 +37,6 @@ use swc_ecma_ast::{ImportSpecifier, Module, ModuleDecl, ModuleItem};
 /// sets.
 pub struct Chunk<'m> {
     name: String,
-    id: ChunkId,
     module: &'m Module,
     structural: StructuralChunkAnalysis<'m>,
     matcher: OnceCell<ChunkResolver<'m>>,
@@ -95,26 +92,16 @@ pub enum MemberSelector {
 }
 
 impl MemberSelector {
-    /// A `members[].selector`, with any `source_match` parsed.
-    pub fn from_spec(request_id: &str, selector: MemberSelectorSpec) -> Result<Self> {
-        Ok(match selector {
+    pub fn from_spec(selector: MemberSelectorSpec) -> Self {
+        match selector {
             MemberSelectorSpec::Binding(binding) => Self::Binding(binding),
-            MemberSelectorSpec::SourceMatch(selector) => {
-                Self::SourceMatch(ParsedSourceMatchSelector::parse(
-                    request_id,
-                    "source_match",
-                    format!("<source_match selector in {request_id}>"),
-                    &selector,
-                    "source_match",
-                )?)
-            }
             MemberSelectorSpec::CrossRef(target) => Self::CrossRef(target),
             MemberSelectorSpec::ReadsMember(target) => Self::ReadsMember(target),
             MemberSelectorSpec::MemberOfModule(target) => Self::MemberOfModule(target),
             MemberSelectorSpec::PassedToCall(target) => Self::PassedToCall(target),
             MemberSelectorSpec::MakesDecorateCall(target) => Self::MakesDecorateCall(target),
             MemberSelectorSpec::IntrinsicAlias(target) => Self::IntrinsicAlias(target),
-        })
+        }
     }
 
     pub fn is_import_specifier(&self) -> bool {
@@ -442,17 +429,14 @@ struct Group {
 }
 
 impl<'m> Chunk<'m> {
-    /// `name` is how outcomes and the selector program name the chunk; `id`
-    /// its interned id in the facts.
+    /// `name` is how outcomes and the selector program name the chunk.
     pub fn new(
         name: impl Into<String>,
-        id: ChunkId,
         module: &'m Module,
         structural: StructuralChunkAnalysis<'m>,
     ) -> Self {
         Self {
             name: name.into(),
-            id,
             module,
             structural,
             matcher: OnceCell::new(),
@@ -463,7 +447,7 @@ impl<'m> Chunk<'m> {
     /// A chunk read from a file, outside a pipeline run.
     pub fn analyze(name: impl Into<String>, module: &'m Module) -> Self {
         let structural = analysis::facts::analyze_chunk_structural(module, None, |_| None);
-        Self::new(name, ChunkId(0), module, structural)
+        Self::new(name, module, structural)
     }
 
     pub fn into_structural(self) -> StructuralChunkAnalysis<'m> {
@@ -475,10 +459,6 @@ impl<'m> Chunk<'m> {
     /// [`Chunk::resolve`]'s job.
     pub fn matcher(&self) -> &ChunkResolver<'m> {
         self.matcher.get_or_init(|| ChunkResolver::new(self.module))
-    }
-
-    fn program_builder(&self) -> MemberSelectorProgramBuilder {
-        MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(self.id, &self.name))
     }
 
     fn places(&self) -> &Places {
@@ -555,9 +535,9 @@ pub fn solve(chunks: Vec<(&Chunk<'_>, &[SpecModule], Projection)>) -> Result<Vec
         .map(|_| SolverResult::default())
         .collect::<Vec<_>>();
     let mut requests = Vec::new();
-    for (index, (chunk, _, projection)) in chunks.iter().enumerate() {
+    for (index, (_, _, projection)) in chunks.iter().enumerate() {
         for group in projection.interacting_groups() {
-            match projection.decide_alone(chunk.id, &group) {
+            match projection.decide_alone(&group) {
                 Some(claims) => decided[index].claims.extend(claims),
                 None => requests.push((index, group)),
             }
@@ -580,12 +560,7 @@ pub fn solve(chunks: Vec<(&Chunk<'_>, &[SpecModule], Projection)>) -> Result<Vec
     let solved = requests
         .par_iter()
         .map(|(index, group)| {
-            let slice = programs[*index].slice_for_targets(
-                group,
-                SelectorProgramSliceOptions {
-                    include_target_all_different: true,
-                },
-            )?;
+            let slice = programs[*index].slice_for_targets(group)?;
             let facts = facts[*index]
                 .as_ref()
                 .expect("a chunk with a request has a fact store");
@@ -600,10 +575,6 @@ pub fn solve(chunks: Vec<(&Chunk<'_>, &[SpecModule], Projection)>) -> Result<Vec
         let (index, result) = solved?;
         let decided = &mut decided[index];
         decided.claims.extend(result.claims);
-        decided.global_diagnostic = decided
-            .global_diagnostic
-            .take()
-            .or(result.global_diagnostic);
     }
     chunks
         .into_iter()
@@ -640,7 +611,11 @@ fn add_nearest_unclaimed(
         .filter(|body_idx| !claimed.contains(body_idx))
         .collect::<Vec<_>>();
     for entity in &mut resolution.outcomes {
-        let Outcome::NoMatch { nearest_unclaimed } = &mut entity.outcome.outcome else {
+        let Outcome::NoMatch {
+            nearest_unclaimed,
+            reason: None,
+        } = &mut entity.outcome.outcome
+        else {
             continue;
         };
         let module = &modules[entity.module];
@@ -746,29 +721,15 @@ fn in_program_targets(
     result: SolverResult,
     to_program: &BTreeMap<SelectorTargetId, SelectorTargetId>,
 ) -> SolverResult {
-    let target = |target: SelectorTargetId| to_program[&target];
     SolverResult {
         claims: result
             .claims
             .into_iter()
             .map(|claim| SolverClaim {
-                target: target(claim.target),
-                outcome: match claim.outcome {
-                    ClaimOutcome::Conflict { with } => ClaimOutcome::Conflict {
-                        with: with.into_iter().map(target).collect(),
-                    },
-                    ClaimOutcome::Duplicate {
-                        owner,
-                        conflicting_targets,
-                    } => ClaimOutcome::Duplicate {
-                        owner,
-                        conflicting_targets: conflicting_targets.into_iter().map(target).collect(),
-                    },
-                    outcome => outcome,
-                },
+                target: to_program[&claim.target],
+                outcome: claim.outcome,
             })
             .collect(),
-        global_diagnostic: result.global_diagnostic,
     }
 }
 
@@ -797,13 +758,7 @@ impl Projection {
     fn interacting_groups(&self) -> Vec<BTreeSet<SelectorTargetId>> {
         let program = &self.program;
         let mut sets = UnionFind::new(program.variables.len());
-        let variable_sets = program.atoms.iter().map(SelectorAtom::variable_ids).chain(
-            program
-                .all_different_variables
-                .iter()
-                .map(|constraint| constraint.variables.iter().copied().collect()),
-        );
-        for variables in variable_sets {
+        for variables in program.atoms.iter().map(SelectorAtom::variable_ids) {
             if let Some(first) = variables.first() {
                 for variable in &variables {
                     sets.union(*first, *variable);
@@ -862,17 +817,11 @@ impl Projection {
     /// The claims of `group` when it can be decided without the solver: it
     /// is one `source_match` or anonymous statement, whose candidates are
     /// exactly its own rows, or one name pin with one place.
-    fn decide_alone(
-        &self,
-        chunk: ChunkId,
-        group: &BTreeSet<SelectorTargetId>,
-    ) -> Option<Vec<SolverClaim>> {
+    fn decide_alone(&self, group: &BTreeSet<SelectorTargetId>) -> Option<Vec<SolverClaim>> {
         let claim = |place: &Place| ResolvedClaim {
-            chunk_id: chunk,
             owner: place.owner,
             statement_ordinal: StatementOrdinal(place.owner.0),
             binding: place.binding.clone(),
-            provenance: Vec::new(),
         };
         if let Some(entity) = self.projected.iter().find(|entity| {
             entity.targets.len() == group.len()
@@ -974,7 +923,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 .iter()
                 .map(|module| format!("{}::{}", chunk.name, module.path))
                 .collect(),
-            builder: chunk.program_builder(),
+            builder: MemberSelectorProgramBuilder::default(),
             outcomes: Vec::new(),
             members: BTreeMap::new(),
             anonymous: Vec::new(),
@@ -1004,7 +953,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     }
                     selector if selector.is_import_specifier() => {}
                     selector => {
-                        let target = self.builder.declare_member_target_in_module_ref(
+                        let target = self.builder.declare_member_target(
                             &self.ids[module_index],
                             &member.export_name,
                             selector.spec_ref(),
@@ -1051,13 +1000,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
         self.project_collected(collected)?;
         for (module_index, member_index) in constrained {
             let member = &modules[module_index].members[member_index];
-            self.builder.lower_member_constraints_in_module_ref(
+            self.builder.lower_member_constraints(
                 &self.ids[module_index],
                 &member.export_name,
                 member.selector.spec_ref(),
             )?;
         }
-        let builder = std::mem::replace(&mut self.builder, self.chunk.program_builder());
+        let builder = std::mem::take(&mut self.builder);
         let program = builder.into_program()?;
         let pin_places = self.pin_places();
         for (target, places) in &pin_places {
@@ -1108,7 +1057,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         let rows =
             self.chunk
                 .matcher()
-                .anonymous_group_candidates_parsed(&self.ids[module_index], &statement.selector)
+                .anonymous_group_candidates(&self.ids[module_index], &statement.selector)
                 .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
                 .into_iter()
                 .map(|group| {
@@ -1181,14 +1130,14 @@ impl<'c, 'm> Resolve<'c, 'm> {
             .partition(|(local, _)| declared_names.contains(local));
         let matched = if declared.is_empty() {
             matcher
-                .anonymous_group_candidates_parsed(logical_module, template)
+                .anonymous_group_candidates(logical_module, template)
                 .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
                 .into_iter()
                 .map(|group| Ok((BTreeMap::new(), group.free_bindings)))
                 .collect::<Result<Vec<_>>>()
         } else {
             matcher
-                .member_group_candidates_parsed(logical_module, template, &declared)
+                .member_group_candidates(logical_module, template, &declared)
                 .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
                 .into_iter()
                 .map(|candidate| {
@@ -1197,7 +1146,10 @@ impl<'c, 'm> Resolve<'c, 'm> {
                             .bindings
                             .iter()
                             .map(|(local, matched)| {
-                                Ok((local.clone(), member_place(places, matched)?))
+                                Ok((
+                                    local.clone(),
+                                    member_place(places, matched.body_idx, &matched.binding)?,
+                                ))
                             })
                             .collect::<Result<BTreeMap<_, _>>>()?,
                         candidate.free_bindings,
@@ -1276,12 +1228,12 @@ impl<'c, 'm> Resolve<'c, 'm> {
         let rows = self
             .chunk
             .matcher()
-            .member_candidates_parsed(&self.ids[module_index], parsed)
+            .member_candidates(&self.ids[module_index], parsed)
             .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
             .into_iter()
             .map(|matched| {
                 Ok(CollectedRow {
-                    places: vec![member_place(places, &matched)?],
+                    places: vec![member_place(places, matched.body_idx, &matched.binding)?],
                     free_bindings: matched.free_bindings,
                 })
             })
@@ -1572,7 +1524,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         match &entity.shape {
             CollectedShape::Member(member_index) => {
                 let member = &module.members[*member_index];
-                let target = self.builder.declare_member_target_in_module_ref(
+                let target = self.builder.declare_member_target(
                     &logical_module,
                     &member.export_name,
                     member.selector.spec_ref(),
@@ -1582,16 +1534,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 targets.push(target);
             }
             CollectedShape::Group(group) => {
-                for (target_binding, member_index) in &group.members_by_target {
+                for member_index in group.members_by_target.values() {
                     let member = &module.members[*member_index];
-                    let target = self
-                        .builder
-                        .declare_binding_group_member_target_in_module_ref(
-                            &logical_module,
-                            &member.export_name,
-                            target_binding,
-                            member.selector.spec_ref(),
-                        )?;
+                    let target = self.builder.declare_binding_group_member_target(
+                        &logical_module,
+                        &member.export_name,
+                        member.selector.spec_ref(),
+                    )?;
                     self.members
                         .insert(target, (entity.module_index, *member_index));
                     targets.push(target);
@@ -1707,7 +1656,6 @@ impl Projection {
         let resolved_by = self.resolved_by(result);
         let Self {
             ids,
-            program,
             mut outcomes,
             members,
             anonymous,
@@ -1723,15 +1671,7 @@ impl Projection {
                     binding: None,
                     resolved_by: how_resolved(&resolved_by, target),
                 },
-                Some(ClaimOutcome::Duplicate {
-                    owner,
-                    conflicting_targets,
-                }) => bail!(
-                    "logical_module {}: global selector solver assigned anonymous statement to \
-                     duplicate owner {owner:?} shared by targets {conflicting_targets:?}",
-                    ids[module_index],
-                ),
-                Some(outcome) => claim_outcome(module, &program, outcome)?,
+                Some(outcome) => claim_outcome(module, outcome)?,
                 None => bail!(
                     "logical_module {}: global selector solver returned no outcome for anonymous \
                      statement selector",
@@ -1761,16 +1701,7 @@ impl Projection {
                         resolved_by: how_resolved(&resolved_by, target),
                     }
                 }
-                Some(ClaimOutcome::Duplicate {
-                    owner,
-                    conflicting_targets,
-                }) => bail!(
-                    "logical_module {}: global selector solver assigned selector member `{}` to \
-                     duplicate owner {owner:?} shared by targets {conflicting_targets:?}",
-                    ids[module_index],
-                    member.export_name,
-                ),
-                Some(outcome) => claim_outcome(module, &program, outcome)?,
+                Some(outcome) => claim_outcome(module, outcome)?,
                 None => bail!(
                     "logical_module {}: global selector solver returned no outcome for selector \
                      member `{}`",
@@ -2165,17 +2096,20 @@ fn bound(place: &Place) -> (OwnerId, String) {
     )
 }
 
-fn member_place(places: &Places, matched: &source_match::MemberBindingMatch) -> Result<Place> {
-    let binding = matched.binding.binding_name.clone();
+fn member_place(
+    places: &Places,
+    body_idx: usize,
+    matched: &source_match::ResolvedMemberBinding,
+) -> Result<Place> {
+    let binding = matched.binding_name.clone();
     let owner = places
         .owner_by_body_and_binding
-        .get(&(matched.body_idx, binding.clone()))
+        .get(&(body_idx, binding.clone()))
         .copied()
         .with_context(|| {
             format!(
-                "source_match candidate at body index {} binding `{binding}` does not map to an \
-                 owner-graph node",
-                matched.body_idx
+                "source_match candidate at body index {body_idx} binding `{binding}` does not \
+                 map to an owner-graph node"
             )
         })?;
     Ok(Place {
@@ -2297,15 +2231,12 @@ fn claim_candidate(module: &Module, claim: &ResolvedClaim) -> Result<Candidate> 
 }
 
 /// The outcome of a target the solve did not resolve.
-fn claim_outcome(
-    module: &Module,
-    program: &SelectorProgram,
-    outcome: &ClaimOutcome,
-) -> Result<Outcome> {
+fn claim_outcome(module: &Module, outcome: &ClaimOutcome) -> Result<Outcome> {
     Ok(match outcome {
         ClaimOutcome::NoMatch => Outcome::no_match(),
-        ClaimOutcome::Conflict { with } => Outcome::Conflict {
-            with: target_entity_refs(program, with),
+        ClaimOutcome::Unsatisfiable { reason } => Outcome::NoMatch {
+            nearest_unclaimed: Vec::new(),
+            reason: Some(reason.clone()),
         },
         ClaimOutcome::Ambiguous {
             candidates,
@@ -2320,8 +2251,8 @@ fn claim_outcome(
         ClaimOutcome::Undecided { reason } => Outcome::Undecided {
             reason: reason.clone(),
         },
-        ClaimOutcome::Unique { .. } | ClaimOutcome::Duplicate { .. } => {
-            unreachable!("resolved and duplicate claims are handled by the caller")
+        ClaimOutcome::Unique { .. } => {
+            unreachable!("resolved claims are handled by the caller")
         }
     })
 }
@@ -2337,20 +2268,17 @@ fn logical_module_path(id: &str) -> String {
 fn target_entity_ref(target: &selector_ir::SelectorTarget) -> EntityRef {
     EntityRef {
         logical_module: logical_module_path(&target.logical_module),
-        entity: match (&target.claim, &target.origin) {
-            (
-                selector_ir::ClaimKind::Binding {
-                    export_name: Some(export_name),
-                },
-                _,
-            )
-            | (selector_ir::ClaimKind::BindingGroupMember { export_name, .. }, _) => {
+        entity: match &target.claim {
+            selector_ir::ClaimKind::Binding {
+                export_name: Some(export_name),
+            }
+            | selector_ir::ClaimKind::BindingGroupMember { export_name } => {
                 Some(Entity::Export(export_name.clone()))
             }
-            (_, selector_ir::ClaimOrigin::AnonymousStatement { index }) => {
+            selector_ir::ClaimKind::AnonymousStatement { index } => {
                 Some(Entity::AnonymousStatement(*index))
             }
-            _ => None,
+            selector_ir::ClaimKind::Binding { export_name: None } => None,
         },
     }
 }
@@ -2401,7 +2329,6 @@ fn import_sources(module: &Module) -> HashMap<String, String> {
 /// kind and declared bindings, its references to other statements' bindings,
 /// and the relation facts only the relational selectors in `program` read.
 fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> SelectorFactStore {
-    let chunk_id = chunk.id;
     let structural = &chunk.structural;
     let module = chunk.module;
     let mut store = SelectorFactStore::default();
@@ -2430,14 +2357,12 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     for statement in &structural.per_statement {
         let owner = OwnerId(statement.ordinal.0);
         store.push(SelectorFact::Owner {
-            chunk_id,
             owner,
             statement_ordinal: statement.ordinal,
             statement_kind: statement.kind.to_string(),
         });
         for binding in &statement.declared {
             store.push(SelectorFact::DeclaredBinding {
-                chunk_id,
                 owner,
                 binding: binding.0.as_str().to_string(),
             });
@@ -2487,7 +2412,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
                 .is_some_and(|target_owner| *target_owner != owner)
             {
                 store.push(SelectorFact::OwnerReferencesBinding {
-                    chunk_id,
                     owner,
                     binding: binding.0.as_str().to_string(),
                     edge_kind: edge_kind.to_string(),
@@ -2506,7 +2430,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
         for (ordinal, member_reads) in chunk_facts::member_reads_by_ordinal(module) {
             for read in member_reads {
                 store.push(SelectorFact::MemberRead {
-                    chunk_id,
                     statement_ordinal: StatementOrdinal(ordinal),
                     object: read.object,
                     member: read.member,
@@ -2524,7 +2447,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
         {
             for use_site in uses {
                 store.push(SelectorFact::ModuleMemberUse {
-                    chunk_id,
                     statement_ordinal: StatementOrdinal(ordinal),
                     module: use_site.module,
                     member: use_site.member,
@@ -2540,7 +2462,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     }) {
         for call in chunk_facts::call_argument_uses(module) {
             store.push(SelectorFact::CallArgumentUse {
-                chunk_id,
                 argument: call.argument,
                 callee_object: call.callee_object,
                 callee_member: call.callee_member,
@@ -2555,7 +2476,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     {
         for call in chunk_facts::decorate_call_uses(module) {
             store.push(SelectorFact::DecorateCallUse {
-                chunk_id,
                 callee: call.callee,
                 class_anchor: call.class_anchor,
                 member: call.member,
@@ -2569,7 +2489,6 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     {
         for alias in chunk_facts::intrinsic_alias_uses(module) {
             store.push(SelectorFact::IntrinsicAliasUse {
-                chunk_id,
                 binding: alias.binding,
                 property: alias.property,
             });

@@ -269,7 +269,6 @@ fn spec_module(claims: &SourceClaimSet<'_>) -> Result<SpecModule> {
                 index,
                 selector: ParsedSourceMatchSelector::parse(
                     &request_id,
-                    "source_match",
                     format!("<source_match needle in {request_id}>"),
                     selector,
                     "source_match",
@@ -317,7 +316,7 @@ fn one_place<'o, 's>(
     let mut truncated = false;
     for source in outcomes {
         match &source.outcome.outcome {
-            Outcome::NoMatch { .. } => {}
+            Outcome::NoMatch { reason: None, .. } => {}
             Outcome::Resolved { owner, binding, .. } => {
                 places.push((
                     Candidate {

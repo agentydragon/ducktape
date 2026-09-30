@@ -873,34 +873,26 @@ fn chunk_rename_with_purity_pure_propagates_to_call_classifier() {
     //   chunk_renames carries `purity: pure` for cx → cx in
     //   declared_pure → cx() is Pure → b is Pure → no S-chain
     //   participation. Only edge: residual → b_module. DAG.
-    let opts = FixtureOpts {
-        local_property_effects: false,
-        trusted_dataflow_summaries: false,
-        chunk_export_purity: &[],
-        extra_chunks: &[],
-        source: r#"import { f as cx } from "./vendor.js";
+    let opts = FixtureOpts::new(
+        r#"import { f as cx } from "./vendor.js";
 const a = (() => 1)();
 const b = cx();
 const c = a + b;
 console.log(c);
 export { a, b, c };
 "#,
-        logical_modules: vec![logical_module("b_module", &[Member::new("b")])],
-        chunk_renames: Some(chunk_rename_with_purity(
-            "getMobxGlobalState",
-            "cx",
-            Some("import_specifier"),
-            MemberPurity::Pure,
-        )),
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_catchall_file(None),
-        dataflow_aware_s_chain: false,
-        admission_overrides: &[],
-        extra_files: &[(
-            "static/app/vendor.js",
-            "export function f() { return 1; }\n",
-        )],
-    };
+        vec![logical_module("b_module", &[Member::new("b")])],
+    )
+    .with_chunk_renames(chunk_rename_with_purity(
+        "getMobxGlobalState",
+        "cx",
+        Some("import_specifier"),
+        MemberPurity::Pure,
+    ))
+    .with_extra_files(&[(
+        "static/app/vendor.js",
+        "export function f() { return 1; }\n",
+    )]);
     // The peel succeeded: b is in b_module without dragging a.
     // The fact that the build didn't error on a cycle proves
     // that `cx()` was classified Pure by the call classifier.
@@ -1315,5 +1307,22 @@ fn annotation_property_write_cannot_be_split_from_its_declarer() {
         )
         .with_local_property_effects(),
         &["atomic", "cycle", "co-locate"],
+    );
+}
+
+#[test]
+fn string_raw_template_initializer_admits_cycle_break() {
+    assert_pure_cycle_break(
+        r#"const a = (() => 1)();
+const b = String.raw`value:${1}`;
+const c = b.length + a;
+console.log(c);
+export { a, b, c };
+"#,
+        vec![logical_module("b_module", &[Member::new("b")])],
+        "b_module",
+        &["const b = String.raw"],
+        &["const a"],
+        "8\n",
     );
 }

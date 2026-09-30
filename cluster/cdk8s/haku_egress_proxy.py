@@ -2,8 +2,8 @@
 for haku-sandbox and haku-ci, its interception CA and trust bundle, and the OpenClaw spike's
 iron-proxy credential substituter.
 
-Written beside other generated files in the same directory (the Namespace from
-agents/namespaces.py, the CiliumNetworkPolicies from egress_fences.py). Hand-written there:
+Its generated file also holds the Namespace from agents/namespaces.py and the
+CiliumNetworkPolicies from egress_fences.py. Hand-written there:
 `kustomization.yaml` (a patch renames a SOPS Secret), the SOPS Secrets, and
 `image-pins/kustomization.yaml`, which overrides the iron-proxy placeholder tag via Flux's
 image-automation marker.
@@ -21,6 +21,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cilium, egress_fences, external_creds
+from cluster.cdk8s.agents import namespaces
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
@@ -449,7 +450,7 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
     # The authentik-jwt-rotation CronJob probes the tokens it publishes against their real
     # endpoints each run, which means reading back the published Secret. Its flux-system Role
     # does not cover this namespace, so it needs a read grant here, scoped to the one Secret
-    # name. Keep in sync with the k8s_secret name in rotations.yaml.
+    # name. Keep in sync with the k8s_secret name in authentik_jwt_rotation.ROTATIONS.
     k8s.KubeRole(
         chart,
         "kube-token-probe-role",
@@ -510,4 +511,11 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+    write_charts(
+        root,
+        OUTPUT_DIR,
+        namespaces.haku_egress_proxy,
+        chart,
+        egress_fences.haku_openclaw_spike,
+        egress_fences.haku_cloud_api,
+    )

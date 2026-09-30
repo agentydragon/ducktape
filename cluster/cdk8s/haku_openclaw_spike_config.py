@@ -1,9 +1,10 @@
-"""The haku-openclaw-spike app: its openclaw.json (see model_rosters.py for ANTHROPIC_MODELS),
-the gateway Deployment and everything around it.
+"""The haku-openclaw-spike app: its namespace, openclaw.json (see model_rosters.py for
+ANTHROPIC_MODELS), the gateway Deployment and everything around it.
 
-The image tag is the placeholder "unset"; the hand-written
-cluster/k8s/agents/haku-openclaw-spike/app/image-pins/kustomization.yaml overrides it at
-`kustomize build` time via Flux's image-automation marker.
+The image tag is the placeholder "unset"; the hand-written `PINS_DIR` Component, which the
+directory includes across the roots, overrides it at `kustomize build` time via Flux's
+image-automation marker. The kubeconfig ConfigMap's payload is `kube-client-config` beside this
+module, copied verbatim.
 """
 
 from __future__ import annotations
@@ -18,26 +19,39 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import haku_egress_proxy, node_scheduling
+from cluster.cdk8s import haku_egress_proxy, namespaces, node_scheduling
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
+from cluster.cdk8s.flux import (
+    ConfigMapArgs,
+    GeneratorOptions,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import config_map_chart, write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.generation import config_map_chart, copy_source_file
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
     haku_console_mcp,
     session_memory_hook,
     trusted_proxy_gateway,
 )
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAMESPACE = "haku-openclaw-spike"
 _NAME = "haku-openclaw-spike"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/haku-openclaw-spike/app"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app-image-pins"
 # Authentik's outpost reaches it by FQDN (cluster/k8s/authentik/app/blueprints/haku-openclaw-spike-sso.yaml).
 _GATEWAY = ServiceRef(
     name=_NAME,
@@ -45,8 +59,8 @@ _GATEWAY = ServiceRef(
     pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
 _CONFIG_MAP_NAME = "haku-openclaw-spike-config"
-# Rendered from the hand-written kube-client-config by the kustomization.yaml's configMapGenerator.
 _KUBECONFIG_CONFIG_MAP_NAME = "haku-openclaw-spike-kubeconfig"
+_KUBECONFIG_KEY = "config"
 _GATEWAY_PASSWORD = SecretRef(namespace=_NAMESPACE, name="haku-openclaw-spike-gateway-password").key("password")
 _STATE_CLAIM_NAME = "haku-openclaw-spike-state-v2"
 _IMAGE = "git.allegedly.works/ducktape-ci/haku-openclaw-spike:unset"
@@ -136,6 +150,20 @@ def claude_config() -> dict:
             }
         },
     }
+
+
+def namespace_chart(app: App) -> Chart:
+    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=_NAMESPACE,
+        vpa=Vpa.AUTO,
+        agent_readable=None,
+        labels={"name": _NAMESPACE},
+        annotations={"description": "Isolated OpenClaw plus Claude Code subscription compatibility spike for Haku."},
+    )
+    return chart
 
 
 def chart(app: App) -> Chart:
@@ -334,7 +362,7 @@ def _openclaw_container() -> k8s.Container:
             # kubeapi.allegedly.works only; with no service account token mounted, this
             # path grants exactly what RBAC binds to oidc-ksbx-groups:haku. subPath because
             # the state volume owns /home/openclaw.
-            _mount("kubeconfig", f"{_HOME}/.kube/config", sub_path="config", read_only=True),
+            _mount("kubeconfig", f"{_HOME}/.kube/config", sub_path=_KUBECONFIG_KEY, read_only=True),
             _STATE_MOUNT,
             # Ephemeral Bazel output base + disk cache (targeted by the init bazelrc), kept
             # off the persistent state volume.
@@ -550,20 +578,22 @@ def _network_policies(scope: Construct) -> None:
 
 def _backup_bucket(scope: Construct) -> None:
     """The VolSync backup bucket and the credentials Secret ../backup's SecretStore reads."""
+    # No S3Identity declares this IAM identity; S3Credentials uses the existing one by name.
+    identity = "haku-openclaw-spike-backups"
     # Restic retention/pruning is managed by VolSync, not by Bucket deletion.
-    bucket = s3.Bucket(
+    s3.bucket(
         scope,
         "backup-bucket",
         name="haku-openclaw-spike-backups",
         namespace=_NAMESPACE,
+        access=[BucketAccess.read_write(identity)],
         adopt_existing=True,
         description="Haku OpenClaw spike VolSync backup bucket.",
-        grant_name=_NAME,
     )
-    # No S3Identity declares this IAM identity; S3Credentials uses the existing one by name.
-    identity = s3.IdentityRef(scope, "backup-identity", name="haku-openclaw-spike-backups")
-    bucket.grant_read_write(identity)
-    identity.credentials(
+    s3.credentials(
+        scope,
+        "backup-credentials",
+        identity=identity,
         namespace=_NAMESPACE,
         # Generated directly where the VolSync SecretStore reads it.
         secret="haku-openclaw-spike-volsync-s3-credentials",
@@ -585,5 +615,33 @@ def app_chart(app: App) -> Chart:
     return workload
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app", chart, app_chart)
+GENERATOR_OPTIONS = GeneratorOptions(disable_name_suffix_hash=True)
+
+
+def write_kubeconfig_config_map(root: Path) -> ConfigMapArgs:
+    """Copy `kube-client-config` into `OUTPUT_DIR`; return the `configMapGenerator` entry packaging
+    it under the key the Deployment mounts at ~/.kube/config."""
+    return ConfigMapArgs(
+        name=_KUBECONFIG_CONFIG_MAP_NAME,
+        namespace=_NAMESPACE,
+        files=[f"{_KUBECONFIG_KEY}=" + copy_source_file(root, OUTPUT_DIR, "cluster/cdk8s/kube-client-config")],
+    )
+
+
+def haku_openclaw_spike_app(
+    chart: Chart,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
+    seaweedfs_operator: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        "haku-openclaw-spike-app",
+        directory,
+        timeout="10m",
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, seaweedfs_operator),
+        description=(
+            "Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy."
+        ),
+    )

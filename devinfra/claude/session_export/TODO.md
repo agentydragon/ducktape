@@ -8,3 +8,8 @@ queries) and decide whether byte-exact payloads outweigh containment queries and
 
 Switching is one column type in `store.py` and `migrations/versions/0001_sessions.py`, and dropping `dumps_jsonb`'s
 rewrite; deployed databases are disposable.
+
+## Confirm live following on the deployed sync
+
+The page's "last event" moves while a session runs and no page read follows the connect, and the stamps of a client
+event sent while the session is followed (`received_at`, then `processing_at`) reach its row.

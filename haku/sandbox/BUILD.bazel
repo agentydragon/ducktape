@@ -1,5 +1,12 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+# The sandbox image's per-claim bootstrap, checked against the SandboxTemplate by
+# //cluster/cdk8s:test_haku_sandbox_setup.
+exports_files(
+    ["image/haku-sandbox-setup.sh"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)
+
 py_library(
     name = "config",
     srcs = ["config.py"],

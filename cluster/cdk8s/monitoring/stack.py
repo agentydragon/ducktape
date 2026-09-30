@@ -24,7 +24,7 @@ from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "monitoring-stack"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/stack"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring"
 _NAMESPACE = "monitoring"
 _HELM_REPOSITORY = "prometheus-community"
 _CONTROL_PLANE_TOKEN = "alloy-control-plane-token"

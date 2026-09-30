@@ -75,10 +75,7 @@ GROCY_VALLEJO = OAuthStateStore(
     id="grocy-vallejo", namespace="grocy-vallejo", database="mcp_oauth_grocy_vallejo", role="mcp_oauth_grocy_vallejo"
 )
 TANA = OAuthStateStore(id="tana", namespace="tana-mcp", database="mcp_oauth_tana", role="mcp_oauth_tana")
-PLAID_DB = OAuthStateStore(
-    id="plaid-db", namespace="plaid-mcp", database="mcp_oauth_plaid_db", role="mcp_oauth_plaid_db"
-)
-STORES = (GROCY_SF, GROCY_VALLEJO, TANA, PLAID_DB)
+STORES = (GROCY_SF, GROCY_VALLEJO, TANA)
 
 
 def _namespace_chart(app: App) -> Chart:
@@ -213,14 +210,13 @@ def add_consumer_credentials(scope: Chart, store: OAuthStateStore) -> None:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, _namespace_chart)
-    write_charts(root, f"{OUTPUT_DIR}/db", _db_chart)
     write_yaml(
         root / OUTPUT_DIR / "db" / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{DATABASE.name}.k8s.yaml"]),
+        kustomize_kustomization(resources=[write_charts(root, f"{OUTPUT_DIR}/db", _db_chart)]),
     )
     write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=["namespace.k8s.yaml", "db"])
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(resources=[write_charts(root, OUTPUT_DIR, _namespace_chart), "db"]),
     )
 
 

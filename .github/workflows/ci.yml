@@ -50,6 +50,12 @@ jobs:
     # other fork while preserving this check context.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/bazel-ci.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      pr_head_sha: ${{ github.event.pull_request.head.sha }}
+      pr_base_sha: ${{ github.event.pull_request.base.sha }}
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 

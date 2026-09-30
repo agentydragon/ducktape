@@ -78,8 +78,8 @@ see `docs/cli.md`.)
 
 ## Bazel integration and profiling
 
-`pipeline.bzl`'s `debundle_pipeline` runs `debundle run` as a build action and
-generates local profiling siblings: <docs/bazel_integration.md>.
+`pipeline.bzl`'s `debundle_pipeline` runs `debundle run` as a build action;
+profile with `perf_wrapper.sh`: <docs/bazel_integration.md>.
 
 ## Comments
 
@@ -102,7 +102,10 @@ YAML schema, worked CLI examples, and the comment/`note:` move semantics.
 A module-top `comment:` emits at the top of the generated module file,
 an annotation `comment:` immediately above the binding's owner statement, and
 an anonymous-statement `comment:` immediately above the matched statement; an
-empty `comment:` emits nothing.
+empty `comment:` emits nothing. Claimed declarators of one `var`/`let`/`const`
+list are emitted as one statement each, so each comment sits above its own
+declarator; bindings of a single destructuring declarator share its statement,
+and their comments stack above it in pattern order.
 
 `comment:` text is part of debundle's readability surface — the point of
 the tool is to turn minified chunks into legible code, so use comments to
@@ -137,3 +140,18 @@ Every materialized chunk is screened for A1 (top-level `eval`), A3 (dynamic
 chunk with `chunk_analysis_options.<chunk>.admission_overrides`. Enforcement
 strength, override reporting and the unchecked residual: `docs/design.md` →
 "Conditions on the input chunk".
+
+## Readable names across chunks
+
+A spec-assigned member name (`name:` on a member or a binding in
+`source_matches[].bindings`) is used for the emitted logical-module binding and
+its intra-chunk imports. For a named binding that was already exported by its
+source chunk, the chunk entry also exports that same live binding under the
+readable name while retaining the original minified export name. Imports from
+processed chunks can then use the readable export and a readable local alias.
+
+This is additive for compatibility: chunks outside the processed set, dynamic
+imports, and namespace imports continue to find the original public export.
+Imports are left in their original form if the readable local would collide with
+another binding or be captured by a nested binding. Unnamed targets are not
+naturalized by this pass.

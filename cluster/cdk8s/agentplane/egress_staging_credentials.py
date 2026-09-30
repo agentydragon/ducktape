@@ -21,7 +21,6 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
-    BUILDBUDDY_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
@@ -481,11 +480,8 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
 
 
 def _buildbuddy(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
-    # `buildbuddy-api-key` is an `external_creds.py` credential already: this namespace's
-    # `agentplane-staging-egress-credentials` copy is an approved consumer there, the same shared
-    # `EXTERNAL_CREDS_STORE`/`external-creds-reader` referent-auth path `github-pat` above uses,
-    # not a dedicated `single_secret_store` (the source Secret already lives in `ducktape-flux`,
-    # not some other service's own namespace).
+    # The shared BuildBuddy API key lives in external-creds; this environment's ExternalSecret
+    # copies it into the isolated namespace the shared egress credential reads.
     credential_external_secret(
         scope,
         namespace=credentials_namespace,
@@ -493,42 +489,6 @@ def _buildbuddy(scope: Construct, *, namespace: str, credentials_namespace: str)
         source="buildbuddy-api-key",
         key="api-key",
         store=EXTERNAL_CREDS_STORE,
-    )
-    EgressCredential(
-        scope,
-        "egresscredential-buildbuddy",
-        metadata=ApiObjectMetadata(name="buildbuddy", namespace=namespace),
-        description=(
-            "The shared BuildBuddy API key (cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml), "
-            "the same one CI's BUILDBUDDY_API_KEY carries, copied into this namespace by ESO. "
-            "BuildBuddy uses this one key for its JSON-over-HTTP API and its gRPC services alike, "
-            "presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry -- "
-            "this is a local-Bazel-client credential only: `bb remote`'s hosted runner copies the "
-            "same value into the Bazel command it executes, which this proxy cannot see or "
-            "protect (agentplane/docs/buildbuddy_remote_auth.md)."
-        ),
-        source=Source.secret_ref(name="buildbuddy-api-key", key="api-key"),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="x-buildbuddy-api-key", method=EgressCredentialSpecTargetsMethod.WHOLE_VALUE
-            )
-        ],
-    )
-    EgressPolicy(
-        scope,
-        "egresspolicy-buildbuddy",
-        metadata=ApiObjectMetadata(name=BUILDBUDDY_POLICY, namespace=namespace),
-        rules=[
-            # app.buildbuddy.io serves the HTTP API (invocation pages, GetInvocation, and
-            # similar); remote.buildbuddy.io serves Build Event Service, Remote Execution and
-            # the remote cache over gRPCS. No path/method narrowing: a Bazel invocation's RBE
-            # traffic spans many gRPC methods over one POST-only HTTP/2 connection, so the key
-            # itself -- scoped read/cache/execute only, not org-admin -- is what bounds this.
-            EgressPolicySpecRules(
-                hosts=["app.buildbuddy.io", "remote.buildbuddy.io"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="buildbuddy"),
-            )
-        ],
     )
 
 

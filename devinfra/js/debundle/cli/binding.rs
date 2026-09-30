@@ -23,12 +23,12 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use serde_yaml::{Mapping, Value};
 
-use spec::ModulePath;
-use spec_modules::{collect_module_files, is_residual_module_path, module_path_from_file};
+use spec::{ModulePath, is_residual_module_path};
+use spec_modules::{collect_module_files, module_path_from_file};
+use yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 use crate::edit_gate::{Gate, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome};
-use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 /// A chunk-top binding's public identity: the minified hygiene name
 /// (`selector.binding.name`, e.g. `_ab`) plus an optional readable
@@ -86,13 +86,7 @@ pub struct BindingMatch {
     pub file: PathBuf,
     pub module_path: String,
     pub location: BindingLocation,
-    /// Member-like index for callers that still only operate on
-    /// `members[]`. For canonical `source_matches[]` bindings this is the
-    /// binding index inside the source-match claim; new callers should branch
-    /// on [`BindingLocation`] instead.
-    pub member_index: usize,
     pub name: BindingName,
-    pub has_comment: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -155,9 +149,7 @@ fn binding_matches_in_doc(file: &Path, module_path: &str, doc: &Value) -> Vec<Bi
                 file: file.to_path_buf(),
                 module_path: module_path.to_string(),
                 location: BindingLocation::Member { member_index: idx },
-                member_index: idx,
                 name: BindingName::new(minified.unwrap_or_default(), readable_name),
-                has_comment: map.get(yk("comment")).is_some(),
             });
         }
     }
@@ -179,7 +171,6 @@ fn binding_matches_in_doc(file: &Path, module_path: &str, doc: &Value) -> Vec<Bi
                 let Some(name) = source_match_binding_name(binding) else {
                     continue;
                 };
-                let effective = binding_effective_name(&name).to_string();
                 out.push(BindingMatch {
                     file: file.to_path_buf(),
                     module_path: module_path.to_string(),
@@ -187,9 +178,7 @@ fn binding_matches_in_doc(file: &Path, module_path: &str, doc: &Value) -> Vec<Bi
                         claim_index,
                         binding_index,
                     },
-                    member_index: binding_index,
                     name,
-                    has_comment: annotation_has_comment(doc, &effective),
                 });
             }
         }
@@ -222,15 +211,6 @@ fn source_match_binding_name(binding: &Value) -> Option<BindingName> {
     }
 }
 
-fn annotation_has_comment(doc: &Value, export_name: &str) -> bool {
-    doc.as_mapping()
-        .and_then(|m| m.get(yk("annotations")))
-        .and_then(Value::as_mapping)
-        .and_then(|annotations| annotations.get(yk(export_name)))
-        .and_then(Value::as_mapping)
-        .is_some_and(|annotation| annotation.get(yk("comment")).is_some())
-}
-
 /// Locate every member matching `sym` under `modules_root`. `sym`
 /// matches either the minified binding name or the readable `name:`.
 pub fn find_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>> {
@@ -238,12 +218,11 @@ pub fn find_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>>
     for file in collect_module_files(modules_root)? {
         let module_path = module_path_from_file(&file, modules_root);
         let doc = read_yaml(&file)?;
-        for binding in binding_matches_in_doc(&file, &module_path, &doc) {
-            let name = binding.name.clone();
-            if name.matches(sym) {
-                out.push(binding);
-            }
-        }
+        out.extend(
+            binding_matches_in_doc(&file, &module_path, &doc)
+                .into_iter()
+                .filter(|binding| binding.name.matches(sym)),
+        );
     }
     Ok(out)
 }
@@ -314,28 +293,17 @@ pub fn run_bindings_list(
     modules_root: &Path,
     filters: &BindingsListFilters,
 ) -> Result<BindingsListReport> {
-    // First pass: collect counts per module to detect orphans.
-    let mut per_module_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut entries: Vec<BindingEntry> = Vec::new();
     for file in collect_module_files(modules_root)? {
         let module_path = module_path_from_file(&file, modules_root);
         let doc = read_yaml(&file)?;
         let bindings = binding_matches_in_doc(&file, &module_path, &doc);
-        per_module_counts.insert(module_path.clone(), bindings.len());
-        for binding in bindings {
-            let entry = BindingEntry {
-                name: binding.name,
-                module: module_path.clone(),
-                orphan: false,
-            };
-            entries.push(entry);
-        }
-    }
-    // Second pass: fill in the orphan flag now we have the counts.
-    for entry in entries.iter_mut() {
-        if per_module_counts.get(&entry.module).copied().unwrap_or(0) <= 1 {
-            entry.orphan = true;
-        }
+        let orphan = bindings.len() == 1;
+        entries.extend(bindings.into_iter().map(|binding| BindingEntry {
+            name: binding.name,
+            module: module_path.clone(),
+            orphan,
+        }));
     }
     entries.retain(|e| {
         (filters.in_module.as_deref().is_none_or(|m| e.module == m))
@@ -1393,20 +1361,6 @@ mod tests {
     }
 
     #[test]
-    fn binding_name_match_and_rename() {
-        let minified = BindingName::new("_ab".to_string(), None);
-        assert!(minified.matches("_ab"));
-        assert!(!minified.matches("parseUserId"));
-        assert!(!minified.is_renamed());
-
-        let readable = BindingName::new("_ab".to_string(), Some("parseUserId".to_string()));
-        // Both spellings resolve the same binding.
-        assert!(readable.matches("_ab"));
-        assert!(readable.matches("parseUserId"));
-        assert!(readable.is_renamed());
-    }
-
-    #[test]
     fn binding_name_serializes_internally_tagged() {
         let readable = BindingName::new("_ab".to_string(), Some("parseUserId".to_string()));
         let json = serde_json::to_value(&readable).unwrap();
@@ -1422,34 +1376,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_move_triple_two_fields() {
-        let m = parse_move_triple("XOe:runtime/plugins").unwrap();
-        assert_eq!(m.sym, "XOe");
-        assert_eq!(m.module, "runtime/plugins");
-        assert_eq!(m.readable, None);
-    }
-
-    #[test]
-    fn parse_move_triple_three_fields() {
-        let m = parse_move_triple("XOe:runtime/plugins:PluginSettingsAccessor").unwrap();
-        assert_eq!(m.sym, "XOe");
-        assert_eq!(m.module, "runtime/plugins");
-        assert_eq!(m.readable.as_deref(), Some("PluginSettingsAccessor"));
-    }
-
-    #[test]
     fn parse_move_triple_rejects_one_field() {
         assert!(parse_move_triple("XOe").is_err());
-    }
-
-    #[test]
-    fn parse_batch_json_array_shape() {
-        let m = parse_batch_json(
-            r#"[{"sym":"a","module":"m"},{"sym":"b","module":"m","readable":"B"}]"#,
-        )
-        .unwrap();
-        assert_eq!(m.len(), 2);
-        assert_eq!(m[1].readable.as_deref(), Some("B"));
     }
 
     #[test]

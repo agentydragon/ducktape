@@ -40,7 +40,6 @@
 //! diffing across runs.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::path::Path;
 
 use anyhow::Result;
 use binding_targets::declaration_name_strings;
@@ -51,7 +50,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{ChunkBundle, ChunkDecompositionOutput, ChunkId, write_json};
+use artifact::{ChunkBundle, ChunkDecompositionOutput, ChunkId};
 use js_ast::ParsedJsModule;
 
 /// One entry in the priority queue: a still-unrenamed top-level symbol
@@ -271,22 +270,6 @@ fn input_bundle_names_by_chunk(
     names_by_chunk
 }
 
-fn is_input_bundle_name(name: &str, input_names: &HashSet<String>) -> bool {
-    input_names.contains(name)
-}
-
-/// Write the queue to `path` and
-/// return the path written. Idempotent: caller is free to re-emit on
-/// every run.
-pub fn write_queue(path: &Path, queue: &IdentifierRenameQueue) -> Result<std::path::PathBuf> {
-    let path = path.to_path_buf();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    write_json(&path, queue)?;
-    Ok(path)
-}
-
 // ---------------------------------------------------------------------------
 // AST walking
 // ---------------------------------------------------------------------------
@@ -317,7 +300,7 @@ fn unrenamed_top_level_sites(
     let mut out = Vec::new();
     for (ordinal, item) in parsed.module.body.iter().enumerate() {
         for name in top_level_binding_names(item) {
-            if !is_input_bundle_name(&name, input_names) {
+            if !input_names.contains(&name) {
                 continue;
             }
             out.push(DeclSite {
@@ -340,8 +323,10 @@ fn unrenamed_top_level_sites(
 /// import alias is a top-level binding that other modules see.
 fn top_level_binding_names(item: &ModuleItem) -> Vec<String> {
     match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => decl_names(decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { decl, .. })) => decl_names(decl),
+        ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_name_strings(decl),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { decl, .. })) => {
+            declaration_name_strings(decl)
+        }
         ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(ExportDefaultDecl {
             decl, ..
         })) => match decl {
@@ -368,10 +353,6 @@ fn top_level_binding_names(item: &ModuleItem) -> Vec<String> {
             .collect(),
         _ => Vec::new(),
     }
-}
-
-fn decl_names(decl: &swc_ecma_ast::Decl) -> Vec<String> {
-    declaration_name_strings(decl)
 }
 
 /// Visitor that counts references to identifiers in `of_interest`.
@@ -474,24 +455,5 @@ impl ReferenceCounter<'_> {
         if let PropName::Computed(computed) = key {
             computed.expr.visit_with(self);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn input_bundle_name_detection_uses_origin_not_spelling() {
-        let input_names = HashSet::from([
-            "aH".to_string(),
-            "getUserData".to_string(),
-            "__vite__mapDeps".to_string(),
-        ]);
-        assert!(is_input_bundle_name("aH", &input_names));
-        assert!(is_input_bundle_name("getUserData", &input_names));
-        assert!(is_input_bundle_name("__vite__mapDeps", &input_names));
-        assert!(!is_input_bundle_name("renamedUsefulThing", &input_names));
-        assert!(!is_input_bundle_name("bC", &input_names));
     }
 }

@@ -353,7 +353,6 @@ mod tests {
                     analysis: ChunkAnalysisReport {
                         chunk_id: (*chunk_name).to_string(),
                         source_path,
-                        parser: Default::default(),
                         entry_file: entry_file.clone(),
                         counts: Default::default(),
                         files: vec![ChunkFileRecord {

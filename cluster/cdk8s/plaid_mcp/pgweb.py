@@ -1,7 +1,7 @@
 """plaid-mcp's `pgweb/`: pgweb, a stock PostgreSQL browser whose JSON API runs a query and returns
 its rows, over the Plaid sync database, for the sandboxes that need to run SQL.
 
-It connects as `plaid_ro` with the credential the Postgres MCP already uses (`db.READONLY`), so it
+It connects as `plaid_ro` using the shared read-only database credential (`db.READONLY`), so it
 reads what that role may SELECT and changes nothing that role may not write. `--readonly` and a
 locked session sit on top of the role as guard rails: pgweb's read-only mode is a keyword filter,
 not a boundary. A caller authenticates to pgweb with one HTTP Basic password, minted here and copied

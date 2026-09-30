@@ -77,6 +77,21 @@ def dns_egress(
     return _dns_egress(KUBE_DNS_LABELS, protocols=protocols, resolves=resolves)
 
 
+def open_internet_egress(
+    *, ports: Sequence[int], entities: Sequence[Entity] = (Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST)
+) -> list[CiliumNetworkPolicySpecEgress]:
+    """Fully open egress: unrestricted DNS resolution, then TCP `ports` to `entities`.
+
+    `world` alone does not mean "everywhere": every `*.allegedly.works` name resolves to an OVH
+    node ExternalIP, which Cilium carries as `reserved:remote-node`/`reserved:host`, not
+    `reserved:world` -- a `world`-only rule black-holes traffic to this cluster's own public
+    hostnames, so `remote_node`/`host` join the default. Widening a CIDR/FQDN rule cannot
+    substitute: `policy-cidr-match-mode` is unset cluster-wide, so CIDR-derived selectors never
+    match node IPs (cluster/docs/cilium_network_policy.md).
+    """
+    return [dns_egress(protocols=["ANY"], resolves=["*"]), EgressRule.to_entities(*entities, ports=ports)]
+
+
 def fqdn_fence(
     *groups: Sequence[str], resolves_also: Sequence[str] = (), port: int = 443
 ) -> list[CiliumNetworkPolicySpecEgress]:

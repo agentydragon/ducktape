@@ -1,5 +1,5 @@
 """The parked augur-evidence unit's copies of its git credentials, rendered beside its
-hand-written Terraform CR in cluster/k8s/parked/augur-evidence.
+hand-written Terraform CR in cluster/parked/augur-evidence.
 
 tf/gitops/augur-evidence writes both Secrets into the forgejo namespace. They are copied
 into budget, where Reflector mirrors them into gaffer-private's augur namespace, as
@@ -16,9 +16,9 @@ from cdk8s_plus_34 import ServiceAccount
 
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/parked/augur-evidence"
+OUTPUT_DIR = f"{PARKED_ROOT}/augur-evidence"
 
 
 def chart(app: App) -> Chart:

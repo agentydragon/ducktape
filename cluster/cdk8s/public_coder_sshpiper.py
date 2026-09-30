@@ -8,11 +8,12 @@ substitution cannot happen in flight -- an SSH publickey signature covers the se
 proxy has to terminate and re-originate. That is what sshpiper's "mapping key" model does, and it
 is why the Agent pins *this* Pod's host key rather than the devbox's.
 
-The routing `Pipe` is `ssh_mcp.sshpiper`'s, written into the same directory.
+The routing `Pipe` is `ssh_mcp.sshpiper`'s, written into the same file.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -39,13 +40,6 @@ _HOST_KEY_SECRET_NAME = "public-coder-agent-sshpiper-host-key"
 _RECORDINGS_CLAIM_NAME = "public-coder-agent-sshpiper-recordings"
 # Match MODULE.bazel's sshpiper_pipe_crd tag and flux_sources.py's sshpiper-source tag.
 _IMAGE = "farmer1992/sshpiperd:v1.6.1@sha256:9ddc25422cc2d7236d7704230b7a706d4c39518edfd211275186b725bf9d3da1"
-_RESOURCES = [
-    "host-key.sops.yaml",
-    "devbox-key.sops.yaml",
-    f"{NAME}.k8s.yaml",
-    # ssh_mcp.generation's Pipe.
-    "pipe-devbox.k8s.yaml",
-]
 
 
 def _rbac(scope: Construct) -> None:
@@ -292,6 +286,19 @@ def chart(app: App, *, app_namespace: str, app_labels: dict[str, str]) -> Chart:
     return chart
 
 
-def write_manifests(root: Path, *, app_namespace: str, app_labels: dict[str, str]) -> None:
-    write_charts(root, OUTPUT_DIR, lambda app: chart(app, app_namespace=app_namespace, app_labels=app_labels))
-    write_yaml(root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=_RESOURCES))
+def write_manifests(
+    root: Path, pipe: Callable[[App], Chart], *, app_namespace: str, app_labels: dict[str, str]
+) -> None:
+    """`pipe` is `ssh_mcp.generation`'s devbox Pipe chart."""
+    write_yaml(
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=[
+                "host-key.sops.yaml",
+                "devbox-key.sops.yaml",
+                write_charts(
+                    root, OUTPUT_DIR, lambda app: chart(app, app_namespace=app_namespace, app_labels=app_labels), pipe
+                ),
+            ]
+        ),
+    )

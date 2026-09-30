@@ -254,7 +254,44 @@ pub(crate) fn classify_expr_purity(
         Expr::New(new_expr) => {
             classify_new_expr_purity(new_expr, shadowed, local_shadowed, declared_pure, graph)
         }
-        Expr::TaggedTpl(t) => Purity::from_reason(PurityRule::TaggedTpl, t.span),
+        Expr::TaggedTpl(t) => {
+            if let Expr::Member(member) = t.tag.as_ref()
+                && matches!(member.obj.as_ref(), Expr::Ident(id) if id.sym.as_ref() == "String")
+                && matches!(&member.prop, MemberProp::Ident(prop) if prop.sym.as_ref() == "raw")
+                && !shadowed.contains("String")
+                && !local_shadowed.contains("String")
+            {
+                t.tpl
+                    .exprs
+                    .iter()
+                    .map(|expr| {
+                        let purity = classify_expr_purity(
+                            expr,
+                            shadowed,
+                            local_shadowed,
+                            declared_pure,
+                            graph,
+                        );
+                        if is_result_primitive(
+                            expr,
+                            &graph.primitive_const_bindings,
+                            local_shadowed,
+                        ) {
+                            purity
+                        } else {
+                            purity.worst(Purity::from_reason_with_detail(
+                                PurityRule::CoercingOperator,
+                                expr.span(),
+                                "String.raw substitution runs ToString on a possibly-object value"
+                                    .to_string(),
+                            ))
+                        }
+                    })
+                    .fold(Purity::Pure, Purity::worst)
+            } else {
+                Purity::from_reason(PurityRule::TaggedTpl, t.span)
+            }
+        }
         Expr::Assign(a) => Purity::from_reason(PurityRule::AssignOrUpdate, a.span),
         Expr::Update(u) => Purity::from_reason(PurityRule::AssignOrUpdate, u.span),
         Expr::Await(a) => Purity::from_reason(PurityRule::AwaitOrYield, a.span),

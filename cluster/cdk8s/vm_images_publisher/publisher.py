@@ -18,6 +18,8 @@ from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
+from cluster.cdk8s.providers.seaweedfs.s3_identity import S3Identity
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
 
@@ -33,26 +35,34 @@ def _credentials(identity: str) -> SecretRef:
     return SecretRef(namespace=NAME, name=f"{identity}-s3-credentials")
 
 
-def _identity(scope: Construct, name: str) -> s3.Identity:
+def _identity(scope: Construct, name: str) -> S3Identity:
     """A publisher-local S3Identity plus the S3Credentials the operator mints its key pair
     into (`_credentials(name)`)."""
-    identity = s3.Identity(scope, name, name=name, namespace=NAME)
-    identity.credentials(namespace=NAME, secret=_credentials(name).name, key_fields=None)
+    identity = s3.identity(scope, name, name=name, namespace=NAME)
+    s3.credentials(
+        scope,
+        f"{name}-credentials",
+        identity=identity.name,
+        namespace=NAME,
+        secret=_credentials(name).name,
+        key_fields=None,
+    )
     return identity
 
 
 def _storage(scope: Construct) -> None:
-    bucket = s3.Bucket(
+    s3.bucket(
         scope,
         "bucket",
         name=_BUCKET,
         namespace=NAME,
+        access=[BucketAccess.read_write(_WRITER), BucketAccess.read(_READER)],
         # The physical bucket already exists; this CR is moving to the publisher's
         # namespace without deleting or recreating its data.
         adopt_existing=True,
     )
-    bucket.grant_read_write(_identity(scope, _WRITER))
-    bucket.grant_read(_identity(scope, _READER))
+    _identity(scope, _WRITER)
+    _identity(scope, _READER)
 
 
 def _cron_job(scope: Construct) -> None:

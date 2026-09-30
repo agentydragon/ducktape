@@ -1,7 +1,7 @@
 """The policy resources the Action Service reads off the API server, parsed once at the boundary.
 
 `ActionPolicySet` and `ActionPolicyBinding` are Agentplane's own kinds (group
-`agentplane.allegedly.works`, `v1alpha1`; the CRDs live in `cluster/k8s/agentplane-crds`). A
+`agentplane.allegedly.works`, `v1alpha1`; the CRDs live in `agentplane/crds`). A
 caller ServiceAccount is an ordinary ServiceAccount carrying `CALLER_LABEL`, which is what admits
 it here at all -- a Pod running as it and a Connection acting as it alike. The operator-authored
 `spec` is parsed strictly, so a typo or an unknown policy kind is refused here rather than

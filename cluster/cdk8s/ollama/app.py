@@ -337,11 +337,8 @@ def _setup_job(scope: Construct) -> None:
     k8s.KubeJob(
         scope,
         "setup-gpt-oss",
-        # Explicit version bumps own reruns; Reloader would delete a running Job
-        # when the scripts ConfigMap changes.
-        metadata=k8s.ObjectMeta(
-            name="setup-gpt-oss-v8", namespace=_NAMESPACE, annotations={"reloader.stakater.com/auto": "false"}
-        ),
+        # Explicit version bumps own reruns.
+        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v8", namespace=_NAMESPACE),
         spec=k8s.JobSpec(
             template=k8s.PodTemplateSpec(
                 # TODO: state automount_service_account_token=False with the next version bump;

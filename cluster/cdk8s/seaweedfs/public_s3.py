@@ -66,7 +66,11 @@ _CLAUDE_READABLE_BUCKETS = ("attic", drivefs_artifacts_bucket.NAME, "vm-images",
 
 def _external_identity(scope: Construct, name: str, *, secret: str, access_key: str, secret_key: str) -> None:
     """An S3Identity plus the S3Credentials registering its externally managed key pair as-is."""
-    s3.Identity(scope, name, name=name).credentials(
+    identity = s3.identity(scope, name, name=name)
+    s3.credentials(
+        scope,
+        f"{name}-credentials",
+        identity=identity.name,
         namespace=namespace.NAME,
         secret=secret,
         secret_namespace=external_credentials.NAMESPACE,

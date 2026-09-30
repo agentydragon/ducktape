@@ -1,7 +1,5 @@
 """The cdk8s-generated ESO distribution for the temporary LiteLLM key."""
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
@@ -50,11 +48,8 @@ class CheapExperimentsCredentials(Construct):
         )
 
 
-def write_agentplane_testing_manifests(root: Path, directory: str) -> None:
-    """Write `litellm-credentials.k8s.yaml` into Agentplane testing's root `directory`."""
-    credentials_dir = root / directory
-    credentials_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(credentials_dir))
+def agentplane_testing_chart(app: App) -> Chart:
+    """The chart Agentplane testing's writer synthesizes beside its environment chart."""
     chart = Chart(app, "litellm-credentials", disable_resource_name_hashes=True)
     CheapExperimentsCredentials(chart, "cheap-experiments")
-    app.synth()
+    return chart

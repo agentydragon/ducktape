@@ -5,6 +5,7 @@
  * only for the live sandbox, thread, and action-inventory views.
  */
 import "./network";
+import { TEST_REASONING_EFFORTS } from "../test_model_catalog";
 import "@mantine/core/styles.css";
 
 import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
@@ -401,6 +402,7 @@ const THREADS: ThreadView[] = [
     last_cursor: 23,
     last_event_at: ago(10_000),
     harness_state: "HARNESS_STATE_RUNNING",
+    active_turn_id: "t2",
   },
 ];
 
@@ -1488,9 +1490,17 @@ routes.push(
     /^\/models$/,
     () => ({
       models: [
-        { model: "harness-claude-model", display_name: "Harness Claude Model" },
-        { model: "next-model", display_name: "Next Model" },
-        { model: "harness-codex-model", display_name: "Harness Codex Model" },
+        {
+          model: "harness-claude-model",
+          display_name: "Harness Claude Model",
+          reasoning_efforts: TEST_REASONING_EFFORTS,
+        },
+        { model: "next-model", display_name: "Next Model", reasoning_efforts: TEST_REASONING_EFFORTS },
+        {
+          model: "harness-codex-model",
+          display_name: "Harness Codex Model",
+          reasoning_efforts: TEST_REASONING_EFFORTS,
+        },
       ],
       harnesses: {
         HARNESS_CLAUDE: ["harness-claude-model", "next-model"],

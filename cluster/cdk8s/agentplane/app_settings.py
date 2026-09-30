@@ -5,6 +5,8 @@ routes and policies passed in here.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from agentplane.app.action_federation import ActionFederationSettings
 from agentplane.app.api import ModelCatalog, ModelOption
 from agentplane.app.main import AppSettingsConfig
@@ -41,6 +43,21 @@ BUILDBUDDY_POLICY = "buildbuddy"
 PLAID_PGWEB_POLICY = "plaid-pgweb"
 
 
+_PUBLIC_CODER_INSTRUCTIONS = (
+    Path(__file__).with_name("public_coder_instructions.md").read_text(encoding="utf-8").strip()
+)
+
+
+def reasoning_efforts(model: str) -> list[str]:
+    """Documented reasoning effort values for the configured direct Anthropic/OpenAI routes."""
+    if model.startswith(("anthropic-max20/ant-messages/", "antigravity/ant-messages/claude-")):
+        return ["low", "medium", "high", "max"]
+    if model.startswith("chatgpt/oai-responses/gpt-"):
+        return ["minimal", "low", "medium", "high", "xhigh"]
+    # Other providers/routes in this roster do not expose these reasoning effort parameters.
+    return []
+
+
 def settings(
     *,
     namespace: str,
@@ -57,7 +74,10 @@ def settings(
     all_models = dict.fromkeys((*harness_claude, *harness_codex))
     return AppSettingsConfig(
         models=ModelCatalog(
-            models=[ModelOption(model=model, display_name=display_name(model)) for model in all_models],
+            models=[
+                ModelOption(model=model, display_name=display_name(model), reasoning_efforts=reasoning_efforts(model))
+                for model in all_models
+            ],
             harnesses={Harness.CLAUDE: harness_claude, Harness.CODEX: harness_codex},
         ),
         # Rendered into the image-owned agent-instruction template; deployments may use
@@ -74,10 +94,7 @@ def settings(
                 model=thread_preset_codex_model,
                 cwd="/state/workspaces/{session_id}",
                 reasoning_effort="medium",
-                instructions=(
-                    "Work as a public-repository coding agent. Keep private cluster data "
-                    "out of the workspace and outputs."
-                ),
+                instructions=_PUBLIC_CODER_INSTRUCTIONS,
             ),
             **(
                 {
@@ -112,9 +129,11 @@ def settings(
                 template="agentplane-runner",
                 policies=[
                     BASIC_POLICY,
+                    PACKAGES_POLICY,
                     GITHUB_AGENTYDRAGON_AGENT_POLICY,
                     GITHUB_CLONE_POLICY,
                     GITHUB_ACTIONS_LOGS_POLICY,
+                    BUILDBUDDY_POLICY,
                 ],
                 **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
                 thread_preset=_THREAD_PRESET_PUBLIC_CODER_CODEX,
@@ -155,7 +174,7 @@ def settings(
                         thread_preset=_THREAD_PRESET_HAKU_CLAUDE,
                         # Shallow clone of haku-state over the in-cluster Forgejo, the way
                         # haku-sandbox-setup.sh clones it for Haku's own sandboxes
-                        # (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh): --depth 1
+                        # (haku/sandbox/image/haku-sandbox-setup.sh): --depth 1
                         # because the box only needs the HEAD checkout, not full history. The
                         # URL's userinfo carries the literal placeholder string as the password
                         # half; git turns that into a Basic Authorization header, and the

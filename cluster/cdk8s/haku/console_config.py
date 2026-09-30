@@ -155,7 +155,7 @@ def config() -> dict[str, Any]:
                 "timeout_seconds": 300,
                 # The reviewed per-claim bootstrap is one baked script -- egress CA trust, git
                 # identity, git credentials, and the haku-state checkout -- kept in its native
-                # file (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh) so shfmt/
+                # file (haku/sandbox/image/haku-sandbox-setup.sh) so shfmt/
                 # shellcheck lint it. Changing bootstrap behavior therefore means an image
                 # rebuild + rollout, not a ConfigMap edit.
                 "script": "set -euo pipefail\n/usr/local/bin/haku-sandbox-setup.sh\n",

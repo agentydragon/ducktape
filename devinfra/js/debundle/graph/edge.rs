@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
-use crate::StatementOrdinal;
-use crate::partition::Partition;
+use crate::{ModuleId, StatementOrdinal};
 
 use super::owner_graph::OwnerId;
 
@@ -39,28 +38,18 @@ pub enum EdgeRole {
 }
 
 impl EdgeRole {
-    /// `Some(callee_owner)` iff this is a `PromotedAtInit` role.
-    /// Read by the CSR-builder in `OwnerGraph::from_report` /
-    /// `build_owner_graph_with` to populate `callee_edges`, and by
-    /// `reports::edge_role_report` to serialize the callee through
-    /// `OwnerGraphEdgeReport.role`.
-    pub fn promoted_callee(self) -> Option<OwnerId> {
-        match self {
-            EdgeRole::Direct => None,
-            EdgeRole::PromotedAtInit { callee_owner } => Some(callee_owner),
-        }
-    }
-
     /// `true` if this is a `PromotedAtInit` role and the callee owner
-    /// lives in a different module than the caller per `partition`.
+    /// lives in a different module than the caller per `module_of`.
     /// The lenient projection view (quotient, reports) drops such
     /// edges; the gate view keeps them.
-    pub fn is_cross_module_promotion(self, from: OwnerId, partition: &Partition) -> bool {
+    pub fn is_cross_module_promotion(
+        self,
+        from: OwnerId,
+        module_of: impl Fn(OwnerId) -> ModuleId,
+    ) -> bool {
         match self {
             EdgeRole::Direct => false,
-            EdgeRole::PromotedAtInit { callee_owner } => {
-                partition.of(callee_owner) != partition.of(from)
-            }
+            EdgeRole::PromotedAtInit { callee_owner } => module_of(callee_owner) != module_of(from),
         }
     }
 }
@@ -187,9 +176,6 @@ impl EdgeReason {
         self.role
     }
 
-    pub fn is_eager_use(&self) -> bool {
-        self.kind == DepKind::EagerUse
-    }
     pub fn kind(&self) -> DepKind {
         self.kind
     }
@@ -249,54 +235,6 @@ pub enum DepKind {
     DeferredRebind,
     Sequenced,
     LocalEffect,
-}
-
-/// Per-edge metadata. One physical `(from, to)` ESM `import`
-/// directive can be backed by multiple reasons (e.g. several
-/// at-init reads of bindings owned by the same target module);
-/// they're all kept here so cycle reports can show every
-/// triggering statement.
-#[derive(Debug, Clone, Default)]
-pub struct EdgeMetadata {
-    pub reasons: Vec<EdgeReason>,
-}
-
-impl EdgeMetadata {
-    /// `true` if at least one reason is an at-init read. The
-    /// realizability gate uses this to decide whether an
-    /// `I ∪ S` SCC contains an `R` cross-module edge.
-    pub fn has_eager_use(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_eager_use)
-    }
-
-    /// `true` if at least one reason is a side-effect ordering
-    /// edge. `S` edges in an SCC make it unrealizable: the
-    /// constraint is "predecessor must evaluate before
-    /// successor", and a cycle has no topological emit order
-    /// satisfying every such edge.
-    pub fn has_sequenced(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_sequenced)
-    }
-
-    /// `true` if at least one reason is a rebinding write. These
-    /// edges are rejected outright when they cross destination
-    /// modules because imported ESM bindings are read-only.
-    pub fn has_rebind(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_rebind)
-    }
-
-    /// `true` if this edge constrains realizability — at least one
-    /// of its reasons is realizability-constraining (an at-init
-    /// read `R`, a side-effect ordering `S` edge, or a rebinding
-    /// write). Lazy read-only edges don't, because the reads they
-    /// represent fire after every module in the cycle has finished
-    /// evaluating.
-    ///
-    /// Delegates to `EdgeReason::constrains_init_order` to keep
-    /// the per-edge and per-reason definitions in lockstep.
-    pub fn constrains_init_order(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::constrains_init_order)
-    }
 }
 
 /// Stable per-chunk identity of an owner-graph edge. Equal to the

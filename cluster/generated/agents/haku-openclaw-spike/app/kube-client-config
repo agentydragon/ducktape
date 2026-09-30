@@ -1,0 +1,45 @@
+# Static, secret-free, and mounted read-only from the ConfigMap -- not planted by
+# the init container. The init container exists for things that need runtime work
+# (templating .netrc from env, generating the PKCS12 truststore with keytool) or
+# that OpenClaw rewrites in place (openclaw.json). A kubeconfig is neither: the
+# token below is a non-secret placeholder, matching the proxy_value declared in
+# cluster/cdk8s/haku_egress_proxy.py, and kubectl never writes to a static-bearer
+# config.
+#
+# Read-only is deliberate. The agent cannot repoint `server` at a host outside
+# the iron-proxy allowlist, and the file cannot drift from what is in git.
+#
+# The filename dodges `kubeconfig*`, which cluster/.gitignore ignores to keep
+# terraform-generated cluster credentials out of git; that guard silently
+# swallowed this file on the first attempt. The generator packages it under the
+# ConfigMap key `config`, mounted at ~/.kube/config (haku_openclaw_spike_config.py).
+apiVersion: v1
+kind: Config
+current-context: allegedly
+clusters:
+  - name: allegedly
+    cluster:
+      # The terminate+re-encrypt Gateway route, NOT api.allegedly.works. That one
+      # is TLS passthrough to the apiserver's cluster-CA cert, which a MITM proxy
+      # cannot validate upstream; this route serves the public LE wildcard and
+      # accepts bearer tokens only. cluster/cdk8s/kube_api_proxy.md.
+      server: https://kubeapi.allegedly.works
+      # The same bundle every other client here trusts, carrying the egress-proxy
+      # interception root. kubectl therefore verifies the proxy, not the
+      # apiserver -- the proxy revalidates the real upstream cert behind it.
+      certificate-authority: /etc/ssl/certs/ca-certificates.crt
+      # Explicit rather than inherited from HTTPS_PROXY: client-go's env handling
+      # interacts with NO_PROXY in ways that are easy to get subtly wrong, and
+      # this states the routing where the server is stated.
+      proxy-url: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
+users:
+  - name: haku
+    user:
+      # Non-secret placeholder. iron-proxy substitutes the real Authentik
+      # client_credentials JWT into the Authorization header, for this host only.
+      token: proxy-haku-kube-placeholder
+contexts:
+  - name: allegedly
+    context:
+      cluster: allegedly
+      user: haku

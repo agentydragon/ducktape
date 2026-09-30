@@ -203,7 +203,7 @@ that carries `groups: ["kubectl-sandbox-users"]`; kube-apiserver's
 `AuthenticationConfiguration` maps that claim to
 `oidc-ksbx-groups:kubectl-sandbox-users`, the Group every binding below
 subjects on. JWTs are minted biweekly by the `authentik-jwt-rotation`
-CronJob in the `agents-infra` namespace — see <../k8s/agents/authentik-jwt-rotation/>.
+CronJob in the `agents-infra` namespace — see <../cdk8s/authentik_jwt_rotation.py>.
 
 Machine JWTs from the `kubectl-sandbox-client-credentials` provider use a
 separate explicit Authentik allowlist for effective groups. The normal provider

@@ -1,8 +1,9 @@
-"""The Agentplane repository index: its Namespace, CNPG database, read token, and one
-index worker per indexed repository (ducktape, haku-state).
+"""The Agentplane repository index: its Namespace, CNPG database, read token, one index
+worker per indexed repository (ducktape, haku-state), and its Flux Kustomization. Operation:
+README.md beside this module.
 
-Hand-written beside the generated output: the directory's `image-pins/` Component. The
-image tag here is a placeholder the Component overrides.
+The image tag is a placeholder; the hand-written `PINS_DIR` Component, which the
+kustomization includes across the roots, overrides it via Flux's image-automation marker.
 """
 
 from __future__ import annotations
@@ -19,13 +20,20 @@ from cnpg_database_crds.io.cnpg.postgresql import (
     DatabaseSpecExtensionsEnsure,
 )
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
 
 from agentplane.indexing.main import Settings
 from cluster.cdk8s import cnpg, forgejo_images, namespaces, node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.flux import ConfigMapArgs
+from cluster.cdk8s.flux import (
+    ConfigMapArgs,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cnpg.database import Database
 from cluster.cdk8s.secret_ref import SecretRef
@@ -33,7 +41,8 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import env_name
 
 NAME = "agentplane-index"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-index"
+OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/agentplane-index-image-pins"
 DATABASE = cnpg.PostgresRef.generated(name=f"{NAME}-db", namespace=NAME)
 _DB_OWNER = "indexer"
 _READ_TOKEN = SecretRef(namespace=NAME, name=f"{NAME}-read-token").key("token")
@@ -253,3 +262,51 @@ def chart(app: App) -> Chart:
         replicas=0,
     )
     return chart
+
+
+def agentplane_index(
+    flux_chart: Chart,
+    directory: RenderedDirectory,
+    cnpg: Kustomization,
+    external_secrets_operator: Kustomization,
+    kyverno: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        flux_chart,
+        NAME,
+        directory,
+        timeout="10m",
+        # The haku-state index worker reads haku-forgejo-git, which the haku-state
+        # Terraform reflects into this Namespace; waiting for that worker would hold
+        # this Kustomization NotReady until the Terraform has applied.
+        wait=False,
+        health_checks=[
+            KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name=NAME),
+            KustomizationSpecHealthChecks(
+                api_version="postgresql.cnpg.io/v1", kind="Cluster", name=DATABASE.name, namespace=NAME
+            ),
+            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name="ducktape", namespace=NAME),
+        ],
+        health_check_exprs=[
+            KustomizationSpecHealthCheckExprs(
+                api_version="postgresql.cnpg.io/v1",
+                kind="Database",
+                current=(
+                    "has(status.applied) && status.applied && "
+                    "has(status.observedGeneration) && status.observedGeneration == "
+                    "metadata.generation && has(status.extensions) && "
+                    "status.extensions.exists(e, e.name == 'vector' && e.applied)"
+                ),
+            )
+        ],
+        depends_on=flux_kustomization_depends_on_many(
+            cnpg,
+            external_secrets_operator,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployments and Namespace.
+            kyverno,
+        ),
+        description=(
+            "Complete Agentplane repository-index service: namespace, ESO "
+            "credentials, CNPG databases, and both index workers."
+        ),
+    )

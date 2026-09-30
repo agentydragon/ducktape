@@ -29,6 +29,7 @@ py_library(
         ":replication_source",
         "//agentplane/app:action_policy",
         "//agentplane/app:api",
+        "//agentplane/app:conftest",
         "//agentplane/app:database",
         "//agentplane/app:database_updates",
         "//agentplane/app:decisions",

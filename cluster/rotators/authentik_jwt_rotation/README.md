@@ -1,12 +1,12 @@
 # authentik-jwt-rotation
 
 Hourly CronJob that mints Authentik `client_credentials` JWTs and commits them
-SOPS-encrypted to `secrets/`. Deployed from
-<../../k8s/agents/authentik-jwt-rotation/> (manifests only — this directory is
-the rotator's source).
-<../../k8s/agents/authentik-jwt-rotation/rotations.yaml> is the source of
-truth for rotation names, providers, output files, credential modes, expected
-groups / audiences / claims, and optional in-cluster Secret publication.
+SOPS-encrypted to `secrets/`. Deployed by
+<../../cdk8s/authentik_jwt_rotation.py> (this directory is the rotator's
+source). Its `ROTATIONS` roster, typed by <config.py>, is the source of truth
+for rotation names, providers, output files, credential modes, expected groups /
+audiences / claims, and optional in-cluster Secret publication; the generator
+renders it into the ConfigMap `rotate.py --config` reads.
 
 `rotate.py` reads each output's unencrypted-by-suffix `expires_unencrypted`
 field (no decryption, no in-cluster age key), skips entries with more than

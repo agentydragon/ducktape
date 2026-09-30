@@ -51,7 +51,8 @@
 //!   body withholds ([`ScopeOccupancy::Body::captured`]): the read-only
 //!   `RenameCaptureProbe` over [`RenameLedger::pending_renames_by_name`]
 //!   for the entry body, the derive clone's candidate walk for module
-//!   bodies. Seal turns them into the hard error; the post-seal executor
+//!   bodies. Captured explicit/import-induced intents are hard errors;
+//!   cosmetic heuristic intents are dropped. The post-seal executor
 //!   `debug_assert!`s its own capture set is empty, pinning probe and
 //!   executor to one verdict.
 //!
@@ -706,18 +707,35 @@ fn validate_body_scope(
             errors.join("\n  - "),
         );
     }
-    // Capture facts the caller's rename walk observed: applying these
-    // renames would make a reference resolve to a nested binding of the
-    // target name. The pre-seal walk's mutation is discarded with the
-    // whole run by this bail.
-    if !captured.is_empty() {
+    // Capture facts are reference-precise. Explicit and import-induced
+    // renames retain their hard-error contract, while heuristic renames are
+    // cosmetic and are dropped when a target would capture a reference.
+    let captured_non_heuristic: BTreeSet<(String, String)> = winners
+        .iter()
+        .filter(|(_, (_, priority))| *priority != RenamePriority::Heuristic)
+        .filter(|&(from, (to, _))| captured.contains(&(from.0.to_string(), to.to_string())))
+        .map(|(from, (to, _))| (from.0.to_string(), to.to_string()))
+        .collect();
+    if !captured_non_heuristic.is_empty() {
         if chunk_style {
             bail!(
-                "chunk_renames for chunk {label} would be captured by a nested binding: {captured:?}",
+                "chunk_renames for chunk {label} would be captured by a nested binding: {captured_non_heuristic:?}",
             );
         }
-        bail!("renames for module {label} would be captured by a nested binding: {captured:?}",);
+        bail!(
+            "renames for module {label} would be captured by a nested binding: {captured_non_heuristic:?}",
+        );
     }
+    winners.retain(|from, (to, priority)| {
+        *priority != RenamePriority::Heuristic
+            || !captured.contains(&(from.0.to_string(), to.to_string()))
+    });
+    // A heuristic is optional readability. Unlike explicit renames, it
+    // silently falls back when the target name is already occupied in the
+    // body; no suffix is minted because that would invent a new name.
+    winners.retain(|from, (to, priority)| {
+        *priority != RenamePriority::Heuristic || to == &from.0 || !root.contains(to.as_ref())
+    });
     for (from, (to, priority)) in &winners {
         if *priority == RenamePriority::ImportInduced
             && (root.contains(to.as_ref()) || nested.contains(to.as_ref()))

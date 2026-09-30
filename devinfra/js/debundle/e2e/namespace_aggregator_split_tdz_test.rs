@@ -14,7 +14,7 @@
 //! at-init read of `sub1` and `sub2`. ESM Phase-2 evaluates `sub1`
 //! and `sub2` before `aggregator` because they are imports.
 //!
-//! The bug: when a sub-module ALSO reads a binding from the residual
+//! The hazard: when a sub-module ALSO reads a binding from the residual
 //! at-init, and the residual reads the aggregator's `ids` at-init,
 //! the resulting cycle is:
 //!
@@ -44,14 +44,12 @@
 //! sub1-module --EagerUse--> aggregator-module (via residual)
 //! ```
 //!
-//! ## Expected outcomes
+//! ## Expected outcome
 //!
-//! - **Before the fix**: pipeline accepts the spec; Node throws
-//!   `ReferenceError: Cannot access 'ids' before initialization`
-//!   (or analogous) when running the emitted entry.
-//! - **After the fix**: the realizability gate sees the aggregator's
-//!   eager read of the sub-modules as a constraining edge that
-//!   participates in the cycle, and rejects the spec.
+//! The realizability gate sees the aggregator's eager read of the
+//! sub-modules as a constraining edge that participates in the cycle, and
+//! rejects the spec (accepting it would emit a bundle that throws
+//! `ReferenceError: Cannot access 'ids' before initialization`).
 
 use debundle_e2e_support::*;
 

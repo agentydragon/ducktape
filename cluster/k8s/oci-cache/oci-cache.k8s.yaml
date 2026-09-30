@@ -7,6 +7,56 @@ metadata:
   name: oci-cache
 spec: {}
 ---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: "Zot's OCI pull-through cache: manifests and blobs."
+  name: registry-cache
+  namespace: oci-cache
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: registry-cache
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: registry-cache
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: "Zot's OCI pull-through cache: manifests and blobs."
+  name: registry-cache
+  namespace: oci-cache
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: registry-cache
+  namespace: oci-cache
+spec:
+  identityRef:
+    name: registry-cache
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    name: registry-cache-s3-credentials
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:

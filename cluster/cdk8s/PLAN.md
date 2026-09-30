@@ -81,8 +81,6 @@ Prefer fluent constructs when they remove independent selectors, names, ports or
 references. Preserve exact behavior with typed core/CRD bindings when the fluent layer
 would require several compensating patches. Treat these as targeted improvements:
 
-- `seaweedfs/s3.py`: use generated structs for grant/access patch values; keep the
-  useful Bucket/Identity API and assess its chart-local grant mutation separately.
 - Keep the shared typed pod-seccomp patch while the pinned API requires it. Review
   Helm's explicit-null patch against its actual schema; do not erase it merely to reduce
   a count.

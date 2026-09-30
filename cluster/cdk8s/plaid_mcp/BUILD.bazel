@@ -67,25 +67,3 @@ py_library(
         "@pypi//cdk8s_plus_34",
     ],
 )
-
-py_library(
-    name = "reader",
-    srcs = ["reader.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":db",
-        "//cluster/cdk8s:cilium",
-        "//cluster/cdk8s:forgejo_images",
-        "//cluster/cdk8s:gateway",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:mcp_oauth_state",
-        "//cluster/cdk8s:secret_ref",
-        "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/providers/cilium:network_policy",
-        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
-        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-    ],
-)

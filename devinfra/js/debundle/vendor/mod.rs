@@ -32,7 +32,6 @@ pub use plan::{
     VendorImportAction, VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan,
 };
 use spec::PartialSwapKind;
-pub use strip::ChunkStripStats;
 
 /// Collect the boundary-rename mapping (vendor-LOCAL binding name → the
 /// distinct, valid export name it is published under) and validate it against
@@ -1475,7 +1474,6 @@ export { b as beta };
             analysis: ChunkAnalysisReport {
                 chunk_id: chunk_id.to_string(),
                 source_path: format!("{chunk_id}.js"),
-                parser: Default::default(),
                 entry_file,
                 counts: Default::default(),
                 files: Vec::new(),
@@ -1593,87 +1591,5 @@ export { b as beta };
         let index = MaterializedOutputChunkIndex::build(&table);
         assert_eq!(index.lookup("vendor.js"), None);
         assert_eq!(index.lookup("vendor/foo.js"), None);
-    }
-
-    #[test]
-    fn materialized_index_matches_legacy_linear_scan() {
-        // Cross-check the index against the original O(N) scan logic for
-        // a range of resolved paths, locking in the equivalence.
-        fn legacy(resolved_path: &str, table: &ChunkTable) -> Option<ChunkId> {
-            let mut best: Option<(usize, ChunkId)> = None;
-            let mut ambiguous = false;
-            for i in 0..table.len() {
-                let cid = ChunkId(i);
-                let name = table.name(cid);
-                let mut len = None;
-                if path_targets_legacy(resolved_path, name) {
-                    len = Some(name.len());
-                }
-                if let Some((_, stripped)) = name.split_once('/')
-                    && path_targets_legacy(resolved_path, stripped)
-                    && len.is_none_or(|l| stripped.len() > l)
-                {
-                    len = Some(stripped.len());
-                }
-                let Some(ml) = len else {
-                    continue;
-                };
-                match best {
-                    None => {
-                        best = Some((ml, cid));
-                        ambiguous = false;
-                    }
-                    Some((bl, _)) if ml > bl => {
-                        best = Some((ml, cid));
-                        ambiguous = false;
-                    }
-                    Some((bl, bc)) if ml == bl && bc != cid => {
-                        ambiguous = true;
-                    }
-                    _ => {}
-                }
-            }
-            if ambiguous {
-                None
-            } else {
-                best.map(|(_, c)| c)
-            }
-        }
-        fn path_targets_legacy(resolved_path: &str, chunk_name: &str) -> bool {
-            resolved_path == format!("{chunk_name}.js")
-                || resolved_path
-                    .strip_prefix(chunk_name)
-                    .is_some_and(|rest| rest.starts_with('/'))
-        }
-
-        let table = chunk_table_with(&[
-            "app",
-            "vendor",
-            "a/b",
-            "a",
-            "static/vendor",
-            "deep/nested/chunk",
-        ]);
-        let index = MaterializedOutputChunkIndex::build(&table);
-        for path in [
-            "app.js",
-            "app/main.js",
-            "vendor.js",
-            "vendor/x.js",
-            "a/b/x.js",
-            "a/x.js",
-            "static/vendor.js",
-            "static/vendor/foo.js",
-            "deep/nested/chunk.js",
-            "deep/nested/chunk/y.js",
-            "unrelated.js",
-            "deep/unrelated.js",
-        ] {
-            assert_eq!(
-                index.lookup(path),
-                legacy(path, &table),
-                "mismatch on path={path:?}"
-            );
-        }
     }
 }

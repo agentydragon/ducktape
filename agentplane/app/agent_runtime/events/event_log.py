@@ -195,6 +195,7 @@ def _project_attached(attached: protocol_pb2.Attached, entry: event_log_pb2.Even
             attached.harness_state = protocol_pb2.HARNESS_STATE_RUNNING
         case "harness_exited" | "harness_lost":
             attached.harness_state = protocol_pb2.HARNESS_STATE_STOPPED
+            attached.active_turn_id = ""
         case "turn_started":
             attached.active_turn_id = event.turn_started.turn_id
         case "turn_completed":

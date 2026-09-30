@@ -16,14 +16,14 @@
 //!
 //! Generalizes the single-shape unit pin
 //! `realizability::tests::simulator_post_order_matches_emitted_evaluation_order`
-//! (the gaffer asymmetric cycle) into a sweep; that pin keeps the
+//! (an asymmetric cycle) into a sweep; that pin keeps the
 //! hand-derived expected order at the unit level, this sweep pins the
 //! simulator against the live Node runtime across the family.
 
 use std::collections::BTreeMap;
 
 use analysis::facts::analyze_chunk;
-use analysis::graph::build_owner_graph;
+use analysis::graph::build_owner_graph_with;
 use analysis::ids::{LogicalModuleIndex, ModuleId};
 use analysis::{AnalysisHints, OwnerGraph, Partition};
 use debundle_e2e_support::*;
@@ -43,9 +43,8 @@ struct SweepCase {
 }
 
 const SWEEP: &[SweepCase] = &[
-    // The gaffer over-rejection shape (#2071): asymmetric I-cycle
-    // whose only residual-side reference points at the constraining
-    // edge's TARGET (the dependency). Node side originally pinned by
+    // Asymmetric I-cycle whose only residual-side reference points at the
+    // constraining edge's TARGET (the dependency). Node side also pinned by
     // `asymmetric_non_residual_cycle_test::dependency_only_residual_reference_into_asymmetric_cycle_runs_under_node`.
     SweepCase {
         name: "asymmetric_dependency_only_residual_reference",
@@ -141,7 +140,7 @@ fn parse_and_build(source: &str) -> OwnerGraph {
         .parse_module()
         .expect("parse module");
     let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
-    build_owner_graph(&facts).unwrap()
+    build_owner_graph_with(&facts, Default::default()).unwrap()
 }
 
 /// Build the partition matching the case's spec assignment:

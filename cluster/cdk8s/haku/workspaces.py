@@ -126,7 +126,7 @@ def _sandbox_template(chart: Chart) -> SandboxTemplate:
     `bazel run //cli:...` / `bazel test //...` in here THROUGH Console, against a git-synced
     haku-state checkout. It does NOT run the agent loop. haku-state builds locally (no
     BuildBuddy/RBE -- source never leaves the cluster), so the image is the local toolchain
-    (cluster/k8s/haku/workspaces/image/).
+    (haku/sandbox/image/).
 
     Trust model (see haku/docs/security.md + haku-state improvements/
     sandbox-provisioning-mcp.md): the pool lives IN haku-sandbox, where Haku already has full

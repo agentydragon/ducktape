@@ -19,6 +19,7 @@ spec:
   sparseCheckout:
     - cluster/k8s/
     - cluster/generated/
+    - cluster/parked/
     - cluster/charts/browsertrix/
     - haku/x/dispatch/deploy/
     - haku/runtime/managed_agent/self_hosted/deploy/

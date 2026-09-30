@@ -240,7 +240,7 @@ Tier-2 below is "rebuild it," with that code in git history as the reference.
   for one-shot `codex exec`; useless for `app-server` stdio.
 - **`haku/runner` runtimes** (`codex_app_server`) → the pod pattern above; gone since #5992.
 - **legacy `agent-workspaces`** → image `agent-workspace` bakes claude+codex+node
-  (`cluster/k8s/agents/agent-sandbox/workspace-image/Dockerfile`), region-pinned OVH.
+  (`cluster/images/agent-workspace/Dockerfile`), region-pinned OVH.
 
 ### Egress + placement — already the right posture
 

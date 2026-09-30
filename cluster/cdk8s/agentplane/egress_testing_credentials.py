@@ -1,12 +1,11 @@
-"""agentplane-testing's egress credentials: only the GitHub bot PAT behind `egress.py`'s shared
-`github-pat` EgressCredential. Testing reaches no other real account.
-"""
+"""Credentials copied into agentplane-testing's isolated egress-credentials namespace."""
 
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
 from cluster.cdk8s.agentplane.egress_credentials import (
+    BUILDBUDDY_API_KEY_SECRET,
     EXTERNAL_CREDS_READER,
     EXTERNAL_CREDS_STORE,
     GITHUB_PAT_SECRET,
@@ -25,5 +24,13 @@ def add_testing_egress_credentials(scope: Construct, *, credentials_namespace: s
         target=GITHUB_PAT_SECRET,
         source="github-agentydragon-agent",
         key="token",
+        store=EXTERNAL_CREDS_STORE,
+    )
+    credential_external_secret(
+        construct,
+        namespace=credentials_namespace,
+        target=BUILDBUDDY_API_KEY_SECRET,
+        source=BUILDBUDDY_API_KEY_SECRET,
+        key="api-key",
         store=EXTERNAL_CREDS_STORE,
     )

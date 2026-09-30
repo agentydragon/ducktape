@@ -8,4 +8,4 @@ resources:
   - flux-system/
   # cdk8s-generated: the ducktape-flux namespace and upstream sources.
   - ducktape-flux/ducktape-flux.k8s.yaml
-  - sources/git-repositories.k8s.yaml
+  - sources/sources.k8s.yaml

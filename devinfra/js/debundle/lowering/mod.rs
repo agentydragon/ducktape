@@ -15,8 +15,7 @@ use analysis::{
 };
 use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
 use stage_one::{
-    ChunkAnalysis, DynamicImportTarget, RebindFold, compute_chunk_analysis_from_structural,
-    compute_rebind_folds,
+    ChunkAnalysis, DynamicImportTarget, RebindFold, compute_chunk_analysis, compute_rebind_folds,
 };
 
 use artifact::{
@@ -38,6 +37,7 @@ mod anonymous;
 mod body_facts;
 mod chunk_ast;
 mod chunk_renames;
+mod cross_chunk_imports;
 mod cross_module;
 mod exports;
 mod import_emit;
@@ -58,6 +58,8 @@ mod scope_names;
 mod util;
 mod vendor_imports;
 mod visitors;
+
+pub use cross_chunk_imports::naturalize_cross_chunk_imports;
 
 use anonymous::ResolvedAnonymousStatement;
 use body_facts::{ModuleBodyFacts, collect_module_body_facts};
