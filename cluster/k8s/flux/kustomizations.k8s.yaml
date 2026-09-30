@@ -3087,7 +3087,7 @@ spec:
       name: matrix-synapse
       namespace: matrix
   interval: 10m
-  path: ./cluster/k8s/matrix/user-provisioner
+  path: ./cluster/generated/matrix/user-provisioner
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3186,7 +3186,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/google-mcp
+  path: ./cluster/generated/google-mcp
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3491,7 +3491,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku/workspaces/app
+  path: ./cluster/generated/haku/workspaces/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3628,7 +3628,7 @@ spec:
       name: agentplane-testing-egress-upstream-ca
       namespace: agentplane-testing
   interval: 10m
-  path: ./cluster/k8s/agentplane-testing
+  path: ./cluster/generated/agentplane-testing
   prune: true
   retryInterval: 1m
   sourceRef:

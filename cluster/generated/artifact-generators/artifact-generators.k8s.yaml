@@ -21,8 +21,10 @@ spec:
       name: ntfy
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/"
+        - from: "@repo/cluster/generated/agentplane-testing/**"
+          to: "@artifact/cluster/generated/agentplane-testing/"
+        - from: "@repo/cluster/k8s/agentplane-testing-image-pins/**"
+          to: "@artifact/cluster/k8s/agentplane-testing-image-pins/"
       name: agentplane-testing
       originRevision: "@repo"
     - copy:
@@ -498,8 +500,10 @@ spec:
       name: goldilocks
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/google-mcp/**"
-          to: "@artifact/cluster/k8s/google-mcp/"
+        - from: "@repo/cluster/generated/google-mcp/**"
+          to: "@artifact/cluster/generated/google-mcp/"
+        - from: "@repo/cluster/k8s/google-mcp-image-pins/**"
+          to: "@artifact/cluster/k8s/google-mcp-image-pins/"
       name: google-mcp
       originRevision: "@repo"
     - copy:
@@ -546,8 +550,10 @@ spec:
       name: haku-workloads
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/haku/workspaces/app/**"
-          to: "@artifact/cluster/k8s/haku/workspaces/app/"
+        - from: "@repo/cluster/generated/haku/workspaces/app/**"
+          to: "@artifact/cluster/generated/haku/workspaces/app/"
+        - from: "@repo/cluster/k8s/haku/workspaces/app-image-pins/**"
+          to: "@artifact/cluster/k8s/haku/workspaces/app-image-pins/"
       name: haku-workspaces-app
       originRevision: "@repo"
     - copy:
@@ -601,8 +607,10 @@ spec:
       name: matrix-app
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/matrix/user-provisioner/**"
-          to: "@artifact/cluster/k8s/matrix/user-provisioner/"
+        - from: "@repo/cluster/generated/matrix/user-provisioner/**"
+          to: "@artifact/cluster/generated/matrix/user-provisioner/"
+        - from: "@repo/cluster/k8s/matrix/user-provisioner-image-pins/**"
+          to: "@artifact/cluster/k8s/matrix/user-provisioner-image-pins/"
       name: matrix-user-provisioner
       originRevision: "@repo"
     - copy:
