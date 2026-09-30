@@ -2,13 +2,15 @@
 is ClickHouse-admin-only, so it lives here; everything inside each database is owned by
 its app (aiquota's `migrate` init container, Langfuse's own migration runner).
 
-schema.sql, hand-written beside the generated output, is the DDL; the generated
+`schema.sql` beside this module is the DDL, copied into the output directory; the generated
 `kustomization.yaml` renders it into the ConfigMap the Job mounts. A Job's template is
 immutable, so the Job name carries a version: bump it to re-run after any change to the
 Job or its schema.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Duration
 from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy
@@ -23,12 +25,13 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on,
 )
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.generation import copy_source_file
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "clickhouse-schema"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/schema"
+OUTPUT_DIR = f"{GENERATED_ROOT}/clickhouse/schema"
 NAMESPACE = "clickhouse"
-SCHEMA_CONFIG_MAP = ConfigMapArgs(name="clickhouse-aiquota-schema", namespace=NAMESPACE, files=[client.SCHEMA_FILE])
+_CONFIG_MAP = "clickhouse-aiquota-schema"
 _JOB_NAME = "clickhouse-aiquota-schema-v11"
 _LABELS = {
     "app.kubernetes.io/name": NAME,
@@ -36,6 +39,15 @@ _LABELS = {
     "app.kubernetes.io/component": "schema",
 }
 _CLICKHOUSE_UID = 101  # the image's `clickhouse` user
+
+
+def write_config_map(root: Path) -> ConfigMapArgs:
+    """Copy `schema.sql` into `OUTPUT_DIR`; return the `configMapGenerator` entry packaging it."""
+    return ConfigMapArgs(
+        name=_CONFIG_MAP,
+        namespace=NAMESPACE,
+        files=[copy_source_file(root, OUTPUT_DIR, f"cluster/cdk8s/clickhouse/{client.SCHEMA_FILE}")],
+    )
 
 
 def chart(app: App) -> Chart:
@@ -65,7 +77,7 @@ def chart(app: App) -> Chart:
             client.queries_file_container(
                 chart,
                 "schema",
-                schema=ConfigMap.from_config_map_name(chart, "schema-ref", SCHEMA_CONFIG_MAP.name),
+                schema=ConfigMap.from_config_map_name(chart, "schema-ref", _CONFIG_MAP),
                 credentials=client.ADMIN_CREDENTIALS,
             )
         ],

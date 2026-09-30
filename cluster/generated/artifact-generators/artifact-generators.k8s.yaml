@@ -439,8 +439,8 @@ spec:
       name: clickhouse-operator
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/clickhouse/schema/**"
-          to: "@artifact/cluster/k8s/clickhouse/schema/"
+        - from: "@repo/cluster/generated/clickhouse/schema/**"
+          to: "@artifact/cluster/generated/clickhouse/schema/"
       name: clickhouse-schema
       originRevision: "@repo"
     - copy:
