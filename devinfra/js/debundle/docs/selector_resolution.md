@@ -244,7 +244,7 @@ authoring specs in parallel produces several at once.
 selectors against it, so a chunk with thousands of selectors pays setup once.
 `selector_match` is the homomorphism itself: hole-skipping, alpha-equivalence
 bijections, and run-hole subsequence alignment, with
-<../selector_match_differential_test.rs> pinning the exact semantics.
+<../selector_match_test.rs> pinning the exact semantics.
 
 Two properties make it near-linear rather than quadratic in selector count:
 needle-only validation is hoisted out of the candidate loop, and exact-mode

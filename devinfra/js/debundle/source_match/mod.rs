@@ -9,7 +9,7 @@
 //! submodule only needs `use super::*;`:
 //!
 //! - `preview` — log-safe selector previews.
-//! - `parse_validate` — selector/module parsing and capability validation.
+//! - `parse_validate` — selector/module parsing and `ANYTHING`-hole validation.
 //! - `types` — shared result/selector types.
 //! - `binding_resolution` — canonical source-match claim expansion and
 //!   declared-binding extraction.
@@ -24,6 +24,7 @@
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) use anyhow::{Context, Result, bail};
+pub(crate) use js_ast::item_var_decl;
 pub(crate) use serde::Serialize;
 pub(crate) use spec::{
     AnonymousStatementSelector, BindingSourceKind, SourceMatch, SourceMatchClaim,
@@ -50,6 +51,14 @@ pub(crate) fn selector_mode(selector: &AnonymousStatementSelector) -> selector_m
         SourceMatchIdentifierMode::Exact => selector_match::Mode::Exact,
         SourceMatchIdentifierMode::AlphaAll => selector_match::Mode::AlphaAll,
     }
+}
+
+/// `map_err` adapter turning a matcher [`selector_match::Unsupported`] into an
+/// error prefixed with the `stage` that hit it.
+pub(crate) fn unsupported_error(
+    stage: &'static str,
+) -> impl Fn(selector_match::Unsupported) -> anyhow::Error {
+    move |unsupported| anyhow::anyhow!("{stage}: {}", unsupported.reason)
 }
 
 mod anonymous_statement;
@@ -83,8 +92,8 @@ pub use binding_resolution::{
     source_match_claim_member_selectors, source_match_declared_binding_names,
 };
 pub use fact_near_miss::{fact_near_misses, fact_source_match_body_debt};
-pub use free_identifiers::free_identifiers;
-pub use parse_validate::parse_selector_module_with_capability_check;
+pub use free_identifiers::{free_identifiers, template_free_identifiers};
+pub use parse_validate::parse_selector_module;
 pub use preview::source_match_preview;
 pub use types::{
     AnonymousGroupMatch, BindingGroupMemberSelector, MemberBindingGroupMatch, MemberBindingMatch,

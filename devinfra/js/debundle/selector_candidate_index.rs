@@ -457,7 +457,7 @@ fn binding_projection_for_target(
     item: &ModuleItem,
     target_binding: &str,
 ) -> Option<BindingProjection> {
-    if item_var_decl(item).is_some_and(|var| {
+    if js_ast::item_var_decl(item).is_some_and(|var| {
         var.decls
             .iter()
             .any(|declarator| declarator_list_hole_name(declarator).is_some())
@@ -759,17 +759,6 @@ fn push_binding(
         name,
         kind,
     });
-}
-
-fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
-            Decl::Var(var) => Some(var),
-            _ => None,
-        },
-        _ => None,
-    }
 }
 
 fn var_kind(kind: VarDeclKind) -> VarKind {

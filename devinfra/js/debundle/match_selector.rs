@@ -28,6 +28,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use binding_targets::{binding_name_strings, declaration_name_strings};
 use selector_outcome::{Outcome, SelectorOutcome, SelectorOutcomeReport};
 use selector_resolve::{Member, MemberSelector, SpecModule};
 use serde::Serialize;
@@ -41,9 +42,9 @@ use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
     ArrowExpr, ArrowFunctionBody, AssignPatProp, BindingIdent, BlockStmt, CallExpr, Class,
-    ClassMember, ClassProp, Constructor, Decl, Expr, ExprOrSpread, ExprStmt, Function, IdentName,
-    Module, ModuleItem, NewExpr, ObjectLit, ObjectPat, ObjectPatProp, Pat, Prop, PropName,
-    PropOrSpread, Stmt,
+    ClassMember, ClassProp, Constructor, Expr, ExprOrSpread, ExprStmt, Function, IdentName, Module,
+    ModuleItem, NewExpr, ObjectLit, ObjectPat, ObjectPatProp, Pat, Prop, PropName, PropOrSpread,
+    Stmt,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -123,7 +124,6 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
                 export_name: "<match-selector>".to_string(),
                 selector: MemberSelector::SourceMatch(ParsedSourceMatchSelector::parse(
                     "<match-selector>",
-                    "source_match",
                     "<source_match needle in <match-selector>>".to_string(),
                     &selector,
                     "source_match",
@@ -491,42 +491,20 @@ fn is_droppable_pat_prop(prop: &ObjectPatProp) -> bool {
 /// binding), so `DropContextStatement` can leave the target's own declaration in
 /// place.
 fn module_item_declares(item: &ModuleItem, name: &str) -> bool {
-    let ModuleItem::Stmt(Stmt::Decl(decl)) = item else {
-        return false;
-    };
-    match decl {
-        Decl::Var(var) => var.decls.iter().any(|d| pat_binds_name(&d.name, name)),
-        Decl::Fn(fn_decl) => fn_decl.ident.sym == *name,
-        Decl::Class(class_decl) => class_decl.ident.sym == *name,
-        _ => false,
-    }
+    js_ast::item_decl(item).is_some_and(|decl| {
+        declaration_name_strings(decl)
+            .iter()
+            .any(|bound| bound == name)
+    })
 }
 
-/// Whether a binding pattern introduces `name` anywhere, descending through
-/// array/object destructuring, rest, and default-value patterns.
-fn pat_binds_name(pat: &Pat, name: &str) -> bool {
-    match pat {
-        Pat::Ident(ident) => ident.id.sym == *name,
-        Pat::Array(array) => array
-            .elems
-            .iter()
-            .flatten()
-            .any(|elem| pat_binds_name(elem, name)),
-        Pat::Object(object) => object
-            .props
-            .iter()
-            .any(|prop| object_pat_prop_binds_name(prop, name)),
-        Pat::Rest(rest) => pat_binds_name(&rest.arg, name),
-        Pat::Assign(assign) => pat_binds_name(&assign.left, name),
-        Pat::Expr(_) | Pat::Invalid(_) => false,
-    }
-}
-
+/// Whether a destructure-pattern property introduces `name` anywhere.
 fn object_pat_prop_binds_name(prop: &ObjectPatProp, name: &str) -> bool {
+    let pat_binds_name = |pat: &Pat| binding_name_strings(pat).iter().any(|bound| bound == name);
     match prop {
-        ObjectPatProp::KeyValue(key_value) => pat_binds_name(&key_value.value, name),
+        ObjectPatProp::KeyValue(key_value) => pat_binds_name(&key_value.value),
         ObjectPatProp::Assign(assign) => assign.key.id.sym == *name,
-        ObjectPatProp::Rest(rest) => pat_binds_name(&rest.arg, name),
+        ObjectPatProp::Rest(rest) => pat_binds_name(&rest.arg),
     }
 }
 

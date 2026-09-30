@@ -3,7 +3,7 @@
 //! `chunk_facts`) as the per-statement match oracle, then extract the claimed
 //! binding(s) with the shared `declared_bindings` / `selector_binding_location`
 //! helpers. The per-statement match semantics are pinned by
-//! `selector_match_differential_test`.
+//! `selector_match_test`.
 //!
 //! Fail-closed: a construct the matcher does not faithfully handle (an
 //! `Unsupported` needle) surfaces as an error rather than a wrong claim — it never
@@ -14,33 +14,19 @@ use super::*;
 /// Facts for a single top-level statement. Extracts from the borrowed item (one
 /// item being one root) — no per-call clone into a one-item `Module`, which on the
 /// per-selector hot path was the resolver's main overhead over production.
-fn item_facts(item: &ModuleItem) -> Option<chunk_facts::ChunkFacts> {
+pub(crate) fn item_facts(item: &ModuleItem) -> Option<chunk_facts::ChunkFacts> {
     chunk_facts::extract_facts_items(std::slice::from_ref(item)).ok()
 }
 
-/// Facts for a single **needle** statement. Source-match selectors no longer
-/// carry string-literal wildcards, so needle facts use the same projection as
-/// subject facts.
-fn needle_item_facts(
-    item: &ModuleItem,
-    _selector: &AnonymousStatementSelector,
-) -> Option<chunk_facts::ChunkFacts> {
-    chunk_facts::extract_facts_items(std::slice::from_ref(item)).ok()
+/// Facts for a needle statement: one that does not project to facts is an error,
+/// not an empty match set.
+fn needle_item_facts(item: &ModuleItem) -> Result<chunk_facts::ChunkFacts> {
+    item_facts(item)
+        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))
 }
 
-/// The free identifiers of `parsed`'s template: the names every candidate's
-/// `free_bindings` may report.
-pub fn template_free_identifiers(parsed: &ParsedSourceMatchSelector) -> BTreeSet<String> {
-    let facts = parsed
-        .body()
-        .iter()
-        .filter_map(|item| needle_item_facts(item, parsed.selector()))
-        .collect::<Vec<_>>();
-    let indices = facts
-        .iter()
-        .map(selector_match::Index::build)
-        .collect::<Vec<_>>();
-    free_identifiers(&indices)
+fn needle_index(item: &ModuleItem) -> Result<selector_match::Index> {
+    Ok(selector_match::Index::build(&needle_item_facts(item)?))
 }
 
 /// One chunk's relational model, built once: the AST plus its top-level body
@@ -333,7 +319,7 @@ fn matching_body_indices(
     let needle_index = selector_match::Index::build(needle_facts);
     let free = free_identifiers([&needle_index]);
     selector_match::matches_indexed(&needle_index, &needle_index, mode, &free)
-        .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
+        .map_err(unsupported_error("source_match resolver"))?;
     // Sound root-kind prefilter: when the needle root is a concrete kind, a
     // subject whose root kind differs is a guaranteed non-match (the `nkind !=
     // subject kind` gate in the matcher), so skip it without matching.
@@ -402,14 +388,13 @@ fn member_matches_var_declarator(
     export_name: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
-    let needle_facts = needle_item_facts(needle, selector)
-        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
+    let needle_facts = needle_item_facts(needle)?;
     let mode = selector_mode(selector);
     let needle_index = selector_match::Index::build(&needle_facts);
     let free = free_identifiers([&needle_index]);
     // Probe the needle once: an unsupported construct errors uniformly.
     selector_match::matches_indexed(&needle_index, &needle_index, mode, &free)
-        .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
+        .map_err(unsupported_error("source_match resolver"))?;
     // Which of the needle declarator's declared bindings is the target.
     let target_binding_idx = match &selector.target_binding {
         Some(target_binding) => {
@@ -512,9 +497,7 @@ fn member_matches_declarator_hole(
     })?;
     let (target_decl_idx, target_binding_idx) =
         selector_var_declarator_binding_location(needle_var, request_id, selector, target_binding)?;
-    let needle_facts = needle_item_facts(needle, selector)
-        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
-    let needle_index = selector_match::Index::build(&needle_facts);
+    let needle_index = needle_index(needle)?;
     let free = free_identifiers([&needle_index]);
     let mode = selector_mode(selector);
     // Probe the needle once: an unsupported construct errors uniformly (and makes
@@ -527,7 +510,7 @@ fn member_matches_declarator_hole(
         &[],
         &free,
     )
-    .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
+    .map_err(unsupported_error("source_match resolver"))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     // The fixed (non-hole) declarators pin invariant tokens any matching owner
     // must carry, so the token index narrows the owner scan (the giant
@@ -597,7 +580,6 @@ fn parse_source_match_selector(
 ) -> Result<ParsedSourceMatchSelector> {
     ParsedSourceMatchSelector::parse(
         request_id,
-        "source_match",
         format!("<source_match needle in {request_id}>"),
         selector,
         "source_match",
@@ -626,15 +608,10 @@ fn member_matches_single_declarator_target_window(
     target_item_idx: usize,
     target_binding_idx: usize,
 ) -> Result<Vec<MemberBindingMatch>> {
-    let needle_facts = needles
+    let needle_indices = needles
         .iter()
-        .map(|item| needle_item_facts(item, selector))
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
-    let needle_indices: Vec<_> = needle_facts
-        .iter()
-        .map(selector_match::Index::build)
-        .collect();
+        .map(needle_index)
+        .collect::<Result<Vec<_>>>()?;
     let windows = selector_match::match_single_declarator_target_windows_indexed(
         &needle_indices,
         &chunk.body_indices,
@@ -642,7 +619,7 @@ fn member_matches_single_declarator_target_window(
         selector_mode(selector),
         &free_identifiers(&needle_indices),
     )
-    .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
+    .map_err(unsupported_error("source_match resolver"))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for window in windows {
         let (target_body_idx, subject_decl_idx) = window.site;
@@ -715,15 +692,10 @@ fn member_matches_multi(
     // A declarator-**hole** target inside a multi-statement window takes the same
     // general path (no single-declarator special-case); `candidate_target_binding`
     // aligns its declarators.
-    let needle_facts = needles
+    let needle_indices = needles
         .iter()
-        .map(|item| needle_item_facts(item, selector))
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
-    let needle_indices: Vec<_> = needle_facts
-        .iter()
-        .map(selector_match::Index::build)
-        .collect();
+        .map(needle_index)
+        .collect::<Result<Vec<_>>>()?;
     let free = free_identifiers(&needle_indices);
     let starts = selector_match::match_fixed_window_sequence_indexed(
         &needle_indices,
@@ -731,7 +703,7 @@ fn member_matches_multi(
         selector_mode(selector),
         &free,
     )
-    .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
+    .map_err(unsupported_error("source_match resolver"))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for start in starts {
         let body_idx = start.site + target_item_idx;
@@ -780,9 +752,7 @@ fn group_matches_declarator_holes(
                 .map(|location| (target.clone(), location))
         })
         .collect::<Result<_>>()?;
-    let needle_facts = needle_item_facts(needle, selector)
-        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
-    let needle_index = selector_match::Index::build(&needle_facts);
+    let needle_index = needle_index(needle)?;
     let free = free_identifiers([&needle_index]);
     let mode = selector_mode(selector);
     selector_match::var_declarator_alignment_indexed(
@@ -792,7 +762,7 @@ fn group_matches_declarator_holes(
         &[],
         &free,
     )
-    .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
+    .map_err(unsupported_error("source_match resolver"))?;
     let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
     // No prebind here (the alignment runs un-prebound), so an exact-mode needle may
     // require its pinned-declarator identifier spellings; `DECLARATORS`-hole
@@ -880,14 +850,13 @@ fn group_matches_single_declarator(
             }
         })
         .collect::<Result<_>>()?;
-    let needle_facts = needle_item_facts(needle, selector)
-        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
+    let needle_facts = needle_item_facts(needle)?;
     let needle_index = selector_match::Index::build(&needle_facts);
     let free = free_identifiers([&needle_index]);
     let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
     let mode = selector_mode(selector);
     selector_match::matches_indexed(&needle_index, &needle_index, mode, &free)
-        .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
+        .map_err(unsupported_error("source_match resolver"))?;
     let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
     // No prebind (the declarator match is un-prebound); an exact-mode needle may
     // require its identifier spellings.
@@ -1009,15 +978,10 @@ fn group_matches_general(
                 .map(|location| (target.clone(), location))
         })
         .collect::<Result<_>>()?;
-    let needle_facts = needles
+    let needle_indices = needles
         .iter()
-        .map(|item| needle_item_facts(item, selector))
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
-    let needle_indices: Vec<_> = needle_facts
-        .iter()
-        .map(selector_match::Index::build)
-        .collect();
+        .map(needle_index)
+        .collect::<Result<Vec<_>>>()?;
     let free = free_identifiers(&needle_indices);
     let alignments = selector_match::match_top_level_sequence_indexed(
         &needle_indices,
@@ -1025,7 +989,7 @@ fn group_matches_general(
         selector_mode(selector),
         &free,
     )
-    .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
+    .map_err(unsupported_error("source_match resolver"))?;
     let mut matches = Vec::new();
     for alignment in alignments {
         let mut resolved = BTreeMap::new();
@@ -1109,8 +1073,7 @@ fn member_matches_single_statement(
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
-    let needle_facts = needle_item_facts(needle, selector)
-        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
+    let needle_facts = needle_item_facts(needle)?;
     let indices = matching_body_indices(chunk, &needle_facts, selector_mode(selector))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     match &selector.target_binding {
@@ -1396,9 +1359,7 @@ impl ChunkResolver<'_> {
         let [needle] = needles else {
             unreachable!("anonymous selector validation requires one parsed statement")
         };
-        let needle_facts = needle_item_facts(needle, selector).ok_or_else(|| {
-            anyhow::anyhow!("source_match resolver: needle did not project to facts")
-        })?;
+        let needle_facts = needle_item_facts(needle)?;
         Ok(
             matching_body_indices(self, &needle_facts, selector_mode(selector))?
                 .into_iter()
@@ -1589,9 +1550,7 @@ mod tests {
             );
             let resolver = ChunkResolver::new(&chunk);
             let needles = parse_needles("test", &selector).expect("selector parses");
-            let needle_facts =
-                needle_item_facts(&needles[0], &selector).expect("needle projects to facts");
-            let needle_index = selector_match::Index::build(&needle_facts);
+            let needle_index = needle_index(&needles[0]).expect("needle projects to facts");
 
             let candidates =
                 resolver.candidate_declarators(&needle_index, selector_mode(&selector), true);
@@ -1619,9 +1578,7 @@ mod tests {
             let selector = member("const x = STR_LITERAL_MATCHING_RE(\"abc$\");", Some("x"));
             let resolver = ChunkResolver::new(&chunk);
             let needles = parse_needles("test", &selector).expect("selector parses");
-            let needle_facts =
-                needle_item_facts(&needles[0], &selector).expect("needle projects to facts");
-            let needle_index = selector_match::Index::build(&needle_facts);
+            let needle_index = needle_index(&needles[0]).expect("needle projects to facts");
 
             let candidates =
                 resolver.candidate_declarators(&needle_index, selector_mode(&selector), true);
@@ -1651,9 +1608,7 @@ mod tests {
             );
             let resolver = ChunkResolver::new(&chunk);
             let needles = parse_needles("test", &selector).expect("selector parses");
-            let needle_facts =
-                needle_item_facts(&needles[0], &selector).expect("needle projects to facts");
-            let needle_index = selector_match::Index::build(&needle_facts);
+            let needle_index = needle_index(&needles[0]).expect("needle projects to facts");
 
             let candidates =
                 resolver.candidate_declarators(&needle_index, selector_mode(&selector), true);

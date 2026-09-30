@@ -260,13 +260,10 @@ fn has_declarator_hole_after(needle: &VarDecl, needle_idx: usize) -> bool {
         .any(|declarator| declarator_list_hole_name(declarator).is_some())
 }
 
-/// Per-statement facts for one top-level item — the same projection the
-/// production fact resolver (`chunk_resolver::item_facts`) builds. `None` for a
-/// non-extractable item (which has no root and so matches nothing).
+/// Match index of one top-level item's facts. `None` for a non-extractable item
+/// (which has no root and so matches nothing).
 fn item_index(item: &ModuleItem) -> Option<Index> {
-    chunk_facts::extract_facts_items(std::slice::from_ref(item))
-        .ok()
-        .map(|facts| Index::build(&facts))
+    chunk_resolver::item_facts(item).map(|facts| Index::build(&facts))
 }
 
 /// `source_match` body debt: the exact top-level alignments (`exact_groups`) plus
@@ -281,9 +278,8 @@ pub fn fact_source_match_body_debt(
     min_score: usize,
     limit: usize,
 ) -> Result<SourceMatchBodyDebt> {
-    let parsed = parse_selector_module_with_capability_check(
+    let parsed = parse_selector_module(
         request_id,
-        "source_match",
         format!("<source_match debt in {request_id}>"),
         &selector.match_source,
         "source_match",
@@ -406,7 +402,7 @@ pub(crate) fn fact_first_mismatch_reason(
         mode,
         &free_identifiers([needle_index]),
     )
-    .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
+    .map_err(unsupported_error("fact near-miss"))?
     .is_some()
     {
         return Ok(None);
@@ -725,7 +721,7 @@ fn first_var_decl_divergence(
         &[],
         &free_identifiers([needle_index]),
     )
-    .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
+    .map_err(unsupported_error("fact near-miss"))?
     .is_some();
     if aligns {
         return Ok(MismatchReason {
@@ -783,7 +779,7 @@ fn first_pinned_var_declarator_divergence(
         mode,
         &free_identifiers([needle_index]),
     )
-    .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?;
+    .map_err(unsupported_error("fact near-miss"))?;
     let pinned_indices = needle_var
         .decls
         .iter()
@@ -864,7 +860,7 @@ fn first_class_divergence(
                 mode,
                 &free,
             )
-            .map_err(|unsupported| anyhow::anyhow!("fact near-miss: {}", unsupported.reason))?
+            .map_err(unsupported_error("fact near-miss"))?
             {
                 return Ok(MismatchReason {
                     score: 65,

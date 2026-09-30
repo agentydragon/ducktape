@@ -30,8 +30,8 @@ use selector_outcome::{
 };
 use selector_runtime::solve_global_selector_program;
 use shape_index::ShapeIndex;
-use source_match::ParsedSourceMatchSelector;
-use source_match::chunk_resolver::{ChunkResolver, template_free_identifiers};
+use source_match::chunk_resolver::ChunkResolver;
+use source_match::{ParsedSourceMatchSelector, template_free_identifiers};
 use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec};
 use swc_ecma_ast::{ImportSpecifier, Module, ModuleDecl, ModuleItem};
 
@@ -102,7 +102,6 @@ impl MemberSelector {
             MemberSelectorSpec::SourceMatch(selector) => {
                 Self::SourceMatch(ParsedSourceMatchSelector::parse(
                     request_id,
-                    "source_match",
                     format!("<source_match selector in {request_id}>"),
                     &selector,
                     "source_match",

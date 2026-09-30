@@ -6,10 +6,9 @@ date it was last reproduced; an entry is deleted when its fix lands with a test.
 
 ## Unknown Hole Keywords Match As Identifiers
 
-Status: open (reproduced 2026-09-24). `source_match/holes.rs`
-`unsupported_selector_hole_name` is a stub returning `None`, so a hole keyword
-the binary does not know is a plain free identifier on every path, including
-`match-selector`. A selector written for a newer hole vocabulary and run by an
+Status: open (reproduced 2026-09-24). Nothing checks for unknown hole
+keywords, so a hole keyword the binary does not know is a plain free identifier
+on every path, including `match-selector`. A selector written for a newer hole vocabulary and run by an
 older pinned debundler reports `no_match` or `ambiguous` instead of `invalid`.
 
 The fix is a design decision first: an old binary cannot recognise a keyword it

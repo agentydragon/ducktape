@@ -195,7 +195,6 @@ pub(super) fn logical_requests_for_chunk(
                     let selector = stmt.selector()?;
                     let parsed_selector = source_match::ParsedSourceMatchSelector::parse(
                         &id,
-                        "source_match",
                         format!("<anonymous source_match in {id}>"),
                         &selector,
                         "source_match",

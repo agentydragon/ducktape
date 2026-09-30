@@ -1064,7 +1064,7 @@ fn selector_feature_stability(feature: &SelectorFeature) -> Stability {
         | SelectorFeature::VarKind(_)
         | SelectorFeature::FunctionArity(_) => Stability::Structural,
         SelectorFeature::StringLiteral(value) => {
-            if looks_volatile(value) {
+            if volatile_tail(value).is_some() {
                 Stability::Volatile
             } else {
                 Stability::Semantic
@@ -1083,26 +1083,26 @@ fn selector_feature_stability(feature: &SelectorFeature) -> Stability {
 }
 
 /// Minimum trailing hex/digit run length for a literal to read as volatile.
-/// Mirrors `selector_codemod::MIN_VOLATILE_TAIL_LEN` (the `STR_LITERAL_MATCHING_RE`
-/// anchor heuristic) so the stability signal and the regex-anchor renderer
-/// agree on what counts as a generated tail.
+/// Short numeric suffixes (`v2`, `s3`) are more often meaningful than generated.
 const MIN_VOLATILE_TAIL_LEN: usize = 4;
 
-/// `true` when `value` ends in a generated-looking hex/digit tail of at least
-/// [`MIN_VOLATILE_TAIL_LEN`] characters over a non-trivial stable prefix — the
-/// dominant bundler volatility pattern (`chunk-a1b2c3`, `main.4f3a2b`).
-fn looks_volatile(value: &str) -> bool {
-    let chars: Vec<char> = value.chars().collect();
-    let hex_tail = chars
-        .iter()
+/// Split `value` into a stable prefix and a generated-looking hex/digit tail of
+/// at least [`MIN_VOLATILE_TAIL_LEN`] characters — the dominant bundler
+/// volatility pattern (`chunk-a1b2c3`, `main.4f3a2b`). `None` when there is no
+/// such tail or the prefix is empty or separator-only. Shared by the stability
+/// ranking here and the `STR_LITERAL_MATCHING_RE` anchor derivation.
+pub fn volatile_tail(value: &str) -> Option<(&str, &str)> {
+    // Hex digits are ASCII, so the char count is also the byte length.
+    let tail_len = value
+        .chars()
         .rev()
-        .take_while(|c| c.is_ascii_hexdigit())
+        .take_while(char::is_ascii_hexdigit)
         .count();
-    if hex_tail < MIN_VOLATILE_TAIL_LEN {
-        return false;
+    if tail_len < MIN_VOLATILE_TAIL_LEN {
+        return None;
     }
-    let prefix = &chars[..chars.len() - hex_tail];
-    !prefix.is_empty() && !prefix.iter().all(|c| matches!(c, '-' | '_' | '.'))
+    let (prefix, tail) = value.split_at(value.len() - tail_len);
+    (!prefix.chars().all(|c| matches!(c, '-' | '_' | '.'))).then_some((prefix, tail))
 }
 
 // Re-export the prefilter feature taxonomy so callers of the shape index can
@@ -1147,13 +1147,15 @@ mod tests {
     }
 
     #[test]
-    fn volatility_matches_regex_anchor_notion() {
-        assert!(looks_volatile("chunk-a1b2c3"));
-        assert!(looks_volatile("main.4f3a2b"));
-        assert!(!looks_volatile("button"));
-        assert!(!looks_volatile("v2"));
-        assert!(
-            !looks_volatile("1234"),
+    fn volatile_tail_splits_off_a_generated_suffix() {
+        assert_eq!(volatile_tail("chunk-a1b2c3"), Some(("chunk-", "a1b2c3")));
+        assert_eq!(volatile_tail("main.4f3a2b"), Some(("main.", "4f3a2b")));
+        assert_eq!(volatile_tail("button"), None);
+        assert_eq!(volatile_tail("v2"), None);
+        assert_eq!(volatile_tail("1234"), None, "empty prefix is not stable");
+        assert_eq!(
+            volatile_tail("-1234"),
+            None,
             "separator-only prefix is not stable"
         );
     }

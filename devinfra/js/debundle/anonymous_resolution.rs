@@ -269,7 +269,6 @@ fn spec_module(claims: &SourceClaimSet<'_>) -> Result<SpecModule> {
                 index,
                 selector: ParsedSourceMatchSelector::parse(
                     &request_id,
-                    "source_match",
                     format!("<source_match needle in {request_id}>"),
                     selector,
                     "source_match",

@@ -4,6 +4,7 @@ use std::fmt;
 use analysis::{AnalysisHints, EffectCell, LocalEffectPolicy, StatementFacts, analyze_chunk};
 use anyhow::{Result, bail};
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
+use js_ast::item_var_decl;
 use serde::Serialize;
 use swc_common::sync::Lrc;
 use swc_common::{DUMMY_SP, SourceMap};
@@ -1076,17 +1077,6 @@ fn item_is_vite_preload_helper(item: &ModuleItem) -> bool {
     let mut probe = VitePreloadProbe::default();
     body.visit_with(&mut probe);
     probe.promise_all_settled && probe.document_create_element && probe.window_dispatch_event
-}
-
-fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
-        | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-            decl: Decl::Var(var),
-            ..
-        })) => Some(var),
-        _ => None,
-    }
 }
 
 fn function_like_body(expr: &Expr) -> Option<&FunctionBody> {
