@@ -110,6 +110,7 @@ in
     ./modules/gnome-shell-keybindings.nix
     ./modules/flameshot-screenshots.nix
     ./modules/aiquota.nix
+    ./modules/plaid-spend.nix
   ];
   # Workstations use the local (gpt-oss) Codex model profiles.
   ducktape.codex.localModels.enable = true;
