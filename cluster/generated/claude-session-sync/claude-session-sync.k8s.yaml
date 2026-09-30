@@ -72,37 +72,39 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    description: Reads every Claude Code cloud session's events into the CNPG database with a dedicated OAuth grant kept on the data volume, and serves the login-protected page that pairs it.
+    description: Serves the owner-authenticated Claude session page and proxies controls to the credential owner.
   labels:
+    app.kubernetes.io/component: web
     app.kubernetes.io/name: claude-session-sync
   name: claude-session-sync
   namespace: claude-session-sync
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: claude-session-sync
   strategy:
-    type: Recreate
+    type: RollingUpdate
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: web
         app.kubernetes.io/name: claude-session-sync
     spec:
       automountServiceAccountToken: false
       containers:
         - args:
-            - serve
+            - web
           env:
             - name: SESSION_SYNC_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   key: uri
                   name: claude-session-sync-db-app
-            - name: SESSION_SYNC_CREDENTIALS_FILE
-              value: /data/credentials.json
             - name: SESSION_SYNC_PUBLIC_BASE_URL
               value: https://claude-session-sync.allegedly.works
+            - name: SESSION_SYNC_CONTROL_BASE_URL
+              value: http://claude-session-sync-control.claude-session-sync.svc:8080
             - name: SESSION_SYNC_PORT
               value: "8080"
             - name: SESSION_SYNC_OIDC_ISSUER
@@ -160,6 +162,86 @@ spec:
               drop:
                 - ALL
             readOnlyRootFilesystem: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Owns the rotating Claude OAuth credential, pairing flow, polling cycle, and live API streams.
+  labels:
+    app.kubernetes.io/component: control
+    app.kubernetes.io/name: claude-session-sync-control
+  name: claude-session-sync-control
+  namespace: claude-session-sync
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: control
+      app.kubernetes.io/name: claude-session-sync-control
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: control
+        app.kubernetes.io/name: claude-session-sync-control
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - control
+          env:
+            - name: SESSION_SYNC_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: claude-session-sync-db-app
+            - name: SESSION_SYNC_CREDENTIALS_FILE
+              value: /data/credentials.json
+            - name: SESSION_SYNC_PORT
+              value: "8080"
+          image: git.allegedly.works/ducktape-ci/claude-session-sync:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          name: claude-session-sync-control
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
           volumeMounts:
             - mountPath: /data
               name: data
@@ -195,7 +277,24 @@ spec:
       protocol: TCP
       targetPort: 8080
   selector:
+    app.kubernetes.io/component: web
     app.kubernetes.io/name: claude-session-sync
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: claude-session-sync-control
+  namespace: claude-session-sync
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/component: control
+    app.kubernetes.io/name: claude-session-sync-control
   type: ClusterIP
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -218,8 +317,68 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   annotations:
-    description: The Gateway may reach the page. The pod may resolve DNS, reach Anthropic's OAuth and API hosts, Authentik for the login, and its database.
-  name: claude-session-sync
+    description: The Gateway may reach the page. Web Pods may reach Authentik, the database, and the private control Service.
+  name: claude-session-sync-web
+  namespace: claude-session-sync
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - auth.allegedly.works
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: claude-session-sync-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: control
+            app.kubernetes.io/name: claude-session-sync-control
+            k8s:io.kubernetes.pod.namespace: claude-session-sync
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: web
+      app.kubernetes.io/name: claude-session-sync
+      k8s:io.kubernetes.pod.namespace: claude-session-sync
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Only web Pods may call the single Claude credential and sync control process.
+  name: claude-session-sync-control
   namespace: claude-session-sync
 spec:
   egress:
@@ -246,15 +405,6 @@ spec:
           serverNames:
             - api.anthropic.com
             - platform.claude.com
-    - toEntities:
-        - remote-node
-        - host
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
-          serverNames:
-            - auth.allegedly.works
     - toEndpoints:
         - matchLabels:
             k8s:cnpg.io/cluster: claude-session-sync-db
@@ -264,10 +414,15 @@ spec:
               protocol: TCP
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: claude-session-sync
+      app.kubernetes.io/component: control
+      app.kubernetes.io/name: claude-session-sync-control
+      k8s:io.kubernetes.pod.namespace: claude-session-sync
   ingress:
-    - fromEntities:
-        - ingress
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: web
+            app.kubernetes.io/name: claude-session-sync
+            k8s:io.kubernetes.pod.namespace: claude-session-sync
       toPorts:
         - ports:
             - port: "8080"

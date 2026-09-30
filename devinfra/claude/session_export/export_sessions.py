@@ -35,13 +35,15 @@ from devinfra.claude.session_export.probe import probe
 from devinfra.claude.session_export.settings import (
     DEFAULT_SYNC_INTERVAL_SECONDS,
     DEFAULT_SYNC_WORKERS,
+    ControlSettings,
     ServeSettings,
     SyncSettings,
+    WebSettings,
 )
 from devinfra.claude.session_export.store import SessionStore, make_engine
 from devinfra.claude.session_export.supervisor import SyncSupervisor
 from devinfra.claude.session_export.sync import sync_once
-from devinfra.claude.session_export.web import create_app
+from devinfra.claude.session_export.web import create_app, create_control_app, create_web_app
 from util.bazel.workspace import get_build_working_directory
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,8 @@ class Command(StrEnum):
     VERIFY = "verify"
     SYNC = "sync"
     SERVE = "serve"
+    WEB = "web"
+    CONTROL = "control"
     PROBE = "probe"
 
 
@@ -116,7 +120,7 @@ async def run_sync(args: argparse.Namespace) -> None:
 
 
 async def run_serve() -> None:
-    """The sync and the page that pairs it, in one process: it owns the credential the page mints."""
+    """Local all-in-one mode: the sync and the page that pairs it share one credential-owning process."""
     settings = ServeSettings()
     await asyncio.to_thread(RUNNER.apply, settings.database_url)
     engine = make_engine(settings.database_url)
@@ -137,6 +141,46 @@ async def run_serve() -> None:
                 syncing.cancel()
 
             # If the loop dies the process must too, so the pod restarts rather than serving a page over nothing.
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(serve_then_stop_syncing(tasks.create_task(supervisor.run())))
+    finally:
+        await engine.dispose()
+
+
+async def run_web() -> None:
+    """Serve the owner-authenticated page; control operations go to the private control service."""
+    settings = WebSettings()
+    await asyncio.to_thread(RUNNER.apply, settings.database_url)
+    async with httpx.AsyncClient(base_url=settings.control_base_url, timeout=30) as control_client:
+        server = uvicorn.Server(
+            uvicorn.Config(
+                create_web_app(settings=settings, control_client=control_client),
+                host=settings.host,
+                port=settings.port,
+                log_level="info",
+            )
+        )
+        await server.serve()
+
+
+async def run_control() -> None:
+    """Own the rotating Claude credential and sync loop behind the private control Service."""
+    settings = ControlSettings()
+    await asyncio.to_thread(RUNNER.apply, settings.database_url)
+    engine = make_engine(settings.database_url)
+    try:
+        async with httpx.AsyncClient(timeout=30) as token_client:
+            supervisor = SyncSupervisor.for_settings(settings, store=SessionStore(engine), token_client=token_client)
+            server = uvicorn.Server(
+                uvicorn.Config(
+                    create_control_app(supervisor=supervisor), host=settings.host, port=settings.port, log_level="info"
+                )
+            )
+
+            async def serve_then_stop_syncing(syncing: asyncio.Task[None]) -> None:
+                await server.serve()
+                syncing.cancel()
+
             async with asyncio.TaskGroup() as tasks:
                 tasks.create_task(serve_then_stop_syncing(tasks.create_task(supervisor.run())))
     finally:
@@ -175,6 +219,10 @@ async def async_main(command: Command, args: argparse.Namespace) -> None:
             await run_sync(args)
         case Command.SERVE:
             await run_serve()
+        case Command.WEB:
+            await run_web()
+        case Command.CONTROL:
+            await run_control()
         case Command.PROBE:
             store = CredentialStore(get_build_working_directory() / args.credentials_file)
             await probe(store, session_id=args.session, listen_seconds=args.listen_seconds)
@@ -203,7 +251,9 @@ def main() -> None:
     count = commands.add_parser(Command.COUNT, help="print how many events the account holds; downloads nothing")
     verify = commands.add_parser(Command.VERIFY, help="re-read --out and check it; no network")
     verify.add_argument("--out", required=True)
-    commands.add_parser(Command.SERVE, help="run the sync with a login-protected page that pairs it and shows status")
+    commands.add_parser(Command.SERVE, help="run the sync with its login-protected pairing page in one process")
+    commands.add_parser(Command.WEB, help="serve the login-protected web/API tier, proxying control operations")
+    commands.add_parser(Command.CONTROL, help="run the private sync owner and its control API")
     probe_parser = commands.add_parser(
         Command.PROBE, help="try the live routes under different headers and hosts, read-only; never refreshes"
     )

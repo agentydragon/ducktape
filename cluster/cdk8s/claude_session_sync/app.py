@@ -1,6 +1,5 @@
-"""claude-session-sync: the single Deployment that keeps a CNPG database level with every Claude
-Code cloud session's events (`devinfra/claude/session_export`), its Namespace, the database, the
-PVC holding the OAuth credential, the pull credentials and the egress policy.
+"""claude-session-sync: a replicated web Deployment plus a single credential-owning control Deployment, its
+CNPG database, the control PVC holding the OAuth credential, pull credentials and egress policies.
 
 The credential is minted by `pair` inside the running container, not provisioned here
 (devinfra/claude/session_export/docs/deploy.md): the Deployment starts unpaired and waits.
@@ -25,7 +24,7 @@ from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from devinfra.claude.session_export.settings import ServeSettings
+from devinfra.claude.session_export.settings import ControlSettings, WebSettings
 from util.settings_contract import env_name
 
 NAME = "claude-session-sync"
@@ -35,21 +34,33 @@ PINS_DIR = f"{HAND_WRITTEN_ROOT}/claude-session-sync-image-pins"
 DATABASE = cnpg.PostgresRef.generated(name="claude-session-sync-db", namespace=NAMESPACE)
 # The tag comes from the Component in PINS_DIR.
 _IMAGE = "git.allegedly.works/ducktape-ci/claude-session-sync:unset"
-_LABELS = {"app.kubernetes.io/name": NAME}
 # tf/gitops/sso-providers/provider_claude_session_sync.tf spells the same origin as its redirect URI.
 HOSTNAME = "claude-session-sync.allegedly.works"
-SERVICE = ServiceRef(
-    name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
-)
-# Reflected from the authentik namespace; its keys are the OIDC environment variables of `ServeSettings`.
+# Reflected from the authentik namespace; its keys are the OIDC environment variables of `WebSettings`.
 _OIDC = SecretRef(namespace=NAMESPACE, name="claude-session-sync-oidc")
 _OIDC_FIELDS = ("oidc_issuer", "oidc_client_id", "oidc_client_secret", "oidc_session_secret", "oidc_allowed_subject")
 _DATA_CLAIM = "claude-session-sync-data"
 _DATA_DIR = "/data"
 _CREDENTIALS_FILE = f"{_DATA_DIR}/credentials.json"
+_CONTROL_NAME = f"{NAME}-control"
 # The hosts the OAuth token is refreshed at and the sessions API is read from.
 _ANTHROPIC_HOSTS = ("api.anthropic.com", "platform.claude.com")
 _UID = 1000
+_WEB_LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "web"}
+_CONTROL_LABELS = {"app.kubernetes.io/name": _CONTROL_NAME, "app.kubernetes.io/component": "control"}
+_WEB_ENDPOINT_LABELS = {**cilium.endpoint_labels(NAMESPACE, NAME), "app.kubernetes.io/component": "web"}
+_CONTROL_ENDPOINT_LABELS = {
+    **cilium.endpoint_labels(NAMESPACE, _CONTROL_NAME),
+    "app.kubernetes.io/component": "control",
+}
+WEB_SERVICE = ServiceRef(
+    name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=NAMESPACE, labels=tuple(_WEB_LABELS.items()))
+)
+CONTROL_SERVICE = ServiceRef(
+    name=_CONTROL_NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=tuple(_CONTROL_LABELS.items())),
+)
 
 
 def _database(chart: Chart) -> None:
@@ -86,35 +97,43 @@ def _data_claim(chart: Chart) -> None:
     )
 
 
-def _healthz(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
+def _healthz(service: ServiceRef, *, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
     return k8s.Probe(
-        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(SERVICE.pod_port)),
+        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(service.pod_port)),
         initial_delay_seconds=initial_delay_seconds,
         period_seconds=period_seconds,
     )
 
 
-def _deployment(chart: Chart) -> None:
+def _deployment(
+    chart: Chart,
+    *,
+    workload_id: str,
+    name: str,
+    labels: dict[str, str],
+    selector_labels: dict[str, str] | None = None,
+    args: list[str],
+    env: list[k8s.EnvVar],
+    service: ServiceRef,
+    replicas: int,
+    strategy: str,
+    description: str,
+    volumes: list[k8s.Volume] | None = None,
+    volume_mounts: list[k8s.VolumeMount] | None = None,
+    tolerate_control_plane: bool = False,
+) -> None:
     deployment = k8s.KubeDeployment(
         chart,
-        "deployment",
+        workload_id,
         metadata=k8s.ObjectMeta(
-            name=NAME,
-            namespace=NAMESPACE,
-            labels=_LABELS,
-            annotations={
-                "description": (
-                    "Reads every Claude Code cloud session's events into the CNPG database with a dedicated OAuth "
-                    "grant kept on the data volume, and serves the login-protected page that pairs it."
-                )
-            },
+            name=name, namespace=NAMESPACE, labels=labels, annotations={"description": description}
         ),
         spec=k8s.DeploymentSpec(
-            replicas=1,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
-            strategy=k8s.DeploymentStrategy(type="Recreate"),
+            replicas=replicas,
+            selector=k8s.LabelSelector(match_labels=selector_labels or labels),
+            strategy=k8s.DeploymentStrategy(type=strategy),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=labels),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
@@ -123,24 +142,13 @@ def _deployment(chart: Chart) -> None:
                     ),
                     containers=[
                         k8s.Container(
-                            name=NAME,
+                            name=name,
                             image=_IMAGE,
-                            args=["serve"],
-                            ports=[SERVICE.port.k8s_container_port()],
-                            env=[
-                                DATABASE.app_secret.key("uri").env_var(env_name(ServeSettings, "database_url")),
-                                k8s.EnvVar(name=env_name(ServeSettings, "credentials_file"), value=_CREDENTIALS_FILE),
-                                k8s.EnvVar(
-                                    name=env_name(ServeSettings, "public_base_url"), value=f"https://{HOSTNAME}"
-                                ),
-                                k8s.EnvVar(name=env_name(ServeSettings, "port"), value=str(SERVICE.pod_port)),
-                                *(
-                                    _OIDC.key(env_name(ServeSettings, field)).env_var(env_name(ServeSettings, field))
-                                    for field in _OIDC_FIELDS
-                                ),
-                            ],
-                            readiness_probe=_healthz(initial_delay_seconds=5, period_seconds=10),
-                            liveness_probe=_healthz(initial_delay_seconds=30, period_seconds=20),
+                            args=args,
+                            ports=[service.port.k8s_container_port()],
+                            env=env,
+                            readiness_probe=_healthz(service, initial_delay_seconds=5, period_seconds=10),
+                            liveness_probe=_healthz(service, initial_delay_seconds=30, period_seconds=20),
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("50m"),
@@ -152,65 +160,133 @@ def _deployment(chart: Chart) -> None:
                             # The aspect py_binary launcher materializes its venv under the image runfiles
                             # directory at startup, so the root filesystem stays writable.
                             security_context=k8s.SecurityContext(read_only_root_filesystem=False),
-                            volume_mounts=[k8s.VolumeMount(name="data", mount_path=_DATA_DIR)],
+                            volume_mounts=volume_mounts,
                         )
                     ],
-                    volumes=[
-                        k8s.Volume(
-                            name="data",
-                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_DATA_CLAIM),
-                        )
-                    ],
+                    volumes=volumes,
                 ),
             ),
         ),
     )
     pod_policy.harden(deployment)
     # The descheduler evicts a pod on a contended worker roughly every 15 minutes
-    # (cluster/cdk8s/cli_proxy_api/cli_proxy_api.py); this pod owns a rotating refresh token, so the
-    # zone's control planes are allowed as overflow capacity.
-    pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
+    # (cluster/cdk8s/cli_proxy_api/cli_proxy_api.py); the credential owner is allowed control planes as overflow.
+    pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=tolerate_control_plane)
+
+
+def _web_deployment(chart: Chart) -> None:
+    _deployment(
+        chart,
+        workload_id="web-deployment",
+        name=NAME,
+        labels=_WEB_LABELS,
+        selector_labels={"app.kubernetes.io/name": NAME},  # preserve the existing Deployment's immutable selector
+        args=["web"],
+        service=WEB_SERVICE,
+        replicas=2,
+        strategy="RollingUpdate",
+        description="Serves the owner-authenticated Claude session page and proxies controls to the credential owner.",
+        env=[
+            DATABASE.app_secret.key("uri").env_var(env_name(WebSettings, "database_url")),
+            k8s.EnvVar(name=env_name(WebSettings, "public_base_url"), value=f"https://{HOSTNAME}"),
+            k8s.EnvVar(name=env_name(WebSettings, "control_base_url"), value=CONTROL_SERVICE.url),
+            k8s.EnvVar(name=env_name(WebSettings, "port"), value=str(WEB_SERVICE.pod_port)),
+            *(_OIDC.key(env_name(WebSettings, field)).env_var(env_name(WebSettings, field)) for field in _OIDC_FIELDS),
+        ],
+    )
+
+
+def _control_deployment(chart: Chart) -> None:
+    _deployment(
+        chart,
+        workload_id="control-deployment",
+        name=_CONTROL_NAME,
+        labels=_CONTROL_LABELS,
+        args=["control"],
+        service=CONTROL_SERVICE,
+        replicas=1,
+        strategy="Recreate",
+        description="Owns the rotating Claude OAuth credential, pairing flow, polling cycle, and live API streams.",
+        env=[
+            DATABASE.app_secret.key("uri").env_var(env_name(ControlSettings, "database_url")),
+            k8s.EnvVar(name=env_name(ControlSettings, "credentials_file"), value=_CREDENTIALS_FILE),
+            k8s.EnvVar(name=env_name(ControlSettings, "port"), value=str(CONTROL_SERVICE.pod_port)),
+        ],
+        volumes=[
+            k8s.Volume(
+                name="data", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_DATA_CLAIM)
+            )
+        ],
+        volume_mounts=[k8s.VolumeMount(name="data", mount_path=_DATA_DIR)],
+        tolerate_control_plane=True,
+    )
 
 
 def _service_and_route(chart: Chart) -> None:
     k8s.KubeService(
         chart,
-        "service",
-        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=_LABELS, ports=[SERVICE.port.k8s_service_port()], type="ClusterIP"),
+        "web-service",
+        metadata=k8s.ObjectMeta(name=WEB_SERVICE.name, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(selector=_WEB_LABELS, ports=[WEB_SERVICE.port.k8s_service_port()], type="ClusterIP"),
+    )
+    k8s.KubeService(
+        chart,
+        "control-service",
+        metadata=k8s.ObjectMeta(name=CONTROL_SERVICE.name, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(
+            selector=_CONTROL_LABELS, ports=[CONTROL_SERVICE.port.k8s_service_port()], type="ClusterIP"
+        ),
     )
     https_route(
         chart,
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=[HOSTNAME],
-        backend=SERVICE,
+        backend=WEB_SERVICE,
         hsts=False,
         listener=None,
     )
 
 
-def _network_policy(chart: Chart) -> None:
+def _network_policies(chart: Chart) -> None:
     NetworkPolicy(
         chart,
-        "network-policy",
+        "web-network-policy",
         metadata=ApiObjectMetadata(
-            name=NAME,
+            name=f"{NAME}-web",
             namespace=NAMESPACE,
             annotations={
                 "description": (
-                    "The Gateway may reach the page. The pod may resolve DNS, reach Anthropic's OAuth and API hosts, "
-                    "Authentik for the login, and its database."
+                    "The Gateway may reach the page. Web Pods may reach Authentik, the database, and the private "
+                    "control Service."
                 )
             },
         ),
-        endpoint_selector=_LABELS,
-        ingress=[IngressRule.from_gateway(SERVICE.pod_port)],
+        endpoint_selector=_WEB_ENDPOINT_LABELS,
+        ingress=[IngressRule.from_gateway(WEB_SERVICE.pod_port)],
+        egress=[
+            cilium.dns_egress(resolves=["*"]),
+            # auth.allegedly.works resolves to the Gateway's node addresses, which an FQDN rule cannot select.
+            cilium.egress_via_gateway("auth.allegedly.works"),
+            EgressRule.to_endpoints({"k8s:cnpg.io/cluster": DATABASE.name}, cnpg.PORT.number),
+            CONTROL_SERVICE.egress(),
+        ],
+    )
+    NetworkPolicy(
+        chart,
+        "control-network-policy",
+        metadata=ApiObjectMetadata(
+            name=f"{NAME}-control",
+            namespace=NAMESPACE,
+            annotations={
+                "description": "Only web Pods may call the single Claude credential and sync control process."
+            },
+        ),
+        endpoint_selector=_CONTROL_ENDPOINT_LABELS,
+        ingress=[WEB_SERVICE.pods.admit(CONTROL_SERVICE.pod_port)],
         egress=[
             cilium.dns_egress(resolves=["*"]),
             EgressRule.to_fqdns(*_ANTHROPIC_HOSTS),
-            # auth.allegedly.works resolves to the Gateway's node addresses, which an FQDN rule cannot select.
-            cilium.egress_via_gateway("auth.allegedly.works"),
             EgressRule.to_endpoints({"k8s:cnpg.io/cluster": DATABASE.name}, cnpg.PORT.number),
         ],
     )
@@ -230,9 +306,10 @@ def chart(app: App) -> Chart:
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _database(chart)
     _data_claim(chart)
-    _deployment(chart)
+    _web_deployment(chart)
+    _control_deployment(chart)
     _service_and_route(chart)
-    _network_policy(chart)
+    _network_policies(chart)
     add_fleet_rules(chart)
     return chart
 

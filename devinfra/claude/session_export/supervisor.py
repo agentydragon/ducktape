@@ -27,7 +27,7 @@ from devinfra.claude.session_export.oauth import (
     PairingAttempt,
     redeem,
 )
-from devinfra.claude.session_export.settings import ServeSettings
+from devinfra.claude.session_export.settings import ControlSettings, ServeSettings
 from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.sync import sync_once
 
@@ -115,7 +115,9 @@ class SyncSupervisor:
         self._live_failure: FailureStatus | None = None
 
     @classmethod
-    def for_settings(cls, settings: ServeSettings, *, store: SessionStore, token_client: httpx.AsyncClient) -> Self:
+    def for_settings(
+        cls, settings: ControlSettings | ServeSettings, *, store: SessionStore, token_client: httpx.AsyncClient
+    ) -> Self:
         return cls(
             credentials=CredentialStore(settings.credentials_file),
             store=store,

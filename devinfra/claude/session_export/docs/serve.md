@@ -1,8 +1,9 @@
 # The pairing page
 
-`export_sessions_bin serve` runs the [sync](sync.md) loop and a page in one process. The page shows how the sync is
-doing, pairs it with a Claude account, and starts a poll on demand. One process does both because the credential
-has one owner: every refresh rotates the refresh token.
+`export_sessions_bin serve` runs the [sync](sync.md) loop and the page in one process for local use. In the cluster,
+`web` serves the owner-authenticated page and `control` owns the sync loop and OAuth credential. The web Deployment
+can have several replicas; all control actions are forwarded to the one control Pod, which keeps the rotating refresh
+token and pairing attempt single-owned.
 
 ## What the page shows
 
@@ -40,13 +41,16 @@ cookie with identity and expiry, and a write to the API from another origin is r
 
 ## Settings
 
-Environment variables, all prefixed `SESSION_SYNC_` (`settings.py`):
+Environment variables are prefixed `SESSION_SYNC_` (`settings.py`). `web` uses the database URL, OIDC fields,
+`PUBLIC_BASE_URL`, and `CONTROL_BASE_URL`; `control` uses the database URL, `CREDENTIALS_FILE`, and sync settings.
+`serve` combines both settings for local use.
 
 | Variable                                              | Meaning                                                                               |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                                        | The PostgreSQL the sync writes                                                        |
 | `CREDENTIALS_FILE`                                    | Where the OAuth credential is kept (0600)                                             |
 | `PUBLIC_BASE_URL`                                     | The page's origin, as Authentik redirects to it                                       |
+| `CONTROL_BASE_URL`                                    | Private in-cluster control Service URL, used by web replicas                          |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | The Authentik provider                                                                |
 | `OIDC_SESSION_SECRET`, `OIDC_SESSION_SECONDS`         | Signing key and lifetime of the browser session                                       |
 | `OIDC_ALLOWED_SUBJECT`                                | The one `sub` admitted                                                                |
