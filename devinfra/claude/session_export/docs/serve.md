@@ -1,8 +1,21 @@
 # The pairing page
 
 `export_sessions_bin serve` runs the [sync](sync.md) loop and a page in one process. The page shows how the sync is
-doing, pairs it with a Claude account, and starts a cycle on demand. One process does both because the credential
+doing, pairs it with a Claude account, and starts a poll on demand. One process does both because the credential
 has one owner: every refresh rotates the refresh token.
+
+## What the page shows
+
+Two mechanisms keep the database current, and the page reports each on its own ([sync.md](sync.md) has the design):
+
+- **Live following** streams the events of the sessions in use as they happen; a session watch finds new sessions at
+  once. It shows the sessions streaming, whether the watch is connected, and when an event last arrived.
+- **Polling** lists every session each interval and reads the events of any that moved on. It works without live
+  following and catches what that missed. It shows the state, when it last ran and what it read, when the next poll
+  is due, and how many sessions are behind.
+
+"Behind" leaves out the sessions with a live stream: a stream keeps its session current but never marks it level, so
+counting it would show a healthy sync as lagging. Both "Poll now" and the interval start the same poll.
 
 ## Pairing
 
