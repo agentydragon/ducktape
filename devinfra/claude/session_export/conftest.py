@@ -26,7 +26,6 @@ TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid=
 TEST_ACCESS_TOKEN = "test-access-token"
 TEST_EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
 LIVE_WINDOW = timedelta(days=36500)  # every test session's last event counts as recent
-RESUME_TOKEN = "test-resume-token"
 
 
 PAIRED_RESPONSE = {
@@ -114,8 +113,9 @@ class SseConnection:
     request: httpx.Request
     frames: asyncio.Queue[bytes | None] = field(default_factory=asyncio.Queue)
 
-    def send(self, event: str, data: dict[str, Any] | None = None, *, frame_id: str | None = None) -> None:
-        lines = [f"event: {event}"]
+    def send(self, event: str | None, data: dict[str, Any] | None = None, *, frame_id: str | None = None) -> None:
+        """`event=None` sends a frame with no `event:` line, as the server's keepalive does."""
+        lines = [] if event is None else [f"event: {event}"]
         if frame_id:
             lines.append(f"id: {frame_id}")
         if data is not None:
@@ -135,6 +135,7 @@ class FakeSessionsService:
     statuses: dict[str, str] = field(default_factory=dict)  # overrides the generated status ("archived")
     fail_next: list[int] = field(default_factory=list)  # HTTP statuses answered before any real response
     stream_refusals: list[int] = field(default_factory=list)  # HTTP statuses answered to the next stream opens
+    list_status: int | None = None  # answers every session list request with this status while set
     requests: list[httpx.Request] = field(default_factory=list)
     streams: list[SseConnection] = field(default_factory=list)  # every stream opened, in order
     on_open: list[Callable[[SseConnection], None]] = field(default_factory=list)  # scripts the next stream opens
@@ -151,9 +152,6 @@ class FakeSessionsService:
 
     def event_streams(self, session_id: str) -> list[SseConnection]:
         return self.streams_at(f"/v1/code/sessions/cse_{session_id.removeprefix('session_')}/events/stream")
-
-    def watches(self) -> list[SseConnection]:
-        return self.streams_at("/v1/code/sessions/watch")
 
     def _open_stream(self, request: httpx.Request) -> httpx.Response:
         if self.stream_refusals:
@@ -172,8 +170,10 @@ class FakeSessionsService:
         bearer_ok = request.headers.get("authorization") == f"Bearer {TEST_ACCESS_TOKEN}"
         if not (cookie_ok or bearer_ok) or request.headers["x-organization-uuid"] != TEST_COOKIE.org_uuid:
             return httpx.Response(401, json={"error": {"type": "authentication_error"}})
-        if request.url.path == "/v1/code/sessions/watch" or request.url.path.endswith("/events/stream"):
+        if request.url.path.endswith("/events/stream"):
             return self._open_stream(request)
+        if self.list_status and request.url.path == "/v1/code/sessions":
+            return httpx.Response(self.list_status, json={"error": {"type": "refused"}})
         params = request.url.params
         limit = int(params["limit"])
         if not 1 <= limit <= (500 if request.url.path.endswith("/events") else 100):
@@ -182,7 +182,7 @@ class FakeSessionsService:
         if request.url.path == "/v1/code/sessions":
             ids = list(self.events)
             listed = ids[cursor : cursor + limit]
-            sessions_body: dict[str, Any] = {"data": [self.list_item(i) for i in listed], "resume_token": RESUME_TOKEN}
+            sessions_body: dict[str, Any] = {"data": [self.list_item(i) for i in listed]}
             if cursor + limit < len(ids):
                 sessions_body["next_cursor"] = str(cursor + limit)
             return httpx.Response(200, json=sessions_body)

@@ -1,31 +1,38 @@
-"""Follow the sessions that are moving through the server's push streams (design: docs/sync.md § Live following).
+"""Follow the sessions that are moving through the server's event streams (design: docs/sync.md § Live following).
 
-Two streams feed the mirror between polling cycles: the session watch names a session as it appears or changes,
-and one event stream per recently active session delivers its events as the server stores them. Both only ever
-add to what a polling cycle would read, and every stream event goes through the same contiguity rule: an event
-past a gap is never stored, the session is paged instead.
+A polling cycle reads what is behind every few minutes. Between cycles this keeps an event stream open per recently
+active session, so a running session reaches the mirror as it happens, and lists the newest sessions every
+`DISCOVERY_INTERVAL` so a new one is found within seconds. The streams only add to what a cycle would read, and every
+stream event goes through the same contiguity rule: an event past a gap is never stored, the session is paged instead.
 """
 
 import asyncio
 import contextlib
 import logging
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
+from pydantic import BaseModel, Field
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception, wait_exponential_jitter
 from tenacity.wait import wait_base
 
-from devinfra.claude.session_export.api import ResumePointLostError, SessionsApi, WatchCursor
-from devinfra.claude.session_export.models import SessionSummary
+from devinfra.claude.session_export.api import ResumePointLostError, SessionsApi
+from devinfra.claude.session_export.failures import describe_failure
 from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.sync import read_events_after
 
 logger = logging.getLogger(__name__)
 
-# How often the sessions worth following are re-derived when nothing prompts it: this is what retires a session
-# whose last event has aged out of the window.
-FOLLOW_SET_INTERVAL = 60.0
+# How often the newest sessions are listed and the followed set re-derived when nothing prompts it. This is also what
+# retires a session whose last event has aged out of the window.
+DISCOVERY_INTERVAL = 30.0
+DISCOVERY = "session discovery"
 _RETRY_MAX_WAIT = 300.0
+
+
+class LiveProblem(BaseModel):
+    source: str = Field(description="What is failing: `session discovery`, or the id of a session whose stream is.")
+    at: datetime = Field(description="When it last failed; it retries with growing waits until it works.")
+    message: str
 
 
 def _is_retryable(failure: BaseException) -> bool:
@@ -42,91 +49,61 @@ class LiveFollower:
         *,
         max_streams: int,
         window: timedelta,
-        on_resync: Callable[[], None],
         retry_wait: wait_base | None = None,
     ) -> None:
-        """`window`: a session is followed while its last event is this recent. `on_resync`: called when the watch
-        lost its place, so changes may have gone unseen and only a list will show them."""
+        """`window`: a session is followed while its last event is this recent."""
         self._api = api
         self._store = store
         self._max_streams = max_streams
         self._window = window
-        self._on_resync = on_resync
         self._retry_wait = retry_wait or wait_exponential_jitter(initial=1, max=_RETRY_MAX_WAIT)
         self._streams: dict[str, asyncio.Task[None]] = {}
         # `sequence_num` each followed session is stored up to; absent until its first page catch-up.
         self._positions: dict[str, int] = {}
+        self._problems: dict[str, LiveProblem] = {}
         self._follow_set_stale = asyncio.Event()
-        self._watching = False
-        self.last_frame_at: datetime | None = None
-
-    @property
-    def watching(self) -> bool:
-        """A session watch is open, or being reopened."""
-        return self._watching
+        self.last_event_at: datetime | None = None
 
     @property
     def streams(self) -> int:
         return len(self._streams)
 
+    @property
+    def problems(self) -> list[LiveProblem]:
+        """What is failing now, most recent first; an entry goes once its source works again."""
+        return sorted(self._problems.values(), key=lambda problem: problem.at, reverse=True)
+
+    def _resolved(self, source: str) -> None:
+        self._problems.pop(source, None)
+
     def refresh(self) -> None:
-        """Re-derive the sessions to follow now: the stored metadata has changed."""
+        """List the newest sessions and re-derive the followed set now: the stored metadata has changed."""
         self._follow_set_stale.set()
 
     async def run(self) -> None:
         async with asyncio.TaskGroup() as group:
-            group.create_task(self._keep_watching())
-            group.create_task(self._keep_following(group))
+            await self._keep_following(group)
 
-    def _retrying(self, label: str) -> AsyncRetrying:
+    def _retrying(self, source: str) -> AsyncRetrying:
         """Retry every failure but a lost resume point, with the wait growing until a pass completes."""
 
         def log_retry(state: RetryCallState) -> None:
             failure = state.outcome.exception() if state.outcome else None
-            logger.warning("%s: retrying in %.0fs after %r", label, state.upcoming_sleep, failure)
+            message = describe_failure(failure) if failure else "unknown failure"
+            self._problems[source] = LiveProblem(source=source, at=datetime.now(UTC), message=message)
+            logger.warning("%s: retrying in %.0fs after %s", source, state.upcoming_sleep, message)
 
         return AsyncRetrying(wait=self._retry_wait, retry=retry_if_exception(_is_retryable), before_sleep=log_retry)
 
-    async def _keep_watching(self) -> None:
-        cursor: WatchCursor | None = None
-        lost_place = False
-        while True:
-            try:
-                async for attempt in self._retrying("session watch"):
-                    with attempt:
-                        if cursor is None:
-                            cursor = WatchCursor(await self._api.resume_token())
-                            if lost_place:
-                                # Asked after the token is taken, so the list it triggers covers the gap.
-                                self._on_resync()
-                                lost_place = False
-                        await self._watch(cursor)
-            except ResumePointLostError as lost:
-                logger.info("%s; taking a fresh resume token", lost)
-                cursor = None
-                lost_place = True
-
-    async def _watch(self, cursor: WatchCursor) -> None:
-        self._watching = True
-        try:
-            async with contextlib.aclosing(self._api.watch_sessions(cursor)) as changes:
-                async for change in changes:
-                    self.last_frame_at = datetime.now(UTC)
-                    if isinstance(change, SessionSummary):
-                        await self._store.upsert_sessions([change])
-                    else:
-                        logger.info("session %s was removed upstream; its stored rows stay", change.id)
-                    self.refresh()
-        finally:
-            self._watching = False
-
     async def _keep_following(self, group: asyncio.TaskGroup) -> None:
         while True:
-            async for attempt in self._retrying("follow set"):
+            async for attempt in self._retrying(DISCOVERY):
                 with attempt:
+                    await self._store.upsert_sessions(await self._api.recent_sessions(self._max_streams))
                     await self._match_streams_to_store(group)
+            self._resolved(DISCOVERY)
             with contextlib.suppress(TimeoutError):
-                async with asyncio.timeout(FOLLOW_SET_INTERVAL):
+                async with asyncio.timeout(DISCOVERY_INTERVAL):
                     await self._follow_set_stale.wait()
 
     async def _match_streams_to_store(self, group: asyncio.TaskGroup) -> None:
@@ -139,6 +116,7 @@ class LiveFollower:
         for session_id in self._streams.keys() - wanted:
             self._streams.pop(session_id).cancel()
             self._positions.pop(session_id, None)
+            self._resolved(session_id)
 
     async def _follow(self, session_id: str) -> None:
         while True:
@@ -156,7 +134,9 @@ class LiveFollower:
             after = await self._store.resume_after(session_id)
             self._positions[session_id] = await read_events_after(self._api, self._store, session_id, after=after)
         async with contextlib.aclosing(
-            self._api.stream_events(session_id, after=self._positions[session_id])
+            self._api.stream_events(
+                session_id, after=self._positions[session_id], on_connected=lambda: self._resolved(session_id)
+            )
         ) as events:
             async for event in events:
                 position = self._positions[session_id]
@@ -166,4 +146,4 @@ class LiveFollower:
                     )
                 await self._store.append_events(session_id, [event])
                 self._positions[session_id] = max(position, event.seq)
-                self.last_frame_at = datetime.now(UTC)
+                self.last_event_at = datetime.now(UTC)

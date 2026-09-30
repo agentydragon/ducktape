@@ -164,7 +164,7 @@ async def test_without_live_streams_the_sync_only_polls(service: FakeSessionsSer
     await running.approve()
     await eventually(lambda: running.cycle_read(3))
     assert (await running.supervisor.status()).live == LiveStatus(
-        following=False, watching=False, streams=0, last_frame_at=None, failure=None
+        following=False, streams=0, last_event_at=None, problems=[], failure=None
     )
     assert service.streams == []
 
@@ -192,8 +192,35 @@ async def test_live_following_stores_a_pushed_event_and_reports_itself(
 
         await eventually(stored_through_four)
         status = (await live.supervisor.status()).live
-        assert (status.following, status.streams, status.failure) == (True, 1, None)
-        assert status.last_frame_at is not None
+        assert (status.following, status.streams, status.problems, status.failure) == (True, 1, [], None)
+        assert status.last_event_at is not None
+    finally:
+        loop.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop
+
+
+async def test_a_refused_stream_shows_on_the_page_with_its_reason(
+    service: FakeSessionsService, store: SessionStore, tmp_path: Path
+) -> None:
+    live = supervisor_for(
+        service, store, tmp_path / "credential.json", FakeTokenEndpoint(PAIRED_RESPONSE), live_streams=1
+    )
+    service.stream_refusals = [403] * 1000
+    loop = asyncio.create_task(live.supervisor.run())
+    try:
+        service.events = {ONE: make_events(3)}
+        service.statuses = {ONE: "active"}
+        await live.approve()
+
+        async def reported() -> bool:
+            return bool((await live.supervisor.status()).live.problems)
+
+        await eventually(reported)
+        [problem] = (await live.supervisor.status()).live.problems
+        assert problem.source == ONE
+        assert "403 Forbidden from GET /v1/code/sessions/cse_test0001/events/stream" in problem.message
+        assert "refused" in problem.message
     finally:
         loop.cancel()
         with contextlib.suppress(asyncio.CancelledError):

@@ -51,17 +51,17 @@ there).
 
 ## Live following
 
-`serve` adds two push streams between the cycles ([live.py](../live.py)); `sync` only polls. The cycle stays the
-source of truth and the streams only shorten the delay.
+`serve` adds event streams between the cycles ([live.py](../live.py)); `sync` only polls. The cycle stays the source
+of truth and the streams only shorten the delay.
 
 - **Event streams.** A session that is not archived and had an event within `LIVE_WINDOW_SECONDS` gets an open
   `events/stream` from its stored position, up to `LIVE_STREAMS` sessions, newest first. The first connection
   starts with a page catch-up so the position is exact; each pushed event is stored as it arrives, and a closed or
   silent stream is reopened from the stored position.
-- **Session watch.** One `sessions/watch` stream names sessions as they appear or change. Each change is upserted,
-  and the set of followed sessions is re-derived, so a session is followed from its first event. Its resume token
-  comes from a one-item list; a watch the server no longer holds asks the supervisor for a cycle, since changes
-  in the gap are only in a list.
+- **Discovery.** Every 30 s the newest `LIVE_STREAMS` sessions are listed (one request) and upserted, and the followed
+  set is re-derived from the store: a new session is followed within about 30 s, and one that was archived or has
+  aged out of the window is dropped. A finished cycle triggers the same pass at once. The web client's own
+  `sessions/watch` feed is not used: it answers 404 to the OAuth bearer ([api.md](api.md) § Session watch).
 
 Rules that keep the mirror exact:
 
@@ -71,10 +71,12 @@ Rules that keep the mirror exact:
 - A frame at or below the position is stored again, which refreshes the worker stamps as a page read does.
 - Streams do not move `synced_last_event_at`. A session they touched is behind until the next cycle reads it, which
   finds nothing new and marks it level.
-- A failing stream retries with jittered backoff from 1 s to 5 min and never ends the cycle; a follower that stops
-  altogether is reported on the page. `LIVE_STREAMS=0` turns following off.
+- A failing source (discovery, or one session's stream) retries with jittered backoff from 1 s to 5 min and never
+  ends the cycle. The page lists each failing source with the reason (HTTP status, route and the API's error body)
+  until it works again, and the log carries the same line. A follower that stops altogether is reported too.
+  `LIVE_STREAMS=0` turns following off.
 
-The wire contract of both streams is in [api.md](api.md) § Event stream and session watch.
+The wire contract of the stream is in [api.md](api.md) § Event stream.
 
 ## `payload` is `jsonb`; `json` is the open alternative
 
