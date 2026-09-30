@@ -108,7 +108,7 @@ pub fn compute_chunk_analysis<F>(
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
 ) -> Result<ChunkAnalysis>
 where
-    F: FnMut(Span) -> Option<(usize, usize)>,
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
     let fact_analysis =
         analyze_chunk_with_policy(structural, hints, source_path, line_range_for_span);

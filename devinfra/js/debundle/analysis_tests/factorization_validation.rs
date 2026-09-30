@@ -744,6 +744,7 @@ fn split_comma_list_assigns_per_declarator_source_ranges() {
                     (
                         cm.lookup_char_pos(span.lo()).line,
                         cm.lookup_char_pos(span.hi()).line,
+                        cm.lookup_char_pos(span.lo()).col_display + 1,
                     )
                 })
             },

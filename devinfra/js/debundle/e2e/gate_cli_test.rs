@@ -21,12 +21,13 @@ use std::path::PathBuf;
 use debundle_e2e_support::*;
 
 /// A two-module at-init cycle the gate must reject:
-/// `mod_x = {A, D}` where `D = wrap(C)` reads `C` from `mod_y`, and
-/// `mod_y = {B, C}` where `B = wrap(A)` reads `A` from `mod_x`.
+/// `mod_x = {A, D}` where unresolved `wrap(C)` reads `C` from `mod_y`,
+/// and `mod_y = {B, C}` where unresolved `wrap(A)` reads `A` from
+/// `mod_x`. Since B is before D, D's impure sequencing edge points to B
+/// in the cut's `mod_x -> mod_y` pair alongside D's at-init read.
 fn cycle_fixture_opts() -> FixtureOpts<'static> {
     FixtureOpts::new(
-        r#"function wrap(x) { return { ref: x }; }
-const A = "a";
+        r#"const A = "a";
 const B = wrap(A);
 const C = "c";
 const D = wrap(C);
@@ -62,10 +63,10 @@ fn gate_json(args: &[&str]) -> serde_json::Value {
 #[test]
 fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() {
     let rejected = rejected_cycle_fixture();
-    let (binding, line) = if rejected.stderr.contains("`B` at static/app.js:3:11") {
-        ("B", 3)
-    } else if rejected.stderr.contains("`D` at static/app.js:5:11") {
-        ("D", 5)
+    let (binding, line) = if rejected.stderr.contains("`D` at static/app.js:4:11") {
+        ("D", 4)
+    } else if rejected.stderr.contains("`B` at static/app.js:2:11") {
+        ("B", 2)
     } else {
         panic!(
             "rejection omitted sequenced initializer owner/location:\n{}",
@@ -104,12 +105,14 @@ fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() 
             .contains("purity: pure")
     );
 
-    let text = run_gate(&[
+    let text = run_debundle(&[
         "gate",
         "describe",
         "0",
         "--graph",
         graph_path(&rejected).to_str().unwrap(),
+        "--format",
+        "text",
     ]);
     let text = String::from_utf8_lossy(&text.stdout);
     assert!(

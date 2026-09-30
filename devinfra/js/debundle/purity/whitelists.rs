@@ -293,5 +293,8 @@ pub(crate) static SHADOW_TRACKED_GLOBALS: LazyLock<BTreeSet<&'static str>> = Laz
     names.extend(PURE_BUILTIN_NEW_NO_ARGS.iter().copied());
     names.extend(PURE_BUILTIN_NEW_ARRAY_ITERABLE.iter().copied());
     names.extend(PURE_BUILTIN_NEW_STRING_LITERAL_ARG.iter().copied());
+    // `String.raw` is a pure tagged-template intrinsic recognized by
+    // the classifier; a chunk-local `String` binding must shadow it.
+    names.insert("String");
     names
 });
