@@ -90,8 +90,7 @@ async def test_spend_changed_notifies_after_commit_and_on_link_removal(
     listener = await asyncpg.connect(listener_url)
     notifications: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
     await listener.add_listener(
-        "plaid_spend_changed",
-        lambda _connection, _pid, channel, payload: notifications.put_nowait((channel, payload)),
+        "plaid_spend_changed", lambda _connection, _pid, channel, payload: notifications.put_nowait((channel, payload))
     )
     allow_commit = asyncio.Event()
     finish_task: asyncio.Task[None] | None = None
@@ -121,9 +120,7 @@ async def test_spend_changed_notifies_after_commit_and_on_link_removal(
         assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
         assert await listener.fetchval("SELECT status FROM sync_runs WHERE run_id = $1", run_id) == "succeeded"
 
-        failed_run_id = await storage.begin_sync_run(
-            trigger="test", item_id="item-investments", configured_windows={}
-        )
+        failed_run_id = await storage.begin_sync_run(trigger="test", item_id="item-investments", configured_windows={})
         await storage.finish_sync_run(failed_run_id, status="failed", error_summary="expected failure")
         await storage.purge_link_data("missing-item")
         await assert_no_notification()
@@ -136,7 +133,9 @@ async def test_spend_changed_notifies_after_commit_and_on_link_removal(
         await storage.purge_link_data("item-investments")
         assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
         assert await listener.fetchval("SELECT count(*) FROM links WHERE item_id = $1", "item-investments") == 0
-        assert await listener.fetchval("SELECT count(*) FROM accounts WHERE account_id = $1", "account-investments") == 0
+        assert (
+            await listener.fetchval("SELECT count(*) FROM accounts WHERE account_id = $1", "account-investments") == 0
+        )
         await assert_no_notification()
     finally:
         allow_commit.set()
