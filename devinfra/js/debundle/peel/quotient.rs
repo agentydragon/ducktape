@@ -116,6 +116,19 @@ pub enum ContractRejected {
     SameClass,
 }
 
+impl ContractRejected {
+    /// The evidence a seed diagnostic reports: empty for a rejection
+    /// that is not cycle-driven (cap, residual stickiness).
+    fn into_cycle_evidence(self) -> CycleEvidence {
+        match self {
+            Self::WouldCreateCycle { cycle } => cycle,
+            Self::ExceedsCap { .. } | Self::ResidualSticky | Self::SameClass => {
+                CycleEvidence::default()
+            }
+        }
+    }
+}
+
 /// Per-contraction rejection diagnostic emitted by `build_seed_quotient`.
 /// Stable JSON shape — `reports/tree/<chunk>/seed_rejections.json`
 /// consumers depend on field order.
@@ -429,7 +442,7 @@ impl QuotientGraph {
             // projection in `realizability_index`.
             classes.push(ClassData {
                 members,
-                lines: owner_line_count_from_report(node),
+                lines: node.line_count(),
                 is_residual: false,
                 is_pre_existing_module: false,
             });
@@ -1596,19 +1609,6 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> [u8; 33] {
     key
 }
 
-/// Estimate of one owner's line count from the JSON report node.
-/// Mirrors `peel::factorize::owner_line_count`.
-fn owner_line_count_from_report(node: &analysis::OwnerGraphNodeReport) -> usize {
-    node.source_location
-        .as_ref()
-        .map(|loc| {
-            loc.end_line
-                .saturating_sub(loc.start_line)
-                .saturating_add(1)
-        })
-        .unwrap_or(0)
-}
-
 /// Apply the seeding protocol: atomic units first, then spec modules.
 /// Each forced contraction is gated by
 /// `merge_preserves_invariants`; rejected contractions push a
@@ -1642,41 +1642,13 @@ pub fn build_seed_quotient(
     units.sort_by(|(a, ai), (b, bi)| ai.cmp(bi).then_with(|| a.id.cmp(&b.id)));
     for (unit, _) in units {
         let owner_idxs = resolve_owner_idxs(&q, &unit.owner_ids);
-        if owner_idxs.len() < 2 {
-            continue;
-        }
-        let pivot = owner_idxs[0];
-        for &member in &owner_idxs[1..] {
-            let c_pivot = q.class_of(pivot);
-            let c_member = q.class_of(member);
-            if c_pivot == c_member {
-                continue;
-            }
-            match q.contract(c_pivot, c_member) {
-                Ok(_) => {}
-                Err(ContractRejected::WouldCreateCycle { cycle }) => {
-                    rejected.push(SeedContractionRejected::AtomicUnit {
-                        unit_id: unit.id.clone(),
-                        owner_ids: unit.owner_ids.clone(),
-                        rejected_pair: (
-                            q.owner_id(pivot).to_string(),
-                            q.owner_id(member).to_string(),
-                        ),
-                        cycle,
-                    });
-                }
-                Err(_) => {
-                    rejected.push(SeedContractionRejected::AtomicUnit {
-                        unit_id: unit.id.clone(),
-                        owner_ids: unit.owner_ids.clone(),
-                        rejected_pair: (
-                            q.owner_id(pivot).to_string(),
-                            q.owner_id(member).to_string(),
-                        ),
-                        cycle: CycleEvidence::default(),
-                    });
-                }
-            }
+        for (rejected_pair, cycle) in contract_group(&mut q, &owner_idxs) {
+            rejected.push(SeedContractionRejected::AtomicUnit {
+                unit_id: unit.id.clone(),
+                owner_ids: unit.owner_ids.clone(),
+                rejected_pair,
+                cycle,
+            });
         }
     }
 
@@ -1689,41 +1661,13 @@ pub fn build_seed_quotient(
     modules.sort_by(|a, b| a.module_id.cmp(&b.module_id));
     for module in modules {
         let owner_idxs = resolve_owner_idxs(&q, &module.owner_ids);
-        if owner_idxs.is_empty() {
-            continue;
-        }
-        let pivot = owner_idxs[0];
-        for &member in owner_idxs.iter().skip(1) {
-            let c_pivot = q.class_of(pivot);
-            let c_member = q.class_of(member);
-            if c_pivot == c_member {
-                continue;
-            }
-            match q.contract(c_pivot, c_member) {
-                Ok(_) => {}
-                Err(ContractRejected::WouldCreateCycle { cycle }) => {
-                    rejected.push(SeedContractionRejected::SpecModule {
-                        module_id: module.module_id.clone(),
-                        owner_ids: module.owner_ids.clone(),
-                        rejected_pair: (
-                            q.owner_id(pivot).to_string(),
-                            q.owner_id(member).to_string(),
-                        ),
-                        cycle,
-                    });
-                }
-                Err(_) => {
-                    rejected.push(SeedContractionRejected::SpecModule {
-                        module_id: module.module_id.clone(),
-                        owner_ids: module.owner_ids.clone(),
-                        rejected_pair: (
-                            q.owner_id(pivot).to_string(),
-                            q.owner_id(member).to_string(),
-                        ),
-                        cycle: CycleEvidence::default(),
-                    });
-                }
-            }
+        for (rejected_pair, cycle) in contract_group(&mut q, &owner_idxs) {
+            rejected.push(SeedContractionRejected::SpecModule {
+                module_id: module.module_id.clone(),
+                owner_ids: module.owner_ids.clone(),
+                rejected_pair,
+                cycle,
+            });
         }
         // Mark every spec-module owner's surviving class as
         // pre-existing-module-anchored (sticky across later
@@ -1840,110 +1784,79 @@ pub fn build_seed_quotient(
         if cs == ct {
             continue;
         }
-        // Diagnostic-only: classify *why* this edge's pair did not
-        // contract using the kernel's read-only predicates. This walk
-        // must NOT commit a merge: a stray successful `contract` here
-        // would mutate the partition the post-seed realizability gate
-        // below reads, committing a merge that is never counted or
-        // looped — silently corrupting the partition. The fixed-point
-        // loop above already applied every legitimate contraction, so
-        // any pair reaching here is expected to be rejected.
-        //
-        // We reproduce `check_merge`'s own classification order
-        // (preconditions, then cycle gate) without committing:
-        //   - preconditions fail -> the non-cycle `Err(_)` arm
-        //     (ResidualSticky / ExceedsCap / SameClass),
-        //   - cycle evidence     -> the `WouldCreateCycle` arm,
-        //   - neither            -> the merge *would* have succeeded;
-        //     unreachable at fixed point. Do nothing (and, critically,
-        //     never commit it) — the old `Ok(_)` arm's stray mutation.
-        if q.check_merge_preconditions(cs, ct).is_err() {
+        // Diagnostic-only: `check_merge` classifies *why* this pair did
+        // not contract without committing. A `contract` here would
+        // mutate the partition the post-seed gate below reads; a pair
+        // that would now succeed is unreachable at fixed point and
+        // reports nothing.
+        if let Err(rejection) = q.check_merge(cs, ct) {
             rejected.push(SeedContractionRejected::AtomicReachability {
                 edge_id: edge.id.clone(),
                 source_unit_id: edge.source.clone(),
                 target_unit_id: edge.target.clone(),
-                rejected_pair: (
-                    q.owner_id(src_pivot).to_string(),
-                    q.owner_id(tgt_pivot).to_string(),
-                ),
-                cycle: CycleEvidence::default(),
-            });
-        } else if let Some(cycle) = q.would_be_cycles_after_contract(cs, ct) {
-            rejected.push(SeedContractionRejected::AtomicReachability {
-                edge_id: edge.id.clone(),
-                source_unit_id: edge.source.clone(),
-                target_unit_id: edge.target.clone(),
-                rejected_pair: (
-                    q.owner_id(src_pivot).to_string(),
-                    q.owner_id(tgt_pivot).to_string(),
-                ),
-                cycle,
+                rejected_pair: owner_pair(&q, src_pivot, tgt_pivot),
+                cycle: rejection.into_cycle_evidence(),
             });
         }
     }
 
-    // ---- Post-seed: run the unified realizability gate once on
-    //      the assembled partition. Catches asymmetric I-cycles
-    //      and mutual constraining cycles that no individual
-    //      contraction created on its own — the materializer
-    //      catches these on `validate_factorization`, and Track A
-    //      wires the planner's seed-rejection diagnostic to the
-    //      same verdict so `modules propose` and `bazelisk build` agree
-    //      on whether a spec is realizable.
-    //
-    //      One O(|V|+|E|) call, not |V|·|V| — the per-merge
-    //      `would_be_cycles_after_contract` queries use the fast
-    //      constraining-only cone check for the greedy's hot
-    //      path. See the function's docstring for the perf
-    //      trade-off (and docs/design.md's "Peel planner unification"
-    //      section).
+    // ---- Post-seed: run the unified realizability gate once on the
+    //      assembled partition. Catches asymmetric I-cycles and mutual
+    //      constraining cycles that no individual contraction created
+    //      on its own, so `modules propose` and the materializer's
+    //      `validate_factorization` agree on whether a spec is
+    //      realizable. One O(|V|+|E|) call.
     let verdict = q.realizability_verdict();
     if !verdict.is_realizable() {
-        let mut sccs_with_evidence: Vec<(BTreeSet<String>, CycleEvidence)> = Vec::new();
-        // Translate verdict SCCs into kernel-shape evidence in
-        // canonical sorted order.
         let partition = q.realizability_partition();
-        for scc in &verdict.unrealizable_sccs {
-            // Walk owners; bucket those whose current partition
-            // assignment falls in this SCC's module set.
-            let modules_in_scc: BTreeSet<analysis::ModuleId> =
-                scc.core.modules.iter().copied().collect();
-            let mut owners: BTreeSet<String> = BTreeSet::new();
-            let mut class_set: BTreeSet<ClassId> = BTreeSet::new();
-            for (owner_idx, owner_id) in q.owner_ids.iter().enumerate() {
-                if owner_idx >= q.owner_graph.num_nodes() {
-                    continue;
-                }
-                let module = partition.of(analysis::OwnerId(owner_idx));
-                if !modules_in_scc.contains(&module) {
-                    continue;
-                }
-                owners.insert(owner_id.clone());
-                class_set.insert(q.owner_to_class[owner_idx]);
+        let owner_modules: Vec<ModuleId> = (0..q.owner_ids.len())
+            .map(|owner_idx| partition.of(OwnerId(owner_idx)))
+            .collect();
+        let mut sccs = q
+            .translate_verdict_with_owner_modules(&verdict, &owner_modules, None)
+            .cycles;
+        // Stable diagnostic order: by the SCC's owner ids.
+        sccs.sort_by(|a, b| a.owner_ids.cmp(&b.owner_ids));
+        rejected.extend(sccs.into_iter().map(|scc| {
+            SeedContractionRejected::PostSeedUnrealizableScc {
+                owner_ids: scc.owner_ids.clone(),
+                cycle: CycleEvidence { cycles: vec![scc] },
             }
-            if owners.is_empty() {
-                continue;
-            }
-            let mut classes: Vec<ClassId> = class_set.into_iter().collect();
-            classes.sort();
-            let evidence = CycleEvidence {
-                cycles: vec![CycleClassSet {
-                    classes,
-                    owner_ids: owners.iter().cloned().collect(),
-                }],
-            };
-            sccs_with_evidence.push((owners, evidence));
-        }
-        // Stable diagnostic order: sort by the SCC's owner-id set
-        // lex.
-        sccs_with_evidence.sort_by(|a, b| a.0.cmp(&b.0));
-        for (owner_set, cycle) in sccs_with_evidence {
-            let owner_ids: Vec<String> = owner_set.into_iter().collect();
-            rejected.push(SeedContractionRejected::PostSeedUnrealizableScc { owner_ids, cycle });
-        }
+        }));
     }
 
     Ok((q, rejected))
+}
+
+/// Contract every other member of `owners` (sorted) into the first
+/// member's class through the gated protocol, skipping members already
+/// in it. Returns the `(pivot, member)` owner-id pair and cycle
+/// evidence of each contraction the gate refused.
+fn contract_group(
+    q: &mut QuotientGraph,
+    owners: &[OwnerIdx],
+) -> Vec<((String, String), CycleEvidence)> {
+    let Some((&pivot, members)) = owners.split_first() else {
+        return Vec::new();
+    };
+    members
+        .iter()
+        .filter_map(|&member| {
+            let (c_pivot, c_member) = (q.class_of(pivot), q.class_of(member));
+            if c_pivot == c_member {
+                return None;
+            }
+            let rejection = q.contract(c_pivot, c_member).err()?;
+            Some((
+                owner_pair(q, pivot, member),
+                rejection.into_cycle_evidence(),
+            ))
+        })
+        .collect()
+}
+
+fn owner_pair(q: &QuotientGraph, a: OwnerIdx, b: OwnerIdx) -> (String, String) {
+    (q.owner_id(a).to_string(), q.owner_id(b).to_string())
 }
 
 fn resolve_owner_idxs(q: &QuotientGraph, owner_ids: &[String]) -> Vec<OwnerIdx> {

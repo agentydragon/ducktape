@@ -1,4 +1,4 @@
-"""Tempo (traces) with its tenant-local SeaweedFS bucket, identity and credentials."""
+"""Tempo (traces) with its tenant-local SeaweedFS `PrivateBucket`."""
 
 from __future__ import annotations
 
@@ -22,21 +22,15 @@ OTLP_GRPC_ENDPOINT = f"{NAME}.{_NAMESPACE}.svc.cluster.local:{_OTLP_GRPC_PORT}"
 
 
 def _storage(chart: Chart) -> None:
-    bucket = s3.Bucket(
+    s3.PrivateBucket(
         chart,
-        "bucket",
+        "storage",
         name=NAME,
-        namespace=_NAMESPACE,
+        tenant=_NAMESPACE,
         adopt_existing=True,
         description="Tempo's tenant-local SeaweedFS trace bucket.",
-    )
-    identity = s3.Identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
-    bucket.grant_read_write(identity)
-    identity.credentials(
-        namespace=_NAMESPACE,
-        secret=_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        description="Tempo's tenant-local SeaweedFS credentials.",
+        # Not the default `tempo-s3-credentials`: that is the legacy Secret below.
+        secret_name=_CREDENTIALS_SECRET,
     )
     # Retain the previous credential Secret during the staged handoff. The old
     # S3Credentials resource is retired separately; revoking its retained key and

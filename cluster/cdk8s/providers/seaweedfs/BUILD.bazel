@@ -1,3 +1,4 @@
+# gazelle:ignore
 # gazelle:resolve py seaweed_adminscript_crds //cluster/cdk8s/providers/seaweedfs:adminscript
 # gazelle:resolve py seaweed_bucket_crds //cluster/cdk8s/providers/seaweedfs:bucket
 # gazelle:resolve py seaweed_resourcereferencegrant_crds //cluster/cdk8s/providers/seaweedfs:resourcereferencegrant
@@ -74,28 +75,51 @@ cdk8s_import(
     visibility = ["//visibility:public"],
 )
 
+# Not `bucket`: the `cdk8s_import` above holds that name.
 py_library(
-    name = "s3",
-    srcs = ["s3.py"],
+    name = "seaweedfs_bucket",
+    srcs = ["bucket.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s/providers/seaweedfs:bucket",
-        "//cluster/cdk8s/providers/seaweedfs:s3identity",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],
 )
 
 py_test(
-    name = "test_s3",
-    srcs = ["test_s3.py"],
+    name = "test_bucket",
+    srcs = ["test_bucket.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":s3",
+        ":seaweedfs_bucket",
         "//:conftest",
+        "//cluster/cdk8s/providers/seaweedfs:bucket",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "s3_identity",
+    srcs = ["s3_identity.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/seaweedfs:s3identity",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "s3_credentials",
+    srcs = ["s3_credentials.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s/providers/seaweedfs:s3credentials",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
     ],
 )
 

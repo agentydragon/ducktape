@@ -225,7 +225,6 @@ from cluster.cdk8s.seaweedfs import (
     operator_release as seaweedfs_operator_release,
     pr_visuals_bucket as seaweedfs_pr_visuals_bucket,
     public_s3 as seaweedfs_public_s3,
-    registry_cache_bucket as seaweedfs_registry_cache_bucket,
 )
 from cluster.cdk8s.seaweedfs_csi import driver as seaweedfs_csi_driver
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
@@ -904,14 +903,6 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, seaweedfs_pr_visuals_bucket_artifact, seaweedfs_pr_visuals_bucket.chart),
         seaweedfs_operator_kustomization,
     )
-    seaweedfs_registry_cache_bucket_artifact = artifact(
-        "seaweedfs-registry-cache-bucket", seaweedfs_registry_cache_bucket.OUTPUT_DIR
-    )
-    seaweedfs_registry_cache_bucket.seaweedfs_registry_cache_bucket(
-        flux_chart,
-        write_directory(root, seaweedfs_registry_cache_bucket_artifact, seaweedfs_registry_cache_bucket.chart),
-        seaweedfs_operator_kustomization,
-    )
     seaweedfs_csi_artifact = artifact("seaweedfs-csi", seaweedfs_csi_driver.OUTPUT_DIR)
     seaweedfs_csi_driver.seaweedfs_csi(
         flux_chart, write_directory(root, seaweedfs_csi_artifact, seaweedfs_csi_driver.chart)
@@ -1014,7 +1005,11 @@ def generate_manifests(root: Path) -> None:
     )
     oci_cache_artifact = artifact("oci-cache", oci_cache_zot.OUTPUT_DIR)
     oci_cache_flux_kustomizations.oci_cache(
-        flux_chart, oci_cache_artifact, valkey_kustomization, monitoring_crds_kustomization
+        flux_chart,
+        oci_cache_artifact,
+        valkey_kustomization,
+        monitoring_crds_kustomization,
+        seaweedfs_operator_kustomization,
     )
     seaweedfs_public_s3_artifact = artifact("seaweedfs-public-s3", seaweedfs_public_s3.OUTPUT_DIR)
     seaweedfs_public_s3.seaweedfs_public_s3(
@@ -1659,7 +1654,6 @@ def generate_manifests(root: Path) -> None:
             seaweedfs_drivefs_artifacts_bucket_artifact,
             seaweedfs_loom_gym_bucket_artifact,
             seaweedfs_pr_visuals_bucket_artifact,
-            seaweedfs_registry_cache_bucket_artifact,
             ssh_mcp_artifact,
             study_casino_artifact,
             talos_cloud_controller_manager_artifact,
