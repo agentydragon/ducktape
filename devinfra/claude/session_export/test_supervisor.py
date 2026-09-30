@@ -11,6 +11,7 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from devinfra.claude.session_export.conftest import (
+    LIVE_WINDOW,
     PAIRED_RESPONSE,
     FakeSessionsService,
     FakeTokenEndpoint,
@@ -20,7 +21,7 @@ from devinfra.claude.session_export.conftest import (
 )
 from devinfra.claude.session_export.oauth import CredentialStore
 from devinfra.claude.session_export.store import SessionStore
-from devinfra.claude.session_export.supervisor import SyncState, SyncSupervisor
+from devinfra.claude.session_export.supervisor import LiveStatus, SyncState, SyncSupervisor
 
 ONE = "session_test0001"
 
@@ -42,7 +43,12 @@ class Running:
 
 
 def supervisor_for(
-    service: FakeSessionsService, store: SessionStore, path: Path, token_endpoint: FakeTokenEndpoint
+    service: FakeSessionsService,
+    store: SessionStore,
+    path: Path,
+    token_endpoint: FakeTokenEndpoint,
+    *,
+    live_streams: int = 0,
 ) -> Running:
     credentials = CredentialStore(path)
     supervisor = SyncSupervisor(
@@ -51,6 +57,8 @@ def supervisor_for(
         token_client=token_endpoint.client,
         interval=3600,
         workers=2,
+        live_streams=live_streams,
+        live_window=LIVE_WINDOW,
         api_transport=httpx.MockTransport(service.handle),
     )
     return Running(supervisor, credentials, token_endpoint)
@@ -148,6 +156,48 @@ async def test_a_code_anthropic_refuses_spends_the_attempt_and_saves_nothing(
         await refused.approve()
     assert not refused.credentials.exists()
     assert not (await refused.supervisor.status()).pairing_started
+
+
+async def test_without_live_streams_the_sync_only_polls(service: FakeSessionsService, running: Running) -> None:
+    service.events = {ONE: make_events(3)}
+    service.statuses = {ONE: "active"}
+    await running.approve()
+    await eventually(lambda: running.cycle_read(3))
+    assert (await running.supervisor.status()).live == LiveStatus(
+        following=False, watching=False, streams=0, last_frame_at=None, failure=None
+    )
+    assert service.streams == []
+
+
+async def test_live_following_stores_a_pushed_event_and_reports_itself(
+    service: FakeSessionsService, store: SessionStore, tmp_path: Path
+) -> None:
+    live = supervisor_for(
+        service, store, tmp_path / "credential.json", FakeTokenEndpoint(PAIRED_RESPONSE), live_streams=1
+    )
+    loop = asyncio.create_task(live.supervisor.run())
+    try:
+        service.events = {ONE: make_events(3)}
+        service.statuses = {ONE: "active"}
+        await live.approve()
+
+        async def stream_opened() -> bool:
+            return bool(service.event_streams(ONE))
+
+        await eventually(stream_opened)  # whichever of the first cycle and the follower stored the session first
+        service.event_streams(ONE)[0].send("client_event", make_event(4), frame_id="4")
+
+        async def stored_through_four() -> bool:
+            return await store.resume_after(ONE) == 4
+
+        await eventually(stored_through_four)
+        status = (await live.supervisor.status()).live
+        assert (status.following, status.streams, status.failure) == (True, 1, None)
+        assert status.last_frame_at is not None
+    finally:
+        loop.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop
 
 
 if __name__ == "__main__":

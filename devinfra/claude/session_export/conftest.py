@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
@@ -24,6 +25,8 @@ from util.testing.postgres_fixtures import postgres_container
 TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid="test-org-uuid")
 TEST_ACCESS_TOKEN = "test-access-token"
 TEST_EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
+LIVE_WINDOW = timedelta(days=36500)  # every test session's last event counts as recent
+RESUME_TOKEN = "test-resume-token"
 
 
 PAIRED_RESPONSE = {
@@ -60,12 +63,16 @@ def make_credential(*, expires_in: timedelta = timedelta(hours=1)) -> OAuthCrede
 
 
 def make_session(
-    session_id: str, *, title: str = "Test session", last_event_at: str = TEST_EPOCH.isoformat()
+    session_id: str,
+    *,
+    title: str = "Test session",
+    status: str = "archived",
+    last_event_at: str = TEST_EPOCH.isoformat(),
 ) -> SessionSummary:
     return SessionSummary(
         id=session_id,
         title=title,
-        status="archived",
+        status=status,
         created_at=TEST_EPOCH.isoformat(),
         updated_at=TEST_EPOCH.isoformat(),
         last_event_at=last_event_at,
@@ -91,20 +98,71 @@ def make_events(count: int) -> list[dict[str, Any]]:
     return [make_event(seq) for seq in range(1, count + 1)]
 
 
+class SseBody(httpx.AsyncByteStream):
+    def __init__(self, frames: asyncio.Queue[bytes | None]) -> None:
+        self._frames = frames
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        while (chunk := await self._frames.get()) is not None:
+            yield chunk
+
+
+@dataclass
+class SseConnection:
+    """One opened server-sent-event stream, which the test feeds and ends."""
+
+    request: httpx.Request
+    frames: asyncio.Queue[bytes | None] = field(default_factory=asyncio.Queue)
+
+    def send(self, event: str, data: dict[str, Any] | None = None, *, frame_id: str | None = None) -> None:
+        lines = [f"event: {event}"]
+        if frame_id:
+            lines.append(f"id: {frame_id}")
+        if data is not None:
+            lines.append(f"data: {json.dumps(data)}")
+        self.frames.put_nowait(("\n".join(lines) + "\n\n").encode())
+
+    def close(self) -> None:
+        self.frames.put_nowait(None)
+
+
 @dataclass
 class FakeSessionsService:
     """In-memory claude.ai session API following the contract in docs/api.md."""
 
     events: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     titles: dict[str, str] = field(default_factory=dict)  # overrides the generated title of a listed session
+    statuses: dict[str, str] = field(default_factory=dict)  # overrides the generated status ("archived")
     fail_next: list[int] = field(default_factory=list)  # HTTP statuses answered before any real response
+    stream_refusals: list[int] = field(default_factory=list)  # HTTP statuses answered to the next stream opens
     requests: list[httpx.Request] = field(default_factory=list)
+    streams: list[SseConnection] = field(default_factory=list)  # every stream opened, in order
+    on_open: list[Callable[[SseConnection], None]] = field(default_factory=list)  # scripts the next stream opens
 
     def list_item(self, session_id: str) -> dict[str, Any]:
         events = self.events[session_id]
         last_event_at = events[-1]["created_at"] if events else TEST_EPOCH.isoformat()
         title = self.titles.get(session_id, "Test session")
-        return make_session(session_id, title=title, last_event_at=last_event_at).model_dump()
+        status = self.statuses.get(session_id, "archived")
+        return make_session(session_id, title=title, status=status, last_event_at=last_event_at).model_dump()
+
+    def streams_at(self, path: str) -> list[SseConnection]:
+        return [s for s in self.streams if s.request.url.path == path]
+
+    def event_streams(self, session_id: str) -> list[SseConnection]:
+        return self.streams_at(f"/v1/code/sessions/cse_{session_id.removeprefix('session_')}/events/stream")
+
+    def watches(self) -> list[SseConnection]:
+        return self.streams_at("/v1/code/sessions/watch")
+
+    def _open_stream(self, request: httpx.Request) -> httpx.Response:
+        if self.stream_refusals:
+            return httpx.Response(self.stream_refusals.pop(0), json={"error": {"type": "refused"}})
+        connection = SseConnection(request)
+        self.streams.append(connection)
+        if self.on_open:
+            self.on_open.pop(0)(connection)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=SseBody(connection.frames))
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -114,6 +172,8 @@ class FakeSessionsService:
         bearer_ok = request.headers.get("authorization") == f"Bearer {TEST_ACCESS_TOKEN}"
         if not (cookie_ok or bearer_ok) or request.headers["x-organization-uuid"] != TEST_COOKIE.org_uuid:
             return httpx.Response(401, json={"error": {"type": "authentication_error"}})
+        if request.url.path == "/v1/code/sessions/watch" or request.url.path.endswith("/events/stream"):
+            return self._open_stream(request)
         params = request.url.params
         limit = int(params["limit"])
         if not 1 <= limit <= (500 if request.url.path.endswith("/events") else 100):
@@ -122,7 +182,7 @@ class FakeSessionsService:
         if request.url.path == "/v1/code/sessions":
             ids = list(self.events)
             listed = ids[cursor : cursor + limit]
-            sessions_body: dict[str, Any] = {"data": [self.list_item(i) for i in listed]}
+            sessions_body: dict[str, Any] = {"data": [self.list_item(i) for i in listed], "resume_token": RESUME_TOKEN}
             if cursor + limit < len(ids):
                 sessions_body["next_cursor"] = str(cursor + limit)
             return httpx.Response(200, json=sessions_body)

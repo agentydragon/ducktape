@@ -113,13 +113,7 @@ async def run_serve() -> None:
     engine = make_engine(settings.database_url)
     try:
         async with httpx.AsyncClient(timeout=30) as token_client:
-            supervisor = SyncSupervisor(
-                credentials=CredentialStore(settings.credentials_file),
-                store=SessionStore(engine),
-                token_client=token_client,
-                interval=settings.interval_seconds,
-                workers=settings.workers,
-            )
+            supervisor = SyncSupervisor.for_settings(settings, store=SessionStore(engine), token_client=token_client)
             server = uvicorn.Server(
                 uvicorn.Config(
                     create_app(supervisor=supervisor, settings=settings),

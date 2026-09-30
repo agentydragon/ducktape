@@ -6,8 +6,23 @@ import pytest_bazel
 from pydantic import SecretStr
 from tenacity import wait_none
 
-from devinfra.claude.session_export.api import SessionCookie, SessionsApi
-from devinfra.claude.session_export.conftest import TEST_COOKIE, FakeSessionsService, make_credential, make_events
+from devinfra.claude.session_export.api import (
+    ResumePointLostError,
+    SessionCookie,
+    SessionsApi,
+    StreamClosedEarlyError,
+    WatchCursor,
+)
+from devinfra.claude.session_export.conftest import (
+    RESUME_TOKEN,
+    TEST_COOKIE,
+    FakeSessionsService,
+    SseConnection,
+    make_credential,
+    make_event,
+    make_events,
+)
+from devinfra.claude.session_export.models import SessionRemoved, SessionSummary
 from devinfra.claude.session_export.oauth import CredentialStore, OAuthTokenSource
 
 SESSION_ID = "session_test0001"
@@ -93,6 +108,115 @@ async def test_auth_failure_is_not_retried_and_carries_the_error_body(service: F
     assert failure.value.response.status_code == 401
     assert any("authentication_error" in note for note in failure.value.__notes__)
     assert len(service.requests) == 1
+
+
+async def test_resume_token_comes_from_a_one_item_list(service: FakeSessionsService, api: SessionsApi) -> None:
+    service.events = {SESSION_ID: []}
+    assert await api.resume_token() == RESUME_TOKEN
+    assert service.requests[0].url.params["limit"] == "1"
+
+
+async def test_event_stream_yields_persisted_events_and_skips_everything_else(
+    service: FakeSessionsService, api: SessionsApi
+) -> None:
+    def script(stream: SseConnection) -> None:
+        stream.send("session_update", {"status": "active"}, frame_id="1")
+        stream.send("ephemeral_event", {"delta": "he"})
+        stream.send("client_event", make_event(4), frame_id="4")
+        stream.send("client_event", frame_id="5")  # advances the cursor only
+        stream.send("delivery_update", {"sequence_num": "4"})
+        stream.send("client_event", make_event(5), frame_id="5")
+        stream.close()
+
+    service.on_open = [script]
+    assert [e.seq async for e in api.stream_events(SESSION_ID, after=3)] == [4, 5]
+    [opened] = service.event_streams(SESSION_ID)
+    assert dict(opened.request.url.params) == {"from_sequence_num": "3"}
+    assert opened.request.headers["last-event-id"] == "3"
+    assert opened.request.url.path == "/v1/code/sessions/cse_test0001/events/stream"
+
+
+async def test_event_stream_from_the_start_sends_no_resume_position(
+    service: FakeSessionsService, api: SessionsApi
+) -> None:
+    def script(stream: SseConnection) -> None:
+        stream.send("client_event", make_event(1))
+        stream.close()
+
+    service.on_open = [script]
+    assert [e.seq async for e in api.stream_events(SESSION_ID, after=0)] == [1]
+    [opened] = service.event_streams(SESSION_ID)
+    assert not opened.request.url.params
+    assert "last-event-id" not in opened.request.headers
+
+
+async def test_event_stream_says_to_page_when_the_server_cannot_resume(
+    service: FakeSessionsService, api: SessionsApi
+) -> None:
+    def truncate(stream: SseConnection) -> None:
+        stream.send("catch_up_truncated")
+        stream.close()
+
+    service.on_open = [truncate]
+    with pytest.raises(ResumePointLostError, match="truncated"):
+        [e async for e in api.stream_events(SESSION_ID, after=3)]
+
+    service.stream_refusals = [410]
+    with pytest.raises(ResumePointLostError, match="410"):
+        [e async for e in api.stream_events(SESSION_ID, after=3)]
+
+
+async def test_event_stream_refusals_and_empty_closes_are_errors(
+    service: FakeSessionsService, api: SessionsApi
+) -> None:
+    service.stream_refusals = [403]
+    with pytest.raises(httpx.HTTPStatusError) as refused:
+        [e async for e in api.stream_events(SESSION_ID, after=3)]
+    assert any("refused" in note for note in refused.value.__notes__)
+
+    service.on_open = [SseConnection.close]
+    with pytest.raises(StreamClosedEarlyError):
+        [e async for e in api.stream_events(SESSION_ID, after=3)]
+
+
+async def test_watch_yields_session_changes_and_advances_its_cursor(
+    service: FakeSessionsService, api: SessionsApi
+) -> None:
+    service.events = {SESSION_ID: make_events(1)}
+    item = service.list_item(SESSION_ID)
+
+    def script(stream: SseConnection) -> None:
+        stream.send("sync", frame_id="cursor-1")
+        stream.send("added", item, frame_id="cursor-2")
+        stream.send("changed", {**item, "title": "Renamed"}, frame_id="cursor-3")
+        stream.send("removed", {"id": item["id"]}, frame_id="cursor-4")
+        stream.close()
+
+    service.on_open = [script]
+    cursor = WatchCursor(RESUME_TOKEN)
+    changes = [change async for change in api.watch_sessions(cursor)]
+    assert changes == [
+        SessionSummary(**item),
+        SessionSummary(**{**item, "title": "Renamed"}),
+        SessionRemoved(id=item["id"]),
+    ]
+    assert cursor.token == "cursor-4"
+    [opened] = service.watches()
+    assert dict(opened.request.url.params) == {"exclude_tags": "-", "resume_token": RESUME_TOKEN}
+
+
+async def test_watch_says_when_the_server_no_longer_holds_the_cursor(
+    service: FakeSessionsService, api: SessionsApi
+) -> None:
+    service.stream_refusals = [410]
+    with pytest.raises(ResumePointLostError):
+        [change async for change in api.watch_sessions(WatchCursor("expired"))]
+
+
+async def test_a_watch_closed_without_a_frame_is_an_error(service: FakeSessionsService, api: SessionsApi) -> None:
+    service.on_open = [SseConnection.close]
+    with pytest.raises(StreamClosedEarlyError):
+        [change async for change in api.watch_sessions(WatchCursor(RESUME_TOKEN))]
 
 
 if __name__ == "__main__":

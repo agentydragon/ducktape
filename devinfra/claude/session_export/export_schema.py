@@ -10,7 +10,6 @@ from pathlib import Path
 
 import httpx
 
-from devinfra.claude.session_export.oauth import CredentialStore
 from devinfra.claude.session_export.settings import ServeSettings
 from devinfra.claude.session_export.store import SessionStore, make_engine
 from devinfra.claude.session_export.supervisor import SyncSupervisor
@@ -28,12 +27,8 @@ def openapi_document() -> dict[str, object]:
         oidc_session_secret="schema-export",
         oidc_allowed_subject="schema-export",
     )
-    supervisor = SyncSupervisor(
-        credentials=CredentialStore(settings.credentials_file),
-        store=SessionStore(make_engine(settings.database_url)),
-        token_client=httpx.AsyncClient(),
-        interval=settings.interval_seconds,
-        workers=settings.workers,
+    supervisor = SyncSupervisor.for_settings(
+        settings, store=SessionStore(make_engine(settings.database_url)), token_client=httpx.AsyncClient()
     )
     document: dict[str, object] = create_app(supervisor=supervisor, settings=settings).openapi()
     return document

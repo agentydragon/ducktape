@@ -3,6 +3,8 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
+# gazelle:resolve py httpx_sse @pypi//httpx_sse
+
 py_library(
     name = "api",
     srcs = ["api.py"],
@@ -10,6 +12,7 @@ py_library(
         ":models",
         ":oauth",
         "@pypi//httpx",
+        "@pypi//httpx_sse",
         "@pypi//pydantic",
         "@pypi//tenacity",
     ],
@@ -120,6 +123,7 @@ py_test(
     deps = [
         ":api",
         ":conftest",
+        ":models",
         ":oauth",
         "//:conftest",
         "//devinfra/claude:conftest",
@@ -258,7 +262,9 @@ py_library(
     srcs = ["supervisor.py"],
     deps = [
         ":api",
+        ":live",
         ":oauth",
+        ":settings",
         ":store",
         ":sync",
         "@pypi//httpx",
@@ -343,11 +349,40 @@ py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
     deps = [
-        ":oauth",
         ":settings",
         ":store",
         ":supervisor",
         ":web",
         "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "live",
+    srcs = ["live.py"],
+    deps = [
+        ":api",
+        ":models",
+        ":store",
+        ":sync",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_live",
+    srcs = ["test_live.py"],
+    deps = [
+        ":api",
+        ":conftest",
+        ":live",
+        ":store",
+        ":sync",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
