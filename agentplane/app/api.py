@@ -107,6 +107,9 @@ class ModelOption(BaseModel):
 
     model: str = Field(description="The route name a session opens with; opaque to the operator.")
     display_name: str = Field(description='Short human name for the session form, e.g. "Sonnet 5".')
+    reasoning_efforts: list[str] = Field(
+        description="Reasoning effort values supported by this model; empty means unsupported."
+    )
 
 
 class ModelCatalog(BaseModel):
@@ -128,6 +131,9 @@ class ModelCatalog(BaseModel):
         if len(ids) != len(set(ids)):
             raise ValueError(f"ModelCatalog.models has duplicate model ids: {ids}")
         known = set(ids)
+        for option in self.models:
+            if len(option.reasoning_efforts) != len(set(option.reasoning_efforts)):
+                raise ValueError(f"Model {option.model!r} has duplicate reasoning efforts")
         for harness, referenced in self.harnesses.items():
             if unknown := [model for model in referenced if model not in known]:
                 raise ValueError(f"{harness} references models outside ModelCatalog.models: {unknown}")
@@ -949,6 +955,12 @@ def create_app(
     for name, preset in configured_presets.threads.items():
         if preset.model not in catalog.harnesses[preset.harness]:
             raise ValueError(f"ThreadPreset {name!r} names model {preset.model!r} outside the configured catalog")
+        option = next(option for option in catalog.models if option.model == preset.model)
+        if preset.reasoning_effort is not None and preset.reasoning_effort not in option.reasoning_efforts:
+            raise ValueError(
+                f"ThreadPreset {name!r} reasoning effort {preset.reasoning_effort!r} "
+                f"is not supported by {preset.model!r}"
+            )
     app = FastAPI(title="Agentplane", version="0")
     app.state.inventory = inventory
     app.state.bridge = bridge

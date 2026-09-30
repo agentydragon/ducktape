@@ -525,13 +525,12 @@ asymmetric `(eager forward, lazy back)` I-cycles that the
    `ModuleId`, except that classes made only of residual-destined owners
    (and not anchored to an existing module) share the residual
    `ModuleId::logical(0)`. Every committed mutation — `contract`, the
-   partition-driven group merges in `from_report_with_partition_extended`, the
    `is_pre_existing_module` promotion in `set_class_pre_existing_module` —
    pushes the matching `PartitionDelta::MoveOwners` onto the index.
 3. The speculative queries — the boolean `merge_preserves_invariants` and the
    evidence-producing `would_be_cycles_after_contract` — are one evaluation
-   through the index's tier ladder (below). `cycle_set()` reads the index's
-   maintained verdict.
+   through the index's tier ladder (below). `realizability_verdict()` reads the
+   index's maintained verdict.
 
 #### Cost and the tier ladder
 
