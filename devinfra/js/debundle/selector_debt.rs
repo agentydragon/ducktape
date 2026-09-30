@@ -486,7 +486,7 @@ fn compute_selector_debt_impl(
                         runtime_module.as_ref(),
                         &module_path,
                         Some(expanded.export_name),
-                        &expanded.selector,
+                        expanded.parsed_selector.selector(),
                         Some(exact_body_indices),
                     )? {
                         binding_group_suggestion_candidates.push(candidate);

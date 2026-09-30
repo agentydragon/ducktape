@@ -316,12 +316,12 @@ pub(super) fn build_members(
         for expanded in source_match::source_match_claim_member_selectors(request_id, claim)? {
             let source_match::BindingGroupMemberSelector {
                 export_name,
-                selector,
                 parsed_selector,
-                comment,
-                note,
             } = expanded;
-            let target_binding = selector.target_binding.clone();
+            let claim_origin = match &parsed_selector.selector().target_binding {
+                Some(target) => format!("source_matches[].bindings[`{target}`]"),
+                None => "source_matches[]".to_string(),
+            };
             requests.push(MemberRequest {
                 binding: String::new(),
                 export_name,
@@ -330,12 +330,9 @@ pub(super) fn build_members(
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
                 no_sync_callback_members: Vec::new(),
-                comment,
-                note,
-                claim_origin: match target_binding {
-                    Some(target) => format!("source_matches[].bindings[`{target}`]"),
-                    None => "source_matches[]".to_string(),
-                },
+                comment: None,
+                note: None,
+                claim_origin,
             });
         }
     }

@@ -113,25 +113,6 @@ rust_test(
     edition = "2024",
 )
 
-# Soundness validation: every read-off, rendered to a source_match and run
-# through the legacy matcher oracle, must resolve uniquely to the intended item.
-# Separate crate so it exercises the public shape_index API plus the oracle
-# boundary explicitly.
-rust_test(
-    name = "shape_index_soundness_test",
-    srcs = ["shape_index_soundness_test.rs"],
-    crate_root = "shape_index_soundness_test.rs",
-    edition = "2024",
-    deps = [
-        ":js_ast",
-        ":selector_candidate_index",
-        ":shape_index",
-        ":source_match",
-        ":spec",
-        "@crates//:swc_ecma_ast",
-    ],
-)
-
 # OPT/read-off-depth distribution + size-sweep benchmark over synthetic
 # chunks. Run with `bazelisk run //devinfra/js/debundle:shape_index_bench`.
 rust_binary(

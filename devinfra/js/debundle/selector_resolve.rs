@@ -20,9 +20,7 @@ use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
     SelectorProgramSliceOptions, SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult,
 };
-use selector_ir_lowering::{
-    MemberSelectorLoweringContext, MemberSelectorProgramBuilder, MemberSelectorSpecRef,
-};
+use selector_ir_lowering::{MemberSelectorProgramBuilder, MemberSelectorSpecRef};
 use selector_outcome::{
     Candidate, Differentiator, Entity, EntityRef, FreeIdentifier, IdentifierMeaning,
     MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome, Placement, ResolvedBy, SelectorKind,
@@ -478,7 +476,7 @@ impl<'m> Chunk<'m> {
     }
 
     fn program_builder(&self) -> MemberSelectorProgramBuilder {
-        MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(self.id, &self.name))
+        MemberSelectorProgramBuilder::new(self.id)
     }
 
     fn places(&self) -> &Places {
@@ -1000,7 +998,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     }
                     selector if selector.is_import_specifier() => {}
                     selector => {
-                        let target = self.builder.declare_member_target_in_module_ref(
+                        let target = self.builder.declare_member_target(
                             &self.ids[module_index],
                             &member.export_name,
                             selector.spec_ref(),
@@ -1047,7 +1045,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         self.project_collected(collected)?;
         for (module_index, member_index) in constrained {
             let member = &modules[module_index].members[member_index];
-            self.builder.lower_member_constraints_in_module_ref(
+            self.builder.lower_member_constraints(
                 &self.ids[module_index],
                 &member.export_name,
                 member.selector.spec_ref(),
@@ -1104,7 +1102,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         let rows =
             self.chunk
                 .matcher()
-                .anonymous_group_candidates_parsed(&self.ids[module_index], &statement.selector)
+                .anonymous_group_candidates(&self.ids[module_index], &statement.selector)
                 .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
                 .into_iter()
                 .map(|group| {
@@ -1177,14 +1175,14 @@ impl<'c, 'm> Resolve<'c, 'm> {
             .partition(|(local, _)| declared_names.contains(local));
         let matched = if declared.is_empty() {
             matcher
-                .anonymous_group_candidates_parsed(logical_module, template)
+                .anonymous_group_candidates(logical_module, template)
                 .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
                 .into_iter()
                 .map(|group| Ok((BTreeMap::new(), group.free_bindings)))
                 .collect::<Result<Vec<_>>>()
         } else {
             matcher
-                .member_group_candidates_parsed(logical_module, template, &declared)
+                .member_group_candidates(logical_module, template, &declared)
                 .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
                 .into_iter()
                 .map(|candidate| {
@@ -1193,7 +1191,10 @@ impl<'c, 'm> Resolve<'c, 'm> {
                             .bindings
                             .iter()
                             .map(|(local, matched)| {
-                                Ok((local.clone(), member_place(places, matched)?))
+                                Ok((
+                                    local.clone(),
+                                    member_place(places, matched.body_idx, &matched.binding)?,
+                                ))
                             })
                             .collect::<Result<BTreeMap<_, _>>>()?,
                         candidate.free_bindings,
@@ -1272,12 +1273,12 @@ impl<'c, 'm> Resolve<'c, 'm> {
         let rows = self
             .chunk
             .matcher()
-            .member_candidates_parsed(&self.ids[module_index], parsed)
+            .member_candidates(&self.ids[module_index], parsed)
             .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
             .into_iter()
             .map(|matched| {
                 Ok(CollectedRow {
-                    places: vec![member_place(places, &matched)?],
+                    places: vec![member_place(places, matched.body_idx, &matched.binding)?],
                     free_bindings: matched.free_bindings,
                 })
             })
@@ -1568,7 +1569,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         match &entity.shape {
             CollectedShape::Member(member_index) => {
                 let member = &module.members[*member_index];
-                let target = self.builder.declare_member_target_in_module_ref(
+                let target = self.builder.declare_member_target(
                     &logical_module,
                     &member.export_name,
                     member.selector.spec_ref(),
@@ -1580,14 +1581,12 @@ impl<'c, 'm> Resolve<'c, 'm> {
             CollectedShape::Group(group) => {
                 for (target_binding, member_index) in &group.members_by_target {
                     let member = &module.members[*member_index];
-                    let target = self
-                        .builder
-                        .declare_binding_group_member_target_in_module_ref(
-                            &logical_module,
-                            &member.export_name,
-                            target_binding,
-                            member.selector.spec_ref(),
-                        )?;
+                    let target = self.builder.declare_binding_group_member_target(
+                        &logical_module,
+                        &member.export_name,
+                        target_binding,
+                        member.selector.spec_ref(),
+                    )?;
                     self.members
                         .insert(target, (entity.module_index, *member_index));
                     targets.push(target);
@@ -2160,17 +2159,20 @@ fn bound(place: &Place) -> (OwnerId, String) {
     )
 }
 
-fn member_place(places: &Places, matched: &source_match::MemberBindingMatch) -> Result<Place> {
-    let binding = matched.binding.binding_name.clone();
+fn member_place(
+    places: &Places,
+    body_idx: usize,
+    matched: &source_match::ResolvedMemberBinding,
+) -> Result<Place> {
+    let binding = matched.binding_name.clone();
     let owner = places
         .owner_by_body_and_binding
-        .get(&(matched.body_idx, binding.clone()))
+        .get(&(body_idx, binding.clone()))
         .copied()
         .with_context(|| {
             format!(
-                "source_match candidate at body index {} binding `{binding}` does not map to an \
-                 owner-graph node",
-                matched.body_idx
+                "source_match candidate at body index {body_idx} binding `{binding}` does not \
+                 map to an owner-graph node"
             )
         })?;
     Ok(Place {
