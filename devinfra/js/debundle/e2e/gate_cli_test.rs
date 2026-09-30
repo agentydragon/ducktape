@@ -67,7 +67,10 @@ fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() 
     } else if rejected.stderr.contains("`D` at static/app.js:5:11") {
         ("D", 5)
     } else {
-        panic!("rejection omitted sequenced initializer owner/location:\n{}", rejected.stderr);
+        panic!(
+            "rejection omitted sequenced initializer owner/location:\n{}",
+            rejected.stderr
+        );
     };
     for required in [
         "unknown_call",
