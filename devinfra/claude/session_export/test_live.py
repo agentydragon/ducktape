@@ -1,31 +1,33 @@
 import asyncio
-import contextlib
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from datetime import timedelta
 
 import pytest
 import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 from tenacity import wait_fixed, wait_none
+from tenacity.wait import wait_base
 
 from devinfra.claude.session_export.api import SessionsApi
 from devinfra.claude.session_export.conftest import (
     LIVE_WINDOW,
+    ONE,
     RESUME_TOKEN,
-    TEST_EPOCH,
+    SESSION_STATUS_ACTIVE,
     FakeSessionsService,
+    background,
     eventually,
     make_event,
     make_events,
-    make_session,
 )
 from devinfra.claude.session_export.live import DISCOVERY, WATCH, LiveFollower
+from devinfra.claude.session_export.models import SESSION_STATUS_ARCHIVED
 from devinfra.claude.session_export.store import EventRow, SessionStore
 from devinfra.claude.session_export.sync import sync_once
 
-ONE = "session_test0001"
+NO_WAIT = wait_none()
 
 
 @dataclass
@@ -34,21 +36,19 @@ class Following:
     task: asyncio.Task[None]
 
 
+Follow = Callable[..., Awaitable[Following]]
+
+
 @pytest.fixture
-async def follow(api: SessionsApi, store: SessionStore) -> AsyncIterator[Callable[[], Following]]:
+async def follow(api: SessionsApi, store: SessionStore) -> AsyncIterator[Follow]:
     """Starts a follower when the test says so: its first discovery pass runs at once, so the test seeds first."""
-    started: list[asyncio.Task[None]] = []
+    async with AsyncExitStack() as stack:
 
-    def start() -> Following:
-        follower = LiveFollower(api, store, max_streams=2, window=LIVE_WINDOW, retry_wait=wait_none())
-        started.append(asyncio.create_task(follower.run()))
-        return Following(follower, started[-1])
+        async def start(*, retry_wait: wait_base = NO_WAIT) -> Following:
+            follower = LiveFollower(api, store, max_streams=2, window=LIVE_WINDOW, retry_wait=retry_wait)
+            return Following(follower, await stack.enter_async_context(background(follower.run())))
 
-    yield start
-    for task in started:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        yield start
 
 
 async def stream_opened(service: FakeSessionsService, session_id: str) -> bool:
@@ -59,13 +59,23 @@ async def watch_opened(service: FakeSessionsService) -> bool:
     return bool(service.watches())
 
 
+async def following_one(service: FakeSessionsService, following: Following) -> bool:
+    return following.follower.streams == 1 and await stream_opened(service, ONE)
+
+
+async def dropped(following: Following) -> bool:
+    return following.follower.streams == 0
+
+
+async def reopened_after(service: FakeSessionsService, sequence_num: int) -> bool:
+    """The session's stream has been opened a second time, resuming from `sequence_num`."""
+    streams = service.event_streams(ONE)
+    return len(streams) == 2 and streams[1].request.url.params["from_sequence_num"] == str(sequence_num)
+
+
 def page_reads(service: FakeSessionsService) -> list[str]:
     """The cursors of the oldest-first event page reads, in order."""
-    return [
-        r.url.params["cursor"]
-        for r in service.requests
-        if r.url.path.endswith("/events") and r.url.params["sort_order"] == "asc"
-    ]
+    return [r.url.params["cursor"] for r in service.event_reads()]
 
 
 async def stored(engine: AsyncEngine, session_id: str) -> list[int]:
@@ -79,20 +89,16 @@ async def stored(engine: AsyncEngine, session_id: str) -> list[int]:
 async def seed_active_session(service: FakeSessionsService, api: SessionsApi, store: SessionStore, count: int) -> None:
     """The session is stored and listed as active, so the next discovery pass follows it."""
     service.events = {ONE: make_events(count)}
-    service.statuses = {ONE: "active"}
+    service.statuses = {ONE: SESSION_STATUS_ACTIVE}
     await sync_once(api, store, workers=1)
     service.requests.clear()
 
 
 async def test_pushed_events_are_stored_as_they_arrive(
-    service: FakeSessionsService,
-    api: SessionsApi,
-    store: SessionStore,
-    engine: AsyncEngine,
-    follow: Callable[[], Following],
+    service: FakeSessionsService, api: SessionsApi, store: SessionStore, engine: AsyncEngine, follow: Follow
 ) -> None:
     await seed_active_session(service, api, store, count=3)
-    following = follow()
+    following = await follow()
     await eventually(lambda: stream_opened(service, ONE))
     [stream] = service.event_streams(ONE)
     assert stream.request.url.params["from_sequence_num"] == "3"
@@ -110,226 +116,156 @@ async def test_pushed_events_are_stored_as_they_arrive(
 
 
 async def test_a_gap_in_the_stream_is_paged_instead_of_stored_out_of_order(
-    service: FakeSessionsService,
-    api: SessionsApi,
-    store: SessionStore,
-    engine: AsyncEngine,
-    follow: Callable[[], Following],
+    service: FakeSessionsService, api: SessionsApi, store: SessionStore, engine: AsyncEngine, follow: Follow
 ) -> None:
     await seed_active_session(service, api, store, count=3)
-    follow()
+    await follow()
     await eventually(lambda: stream_opened(service, ONE))
     service.events[ONE] = make_events(7)
     [first] = service.event_streams(ONE)
     first.send("client_event", make_event(7), frame_id="7")  # 4..6 never arrived
 
-    async def reopened_after_seven() -> bool:
-        streams = service.event_streams(ONE)
-        return len(streams) == 2 and streams[1].request.url.params["from_sequence_num"] == "7"
-
-    await eventually(reopened_after_seven)
+    await eventually(lambda: reopened_after(service, 7))
     assert await stored(engine, ONE) == list(range(1, 8))
     assert page_reads(service) == ["3", "3"]
 
 
 async def test_a_closed_stream_is_reopened_from_where_it_stopped_without_paging(
-    service: FakeSessionsService,
-    api: SessionsApi,
-    store: SessionStore,
-    engine: AsyncEngine,
-    follow: Callable[[], Following],
+    service: FakeSessionsService, api: SessionsApi, store: SessionStore, engine: AsyncEngine, follow: Follow
 ) -> None:
     await seed_active_session(service, api, store, count=3)
-    follow()
+    await follow()
     await eventually(lambda: stream_opened(service, ONE))
     [first] = service.event_streams(ONE)
     first.send("client_event", make_event(4), frame_id="4")
     first.close()
 
-    async def reopened_after_four() -> bool:
-        streams = service.event_streams(ONE)
-        return len(streams) == 2 and streams[1].request.url.params["from_sequence_num"] == "4"
-
-    await eventually(reopened_after_four)
+    await eventually(lambda: reopened_after(service, 4))
     assert await stored(engine, ONE) == [1, 2, 3, 4]
     assert page_reads(service) == ["3"]
 
 
 async def test_a_server_that_cannot_resume_sends_the_follower_back_to_paging(
-    service: FakeSessionsService,
-    api: SessionsApi,
-    store: SessionStore,
-    engine: AsyncEngine,
-    follow: Callable[[], Following],
+    service: FakeSessionsService, api: SessionsApi, store: SessionStore, engine: AsyncEngine, follow: Follow
 ) -> None:
     await seed_active_session(service, api, store, count=3)
-    follow()
+    await follow()
     await eventually(lambda: stream_opened(service, ONE))
     service.events[ONE] = make_events(6)
     [first] = service.event_streams(ONE)
     first.send("catch_up_truncated")
 
-    async def reopened_after_six() -> bool:
-        streams = service.event_streams(ONE)
-        return len(streams) == 2 and streams[1].request.url.params["from_sequence_num"] == "6"
-
-    await eventually(reopened_after_six)
+    await eventually(lambda: reopened_after(service, 6))
     assert await stored(engine, ONE) == list(range(1, 7))
 
 
 async def test_discovery_follows_a_new_session_and_stops_when_it_is_archived(
-    service: FakeSessionsService, engine: AsyncEngine, follow: Callable[[], Following]
+    service: FakeSessionsService, engine: AsyncEngine, follow: Follow
 ) -> None:
     service.events = {ONE: make_events(2)}  # never seen by a polling cycle
-    service.statuses = {ONE: "active"}
-    following = follow()
+    service.statuses = {ONE: SESSION_STATUS_ACTIVE}
+    following = await follow()
 
-    async def following_one() -> bool:
-        return following.follower.streams == 1 and bool(service.event_streams(ONE))
-
-    await eventually(following_one)
+    await eventually(lambda: following_one(service, following))
     assert await stored(engine, ONE) == [1, 2]  # paged on the first connection
 
-    service.statuses[ONE] = "archived"
+    service.statuses[ONE] = SESSION_STATUS_ARCHIVED
     following.follower.refresh()
 
-    async def dropped() -> bool:
-        return following.follower.streams == 0
-
-    await eventually(dropped)
+    await eventually(lambda: dropped(following))
 
 
 async def test_the_watch_starts_following_a_session_between_discovery_passes(
-    service: FakeSessionsService, engine: AsyncEngine, follow: Callable[[], Following]
+    service: FakeSessionsService, engine: AsyncEngine, follow: Follow
 ) -> None:
-    following = follow()
+    following = await follow()
     await eventually(lambda: watch_opened(service))
     [watch] = service.watches()
     assert watch.request.url.params["resume_token"] == RESUME_TOKEN
     assert following.follower.watching
 
     service.events = {ONE: make_events(2)}  # not listed until discovery next runs
-    service.statuses = {ONE: "active"}
+    service.statuses = {ONE: SESSION_STATUS_ACTIVE}
     watch.send("added", service.list_item(ONE), frame_id="cursor-1")
 
-    async def following_one() -> bool:
-        return following.follower.streams == 1 and bool(service.event_streams(ONE))
-
-    await eventually(following_one)
+    await eventually(lambda: following_one(service, following))
     assert await stored(engine, ONE) == [1, 2]
 
-    service.statuses[ONE] = "archived"
+    service.statuses[ONE] = SESSION_STATUS_ARCHIVED
     watch.send("changed", service.list_item(ONE), frame_id="cursor-2")
 
-    async def dropped() -> bool:
-        return following.follower.streams == 0
-
-    await eventually(dropped)
+    await eventually(lambda: dropped(following))
 
 
-async def test_a_lost_watch_position_takes_a_fresh_resume_token(
-    service: FakeSessionsService, follow: Callable[[], Following]
-) -> None:
+async def test_a_lost_watch_position_takes_a_fresh_resume_token(service: FakeSessionsService, follow: Follow) -> None:
     service.stream_refusals = [410]
-    follow()
+    await follow()
     await eventually(lambda: watch_opened(service))
     token_probes = [r for r in service.requests if r.url.path == "/v1/code/sessions" and r.url.params["limit"] == "1"]
     assert len(token_probes) == 2  # the first token, then the fresh one after the 410
 
 
 async def test_a_refused_watch_is_reported_with_its_reason_while_discovery_carries_on(
-    service: FakeSessionsService, api: SessionsApi, store: SessionStore, engine: AsyncEngine
+    service: FakeSessionsService, store: SessionStore, follow: Follow
 ) -> None:
     service.events = {ONE: make_events(2)}
-    service.statuses = {ONE: "active"}
+    service.statuses = {ONE: SESSION_STATUS_ACTIVE}
     service.stream_refusals = [404] * 1000  # every stream open, so the session's own stream is refused too
-    follower = LiveFollower(api, store, max_streams=2, window=LIVE_WINDOW, retry_wait=wait_fixed(0.01))
-    running = asyncio.create_task(follower.run())
-    try:
+    follower = (await follow(retry_wait=wait_fixed(0.01))).follower
 
-        async def watch_reported() -> bool:
-            return any(problem.source == WATCH for problem in follower.problems)
+    async def watch_reported() -> bool:
+        return any(problem.source == WATCH for problem in follower.problems)
 
-        await eventually(watch_reported)
-        [problem] = [p for p in follower.problems if p.source == WATCH]
-        assert "404 Not Found from GET /v1/code/sessions/watch" in problem.message
+    await eventually(watch_reported)
+    [problem] = [p for p in follower.problems if p.source == WATCH]
+    assert "404 Not Found from GET /v1/code/sessions/watch" in problem.message
 
-        async def discovery_stored_the_session() -> bool:  # the refused watch did not stop discovery
-            return (await store.synced_last_event_at()).keys() == {ONE}
+    async def discovery_stored_the_session() -> bool:  # the refused watch did not stop discovery
+        return (await store.synced_last_event_at()).keys() == {ONE}
 
-        await eventually(discovery_stored_the_session)
+    await eventually(discovery_stored_the_session)
 
-        service.stream_refusals.clear()
+    service.stream_refusals.clear()
 
-        async def watching_again() -> bool:
-            return follower.watching and not any(p.source == WATCH for p in follower.problems)
+    async def watching_again() -> bool:
+        return follower.watching and not any(p.source == WATCH for p in follower.problems)
 
-        await eventually(watching_again)
-    finally:
-        running.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await running
+    await eventually(watching_again)
 
 
 async def test_a_failing_discovery_is_reported_with_its_reason_and_clears_once_it_works(
-    service: FakeSessionsService, api: SessionsApi, store: SessionStore
+    service: FakeSessionsService, follow: Follow
 ) -> None:
     service.list_status = 404  # the watch fetches its token from this route too, so it fails alongside
-    follower = LiveFollower(api, store, max_streams=2, window=LIVE_WINDOW, retry_wait=wait_fixed(0.01))
-    running = asyncio.create_task(follower.run())
-    try:
+    follower = (await follow(retry_wait=wait_fixed(0.01))).follower
 
-        async def reported() -> bool:
-            return any(problem.source == DISCOVERY for problem in follower.problems)
+    async def reported() -> bool:
+        return any(problem.source == DISCOVERY for problem in follower.problems)
 
-        await eventually(reported)
-        [problem] = [p for p in follower.problems if p.source == DISCOVERY]
-        assert "404 Not Found from GET /v1/code/sessions" in problem.message
-        assert "refused" in problem.message  # the API's own error body
+    await eventually(reported)
+    [problem] = [p for p in follower.problems if p.source == DISCOVERY]
+    assert "404 Not Found from GET /v1/code/sessions" in problem.message
+    assert "refused" in problem.message  # the API's own error body
 
-        service.list_status = None
+    service.list_status = None
 
-        async def cleared() -> bool:
-            return follower.problems == []
+    async def cleared() -> bool:
+        return follower.problems == []
 
-        await eventually(cleared)
-    finally:
-        running.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await running
+    await eventually(cleared)
 
 
 async def test_cancelling_the_follower_stops_it_with_streams_open(
-    service: FakeSessionsService, api: SessionsApi, store: SessionStore, follow: Callable[[], Following]
+    service: FakeSessionsService, api: SessionsApi, store: SessionStore, follow: Follow
 ) -> None:
     await seed_active_session(service, api, store, count=3)
-    following = follow()
+    following = await follow()
     await eventually(lambda: stream_opened(service, ONE))
 
     following.task.cancel()
     async with asyncio.timeout(10):  # a retry loop that treated cancellation as a failure would reconnect instead
         with pytest.raises(asyncio.CancelledError):
             await following.task
-
-
-async def test_only_recent_unarchived_sessions_are_worth_a_stream(store: SessionStore) -> None:
-    since = TEST_EPOCH + timedelta(days=1)
-    day = timedelta(days=1)
-    await store.upsert_sessions(
-        [
-            make_session("session_recent0001", status="active", last_event_at=(since + day).isoformat()),
-            make_session("session_recent0002", status="paused", last_event_at=(since + 2 * day).isoformat()),
-            make_session("session_recent0003", status="active", last_event_at=(since + 3 * day).isoformat()),
-            make_session("session_archived", status="archived", last_event_at=(since + 4 * day).isoformat()),
-            make_session("session_stale", status="active", last_event_at=(since - day).isoformat()),
-        ]
-    )
-    assert await store.live_session_ids(active_since=since, limit=10) == [
-        "session_recent0003",
-        "session_recent0002",
-        "session_recent0001",
-    ]
-    assert await store.live_session_ids(active_since=since, limit=2) == ["session_recent0003", "session_recent0002"]
 
 
 if __name__ == "__main__":

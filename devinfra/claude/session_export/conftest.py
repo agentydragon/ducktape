@@ -1,10 +1,13 @@
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 from uuid import UUID, uuid4
 
 import httpx
@@ -16,25 +19,29 @@ from testcontainers.postgres import PostgresContainer
 
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
 from devinfra.claude.session_export.database_migrate import RUNNER
-from devinfra.claude.session_export.models import DEFAULT_ATTESTATION_STATUS, SessionSummary
-from devinfra.claude.session_export.oauth import OAuthCredential
+from devinfra.claude.session_export.models import DEFAULT_ATTESTATION_STATUS, SESSION_STATUS_ARCHIVED, SessionSummary
+from devinfra.claude.session_export.oauth import CredentialStore, OAuthCredential
 from devinfra.claude.session_export.store import SessionStore, make_engine
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 
-TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid="test-org-uuid")
+TEST_ORG_UUID = "test-org-uuid"
+TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid=TEST_ORG_UUID)
 TEST_ACCESS_TOKEN = "test-access-token"
 TEST_EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
 LIVE_WINDOW = timedelta(days=36500)  # every test session's last event counts as recent
 RESUME_TOKEN = "test-resume-token"
-
+ONE, TWO, EMPTY = "session_test0001", "session_test0002", "session_test0003"  # `EMPTY` is seeded without events
+# Statuses the server sends. Plain strings, not an enum: the server may add more.
+SESSION_STATUS_ACTIVE = "active"
+SESSION_STATUS_PAUSED = "paused"
 
 PAIRED_RESPONSE = {
     "access_token": TEST_ACCESS_TOKEN,
     "refresh_token": "test-refresh-1",
     "expires_in": 3600,
     "scope": "user:profile",
-    "organization": {"uuid": TEST_COOKIE.org_uuid},
+    "organization": {"uuid": TEST_ORG_UUID},
 }
 
 
@@ -58,7 +65,7 @@ def make_credential(*, expires_in: timedelta = timedelta(hours=1)) -> OAuthCrede
         refresh_token=SecretStr("test-refresh-1"),
         expires_at=datetime.now(UTC) + expires_in,
         scopes=frozenset({"user:profile"}),
-        organization_uuid=TEST_COOKIE.org_uuid,
+        organization_uuid=TEST_ORG_UUID,
     )
 
 
@@ -66,7 +73,7 @@ def make_session(
     session_id: str,
     *,
     title: str = "Test session",
-    status: str = "archived",
+    status: str = SESSION_STATUS_ARCHIVED,
     last_event_at: str = TEST_EPOCH.isoformat(),
 ) -> SessionSummary:
     return SessionSummary(
@@ -133,7 +140,7 @@ class FakeSessionsService:
 
     events: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     titles: dict[str, str] = field(default_factory=dict)  # overrides the generated title of a listed session
-    statuses: dict[str, str] = field(default_factory=dict)  # overrides the generated status ("archived")
+    statuses: dict[str, str] = field(default_factory=dict)  # overrides the generated status (archived)
     fail_next: list[int] = field(default_factory=list)  # HTTP statuses answered before any real response
     stream_refusals: list[int] = field(default_factory=list)  # HTTP statuses answered to the next stream opens
     list_status: int | None = None  # answers every session list request with this status while set
@@ -145,7 +152,7 @@ class FakeSessionsService:
         events = self.events[session_id]
         last_event_at = events[-1]["created_at"] if events else TEST_EPOCH.isoformat()
         title = self.titles.get(session_id, "Test session")
-        status = self.statuses.get(session_id, "archived")
+        status = self.statuses.get(session_id, SESSION_STATUS_ARCHIVED)
         return make_session(session_id, title=title, status=status, last_event_at=last_event_at).model_dump()
 
     def streams_at(self, path: str) -> list[SseConnection]:
@@ -156,6 +163,13 @@ class FakeSessionsService:
 
     def watches(self) -> list[SseConnection]:
         return self.streams_at("/v1/code/sessions/watch")
+
+    def event_requests(self) -> list[httpx.Request]:
+        return [r for r in self.requests if r.url.path.endswith("/events")]
+
+    def event_reads(self) -> list[httpx.Request]:
+        """The oldest-first page reads, not the newest-first probes of a session's newest `sequence_num`."""
+        return [r for r in self.event_requests() if r.url.params["sort_order"] == "asc"]
 
     def _open_stream(self, request: httpx.Request) -> httpx.Response:
         if self.stream_refusals:
@@ -172,7 +186,7 @@ class FakeSessionsService:
             return httpx.Response(self.fail_next.pop(0))
         cookie_ok = "sessionKey=test-session-key" in request.headers.get("cookie", "")
         bearer_ok = request.headers.get("authorization") == f"Bearer {TEST_ACCESS_TOKEN}"
-        if not (cookie_ok or bearer_ok) or request.headers["x-organization-uuid"] != TEST_COOKIE.org_uuid:
+        if not (cookie_ok or bearer_ok) or request.headers["x-organization-uuid"] != TEST_ORG_UUID:
             return httpx.Response(401, json={"error": {"type": "authentication_error"}})
         if request.url.path == "/v1/code/sessions/watch" and "anthropic-client-platform" not in request.headers:
             return httpx.Response(404, text="endpoint not enabled\n")  # what the server says without the header
@@ -207,6 +221,28 @@ class FakeSessionsService:
         return httpx.Response(200, json=events_body)
 
 
+def authorization_state(authorization_url: str) -> str:
+    """The `state` the authorization URL carries, which the redirect has to bring back."""
+    return dict(parse_qsl(urlsplit(authorization_url).query))["state"]
+
+
+def redirect_url(state: str) -> str:
+    """The URL the browser is sent to after approval, as the human pastes it back."""
+    return f"http://localhost:54545/callback?code=test-code&state={state}"
+
+
+@asynccontextmanager
+async def background(coroutine: Coroutine[Any, Any, None]) -> AsyncIterator[asyncio.Task[None]]:
+    """Runs `coroutine` as a task for the block, then cancels it and waits it out; the cancellation is not an error."""
+    task = asyncio.create_task(coroutine)
+    try:
+        yield task
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
 async def eventually(condition: Callable[[], Awaitable[bool]]) -> None:
     """Returns once `condition` holds: the wait for a background loop's progress, bounded so a wedge fails the test."""
     async for attempt in AsyncRetrying(wait=wait_fixed(0.01), stop=stop_after_delay(30), reraise=True):
@@ -224,6 +260,18 @@ async def api(service: FakeSessionsService) -> AsyncIterator[SessionsApi]:
     transport = httpx.MockTransport(service.handle)
     async with SessionsApi.for_cookie(TEST_COOKIE, transport=transport, retry_wait=wait_none()) as api:
         yield api
+
+
+@pytest.fixture
+def credential_store(tmp_path: Path) -> Callable[..., CredentialStore]:
+    """Saves a credential that expires in `expires_in` and returns the store holding it."""
+
+    def make(*, expires_in: timedelta = timedelta(hours=1)) -> CredentialStore:
+        store = CredentialStore(tmp_path / "credential.json")
+        store.save(make_credential(expires_in=expires_in))
+        return store
+
+    return make
 
 
 @pytest.fixture
