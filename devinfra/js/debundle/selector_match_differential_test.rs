@@ -10,25 +10,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use selector_match::Mode;
 
 fn facts(source: &str) -> chunk_facts::ChunkFacts {
-    chunk_facts::extract_facts(&js_ast::parse_js_module_ast("<t>", source).unwrap()).unwrap()
+    chunk_facts::extract_facts_items(&js_ast::parse_js_module_ast("<t>", source).unwrap().body)
+        .unwrap()
 }
 
 /// Per-top-level-statement facts (one `ChunkFacts` per item), for the
 /// multi-statement sequence matcher.
 fn roots(source: &str) -> Vec<chunk_facts::ChunkFacts> {
-    let module = js_ast::parse_js_module_ast("<t>", source).unwrap();
-    let span = module.span;
-    module
+    js_ast::parse_js_module_ast("<t>", source)
+        .unwrap()
         .body
         .into_iter()
-        .map(|item| {
-            chunk_facts::extract_facts(&swc_ecma_ast::Module {
-                span,
-                body: vec![item],
-                shebang: None,
-            })
-            .unwrap()
-        })
+        .map(|item| chunk_facts::extract_facts_items(&[item]).unwrap())
         .collect()
 }
 

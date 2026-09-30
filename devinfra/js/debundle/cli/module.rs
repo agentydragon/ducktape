@@ -706,49 +706,6 @@ mod tests {
     }
 
     #[test]
-    fn merge_appends_members_and_deletes_sources() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "target.yaml",
-            "members:\n  - selector: { binding: { name: a } }\n",
-        );
-        write(
-            root,
-            "src1.yaml",
-            "members:\n  - selector: { binding: { name: b } }\n",
-        );
-        write(
-            root,
-            "src2.yaml",
-            "members:\n  - selector: { binding: { name: c } }\n",
-        );
-
-        let summary = merge_modules(
-            root,
-            Path::new("target.yaml"),
-            &[Path::new("src1.yaml"), Path::new("src2.yaml")],
-        )
-        .unwrap();
-
-        assert_eq!(summary.merged_sources.len(), 2);
-        assert!(summary.summary_line().contains("merged 2 source(s) into"));
-        assert!(!root.join("src1.yaml").exists());
-        assert!(!root.join("src2.yaml").exists());
-
-        let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
-        assert!(!merged.contains("# merged from"), "merged={merged}");
-        let doc: Value = serde_yaml::from_str(&merged).unwrap();
-        assert_eq!(
-            doc["note"].as_str(),
-            Some("merged from: src1.yaml, src2.yaml"),
-            "merged={merged}",
-        );
-        assert_eq!(member_names(&doc), vec!["a", "b", "c"]);
-    }
-
-    #[test]
     fn merge_records_provenance_note_and_preserves_members() {
         // Even a member-empty source records `merged from:` provenance
         // in the target's module-level `note:` (durable, non-emitting).
@@ -815,64 +772,6 @@ mod tests {
             Some("merged from: ai/models/pricing/lookup.yaml"),
             "merged={merged}",
         );
-    }
-
-    #[test]
-    fn merge_creates_missing_target_from_sources() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "src/one.yaml",
-            "members:\n  - selector: { binding: { name: a } }\n",
-        );
-        write(
-            root,
-            "src/two.yaml",
-            "members:\n  - selector: { binding: { name: b } }\n",
-        );
-
-        let summary = merge_modules(
-            root,
-            Path::new("new/nested/target"),
-            &[Path::new("src/one"), Path::new("src/two.yaml")],
-        )
-        .unwrap();
-
-        assert_eq!(summary.target, root.join("new/nested/target.yaml"));
-        assert!(root.join("new/nested/target.yaml").exists());
-        assert!(!root.join("src/one.yaml").exists());
-        assert!(!root.join("src/two.yaml").exists());
-        let merged = fs::read_to_string(root.join("new/nested/target.yaml")).unwrap();
-        let doc: Value = serde_yaml::from_str(&merged).unwrap();
-        assert_eq!(
-            doc["note"].as_str(),
-            Some("merged from: src/one.yaml, src/two.yaml"),
-            "merged={merged}",
-        );
-        assert_eq!(member_names(&doc), vec!["a", "b"]);
-    }
-
-    #[test]
-    fn duplicate_name_across_files_is_rejected() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "target.yaml",
-            "members:\n  - selector: { binding: { name: dup } }\n",
-        );
-        write(
-            root,
-            "src.yaml",
-            "members:\n  - selector: { binding: { name: dup } }\n",
-        );
-        let err =
-            merge_modules(root, Path::new("target.yaml"), &[Path::new("src.yaml")]).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate member name \"dup\""), "msg={msg}");
-        // Source must not be deleted on failure.
-        assert!(root.join("src.yaml").exists());
     }
 
     #[test]

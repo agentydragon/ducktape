@@ -356,11 +356,9 @@ fn decode_satisfying_assignments<E>(
                 .copied()
                 .ok_or(SelectorBackendSolveError::MissingOwnerFact { owner })?;
             let claim = ResolvedClaim {
-                chunk_id: target.chunk_id,
                 owner,
                 statement_ordinal,
                 binding,
-                provenance: Vec::new(),
             };
             let claims = claims_by_target.entry(target.id).or_default();
             if !claims.contains(&claim) {
@@ -491,13 +489,13 @@ impl MaterializationFacts {
 mod tests {
     use std::convert::Infallible;
 
-    use analysis::{ChunkId, OwnerId, StatementOrdinal};
+    use analysis::{OwnerId, StatementOrdinal};
     use selector_constraint_backend::ConstraintValue;
     use selector_constraint_backend::{
         BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
         BackendValueId, BackendVariableAssignment,
     };
-    use selector_ir::{ClaimOrigin, OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
+    use selector_ir::{OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
 
     use super::*;
 
@@ -571,7 +569,6 @@ mod tests {
 
     fn owner_fact(owner: OwnerId, ordinal: usize, kind: &str) -> SelectorFact {
         SelectorFact::Owner {
-            chunk_id: ChunkId(0),
             owner,
             statement_ordinal: StatementOrdinal(ordinal),
             statement_kind: kind.to_string(),
@@ -580,7 +577,6 @@ mod tests {
 
     fn binding_fact(owner: OwnerId, binding: &str) -> SelectorFact {
         SelectorFact::DeclaredBinding {
-            chunk_id: ChunkId(0),
             owner,
             binding: binding.to_string(),
         }
@@ -591,13 +587,11 @@ mod tests {
         let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
         let binding = program.add_variable(VariableDomain::String, Some("binding".to_string()));
         let target = program.add_target(
-            ChunkId(0),
             owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Readable".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: owner },
@@ -610,13 +604,11 @@ mod tests {
         let mut program = SelectorProgram::default();
         let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
         let target = program.add_target(
-            ChunkId(0),
             owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Readable".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: owner },
@@ -632,22 +624,18 @@ mod tests {
         let first_owner = program.add_variable(VariableDomain::Owner, Some("first".to_string()));
         let second_owner = program.add_variable(VariableDomain::Owner, Some("second".to_string()));
         let first_target = program.add_target(
-            ChunkId(0),
             first_owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("First".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         let second_target = program.add_target(
-            ChunkId(0),
             second_owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Second".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         for owner in [first_owner, second_owner] {
             program.add_atom(SelectorAtom::OwnerDeclaresBinding {
@@ -736,11 +724,9 @@ mod tests {
             result.outcome_for(target),
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
                     owner: OwnerId(1),
                     statement_ordinal: StatementOrdinal(10),
                     binding: Some("minA".to_string()),
-                    provenance: Vec::new(),
                 }
             })
         );
@@ -761,11 +747,9 @@ mod tests {
             result.outcome_for(target),
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
                     owner: OwnerId(1),
                     statement_ordinal: StatementOrdinal(10),
                     binding: Some("minA".to_string()),
-                    provenance: Vec::new(),
                 }
             })
         );
@@ -829,13 +813,11 @@ mod tests {
                 binding: StringTerm::Var { id: binding },
             });
             program.add_target(
-                ChunkId(0),
                 owner,
                 "module",
                 ClaimKind::Binding {
                     export_name: Some(export_name.to_string()),
                 },
-                ClaimOrigin::Synthetic,
             )
         });
         let backend = SelectingBackend {
@@ -892,11 +874,9 @@ mod tests {
             result.outcome_for(target),
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
                     owner: OwnerId(1),
                     statement_ordinal: StatementOrdinal(10),
                     binding: Some("minA".to_string()),
-                    provenance: Vec::new(),
                 }
             })
         );
@@ -913,11 +893,9 @@ mod tests {
             result.outcome_for(target),
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
                     owner: OwnerId(1),
                     statement_ordinal: StatementOrdinal(10),
                     binding: Some("minA".to_string()),
-                    provenance: Vec::new(),
                 }
             })
         );
@@ -950,13 +928,11 @@ mod tests {
                     },
                 });
                 program.add_target(
-                    ChunkId(0),
                     owner,
                     "module",
                     ClaimKind::Binding {
                         export_name: Some(binding.to_string()),
                     },
-                    ClaimOrigin::Synthetic,
                 )
             })
             .collect()
@@ -1016,11 +992,9 @@ mod tests {
             result.outcome_for(fixed),
             Some(&ClaimOutcome::Unique {
                 claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
                     owner: OwnerId(1),
                     statement_ordinal: StatementOrdinal(10),
                     binding: Some("minA".to_string()),
-                    provenance: Vec::new(),
                 }
             })
         );

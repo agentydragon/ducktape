@@ -86,7 +86,7 @@ the edit model is clear.
 
 ### Source Inventory
 
-The shared per-chunk index is `shape_index.rs` (over
+The shared per-chunk index is `shape_index.rs` (per-statement features from
 `selector_candidate_index.rs`). Repair, port and bulk-planning tooling query it
 rather than adding per-command AST walks that drift semantically.
 

@@ -81,7 +81,7 @@ struct AdmissionViolation {
 /// per check and description, naming every statement it suppressed;
 /// configured overrides that suppress nothing print a redundant-override
 /// warning (mirroring the redundant-purity-hint diagnostics).
-pub fn enforce_chunk_admission(
+pub(super) fn enforce_chunk_admission(
     chunk_id: &str,
     module: &Module,
     overrides: AdmissionOverrides,

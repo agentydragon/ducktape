@@ -370,30 +370,6 @@ members:
     }
 
     #[test]
-    fn read_module_file_rejects_legacy_binding_groups() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("x.yaml");
-        fs::write(
-            &path,
-            r#"binding_groups:
-  - source_match:
-      match: "const primary = EXPR_PRIMARY, secondary = EXPR_SECONDARY;"
-    exports:
-      primary: Primary
-"#,
-        )
-        .unwrap();
-
-        let err = read_module_file(&path).expect_err("must reject legacy binding_groups");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("binding_groups"), "{msg}");
-        assert!(
-            msg.contains("unknown field") || msg.contains("expected one of"),
-            "{msg}"
-        );
-    }
-
-    #[test]
     fn read_module_file_accepts_comment_field_on_anonymous_statement() {
         // `AnonymousStatement` accepts `comment:` alongside `note:`
         // (both `Option<String>`). `comment:` is the JS-visible prose

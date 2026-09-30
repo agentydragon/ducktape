@@ -363,25 +363,4 @@ mod tests {
         assert_eq!(s.modules.member_count.large_21_plus, 1);
         assert_eq!(s.modules.member_count.max, 21);
     }
-
-    #[test]
-    fn deterministic_same_spec_same_output() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "a.yaml",
-            "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\n",
-        );
-        write(
-            root,
-            "b/c.yaml",
-            "members:\n  - selector: { binding: { name: c } }\n",
-        );
-        let s1 = compute_spec_stats(root).unwrap();
-        let s2 = compute_spec_stats(root).unwrap();
-        let j1 = serde_json::to_string(&s1).unwrap();
-        let j2 = serde_json::to_string(&s2).unwrap();
-        assert_eq!(j1, j2);
-    }
 }

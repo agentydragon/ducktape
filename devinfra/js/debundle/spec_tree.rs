@@ -613,7 +613,6 @@ fn chunk_renames_map(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_yaml::Value;
 
     fn write_file(path: &Path, body: &str) {
         if let Some(parent) = path.parent() {
@@ -730,7 +729,7 @@ unassigned_mode:
     kind: inline_in_entry
   print:
     kind: catchall_file
-    target_path: residual/print
+    target: residual/print
 "#,
         );
         write_file(&vendor_marks, "vendor_marks: []\n");
@@ -791,10 +790,12 @@ unassigned_mode:
             spec.unassigned_mode["cli"],
             UnassignedMode::InlineInEntry
         ));
-        assert!(matches!(
+        assert_eq!(
             spec.unassigned_mode["print"],
-            UnassignedMode::CatchallFile { .. }
-        ));
+            UnassignedMode::CatchallFile {
+                target: Some("residual/print".to_string())
+            }
+        );
     }
 
     #[test]
@@ -1010,30 +1011,6 @@ unassigned_mode:
         assert_eq!(
             spec.write_js_tree.unwrap().out_dir,
             Path::new("out/override")
-        );
-    }
-
-    #[test]
-    fn serialized_spec_omits_retired_and_trivial_fields() {
-        let temp = tempfile::tempdir().unwrap();
-        let spec = compile_spec_tree(&fixture(temp.path())).unwrap();
-        let value: Value = serde_yaml::from_str(&serde_yaml::to_string(&spec).unwrap()).unwrap();
-
-        assert!(value.get("kind").is_none());
-        assert!(value.get("schema_version").is_none());
-        assert!(value.get("pipeline").is_none());
-        assert!(value.get("operations").is_none());
-        assert!(value.get("rewrite_chunk_entry_specifiers").is_none());
-        assert!(value.get("write_js_tree").is_none());
-        assert!(
-            value["materialize_logical_modules"]
-                .get("target_dir")
-                .is_none()
-        );
-        assert!(
-            value["logical_modules"]["static/main"]["ui/active"]["members"][0]
-                .get("purity")
-                .is_none()
         );
     }
 

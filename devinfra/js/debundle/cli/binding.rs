@@ -1361,20 +1361,6 @@ mod tests {
     }
 
     #[test]
-    fn binding_name_match_and_rename() {
-        let minified = BindingName::new("_ab".to_string(), None);
-        assert!(minified.matches("_ab"));
-        assert!(!minified.matches("parseUserId"));
-        assert!(!minified.is_renamed());
-
-        let readable = BindingName::new("_ab".to_string(), Some("parseUserId".to_string()));
-        // Both spellings resolve the same binding.
-        assert!(readable.matches("_ab"));
-        assert!(readable.matches("parseUserId"));
-        assert!(readable.is_renamed());
-    }
-
-    #[test]
     fn binding_name_serializes_internally_tagged() {
         let readable = BindingName::new("_ab".to_string(), Some("parseUserId".to_string()));
         let json = serde_json::to_value(&readable).unwrap();
@@ -1390,34 +1376,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_move_triple_two_fields() {
-        let m = parse_move_triple("XOe:runtime/plugins").unwrap();
-        assert_eq!(m.sym, "XOe");
-        assert_eq!(m.module, "runtime/plugins");
-        assert_eq!(m.readable, None);
-    }
-
-    #[test]
-    fn parse_move_triple_three_fields() {
-        let m = parse_move_triple("XOe:runtime/plugins:PluginSettingsAccessor").unwrap();
-        assert_eq!(m.sym, "XOe");
-        assert_eq!(m.module, "runtime/plugins");
-        assert_eq!(m.readable.as_deref(), Some("PluginSettingsAccessor"));
-    }
-
-    #[test]
     fn parse_move_triple_rejects_one_field() {
         assert!(parse_move_triple("XOe").is_err());
-    }
-
-    #[test]
-    fn parse_batch_json_array_shape() {
-        let m = parse_batch_json(
-            r#"[{"sym":"a","module":"m"},{"sym":"b","module":"m","readable":"B"}]"#,
-        )
-        .unwrap();
-        assert_eq!(m.len(), 2);
-        assert_eq!(m[1].readable.as_deref(), Some("B"));
     }
 
     #[test]

@@ -11,36 +11,28 @@ use std::hash::{Hash, Hasher};
 
 use analysis::OwnerId;
 use selector_ir::{SelectorTargetId, SelectorVariableId, VariableDomain};
-use serde::{Deserialize, Serialize};
 
 const SHARED_SPARSE_DOMAIN_THRESHOLD: usize = 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstraintVariableId(pub usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AllowedTupleConstraintId(pub usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AllowedTupleRowsId(pub usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SharedVariableDomainId(pub usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AllDifferentConstraintId(pub usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BackendValueId(pub i64);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ConstraintValue {
     Owner(OwnerId),
     String(String),
@@ -55,34 +47,30 @@ impl ConstraintValue {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompiledVariableDomain {
     Full(VariableDomain),
     Sparse(Vec<BackendValueId>),
     SharedSparse(SharedVariableDomainId),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledVariable {
     pub id: ConstraintVariableId,
     pub source: SelectorVariableId,
     pub domain: VariableDomain,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub debug_name: Option<String>,
     pub values: CompiledVariableDomain,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetProjection {
     pub target: SelectorTargetId,
     pub owner_variable: ConstraintVariableId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding_projection: Option<TargetBindingProjection>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TargetBindingProjection {
     Variable(ConstraintVariableId),
     Const(String),
@@ -97,27 +85,27 @@ impl TargetBindingProjection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledAllowedTupleConstraint {
     pub id: AllowedTupleConstraintId,
     pub variables: Vec<ConstraintVariableId>,
     pub row_set: AllowedTupleRowsId,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledAllowedTupleRowSet {
     pub id: AllowedTupleRowsId,
     pub rows: CompiledAllowedTupleRows,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledSharedVariableDomain {
     pub id: SharedVariableDomainId,
     pub domain: VariableDomain,
     pub values: Vec<BackendValueId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledAllowedTupleRows {
     arity: usize,
     values: Vec<BackendValueId>,
@@ -134,7 +122,7 @@ impl CompiledAllowedTupleRows {
         Self { arity, values }
     }
 
-    fn from_flat_rows(arity: usize, mut values: Vec<BackendValueId>) -> Self {
+    pub fn from_flat_rows(arity: usize, mut values: Vec<BackendValueId>) -> Self {
         debug_assert!(arity > 0);
         sort_dedup_flat_rows(arity, &mut values);
         Self { arity, values }
@@ -228,21 +216,20 @@ struct AllowedTupleRowsFingerprint {
     hash: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AllDifferentReason {
     TargetInjectivity { targets: Vec<SelectorTargetId> },
     SelectorSemantics { label: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledAllDifferentConstraint {
     pub id: AllDifferentConstraintId,
     pub variables: Vec<ConstraintVariableId>,
     pub reason: AllDifferentReason,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FullDomainValues {
     pub owners: Vec<BackendValueId>,
     pub strings: Vec<BackendValueId>,
@@ -264,7 +251,7 @@ impl FullDomainValues {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DomainValueDictionary {
     pub owners: Vec<OwnerId>,
     pub strings: Vec<String>,
@@ -307,19 +294,16 @@ impl DomainValueDictionary {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledSelectorProblem {
     pub value_dictionary: DomainValueDictionary,
     pub full_domains: FullDomainValues,
-    #[serde(default)]
     pub shared_variable_domains: Vec<CompiledSharedVariableDomain>,
     pub variables: Vec<CompiledVariable>,
     pub target_projections: Vec<TargetProjection>,
-    #[serde(default)]
     pub allowed_tuple_row_sets: Vec<CompiledAllowedTupleRowSet>,
     pub allowed_tuples: Vec<CompiledAllowedTupleConstraint>,
     pub all_different: Vec<CompiledAllDifferentConstraint>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub known_unsat: Option<String>,
 }
 
@@ -1894,8 +1878,7 @@ pub enum BackendSolveStatus {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum BackendAssignmentCoverage {
     #[default]
     Sample,

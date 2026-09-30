@@ -8,109 +8,69 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
-use analysis::{ChunkId, OwnerId, StatementOrdinal};
-use serde::{Deserialize, Serialize};
+use analysis::{OwnerId, StatementOrdinal};
 
 /// Dense id of a solver variable in a [`SelectorProgram`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SelectorVariableId(pub usize);
 
 /// Dense id of a materializer claim target in a [`SelectorProgram`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SelectorTargetId(pub usize);
 
 /// The relation domain a solver variable ranges over.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VariableDomain {
     Owner,
     String,
 }
 
 /// One variable in the global selector constraint program.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectorVariable {
     pub id: SelectorVariableId,
     pub domain: VariableDomain,
     /// Optional authoring/debug name, e.g. `@Button` or `needle.return`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub debug_name: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OwnerTerm {
     Var { id: SelectorVariableId },
     Const { owner: OwnerId },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StringTerm {
     Var { id: SelectorVariableId },
     Const { value: String },
 }
 
 /// Materializer-facing shape of a target once the solver has selected an owner.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClaimKind {
     /// A normal exported member claim. The owner should declare `binding`.
-    Binding {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        export_name: Option<String>,
-    },
-    /// An anonymous top-level statement claim. The owner may declare no binding.
-    AnonymousStatement,
-    /// One target in a `source_matches[].bindings[]` selector.
-    BindingGroupMember {
-        export_name: String,
-        target_binding: String,
-    },
-}
-
-/// Where a target came from in the spec/lowering pipeline.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ClaimOrigin {
-    MemberSelector,
-    BindingGroup { group_index: usize },
+    Binding { export_name: Option<String> },
+    /// An anonymous top-level statement claim, the `index`th of its module's
+    /// `anonymous_statements[]`. The owner may declare no binding.
     AnonymousStatement { index: usize },
-    RelationalSelector { relation: RelationalPrimitive },
-    Synthetic,
-}
-
-/// Current relational primitives that should become solver atoms rather than
-/// late materializer bridge passes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RelationalPrimitive {
-    CrossRef,
-    ReadsMember,
-    MemberOfModule,
-    PassedToCall,
-    MakesDecorateCall,
-    IntrinsicAlias,
+    /// One target in a `source_matches[].bindings[]` selector.
+    BindingGroupMember { export_name: String },
 }
 
 /// One claim the materializer will consume after solving.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectorTarget {
     pub id: SelectorTargetId,
-    pub chunk_id: ChunkId,
     pub owner: SelectorVariableId,
     /// Spec logical module path/key as authored. Later integration can replace
     /// this with the materializer's module id once lowering has that table.
     pub logical_module: String,
     pub claim: ClaimKind,
-    pub origin: ClaimOrigin,
 }
 
 /// One conjunctive-query atom in the lowered selector program.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectorAtom {
     OwnerKind {
         owner: OwnerTerm,
@@ -123,7 +83,6 @@ pub enum SelectorAtom {
     ProjectedAllowedTuples {
         variables: Vec<SelectorVariableId>,
         rows: Vec<Vec<SelectorProjectedValue>>,
-        reason: String,
     },
     OwnerReferencesOwner {
         owner: OwnerTerm,
@@ -150,20 +109,17 @@ pub enum SelectorAtom {
     PassedToCall {
         owner: OwnerTerm,
         callee_member: StringTerm,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         arg_index: Option<u32>,
     },
     PassedToCallOfOwner {
         owner: OwnerTerm,
         callee_object: OwnerTerm,
         callee_member: StringTerm,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         arg_index: Option<u32>,
     },
     MakesDecorateCallForOwner {
         owner: OwnerTerm,
         class_anchor: OwnerTerm,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         member: Option<StringTerm>,
     },
     IntrinsicAlias {
@@ -282,17 +238,12 @@ impl SelectorAtom {
                 owner: remap_owner_term(owner, variable_map),
                 binding: remap_string_term(binding, variable_map),
             },
-            Self::ProjectedAllowedTuples {
-                variables,
-                rows,
-                reason,
-            } => Self::ProjectedAllowedTuples {
+            Self::ProjectedAllowedTuples { variables, rows } => Self::ProjectedAllowedTuples {
                 variables: variables
                     .iter()
                     .map(|variable| remap_variable_id(*variable, variable_map))
                     .collect(),
                 rows: rows.clone(),
-                reason: reason.clone(),
             },
             Self::OwnerReferencesOwner { owner, referenced } => Self::OwnerReferencesOwner {
                 owner: remap_owner_term(owner, variable_map),
@@ -415,8 +366,7 @@ fn remap_string_term(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectorProjectedValue {
     Owner(OwnerId),
     String(String),
@@ -432,20 +382,18 @@ impl SelectorProjectedValue {
 }
 
 /// Whole lowered selector program for one chunk/component solve.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SelectorProgram {
     pub variables: Vec<SelectorVariable>,
     pub targets: Vec<SelectorTarget>,
     pub atoms: Vec<SelectorAtom>,
     /// Sets of target ids that must land on distinct owners.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub all_different: Vec<Vec<SelectorTargetId>>,
     /// Sets of variables that must land on distinct values.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub all_different_variables: Vec<SelectorVariableAllDifferent>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectorVariableAllDifferent {
     pub variables: Vec<SelectorVariableId>,
     pub label: String,
@@ -480,20 +428,16 @@ impl SelectorProgram {
 
     pub fn add_target(
         &mut self,
-        chunk_id: ChunkId,
         owner: SelectorVariableId,
         logical_module: impl Into<String>,
         claim: ClaimKind,
-        origin: ClaimOrigin,
     ) -> SelectorTargetId {
         let id = SelectorTargetId(self.targets.len());
         self.targets.push(SelectorTarget {
             id,
-            chunk_id,
             owner,
             logical_module: logical_module.into(),
             claim,
-            origin,
         });
         id
     }
@@ -586,13 +530,8 @@ impl SelectorProgram {
             let owner = *variable_map
                 .get(&target.owner)
                 .expect("selected target owner variable must be kept");
-            let remapped = program.add_target(
-                target.chunk_id,
-                owner,
-                target.logical_module.clone(),
-                target.claim.clone(),
-                target.origin.clone(),
-            );
+            let remapped =
+                program.add_target(owner, target.logical_module.clone(), target.claim.clone());
             old_to_new_targets.insert(target.id, remapped);
             new_to_old_targets.insert(remapped, target.id);
         }
@@ -703,11 +642,7 @@ impl SelectorProgram {
                 self.validate_owner_term(owner, "owner_declares_binding.owner")?;
                 self.validate_string_term(binding, "owner_declares_binding.binding")
             }
-            SelectorAtom::ProjectedAllowedTuples {
-                variables,
-                rows,
-                reason: _,
-            } => {
+            SelectorAtom::ProjectedAllowedTuples { variables, rows } => {
                 if variables.is_empty() {
                     return Err(SelectorProgramError::EmptyProjectedAllowedTuples);
                 }
@@ -971,56 +906,44 @@ impl Error for SelectorProgramError {}
 
 /// Solver EDB row. These are the stable serialization boundary between program
 /// analysis and the fixed Ascent rule library.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectorFact {
     Owner {
-        chunk_id: ChunkId,
         owner: OwnerId,
         statement_ordinal: StatementOrdinal,
         statement_kind: String,
     },
     DeclaredBinding {
-        chunk_id: ChunkId,
         owner: OwnerId,
         binding: String,
     },
     OwnerReferencesBinding {
-        chunk_id: ChunkId,
         owner: OwnerId,
         binding: String,
         edge_kind: String,
     },
     MemberRead {
-        chunk_id: ChunkId,
         statement_ordinal: StatementOrdinal,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         object: Option<String>,
         member: String,
     },
     ModuleMemberUse {
-        chunk_id: ChunkId,
         statement_ordinal: StatementOrdinal,
         module: String,
         member: String,
     },
     CallArgumentUse {
-        chunk_id: ChunkId,
         argument: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         callee_object: Option<String>,
         callee_member: String,
         arg_index: usize,
     },
     DecorateCallUse {
-        chunk_id: ChunkId,
         callee: String,
         class_anchor: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         member: Option<String>,
     },
     IntrinsicAliasUse {
-        chunk_id: ChunkId,
         binding: String,
         property: String,
     },
@@ -1042,7 +965,7 @@ impl SelectorFact {
 }
 
 /// Append-only EDB relation store for one solver invocation.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SelectorFactStore {
     pub facts: Vec<SelectorFact>,
 }
@@ -1070,7 +993,7 @@ impl SelectorFactStore {
 }
 
 /// Solver output projected to materializer targets.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SolverResult {
     pub claims: Vec<SolverClaim>,
 }
@@ -1084,14 +1007,13 @@ impl SolverResult {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SolverClaim {
     pub target: SelectorTargetId,
     pub outcome: ClaimOutcome,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClaimOutcome {
     Unique {
         claim: ResolvedClaim,
@@ -1118,21 +1040,11 @@ pub enum ClaimOutcome {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedClaim {
-    pub chunk_id: ChunkId,
     pub owner: OwnerId,
     pub statement_ordinal: StatementOrdinal,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub provenance: Vec<ProvenanceFact>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProvenanceFact {
-    pub relation: String,
-    pub summary: String,
 }
 
 #[cfg(test)]
@@ -1152,13 +1064,11 @@ mod tests {
         let mut program = SelectorProgram::default();
         let owner = program.add_variable(VariableDomain::Owner, Some("@Widget".to_string()));
         let member = program.add_target(
-            ChunkId(0),
             owner,
             "runtime/widgets",
             ClaimKind::Binding {
                 export_name: Some("Widget".to_string()),
             },
-            ClaimOrigin::MemberSelector,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: owner },
@@ -1174,11 +1084,9 @@ mod tests {
         let mut program = SelectorProgram::default();
         let binding = program.add_variable(VariableDomain::String, None);
         program.add_target(
-            ChunkId(0),
             binding,
             "runtime/widgets",
-            ClaimKind::AnonymousStatement,
-            ClaimOrigin::AnonymousStatement { index: 0 },
+            ClaimKind::AnonymousStatement { index: 0 },
         );
 
         assert_eq!(
@@ -1227,22 +1135,18 @@ mod tests {
         let referenced_owner =
             program.add_variable(VariableDomain::Owner, Some("referenced".to_string()));
         let ignored_target = program.add_target(
-            ChunkId(0),
             ignored_owner,
             "ignored/module",
             ClaimKind::Binding {
                 export_name: Some("Ignored".to_string()),
             },
-            ClaimOrigin::MemberSelector,
         );
         let kept_target = program.add_target(
-            ChunkId(0),
             kept_owner,
             "kept/module",
             ClaimKind::Binding {
                 export_name: Some("Kept".to_string()),
             },
-            ClaimOrigin::MemberSelector,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: ignored_owner },
@@ -1304,14 +1208,11 @@ mod tests {
         let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
         let binding = program.add_variable(VariableDomain::String, Some("binding".to_string()));
         let target = program.add_target(
-            ChunkId(0),
             owner,
             "projected/module",
             ClaimKind::BindingGroupMember {
                 export_name: "Projected".to_string(),
-                target_binding: "projected".to_string(),
             },
-            ClaimOrigin::BindingGroup { group_index: 0 },
         );
         program.add_atom(SelectorAtom::ProjectedAllowedTuples {
             variables: vec![owner, binding],
@@ -1319,7 +1220,6 @@ mod tests {
                 SelectorProjectedValue::Owner(OwnerId(7)),
                 SelectorProjectedValue::String("minified".to_string()),
             ]],
-            reason: "projected source_match group".to_string(),
         });
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: owner },
@@ -1339,17 +1239,13 @@ mod tests {
         assert!(slice.program.atoms.iter().any(|atom| {
             matches!(
                 atom,
-                SelectorAtom::ProjectedAllowedTuples {
-                    variables,
-                    rows,
-                    reason,
-                } if variables == &vec![SelectorVariableId(0), SelectorVariableId(1)]
-                    && rows
-                        == &vec![vec![
-                            SelectorProjectedValue::Owner(OwnerId(7)),
-                            SelectorProjectedValue::String("minified".to_string())
-                        ]]
-                    && reason == "projected source_match group"
+                SelectorAtom::ProjectedAllowedTuples { variables, rows }
+                    if variables == &vec![SelectorVariableId(0), SelectorVariableId(1)]
+                        && rows
+                            == &vec![vec![
+                                SelectorProjectedValue::Owner(OwnerId(7)),
+                                SelectorProjectedValue::String("minified".to_string())
+                            ]]
             )
         }));
         assert!(slice.program.validate().is_ok());
@@ -1364,22 +1260,18 @@ mod tests {
         let right_name =
             program.add_variable(VariableDomain::String, Some("right_name".to_string()));
         let left_target = program.add_target(
-            ChunkId(0),
             left_owner,
             "left/module",
             ClaimKind::Binding {
                 export_name: Some("Left".to_string()),
             },
-            ClaimOrigin::MemberSelector,
         );
         let right_target = program.add_target(
-            ChunkId(0),
             right_owner,
             "right/module",
             ClaimKind::Binding {
                 export_name: Some("Right".to_string()),
             },
-            ClaimOrigin::MemberSelector,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: left_owner },
@@ -1421,54 +1313,5 @@ mod tests {
             vec![vec![SelectorTargetId(0), SelectorTargetId(1)]]
         );
         assert!(coupled_slice.program.validate().is_ok());
-    }
-
-    #[test]
-    fn serde_round_trips_program_and_result() {
-        let mut program = SelectorProgram::default();
-        let owner = program.add_variable(VariableDomain::Owner, Some("@Class".to_string()));
-        let target = program.add_target(
-            ChunkId(2),
-            owner,
-            "runtime/classes",
-            ClaimKind::Binding {
-                export_name: Some("Class".to_string()),
-            },
-            ClaimOrigin::RelationalSelector {
-                relation: RelationalPrimitive::MakesDecorateCall,
-            },
-        );
-        let class = program.add_variable(VariableDomain::Owner, Some("@C".to_string()));
-        program.add_atom(SelectorAtom::MakesDecorateCallForOwner {
-            owner: OwnerTerm::Var { id: owner },
-            class_anchor: OwnerTerm::Var { id: class },
-            member: Some(const_str("ready")),
-        });
-        program.validate().unwrap();
-
-        let json = serde_json::to_string(&program).unwrap();
-        let decoded: SelectorProgram = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded, program);
-
-        let result = SolverResult {
-            claims: vec![SolverClaim {
-                target,
-                outcome: ClaimOutcome::Unique {
-                    claim: ResolvedClaim {
-                        chunk_id: ChunkId(2),
-                        owner: OwnerId(9),
-                        statement_ordinal: StatementOrdinal(9),
-                        binding: Some("a".to_string()),
-                        provenance: vec![ProvenanceFact {
-                            relation: "makes_decorate_call".to_string(),
-                            summary: "decorates C.ready".to_string(),
-                        }],
-                    },
-                },
-            }],
-        };
-        let json = serde_json::to_string(&result).unwrap();
-        let decoded: SolverResult = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded.outcome_for(target), result.outcome_for(target));
     }
 }

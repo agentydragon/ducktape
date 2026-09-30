@@ -374,7 +374,7 @@ fn quotient_edge_indices_by_source(
 
 /// True iff `id` refers to a logical module whose `residual` flag is
 /// set — the chunk's catch-all destination synthesized before
-/// `ChunkFactorization::build`. Used by the destination
+/// `ChunkFactorization::build_with`. Used by the destination
 /// projection in reports to gate residual-only predicates without
 /// string-matching module ids or labels.
 fn is_residual_destination(factorization: &ChunkFactorization, id: ModuleId) -> bool {
