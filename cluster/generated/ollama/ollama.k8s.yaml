@@ -150,6 +150,10 @@ spec:
                 secretKeyRef:
                   key: token
                   name: ollama-direct-token
+            - name: AUTH_PROXY_PORT
+              value: "11435"
+            - name: OLLAMA_API_PORT
+              value: "11434"
           image: nginx:1.31-alpine
           livenessProbe:
             initialDelaySeconds: 5

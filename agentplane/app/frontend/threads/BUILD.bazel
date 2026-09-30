@@ -84,11 +84,10 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":history_rows",
-        ":local_commands",
         ":projected_session_css",
         ":retained_disclosures",
         ":thread_cards",
-        ":thread_evidence",
+        ":thread_commands",
         ":thread_sync",
         ":thread_title",
         "//:node_modules/@bufbuild/protobuf",
@@ -123,6 +122,7 @@ ts_library(
         ":projected_session",
         ":retained_disclosures",
         ":thread_cards",
+        ":thread_commands",
         ":thread_entity_fixture",
         ":thread_sync",
         "//:node_modules/@bufbuild/protobuf",
@@ -181,6 +181,23 @@ ts_library(
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:markdown",
         "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "thread_commands",
+    srcs = ["thread_commands.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":local_commands",
+        ":thread_cards",
+        ":thread_evidence",
+        ":thread_sync",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/protocol:command_pb",
     ],
 )
 

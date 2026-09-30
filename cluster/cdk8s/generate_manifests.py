@@ -1094,10 +1094,15 @@ def generate_manifests(root: Path) -> None:
     agents_flux_kustomizations.authentik_jwt_rotation(
         flux_chart, authentik_jwt_rotation_artifact, external_secrets_operator_kustomization
     )
-    loki_read_proxy_artifact = artifact("loki-read-proxy", loki_read_proxy.OUTPUT_DIR)
+    loki_read_proxy_artifact = artifact("loki-read-proxy", loki_read_proxy.OUTPUT_DIR, loki_read_proxy.PINS_DIR)
     loki_read_proxy.loki_read_proxy(
         flux_chart,
-        write_directory(root, loki_read_proxy_artifact, loki_read_proxy.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            loki_read_proxy_artifact,
+            loki_read_proxy.chart,
+            components=[posixpath.relpath(loki_read_proxy.PINS_DIR, loki_read_proxy.OUTPUT_DIR)],
+        ),
         external_secrets_operator_kustomization,
     )
     plaid_mcp_artifact = artifact("plaid-mcp", f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp")
@@ -1327,10 +1332,12 @@ def generate_manifests(root: Path) -> None:
     grocy_flux_kustomizations.grocy_vallejo_user_perms(
         flux_chart, grocy_vallejo_user_perms_artifact, grocy_vallejo_kustomization
     )
-    ha_mcp_artifact = artifact("ha-mcp", ha_mcp.OUTPUT_DIR)
+    ha_mcp_artifact = artifact("ha-mcp", ha_mcp.OUTPUT_DIR, ha_mcp.PINS_DIR)
     ha_mcp.ha_mcp(
         flux_chart,
-        write_directory(root, ha_mcp_artifact, ha_mcp.chart, components=["./image-pins"]),
+        write_directory(
+            root, ha_mcp_artifact, ha_mcp.chart, components=[posixpath.relpath(ha_mcp.PINS_DIR, ha_mcp.OUTPUT_DIR)]
+        ),
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
     )
@@ -1406,10 +1413,17 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
     )
-    agent_workspaces_app_artifact = artifact("agent-workspaces-app", agent_workspaces.OUTPUT_DIR)
+    agent_workspaces_app_artifact = artifact(
+        "agent-workspaces-app", agent_workspaces.OUTPUT_DIR, agent_workspaces.PINS_DIR
+    )
     agent_workspaces.agent_workspaces_app(
         flux_chart,
-        write_directory(root, agent_workspaces_app_artifact, agent_workspaces.chart, components=["./image-pins"]),
+        write_directory(
+            root,
+            agent_workspaces_app_artifact,
+            agent_workspaces.chart,
+            components=[posixpath.relpath(agent_workspaces.PINS_DIR, agent_workspaces.OUTPUT_DIR)],
+        ),
         external_secrets_operator_kustomization,
         agent_sandbox_controller_kustomization,
         kyverno_policies_kustomization,

@@ -2,8 +2,8 @@
 namespace, its quota and limits, the codex-lane SandboxTemplate and warm pool, and the janitor.
 Usage: cluster/k8s/agents/agent-sandbox/README.md.
 
-Hand-written beside the output: `image-pins/kustomization.yaml`, which overrides the workspace
-image's `unset` tag.
+The workspace image's tag is the placeholder "unset"; the hand-written `PINS_DIR` Component,
+which the directory includes across the roots, overrides it.
 """
 
 from __future__ import annotations
@@ -39,13 +39,14 @@ from cdk8s_plus_34 import k8s
 from cluster.cdk8s import agent_sandbox, forgejo_images, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 
 NAME = "agent-workspaces"
 NAMESPACE = "agent-workspaces"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/agent-sandbox/workspaces"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/agent-sandbox/workspaces"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/agent-sandbox/workspaces-image-pins"
 
 
 def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
@@ -86,7 +87,7 @@ def _codex_template(chart: Chart) -> SandboxTemplate:
                 containers=[
                     SandboxTemplateSpecPodTemplateSpecContainers(
                         name="workspace",
-                        # image-pins/ sets the tag.
+                        # PINS_DIR sets the tag.
                         image="git.allegedly.works/ducktape-ci/agent-workspace:unset",
                         command=["sleep", "infinity"],
                         working_dir="/workspace",
