@@ -23,7 +23,7 @@ use std::process::Command;
 
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, assert_module_exports, debundler_path, logical_module,
-    logical_module_with_source_matches, parse_stdout_json, read_selector_outcomes,
+    logical_module_with_binding_groups, parse_stdout_json, read_selector_outcomes,
     run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture, run_match_selector,
     run_source_only_validate, run_spec_validate, run_synthesize_selectors,
     write_validate_fixture_spec,
@@ -1066,7 +1066,7 @@ function f() { return key + 1; }"#;
 
     let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
         CHUNK,
-        vec![logical_module_with_source_matches(
+        vec![logical_module_with_binding_groups(
             MODULE,
             &[],
             &[BindingGroup::source_alpha(

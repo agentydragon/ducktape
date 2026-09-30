@@ -1137,7 +1137,7 @@ pub struct Member {
     pub selector: MemberSelector,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MemberSelector {
     #[serde(default, skip_serializing_if = "Option::is_none")]

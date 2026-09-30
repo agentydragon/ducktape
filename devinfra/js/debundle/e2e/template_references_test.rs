@@ -144,7 +144,7 @@ fn logger_boot_fixture() -> FixtureOpts<'static> {
         TWO_LOGGERS,
         vec![
             logical_module("logging/logger", &[Member::renamed("logger", "L")]),
-            logical_module_with_anon_alpha("logging/boot", &[], "logger.log(\"x\");"),
+            logical_module_with_anon_alpha("logging/boot", &[], &["logger.log(\"x\");"]),
         ],
     )
 }

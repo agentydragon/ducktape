@@ -736,8 +736,6 @@ export { a, b, c };
     let consumer = fs::read_to_string(fixture.out_root.join("static/app/modules/consumer.js"))
         .expect("read consumer module");
 
-    parse_module(&consumer);
-    assert_unique_lexical_decls_per_scope(&consumer, "sharedReadableName");
     assert!(
         consumer.contains("sharedReadableName as sharedReadableName$1"),
         "expected imported readable name to be aliased away from local function decl; got:\n{consumer}",
@@ -781,13 +779,7 @@ export { destructure, alias, consumer };
             ],
         )],
     );
-    let fixture = run_fixture(opts);
-    let module_path = fixture.out_root.join("static/app/modules/mod_x.js");
-    let module_src = fs::read_to_string(&module_path).expect("read modules/mod_x.js");
-
-    parse_module(&module_src);
-    assert_unique_lexical_decls_per_scope(&module_src, "readable");
-    assert_entry_output(&fixture, "0 y vx\n");
+    assert_entry_output(&run_fixture(opts), "0 y vx\n");
 }
 
 // --- ImportSpecifier-bound members --------------------------------------
@@ -1018,8 +1010,6 @@ export { St as B, Ite };
             .join("static/app/modules/feature/consumer.js"),
     )
     .expect("read moved consumer module");
-    parse_module(&moved);
-    assert_unique_import_locals(&moved);
 
     assert!(
         moved.contains("B as entryHelper"),

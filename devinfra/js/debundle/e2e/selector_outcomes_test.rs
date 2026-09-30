@@ -174,8 +174,8 @@ fn anonymous_elimination_fixture() -> FixtureOpts<'static> {
 console.log("other");
 "#,
         vec![
-            logical_module_with_anon_alpha("anonymous/either", &[], "console.log(EXPR);"),
-            logical_module_with_anon_alpha("anonymous/other", &[], r#"console.log("other");"#),
+            logical_module_with_anon_alpha("anonymous/either", &[], &["console.log(EXPR);"]),
+            logical_module_with_anon_alpha("anonymous/other", &[], &[r#"console.log("other");"#]),
         ],
     )
 }

@@ -12,12 +12,6 @@ use debundle_e2e_support::{debundler_path, write_atomic_unit_fixture, write_text
 use std::fs;
 use std::process::Command;
 
-/// Synthetic owner graph where alpha (owner:0) and beta (owner:1)
-/// form an atomic unit via mutual `eager_rebind` edges (matching the
-/// `bindings_assign_gate_cli_test.rs` fixture). The atom MUST
-/// co-locate: any partition that places one in a different module
-/// (including "this one's home is residual, the other one isn't")
-/// splits the unit.
 #[test]
 fn bindings_unassign_rejects_atom_split_when_other_members_stay() {
     // Atomic unit {alpha, beta} co-located in `home/atom.yaml`.

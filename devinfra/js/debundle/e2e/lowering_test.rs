@@ -180,7 +180,7 @@ const output = selected("  hi  ");
 console.log(output);
 export { selected, output };
 "#,
-        vec![logical_module_with_source_matches(
+        vec![logical_module_with_binding_groups(
             "format",
             &[],
             &[BindingGroup::source_alpha(
