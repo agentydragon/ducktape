@@ -26,13 +26,15 @@ Open the printed URL in a browser signed in to the account and approve. The brow
 `http://localhost:54545/callback`, so it must reach the machine running `pair`; otherwise forward the port
 (`ssh -L 54545:localhost:54545 host`, or `kubectl port-forward` to a pod).
 
-The 0600 credential file holds an access token the tool refreshes itself. **Give the file one owning process**:
-refresh tokens rotate, so pointing this tool at `~/.claude/.credentials.json` would make it and Claude Code
-invalidate each other.
+The 0600 credential file holds an access token (valid for 8 hours) that the tool refreshes itself. **Give the file
+one owning process**: every refresh returns a new refresh token, which the tool writes back before using it, so
+pointing this tool at `~/.claude/.credentials.json` would make it and Claude Code invalidate each other.
 
-`--scope` (repeatable) narrows the grant; the default is `user:profile user:sessions:claude_code`. If the authorize
-page refuses that, retry with the set Claude Code itself requests: `--scope user:profile --scope user:inference
---scope user:sessions:claude_code --scope user:mcp_servers --scope user:file_upload`.
+`--scope` (repeatable) narrows the grant; the default is `user:profile user:sessions:claude_code`. That is enough to
+list sessions and read events, and the Messages API refuses such a grant, so it cannot spend inference quota. The
+sessions scope very likely still permits creating and steering cloud sessions, so treat the file as a credential. If
+the authorize page ever refuses the default, retry with the set Claude Code itself requests: `--scope user:profile
+--scope user:inference --scope user:sessions:claude_code --scope user:mcp_servers --scope user:file_upload`.
 
 **Cookie.** In a browser signed in to claude.ai: DevTools → Application → Cookies → `https://claude.ai`. Copy
 `sessionKey` (HttpOnly, so `document.cookie` does not show it) and `lastActiveOrg`.

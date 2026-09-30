@@ -36,7 +36,14 @@ Observed with a Claude Code login token (the full scope set): the list route, an
 archived session, answered as on `claude.ai`. On the list route, dropping `anthropic-beta: ccr-byoc-2025-07-29` or
 `x-organization-uuid` alone still worked; dropping both is untested, and the events probes sent both. The client
 sends both, as Claude Code does. An expired token gives 401 `authentication_error` ("OAuth access token has
-expired"). An access token lasts about 8 hours.
+expired"). An access token lasts 8 hours.
+
+A grant with only `user:profile user:sessions:claude_code` lists all sessions and reads events (a 1,531-session
+listing; a 216,491-event session), and the Messages API refuses it: 403 `permission_error`, "OAuth token does not
+meet scope requirement any_of(org:service_key_inference, user:ccr_inference, user:developer, user:inference,
+user:voice, workspace:developer, workspace:inference, workspace:messages_create)". Claude Code uses the sessions
+scope to create and steer cloud sessions, so it very likely permits writes too; that is untested, so treat such a
+token as writable.
 
 ### Pairing a dedicated OAuth grant
 
@@ -50,9 +57,13 @@ Authorization-code flow with PKCE, the way Claude Code logs in (constants from C
   `{access_token, refresh_token, expires_in, organization: {uuid}, …}`.
 - Refresh: the same URL, JSON `{grant_type: refresh_token, refresh_token, client_id, scope}`.
 
-Not established: whether a scope set narrower than Claude Code's full one is accepted by the authorize page or
-enough for the sessions routes; whether the token response reports the granted `scope`; whether a refresh rotates
-the refresh token (the client keeps the old one when none comes back).
+Observed: the authorize page accepted `user:profile user:sessions:claude_code`, and the resulting grant is enough
+for the list and events routes. A refresh returned a new refresh token and kept the scopes, so the refresh token is
+single-holder state: the client persists the new credential before using it, and a crash between the response and
+the write would lose the grant (re-pair).
+
+Not established: whether the token response reports the granted `scope` (the credential records the requested set
+when it does not), whether the old refresh token stays valid after a rotation, and whether `user:profile` is needed.
 
 ## List sessions
 
