@@ -112,7 +112,7 @@ omitted for a client with no position. Frames, by `event:`:
 
 | Frame                | Data                                                        | The client                                            |
 | -------------------- | ----------------------------------------------------------- | ----------------------------------------------------- |
-| none                 | sent as the stream opens (observed)                         | nothing but its idle timer: a keepalive               |
+| none                 | as the stream opens, then every 12-15 s (observed)          | nothing but its idle timer: a keepalive               |
 | `client_event`       | an event as the events route sends it; `id: <sequence_num>` | stores it; a frame with no data only moves its cursor |
 | `catch_up_truncated` | none                                                        | pages for what the stream did not replay              |
 | `session_update`     | session metadata                                            | applies it                                            |
@@ -123,11 +123,24 @@ An open answered 410 means the position is gone: the client restarts from nothin
 it; 429 honors `Retry-After`. It restarts a stream that delivered nothing for 35 s, backs off 1 s doubling to 30 s
 with jitter, and after two connections that delivered no frame polls `GET .../events?sort_order=asc&cursor=<n>`.
 
-Observed on 2026-09-30, with the OAuth bearer against `api.anthropic.com`: the stream opens, and sends a frame with
-no `event:` name and, for a session that was running, a `session_update` carrying `connection_status`. In 60 s on a
-session in use it sent 124 frames, among them `client_event` frames whose `id` is their `sequence_num`. The first four
-carried exactly `created_at`, `event_id`, `event_type`, `payload`, `sequence_num` and `source`: no worker stamps, no
-`device_attestation_status`, no `sent_by_account_id`, which the events route sends and `Event` defaults.
+Observed on 2026-09-30, with the OAuth bearer against `api.anthropic.com`, on a session in use (150 s) and on an
+archived one (100 s):
+
+- **Open.** An unnamed frame, then a `session_update` carrying only `connection_status`. The server closed neither
+  stream, and an unnamed frame came every 12-15 s, so a quiet stream stays inside the client's 35 s limit.
+- **`client_event`.** `id` is the `sequence_num`; the frames were contiguous and none was sent again. A `worker` event
+  carries `created_at`, `event_id`, `event_type`, `payload`, `sequence_num` and `source`: no `device_attestation_status`
+  and no `sent_by_account_id` (the events route sends both; `Event` defaults them) and no worker stamps. The events
+  route sends stamps only on events with `source: client` (a user's message, a queued notification, a control
+  response): 6 of a session's newest 500, and none of the 494 `worker` ones.
+- **`delivery_update`** carries `event_id`, `status` and `timestamp`. It follows a client-sent event by about 0.1 s
+  with `DELIVERY_STATUS_RECEIVED`, and later `DELIVERY_STATUS_PROCESSING`; a third status has not been seen. The
+  client event itself is pushed without stamps and is not sent again: this frame is how they change on a live stream.
+  Its `timestamp` is 12-19 ms after the `received_at` the events route reports, so it is not the stamp.
+- **Catch-up.** A `from_sequence_num` in the past replays the stored events as `client_event` frames carrying the
+  stamps the events route reports, only those that are set: 471 in 12 s, with no `catch_up_truncated`.
+- **`ephemeral_event`** carries `event_type`, `payload`, `source` and `timestamp`, no id: 44 in 150 s, all `system`
+  events of the `worker`.
 
 ## Session watch
 
