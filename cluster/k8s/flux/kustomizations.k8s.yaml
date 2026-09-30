@@ -2068,27 +2068,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: seaweedfs-registry-cache-bucket
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: seaweedfs-operator
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/seaweedfs/registry-cache-bucket
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-registry-cache-bucket
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: seaweedfs-csi
   namespace: ducktape-flux
 spec:
@@ -2412,6 +2391,8 @@ spec:
     - name: valkey
       namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/oci-cache
