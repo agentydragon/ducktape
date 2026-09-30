@@ -41,4 +41,8 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         # agentplane-testing. claude-sonnet-5 to match what Haku's own managed agents run
         # today (haku/runtime/managed_agent/self_hosted/haku.agent.yaml).
         haku_preset_model=exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, "claude-sonnet-5"),
+        # The "finance-agent" sandbox preset (app_settings.py) exists only here too, for the
+        # same reason as "haku": it names staging-only credentials (forgejo-finance-agent,
+        # plaid-pgweb). Same model as public-coder.
+        finance_agent_preset_model=codex_responses_name("gpt-6-luna"),
     )

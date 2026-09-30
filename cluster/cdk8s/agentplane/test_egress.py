@@ -17,6 +17,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
     BASIC_POLICY,
+    FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GOOGLE_READONLY_POLICY,
@@ -115,6 +116,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
         and doc["metadata"]["name"]
         in {
             FORGEJO_HAKU_POLICY,
+            FORGEJO_FINANCE_AGENT_POLICY,
             GOOGLE_READONLY_POLICY,
             GROCY_SF_READONLY_POLICY,
             HOME_ASSISTANT_READONLY_POLICY,

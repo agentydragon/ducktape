@@ -21,6 +21,7 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
+    FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
@@ -66,6 +67,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
         store=EXTERNAL_CREDS_STORE,
     )
     _forgejo_haku(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    _forgejo_finance_agent(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _google_readonly(construct, namespace=namespace)
     _grocy_sf_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _home_assistant_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
@@ -133,6 +135,63 @@ def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             # proxy's refusal of private addresses should still stop haku's password going there.
             EgressPolicySpecRules(
                 hosts=[FORGEJO_PUBLIC_HOST], credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku")
+            ),
+        ],
+    )
+
+
+def _forgejo_finance_agent(
+    scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
+) -> None:
+    # Sources directly from the `forgejo` namespace, where tf/gitops/finance-agent creates the
+    # Secret -- unlike `_forgejo_haku` above, nothing else needs a copy of it, so there is no
+    # existing namespace to piggyback on.
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target="finance-agent-git-creds",
+        source="finance-agent-git-creds",
+        key="password",
+        store=single_secret_store(
+            scope,
+            "agentplane-staging-forgejo-finance-agent",
+            reader=reader,
+            source_namespace="forgejo",
+            source_secret="finance-agent-git-creds",
+            consumer_namespace=credentials_namespace,
+        ),
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-forgejo-finance-agent",
+        metadata=ApiObjectMetadata(name="forgejo-finance-agent", namespace=namespace),
+        description=(
+            "The password of the `finance-agent` account on the internal Forgejo, the service "
+            "user that owns the finance-agent repo (tf/gitops/finance-agent) -- Rai's personal "
+            "financial-leash agent workspace. Requests carrying it act as that account with its "
+            "full authority, but the account owns exactly one repo, so the blast radius is that "
+            "repo alone."
+        ),
+        source=Source.secret_ref(name="finance-agent-git-creds", key="password"),
+        # Same Basic-auth shape as forgejo-haku: the password half is substituted, the client
+        # supplies the username itself.
+        targets=[
+            EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
+        ],
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-forgejo-finance-agent",
+        metadata=ApiObjectMetadata(name=FORGEJO_FINANCE_AGENT_POLICY, namespace=namespace),
+        rules=[
+            EgressPolicySpecRules(
+                hosts=[FORGEJO_HOST, *FORGEJO_HOST_ALIASES],
+                cluster_internal=True,
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-finance-agent"),
+            ),
+            EgressPolicySpecRules(
+                hosts=[FORGEJO_PUBLIC_HOST],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-finance-agent"),
             ),
         ],
     )
