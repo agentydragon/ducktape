@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception, wait_exponential_jitter
 from tenacity.wait import wait_base
 
-from devinfra.claude.session_export.api import ResumePointLostError, SessionsApi, WatchCursor
+from devinfra.claude.session_export.api import ResumePointLostError, SessionsApi
 from devinfra.claude.session_export.failures import describe_failure
 from devinfra.claude.session_export.models import SessionSummary
 from devinfra.claude.session_export.store import SessionStore
@@ -106,24 +106,22 @@ class LiveFollower:
         return AsyncRetrying(wait=self._retry_wait, retry=retry_if_exception(_is_retryable), before_sleep=log_retry)
 
     async def _keep_watching(self, group: asyncio.TaskGroup) -> None:
-        cursor: WatchCursor | None = None
         while True:
             try:
                 async for attempt in self._retrying(WATCH):
                     with attempt:
-                        if cursor is None:
-                            cursor = WatchCursor(await self._api.resume_token())
-                        await self._watch(cursor, group)
+                        # Every connection takes a fresh token: the server answers an old one with a watch that stays
+                        # open and delivers nothing. Changes in the gap reach the store through discovery, or the next
+                        # polling cycle.
+                        await self._watch(await self._api.resume_token(), group)
             except ResumePointLostError as lost:
-                # Changes in the gap reach the store through discovery, or the next polling cycle.
                 logger.info("%s; taking a fresh resume token", lost)
-                cursor = None
 
-    async def _watch(self, cursor: WatchCursor, group: asyncio.TaskGroup) -> None:
+    async def _watch(self, resume_token: str, group: asyncio.TaskGroup) -> None:
         self._watching = True
         try:
             async with contextlib.aclosing(
-                self._api.watch_sessions(cursor, on_connected=lambda: self._resolved(WATCH))
+                self._api.watch_sessions(resume_token, on_connected=lambda: self._resolved(WATCH))
             ) as changes:
                 async for change in changes:
                     if isinstance(change, SessionSummary):

@@ -5,7 +5,6 @@ import logging
 import re
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from types import TracebackType
@@ -68,6 +67,8 @@ class EventStreamFrame(StrEnum):
 
 
 class WatchFrame(StrEnum):
+    # A frame with no `event:` line and no data, seen in the deployed sync's log as it connected: a keepalive.
+    UNNAMED = "message"
     ADDED = "added"
     CHANGED = "changed"
     REMOVED = "removed"
@@ -80,13 +81,6 @@ class ResumePointLostError(Exception):
 
 class StreamClosedEarlyError(Exception):
     """The server ended a stream without sending a frame."""
-
-
-@dataclass
-class WatchCursor:
-    """Where the session watch stands: the id of the last frame it delivered."""
-
-    token: str
 
 
 class SessionCookie(BaseModel, frozen=True):
@@ -332,19 +326,20 @@ class SessionsApi:
             raise StreamClosedEarlyError(f"{session_id=}: the server closed the stream without a frame")
 
     async def watch_sessions(
-        self, cursor: WatchCursor, *, on_connected: Callable[[], None] | None = None
+        self, resume_token: str, *, on_connected: Callable[[], None] | None = None
     ) -> AsyncGenerator[SessionSummary | SessionRemoved]:
-        """Changes to the account's sessions since `cursor`, as the server pushes them; advances `cursor`.
+        """Changes to the account's sessions since `resume_token`, as the server pushes them.
 
-        `on_connected` is called once the server has accepted the stream. Ends when the server closes the stream or it falls silent for `WATCH_IDLE_TIMEOUT`. Raises
-        `ResumePointLostError` when the server no longer holds `cursor`, and `StreamClosedEarlyError` when it
-        closes without a frame.
+        The token must be fresh: the server accepts an old one and then delivers nothing (docs/api.md § Session
+        watch). `on_connected` is called once the server has accepted the stream. Ends when the server closes the
+        stream or it falls silent for `WATCH_IDLE_TIMEOUT`. Raises `ResumePointLostError` when the server no longer
+        holds `resume_token`, and `StreamClosedEarlyError` when it closes without a frame.
         """
         delivered = False
         try:
             async with self._open_stream(
                 "/v1/code/sessions/watch",
-                params={"exclude_tags": "-", "resume_token": cursor.token},
+                params={"exclude_tags": "-", "resume_token": resume_token},
                 headers={"anthropic-client-platform": WATCH_CLIENT_PLATFORM},
                 idle_timeout=WATCH_IDLE_TIMEOUT,
             ) as source:
@@ -352,8 +347,6 @@ class SessionsApi:
                     on_connected()
                 async for frame in source.aiter_sse():
                     delivered = True
-                    if frame.id:
-                        cursor.token = frame.id
                     match frame.event:
                         case WatchFrame.ADDED | WatchFrame.CHANGED:
                             if frame.data:
@@ -363,6 +356,8 @@ class SessionsApi:
                                 yield SessionRemoved.model_validate_json(frame.data)
                         case WatchFrame.SYNC:
                             pass  # the feed has delivered everything up to the token the watch opened with
+                        case WatchFrame.UNNAMED if not frame.data:
+                            pass  # a keepalive
                         case _:
                             self._note_unknown_frame(frame)
         except httpx.ReadTimeout:
