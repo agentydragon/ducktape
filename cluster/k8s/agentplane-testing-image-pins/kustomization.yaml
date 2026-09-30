@@ -8,7 +8,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
     newTag: devel-20260930082430-d5586a5 # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20260930104622-a3ffbe9 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20260930124251-f607861 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20260926101415-8f02fee # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner

@@ -230,6 +230,77 @@ spec:
       app.kubernetes.io/component: filer
       app.kubernetes.io/name: seaweedfs
 ---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  annotations:
+    description: Lets the tenant namespaces' Buckets, S3Identities and S3Credentials reference this cluster.
+  name: tenants
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespaceSelector:
+        matchExpressions:
+          - key: kubernetes.io/metadata.name
+            operator: In
+            values:
+              - authentik
+              - flux-system
+              - forgejo
+              - haku-openclaw-spike
+              - home-assistant
+              - langfuse
+              - loki
+              - monitoring
+              - nix-cache
+              - oci-cache
+              - public-coder-agent
+              - vm-images-publisher
+    - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespaceSelector:
+        matchExpressions:
+          - key: kubernetes.io/metadata.name
+            operator: In
+            values:
+              - authentik
+              - flux-system
+              - forgejo
+              - haku-openclaw-spike
+              - home-assistant
+              - langfuse
+              - loki
+              - monitoring
+              - nix-cache
+              - oci-cache
+              - public-coder-agent
+              - vm-images-publisher
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespaceSelector:
+        matchExpressions:
+          - key: kubernetes.io/metadata.name
+            operator: In
+            values:
+              - authentik
+              - flux-system
+              - forgejo
+              - haku-openclaw-spike
+              - home-assistant
+              - langfuse
+              - loki
+              - monitoring
+              - nix-cache
+              - oci-cache
+              - public-coder-agent
+              - vm-images-publisher
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
