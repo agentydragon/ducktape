@@ -26,7 +26,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/agents/agent-sandbox/controller
+  path: ./cluster/generated/agents/agent-sandbox/controller
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -132,7 +132,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/kubevirt/cdi-operator
+  path: ./cluster/generated/kubevirt/cdi-operator
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -149,7 +149,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/kubevirt/operator
+  path: ./cluster/generated/kubevirt/operator
   prune: true
   retryInterval: 1m
   sourceRef:
