@@ -16,9 +16,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::{
-    AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind, LineRange,
-    ModuleEntry, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
-    OwnerGraphReport, Purity, SourceLocation, StatementKind, StatementOrdinal,
+    AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind,
+    EdgeRoleReport, LineRange, ModuleEntry, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport,
+    OwnerGraphQuotientReport, OwnerGraphReport, Purity, SourceLocation, StatementKind,
+    StatementOrdinal,
 };
 use peel::quotient::{OwnerIdx, PartitionGroup};
 use spec::{ModulePath, is_residual_module_path};
@@ -173,6 +174,25 @@ pub fn owner_edge(
         statement_ordinal: StatementOrdinal(0),
         constrains_init_order: constrains,
         role: None,
+    }
+}
+
+/// [`owner_edge`] promoted at init from an at-init call into
+/// `callee`'s body; `callee == source` is the conservative fallback
+/// for a call the analysis cannot resolve.
+pub fn promoted_owner_edge(
+    id: &str,
+    source: &str,
+    target: &str,
+    kind: DepKind,
+    constrains: bool,
+    callee: &str,
+) -> OwnerGraphEdgeReport {
+    OwnerGraphEdgeReport {
+        role: Some(EdgeRoleReport::PromotedAtInit {
+            callee_owner: callee.to_string(),
+        }),
+        ..owner_edge(id, source, target, kind, constrains)
     }
 }
 

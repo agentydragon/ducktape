@@ -26,7 +26,8 @@ use analysis::{DepKind, OwnerGraphNodeReport, OwnerGraphReport};
 use gate::{LadderDecision, RealizabilityVerdict, SccRejection, check_realizability_touching};
 use peel::quotient::{ClassId, QuotientGraph, SpecModuleGroup, build_seed_quotient, greedy_step};
 use report_fixtures::{
-    active_owner, atomic_unit_for, graph_of, module_group, owner_edge, residual_owner,
+    active_owner, atomic_unit_for, graph_of, module_group, owner_edge, promoted_owner_edge,
+    residual_owner,
 };
 
 const CAP_LINES: usize = 10_000;
@@ -465,9 +466,10 @@ impl Rng {
 }
 
 /// Random small report: mixed residual/active owners, mixed
-/// `DepKind`s (including lazy back-edges and rebinds), singleton
-/// atomic units plus the occasional multi-member unit, and spec
-/// module groups derived from the active destinations.
+/// `DepKind`s (including lazy back-edges and rebinds, and eager
+/// edges promoted at init), singleton atomic units plus the
+/// occasional multi-member unit, and spec module groups derived from
+/// the active destinations.
 fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
     let owner_count = 4 + rng.below(5);
     let nodes: Vec<OwnerGraphNodeReport> = (0..owner_count)
@@ -495,13 +497,27 @@ fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
                 6 => (DepKind::Sequenced, true),
                 _ => (DepKind::EagerRebind, true),
             };
-            edges.push(owner_edge(
-                &format!("edge:{}", edges.len()),
-                &nodes[source].id,
-                &nodes[target].id,
-                kind,
-                constrains,
-            ));
+            let id = format!("edge:{}", edges.len());
+            edges.push(if kind == DepKind::EagerUse && rng.chance(30) {
+                // The analysis only promotes eager reads: half the
+                // promoted edges are conservative fallbacks (callee is
+                // the caller), the rest name another owner as callee.
+                let callee = if rng.chance(50) {
+                    source
+                } else {
+                    rng.below(owner_count)
+                };
+                promoted_owner_edge(
+                    &id,
+                    &nodes[source].id,
+                    &nodes[target].id,
+                    kind,
+                    constrains,
+                    &nodes[callee].id,
+                )
+            } else {
+                owner_edge(&id, &nodes[source].id, &nodes[target].id, kind, constrains)
+            });
         }
     }
 
@@ -553,9 +569,11 @@ fn randomized_gate_equals_reference() {
     // distribution — plus "preconditions_failed".
     let mut tally: BTreeMap<String, usize> = BTreeMap::new();
     let mut compared = 0usize;
+    let mut promoted_edges = 0usize;
     for seed in 1..=60u64 {
         let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
         let (report, spec) = random_report(&mut rng);
+        promoted_edges += report.edges.iter().filter(|e| e.role.is_some()).count();
         let (mut q, _rejected) =
             build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, CAP_LINES).unwrap();
         for _round in 0..6 {
@@ -594,5 +612,6 @@ fn randomized_gate_equals_reference() {
         "sweep must exercise a meaningful number of in-domain \
          queries; tally: {tally:?}",
     );
+    assert!(promoted_edges > 0, "sweep must generate promoted edges");
     eprintln!("gate-vs-reference sweep tier tally ({compared} compared): {tally:?}");
 }

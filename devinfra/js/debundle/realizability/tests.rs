@@ -5,7 +5,7 @@ use super::*;
 use crate::rollback_graph::RollbackDiGraph;
 use analysis::OwnerId;
 use analysis::facts::analyze_chunk;
-use analysis::graph::build_owner_graph_with;
+use analysis::graph::{EdgeRole, build_owner_graph_with};
 use analysis::ids::{LogicalModuleIndex, ModuleId};
 use analysis::partition::Partition;
 use analysis::{AnalysisHints, OwnerGraph};
@@ -1225,4 +1225,171 @@ fn ladder_matches_verdict_across_push_commit_undo() {
     sweep(&index);
     index.undo(&owner_graph, speculative);
     sweep(&index);
+}
+
+// ---------------------------------------------------------------------
+// Move overlay vs committed path vs pure reference, over owner graphs
+// that carry promoted-at-init edges.
+// ---------------------------------------------------------------------
+
+/// One speculative move must get the same verdict from all three
+/// routes to the gate: the overlay (the production speculative path,
+/// both the evidence-producing verdict and the tier ladder), the
+/// committed path (`push` then `verdict_touching`), and the pure
+/// from-scratch reference on the post-move partition.
+fn assert_move_agrees_across_paths(
+    index: &mut RealizabilityIndex,
+    owner_graph: &OwnerGraph,
+    owners: &[OwnerId],
+    to: ModuleId,
+) {
+    let base: Vec<usize> = index.partition().iter().map(|(_, m)| m.0.0).collect();
+    let overlay = index.verdict_after_moving_owners_touching(owner_graph, owners, to);
+    let ladder = index.ladder_decision_after_moving_owners_touching(owner_graph, owners, to);
+    let mut post = index.partition().clone();
+    for &owner in owners {
+        post.set(owner, to);
+    }
+    let pure = check_realizability_touching(owner_graph, &post, to);
+    let committed = index.scoped(
+        owner_graph,
+        PartitionDelta::MoveOwners {
+            owners: owners.to_vec(),
+            to,
+        },
+        |idx| idx.verdict_touching(to),
+    );
+    assert_eq!(
+        ladder.accepts(),
+        pure.is_realizable(),
+        "ladder {ladder:?} vs pure {pure:#?}: move {owners:?} -> {to:?} from {base:?}",
+    );
+    let pure = normalize_verdict(pure);
+    assert_eq!(
+        normalize_verdict(committed),
+        pure,
+        "committed path vs pure: move {owners:?} -> {to:?} from {base:?}",
+    );
+    assert_eq!(
+        normalize_verdict(overlay),
+        pure,
+        "overlay vs pure: move {owners:?} -> {to:?} from {base:?}",
+    );
+}
+
+fn partition_with(owner_graph: &OwnerGraph, assignments: &[(usize, usize)]) -> Partition {
+    let mut partition = Partition::new(owner_graph, module_id(0));
+    for &(owner, module) in assignments {
+        partition.set(OwnerId(owner), module_id(module));
+    }
+    partition
+}
+
+/// Fallback-promoted edges (`callee_owner == from`, emitted for an
+/// at-init call the analysis cannot resolve) drop out of the gate view
+/// when the caller is in residual. Moving such an edge's target into a
+/// module that reads residual must not add a residual -> module
+/// constraining edge: the gate accepts the move, the overlay must too.
+#[test]
+fn move_overlay_adds_no_edge_for_residual_fallback_edge_when_target_moves() {
+    // Owners: 0 a, 1 read_a, 2 g, 3 r, 4 m. `r = g()` is unresolvable
+    // (alias), so r -> a is a fallback-promoted edge from residual;
+    // m (module 1) reads r (residual).
+    let owner_graph = parse_and_build(
+        "const a = 1; function read_a() { return a; } const g = read_a; const r = g(); const m = r + 1;",
+    );
+    let mut index =
+        RealizabilityIndex::from_partition(&owner_graph, partition_with(&owner_graph, &[(4, 1)]));
+    assert_move_agrees_across_paths(
+        &mut index,
+        &owner_graph,
+        &[OwnerId(0), OwnerId(1)],
+        module_id(1),
+    );
+}
+
+/// Same rule, other direction: moving the *caller* of a residual
+/// fallback edge out of residual must not remove a residual -> target
+/// quotient edge the gate never had, since the removal would cancel a
+/// real edge on the same module pair (here the lazy `api -> a` read)
+/// and hide the TDZ cycle the move closes.
+#[test]
+fn move_overlay_removes_no_edge_for_residual_fallback_edge_when_caller_moves() {
+    // Owners: 0 a, 1 api, 2 r, 3 m. `r = api.read()` is unresolvable
+    // (member call), so r -> a is a fallback-promoted edge from
+    // residual; api (residual) reads a (module 1) lazily.
+    let owner_graph = parse_and_build(
+        "const a = 1; const api = { read: () => a }; const r = api.read(); const m = r + 1;",
+    );
+    let mut index =
+        RealizabilityIndex::from_partition(&owner_graph, partition_with(&owner_graph, &[(0, 1)]));
+    assert_move_agrees_across_paths(
+        &mut index,
+        &owner_graph,
+        &[OwnerId(2), OwnerId(3)],
+        module_id(1),
+    );
+}
+
+/// Every single- and pair-owner move from every assignment of the
+/// owners to three modules (module 0 is residual; the targets include
+/// a fresh module) must agree across the overlay, the committed path
+/// and the pure reference. The first two sources carry
+/// fallback-promoted edges (`callee_owner == from`); the third a
+/// promoted edge whose callee is neither endpoint.
+#[test]
+fn move_overlay_matches_committed_and_pure_on_promoted_edge_graphs() {
+    let sources = [
+        (
+            "const a = 1; function read_a() { return a; } const g = read_a; const r = g(); const m = r + 1;",
+            true,
+        ),
+        (
+            "const a = 1; const api = { read: () => a }; const r = api.read(); const m = r + 1;",
+            true,
+        ),
+        (
+            "const a = 1; const read_a = () => a; const s = { v: read_a() }; const t = s.v + 1; const u = t;",
+            false,
+        ),
+    ];
+    for (source, callee_is_caller) in sources {
+        let owner_graph = parse_and_build(source);
+        assert!(
+            owner_graph.iter_edges().any(|edge| matches!(
+                edge.reason.role(),
+                EdgeRole::PromotedAtInit { callee_owner }
+                    if (callee_owner == edge.from) == callee_is_caller
+            )),
+            "{source}: fixture lost its promoted edge",
+        );
+        let owner_count = owner_graph.num_nodes();
+        let moves: Vec<Vec<OwnerId>> = (0..owner_count)
+            .flat_map(|first| {
+                std::iter::once(vec![OwnerId(first)]).chain(
+                    ((first + 1)..owner_count)
+                        .map(move |second| vec![OwnerId(first), OwnerId(second)]),
+                )
+            })
+            .collect();
+        for assignment in 0..3usize.pow(owner_count as u32) {
+            let base: Vec<(usize, usize)> = (0..owner_count)
+                .map(|owner| (owner, assignment / 3usize.pow(owner as u32) % 3))
+                .collect();
+            let mut index = RealizabilityIndex::from_partition(
+                &owner_graph,
+                partition_with(&owner_graph, &base),
+            );
+            for owners in &moves {
+                for to in 0..4 {
+                    assert_move_agrees_across_paths(
+                        &mut index,
+                        &owner_graph,
+                        owners,
+                        module_id(to),
+                    );
+                }
+            }
+        }
+    }
 }
