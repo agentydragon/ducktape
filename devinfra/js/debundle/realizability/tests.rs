@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use super::incremental_quotient::OverlayGraphView;
 use super::*;
+use crate::rollback_graph::RollbackDiGraph;
 use analysis::OwnerId;
 use analysis::facts::analyze_chunk;
 use analysis::graph::build_owner_graph_with;
