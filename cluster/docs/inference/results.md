@@ -77,13 +77,13 @@ one slot, two RTX 5090s. Short throughput requests used 51 prompt tokens and gen
 The measured configuration was served from the SSD-backed PV with fit targets shown
 below.
 
-| Fit targets | Configured context | Actual input/history | Decode tok/s     | Result | Trust  |
-| ----------- | ----------------: | ------------------ | ---------------: | ------ | ------ |
-| 2/0 GiB     | 128K              | 51 tokens          | 55.74 / 71.89    | Short requests pass | local~ |
-| 2/0 GiB     | 256K              | 51 tokens          | 49.66 / 60.82    | Short requests pass; 145K prefill later OOMed | local~ |
-| 4/2 GiB     | 128K              | 51 tokens          | 50.21 / 60.01    | Short requests pass | local~ |
-| 4/2 GiB     | 256K              | 51 tokens          | 44.39 / 49.48    | Short requests pass | local~ |
-| 4/2 GiB     | 256K              | 145,110-token history | 29.07          | 1,024-token continuation passes; 145K marker recalled | local~ |
+| Fit targets | Configured context | Actual input/history  |  Decode tok/s | Result                                                | Trust  |
+| ----------- | -----------------: | --------------------- | ------------: | ----------------------------------------------------- | ------ |
+| 2/0 GiB     |               128K | 51 tokens             | 55.74 / 71.89 | Short requests pass                                   | local~ |
+| 2/0 GiB     |               256K | 51 tokens             | 49.66 / 60.82 | Short requests pass; 145K prefill later OOMed         | local~ |
+| 4/2 GiB     |               128K | 51 tokens             | 50.21 / 60.01 | Short requests pass                                   | local~ |
+| 4/2 GiB     |               256K | 51 tokens             | 44.39 / 49.48 | Short requests pass                                   | local~ |
+| 4/2 GiB     |               256K | 145,110-token history |         29.07 | 1,024-token continuation passes; 145K marker recalled | local~ |
 
 Paired rates are the first / warm-repeat samples; 29.07 is one continuation sample.
 
