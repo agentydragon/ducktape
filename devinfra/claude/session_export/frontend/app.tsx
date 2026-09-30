@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type JSX } from "react";
 import { ApiError, getStatus, syncNow, type SyncStatus } from "./api";
 import { Overview } from "./overview";
 import { Pairing } from "./pairing";
+import { SessionViewer } from "./viewer";
 
 /** A cycle moves the counts, and pairing or "Sync now" should show up without a reload. */
 const POLL_INTERVAL_MS = 5_000;
@@ -57,6 +58,7 @@ export function App(): JSX.Element {
         <>
           <Overview status={status} now={now} onSyncNow={() => void requestSync()} />
           <Pairing paired={status.credential !== null} onPaired={setStatus} />
+          <SessionViewer />
         </>
       )}
     </main>
