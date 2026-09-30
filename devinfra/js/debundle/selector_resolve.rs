@@ -18,7 +18,7 @@ use js_ast::body_index_for_statement_ordinal;
 use rayon::prelude::*;
 use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
-    SelectorProgramSliceOptions, SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult,
+    SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult,
 };
 use selector_ir_lowering::{
     MemberSelectorLoweringContext, MemberSelectorProgramBuilder, MemberSelectorSpecRef,
@@ -576,12 +576,7 @@ pub fn solve(chunks: Vec<(&Chunk<'_>, &[SpecModule], Projection)>) -> Result<Vec
     let solved = requests
         .par_iter()
         .map(|(index, group)| {
-            let slice = programs[*index].slice_for_targets(
-                group,
-                SelectorProgramSliceOptions {
-                    include_target_all_different: true,
-                },
-            )?;
+            let slice = programs[*index].slice_for_targets(group)?;
             let facts = facts[*index]
                 .as_ref()
                 .expect("a chunk with a request has a fact store");
@@ -742,23 +737,13 @@ fn in_program_targets(
     result: SolverResult,
     to_program: &BTreeMap<SelectorTargetId, SelectorTargetId>,
 ) -> SolverResult {
-    let target = |target: SelectorTargetId| to_program[&target];
     SolverResult {
         claims: result
             .claims
             .into_iter()
             .map(|claim| SolverClaim {
-                target: target(claim.target),
-                outcome: match claim.outcome {
-                    ClaimOutcome::Duplicate {
-                        owner,
-                        conflicting_targets,
-                    } => ClaimOutcome::Duplicate {
-                        owner,
-                        conflicting_targets: conflicting_targets.into_iter().map(target).collect(),
-                    },
-                    outcome => outcome,
-                },
+                target: to_program[&claim.target],
+                outcome: claim.outcome,
             })
             .collect(),
     }
@@ -789,13 +774,7 @@ impl Projection {
     fn interacting_groups(&self) -> Vec<BTreeSet<SelectorTargetId>> {
         let program = &self.program;
         let mut sets = UnionFind::new(program.variables.len());
-        let variable_sets = program.atoms.iter().map(SelectorAtom::variable_ids).chain(
-            program
-                .all_different_variables
-                .iter()
-                .map(|constraint| constraint.variables.iter().copied().collect()),
-        );
-        for variables in variable_sets {
+        for variables in program.atoms.iter().map(SelectorAtom::variable_ids) {
             if let Some(first) = variables.first() {
                 for variable in &variables {
                     sets.union(*first, *variable);
@@ -1707,14 +1686,6 @@ impl Projection {
                     binding: None,
                     resolved_by: how_resolved(&resolved_by, target),
                 },
-                Some(ClaimOutcome::Duplicate {
-                    owner,
-                    conflicting_targets,
-                }) => bail!(
-                    "logical_module {}: global selector solver assigned anonymous statement to \
-                     duplicate owner {owner:?} shared by targets {conflicting_targets:?}",
-                    ids[module_index],
-                ),
                 Some(outcome) => claim_outcome(module, outcome)?,
                 None => bail!(
                     "logical_module {}: global selector solver returned no outcome for anonymous \
@@ -1745,15 +1716,6 @@ impl Projection {
                         resolved_by: how_resolved(&resolved_by, target),
                     }
                 }
-                Some(ClaimOutcome::Duplicate {
-                    owner,
-                    conflicting_targets,
-                }) => bail!(
-                    "logical_module {}: global selector solver assigned selector member `{}` to \
-                     duplicate owner {owner:?} shared by targets {conflicting_targets:?}",
-                    ids[module_index],
-                    member.export_name,
-                ),
                 Some(outcome) => claim_outcome(module, outcome)?,
                 None => bail!(
                     "logical_module {}: global selector solver returned no outcome for selector \
@@ -2301,8 +2263,8 @@ fn claim_outcome(module: &Module, outcome: &ClaimOutcome) -> Result<Outcome> {
         ClaimOutcome::Undecided { reason } => Outcome::Undecided {
             reason: reason.clone(),
         },
-        ClaimOutcome::Unique { .. } | ClaimOutcome::Duplicate { .. } => {
-            unreachable!("resolved and duplicate claims are handled by the caller")
+        ClaimOutcome::Unique { .. } => {
+            unreachable!("resolved claims are handled by the caller")
         }
     })
 }

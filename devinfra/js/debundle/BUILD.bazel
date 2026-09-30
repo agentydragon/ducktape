@@ -1025,10 +1025,8 @@ rust_test(
     ],
 )
 
-# Shared selector-program contract for the global resolver endpoint. This is the
-# data boundary between selector lowering, fact extraction, the fixed Ascent rule
-# library, and materialization; it is intentionally additive until the compare
-# path is wired.
+# The selector program and chunk facts that selector lowering and fact
+# extraction hand to the solver, and the claims it returns.
 rust_library(
     name = "selector_ir",
     srcs = ["selector_ir.rs"],

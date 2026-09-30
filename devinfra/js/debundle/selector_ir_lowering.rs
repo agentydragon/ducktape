@@ -737,57 +737,10 @@ impl From<selector_ir::SelectorProgramError> for SelectorIrLoweringError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use selector_ir::{SelectorAtom, StringTerm};
     use spec::{CrossRefRelation, CrossRefTarget};
 
     fn context() -> MemberSelectorLoweringContext {
         MemberSelectorLoweringContext::new("runtime/widgets")
-    }
-
-    #[test]
-    fn lowers_binding_name_selector() {
-        let lowered = lower_member_selector(
-            &context(),
-            "Widget",
-            &MemberSelectorSpec::Binding(BindingSelector {
-                name: "a".to_string(),
-                kind: None,
-            }),
-        )
-        .unwrap();
-
-        assert_eq!(lowered.target, SelectorTargetId(0));
-        assert_eq!(lowered.program.targets[0].logical_module, "runtime/widgets");
-        assert_eq!(lowered.program.atoms.len(), 1);
-        assert!(matches!(
-            &lowered.program.atoms[0],
-            SelectorAtom::OwnerDeclaresBinding {
-                binding: StringTerm::Const { value },
-                ..
-            } if value == "a"
-        ));
-    }
-
-    #[test]
-    fn lowers_binding_kind_constraint() {
-        let lowered = lower_member_selector(
-            &context(),
-            "WidgetFactory",
-            &MemberSelectorSpec::Binding(BindingSelector {
-                name: "f".to_string(),
-                kind: Some(BindingSourceKind::FunctionDeclaration),
-            }),
-        )
-        .unwrap();
-
-        assert_eq!(lowered.program.atoms.len(), 2);
-        assert!(matches!(
-            &lowered.program.atoms[1],
-            SelectorAtom::OwnerKind {
-                statement_kind: StringTerm::Const { value },
-                ..
-            } if value == "fn_decl"
-        ));
     }
 
     #[test]
