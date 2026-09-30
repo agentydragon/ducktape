@@ -2500,7 +2500,7 @@ YAML conventions.
 
 The authoritative stage sequence — which stages exist, which module
 implements each, and when each runs — is the fixed composition in
-`run_transform_cli_with_options` (<../pipeline.rs>); this doc does not
+`run_transform_cli` (<../pipeline.rs>); this doc does not
 mirror it. The shape to know: spec load/validate → chunk load/prepare
 (one parallel per-chunk SWC parse) → artifact indexes → the read-only
 `build_vendor_resolution_plan` → `materialize_logical_modules` (the only

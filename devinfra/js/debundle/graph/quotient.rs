@@ -97,7 +97,7 @@ pub enum EndpointView {
 /// `view` selects which projection rule the caller wants:
 ///
 /// - [`EndpointView::Lenient`] — used by `build_module_quotient` and
-///   `report_builders::build_quotient_edge_reports` (gate crate). Drops same-module edges
+///   the gate crate's quotient edge report builder. Drops same-module edges
 ///   AND drops cross-module [`EdgeRole::PromotedAtInit`] edges when
 ///   the callee module differs from the caller module. ESM
 ///   justification: the body read fires inside a call into a

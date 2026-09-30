@@ -169,7 +169,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
     let source_root = options.source_root.as_deref();
     let input_root = source_path(source_root, config.inputs.root);
     let js_list_path = source_path(source_root, config.inputs.js_list_path);
-    let layout = OutputLayout::new(options.out_root.clone());
+    let layout = DebundleOutputLayout::new(&options.out_root);
     let module_sources = load_module_sources(
         &options.modules_root,
         &config.main_chunk_id,
@@ -195,23 +195,23 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         chunk_analysis_options: config.chunk_analysis_options,
         chunk_export_purity: config.chunk_export_purity,
         swap_vendor_chunks: SwapVendorChunksConfig {
-            output_manifest_path: Some(layout.vendor_manifest_path.clone()),
-            output_wrapper_dir: Some(layout.vendor_wrapper_root.clone()),
+            output_manifest_path: Some(layout.vendor_swaps_report()),
+            output_wrapper_dir: Some(layout.app_root().join("vendors/generated")),
             write: true,
         },
         materialize_logical_modules: MaterializeLogicalModulesConfig {
             file: None,
             prune_other_chunks: false,
-            report_out_dir: Some(layout.report_tree_root.clone()),
+            report_out_dir: Some(layout.tree_root()),
             target_dir: String::new(),
         },
         write_js_tree: config.write_js_tree.then(|| WriteJsTreeConfig {
-            out_dir: layout.output_root.clone(),
+            out_dir: options.out_root.clone(),
         }),
         emit_browser_harness: config.browser_harness.map(|browser_harness| {
             EmitBrowserHarnessConfig {
                 asset_summary_path: source_path(source_root, browser_harness.asset_summary_path),
-                out_dir: layout.output_root,
+                out_dir: options.out_root.clone(),
                 snapshot_root: input_root,
             }
         }),
@@ -233,26 +233,6 @@ fn read_yaml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
         &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
     )
     .with_context(|| format!("parsing {}", path.display()))
-}
-
-#[derive(Debug, Clone)]
-struct OutputLayout {
-    output_root: PathBuf,
-    report_tree_root: PathBuf,
-    vendor_manifest_path: PathBuf,
-    vendor_wrapper_root: PathBuf,
-}
-
-impl OutputLayout {
-    fn new(root: PathBuf) -> Self {
-        let debundle = DebundleOutputLayout::new(&root);
-        Self {
-            output_root: debundle.root().to_path_buf(),
-            report_tree_root: debundle.tree_root(),
-            vendor_manifest_path: debundle.vendor_swaps_report(),
-            vendor_wrapper_root: debundle.app_root().join("vendors/generated"),
-        }
-    }
 }
 
 fn load_module_sources(
@@ -437,16 +417,7 @@ impl VendorMarkSource {
                         self.chunk_path
                     )
                 })?;
-                for (chunk_export, symbol) in &symbols {
-                    if !packages.contains_key(&symbol.package) {
-                        bail!(
-                            "vendor mark {} (partial_swap) symbol {} references unknown package `{}`",
-                            self.chunk_path,
-                            chunk_export,
-                            symbol.package
-                        );
-                    }
-                }
+                self.ensure_symbols_reference_known_packages("partial_swap", &packages, &symbols)?;
                 Ok(VendorLevel::PartialSwap(PartialSwapMark {
                     packages: packages
                         .into_iter()
@@ -477,16 +448,11 @@ impl VendorMarkSource {
                         self.chunk_path
                     )
                 })?;
-                for (chunk_export, symbol) in &symbols {
-                    if !packages.contains_key(&symbol.package) {
-                        bail!(
-                            "vendor mark {} (bundled_partial_swap) symbol {} references unknown package `{}`",
-                            self.chunk_path,
-                            chunk_export,
-                            symbol.package
-                        );
-                    }
-                }
+                self.ensure_symbols_reference_known_packages(
+                    "bundled_partial_swap",
+                    &packages,
+                    &symbols,
+                )?;
                 Ok(VendorLevel::BundledPartialSwap(BundledPartialSwapMark {
                     bundle: BundledPartialSwapBundle {
                         path: source_path(source_root, bundle.path),
@@ -504,6 +470,24 @@ impl VendorMarkSource {
                 }))
             }
         }
+    }
+
+    fn ensure_symbols_reference_known_packages(
+        &self,
+        level: &str,
+        packages: &BTreeMap<String, VendorPackageSource>,
+        symbols: &BTreeMap<String, PartialSwapSymbol>,
+    ) -> Result<()> {
+        for (chunk_export, symbol) in symbols {
+            if !packages.contains_key(&symbol.package) {
+                bail!(
+                    "vendor mark {} ({level}) symbol {chunk_export} references unknown package `{}`",
+                    self.chunk_path,
+                    symbol.package
+                );
+            }
+        }
+        Ok(())
     }
 
     fn ensure_no_swap_payload(&self) -> Result<()> {

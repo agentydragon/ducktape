@@ -794,7 +794,7 @@ pub struct BindingAnnotation {
 pub struct SourceMatchClaim {
     /// Identifier matching mode for this source-backed claim. Omitted means
     /// alpha-equivalent identifier matching, matching [`SourceMatch`].
-    #[serde(skip, default = "default_source_match_identifier_mode")]
+    #[serde(skip)]
     pub identifiers: SourceMatchIdentifierMode,
     /// JS source pattern to match against one top-level source statement.
     #[serde(rename = "match")]
@@ -818,14 +818,6 @@ impl SourceMatchClaim {
             identifiers: self.identifiers,
             target_binding: None,
             match_source: self.match_source.clone(),
-        }
-    }
-
-    pub fn selector_for_local(&self, local: String) -> AnonymousStatementSelector {
-        AnonymousStatementSelector {
-            match_source: self.match_source.clone(),
-            identifiers: self.identifiers,
-            target_binding: Some(local),
         }
     }
 }
@@ -866,11 +858,7 @@ impl AnonymousStatement {
         &self,
     ) -> std::result::Result<AnonymousStatementSelector, AnonymousStatementSelectorError> {
         match (&self.match_source, &self.source_match) {
-            (Some(match_source), None) => Ok(AnonymousStatementSelector {
-                match_source: match_source.clone(),
-                identifiers: SourceMatchIdentifierMode::Exact,
-                target_binding: None,
-            }),
+            (Some(match_source), None) => Ok(AnonymousStatementSelector::exact(match_source)),
             (None, Some(source_match)) if source_match.target_binding.is_some() => {
                 Err(AnonymousStatementSelectorError {
                     message: "anonymous_statements source_match cannot include `target_binding`",
@@ -902,7 +890,7 @@ impl std::error::Error for AnonymousStatementSelectorError {}
 
 #[derive(Debug, Clone, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 pub struct SourceMatch {
-    #[serde(default = "default_source_match_identifier_mode", skip_serializing)]
+    #[serde(default, skip_serializing)]
     pub identifiers: SourceMatchIdentifierMode,
     /// Internal selector-local binding name to project after parsing a
     /// canonical `source_matches[].bindings` claim. Public YAML selector bodies
@@ -985,16 +973,23 @@ pub enum SourceMatchIdentifierMode {
     AlphaAll,
 }
 
-fn default_source_match_identifier_mode() -> SourceMatchIdentifierMode {
-    SourceMatchIdentifierMode::AlphaAll
-}
-
 /// Default value the [`UnassignedMode::CatchallFile`] target path
 /// falls back to when the spec author omits it. SSOT consumed by
 /// the materializer (`logical_modules` residual synthesis) and by
 /// analysis tools that want to match the canonical residual
 /// catch-all path.
 pub const DEFAULT_RESIDUAL_MODULE_PATH: &str = "residual/unhandled";
+
+/// Module path components that hold the spec's residual catch-all
+/// (default emit target [`DEFAULT_RESIDUAL_MODULE_PATH`]
+/// per `UnassignedMode::CatchallFile`). Files under any
+/// directory whose top-level segment is `residual/` are treated as
+/// "the still-to-be-factorized pile". Detection is by module-path
+/// prefix only (matches both the default and any spec author's
+/// custom `residual/<other>.yaml`).
+pub fn is_residual_module_path(module_path: &str) -> bool {
+    module_path == "residual" || module_path.starts_with("residual/")
+}
 
 /// The single, canonical identity of a logical module: **relative,
 /// slash-separated, lowercase** (e.g. `domains/system/ids`), equal to
@@ -1056,12 +1051,6 @@ impl ModulePath {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-
-    /// True for the residual catch-all subtree (`residual` or
-    /// `residual/...`); matches `spec_modules::is_residual_module_path`.
-    pub fn is_residual(&self) -> bool {
-        self.0 == "residual" || self.0.starts_with("residual/")
-    }
 }
 
 impl std::fmt::Display for ModulePath {
@@ -1086,7 +1075,7 @@ impl std::error::Error for ModulePathError {}
 
 #[cfg(test)]
 mod module_path_tests {
-    use super::ModulePath;
+    use super::{ModulePath, is_residual_module_path};
 
     #[test]
     fn chunk_prefixed_and_clean_spellings_parse_equal() {
@@ -1108,14 +1097,15 @@ mod module_path_tests {
     }
 
     #[test]
-    fn residual_subtree_detected() {
-        assert!(ModulePath::parse("residual", "").unwrap().is_residual());
-        assert!(
-            ModulePath::parse("residual/unhandled", "")
-                .unwrap()
-                .is_residual()
-        );
-        assert!(!ModulePath::parse("ui/residual", "").unwrap().is_residual());
+    fn is_residual_module_path_matches_residual_subtree_only() {
+        assert!(is_residual_module_path("residual"));
+        assert!(is_residual_module_path("residual/unhandled"));
+        assert!(is_residual_module_path("residual/custom/sub"));
+        assert!(!is_residual_module_path("ui/sidebar"));
+        // The substring "residual" inside a path segment shouldn't
+        // match — only the top-level segment counts.
+        assert!(!is_residual_module_path("ui/residual"));
+        assert!(!is_residual_module_path("residualish/foo"));
     }
 
     #[test]
@@ -1524,7 +1514,6 @@ impl MemberSelector {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum MemberSelectorSpec {
     Binding(BindingSelector),
-    SourceMatch(AnonymousStatementSelector),
     CrossRef(CrossRefTarget),
     ReadsMember(ReadsMemberTarget),
     MemberOfModule(MemberOfModuleTarget),
@@ -1539,7 +1528,6 @@ impl MemberSelectorSpec {
     pub fn selector_kind_label(&self) -> &'static str {
         match self {
             Self::Binding(_) => "binding",
-            Self::SourceMatch(_) => "source_match",
             Self::CrossRef(_) => "cross_ref",
             Self::ReadsMember(_) => "reads_member",
             Self::MemberOfModule(_) => "member_of_module",
