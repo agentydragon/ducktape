@@ -10,7 +10,6 @@ import os
 import shlex
 import shutil
 import signal
-import socket
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
@@ -22,7 +21,6 @@ from uuid import UUID
 import httpx
 import pytest
 import pytest_bazel
-import uvicorn
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import select
@@ -57,6 +55,8 @@ from agentplane.runner.client import Attachment, RunnerClient, RunnerError, Stre
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.session import Session
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
+from util.net import bind_free_port
+from util.testing.asgi import serve_app_in_loop
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -166,9 +166,6 @@ async def app_url(
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
     server is real because SSE needs a response that streams, which an in-process ASGI transport
     would buffer."""
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = int(probe.getsockname()[1])
     ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
     bridge = RunnerBridge(
         runners=local_runners,
@@ -177,44 +174,29 @@ async def app_url(
         ingester=ingester,
         thread_changes=database_updates.changes[Channel.THREADS],
     )
-    server = uvicorn.Server(
-        uvicorn.Config(
-            create_app(
-                inventory,
-                bridge,
-                store,
-                ModelCatalog(
-                    models=[ModelOption(model="bridge-model", display_name="Bridge Model")],
-                    harnesses={harness: ["bridge-model"] for harness in Harness},
-                ),
-                egress,
-                decisions,
-                live_index,
-                action_policy,
-                reviewer=reviewer,
-                event_logs=event_logs,
-                content=content,
-                database_updates=database_updates,
-                operator_sessions=operator_sessions,
-            ),
-            host="127.0.0.1",
-            port=port,
-            log_level="warning",
-        )
+    app = create_app(
+        inventory,
+        bridge,
+        store,
+        ModelCatalog(
+            models=[ModelOption(model="bridge-model", display_name="Bridge Model")],
+            harnesses={harness: ["bridge-model"] for harness in Harness},
+        ),
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
+        database_updates=database_updates,
+        operator_sessions=operator_sessions,
     )
-    serving = asyncio.create_task(server.serve())
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(OSError)
-    ):
-        with attempt:
-            _, writer = await asyncio.open_connection("127.0.0.1", port)
-            writer.close()
-            await writer.wait_closed()
+    sock = bind_free_port()
     try:
-        yield f"http://127.0.0.1:{port}"
+        async with serve_app_in_loop(app, sock=sock):
+            yield f"http://127.0.0.1:{sock.getsockname()[1]}"
     finally:
-        server.should_exit = True
-        await serving
         await ingester.close()
 
 
