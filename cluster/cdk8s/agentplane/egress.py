@@ -620,7 +620,6 @@ class Egress(Construct):
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,
                 ),
-                cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 self.agent_api.egress(),
                 llm_ingress.service(namespace).egress(),
@@ -628,7 +627,6 @@ class Egress(Construct):
                 forgejo.HTTP.egress(),
                 # hostNetwork: Cilium sees the node, not an endpoint.
                 EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[home_assistant.SERVICE.port.number]),
-                # dns_egress above already covers this policy's resolution needs.
-                *cilium.open_internet_egress(ports=[443, 80], include_dns=False),
+                *cilium.open_internet_egress(ports=[443, 80]),
             ],
         )

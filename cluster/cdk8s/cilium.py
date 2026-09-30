@@ -78,10 +78,7 @@ def dns_egress(
 
 
 def open_internet_egress(
-    *,
-    ports: Sequence[int],
-    entities: Sequence[Entity] = (Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST),
-    include_dns: bool = True,
+    *, ports: Sequence[int], entities: Sequence[Entity] = (Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST)
 ) -> list[CiliumNetworkPolicySpecEgress]:
     """Fully open egress: unrestricted DNS resolution, then TCP `ports` to `entities`.
 
@@ -91,14 +88,8 @@ def open_internet_egress(
     hostnames, so `remote_node`/`host` join the default. Widening a CIDR/FQDN rule cannot
     substitute: `policy-cidr-match-mode` is unset cluster-wide, so CIDR-derived selectors never
     match node IPs (cluster/docs/cilium_network_policy.md).
-
-    `include_dns=False` drops the DNS rule, for a policy whose own `dns_egress(protocols=["ANY"],
-    resolves=["*"])` call already covers this resolution.
     """
-    entities_rule = EgressRule.to_entities(*entities, ports=ports)
-    if not include_dns:
-        return [entities_rule]
-    return [dns_egress(protocols=["ANY"], resolves=["*"]), entities_rule]
+    return [dns_egress(protocols=["ANY"], resolves=["*"]), EgressRule.to_entities(*entities, ports=ports)]
 
 
 def fqdn_fence(
