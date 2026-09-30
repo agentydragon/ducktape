@@ -129,7 +129,7 @@ verified against Authentik.
 Keep SQL, Nginx/Caddy configuration, Alloy, dashboard JSON, shell scripts and
 static known-hosts files in their native form unless shared values or repeated
 structures justify generation. Examples remain under `activitywatch`, `monitoring`,
-`haku/mailbox`, `nix-cache`, `oci-cache`, `ollama` and `seaweedfs/cluster`.
+`haku/mailbox`, `nix-cache`, `oci-cache` and `seaweedfs/cluster`.
 `home-assistant/app/configuration.yaml.conf` is YAML despite its suffix.
 
 Similarly, `headlamp.py:_PLUGINS_CONFIG` is still YAML embedded in a Python string,

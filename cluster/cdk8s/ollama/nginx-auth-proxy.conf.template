@@ -1,5 +1,5 @@
 server {
-    listen 11435;
+    listen @{listen_port};
 
     location / {
         set $expected "Bearer ${OLLAMA_DIRECT_TOKEN}";
@@ -7,7 +7,7 @@ server {
             return 401 '{"error": "unauthorized"}';
         }
 
-        proxy_pass http://127.0.0.1:11434;
+        proxy_pass http://127.0.0.1:@{ollama_port};
         proxy_buffering off;
         proxy_http_version 1.1;
         proxy_set_header Host $host;

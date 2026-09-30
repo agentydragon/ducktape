@@ -23,7 +23,7 @@ and how the inference config holds up under it.
 
 Docs hub for LLM inference on the cluster. Notes that should outlive any
 one deployment go here; reusable service scripts live with the workload
-(`cluster/k8s/ollama/`, `x/local_llm/`), while exact experimental drivers live
+(`cluster/cdk8s/ollama/`, `x/local_llm/`), while exact experimental drivers live
 with their dated run records.
 
 ## What's here
@@ -81,6 +81,6 @@ individual tasks remain in <TODO.md>.
 
 ## See also
 
-- <../../k8s/ollama/> — current cluster Ollama deployment
+- <../../cdk8s/ollama/> — current cluster Ollama deployment
 - <../../../x/local_llm/> — wyrm2 host scripts (vLLM/Ollama/comfyui)
 - <../gpu.md> — GPU/CDI runtime stack on wyrm2
