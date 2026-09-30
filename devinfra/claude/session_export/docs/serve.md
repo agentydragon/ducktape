@@ -45,6 +45,16 @@ Environment variables are prefixed `SESSION_SYNC_` (`settings.py`). `web` uses t
 `PUBLIC_BASE_URL`, and `CONTROL_BASE_URL`; `control` uses the database URL, `CREDENTIALS_FILE`, and sync settings.
 `serve` combines both settings for local use.
 
+## Session read API
+
+The authenticated web tier exposes a read-only Claude Code-shaped subset:
+`GET /v1/code/sessions?limit=&cursor=&statuses=`, `GET /v1/code/sessions/{id}`, and
+`GET /v1/code/sessions/{id}/events?limit=&sort_order=&cursor=`. List pages return `data`, `next_cursor`, and
+`resume_token`; event pages return `data`, `has_more`, `first_id`, and `last_id`. IDs using either `session_` or
+`cse_` are accepted. By default the list includes active and paused sessions; repeat `statuses=` to select states,
+including archived sessions. Cursors are opaque to clients. The routes read the mirror and do not expose Claude's
+session mutation endpoints.
+
 | Variable                                              | Meaning                                                                               |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                                        | The PostgreSQL the sync writes                                                        |
