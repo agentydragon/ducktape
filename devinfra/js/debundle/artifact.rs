@@ -280,6 +280,14 @@ pub struct SelectedModuleLowering {
     pub binding_names: Vec<String>,
     pub chunk_id: String,
     pub exported_names: Vec<String>,
+    /// Public names explicitly assigned by the spec. Kept in-memory for
+    /// cross-chunk import naturalization; omitted from serialized reports.
+    #[serde(skip)]
+    pub spec_named_export_names: Vec<String>,
+    /// Original entry export names that actually received a readable alias,
+    /// paired with that alias. Kept in-memory for import rewriting only.
+    #[serde(skip)]
+    pub cross_chunk_import_aliases: Vec<(String, String)>,
     pub file: String,
     pub owner_ids: Vec<String>,
     pub residual: bool,

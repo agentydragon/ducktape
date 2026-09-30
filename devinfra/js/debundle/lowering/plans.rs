@@ -34,6 +34,9 @@ pub(super) struct AnonymousStatementRequest {
 pub(super) struct MemberRequest {
     pub(super) binding: String,
     pub(super) export_name: String,
+    /// Whether the spec explicitly assigned this public name (as opposed to
+    /// the implicit binding-name default).
+    pub(super) explicit_export_name: bool,
     /// How the member names its declaration. Every selector but an import
     /// specifier name pin resolves through the global selector solver.
     pub(super) selector: MemberSelector,
@@ -140,6 +143,9 @@ pub(super) struct ModulePlan {
     /// emit / report sites sort by local name before consuming so
     /// the emitted source and JSON shapes stay deterministic.
     pub(super) bindings: HashMap<String, String>,
+    /// Source bindings whose public names came explicitly from the spec,
+    /// including names equal to the original binding spelling.
+    pub(super) spec_named_bindings: BTreeSet<String>,
     /// Source-chunk statement ordinals of anonymous-statement members
     /// claimed by this module. These owners have empty
     /// `declared_bindings`, so they can't be addressed by name —
@@ -287,6 +293,7 @@ pub(super) fn build_members(
             Ok(MemberRequest {
                 binding,
                 export_name,
+                explicit_export_name: m.name.is_some(),
                 selector: MemberSelector::from_spec(selected),
                 purity: MemberPurity::Default,
                 effect: MemberEffect::Default,
@@ -312,6 +319,7 @@ pub(super) fn build_members(
             requests.push(MemberRequest {
                 binding: String::new(),
                 export_name,
+                explicit_export_name: true,
                 selector: MemberSelector::SourceMatch(parsed_selector),
                 purity: MemberPurity::Default,
                 effect: MemberEffect::Default,

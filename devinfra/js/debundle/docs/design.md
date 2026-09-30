@@ -2637,9 +2637,16 @@ exploration before crossing the relevant phase.
   (React component detection, big-string clustering, scrambled-
   identifier statistics) help the human author write better
   specs, but the spec is still chosen by humans.
-- **Identifier readability.** The rename pass that converts
-  scrambled names to readable ones is orthogonal to this
-  scheduling design and stays.
+- **Identifier readability and cross-chunk imports.** Spec-assigned
+  readable names apply to the defining logical module and its intra-chunk
+  imports. When that binding is already part of its chunk's public export
+  surface, lowering retains the old export and adds the readable name as a
+  second export of the same binding. Processed named-import consumers may use
+  that alias and rename only the import local through `RenameLedger`; unsafe
+  collisions and nested capture conservatively keep the original import.
+  External chunks, dynamic imports and namespace imports continue to use the
+  legacy export name. This is an emission compatibility rule, not a scheduling
+  rewrite.
 
 ## File references
 

@@ -13,7 +13,7 @@ use artifact::{ChunkDecompositionOutput, ChunkId};
 use emit_harness::emit_browser_harness;
 use lowering::{
     MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission, UnmatchedSpecClaim,
-    materialize_logical_modules,
+    materialize_logical_modules, naturalize_cross_chunk_imports,
 };
 use prepare_chunks::prepare_js_chunks;
 use prune_dead_imports::prune_dead_import_specifiers;
@@ -215,6 +215,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     let excluded_chunk_ids = vendor_plan.full_swap_chunk_ids();
     vendor_report.full = vendor_plan.full_swap_resolutions();
 
+    let processed_chunk_names: BTreeSet<String> = materialise_chunk_ids.iter().cloned().collect();
     let mut module_count: usize = 0;
     let mut selected_lowerings: Vec<artifact::SelectedModuleLowering> = Vec::new();
     let mut decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput> = HashMap::new();
@@ -277,6 +278,19 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
             Ok((materialize_result.artifact, ()))
         })?;
     }
+
+    // Cross-chunk import naturalization runs after lowering has exposed
+    // target aliases but before source-specifier canonicalization changes the
+    // original chunk-relative import paths used by ArtifactSourceImportResolver.
+    (indexed, ()) = indexed.update(|mut artifact, indexes| {
+        naturalize_cross_chunk_imports(
+            &mut artifact,
+            indexes,
+            &selected_lowerings,
+            &processed_chunk_names,
+        )?;
+        Ok((artifact, ()))
+    })?;
 
     // Emission rewrites, one artifact pass over two disjoint file sets:
     //

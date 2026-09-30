@@ -322,6 +322,12 @@ impl ChunkPlanBuilder {
             target_path: request.target_path.clone(),
             explicit: true,
             bindings,
+            spec_named_bindings: request
+                .members
+                .iter()
+                .filter(|member| member.explicit_export_name && !member.binding.is_empty())
+                .map(|member| member.binding.clone())
+                .collect(),
             anonymous_statement_ordinals: Vec::new(),
             anonymous_statement_comments: BTreeMap::new(),
             comment: request.comment.clone(),
@@ -668,6 +674,9 @@ impl ChunkPlanBuilder {
         let plan = &mut self.module_plans[index];
         plan.bindings
             .insert(binding.to_string(), member.export_name.clone());
+        if member.explicit_export_name {
+            plan.spec_named_bindings.insert(binding.to_string());
+        }
         plan.binding_claim_origins
             .insert(binding.to_string(), member.claim_origin.clone());
         if let Some(comment) = &member.comment {
@@ -870,6 +879,7 @@ impl ChunkPlanBuilder {
                     target_path: residual.target_path.clone(),
                     explicit: false,
                     bindings: residual_bindings,
+                    spec_named_bindings: BTreeSet::new(),
                     anonymous_statement_ordinals: Vec::new(),
                     anonymous_statement_comments: BTreeMap::new(),
                     comment: None,
@@ -1061,6 +1071,7 @@ impl ChunkPlanBuilder {
                 target_path,
                 explicit: false,
                 bindings,
+                spec_named_bindings: BTreeSet::new(),
                 anonymous_statement_ordinals,
                 anonymous_statement_comments: BTreeMap::new(),
                 comment: None,

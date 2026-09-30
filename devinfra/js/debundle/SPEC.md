@@ -121,3 +121,18 @@ elimination or by its references in a spec is `ambiguous` there.
   resolved outcomes, chunks in chunk-id order.
 
 Warnings never stop a run.
+
+## Readable names and the chunk public surface
+
+`name:` on a member and the name assigned to `source_matches[].bindings[]`
+name the spec-owned binding in its logical module. If the source chunk already
+exports that binding, emitted output keeps the original chunk export name and
+adds the spec name as a second export of the same binding. The two ESM export
+names are live aliases; existing consumers therefore remain compatible.
+
+Named imports in other processed chunks may import the readable alias and bind
+it locally under that readable name. This import-local change is conservative:
+a collision with an existing or nested binding, an ambiguous alias, or an
+unprocessed importer leaves the old import form unchanged. Dynamic imports and
+namespace imports continue to use the original minified export names. Bindings
+without a spec-assigned name are not changed by this cross-chunk pass.

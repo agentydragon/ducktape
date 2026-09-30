@@ -172,6 +172,19 @@ debundle_e2e_test(
     deps = ["@crates//:serde_json"],
 )
 
+rust_test(
+    name = "cross_chunk_readable_imports_test",
+    size = "small",
+    srcs = ["cross_chunk_readable_imports_test.rs"],
+    crate_root = "cross_chunk_readable_imports_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
 debundle_e2e_test(
     name = "duplicate_top_level_declaration_test",
     size = "small",

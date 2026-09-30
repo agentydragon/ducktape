@@ -37,6 +37,7 @@ mod anonymous;
 mod body_facts;
 mod chunk_ast;
 mod chunk_renames;
+mod cross_chunk_imports;
 mod cross_module;
 mod exports;
 mod import_emit;
@@ -57,6 +58,8 @@ mod scope_names;
 mod util;
 mod vendor_imports;
 mod visitors;
+
+pub use cross_chunk_imports::naturalize_cross_chunk_imports;
 
 use anonymous::ResolvedAnonymousStatement;
 use body_facts::{ModuleBodyFacts, collect_module_body_facts};

@@ -735,6 +735,7 @@ rust_library(
         "lowering/body_facts.rs",
         "lowering/chunk_ast.rs",
         "lowering/chunk_renames.rs",
+        "lowering/cross_chunk_imports.rs",
         "lowering/cross_module.rs",
         "lowering/exports.rs",
         "lowering/import_emit.rs",
