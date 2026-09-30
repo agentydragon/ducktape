@@ -37,6 +37,7 @@ from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "authentik"
 NAMESPACE = "authentik"
+HOSTNAME = "auth.allegedly.works"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/app"
 _HOST_CONFIG_MAP = "authentik-host"
 _BLUEPRINTS_CONFIG_MAP = "authentik-sso-blueprints"
@@ -200,7 +201,7 @@ def _host_config_map(chart: Chart) -> None:
         "host",
         metadata=k8s.ObjectMeta(name=_HOST_CONFIG_MAP, namespace=NAMESPACE),
         data={
-            "AUTHENTIK_HOST": "https://auth.allegedly.works",
+            "AUTHENTIK_HOST": f"https://{HOSTNAME}",
             # Cilium Gateway API uses host-network TPROXY, so Gateway hairpins can reach Authentik
             # with the caller's cluster-pod source address instead of the Envoy node address.
             # Authentik 2026.8 otherwise ignores X-Forwarded-Proto and emits HTTP OIDC metadata for
@@ -216,7 +217,7 @@ def _http_route(chart: Chart) -> None:
         chart,
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        hostnames=["auth.allegedly.works"],
+        hostnames=[HOSTNAME],
         backend=SERVER,
         hsts=False,
         listener=None,

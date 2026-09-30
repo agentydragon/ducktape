@@ -17,7 +17,10 @@ py_library(
 py_library(
     name = "app",
     srcs = ["app.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
+    ],
     deps = [
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:generation",

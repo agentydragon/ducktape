@@ -85,21 +85,6 @@ unchanged, and generated ConfigMaps contain no credentials.
 
 ## Model selectively: third-party configuration
 
-### Gatus
-
-`cluster/k8s/gatus/config.yaml` combines endpoint identity with monitoring intent:
-health URLs, expected statuses, body predicates and an inference request.
-Proposed: derive owned hostnames, service addresses and model names from exported
-values while retaining explicit probe selection and assertions. Do not automatically
-turn every HTTPRoute into a health check or infer that a 200 response is sufficient.
-
-Preserve application-expanded `${GATUS_CLIENT_SECRET}`, `${GATUS_DB_URI}` and
-`${LITELLM_API_KEY}` literally. Validate with the pinned consumer/schema; do not use
-whole-resource Flux substitution to inject these runtime values.
-
-Done: shared identities come from their owners, and probes retain their authentication
-and behavioral meaning.
-
 ### Authentik blueprints: ownership first
 
 `cluster/k8s/authentik/app/blueprints/*.yaml` uses `!Find`, `!KeyOf`, object

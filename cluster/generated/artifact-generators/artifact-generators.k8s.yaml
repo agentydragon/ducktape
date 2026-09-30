@@ -468,8 +468,8 @@ spec:
       name: budget-namespace
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/gatus/**"
-          to: "@artifact/cluster/k8s/gatus/"
+        - from: "@repo/cluster/generated/gatus/**"
+          to: "@artifact/cluster/generated/gatus/"
       name: gatus
       originRevision: "@repo"
     - copy:

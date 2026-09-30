@@ -137,7 +137,7 @@ from cluster.cdk8s.gaffer_private_source import (
     flux_kustomizations as gaffer_private_source_flux_kustomizations,
     source as gaffer_private_source,
 )
-from cluster.cdk8s.gatus import app as gatus_app, flux_kustomizations as gatus_flux_kustomizations, sso as gatus_sso
+from cluster.cdk8s.gatus import app as gatus_app, sso as gatus_sso
 from cluster.cdk8s.generation import write_directory, write_generated_readme
 from cluster.cdk8s.github_api_proxy import (
     flux_kustomizations as github_api_proxy_flux_kustomizations,
@@ -327,7 +327,6 @@ def generate_manifests(root: Path) -> None:
     forgejo_token_rotation.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
     ollama_app.write_manifests(root)
-    gatus_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
     study_casino_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
@@ -930,7 +929,12 @@ def generate_manifests(root: Path) -> None:
         flux_chart, grafana_instance_artifact, grafana_operator_kustomization, cnpg_kustomization
     )
     gatus_artifact = artifact("gatus", gatus_app.OUTPUT_DIR)
-    gatus_flux_kustomizations.gatus(flux_chart, gatus_artifact, cnpg_kustomization, monitoring_crds_kustomization)
+    gatus_app.gatus(
+        flux_chart,
+        write_directory(root, gatus_artifact, gatus_app.chart, config_map_generator=[gatus_app.CONFIG_MAP]),
+        cnpg_kustomization,
+        monitoring_crds_kustomization,
+    )
     flux_webhook_artifact = artifact("flux-webhook", flux_webhook_chart.OUTPUT_DIR)
     flux_webhook_chart.flux_webhook(
         flux_chart,
