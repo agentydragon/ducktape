@@ -46,6 +46,7 @@ _LEGACY_CREDENTIALS_SECRET = "loki-s3-credentials"
 # Written by the tenant-local S3Credentials; what the Loki pods read.
 _CREDENTIALS_SECRET = "loki-seaweedfs-credentials"
 WRITE_URL = "http://loki-write.loki.svc.cluster.local:3100"
+READ_URL = "http://loki-read.loki.svc.cluster.local:3100"
 PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
 _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}

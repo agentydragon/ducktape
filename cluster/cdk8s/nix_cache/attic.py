@@ -32,6 +32,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "attic"
 NAMESPACE = "nix-cache"
+HOSTNAME = "cache.allegedly.works"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/nix-cache"
 SERVICE = ServiceRef(
     name=NAME,
@@ -162,7 +163,7 @@ def _server(scope: Construct) -> None:
         scope,
         "route",
         metadata=ApiObjectMetadata(name=NAMESPACE, namespace=NAMESPACE),
-        hostnames=["cache.allegedly.works"],
+        hostnames=[HOSTNAME],
         backend=SERVICE,
         hsts=False,
         listener=None,

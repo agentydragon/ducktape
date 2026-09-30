@@ -7,7 +7,8 @@ from pydantic import SecretStr
 from tenacity import wait_none
 
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
-from devinfra.claude.session_export.conftest import TEST_COOKIE, FakeSessionsService, make_events
+from devinfra.claude.session_export.conftest import TEST_COOKIE, FakeSessionsService, make_credential, make_events
+from devinfra.claude.session_export.oauth import CredentialStore, OAuthTokenSource
 
 SESSION_ID = "session_test0001"
 
@@ -62,9 +63,25 @@ async def test_retries_are_bounded(service: FakeSessionsService, api: SessionsAp
     assert len(service.requests) == 6
 
 
+async def test_oauth_client_sends_its_bearer_to_the_first_party_api(
+    service: FakeSessionsService, tmp_path: Path
+) -> None:
+    store = CredentialStore(tmp_path / "credential.json")
+    store.save(make_credential())
+    service.events[SESSION_ID] = make_events(3)
+    async with httpx.AsyncClient() as token_client:
+        api = SessionsApi.for_oauth(
+            OAuthTokenSource(store, token_client), transport=httpx.MockTransport(service.handle), retry_wait=wait_none()
+        )
+        async with api:
+            assert await api.newest_sequence_num(SESSION_ID) == 3
+    assert {request.url.host for request in service.requests} == {"api.anthropic.com"}
+
+
 async def test_auth_failure_is_not_retried_and_carries_the_error_body(service: FakeSessionsService) -> None:
     wrong_key = SessionCookie(session_key=SecretStr("wrong-key"), org_uuid=TEST_COOKIE.org_uuid)
-    async with SessionsApi(wrong_key, transport=httpx.MockTransport(service.handle), retry_wait=wait_none()) as api:
+    transport = httpx.MockTransport(service.handle)
+    async with SessionsApi.for_cookie(wrong_key, transport=transport, retry_wait=wait_none()) as api:
         with pytest.raises(httpx.HTTPStatusError) as failure:
             await api.newest_sequence_num(SESSION_ID)
     assert failure.value.response.status_code == 401

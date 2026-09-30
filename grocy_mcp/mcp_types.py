@@ -24,6 +24,7 @@ from mcp_infra.persistence import FilePersistence, PersistenceConfig
 # gazelle:include_dep @pypi//pyyaml
 
 MAX_BATCH_SIZE = 100
+CONFIG_FILE_ENV = "GROCY_MCP_CONFIG_FILE"
 
 # ── Server settings ─────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ class ServerSettings(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Insert an optional YAML file source (below env) when ``GROCY_MCP_CONFIG_FILE`` is set."""
         sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get("GROCY_MCP_CONFIG_FILE"):
+        if config_file := os.environ.get(CONFIG_FILE_ENV):
             sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
         sources.append(file_secret_settings)
         return tuple(sources)
