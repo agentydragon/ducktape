@@ -3,6 +3,7 @@
 import asyncio
 import gzip
 import logging
+import time
 from collections.abc import Collection
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from devinfra.claude.session_export.api import SessionsApi
 from devinfra.claude.session_export.models import Event, SessionSummary
 
 logger = logging.getLogger(__name__)
+
+PROGRESS_INTERVAL_SECONDS = 10  # a session that finishes sooner logs only its completion
 
 
 class ManifestRecord(BaseModel):
@@ -54,6 +57,8 @@ async def export_session(api: SessionsApi, session: SessionSummary, events_dir: 
     session_id = canonical_id(session.id)
     target = events_dir / f"{session_id}.jsonl.gz"
     partial = target.with_name(f"{target.name}.part")
+    expected = await api.newest_sequence_num(session_id)  # progress denominator; a live session can outgrow it
+    next_report = time.monotonic() + PROGRESS_INTERVAL_SECONDS
     count = 0
     with gzip.open(partial, "wt", encoding="utf-8") as out:
         async for page in api.iter_event_pages(session_id):
@@ -64,6 +69,9 @@ async def export_session(api: SessionsApi, session: SessionSummary, events_dir: 
                     raise ValueError(f"{session_id=}: expected sequence_num {count}, got {event.sequence_num}")
                 lines.append(f"{event.model_dump_json()}\n")
             await asyncio.to_thread(out.write, "".join(lines))
+            if time.monotonic() >= next_report:
+                next_report = time.monotonic() + PROGRESS_INTERVAL_SECONDS
+                logger.info("%s: %d/%d events (%d%%)", session_id, count, expected, 100 * count // max(expected, 1))
     partial.replace(target)
     return ManifestRecord(
         session_id=session_id,
