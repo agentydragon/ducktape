@@ -248,6 +248,8 @@ let
       binaryName ? pname,
       description,
       extraBuildInputs ? [ ],
+      # Executables the binary finds beside itself, keyed by the file name it looks up.
+      sidecars ? { },
     }:
     pkgs.stdenvNoCC.mkDerivation {
       inherit pname src;
@@ -257,7 +259,10 @@ let
       dontUnpack = true;
       installPhase = ''
         install -Dm755 $src $out/bin/${binaryName}
-      '';
+      ''
+      + lib.concatStrings (
+        lib.mapAttrsToList (name: file: "install -Dm755 ${file} $out/bin/${name}\n") sidecars
+      );
       meta = {
         inherit description;
         homepage = "https://github.com/agentydragon/ducktape";
@@ -267,9 +272,12 @@ let
       };
     };
 
+  # The CP-SAT sidecar is a separate release asset (devinfra/js/debundle/docs/cli.md
+  # § Selector sidecar); `run` and `spec validate` fail without it beside the binary.
   debundle = mkBinaryArtifact {
     pname = "debundle";
     src = artifacts.debundle;
+    sidecars.selector_cpsat_solver = artifacts.debundle-ortools-cpsat-solver;
     description = "JavaScript debundling CLI";
   };
 
@@ -492,7 +500,7 @@ rec {
       ) skillList
     );
 }
-// lib.optionalAttrs (artifacts ? debundle) {
+// lib.optionalAttrs (artifacts ? debundle && artifacts ? debundle-ortools-cpsat-solver) {
   inherit debundle;
 }
 // lib.optionalAttrs (artifacts ? aw-importer) {

@@ -60,6 +60,11 @@
       "output": "bb-out/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle",
       "release": "debundle"
     },
+    "debundle-ortools-cpsat-solver": {
+      "target": "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
+      "output": "bb-out/bazel-out/k8-opt/bin/devinfra/js/debundle/solver_backends/ortools_cpsat/selector_cpsat_solver",
+      "release": "debundle"
+    },
     "aw-importer": {
       "target": "@ducktape_activitywatch//importer:aw_importer_bin",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/external/ducktape_activitywatch+/importer/aw_importer_bin",

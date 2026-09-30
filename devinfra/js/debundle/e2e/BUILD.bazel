@@ -156,6 +156,23 @@ rust_test(
     deps = [":support"],
 )
 
+# The released layout: the binary copied beside its CP-SAT sidecar, run with no
+# runfiles tree and no sidecar variable. The sidecar is `data` so `support` can
+# copy it.
+rust_test(
+    name = "sidecar_beside_binary_test",
+    size = "small",
+    srcs = ["sidecar_beside_binary_test.rs"],
+    crate_root = "sidecar_beside_binary_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [":support"],
+)
+
 rust_test(
     name = "module_trees_test",
     srcs = ["module_trees_test.rs"],

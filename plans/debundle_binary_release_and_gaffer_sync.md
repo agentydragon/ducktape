@@ -2,32 +2,39 @@
 
 Last trimmed: 2026-07-05.
 
-Status: the Ducktape-side binary release path exists. `debundle` is in the
-release matrix, release metadata is emitted, and the Nix artifact package is
-defined. This plan now tracks only the remaining Gaffer-side synchronization
-work.
+Status: the Ducktape-side binary release path exists. The `debundle` release
+ships the binary and its CP-SAT sidecar, release metadata is emitted, and the Nix
+artifact package is defined. This plan now tracks only the remaining Gaffer-side
+synchronization work.
 
 Gaffer-local pinning notes live in
 `../gaffer-private/tana/re/DUCKTAPE_PINNING.md`.
 
-**No Ducktape-side work remains**, and Ducktape cannot observe whether the Gaffer
-side has landed. Manual syncs have been done and their gates passed; which pin
-Gaffer currently carries is a fact about Gaffer, so it is tracked there rather than
-restated here where it silently goes stale. The remaining value in this file is the
-workflow shape and validation gate below.
+Ducktape-side work remains only until `sync-pins.yml` commits the `debundle` and
+`debundle-ortools-cpsat-solver` pins of the first release that carries the sidecar;
+`nix/packages/default.nix` exposes `.#debundle` once both exist. Ducktape cannot
+observe whether the Gaffer side has landed. Manual syncs have been done and their
+gates passed; which pin Gaffer currently carries is a fact about Gaffer, so it is
+tracked there rather than restated here where it silently goes stale. The remaining
+value in this file is the workflow shape and validation gate below.
 
 ## Current Ducktape State
 
 Ducktape publishes the Linux amd64 debundler as a normal release artifact:
 
-- `.github/workflows/release.yml` has a `pkg: debundle` matrix row for
-  `//devinfra/js/debundle:debundle`.
-- `devinfra/ci/artifacts.py` registers the `debundle` release artifact.
-- Release metadata is covered by `devinfra/ci/test_release_metadata.py`; Gaffer
-  can read `debundle.release.json` to recover the source commit, platform, binary
-  name, and hash.
-- `nix/packages/default.nix` exposes the pinned artifact as the `debundle`
-  package once `nix/artifact-pins.json` has a release pin.
+- `devinfra/ci/artifact_targets.json` declares the `debundle` release, which
+  `.github/workflows/release.yml` fans out over, with two pins:
+  `//devinfra/js/debundle:debundle` and its CP-SAT sidecar
+  `//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver`
+  (`debundle-ortools-cpsat-solver`). Both are assets of each `debundle-*` release.
+- `debundle.release.json` (<../devinfra/ci/test_release_metadata.py>) gives the
+  source commit, platform, binary name, and hash, plus the sidecar's hash under
+  `sidecars`.
+- The binary finds the sidecar beside itself
+  (<../devinfra/js/debundle/docs/cli.md> § Selector sidecar); `run` and
+  `spec validate` fail without it.
+- `nix/packages/default.nix` exposes `debundle`, binary and sidecar installed
+  together, once `nix/artifact-pins.json` pins both.
 
 The original compile-cost problem is therefore solved on the producer side:
 Gaffer no longer needs a Ducktape change to consume a released binary.
@@ -41,6 +48,11 @@ Gaffer currently has two independent Ducktape pins:
 - `@ducktape_debundle_bin` via `http_file(...)`, the released debundler binary
   selected with Gaffer's `--config=released-debundler`.
 
+The released sidecar is a third artifact to pin with them: `debundle_pipeline`
+takes its solver from the `@ducktape//devinfra/js/debundle:ortools_cpsat_solver`
+label flag, which defaults to the sidecar built from the `@ducktape` source pin
+(<../devinfra/js/debundle/docs/bazel_integration.md>).
+
 The remaining automation should update those pins deliberately, not by fetching
 "latest" during Bazel evaluation.
 
@@ -53,11 +65,11 @@ pins together, run the Gaffer gates, and land a reviewed Gaffer PR.
 Add a Gaffer workflow or checked-in script that:
 
 1. Finds the newest non-prerelease `agentydragon/ducktape` `debundle-*` release.
-2. Downloads `debundle.release.json` and the binary asset.
+2. Downloads `debundle.release.json` and the binary and sidecar assets.
 3. Updates Gaffer's `MODULE.bazel` `archive_override(module_name = "ducktape")`
    to the Ducktape commit that produced the binary.
-4. Updates `http_file(name = "ducktape_debundle_bin")` to the matching release
-   binary URL and integrity.
+4. Updates `http_file(name = "ducktape_debundle_bin")` and the sidecar's
+   `http_file` to the matching release asset URLs and integrity.
 5. Updates any Gaffer workflow `DUCKTAPE_REF` constants only when those workflow
    tool pins are intentionally supposed to move with the source pin.
 6. Refreshes Bazel locks as needed.

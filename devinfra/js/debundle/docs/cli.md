@@ -7,9 +7,10 @@ code wins wherever prose and binary disagree. Future CLI ideas live in
 `TODO.md`.
 
 The CLI is one binary (`bazel run @ducktape_debundle_bin//file:debundle` or
-built locally as `bazel-bin/devinfra/js/debundle/debundle`). All commands
-share the same JSON-on-stdout / structured-diagnostic-on-stderr convention
-as the rest of ducktape.
+built locally as `bazel-bin/devinfra/js/debundle/debundle`) and, for the
+commands that resolve interacting selectors, its CP-SAT sidecar
+(§ Selector sidecar). All commands share the same JSON-on-stdout /
+structured-diagnostic-on-stderr convention as the rest of ducktape.
 
 ## Command index
 
@@ -179,19 +180,39 @@ entities never claim the same place.
 
 `debundle spec validate` is `debundle run` in dry-run keep-going mode
 reporting every selector problem: it takes the **same inputs** (`--spec` /
-`--tree-config` + package roots) and needs the full pipeline, so run it via
-the Bazel `:debundle` target, not the standalone binary. Its source-only
+`--tree-config` + package roots) and needs the full pipeline and the sidecar
+(§ Selector sidecar). Its source-only
 preflight mode (`--modules` plus `--source-file` or `--source-root
 --chunk`) needs no pipeline build and resolves the module files jointly with
 the same resolve as `run`. How its outcomes differ from the pipeline's:
 <../SPEC.md> § Outcomes; also, a name pin on a binding the chunk does not
 declare is `no_match` in this mode but an unmatched claim in `run`.
 
-Each group of interacting selectors is one request to the CP-SAT sidecar, found in the
-`debundle` runfiles or through `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER` — in
-source-only `validate`, and in the edit gate, `describe` and `peel` when they
-resolve source claims. `match-selector` and `synthesize-selectors` resolve one
-selector at a time and never need it.
+### Selector sidecar
+
+Each group of interacting selectors is one request to the OR-Tools CP-SAT
+sidecar `selector_cpsat_solver` (`solver_backends/ortools_cpsat`) — in
+`run`, both modes of `validate`, and the edit gate, `describe` and `peel` when
+they resolve source claims. `match-selector` and `synthesize-selectors` resolve
+one selector at a time and never need it.
+
+`debundle` takes the first of these that is set or exists:
+
+1. the file `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER` names — an override, used
+   without a check that it exists;
+2. the Bazel runfile
+   `$RUNFILES_DIR/_main/devinfra/js/debundle/solver_backends/ortools_cpsat/selector_cpsat_solver`;
+3. a file named `selector_cpsat_solver` in the directory of the running
+   `debundle` executable.
+
+A command that needs it and finds none fails naming each place it looked.
+
+A `debundle-*` release carries the sidecar as its own asset next to the binary,
+and `debundle.release.json` lists both with their `sha256`. Download the two
+assets of one release (they share `selector_cp_sat.proto`, so a pair from two
+commits can disagree on the wire), `chmod +x` both, and keep them in one
+directory. The `debundle` Nix package installs them together.
+<bazel_integration.md> covers the Bazel rule's own wiring.
 
 ### Selector outcomes
 

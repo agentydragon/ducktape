@@ -203,6 +203,7 @@ py_test(
     srcs = ["test_release_metadata.py"],
     deps = [
         ":release_metadata",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

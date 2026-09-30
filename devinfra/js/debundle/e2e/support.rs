@@ -39,6 +39,8 @@ use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 use tempfile::TempDir;
 
 const DEBUNDLER_RLOCATION: &str = "_main/devinfra/js/debundle/debundle";
+const ORTOOLS_CPSAT_SOLVER_RLOCATION: &str =
+    "_main/devinfra/js/debundle/solver_backends/ortools_cpsat/selector_cpsat_solver";
 const NODE_RLOCATION: &str = "nodejs_linux_amd64/bin/node";
 
 static MODULE_EXPORT_PROBE_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -2125,6 +2127,60 @@ pub fn debundler_path() -> PathBuf {
     let r = Runfiles::create().expect("create runfiles");
     rlocation!(r, DEBUNDLER_RLOCATION)
         .unwrap_or_else(|| panic!("could not resolve debundler runfile: {DEBUNDLER_RLOCATION}"))
+}
+
+fn ortools_cpsat_solver_path() -> PathBuf {
+    let r = Runfiles::create().expect("create runfiles");
+    rlocation!(r, ORTOOLS_CPSAT_SOLVER_RLOCATION).unwrap_or_else(|| {
+        panic!("could not resolve CP-SAT sidecar runfile: {ORTOOLS_CPSAT_SOLVER_RLOCATION}")
+    })
+}
+
+/// `debundle` as a release download runs it: a copy of the binary in an
+/// otherwise empty directory, spawned with an empty environment (no runfiles,
+/// no sidecar variable).
+pub struct DownloadedDebundle {
+    dir: TempDir,
+}
+
+impl DownloadedDebundle {
+    /// The file name the sidecar is released under and looked up by.
+    pub const SIDECAR_FILE_NAME: &'static str = "selector_cpsat_solver";
+
+    pub fn binary_only() -> Self {
+        let dir = TempDir::with_prefix(current_test_prefix()).expect("create install dir");
+        fs::copy(debundler_path(), dir.path().join("debundle")).expect("copy debundle binary");
+        Self { dir }
+    }
+
+    pub fn with_sidecar() -> Self {
+        let install = Self::binary_only();
+        fs::copy(
+            ortools_cpsat_solver_path(),
+            install.dir().join(Self::SIDECAR_FILE_NAME),
+        )
+        .expect("copy CP-SAT sidecar");
+        install
+    }
+
+    pub fn dir(&self) -> &Path {
+        self.dir.path()
+    }
+
+    pub fn run(&self, args: &[&str]) -> CommandResult {
+        self.run_with_env(args, &[])
+    }
+
+    pub fn run_with_env(&self, args: &[&str], env: &[(&str, &str)]) -> CommandResult {
+        let bin = self.dir().join("debundle");
+        let output = Command::new(&bin)
+            .args(args)
+            .env_clear()
+            .envs(env.iter().copied())
+            .output()
+            .unwrap_or_else(|e| panic!("spawn debundle {}: {e}", bin.display()));
+        command_result(output)
+    }
 }
 
 fn node_path() -> PathBuf {

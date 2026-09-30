@@ -61,7 +61,8 @@ The resolve is two halves, so `run` can do the first per chunk in parallel:
    candidates, and a lone name pin with one place is a constant. Every other
    group is one request to the OR-Tools CP-SAT sidecar
    (`solver_backends/ortools_cpsat`), a required tool of the
-   `debundle_pipeline` rule and a runfile of the `debundle` binary, over the
+   `debundle_pipeline` rule and a runfile of the `debundle` binary (how the
+   binary finds it: <cli.md> § Selector sidecar), over the
    program sliced to the group; requests run in parallel.
 
 No constraint relates two chunks' entities, so every group lies in one chunk,

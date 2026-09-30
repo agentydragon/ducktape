@@ -20,5 +20,12 @@ def test_artifacts_are_derived_from_release_metadata() -> None:
         assert artifacts[skill["pkg"]].filename == skill["filename"]
 
 
+def test_debundle_release_ships_the_sidecar_the_binary_looks_for() -> None:
+    """A downloaded `debundle` finds its CP-SAT sidecar by file name beside itself
+    (devinfra/js/debundle/docs/cli.md), so the release must carry it under that name."""
+    assets = {artifact.filename for artifact in ARTIFACTS if artifact.release_tag_prefix == "debundle"}
+    assert {"debundle", "selector_cpsat_solver"} <= assets
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

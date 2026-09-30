@@ -43,7 +43,9 @@ releases:
     nixPackage:        (optional, default false) has a `.#packages.x86_64-linux.<release_name>`
                        flake output the PR gate builds + imports-checks
     bazelFlags:        (optional) extra flags passed to bazel build
-    releaseMetadata:   (optional, default false) upload a <pkg>.release.json alongside
+    releaseMetadata:   (optional, default false) upload a <release>.release.json alongside;
+                       the asset named <release> is its `binary`, every other asset is
+                       listed by file name, with its sha256, under `sidecars`
     metadataPlatform:  (optional) `platforms` string in that release.json
 ```
 
@@ -65,6 +67,14 @@ Ship an optimized binary — opt-level=3 LLVM optimizations, debug-assertions
 off. Cuts `modules propose` wall on the tana corpus from ~5 min to ~45 s
 (7x). `-Cdebuginfo=1` (line tables only) preserves addr2line + inlined-frame
 resolution for downstream perf profiling at ~5–10% size cost.
+
+**`debundle` / `debundle-ortools-cpsat-solver`**
+
+Two pins ship on one release tag: the `debundle` binary looks for its CP-SAT
+sidecar by file name beside itself (<../js/debundle/docs/cli.md> § Selector
+sidecar), and the two share a protobuf wire format, so a consumer takes both
+assets from one release. The `debundle` Nix package installs them together and
+exists once both pins are in `nix/artifact-pins.json`.
 
 **`aiquota` / `aiquota-extension`**
 

@@ -64,7 +64,10 @@ fn run_sidecar(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(OrToolsCpSatBackendError::Spawn)?;
+        .map_err(|error| OrToolsCpSatBackendError::Spawn {
+            solver_path: solver_path.to_path_buf(),
+            error,
+        })?;
     let mut stdin = child
         .stdin
         .take()
@@ -92,7 +95,10 @@ pub enum OrToolsCpSatBackendError {
         field: &'static str,
         value: usize,
     },
-    Spawn(io::Error),
+    Spawn {
+        solver_path: PathBuf,
+        error: io::Error,
+    },
     MissingChildStdin,
     WriteRequest(io::Error),
     Wait(io::Error),
@@ -120,7 +126,11 @@ impl fmt::Display for OrToolsCpSatBackendError {
                     "CP-SAT protobuf field {field} cannot represent id {value}"
                 )
             }
-            Self::Spawn(err) => write!(f, "failed to spawn CP-SAT sidecar: {err}"),
+            Self::Spawn { solver_path, error } => write!(
+                f,
+                "failed to spawn CP-SAT sidecar {}: {error}",
+                solver_path.display()
+            ),
             Self::MissingChildStdin => write!(f, "CP-SAT sidecar stdin was unavailable"),
             Self::WriteRequest(err) => write!(f, "failed to write CP-SAT request: {err}"),
             Self::Wait(err) => write!(f, "failed to wait for CP-SAT sidecar: {err}"),
@@ -151,7 +161,9 @@ impl fmt::Display for OrToolsCpSatBackendError {
 impl Error for OrToolsCpSatBackendError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Spawn(err) | Self::WriteRequest(err) | Self::Wait(err) => Some(err),
+            Self::Spawn { error, .. } | Self::WriteRequest(error) | Self::Wait(error) => {
+                Some(error)
+            }
             Self::DecodeResponse(err) => Some(err),
             Self::IdOutOfRange { .. }
             | Self::InvalidProblem(_)

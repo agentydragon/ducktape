@@ -198,5 +198,14 @@ def test_each_row_pairs_one_output_with_one_target() -> None:
         assert row.release_metadata in {"true", "false"}, row.pkg
 
 
+def test_a_release_with_metadata_ships_an_asset_named_after_it() -> None:
+    """release_metadata.py takes that asset as the release's `binary`; without it the
+    publish job fails only once the release is being cut."""
+    rows = [row for row in load_releases(ARTIFACT_TARGETS, SKILLS_REGISTRY) if row.release_metadata == "true"]
+    assert rows
+    for row in rows:
+        assert row.pkg in [Path(output).name for output in row.output_paths]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

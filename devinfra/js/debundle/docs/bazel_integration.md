@@ -42,7 +42,9 @@ bazel build //path/to:debundle \
 The rule declares `@ducktape//devinfra/js/debundle:ortools_cpsat_solver` as an
 action tool and passes its execroot path to the debundler. The materializer uses
 that OR-Tools CP-SAT sidecar for global selector assignment. Consumers can
-override the solver tool with the matching label flag when needed.
+override the solver tool with the matching label flag when needed; one using
+a released `debundle` points both flags at the assets of the same release
+(<cli.md> § Selector sidecar).
 
 ## Profiling
 

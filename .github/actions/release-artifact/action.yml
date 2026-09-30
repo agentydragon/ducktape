@@ -12,7 +12,7 @@ inputs:
     description: "Space-separated release asset paths under bb-out/"
     required: true
   release_metadata:
-    description: "Upload <pkg>.release.json for a single-asset release"
+    description: "Upload <pkg>.release.json; the asset named <pkg> is its binary, any other asset a sidecar"
     required: false
     default: "false"
   metadata_platform:
@@ -113,15 +113,9 @@ runs:
         done
 
         if [[ "${{ inputs.release_metadata }}" == "true" ]]; then
-          if [[ "${#files[@]}" -ne 1 ]]; then
-            echo "::error::Release metadata requires exactly one release asset"
-            exit 1
-          fi
-          artifact="${files[0]}"
           metadata="$RUNNER_TEMP/${PKG}.release.json"
           metadata_platform="${{ inputs.metadata_platform }}"
           metadata_platform_args=()
-          artifact_sha=$(sha256sum "$artifact" | awk '{print $1}')
           if [[ -n "$metadata_platform" ]]; then
             metadata_platform_args=(--platform "$metadata_platform")
           fi
@@ -130,9 +124,8 @@ runs:
             --package "$PKG" \
             --tag "$tag" \
             --git-commit "$(git rev-parse HEAD)" \
-            --binary "$(basename "$artifact")" \
-            --sha256 "$artifact_sha" \
-            "${metadata_platform_args[@]}"
+            "${metadata_platform_args[@]}" \
+            "${files[@]}"
           files+=("$metadata")
         fi
 
