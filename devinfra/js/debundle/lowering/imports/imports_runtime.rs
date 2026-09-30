@@ -5,9 +5,9 @@
 //! `resolve_imported_binding` traces the binding to its original source;
 //! `source_chunk_imports_for_moved_body` emits the re-import declarations.
 
-use super::*;
+use super::super::*;
 
-pub(super) fn resolve_imported_binding(
+pub(crate) fn resolve_imported_binding(
     source_import_cache: &mut ArtifactSourceImportResolutionCache<'_>,
     runtime_import_facts: &RuntimeImportFacts,
     source_chunk_id: &str,
@@ -58,7 +58,7 @@ pub(super) fn resolve_imported_binding(
 /// emitter matches what an author would write — not one statement per
 /// binding. See [`group_specifiers_into_import_decls`] for the grouping
 /// and namespace-split rules.
-pub(super) fn source_chunk_imports_for_moved_body(
+pub(crate) fn source_chunk_imports_for_moved_body(
     source_import_cache: &mut ArtifactSourceImportResolutionCache<'_>,
     source_chunk_id: &str,
     source_runtime_file: &str,
@@ -87,7 +87,7 @@ pub(super) fn source_chunk_imports_for_moved_body(
     Ok(group_specifiers_into_import_decls(pairs))
 }
 
-pub(super) fn source_chunk_import_for_target(
+pub(crate) fn source_chunk_import_for_target(
     source_import_cache: &mut ArtifactSourceImportResolutionCache<'_>,
     source_chunk_id: &str,
     source_runtime_file: &str,
@@ -141,7 +141,7 @@ pub(super) fn source_chunk_import_for_target(
 /// at most one `NameSpaceImport`. Within a same-source named/default group,
 /// default specifiers are sorted before named to satisfy ESM grammar
 /// (`import D, { x } from "src"`, not the reverse).
-pub(super) fn group_specifiers_into_import_decls(
+pub(crate) fn group_specifiers_into_import_decls(
     pairs: Vec<(String, ImportSpecifier)>,
 ) -> Vec<ModuleItem> {
     let mut groups: Vec<(String, Vec<ImportSpecifier>, Vec<ImportSpecifier>)> = Vec::new();
@@ -173,7 +173,7 @@ pub(super) fn group_specifiers_into_import_decls(
     result
 }
 
-pub(super) fn import_decl_module_item(specifiers: Vec<ImportSpecifier>, src: &str) -> ModuleItem {
+pub(crate) fn import_decl_module_item(specifiers: Vec<ImportSpecifier>, src: &str) -> ModuleItem {
     ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
         span: DUMMY_SP,
         specifiers,

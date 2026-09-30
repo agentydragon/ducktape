@@ -1,9 +1,9 @@
 //! Per-chunk runtime-imports table built from the source chunk
 //! plus the helpers that emit re-import specifiers in moved modules.
 
-use super::*;
+use super::super::*;
 
-pub(super) struct RuntimeImportFacts {
+pub(crate) struct RuntimeImportFacts {
     /// Maps a source-chunk import binding's `Id` (the local name at the
     /// import site) to the `RuntimeImportInfo` describing where it came
     /// from. Keyed by the **pre-rename** `Id` because the map is built
@@ -11,7 +11,7 @@ pub(super) struct RuntimeImportFacts {
     /// bridges the rename via the sealed rename map's inverse projection
     /// (`RuntimeImportLookup::original_by_renamed`) when the body has
     /// been renamed.
-    pub(super) imports: HashMap<Id, RuntimeImportInfo>,
+    pub(crate) imports: HashMap<Id, RuntimeImportInfo>,
 }
 
 impl RuntimeImportFacts {
@@ -20,7 +20,7 @@ impl RuntimeImportFacts {
     /// pre-date the `Id` migration). Returns the first matching entry,
     /// which is unambiguous within a chunk's top-level scope (resolver
     /// gives all top-level bindings the same `top_level_mark`).
-    pub(super) fn lookup_by_sym(&self, sym: &str) -> Option<&RuntimeImportInfo> {
+    pub(crate) fn lookup_by_sym(&self, sym: &str) -> Option<&RuntimeImportInfo> {
         self.imports
             .iter()
             .find(|(id, _)| id.0.as_ref() == sym)
@@ -28,7 +28,7 @@ impl RuntimeImportFacts {
     }
 }
 
-pub(super) fn record_runtime_imports(
+pub(crate) fn record_runtime_imports(
     item: &ModuleItem,
     imports: &mut HashMap<Id, RuntimeImportInfo>,
 ) {
@@ -75,13 +75,13 @@ pub(super) fn record_runtime_imports(
 }
 
 #[derive(Debug)]
-pub(super) struct RuntimeImportInfo {
-    pub(super) kind: RuntimeImportKind,
-    pub(super) src: String,
+pub(crate) struct RuntimeImportInfo {
+    pub(crate) kind: RuntimeImportKind,
+    pub(crate) src: String,
 }
 
 #[derive(Debug)]
-pub(super) enum RuntimeImportKind {
+pub(crate) enum RuntimeImportKind {
     Named { imported: String },
     Default,
     Namespace,
@@ -91,7 +91,7 @@ fn ident_from_id(id: &Id) -> Ident {
     Ident::new(id.0.clone(), DUMMY_SP, id.1)
 }
 
-pub(super) fn runtime_reimport_specifier(local: &Id, info: &RuntimeImportInfo) -> ImportSpecifier {
+pub(crate) fn runtime_reimport_specifier(local: &Id, info: &RuntimeImportInfo) -> ImportSpecifier {
     match &info.kind {
         RuntimeImportKind::Named { imported } => ImportSpecifier::Named(ImportNamedSpecifier {
             span: DUMMY_SP,
@@ -120,7 +120,7 @@ pub(super) fn runtime_reimport_specifier(local: &Id, info: &RuntimeImportInfo) -
 /// Named re-import specifier with an explicit imported name, used when
 /// the vendor plan's boundary mapping overrides the recorded source
 /// name.
-pub(super) fn runtime_reimport_named_specifier(local: &Id, imported: &str) -> ImportSpecifier {
+pub(crate) fn runtime_reimport_named_specifier(local: &Id, imported: &str) -> ImportSpecifier {
     ImportSpecifier::Named(ImportNamedSpecifier {
         span: DUMMY_SP,
         local: ident_from_id(local),
@@ -134,7 +134,7 @@ pub(super) fn runtime_reimport_named_specifier(local: &Id, imported: &str) -> Im
 /// `{ <local> }` when local == imported) for an ImportSpecifier-bound
 /// reexport. Callers group same-source specifiers and wrap the list in
 /// one `ImportDecl` via [`import_decl_module_item`].
-pub(super) fn imported_binding_named_specifier(local: &str, imported: &str) -> ImportSpecifier {
+pub(crate) fn imported_binding_named_specifier(local: &str, imported: &str) -> ImportSpecifier {
     ImportSpecifier::Named(ImportNamedSpecifier {
         span: DUMMY_SP,
         local: Ident::new_no_ctxt(local.into(), DUMMY_SP),

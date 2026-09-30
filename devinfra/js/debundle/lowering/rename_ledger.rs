@@ -68,7 +68,7 @@
 //! / [`RenameLedger::claim`]) and request fresh names with
 //! [`RenameLedger::mint`], which suffix-mints `base$N` past collisions
 //! (the `$N` scheme is the minting contract; readability is a later
-//! naturalizer concern). Import-local disambiguation (`import_emit.rs`)
+//! naturalizer concern). Import-local disambiguation (`imports/import_emit.rs`)
 //! and public-export growth (`exports.rs`) mint through the ledger.
 //!
 //! ## Contract: no structural moves between seal and execute
@@ -214,11 +214,11 @@
 //!   ledger; the module-global target-collision rule runs at seal via
 //!   [`merge_module_renames`]).
 //! - Import-local disambiguation (fresh-local `$N` minting) —
-//!   `import_emit.rs::disambiguate_*` mint through
+//!   `imports/import_emit.rs::disambiguate_*` mint through
 //!   [`RenameLedger::mint`]. The entry-side call site in
 //!   `lower.rs::lower_chunk` submits into the entry ledger (scope:
 //!   `Chunk`, origin: `ImportInduced`); the module-side call sites in
-//!   `imports_cross.rs` submit into the per-plan import ledger (scope:
+//!   `imports/imports_cross.rs` submit into the per-plan import ledger (scope:
 //!   `Module`, origin: `ImportInduced`).
 //! - Collision-resolving public-name minting —
 //!   `exports.rs::auto_grown_residual_exports` (mints a grown public

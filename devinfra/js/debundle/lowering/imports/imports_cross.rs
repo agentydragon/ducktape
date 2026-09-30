@@ -1,26 +1,26 @@
 //! Emit cross-module + residual-entry imports for a moved module body.
-//! Both call `disambiguate_*_import_locals` (import_emit.rs), which mint
+//! Both call `disambiguate_*_import_locals` (`imports/import_emit.rs`), which mint
 //! fresh locals through the consuming plan's import ledger
 //! (`RenameLedger::mint`, seeded with the body's binding names); the
 //! minted `original → fresh` renames are submitted into the same ledger
 //! (scope: that plan's `Module`, origin: `ImportInduced`) and applied
 //! from the sealed projection in `lower_single_plan`.
 
+use super::super::*;
 use super::import_emit::{
     disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
 };
-use super::*;
 
-pub(super) const CROSS_MODULE_IMPORT_CONTRIBUTOR: &str = "cross-module import-local disambiguation";
-pub(super) const RESIDUAL_ENTRY_IMPORT_CONTRIBUTOR: &str =
+pub(crate) const CROSS_MODULE_IMPORT_CONTRIBUTOR: &str = "cross-module import-local disambiguation";
+pub(crate) const RESIDUAL_ENTRY_IMPORT_CONTRIBUTOR: &str =
     "residual-entry import-local disambiguation";
 
 /// Where one plan's import-local mint renames go: the per-plan ledger
 /// plus the scope/key context its intents need.
-pub(super) struct ImportLocalRenameSink<'a> {
-    pub(super) module: ModuleId,
-    pub(super) chunk_top_level_mark: swc_common::Mark,
-    pub(super) ledger: &'a mut RenameLedger,
+pub(crate) struct ImportLocalRenameSink<'a> {
+    pub(crate) module: ModuleId,
+    pub(crate) chunk_top_level_mark: swc_common::Mark,
+    pub(crate) ledger: &'a mut RenameLedger,
 }
 
 impl ImportLocalRenameSink<'_> {
@@ -53,7 +53,7 @@ impl ImportLocalRenameSink<'_> {
 /// Providers are processed in ascending index order so import-local
 /// minting (`disambiguate_import_locals`) stays deterministic and
 /// independent of the final emitted order.
-pub(super) fn cross_module_imports_for_plan(
+pub(crate) fn cross_module_imports_for_plan(
     from_file: &str,
     imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
     factorization: &ChunkFactorization,
@@ -94,7 +94,7 @@ pub(super) fn cross_module_imports_for_plan(
 /// imports and the residual-entry import and orders the whole list
 /// through the shared `EsmImportOrder::sort_module_imports`,
 /// mirroring the gate simulator's neighbor order exactly.
-pub(super) fn phantom_side_effect_imports(
+pub(crate) fn phantom_side_effect_imports(
     from_file: &str,
     phantom_providers: BTreeSet<usize>,
     factorization: &ChunkFactorization,
@@ -114,7 +114,7 @@ pub(super) fn phantom_side_effect_imports(
         .collect()
 }
 
-pub(super) fn residual_entry_imports_for_moved_body(
+pub(crate) fn residual_entry_imports_for_moved_body(
     module_id: &str,
     entry_file: &str,
     from_file: &str,
@@ -147,7 +147,7 @@ pub(super) fn residual_entry_imports_for_moved_body(
     Ok(vec![import_decl_for_plan(from_file, entry_file, &resolved)])
 }
 
-pub(super) fn collect_entry_exports_by_original_local(
+pub(crate) fn collect_entry_exports_by_original_local(
     entry_body: &[ModuleItem],
     entry_renames: &BTreeMap<String, String>,
     chunk_top_level_mark: swc_common::Mark,
@@ -204,14 +204,14 @@ pub(super) fn collect_entry_exports_by_original_local(
     exports
 }
 
-pub(super) fn module_export_ident_name(name: &ModuleExportName) -> Option<String> {
+pub(crate) fn module_export_ident_name(name: &ModuleExportName) -> Option<String> {
     match name {
         ModuleExportName::Ident(ident) => Some(ident.sym.to_string()),
         ModuleExportName::Str(_) => None,
     }
 }
 
-pub(super) fn named_export_public_ident_name(
+pub(crate) fn named_export_public_ident_name(
     exported: &Option<ModuleExportName>,
     fallback: &str,
 ) -> Option<String> {
@@ -222,7 +222,7 @@ pub(super) fn named_export_public_ident_name(
     }
 }
 
-pub(super) fn final_module_exports(
+pub(crate) fn final_module_exports(
     exports: &BTreeMap<String, String>,
     local_renames: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {

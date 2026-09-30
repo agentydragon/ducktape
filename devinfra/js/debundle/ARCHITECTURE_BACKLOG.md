@@ -114,7 +114,7 @@ Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
    edge representation (domain graph → counted graph → realizability index)
    has fragile bridging; `pub(super)` blankets `lowering/` field and function
    visibility; `SourceImportResolution = Option<(String, String, String)>`
-   (`plan_references.rs`) needs a named struct.
+   (`lowering/imports/plan_references.rs`) needs a named struct.
 6. Tests: `e2e/comma_list_owner_split_test.rs` asserts emitted shapes via
    whitespace OR-chains — parse or normalize instead.
 7. `ChunkBundle` ownership ping-pong through every stage

@@ -12,7 +12,7 @@ use vendor::{
     VendorResolutionPlan, bundled_facade_import_source, resolve_partial_swap_import_target,
 };
 
-use super::*;
+use super::super::*;
 
 /// Planner-boundary target vocabulary for one runtime re-import. Intra-chunk import lists stay keyed by
 /// dense `ModuleId`s — the gate's universe never sees vendor targets —
@@ -35,7 +35,7 @@ enum ImportTarget {
 /// re-imports against the vendor plan; built once per
 /// `materialize_logical_modules` run and shared by the per-chunk
 /// lowering workers.
-pub(super) struct VendorReimportOracle<'a> {
+pub(crate) struct VendorReimportOracle<'a> {
     plan: &'a VendorResolutionPlan,
     chunk_table: &'a ChunkTable,
     references: &'a ArtifactIndexes,
@@ -47,7 +47,7 @@ impl<'a> VendorReimportOracle<'a> {
     /// boundary renames — classification would never fire. (Full-swap
     /// marks are covered: every `swap` mark contributes a
     /// boundary-rename plan entry.)
-    pub(super) fn new(
+    pub(crate) fn new(
         plan: &'a VendorResolutionPlan,
         chunk_table: &'a ChunkTable,
         references: &'a ArtifactIndexes,
@@ -102,29 +102,29 @@ impl<'a> VendorReimportOracle<'a> {
 }
 
 /// The vendor-consulted split of a module body's runtime re-imports.
-pub(super) struct PlannedVendorReimports<'a> {
+pub(crate) struct PlannedVendorReimports<'a> {
     /// Re-imports the oracle did not claim — constructed as chunk
     /// re-imports exactly as before.
-    pub(super) retained: BTreeMap<Id, &'a RuntimeImportInfo>,
+    pub(crate) retained: BTreeMap<Id, &'a RuntimeImportInfo>,
     /// Boundary-rename name mapping for retained named re-imports
     /// (vendor-local → public). Load-bearing: source ASTs reach
     /// lowering with the vendor-local names, and the public name is
     /// applied at import construction.
-    pub(super) imported_overrides: BTreeMap<Id, String>,
+    pub(crate) imported_overrides: BTreeMap<Id, String>,
     /// External package / facade import decls replacing claimed
     /// re-imports; appended to the runtime re-import block.
-    pub(super) external_imports: Vec<ModuleItem>,
+    pub(crate) external_imports: Vec<ModuleItem>,
     /// Body replacements for member-access / named-rename claimed
     /// bindings, applied by `PartialSwapIdentRewriter` after the sealed
     /// rename application (like the runtime-URL rewrite).
-    pub(super) body_rewrites: BTreeMap<Id, IdentRewriteTarget>,
+    pub(crate) body_rewrites: BTreeMap<Id, IdentRewriteTarget>,
     /// Whole-import replacements already counted at construction
     /// (namespace / default / named-without-alias kinds), summed into
     /// the manifest's per-symbol `references_rewritten`.
-    pub(super) references_rewritten: BTreeMap<(ChunkId, String), usize>,
+    pub(crate) references_rewritten: BTreeMap<(ChunkId, String), usize>,
 }
 
-pub(super) fn plan_vendor_reimports<'a>(
+pub(crate) fn plan_vendor_reimports<'a>(
     needed: BTreeMap<Id, &'a RuntimeImportInfo>,
     oracle: Option<&VendorReimportOracle<'_>>,
     source_chunk_id: ChunkId,

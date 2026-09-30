@@ -10,11 +10,11 @@ use swc_common::GLOBALS;
 use swc_common::{BytePos, Spanned};
 
 use super::chunk_renames::CHUNK_RENAMES_CONTRIBUTOR;
-use super::import_emit::{
+use super::imports::import_emit::{
     disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names,
     relative_source,
 };
-use super::imports_runtime::source_chunk_import_for_target;
+use super::imports::imports_runtime::source_chunk_import_for_target;
 use super::scope_names::{
     collect_local_binding_names, collect_nested_binding_names, collect_occupied_local_names,
 };
@@ -33,7 +33,7 @@ pub(super) struct LoweredChunk {
     pub(super) applied: Vec<SelectedModuleLowering>,
     /// Per-symbol vendor-swap rewrite counts applied at construction
     /// time across this chunk's module bodies (see
-    /// `vendor_imports::plan_vendor_reimports`).
+    /// `imports::vendor_imports::plan_vendor_reimports`).
     pub(super) vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
 }
 
@@ -763,7 +763,7 @@ struct LowerSinglePlanInputs<'a> {
     binding_assignment: &'a HashMap<Id, usize>,
     runtime_import_facts: &'a RuntimeImportFacts,
     entry_exports_by_original_local: &'a HashMap<Id, EntryExport>,
-    imported_reexports_by_module: &'a [Vec<super::plan_references::ImportedReexport>],
+    imported_reexports_by_module: &'a [Vec<super::imports::plan_references::ImportedReexport>],
     selected_exports_by_module: &'a [Option<BTreeMap<String, String>>],
     cross_module_chunk_renames: &'a BTreeMap<String, String>,
     source_import_cache: &'a Mutex<ArtifactSourceImportResolutionCache<'a>>,

@@ -5,28 +5,28 @@
 //! pairs a body Id with the heuristic-rename pre-sym to find the
 //! runtime-import entry.
 
-use super::*;
+use super::super::*;
 
 #[derive(Debug)]
-pub(super) struct ImportedReexport {
-    pub(super) local: String,
-    pub(super) imported_name: String,
-    pub(super) imported_from: String,
-    pub(super) public_name: String,
+pub(crate) struct ImportedReexport {
+    pub(crate) local: String,
+    pub(crate) imported_name: String,
+    pub(crate) imported_from: String,
+    pub(crate) public_name: String,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct EntryExport {
-    pub(super) local_name: String,
-    pub(super) exported_name: String,
+pub(crate) struct EntryExport {
+    pub(crate) local_name: String,
+    pub(crate) exported_name: String,
 }
 
 #[derive(Default)]
-pub(super) struct ModuleReferenceNeeds<'a> {
-    pub(super) cross_module_imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
-    pub(super) residual_entry_imports: BTreeMap<String, EntryExport>,
-    pub(super) missing_residual_exports: BTreeSet<String>,
-    pub(super) runtime_reimports: BTreeMap<Id, &'a RuntimeImportInfo>,
+pub(crate) struct ModuleReferenceNeeds<'a> {
+    pub(crate) cross_module_imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
+    pub(crate) residual_entry_imports: BTreeMap<String, EntryExport>,
+    pub(crate) missing_residual_exports: BTreeSet<String>,
+    pub(crate) runtime_reimports: BTreeMap<Id, &'a RuntimeImportInfo>,
     /// Side-effect-only providers: modules this module has a constraining
     /// edge to (via at-init call promotion) but whose bindings aren't
     /// directly referenced in this module's body. Without an explicit
@@ -35,13 +35,13 @@ pub(super) struct ModuleReferenceNeeds<'a> {
     /// provider's body — a runtime TDZ on any of the provider's
     /// declared bindings the call chain transitively reads. See
     /// `accepted_spec_runs_under_node_test::early_entry_importer_…`.
-    pub(super) phantom_side_effect_providers: BTreeSet<usize>,
+    pub(crate) phantom_side_effect_providers: BTreeSet<usize>,
 }
 
-pub(super) type SourceImportResolutionKey = (String, String, String);
-pub(super) type SourceImportResolution = Option<(String, String, String)>;
+pub(crate) type SourceImportResolutionKey = (String, String, String);
+pub(crate) type SourceImportResolution = Option<(String, String, String)>;
 
-pub(super) struct ArtifactSourceImportResolutionCache<'a> {
+pub(crate) struct ArtifactSourceImportResolutionCache<'a> {
     artifact: &'a ChunkBundle,
     indexes: &'a ArtifactIndexes,
     resolutions: BTreeMap<SourceImportResolutionKey, SourceImportResolution>,
@@ -49,7 +49,7 @@ pub(super) struct ArtifactSourceImportResolutionCache<'a> {
 }
 
 impl<'a> ArtifactSourceImportResolutionCache<'a> {
-    pub(super) fn new(artifact: &'a ChunkBundle, indexes: &'a ArtifactIndexes) -> Self {
+    pub(crate) fn new(artifact: &'a ChunkBundle, indexes: &'a ArtifactIndexes) -> Self {
         Self {
             artifact,
             indexes,
@@ -58,7 +58,7 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
         }
     }
 
-    pub(super) fn resolve(
+    pub(crate) fn resolve(
         &mut self,
         source: &str,
         caller_chunk_id: &str,
@@ -93,7 +93,7 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
     }
 }
 
-pub(super) fn collect_imported_reexports_by_module(
+pub(crate) fn collect_imported_reexports_by_module(
     factorization: &ChunkFactorization,
     module_count: usize,
 ) -> Vec<Vec<ImportedReexport>> {
@@ -136,16 +136,16 @@ pub(super) fn collect_imported_reexports_by_module(
 /// Runtime-import lookup that bridges post-rename body syms back to the
 /// pre-rename keys of the source chunk's import map by consulting the
 /// inverse projection of the module's sealed rename map.
-pub(super) struct RuntimeImportLookup<'a> {
-    pub(super) imports: &'a RuntimeImportFacts,
+pub(crate) struct RuntimeImportLookup<'a> {
+    pub(crate) imports: &'a RuntimeImportFacts,
     /// Post-rename sym → original sym: the inverse of the module's
     /// sealed merged rename map. Injective by seal's target-collision
     /// rules (explicit duplicates are hard errors; heuristic target
     /// collisions drop both sides), so the inversion is lossless.
-    pub(super) original_by_renamed: BTreeMap<String, String>,
+    pub(crate) original_by_renamed: BTreeMap<String, String>,
 }
 
-pub(super) fn plan_module_reference_needs<'a>(
+pub(crate) fn plan_module_reference_needs<'a>(
     module_index: usize,
     body_facts: &ModuleBodyFacts,
     factorization: &ChunkFactorization,
