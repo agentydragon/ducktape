@@ -41,8 +41,9 @@ before postBuild substitution (<../cdk8s/AGENTS.md> § Testing a generator).
    in Python (`kubevirt/operators.py`); its objects are never transcribed into constructs.
 3. **Hand-written `kustomization.yaml` over generated resources**, where the directory
    keeps something the generator does not own (a `configMapGenerator` with
-   `configurations:` or `generatorOptions`, an object from § What stays hand-written). It lists each `<name>.k8s.yaml` as a resource with a
-   comment naming the generator module.
+   `configurations:` or `generatorOptions`, an object from § What stays hand-written).
+   It lists each `<name>.k8s.yaml` as a resource with a comment naming the generator
+   module.
 4. **Hand-written outright**: `flux/flux-system` (`flux bootstrap` output) and
    `parked/`.
 
