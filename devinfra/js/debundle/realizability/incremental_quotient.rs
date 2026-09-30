@@ -857,7 +857,9 @@ impl IncrementalQuotient {
         // `verdict_with_overlay_touching` for the rationale.
         self.maybe_record_base_snapshot();
 
-        let constraining_modules = self.constraining_graph.scc_containing(module);
+        let no_delta = BTreeMap::new();
+        let constraining_modules =
+            OverlayGraphView::new(&self.constraining_graph, &no_delta).scc_containing_inner(module);
         let constraining_scc_size = constraining_modules.len();
         if constraining_modules.len() >= 2 {
             let constraining_owner_edges = self.constraining_edges_inside(&constraining_modules);
@@ -871,7 +873,8 @@ impl IncrementalQuotient {
             });
         }
 
-        let i_modules = self.i_graph.scc_containing(module);
+        let i_modules =
+            OverlayGraphView::new(&self.i_graph, &no_delta).scc_containing_inner(module);
         let i_scc_size = i_modules.len();
         if i_modules.len() >= 2 && !reported.contains(&i_modules) {
             let any_constraining = self
