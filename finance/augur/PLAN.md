@@ -13,7 +13,7 @@ In priority order; their items are under § Work.
    replay is vetted, and every projection inherits that.
 2. **A correct answer for a liquid FIRE portfolio:** BIND and EXUS, MIDYEAR, the Distributions
    and Payments tax slices, MA3 and STUDY, then RUN and ROBUST.
-3. **Backstops:** GX (moving to Europe) and housing (§ Property taxes, Housing basis, GHOUSE).
+3. **Backstops:** GX (moving to Europe) and housing (§ Property taxes, GHOUSE).
 4. **Consolidation:** TLHCOHORT and the app's future (§ Open questions).
 5. **Deferred:** private equity (GPE; the stake is valued at $0) and performance.
 
@@ -170,8 +170,9 @@ Annual totals are right without DECLINE and INSTALLMENTS; Mare Island is not wit
   partially sell the existing nominal-bond slice, then off-par acquisition. Hold-to-maturity
   becomes a policy, not the instrument's illiquidity. Then a native-position version of
   <x/bond_policies/README.md>'s supplied-curve control.
-- **EXUS** (with PANEL or a fitted ex-US series): VT's and VXUS's ex-US holdings follow an
-  ex-US equity path, not US returns.
+- **EXUS:** VT's and VXUS's ex-US holdings follow an ex-US equity path, not US returns. The
+  series is in the record (`MacroHistory.ex_us_equity_level`, developed markets from 1975);
+  what remains is the product mapping and carrying the path through replay and the bootstrap.
 - **Trading costs:** a proportional cost per trade, readable in the trace (#5486, held #8143).
 - **Fund expense ratios:** a fund's annual expense ratio accrues as a drag on its value,
   readable in the trace; model them before comparing products whose costs differ materially.
