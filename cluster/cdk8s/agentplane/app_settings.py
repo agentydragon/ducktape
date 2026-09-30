@@ -5,6 +5,8 @@ routes and policies passed in here.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from agentplane.app.action_federation import ActionFederationSettings
 from agentplane.app.api import ModelCatalog, ModelOption
 from agentplane.app.main import AppSettingsConfig
@@ -41,6 +43,11 @@ BUILDBUDDY_POLICY = "buildbuddy"
 PLAID_PGWEB_POLICY = "plaid-pgweb"
 
 
+_PUBLIC_CODER_INSTRUCTIONS = (
+    Path(__file__).with_name("public_coder_instructions.md").read_text(encoding="utf-8").strip()
+)
+
+
 def settings(
     *,
     namespace: str,
@@ -74,16 +81,7 @@ def settings(
                 model=thread_preset_codex_model,
                 cwd="/state/workspaces/{session_id}",
                 reasoning_effort="medium",
-                instructions=(
-                    "Work as a public-repository coding agent. You will usually work on "
-                    "the public GitHub repository agentydragon/ducktape. Your egress proxy "
-                    "gives you a full-access GitHub PAT for the user 'agentydragon-agent'. "
-                    "When contributing to ducktape, push branches to the fork owned by your "
-                    "dedicated user (agentydragon-agent/ducktape), then use the substituted "
-                    "agentydragon-agent GitHub PAT to open a PR in agentydragon/ducktape "
-                    "(requesting to merge your branch from agentydragon-agent/ducktape into "
-                    "agentydragon/ducktape's default branch 'devel')."
-                ),
+                instructions=_PUBLIC_CODER_INSTRUCTIONS,
             ),
             **(
                 {
@@ -122,6 +120,7 @@ def settings(
                     GITHUB_AGENTYDRAGON_AGENT_POLICY,
                     GITHUB_CLONE_POLICY,
                     GITHUB_ACTIONS_LOGS_POLICY,
+                    BUILDBUDDY_POLICY,
                 ],
                 **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
                 thread_preset=_THREAD_PRESET_PUBLIC_CODER_CODEX,

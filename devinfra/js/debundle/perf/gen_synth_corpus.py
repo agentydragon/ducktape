@@ -31,9 +31,9 @@ Measurement recipe (see `perf/proposer.md` "How to run"):
 
     gen_synth_corpus --out /tmp/synth --statements 10000 --seed 1 --claim-blocks 62
     debundle run --spec /tmp/synth/spec.json
-    DEBUNDLE_TIMING=1 debundle modules propose \\
+    perf_wrapper.sh --output-dir /tmp/propose-profile -- debundle modules propose \\
         --graph /tmp/synth/out/reports/tree/static/app/owner_graph.json \\
-        --modules /tmp/synth/modules --format json >/dev/null
+        --modules /tmp/synth/modules --format json
 """
 
 import argparse

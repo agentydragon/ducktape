@@ -568,8 +568,10 @@ post-merge module — or escalates:
   no effective constraining pair, Pass 2 is vacuous — accept.
   When the overlay removes an edge internal to a multi-module
   I-SCC (the one case where the maintained union-find is
-  stale-coarse), the tier falls back to the exact per-query
-  `OverlayGraphView::scc_containing` bidirectional DFS.
+  stale-coarse), the order answers through its exact bidirectional
+  reachability fallback (`exact_multi_scc`); a multi-module verdict
+  then has `OverlayGraphView::scc_containing` materialize the I-SCC
+  for the constraining-pair check.
 - **Tier 3 — scoped ESM simulator.** The shared
   `EsmEvaluationSimulator` over the overlay-patched I-SCC: reject
   iff any TDZ pair. This is the same code `check_realizability`'s
