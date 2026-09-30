@@ -10,7 +10,7 @@ from itertools import batched
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Text, func, or_, select, update
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Text, and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -188,6 +188,67 @@ class SessionStore:
                 await connection.execute(select(func.count(), func.count().filter(behind)).select_from(SessionRow))
             ).one()
         return StoreCounts(sessions=sessions, behind=lagging)
+
+    async def session_page(
+        self, *, limit: int, statuses: Collection[str] | None, before: tuple[datetime, str] | None
+    ) -> tuple[list[dict[str, Any]], bool, tuple[datetime, str] | None]:
+        """Read sessions newest-first, with a stable cursor over `(last_event_at, session_id)`."""
+        query = select(SessionRow)
+        if statuses is not None:
+            query = query.where(SessionRow.status.in_(statuses))
+        if before is not None:
+            timestamp, session_id = before
+            query = query.where(
+                or_(
+                    SessionRow.last_event_at < timestamp,
+                    and_(SessionRow.last_event_at == timestamp, SessionRow.session_id < session_id),
+                )
+            )
+        query = query.order_by(SessionRow.last_event_at.desc(), SessionRow.session_id.desc()).limit(limit + 1)
+        async with self._engine.connect() as connection:
+            rows = list((await connection.execute(query)).scalars())
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = (rows[-1].last_event_at, rows[-1].session_id) if has_more and rows else None
+        return [row.raw for row in rows], has_more, next_cursor
+
+    async def session(self, session_id: str) -> dict[str, Any] | None:
+        async with self._engine.connect() as connection:
+            return await connection.scalar(select(SessionRow.raw).where(SessionRow.session_id == session_id))
+
+    async def event_page(
+        self, session_id: str, *, limit: int, sort_order: str, after: int | None, before: int | None
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Read events in sequence order; `after` and `before` make cursors stable across concurrent writes."""
+        query = select(EventRow).where(EventRow.session_id == session_id)
+        if sort_order == "asc":
+            if after is not None:
+                query = query.where(EventRow.sequence_num > after)
+            query = query.order_by(EventRow.sequence_num.asc())
+        else:
+            if before is not None:
+                query = query.where(EventRow.sequence_num < before)
+            query = query.order_by(EventRow.sequence_num.desc())
+        async with self._engine.connect() as connection:
+            rows = list((await connection.execute(query.limit(limit + 1))).scalars())
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        return [
+            {
+                "event_id": str(row.event_id),
+                "sequence_num": str(row.sequence_num),
+                "event_type": row.event_type,
+                "source": row.source,
+                "created_at": row.created_at.isoformat(),
+                "received_at": row.received_at.isoformat() if row.received_at else None,
+                "processing_at": row.processing_at.isoformat() if row.processing_at else None,
+                "processed_at": row.processed_at.isoformat() if row.processed_at else None,
+                "device_attestation_status": DEFAULT_ATTESTATION_STATUS,
+                "sent_by_account_id": None,
+                "payload": row.payload,
+            }
+            for row in rows
+        ], has_more
 
     async def resume_after(self, session_id: str) -> int:
         """The `sequence_num` to read after: the newest stored, or just before the earliest event the worker had

@@ -124,12 +124,13 @@ async def run_serve() -> None:
     settings = ServeSettings()
     await asyncio.to_thread(RUNNER.apply, settings.database_url)
     engine = make_engine(settings.database_url)
+    store = SessionStore(engine)
     try:
         async with httpx.AsyncClient(timeout=30) as token_client:
-            supervisor = SyncSupervisor.for_settings(settings, store=SessionStore(engine), token_client=token_client)
+            supervisor = SyncSupervisor.for_settings(settings, store=store, token_client=token_client)
             server = uvicorn.Server(
                 uvicorn.Config(
-                    create_app(supervisor=supervisor, settings=settings),
+                    create_app(supervisor=supervisor, settings=settings, store=store),
                     host=settings.host,
                     port=settings.port,
                     log_level="info",
@@ -151,16 +152,20 @@ async def run_web() -> None:
     """Serve the owner-authenticated page; control operations go to the private control service."""
     settings = WebSettings()
     await asyncio.to_thread(RUNNER.apply, settings.database_url)
-    async with httpx.AsyncClient(base_url=settings.control_base_url, timeout=30) as control_client:
-        server = uvicorn.Server(
-            uvicorn.Config(
-                create_web_app(settings=settings, control_client=control_client),
-                host=settings.host,
-                port=settings.port,
-                log_level="info",
+    engine = make_engine(settings.database_url)
+    try:
+        async with httpx.AsyncClient(base_url=settings.control_base_url, timeout=30) as control_client:
+            server = uvicorn.Server(
+                uvicorn.Config(
+                    create_web_app(settings=settings, control_client=control_client, store=SessionStore(engine)),
+                    host=settings.host,
+                    port=settings.port,
+                    log_level="info",
+                )
             )
-        )
-        await server.serve()
+            await server.serve()
+    finally:
+        await engine.dispose()
 
 
 async def run_control() -> None:

@@ -208,6 +208,18 @@ py_library(
 )
 
 py_library(
+    name = "read_api",
+    srcs = ["read_api.py"],
+    deps = [
+        ":models",
+        ":store",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
     name = "sync",
     srcs = ["sync.py"],
     deps = [
@@ -304,7 +316,9 @@ py_library(
     name = "web",
     srcs = ["web.py"],
     deps = [
+        ":read_api",
         ":settings",
+        ":store",
         ":supervisor",
         "//util:oidc_login",
         "//util/bazel:runfiles",
@@ -322,6 +336,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        ":models",
         ":oauth",
         ":settings",
         ":store",
