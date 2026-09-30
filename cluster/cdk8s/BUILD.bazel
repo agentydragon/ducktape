@@ -471,11 +471,9 @@ py_library(
         ":flux",
         ":manifest_roots",
         ":restic_backup",
-        "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
         "//cluster/cdk8s/providers/volsync:replicationsource",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
-        "@pypi//constructs",
     ],
 )
 

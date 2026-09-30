@@ -1,7 +1,8 @@
 """This cluster's SeaweedFS S3 objects: `bucket`, `identity` and `credentials` build the
 `providers/seaweedfs` kinds against the one deployed `Seaweed` cluster, and `cluster_grant` and
 `secret_grant` build the ResourceReferenceGrants that let another namespace's objects reference it
-or its Secrets. Each object is built complete, once.
+or its Secrets. Each object is built complete, once. `PrivateBucket` is the repeated group: one
+consumer's bucket, its identity and key, and their grant, rendered in the consumer's own unit.
 
 Operator behaviour these encode (`cluster/skills/seaweed_operator/SKILL.md`):
 
@@ -35,13 +36,14 @@ from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
 )
 from seaweed_s3identity_crds.com.seaweedfs.seaweed import S3IdentitySpecReclaimPolicy, S3IdentitySpecSeaweedRef
 
-from cluster.cdk8s.providers.seaweedfs.bucket import Bucket
+from cluster.cdk8s.providers.seaweedfs.bucket import Bucket, BucketAccess
 from cluster.cdk8s.providers.seaweedfs.resource_reference_grant import ResourceReferenceGrant
 from cluster.cdk8s.providers.seaweedfs.s3_credentials import S3Credentials
 from cluster.cdk8s.providers.seaweedfs.s3_identity import S3Identity
 
 # Aliased: the functions' own `namespace` parameter is the tenant's.
 from cluster.cdk8s.seaweedfs import cluster, namespace as seaweedfs_namespace
+from cluster.cdk8s.secret_ref import SecretRef
 
 _GROUP = "seaweed.seaweedfs.com"
 
@@ -55,6 +57,8 @@ class SecretKeyFields:
 
 
 AWS_ENV_KEY_FIELDS = SecretKeyFields(access_key="AWS_ACCESS_KEY_ID", secret_key="AWS_SECRET_ACCESS_KEY")
+# What S3Credentials writes when its `secretRef` names no keys (the operator's `credentialFields`).
+_OPERATOR_KEY_FIELDS = SecretKeyFields(access_key="accessKey", secret_key="secretKey")
 
 
 def _description(description: str | None) -> dict[str, str] | None:
@@ -158,3 +162,53 @@ def secret_grant(scope: Construct, *, secret: str, namespace: str) -> ResourceRe
         from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind="S3Credentials", namespace=seaweedfs_namespace.NAME)],
         to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=secret)],
     )
+
+
+class PrivateBucket(Construct):
+    """Bucket `name` in `tenant`, read-write for the S3Identity of the same name beside it, where the
+    S3Credentials' `identityRef` resolves. The operator writes that identity's key pair into Secret
+    `<name>-s3-credentials`, or `secret_name` where a live consumer already reads another name, under
+    `key_fields` (None: the operator's `accessKey`/`secretKey`). Outside the SeaweedFS namespace, grant
+    `<tenant>-<name>` admits the three kinds. Everything Retains.
+
+    A live Secret keeps its name and `key_fields`: under a new name or keys the operator finds no key
+    pair, mints one and revokes the key the consumer holds."""
+
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        name: str,
+        tenant: str,
+        adopt_existing: bool,
+        description: str,
+        secret_name: str | None = None,
+        key_fields: SecretKeyFields | None = AWS_ENV_KEY_FIELDS,
+    ) -> None:
+        super().__init__(scope, id)
+        secret = SecretRef(namespace=tenant, name=secret_name or f"{name}-s3-credentials")
+        self.bucket = bucket(
+            self,
+            "bucket",
+            name=name,
+            namespace=tenant,
+            access=[BucketAccess.read_write(name)],
+            adopt_existing=adopt_existing,
+            description=description,
+        )
+        self.identity = identity(self, "identity", name=name, namespace=tenant, description=description)
+        self.credentials = credentials(
+            self, "credentials", identity=name, namespace=tenant, secret=secret.name, key_fields=key_fields
+        )
+        fields = key_fields or _OPERATOR_KEY_FIELDS
+        self.access_key = secret.key(fields.access_key)
+        self.secret_key = secret.key(fields.secret_key)
+        if tenant != seaweedfs_namespace.NAME:
+            cluster_grant(
+                self,
+                "grant",
+                name=f"{tenant}-{name}",
+                namespace=tenant,
+                kinds=["Bucket", "S3Identity", "S3Credentials"],
+            )

@@ -5,7 +5,6 @@ SOPS-encrypted Restic password beside the output stays hand-written.
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from constructs import Construct
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecResticMoverAffinity,
     ReplicationSourceSpecResticMoverAffinityNodeAffinity,
@@ -16,7 +15,6 @@ from volsync_replicationsource_crds.backube.volsync import (
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.restic_backup import ResticBackup
 from cluster.cdk8s.seaweedfs import s3
 
@@ -27,34 +25,17 @@ _BUCKET_NAME = "public-coder-agent-backups"
 _S3_CREDENTIALS_SECRET_NAME = "public-coder-agent-seaweedfs-credentials"
 
 
-def _bucket(scope: Construct) -> None:
-    s3.bucket(
-        scope,
-        "bucket",
-        name=_BUCKET_NAME,
-        namespace=_NAMESPACE,
-        access=[BucketAccess.read_write(_BUCKET_NAME)],
-        adopt_existing=True,
-        description="Public Coder's tenant-local SeaweedFS backup bucket.",
-    )
-    s3.cluster_grant(
-        scope, "grant", name=_BUCKET_NAME, namespace=_NAMESPACE, kinds=["Bucket", "S3Identity", "S3Credentials"]
-    )
-    identity = s3.identity(scope, "identity", name=_BUCKET_NAME, namespace=_NAMESPACE)
-    s3.credentials(
-        scope,
-        "credentials",
-        identity=identity.name,
-        namespace=_NAMESPACE,
-        secret=_S3_CREDENTIALS_SECRET_NAME,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        description="Public Coder's tenant-local SeaweedFS backup credentials.",
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    _bucket(chart)
+    s3.PrivateBucket(
+        chart,
+        "storage",
+        name=_BUCKET_NAME,
+        tenant=_NAMESPACE,
+        adopt_existing=True,
+        description="Public Coder's tenant-local SeaweedFS backup bucket.",
+        secret_name=_S3_CREDENTIALS_SECRET_NAME,
+    )
     # The worker-local OpenClaw state. Run and retain a restore drill before treating these
     # snapshots as a replacement for the old PVC/rescue archive.
     ResticBackup(

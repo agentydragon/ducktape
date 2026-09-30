@@ -1,4 +1,4 @@
-"""Tempo (traces) with its tenant-local SeaweedFS bucket, identity and credentials."""
+"""Tempo (traces) with its tenant-local SeaweedFS `PrivateBucket`."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository, mimir
-from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "tempo"
@@ -23,25 +22,15 @@ OTLP_GRPC_ENDPOINT = f"{NAME}.{_NAMESPACE}.svc.cluster.local:{_OTLP_GRPC_PORT}"
 
 
 def _storage(chart: Chart) -> None:
-    s3.bucket(
+    s3.PrivateBucket(
         chart,
-        "bucket",
+        "storage",
         name=NAME,
-        namespace=_NAMESPACE,
-        access=[BucketAccess.read_write(NAME)],
+        tenant=_NAMESPACE,
         adopt_existing=True,
         description="Tempo's tenant-local SeaweedFS trace bucket.",
-    )
-    s3.cluster_grant(chart, "grant", name=NAME, namespace=_NAMESPACE, kinds=["Bucket", "S3Identity", "S3Credentials"])
-    identity = s3.identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
-    s3.credentials(
-        chart,
-        "credentials",
-        identity=identity.name,
-        namespace=_NAMESPACE,
-        secret=_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        description="Tempo's tenant-local SeaweedFS credentials.",
+        # Not the default `tempo-s3-credentials`: that is the legacy Secret below.
+        secret_name=_CREDENTIALS_SECRET,
     )
     # Retain the previous credential Secret during the staged handoff. The old
     # S3Credentials resource is retired separately; revoking its retained key and

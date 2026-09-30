@@ -24,5 +24,22 @@ def test_seaweed_ref_names_the_seaweedfs_namespace_only_from_a_tenant() -> None:
     ]
 
 
+def test_private_bucket_grants_its_kinds_only_from_outside_the_seaweedfs_namespace() -> None:
+    chart = Cdk8sTesting.chart()
+    s3.PrivateBucket(chart, "tenant", name="test-bucket", tenant="test-tenant", adopt_existing=False, description="t")
+    s3.PrivateBucket(chart, "local", name="test-local", tenant=namespace.NAME, adopt_existing=False, description="t")
+    assert [
+        (o["metadata"], {(f["kind"], f["namespace"]) for f in o["spec"]["from"]}, o["spec"]["to"])
+        for o in Cdk8sTesting.synth(chart)
+        if o["kind"] == "ResourceReferenceGrant"
+    ] == [
+        (
+            {"name": "test-tenant-test-bucket", "namespace": namespace.NAME},
+            {("Bucket", "test-tenant"), ("S3Identity", "test-tenant"), ("S3Credentials", "test-tenant")},
+            [{"group": "seaweed.seaweedfs.com", "kind": "Seaweed", "name": cluster.NAME}],
+        )
+    ]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

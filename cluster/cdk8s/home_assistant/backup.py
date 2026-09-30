@@ -1,6 +1,5 @@
-"""Home Assistant's backup bucket: the tenant-local SeaweedFS identity, Bucket and S3Credentials,
-the grant letting them reference the SeaweedFS cluster, and the ESO wiring that composes the
-Restic repository Secret.
+"""Home Assistant's backup bucket, a tenant-local SeaweedFS `PrivateBucket`, and the ESO wiring
+that composes the Restic repository Secret.
 
 Hand-written beside the generated output: `credentials-secret.sops.yaml`.
 """
@@ -22,7 +21,6 @@ from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
-from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/backup"
@@ -89,25 +87,14 @@ def _repository(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    identity = s3.identity(chart, "identity", name=_NAME, namespace=_NAMESPACE)
-    s3.cluster_grant(chart, "grant", name=_NAME, namespace=_NAMESPACE, kinds=["S3Identity", "Bucket", "S3Credentials"])
-    s3.bucket(
+    s3.PrivateBucket(
         chart,
-        "bucket",
+        "storage",
         name=_NAME,
-        namespace=_NAMESPACE,
-        access=[BucketAccess.read_write(identity.name)],
+        tenant=_NAMESPACE,
         adopt_existing=True,
         description="Home Assistant's tenant-local SeaweedFS backup bucket.",
-    )
-    s3.credentials(
-        chart,
-        "credentials",
-        identity=identity.name,
-        namespace=_NAMESPACE,
-        secret=_S3_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        description="Home Assistant's tenant-local SeaweedFS backup credentials.",
+        secret_name=_S3_CREDENTIALS_SECRET,
     )
     _repository(chart)
     return chart

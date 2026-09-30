@@ -1,5 +1,5 @@
-"""Authentik's CNPG backups (`cluster/generated/authentik/db-backups`): the SeaweedFS storage, the
-barman-cloud `ObjectStore` pointing at it, and the daily `ScheduledBackup`."""
+"""Authentik's CNPG backups (`cluster/generated/authentik/db-backups`): the SeaweedFS
+`PrivateBucket`, the barman-cloud `ObjectStore` pointing at it, and the daily `ScheduledBackup`."""
 
 from __future__ import annotations
 
@@ -27,7 +27,6 @@ from cnpg_scheduledbackup_crds.io.cnpg.postgresql import (
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "authentik-db-backups"
@@ -39,33 +38,14 @@ _OBJECT_STORE = "authentik-db-ovh"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "db-backups", disable_resource_name_hashes=True)
-    identity = s3.identity(
+    storage = s3.PrivateBucket(
         chart,
-        "identity",
+        "storage",
         name=NAME,
-        namespace=NAMESPACE,
-        description="Dedicated SeaweedFS identity for Authentik CNPG backups.",
-    )
-    # Tenant-local, so the grant covers S3Identity too.
-    s3.cluster_grant(chart, "grant", name=NAME, namespace=NAMESPACE, kinds=["S3Identity", "S3Credentials", "Bucket"])
-    s3.credentials(
-        chart,
-        "credentials",
-        identity=identity.name,
-        namespace=NAMESPACE,
-        # The operator creates and owns this Secret in the credential's namespace, where the
-        # ObjectStore below consumes it.
-        secret=_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-    )
-    s3.bucket(
-        chart,
-        "bucket",
-        name=NAME,
-        namespace=NAMESPACE,
-        access=[BucketAccess.read_write(identity.name)],
+        tenant=NAMESPACE,
         adopt_existing=True,
         description="Private CNPG physical backups and WAL archive for Authentik.",
+        secret_name=_CREDENTIALS_SECRET,
     )
     ObjectStore(
         chart,
@@ -82,10 +62,10 @@ def chart(app: App) -> Chart:
                 endpoint_url="http://seaweedfs-s3.seaweedfs.svc:8333",
                 s3_credentials=ObjectStoreSpecConfigurationS3Credentials(
                     access_key_id=ObjectStoreSpecConfigurationS3CredentialsAccessKeyId(
-                        name=_CREDENTIALS_SECRET, key="AWS_ACCESS_KEY_ID"
+                        name=storage.access_key.secret.name, key=storage.access_key.key
                     ),
                     secret_access_key=ObjectStoreSpecConfigurationS3CredentialsSecretAccessKey(
-                        name=_CREDENTIALS_SECRET, key="AWS_SECRET_ACCESS_KEY"
+                        name=storage.secret_key.secret.name, key=storage.secret_key.key
                     ),
                 ),
                 data=ObjectStoreSpecConfigurationData(compression=ObjectStoreSpecConfigurationDataCompression.GZIP),

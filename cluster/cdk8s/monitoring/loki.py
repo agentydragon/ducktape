@@ -85,13 +85,24 @@ def _storage(chart: Chart) -> None:
     # Permit only the SeaweedFS operator's S3Credentials resource to populate
     # this exact workload Secret across namespaces.
     s3.secret_grant(chart, secret=_LEGACY_CREDENTIALS_SECRET, namespace=NAME)
-    identity = s3.identity(chart, "identity", name=NAME, namespace=NAME)
-    # Covers the tenant-local objects below; the legacy ones in the SeaweedFS namespace need none.
-    s3.cluster_grant(chart, "grant", name=NAME, namespace=NAME, kinds=["S3Identity", "Bucket", "S3Credentials"])
+    # Tenant-local ownership for Loki's existing Seaweed bucket and credentials.
+    # The old seaweedfs-namespace resources remain until the consumer cutover and
+    # data-path verification are complete.
+    storage = s3.PrivateBucket(
+        chart,
+        "storage",
+        name=NAME,
+        tenant=NAME,
+        adopt_existing=True,
+        description="Loki chunks, ruler, and admin objects.",
+        # Not the default `loki-s3-credentials`: that is the legacy Secret above, populated by the
+        # old cross-namespace S3Credentials, which this one cannot adopt.
+        secret_name=_CREDENTIALS_SECRET,
+    )
     s3.credentials(
         chart,
         "legacy-s3-credentials",
-        identity=identity.name,
+        identity=storage.identity.name,
         namespace=namespace.NAME,
         secret=_LEGACY_CREDENTIALS_SECRET,
         secret_namespace=NAME,
@@ -105,33 +116,10 @@ def _storage(chart: Chart) -> None:
         "legacy-bucket",
         name=NAME,
         namespace=namespace.NAME,
-        access=[BucketAccess.read_write(identity.name)],
+        access=[BucketAccess.read_write(storage.identity.name)],
         adopt_existing=False,
         # Unset: the CRD defaults to Retain.
         reclaim_policy=None,
-    )
-    # Tenant-local ownership for Loki's existing Seaweed bucket and credentials.
-    # The old seaweedfs-namespace resources remain until the consumer cutover and
-    # data-path verification are complete.
-    s3.bucket(
-        chart,
-        "bucket",
-        name=NAME,
-        namespace=NAME,
-        access=[BucketAccess.read_write(identity.name)],
-        adopt_existing=True,
-        description="Loki chunks, ruler, and admin objects.",
-    )
-    s3.credentials(
-        chart,
-        "credentials",
-        identity=identity.name,
-        namespace=NAME,
-        # A new Secret during the staged handoff: the existing one is populated by the old
-        # cross-namespace S3Credentials object and cannot be adopted here.
-        secret=_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        description="Loki's tenant-local SeaweedFS credentials.",
     )
 
 

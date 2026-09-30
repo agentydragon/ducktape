@@ -91,7 +91,6 @@ py_library(
         ":s3",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
         "@pypi//cdk8s",
     ],
 )
@@ -195,6 +194,7 @@ py_library(
     srcs = ["s3.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
         "//cluster/cdk8s/providers/seaweedfs:resource_reference_grant",
         "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
