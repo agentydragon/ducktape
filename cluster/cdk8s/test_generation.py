@@ -8,7 +8,7 @@ import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
 from cluster.cdk8s.artifact_generators import artifact
-from cluster.cdk8s.flux import artifact_directory, flux_kustomization, kustomizations_chart
+from cluster.cdk8s.flux import Json6902Patch, PatchTarget, artifact_directory, flux_kustomization, kustomizations_chart
 from cluster.cdk8s.generation import config_map_chart, write_directory
 
 _ARTIFACT = artifact("test-app", "test/app")
@@ -27,6 +27,24 @@ def test_kustomization_lists_each_synthesized_file_then_the_siblings(tmp_path: P
     assert yaml.safe_load((out_dir / "kustomization.yaml").read_text())["resources"] == [
         *written,
         "test-secret.sops.yaml",
+    ]
+
+
+def test_patch_charts_are_listed_as_patches_not_resources(tmp_path: Path) -> None:
+    target = PatchTarget(kind="Deployment", name="test-app", namespace="test-ns")
+    write_directory(
+        tmp_path,
+        _ARTIFACT,
+        _chart("first"),
+        remote_resources=["https://release.test/app.yaml"],
+        patch_charts=[_chart("patch")],
+        json6902_patches=[Json6902Patch(patch="[]", target=target)],
+    )
+    kustomization = yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())
+    assert kustomization["resources"] == ["first.k8s.yaml", "https://release.test/app.yaml"]
+    assert kustomization["patches"] == [
+        {"path": "patch.k8s.yaml"},
+        {"patch": "[]", "target": {"kind": "Deployment", "name": "test-app", "namespace": "test-ns"}},
     ]
 
 

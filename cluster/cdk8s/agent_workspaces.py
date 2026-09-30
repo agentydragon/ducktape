@@ -56,7 +56,7 @@ def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
 def _codex_template(chart: Chart) -> SandboxTemplate:
     """codex LLM lane: OpenAI Codex-account models via the cluster LiteLLM. The
     networkPolicyManagement/dnsPolicy/storageClassName settings are load-bearing. The codex CLI
-    picks up the baked ~/.codex/config.toml (workspace-image/codex-config.toml), whose provider
+    picks up the baked ~/.codex/config.toml (cluster/images/agent-workspace/codex-config.toml), whose provider
     reads the key from LITELLM_API_KEY."""
     return SandboxTemplate(
         chart,

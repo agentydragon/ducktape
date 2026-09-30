@@ -1,11 +1,11 @@
-# Build the Nix-based Haku sandbox image (cluster/k8s/haku/workspaces/image/default.nix)
+# Build the Nix-based Haku sandbox image (haku/sandbox/image/default.nix)
 # and push it to the Forgejo OCI registry, through nix-image.yml.
 #
 # Deliberately a DIFFERENT image repo from the apt-based haku-sandbox-image.yml
 # (`-nix` suffix): the Nix image is not yet what the SandboxTemplate pulls, and pushing it
 # under the same name would let Flux/the template roll an image whose runtime behaviour
 # nobody has confirmed yet. Publishing it under its own name is what makes the cutover
-# checklist in cluster/k8s/haku/workspaces/image/README.md runnable at all — you need a
+# checklist in haku/sandbox/image/README.md runnable at all — you need a
 # pullable ref to point a scratch SandboxTemplate at.
 #
 # Once the checklist passes, this workflow and haku-sandbox-image.yml collapse into one and
@@ -20,8 +20,8 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/haku-sandbox-image-nix.yml"
       - ".github/workflows/nix-image.yml"
-      - "cluster/k8s/haku/workspaces/image/**"
       - "flake.lock"
+      - "haku/sandbox/image/**"
       - "nix/flake/packages.nix"
       - "nix/lib/nix-ld-image.nix"
       # keep-sorted end
@@ -38,8 +38,8 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/haku-sandbox-image-nix.yml"
       - ".github/workflows/nix-image.yml"
-      - "cluster/k8s/haku/workspaces/image/**"
       - "flake.lock"
+      - "haku/sandbox/image/**"
       - "nix/flake/packages.nix"
       - "nix/lib/nix-ld-image.nix"
       # keep-sorted end

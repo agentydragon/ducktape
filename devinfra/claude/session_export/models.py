@@ -13,9 +13,17 @@ from pydantic import BaseModel, ConfigDict, Field
 DEFAULT_ATTESTATION_STATUS = "DEVICE_ATTESTATION_STATUS_UNSPECIFIED"
 
 
+SESSION_STATUS_ARCHIVED = "archived"
+
+
 def canonical_id(session_id: str) -> str:
     """The API accepts `session_<x>` and `cse_<x>` interchangeably; files and the database use `session_<x>`."""
     return "session_" + session_id.split("_", 1)[1]
+
+
+def cse_id(session_id: str) -> str:
+    """The form the web client puts in the event-stream URL."""
+    return "cse_" + session_id.split("_", 1)[1]
 
 
 def parse_timestamp(value: str) -> datetime:
@@ -68,3 +76,15 @@ class SessionSummary(BaseModel):
 class SessionsPage(BaseModel):
     data: list[SessionSummary]
     next_cursor: str | None = Field(default=None, description="Absent when this page is the last one.")
+
+
+class SessionRemoved(BaseModel):
+    """The `removed` frame of the session watch."""
+
+    id: str
+
+
+class ResumeTokenPage(BaseModel):
+    """What a list page carries beyond its sessions that the session watch needs."""
+
+    resume_token: str = Field(description="Where in the change feed the listed state stands; opens the watch.")

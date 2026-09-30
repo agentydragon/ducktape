@@ -16,20 +16,6 @@ from cluster.cdk8s.flux import (
 )
 
 
-def agent_sandbox_controller(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    name = "agent-sandbox-controller"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        timeout="5m",
-        description=(
-            "kubernetes-sigs/agent-sandbox v0.5.5 combined release asset "
-            "(Sandbox, SandboxTemplate, SandboxClaim, SandboxWarmPool CRDs)."
-        ),
-    )
-
-
 def airlock(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:

@@ -102,16 +102,11 @@ does not validate the chart's arbitrary values. Do not hand-maintain full vendor
 just to eliminate dictionaries.
 
 Generated Kustomize wrappers can package these files without converting their contents.
-Extend the small Kustomize model for an actually used field (`patches`,
-`configurations`, generator options) only where it removes a concrete authoring seam.
+Extend the small Kustomize model for an actually used field only where it removes a
+concrete authoring seam.
 
 ## Kubernetes manifests and deliberate external owners
 
-- **Remote installations:** `agents/agent-sandbox/controller/{kustomization,patches}.yaml`
-  and `kubevirt/{operator,cdi-operator}/{kustomization,namespace-patch}.yaml` compose
-  upstream release bundles with local patches. Keep upstream release ownership.
-  Generate local typed patches/wrappers where worthwhile; check against the actual
-  pinned release render. Do not transcribe upstream controllers/CRDs into local Python.
 - **Other generators:** `flux/flux-system` belongs to Flux bootstrap. Its YAML is not
   missing hand-written-to-cdk8s work.
 - **SOPS and image automation:** ciphertext stays with SOPS/key holders or its rotator;

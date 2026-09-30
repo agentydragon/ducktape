@@ -1134,7 +1134,6 @@ rust_library(
     edition = "2024",
     deps = [
         ":selector_constraint_backend",
-        ":selector_ir",
         "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cp_sat_rust_proto",
         "@rules_rust_prost//private/3rdparty/crates:prost",
     ],

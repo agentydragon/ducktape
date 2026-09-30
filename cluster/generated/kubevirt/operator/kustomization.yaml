@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - https://github.com/kubevirt/kubevirt/releases/download/v1.8.2/kubevirt-operator.yaml
+patches:
+  - path: namespace-patch.k8s.yaml
+  - patch: |
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          topology.kubernetes.io/region: hil
+    target:
+      kind: Deployment
+      name: virt-operator
+      namespace: kubevirt

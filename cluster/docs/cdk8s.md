@@ -36,12 +36,14 @@ before postBuild substitution (<../cdk8s/AGENTS.md> § Testing a generator).
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
    `cdk8s import` to ingest), listing one `<name>.k8s.yaml` per chart and the
    hand-written siblings below. `generation.write_directory` writes it for every
-   directory it synthesizes, and a new component is written that way.
+   directory it synthesizes, and a new component is written that way. A pinned upstream
+   release manifest is a remote resource the kustomization names by URL, with patches built
+   in Python (`kubevirt/operators.py`); its objects are never transcribed into constructs.
 3. **Hand-written `kustomization.yaml` over generated resources**, where the directory
    keeps something the generator does not own (a `configMapGenerator` with
-   `configurations:` or `generatorOptions`, a remote-release patch, an object from
-   § What stays hand-written). It lists each `<name>.k8s.yaml` as a resource with a
-   comment naming the generator module.
+   `configurations:` or `generatorOptions`, an object from § What stays hand-written).
+   It lists each `<name>.k8s.yaml` as a resource with a comment naming the generator
+   module.
 4. **Hand-written outright**: `flux/flux-system` (`flux bootstrap` output) and
    `parked/`.
 
@@ -58,9 +60,7 @@ Kustomization that owns it through `generation.write_namespace`.
 ### What stays hand-written
 
 - `.sops.yaml` Secrets (cdk8s has no key material; below).
-- Vendored and externally generated manifests: `flux/flux-system` and the kustomizations
-  that patch a remote release (`kubevirt/{operator,cdi-operator}`,
-  `agents/agent-sandbox/controller`).
+- Vendored and externally generated manifests: `flux/flux-system`.
 - `configMapGenerator` inputs (Iron and app configs, SQL, blueprints), and the
   `kustomization.yaml` that carries the generator where it is hand-written.
 - `image-pins/` Components and the ConfigMaps whose data carries a `$imagepolicy` marker

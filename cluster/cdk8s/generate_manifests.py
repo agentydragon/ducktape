@@ -9,6 +9,7 @@ from cdk8s import App
 from cluster.cdk8s import (
     agent_machine_access,
     agent_rbac_base,
+    agent_sandbox,
     agent_shared_rbac,
     agent_workspaces,
     agentplane_crds,
@@ -79,10 +80,7 @@ from cluster.cdk8s.activitywatch import (
     flux_kustomizations as activitywatch_flux_kustomizations,
 )
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
-from cluster.cdk8s.agentplane_index import (
-    flux_kustomizations as agentplane_index_flux_kustomizations,
-    workers as agentplane_index_workers,
-)
+from cluster.cdk8s.agentplane_index import workers as agentplane_index_workers
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
 from cluster.cdk8s.artifact_generators import (
     artifact,
@@ -106,6 +104,7 @@ from cluster.cdk8s.cert_manager import (
     environment as cert_manager_environment,
     trust as cert_manager_trust,
 )
+from cluster.cdk8s.claude_session_sync import app as claude_session_sync_app
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api
 from cluster.cdk8s.clickhouse import (
     installation as clickhouse_installation,
@@ -173,11 +172,7 @@ from cluster.cdk8s.home_assistant import (
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.infra_drift import drift_watch
-from cluster.cdk8s.kubevirt import (
-    app as kubevirt_app,
-    cdi as kubevirt_cdi,
-    flux_kustomizations as kubevirt_flux_kustomizations,
-)
+from cluster.cdk8s.kubevirt import app as kubevirt_app, cdi as kubevirt_cdi, operators as kubevirt_operators
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
 from cluster.cdk8s.langfuse import app as langfuse_app
 from cluster.cdk8s.litellm import (
@@ -334,11 +329,15 @@ def generate_manifests(root: Path) -> None:
     agentplane_crds_kustomization = agentplane_crds.agentplane_crds(
         flux_chart, write_directory(root, agentplane_crds_artifact, siblings=agentplane_crds.copy_crds(root))
     )
-    agent_sandbox_controller_artifact = artifact(
-        "agent-sandbox-controller", f"{HAND_WRITTEN_ROOT}/agents/agent-sandbox/controller"
-    )
-    agent_sandbox_controller_kustomization = agents_flux_kustomizations.agent_sandbox_controller(
-        flux_chart, agent_sandbox_controller_artifact
+    agent_sandbox_controller_artifact = artifact("agent-sandbox-controller", agent_sandbox.CONTROLLER_DIR)
+    agent_sandbox_controller_kustomization = agent_sandbox.agent_sandbox_controller(
+        flux_chart,
+        write_directory(
+            root,
+            agent_sandbox_controller_artifact,
+            remote_resources=[agent_sandbox.RELEASE],
+            patch_charts=[agent_sandbox.controller_patches],
+        ),
     )
     artifact_generators_factory(flux_chart)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
@@ -353,11 +352,27 @@ def generate_manifests(root: Path) -> None:
     )
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
     kube_api_proxy.kube_api_proxy(flux_chart, write_directory(root, kube_api_proxy_artifact, kube_api_proxy.chart))
-    kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", f"{HAND_WRITTEN_ROOT}/kubevirt/cdi-operator")
-    cdi_operator_kustomization = kubevirt_flux_kustomizations.cdi_operator(flux_chart, kubevirt_cdi_operator_artifact)
-    kubevirt_operator_artifact = artifact("kubevirt-operator", f"{HAND_WRITTEN_ROOT}/kubevirt/operator")
-    kubevirt_operator_kustomization = kubevirt_flux_kustomizations.kubevirt_operator(
-        flux_chart, kubevirt_operator_artifact
+    kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", kubevirt_operators.CDI_OPERATOR_DIR)
+    cdi_operator_kustomization = kubevirt_operators.cdi_operator(
+        flux_chart,
+        write_directory(
+            root,
+            kubevirt_cdi_operator_artifact,
+            remote_resources=[kubevirt_operators.CDI_OPERATOR_RELEASE],
+            patch_charts=[kubevirt_operators.cdi_operator_namespace_patch],
+            json6902_patches=[kubevirt_operators.CDI_OPERATOR_ON_HIL],
+        ),
+    )
+    kubevirt_operator_artifact = artifact("kubevirt-operator", kubevirt_operators.VIRT_OPERATOR_DIR)
+    kubevirt_operator_kustomization = kubevirt_operators.kubevirt_operator(
+        flux_chart,
+        write_directory(
+            root,
+            kubevirt_operator_artifact,
+            remote_resources=[kubevirt_operators.VIRT_OPERATOR_RELEASE],
+            patch_charts=[kubevirt_operators.virt_operator_namespace_patch],
+            json6902_patches=[kubevirt_operators.VIRT_OPERATOR_ON_HIL],
+        ),
     )
     kyverno_artifact = artifact("kyverno", kyverno_app.OUTPUT_DIR)
     kyverno_kustomization = kyverno_app.kyverno(
@@ -1073,14 +1088,16 @@ def generate_manifests(root: Path) -> None:
     activitywatch_flux_kustomizations.activitywatch(
         flux_chart, activitywatch_artifact, external_secrets_operator_kustomization
     )
-    agentplane_index_artifact = artifact("agentplane-index", agentplane_index_workers.OUTPUT_DIR)
-    agentplane_index_flux_kustomizations.agentplane_index(
+    agentplane_index_artifact = artifact(
+        "agentplane-index", agentplane_index_workers.OUTPUT_DIR, agentplane_index_workers.PINS_DIR
+    )
+    agentplane_index_workers.agentplane_index(
         flux_chart,
         write_directory(
             root,
             agentplane_index_artifact,
             agentplane_index_workers.chart,
-            components=["./image-pins"],
+            components=[posixpath.relpath(agentplane_index_workers.PINS_DIR, agentplane_index_workers.OUTPUT_DIR)],
             config_map_generator=[agentplane_index_workers.CONFIG_MAP],
         ),
         cnpg_kustomization,
@@ -1150,6 +1167,20 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kubevirt_kustomization,
     )
+    claude_session_sync_artifact = artifact(
+        "claude-session-sync", claude_session_sync_app.OUTPUT_DIR, claude_session_sync_app.PINS_DIR
+    )
+    claude_session_sync_app.claude_session_sync(
+        flux_chart,
+        write_directory(
+            root,
+            claude_session_sync_artifact,
+            claude_session_sync_app.chart,
+            components=[posixpath.relpath(claude_session_sync_app.PINS_DIR, claude_session_sync_app.OUTPUT_DIR)],
+        ),
+        cnpg_kustomization,
+        external_secrets_operator_kustomization,
+    )
     flux_image_automation_forgejo_artifact = artifact(
         "flux-image-automation-forgejo", forgejo_image_automation.OUTPUT_DIR
     )
@@ -1166,14 +1197,14 @@ def generate_manifests(root: Path) -> None:
         cert_manager_kustomization,
         monitoring_crds_kustomization,
     )
-    github_exporter_artifact = artifact("github-exporter", github_exporter_app.OUTPUT_DIR)
+    github_exporter_artifact = artifact("github-exporter", github_exporter_app.OUTPUT_DIR, github_exporter_app.PINS_DIR)
     github_exporter_app.github_exporter(
         flux_chart,
         write_directory(
             root,
             github_exporter_artifact,
             github_exporter_app.chart,
-            components=["./image-pins"],
+            components=[posixpath.relpath(github_exporter_app.PINS_DIR, github_exporter_app.OUTPUT_DIR)],
             config_map_generator=grafana_dashboards.config_map_generator(
                 root, github_exporter_app.OUTPUT_DIR, [github_exporter_app.DASHBOARD]
             ),
@@ -1540,6 +1571,7 @@ def generate_manifests(root: Path) -> None:
             atuin_artifact,
             atuin_user_provisioner_artifact,
             authentik_db_backups_artifact,
+            claude_session_sync_artifact,
             cli_proxy_api_artifact,
             clickhouse_operator_artifact,
             clickhouse_schema_artifact,

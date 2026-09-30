@@ -245,6 +245,10 @@ usually the code the selector should now match:
 [no_match] app.js::widgets/widget as `Widget` (source_matches[].bindings[`Widget`]): did not match any top-level declaration; nearest unclaimed: body[0] declaring `a` (score 70): selector class pinned member `shut` was not found in the candidate class body in order; body[1] declaring `b` (score 70): selector class pinned member `open` was not found in the candidate class body in order -- selector: class Widget { open() { STMT_LIST; } shut() { STMT_LIST; } }
 ```
 
+A `no_match` with a `reason` instead matched places, but it and the selectors
+interacting with it admit no joint assignment, and the record does not name
+which of them contradict.
+
 `validate` also lists, under `templates`, what each free identifier of every
 matched template (member, `source_matches[]` entry or anonymous statement)
 means (<../SPEC.md> § Matching): a `reference` with its `entity`, a `global`,

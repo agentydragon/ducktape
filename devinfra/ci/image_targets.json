@@ -190,6 +190,11 @@
       "target": "//cpap:image",
       "registry": "forgejo"
     },
+    "claude-session-sync": {
+      "target": "//devinfra/claude/session_export:image",
+      "test": "//devinfra/claude/session_export/...",
+      "registry": "forgejo"
+    },
     "agentplane-app": {
       "target": "//agentplane/app:image",
       "test": "//agentplane/app/...",

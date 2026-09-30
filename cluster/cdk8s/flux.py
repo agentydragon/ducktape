@@ -261,6 +261,28 @@ class ConfigMapArgs(BaseModel):
     literals: list[str] | None = Field(default=None, description="`KEY=value` entries, split at the first `=`.")
 
 
+class PatchFile(BaseModel):
+    """A `patches` entry naming a strategic-merge patch file beside the `kustomization.yaml`;
+    each object in it names the object it patches."""
+
+    path: str
+
+
+class PatchTarget(BaseModel):
+    """A `patches` entry's `target` (kustomize's `Selector`)."""
+
+    kind: str
+    name: str
+    namespace: str
+
+
+class Json6902Patch(BaseModel):
+    """A `patches` entry holding a JSON6902 patch (RFC 6902 operations, as YAML) of `target`."""
+
+    patch: str
+    target: PatchTarget
+
+
 class _KustomizeKustomization(BaseModel):
     """The plain (non-CRD) `kustomize.config.k8s.io/v1beta1` `Kustomization`."""
 
@@ -277,6 +299,7 @@ class _KustomizeKustomization(BaseModel):
     configurations: list[str] | None = Field(
         default=None, description="Transformer configuration files, relative to the directory."
     )
+    patches: list[PatchFile | Json6902Patch] | None = None
 
 
 def kustomize_kustomization(
@@ -286,6 +309,7 @@ def kustomize_kustomization(
     components: Sequence[str] = (),
     config_map_generator: Sequence[ConfigMapArgs] = (),
     configurations: Sequence[str] = (),
+    patches: Sequence[PatchFile | Json6902Patch] = (),
 ) -> dict[str, object]:
     """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
 
@@ -300,5 +324,6 @@ def kustomize_kustomization(
         components=list(components) if components else None,
         config_map_generator=list(config_map_generator) if config_map_generator else None,
         configurations=list(configurations) if configurations else None,
+        patches=list(patches) if patches else None,
     )
     return manifest.model_dump(by_alias=True, exclude_none=True)

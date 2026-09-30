@@ -49,6 +49,33 @@ there).
 
 `last_event_at > synced_last_event_at` is the lag of one session.
 
+## Live following
+
+`serve` adds two push streams between the cycles ([live.py](../live.py)); `sync` only polls. The cycle stays the
+source of truth and the streams only shorten the delay.
+
+- **Event streams.** A session that is not archived and had an event within `LIVE_WINDOW_SECONDS` gets an open
+  `events/stream` from its stored position, up to `LIVE_STREAMS` sessions, newest first. The first connection
+  starts with a page catch-up so the position is exact; each pushed event is stored as it arrives, and a closed or
+  silent stream is reopened from the stored position.
+- **Session watch.** One `sessions/watch` stream names sessions as they appear or change. Each change is upserted,
+  and the set of followed sessions is re-derived, so a session is followed from its first event. Its resume token
+  comes from a one-item list; a watch the server no longer holds asks the supervisor for a cycle, since changes
+  in the gap are only in a list.
+
+Rules that keep the mirror exact:
+
+- An event is stored only when its `sequence_num` is at most one past the stored position. A frame beyond that, a
+  `catch_up_truncated` frame or a 410 sends the session back to paging from its stored position before its stream is
+  reopened: `resume_after` reads the newest stored number, so an event stored past a gap would never be fetched.
+- A frame at or below the position is stored again, which refreshes the worker stamps as a page read does.
+- Streams do not move `synced_last_event_at`. A session they touched is behind until the next cycle reads it, which
+  finds nothing new and marks it level.
+- A failing stream retries with jittered backoff from 1 s to 5 min and never ends the cycle; a follower that stops
+  altogether is reported on the page. `LIVE_STREAMS=0` turns following off.
+
+The wire contract of both streams is in [api.md](api.md) § Event stream and session watch.
+
 ## `payload` is `jsonb`; `json` is the open alternative
 
 `jsonb` rejects U+0000, so the sync rewrites each NUL character to U+2400 (`␀`) and logs the count: 151 of the 5.2 M

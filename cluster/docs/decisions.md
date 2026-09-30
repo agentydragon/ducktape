@@ -327,7 +327,7 @@ See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
   refresh worker, and never puts the upstream OAuth session in git. The `*-chatgpt`
   model names survived the swap: LiteLLM served them over CLIProxyAPI's native
   `/v1/responses` (`openai/` passthrough, not a bridge), so the baked configs pinning
-  those names (<../k8s/agents/agent-sandbox/workspace-image/codex-config.toml>,
+  those names (<../images/agent-workspace/codex-config.toml>,
   <../../x/codex_pod_image/home.nix>, `oai_lane_models` in
   <../../tf/gitops/litellm-keys/main.tf>) needed no rebuild, and the `codex-*` entries
   stayed on `anthropic/` → `/v1/messages` for Claude Code. [#4823] later renamed the

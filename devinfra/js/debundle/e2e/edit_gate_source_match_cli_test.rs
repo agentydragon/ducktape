@@ -323,6 +323,33 @@ fn gate_rejects_source_match_that_matches_two_declarations() {
 }
 
 #[test]
+fn gate_rejects_source_matches_that_claim_the_same_declaration() {
+    // Both templates match only `const alpha = 1`, so the entries cannot take
+    // a place each.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let (modules, graph) = write_custom_fixture(
+        root,
+        &graph_with_atomic_unit_and_sources(),
+        "const alpha = 1;\nconst beta = 2;\nconst gamma = 3;\n",
+        r#"source_matches:
+  - match: 'const x = 1;'
+    bindings:
+      - local: x
+        name: X
+  - match: 'const y = 1;'
+    bindings:
+      - local: y
+        name: Y
+"#,
+    );
+
+    let out = run_unassign(root, &modules, &graph, "gamma");
+
+    assert_gate_error(&out, "admit no joint assignment");
+}
+
+#[test]
 fn gate_rejects_source_match_resolving_to_an_import_specifier() {
     // An import specifier declares no chunk-top owner, so a claim on one
     // names nothing the gate (or `run`) can place.

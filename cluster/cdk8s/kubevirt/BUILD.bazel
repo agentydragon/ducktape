@@ -7,6 +7,7 @@ py_library(
     srcs = ["app.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":operators",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
@@ -31,13 +32,13 @@ py_library(
 )
 
 py_library(
-    name = "flux_kustomizations",
-    srcs = ["flux_kustomizations.py"],
+    name = "operators",
+    srcs = ["operators.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
     ],
 )
