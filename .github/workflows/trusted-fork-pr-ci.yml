@@ -6,27 +6,66 @@
 # executing PR code.
 name: Trusted fork PR CI
 run-name: >-
-  Trusted PR #${{ github.event.pull_request.number }} @
-  ${{ github.event.pull_request.head.sha }}
+  ${{ github.event_name == 'pull_request_target' &&
+      format('Trusted PR #{0} @ {1}', github.event.pull_request.number, github.event.pull_request.head.sha) ||
+      format('PR mergeability refresh on {0}', github.ref_name) }}
 
 on:
   pull_request_target:
     branches: [devel]
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+  push:
+    branches: [devel]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: trusted-fork-pr-ci-${{ github.event.pull_request.number }}
+  group: trusted-fork-pr-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  mergeability:
+    name: PR mergeability
+    if: github.event_name == 'push' || github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: write
+    outputs:
+      mergeable: ${{ steps.inspect.outputs.mergeable }}
+    steps:
+      # pull_request_target runs trusted base-branch code. This job reads PR metadata
+      # and publishes a check on the PR head; it never checks out PR-controlled code.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          fetch-depth: 1
+      - name: Inspect current PR mergeability
+        id: inspect
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          BASE_BRANCH: devel
+        run: python3 devinfra/ci/pr_mergeability.py
+
   bazel-ci:
+    needs: [mergeability]
     if: >-
+      always() &&
+      github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name != github.repository &&
-      !github.event.pull_request.draft
+      !github.event.pull_request.draft &&
+      needs.mergeability.outputs.mergeable == 'true'
     uses: ./.github/workflows/bazel-ci.yml
+    permissions:
+      contents: read
+      pull-requests: read
     with:
       # PRs authored by the agent identity or repository owner already own the only
       # injected capability. All other authors wait for a fork-ci-review review.
@@ -50,10 +89,17 @@ jobs:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
   nix-wheel-check:
+    needs: [mergeability]
     if: >-
+      always() &&
+      github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name != github.repository &&
-      !github.event.pull_request.draft
+      !github.event.pull_request.draft &&
+      needs.mergeability.outputs.mergeable == 'true'
     uses: ./.github/workflows/nix-wheel-check.yml
+    permissions:
+      contents: read
+      pull-requests: read
     with:
       environment: >-
         ${{
