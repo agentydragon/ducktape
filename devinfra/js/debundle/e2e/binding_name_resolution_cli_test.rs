@@ -20,7 +20,7 @@ use analysis::{
 };
 use debundle_e2e_support::write_text_file;
 use peel::{
-    CommonArgs, ExplainArgs, SelectionArgs, SourceSliceArgs, resolve_binding_owners,
+    CommonArgs, ExplainArgs, SelectionKind, SourceSliceArgs, resolve_binding_owners,
     run_explain_report, run_source_slice_report,
 };
 use report_fixtures::{module_entry, module_ref};
@@ -148,20 +148,11 @@ fn renamed_fixture() -> (TempDir, CommonArgs) {
 fn explain_with_binding(common: CommonArgs, sym: &str) -> peel::ExplainReport {
     run_explain_report(&ExplainArgs {
         common,
-        selection: SelectionArgs {
-            owner_id: None,
-            module_path: None,
-            module_id: None,
-            binding_id: Some(sym.to_string()),
-            proposal_id: None,
-            unit_id: None,
-            diagnostic_id: None,
-        },
+        selection: SelectionKind::Binding(sym.to_string()),
         size_cap_lines: 10_000,
         source_root: None,
         limit: 0,
         include_proposals: false,
-        format: None,
     })
     .expect("explain report")
 }
@@ -173,19 +164,10 @@ fn show_source_with_binding(
 ) -> peel::SourceSliceReport {
     run_source_slice_report(&SourceSliceArgs {
         common,
-        selection: SelectionArgs {
-            owner_id: None,
-            module_path: None,
-            module_id: None,
-            binding_id: Some(sym.to_string()),
-            proposal_id: None,
-            unit_id: None,
-            diagnostic_id: None,
-        },
+        selection: SelectionKind::Binding(sym.to_string()),
         size_cap_lines: 10_000,
         context_lines: 1,
         source_root: Some(source_root.to_path_buf()),
-        format: None,
     })
     .expect("source slice report")
 }

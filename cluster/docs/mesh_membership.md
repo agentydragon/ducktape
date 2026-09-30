@@ -16,7 +16,7 @@ The mesh host roster is a single JSON file at the repo root,
 - `cluster/terraform/main/persistent-auth.tf` — reads persisted per-host Nebula
   certificate material for every tofu-managed entry
 - `cluster/cdk8s/generate_manifests.py` — renders the etcd metrics scrape
-  targets (`cluster/generated/platform-monitoring/etcd-monitoring.k8s.yaml`, every
+  targets (`cluster/generated/platform-monitoring/platform-monitoring.k8s.yaml`, every
   control plane's Nebula IP) and the dns-records Terraform CR's `public_nodes` var
   (every public k8s node, for the Route 53 records); regenerate after any roster
   edit, CI fails on drift

@@ -454,9 +454,8 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart)
     # The OAuth OIDC credentials are provisioned by tf/gitops/sso-providers/ as a k8s Secret.
     write_yaml(
         root / _OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{_NAME}.k8s.yaml", "forgejo-admin-password.sops.yaml"]),
+        kustomize_kustomization(resources=[write_charts(root, _OUTPUT_DIR, chart), "forgejo-admin-password.sops.yaml"]),
     )

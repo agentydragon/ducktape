@@ -29,10 +29,10 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use peel::OutputFormat;
 use spec::LogicalModule;
+use yaml_edit::write_yaml_body_if_semantic_changed;
 
 use crate::edit_gate::{Gate, post_delete_spec, post_merge_spec};
 use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
-use crate::yaml_edit::write_yaml_body_if_semantic_changed;
 
 #[derive(Debug, ClapArgs)]
 pub struct MergeArgs {

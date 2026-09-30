@@ -393,7 +393,7 @@ transactionally if unexpected preexisting rows exist.
 ## Action policy sets and bindings
 
 `policies/resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
-`cluster/k8s/agentplane-crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
+`agentplane/crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
 a subject that is not a namespaced ServiceAccount makes the object an `InvalidResource`. `policy_informer` list-and-watches both kinds and the labeled caller
 ServiceAccounts in every `allowed_service_account_namespaces` entry into one `PolicyIndex`, and
 writes each set's and binding's `Ready` condition with `observedGeneration`, so `kubectl get`
@@ -460,7 +460,7 @@ Kubernetes ServiceAccount lists are the final operator design.
 Migrations run separately through `:migrate`; the server verifies the migrated schema and never
 creates tables at startup. `:image` and `:migration_image` are separate OCI targets. Each deployed
 environment gives the service its own `actions` database and login role on the namespace's shared
-CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane.k8s.yaml`),
+CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
 
 ## MCP executor transports

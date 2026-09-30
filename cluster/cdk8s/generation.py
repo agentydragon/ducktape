@@ -6,7 +6,7 @@ import posixpath
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path, PurePosixPath
 
-from cdk8s import ApiObjectMetadata, App, Chart, Names, Yaml
+from cdk8s import ApiObjectMetadata, App, Chart, Yaml
 from cdk8s_plus_34 import ConfigMap
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDecryption
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -15,6 +15,9 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     ConfigMapArgs,
+    GeneratorOptions,
+    Json6902Patch,
+    PatchFile,
     RenderedDirectory,
     artifact_directories,
     kustomize_kustomization,
@@ -27,6 +30,7 @@ CNPG_DATABASE_READY = (
     "has(status.applied) && status.applied && "
     "has(status.observedGeneration) && status.observedGeneration == metadata.generation"
 )
+_PATCH_FILE = "patches.k8s.yaml"
 
 
 _GENERATED_README = """\
@@ -65,16 +69,36 @@ def config_map_chart(app: App, *, chart_name: str, configmap_name: str, namespac
     return chart
 
 
-def write_charts(root: Path, app_dir: str, *chart_builders: Callable[[App], Chart]) -> list[str]:
-    """Synthesize charts into one Kustomization directory; return the files written, in chart order."""
-    out_dir = root / app_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
+def manifest_file(directory: str) -> str:
+    """The one generated resource file of `directory`, named after the directory itself."""
+    return f"{PurePosixPath(directory).name}.k8s.yaml"
+
+
+def _write_app(path: Path, app: App) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # `App.synth` would write one file per chart; `synth_yaml` runs the same validation.
+    path.write_text(app.synth_yaml())
+
+
+def _app(chart_builders: Sequence[Callable[[App], Chart]]) -> App:
+    app = App()
     for build in chart_builders:
         build(app)
-    app.synth()
-    # `App.synth`'s file name for a chart while no chart depends on another (cdk8s `SimpleChartNamer`).
-    return [Names.to_dns_label(chart) + app.output_file_extension for chart in app.charts]
+    return app
+
+
+def write_app(root: Path, directory: str, app: App) -> str:
+    """Write every chart of `app`, in chart order, into `directory`'s one generated file,
+    `manifest_file(directory)`; return that name. Every generated resource of a directory is
+    in that file, so each directory's writer builds all its charts into one app."""
+    name = manifest_file(directory)
+    _write_app(root / directory / name, app)
+    return name
+
+
+def write_charts(root: Path, directory: str, *chart_builders: Callable[[App], Chart]) -> str:
+    """Synthesize charts, in order, into `directory`'s one generated file (`write_app`); return its name."""
+    return write_app(root, directory, _app(chart_builders))
 
 
 def write_directory(
@@ -82,15 +106,22 @@ def write_directory(
     artifact: ArtifactGeneratorSpecArtifacts,
     *chart_builders: Callable[[App], Chart],
     siblings: Sequence[str] = (),
+    remote_resources: Sequence[str] = (),
     namespace: str | None = None,
     components: Sequence[str] = (),
+    generator_options: GeneratorOptions | None = None,
     config_map_generator: Sequence[ConfigMapArgs] = (),
     configurations: Sequence[str] = (),
+    patch_charts: Sequence[Callable[[App], Chart]] = (),
+    json6902_patches: Sequence[Json6902Patch] = (),
 ) -> RenderedDirectory:
-    """Synthesize a component's charts into the directory `artifact` packages, and write its
-    `kustomization.yaml` listing them, then `siblings`: the hand-written files beside them.
-    `namespace`, `components`, `config_map_generator` and `configurations` are
-    `kustomize_kustomization`'s.
+    """Synthesize a component's charts into the one generated file of the directory `artifact`
+    packages (`write_charts`), and write its `kustomization.yaml` listing it, then `siblings`:
+    the directory's other files, then `remote_resources`: URLs kustomize fetches at build time,
+    such as an upstream release manifest. `patch_charts` are synthesized into
+    `patches.k8s.yaml` beside it and listed as strategic-merge patches, before
+    `json6902_patches`. `namespace`, `components`, `generator_options`, `config_map_generator`
+    and `configurations` are `kustomize_kustomization`'s.
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
@@ -105,15 +136,23 @@ def write_directory(
     included = {posixpath.normpath(posixpath.join(directory, component)) for component in components}
     if shared := [base for base in copied if base not in included]:
         raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies {shared=}")
-    resources = [*write_charts(root, directory, *chart_builders), *siblings]
+    out_dir = root / directory
+    out_dir.mkdir(parents=True, exist_ok=True)
+    resources = [write_charts(root, directory, *chart_builders)] if chart_builders else []
+    patch_files: list[PatchFile] = []
+    if patch_charts:
+        _write_app(out_dir / _PATCH_FILE, _app(patch_charts))
+        patch_files.append(PatchFile(path=_PATCH_FILE))
     write_yaml(
-        root / directory / "kustomization.yaml",
+        out_dir / "kustomization.yaml",
         kustomize_kustomization(
-            resources=resources,
+            resources=[*resources, *siblings, *remote_resources],
             namespace=namespace,
             components=components,
+            generator_options=generator_options,
             config_map_generator=config_map_generator,
             configurations=configurations,
+            patches=[*patch_files, *json6902_patches],
         ),
     )
     return RenderedDirectory(artifact=artifact, decryption=sops_decryption(siblings))
@@ -126,29 +165,19 @@ def sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | N
     return SOPS_DECRYPTION
 
 
-def write_namespace(
-    root: Path,
-    directory: str,
+def namespace_chart(
+    app: App,
     *,
     name: str,
     vpa: Vpa,
     agent_readable: AgentReadable | None,
     labels: Mapping[str, str] | None = None,
     annotations: Mapping[str, str] | None = None,
-) -> None:
-    """Write only `namespace.k8s.yaml`, `namespaces.namespace`'s Namespace, into `directory`; its
-    `kustomization.yaml`, hand-written or generated elsewhere, lists it, so the Namespace stays
-    owned by that directory's Kustomization."""
-    out_dir = root / directory
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
+) -> Chart:
+    """A chart holding only `namespaces.namespace`'s Namespace, for the writer of the directory
+    whose Kustomization owns it."""
+    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
     namespaces.namespace(
-        Chart(app, "namespace", disable_resource_name_hashes=True),
-        "namespace",
-        name=name,
-        vpa=vpa,
-        agent_readable=agent_readable,
-        labels=labels,
-        annotations=annotations,
+        chart, "namespace", name=name, vpa=vpa, agent_readable=agent_readable, labels=labels, annotations=annotations
     )
-    app.synth()
+    return chart

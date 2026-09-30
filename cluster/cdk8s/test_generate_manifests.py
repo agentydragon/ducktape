@@ -3,8 +3,8 @@
 The generated-output snapshot (STYLE.md § Testing) over every file the generator writes:
 the committed files are the source of truth, and regeneration must reproduce them exactly.
 `GENERATED_ROOT` is closed in the other direction too, so a hand-added or stale file there
-fails; generated files beside hand-written ones under `HAND_WRITTEN_ROOT` are pinned only
-one way.
+fails; generated files beside hand-written ones under `HAND_WRITTEN_ROOT` or `PARKED_ROOT`
+are pinned only one way.
 """
 
 from pathlib import Path

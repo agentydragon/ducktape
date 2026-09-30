@@ -1073,8 +1073,6 @@ impl SelectorFactStore {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SolverResult {
     pub claims: Vec<SolverClaim>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub global_diagnostic: Option<SolverGlobalDiagnostic>,
 }
 
 impl SolverResult {
@@ -1084,13 +1082,6 @@ impl SolverResult {
             .find(|claim| claim.target == target)
             .map(|claim| &claim.outcome)
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct SolverGlobalDiagnostic {
-    pub category: String,
-    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1115,11 +1106,10 @@ pub enum ClaimOutcome {
         owner: OwnerId,
         conflicting_targets: Vec<SelectorTargetId>,
     },
-    /// The target is in an unsatisfiable core: it cannot resolve together
-    /// with `with`, the other targets of that core. The core need not be
-    /// minimal.
-    Conflict {
-        with: Vec<SelectorTargetId>,
+    /// The targets solved together with this one admit no joint assignment;
+    /// which of them are at fault is not determined.
+    Unsatisfiable {
+        reason: String,
     },
     /// The backend stopped (a time limit, or UNKNOWN) before proving the
     /// target's value unique or listing its alternatives.
@@ -1476,7 +1466,6 @@ mod tests {
                     },
                 },
             }],
-            global_diagnostic: None,
         };
         let json = serde_json::to_string(&result).unwrap();
         let decoded: SolverResult = serde_json::from_str(&json).unwrap();

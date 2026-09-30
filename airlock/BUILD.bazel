@@ -44,6 +44,7 @@ py_library(
     visibility = ["//airlock:__subpackages__"],
     deps = [
         ":config",
+        "//util:oidc_login",
         "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//httpx",
@@ -76,6 +77,7 @@ py_library(
         "//airlock/oauth:provider",
         "//airlock/oauth:refresh",
         "//airlock/oauth:routes",
+        "//util:oidc_login",
         "@pypi//fastapi",
         "@pypi//itsdangerous",
         "@pypi//starlette",

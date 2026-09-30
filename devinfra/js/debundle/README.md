@@ -78,8 +78,8 @@ see `docs/cli.md`.)
 
 ## Bazel integration and profiling
 
-`pipeline.bzl`'s `debundle_pipeline` runs `debundle run` as a build action and
-generates local profiling siblings: <docs/bazel_integration.md>.
+`pipeline.bzl`'s `debundle_pipeline` runs `debundle run` as a build action;
+profile with `perf_wrapper.sh`: <docs/bazel_integration.md>.
 
 ## Comments
 
@@ -102,7 +102,10 @@ YAML schema, worked CLI examples, and the comment/`note:` move semantics.
 A module-top `comment:` emits at the top of the generated module file,
 an annotation `comment:` immediately above the binding's owner statement, and
 an anonymous-statement `comment:` immediately above the matched statement; an
-empty `comment:` emits nothing.
+empty `comment:` emits nothing. Claimed declarators of one `var`/`let`/`const`
+list are emitted as one statement each, so each comment sits above its own
+declarator; bindings of a single destructuring declarator share its statement,
+and their comments stack above it in pattern order.
 
 `comment:` text is part of debundle's readability surface — the point of
 the tool is to turn minified chunks into legible code, so use comments to

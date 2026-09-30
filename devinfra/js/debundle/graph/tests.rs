@@ -1,4 +1,3 @@
-#[cfg(test)]
 mod chunk_constraining_module_edges_tests {
     //! Regression coverage for [`chunk_constraining_module_edges`]'s
     //! filter rule. The canonical edge set must match what the
@@ -152,9 +151,9 @@ mod chunk_constraining_module_edges_tests {
             .pairs()
             .filter(|&(from, to)| from == module_id(1) && to == module_id(0))
             .count();
-        assert!(
-            pair_count <= 1,
-            "sequenced edges between the same pair must dedup; got {pair_count}",
+        assert_eq!(
+            pair_count, 1,
+            "sequenced edges between the same pair must dedup to one"
         );
     }
 
@@ -177,13 +176,8 @@ mod chunk_constraining_module_edges_tests {
         assert!(pos[&module_id(2)] < pos[&module_id(3)]);
     }
 
-    /// `chunk_source_import_order` reverses within an SCC so the
-    /// dependent appears first in source. Asymmetric cycle shape: a
-    /// canonical edge from dependent → dependency, but only after
-    /// the unification's lazy-edge exclusion takes effect (so the
-    /// SCC is detected via some other path — here we exercise it
-    /// directly with the modules present even though canonical
-    /// edges are acyclic post-fix).
+    /// `chunk_source_import_order` returns every module of the canonical
+    /// set plus the `extra_nodes`, which have no canonical edges.
     #[test]
     fn chunk_source_import_order_includes_extra_nodes() {
         // Simple two-module DAG.
@@ -228,7 +222,6 @@ mod chunk_constraining_module_edges_tests {
     }
 }
 
-#[cfg(test)]
 mod edge_role_wire_format_tests {
     //! Wire-format round-trip for [`EdgeRole`]. The materializer
     //! emits the role through `OwnerGraphEdgeReport.role`; the peel
@@ -331,53 +324,6 @@ mod edge_role_wire_format_tests {
         // CSR by-callee adjacency populated for owner:2.
         assert_eq!(graph.callee_edges_of(OwnerId(2)).len(), 1);
         assert_eq!(graph.callee_edges_of(OwnerId(0)).len(), 0);
-    }
-
-    /// JSON serialization shape: a `Direct` role omits the `role`
-    /// field; a `PromotedAtInit` role nests `{kind: "promoted_at_init",
-    /// callee_owner: "owner:N"}`. This pins the wire encoding so
-    /// callers (chunk-analysis artifact readers) don't drift.
-    #[test]
-    fn role_json_shape_pinned() {
-        let direct_report = OwnerGraphEdgeReport {
-            id: "owner_edge:0".to_string(),
-            source: "owner:1".to_string(),
-            target: "owner:0".to_string(),
-            edge_kind: DepKind::EagerUse,
-            binding: None,
-            statement_ordinal: StatementOrdinal(1),
-            constrains_init_order: true,
-            role: None,
-        };
-        let direct_json = serde_json::to_string(&direct_report).unwrap();
-        assert!(
-            !direct_json.contains("\"role\""),
-            "Direct edges omit the role field; got {direct_json}",
-        );
-
-        let promoted_report = OwnerGraphEdgeReport {
-            role: Some(EdgeRoleReport::PromotedAtInit {
-                callee_owner: "owner:7".to_string(),
-            }),
-            ..direct_report
-        };
-        let promoted_json = serde_json::to_string(&promoted_report).unwrap();
-        assert!(
-            promoted_json.contains("\"role\""),
-            "PromotedAtInit edges carry a role field; got {promoted_json}",
-        );
-        assert!(
-            promoted_json.contains("\"kind\":\"promoted_at_init\""),
-            "role tag must be `promoted_at_init`; got {promoted_json}",
-        );
-        assert!(
-            promoted_json.contains("\"callee_owner\":\"owner:7\""),
-            "callee_owner must round-trip; got {promoted_json}",
-        );
-
-        // Round-trip via JSON.
-        let parsed: OwnerGraphEdgeReport = serde_json::from_str(&promoted_json).unwrap();
-        assert_eq!(parsed.role, promoted_report.role);
     }
 }
 

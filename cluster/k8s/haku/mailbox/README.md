@@ -14,10 +14,10 @@ admission. The init container retries through normal Pod reconciliation.
 
 Ownership changes follow the [stateful Flux migration guidance](../../../AGENTS.md#migrating-stateful-flux-kustomizations).
 
-| Path                    | Role                                                                                                                                                                    |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `haku-mailbox.k8s.yaml` | Generated (`cluster/cdk8s/haku/mailbox.py`): CNPG Postgres store, Stalwart Deployment (plan + init reconciliation and production server), SMTP ingress, Services, route |
-| `image/`                | Bazel repack of upstream Stalwart with `stalwart-cli` layered in (`git.allegedly.works/ducktape-ci/stalwart`)                                                           |
+| Path               | Role                                                                                                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mailbox.k8s.yaml` | Generated (`cluster/cdk8s/haku/mailbox.py`): CNPG Postgres store, Stalwart Deployment (plan + init reconciliation and production server), SMTP ingress, Services, route |
+| `image/`           | Bazel repack of upstream Stalwart with `stalwart-cli` layered in (`git.allegedly.works/ducktape-ci/stalwart`)                                                           |
 
 ## Configuration model
 

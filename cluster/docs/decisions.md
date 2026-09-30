@@ -327,7 +327,7 @@ See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
   refresh worker, and never puts the upstream OAuth session in git. The `*-chatgpt`
   model names survived the swap: LiteLLM served them over CLIProxyAPI's native
   `/v1/responses` (`openai/` passthrough, not a bridge), so the baked configs pinning
-  those names (<../k8s/agents/agent-sandbox/workspace-image/codex-config.toml>,
+  those names (<../images/agent-workspace/codex-config.toml>,
   <../../x/codex_pod_image/home.nix>, `oai_lane_models` in
   <../../tf/gitops/litellm-keys/main.tf>) needed no rebuild, and the `codex-*` entries
   stayed on `anthropic/` → `/v1/messages` for Claude Code. [#4823] later renamed the
@@ -343,11 +343,11 @@ See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
 These applications remain in Git for possible revival, but are not actively reconciled.
 Their Flux Kustomizations are either retained as suspended declarations with the
 `ducktape.org/parked` annotation or removed from the active root bundle, as noted below.
-Non-ducktape-owned manifests stay under `cluster/k8s/parked/<name>/`; ducktape-owned
+Non-ducktape-owned manifests stay under `cluster/parked/<name>/`; ducktape-owned
 manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
 (non-ducktape-owned) application manifests").
 
-- **postscanmail-mcp**: `cluster/k8s/parked/postscanmail-mcp/` — decommissioned; its
+- **postscanmail-mcp**: `cluster/parked/postscanmail-mcp/` — decommissioned; its
   ducktape-owned source (`x/postscanmail_mcp_server/`) stays live and unparked, only
   the k8s manifests moved. Its Flux Kustomization is removed from the active bundle;
   the manifests remain for manual revival. Its Authentik OAuth Terraform resources
@@ -355,10 +355,10 @@ manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
   Keep the active Authentik `state: absent` blueprint until tofu has reconciled the
   Terraform deletion and a later Authentik blueprint reconciliation confirms the
   application and provider are absent; remove that tombstone in a follow-up PR.
-- **kubectl-machine-mcp**: `cluster/k8s/parked/kubectl-machine-mcp/` — decommissioned
+- **kubectl-machine-mcp**: `cluster/parked/kubectl-machine-mcp/` — decommissioned
   with the managed-agent consumers that used it. Its Flux Kustomization is removed
   from the active bundle; manifests remain for manual revival.
-- **Haku cloud agent**: `cluster/k8s/parked/cloud-agent-tf/` — Anthropic-hosted Managed
+- **Haku cloud agent**: `cluster/parked/cloud-agent-tf/` — Anthropic-hosted Managed
   Agent; already effectively dead (the cloud objects were deleted at Anthropic), now
   formally parked. HCL root (`tf/gitops/haku-cloud-agent/`) and design docs
   (`haku/runtime/managed_agent/anthropic_hosted/`) are ducktape-owned and untouched.
@@ -372,72 +372,72 @@ manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
   second consumer (`haku-ci`'s KEDA scaler via Reflector) unrelated to the worker
   itself, so it was split into its own small active Kustomization at
   `cluster/k8s/haku/forgejo-tea/` rather than parked with the rest.
-- **Paperless**: `cluster/k8s/parked/paperless/` — decommissioned; third-party
+- **Paperless**: `cluster/parked/paperless/` — decommissioned; third-party
   (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source.
-- **Firecrawl**: `cluster/k8s/parked/firecrawl/` — its namespace, database, and app
+- **Firecrawl**: `cluster/parked/firecrawl/` — its namespace, database, and app
   declarations remain in Git.
-- **OpenHands**: `cluster/k8s/parked/openhands/` — experimental and not currently used;
+- **OpenHands**: `cluster/parked/openhands/` — experimental and not currently used;
   its namespace, secrets, sandbox, and app declarations remain in Git.
-- **Tandoor**: `cluster/k8s/parked/tandoor/` — replaced by Grocy; its three Flux
+- **Tandoor**: `cluster/parked/tandoor/` — replaced by Grocy; its three Flux
   Kustomizations are removed from the active bundle. Namespace, database, and app
   manifests remain in Git for possible manual revival.
-- **Browsertrix**: `cluster/k8s/parked/browsertrix/` — decommissioned; its revival
+- **Browsertrix**: `cluster/parked/browsertrix/` — decommissioned; its revival
   package remains in Git.
-- **ArchiveBox**: `cluster/k8s/parked/archivebox/` — decommissioned; its revival
+- **ArchiveBox**: `cluster/parked/archivebox/` — decommissioned; its revival
   package remains in Git.
-- **Google Workspace MCP**: `cluster/k8s/parked/google-workspace-mcp/` — decommissioned;
+- **Google Workspace MCP**: `cluster/parked/google-workspace-mcp/` — decommissioned;
   its revival package remains in Git.
-- **egress-proxy-rugged**: `cluster/k8s/parked/egress-proxy-rugged/` — decommissioned;
+- **egress-proxy-rugged**: `cluster/parked/egress-proxy-rugged/` — decommissioned;
   its configuration remains in Git.
-- **InvenTree**: `cluster/k8s/parked/inventree/` — decommissioned; its four Flux
+- **InvenTree**: `cluster/parked/inventree/` — decommissioned; its four Flux
   Kustomizations are removed from the active bundle, and the revival package remains in Git.
-- **Authelia**: `cluster/k8s/parked/authelia/` — decommissioned SSO alternative
+- **Authelia**: `cluster/parked/authelia/` — decommissioned SSO alternative
   experiment; its Flux Kustomization is removed from the active bundle and manifests
   remain for manual revival. Authentik is the active SSO provider.
-- **agent-box**: `cluster/k8s/parked/agent-box/` — inactive while the unschedulable
+- **agent-box**: `cluster/parked/agent-box/` — inactive while the unschedulable
   legacy VM is retired; the VM and its local disk stay untouched until explicitly
   deleted.
-- **gecko**: `cluster/k8s/parked/gecko/` — same legacy-VM retirement hold as agent-box.
-- **BuildBuddy Executor**: `cluster/k8s/parked/buildbuddy-executor/` — scaled to 0;
+- **gecko**: `cluster/parked/gecko/` — same legacy-VM retirement hold as agent-box.
+- **BuildBuddy Executor**: `cluster/parked/buildbuddy-executor/` — scaled to 0;
   Proxmox-pinned, and atlas/wyrm2 being back (both returned 2026-08) removes that
   blocker — re-enable when needed.
-- **sdr**: `cluster/k8s/parked/sdr/` — suspended pending the radio re-set-up
+- **sdr**: `cluster/parked/sdr/` — suspended pending the radio re-set-up
   post-relocation (not unblocked by atlas/wyrm2 returning).
-- **manifold-mcp**: `cluster/k8s/parked/manifold-mcp/` — decommissioned; third-party npm
+- **manifold-mcp**: `cluster/parked/manifold-mcp/` — decommissioned; third-party npm
   MCP server (`bmorphism/manifold-mcp-server`), ducktape's OCI build wrapper
   (`third_party/manifold_mcp_server/`) stays live and unparked. Its Flux Kustomization
   is removed from the active bundle; manifests remain for manual revival. Its API-key
   Secret had been Reflector-mirrored into an `augur` namespace defined in the separate
   `gaffer-private` repo. That namespace is now absent, so no current in-cluster consumer
   remains; the secret manifest stays parked.
-- **osm-mcp**: `cluster/k8s/parked/osm-mcp/` — decommissioned; its Flux Kustomization
+- **osm-mcp**: `cluster/parked/osm-mcp/` — decommissioned; its Flux Kustomization
   is removed from the active bundle. The third-party Go MCP server
   (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live
   and unparked. Already unwired from haku-console's tool config since 2026-07-19
   (routing-profile bug), so it had no live consumer.
 - **codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:
-  `cluster/k8s/parked/<name>/` — three successive Codex-in-a-pod experiments, previously
+  `cluster/parked/<name>/` — three successive Codex-in-a-pod experiments, previously
   under `cluster/k8s/agents/x/`; none were wired into root or Flux-reconciled (pure
   manual-`kubectl apply` spikes). **codex-pod**: `x/codex_pod_image/deploy/` — its
   manifests now live beside their ducktape-owned Nix image source; it was Flux-wired
   once, but its Flux Kustomization had already been retired. The image source remains
   in place for possible revival, though its flake evaluation currently fails. Its two
-  SOPS Secret manifests remain parked at `cluster/k8s/parked/codex-pod/`; replace
+  SOPS Secret manifests remain parked at `cluster/parked/codex-pod/`; replace
   them with runtime-managed credentials before reactivation.
-- **budget (Fava)**: `cluster/k8s/parked/budget/` — decommissioned read-only Beancount
+- **budget (Fava)**: `cluster/parked/budget/` — decommissioned read-only Beancount
   ledger viewer. Its `budget` namespace remains active at
   `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's
   git credentials (`budget-ledger-git-creds`). The underlying ledger data (a Forgejo git
   repo provisioned by `tf/gitops/budget-ledger/`) is untouched. Its Authentik
   SSO blueprint was tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
   <sso.md> § "Deleting Authentik providers or applications".
-- **augur-evidence**: `cluster/k8s/parked/augur-evidence/` — retired Forgejo evidence
+- **augur-evidence**: `cluster/parked/augur-evidence/` — retired Forgejo evidence
   repository provisioning and Flux package. The repository and credentials are retained;
   the market roster is kept at `finance/scraper/market-roster.yaml` for a future revival.
-- **docker-ci**: `cluster/k8s/parked/docker-ci/` — decommissioned despite backing
+- **docker-ci**: `cluster/parked/docker-ci/` — decommissioned despite backing
   `loom/gym`'s on-demand forecasting-eval Job (`loom/gym/k8s/eval-job.yaml`); parked at
   operator request, accepting that an eval run needs reviving it first.
-- **haku-dispatch**: `cluster/k8s/parked/haku-dispatch/` — only the Flux Kustomization
+- **haku-dispatch**: `cluster/parked/haku-dispatch/` — only the Flux Kustomization
   pointer moved (it was already `spec.suspend: true`); the ducktape-owned manifests it
   deploys (`haku/x/dispatch/deploy/`) stay untouched, per the usual ducktape-owned-code
   exemption below. Operator request: the pointer itself moves under `parked/` and out
@@ -445,11 +445,11 @@ manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
 
 **Wayback cache**: `loom/wayback/deploy/` — decommissioned by operator request, but this
 is ducktape-owned code (`loom/wayback/cache/`), so its parked Flux declaration stays
-colocated with its source rather than moving to `cluster/k8s/parked/`. Same for
+colocated with its source rather than moving to `cluster/parked/`. Same for
 **props**: `props/deploy/` — suspended 2026-08-20 for a temporary teardown, ducktape-owned
 code, not part of this convention.
 
-**Why `cluster/k8s/parked/`, not `archive/` or `x/`.** `archive/` (root README.md
+**Why `cluster/parked/`, not `archive/` or `x/`.** `archive/` (root README.md
 § Conventions) already means something else — curated historical-lesson docs, explicitly
 "not a parking lot." `x/` (same section) is a maturity axis — "experimental, in-flux,
 hasn't stabilized" — not a run-state axis; before this convention, `cluster/k8s/x/` held

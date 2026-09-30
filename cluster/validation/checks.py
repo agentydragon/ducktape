@@ -22,16 +22,8 @@ _FORGEJO_REGISTRY = "git.allegedly.works"
 _FORGEJO_CREDENTIAL_SECRET = "forgejo-images-creds"
 _FORGEJO_IMAGE_WORKLOAD_TYPES = (CronJobResource, PodTemplateWorkloadResource, SandboxTemplateResource)
 # These inputs are intentionally stored without a deploy Kustomization reference:
-# Dreo is retained for future Home Assistant provisioning (see homeassistant/TODO.md);
-# Codex pod credentials stay parked until replaced with runtime-managed secrets
-# (see x/codex_pod_image/deploy/README.md before reactivation).
-_INTENTIONALLY_STORED_ONLY_FILES = frozenset(
-    {
-        Path("cluster/k8s/external-creds/dreo-account.sops.yaml"),
-        Path("cluster/k8s/parked/codex-pod/codex-bootstrap-identity.sops.yaml"),
-        Path("cluster/k8s/parked/codex-pod/forgejo-tea.sops.yaml"),
-    }
-)
+# Dreo is retained for future Home Assistant provisioning (see homeassistant/TODO.md).
+_INTENTIONALLY_STORED_ONLY_FILES = frozenset({Path("cluster/k8s/external-creds/dreo-account.sops.yaml")})
 
 
 def find_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> list[str]:

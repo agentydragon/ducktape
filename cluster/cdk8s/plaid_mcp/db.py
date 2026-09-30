@@ -201,11 +201,10 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
         kustomize_kustomization(
-            resources=[f"{POSTGRES.name}.k8s.yaml"],
+            resources=[write_charts(root, OUTPUT_DIR, chart)],
             config_map_generator=[ConfigMapArgs(name=_SQL_CONFIG_MAP, namespace=NAMESPACE, files=[_SQL_FILE])],
         ),
     )

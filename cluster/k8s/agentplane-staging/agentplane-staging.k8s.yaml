@@ -1,0 +1,5268 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    description: Agentplane staging - sandboxed runner Pods (one per Sandbox) and the integration app that drives them.
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+    name: agentplane-staging
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: agentplane-staging
+spec: {}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: agentplane-staging-quota
+  namespace: agentplane-staging
+spec:
+  hard:
+    limits.cpu: "18"
+    limits.memory: 28Gi
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    requests.storage: 80Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: agentplane-staging-limits
+  namespace: agentplane-staging
+spec:
+  limits:
+    - default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "2"
+        memory: 4Gi
+      min:
+        cpu: 10m
+        memory: 16Mi
+      type: Container
+    - max:
+        cpu: "4"
+        memory: 8Gi
+      type: Pod
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: postgres-actions-generator
+  namespace: agentplane-staging
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-actions
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: postgres-actions-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-actions
+    template:
+      data:
+        dbname: actions
+        host: postgres-rw.agentplane-staging.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://actions:{{ .password }}@postgres-rw.agentplane-staging.svc:5432/actions
+        username: actions
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: postgres-egress-generator
+  namespace: agentplane-staging
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-egress
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: postgres-egress-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-egress
+    template:
+      data:
+        dbname: egress
+        host: postgres-rw.agentplane-staging.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://egress:{{ .password }}@postgres-rw.agentplane-staging.svc:5432/egress
+        username: egress
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: postgres-electric-generator
+  namespace: agentplane-staging
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-electric
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: postgres-electric-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-electric
+    template:
+      data:
+        dbname: app
+        host: postgres-rw.agentplane-staging.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://electric:{{ .password }}@postgres-rw.agentplane-staging.svc:5432/app
+        username: electric
+      type: kubernetes.io/basic-auth
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: agentplane-staging
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  managed:
+    roles:
+      - ensure: present
+        login: true
+        name: actions
+        passwordSecret:
+          name: postgres-actions
+      - ensure: present
+        login: true
+        name: egress
+        passwordSecret:
+          name: postgres-egress
+      - ensure: present
+        login: true
+        name: electric
+        passwordSecret:
+          name: postgres-electric
+        replication: true
+  monitoring:
+    enablePodMonitor: true
+  postgresql:
+    parameters:
+      max_slot_wal_keep_size: 512MB
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 5Gi
+    storageClass: local-path-ovh-ssd
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: actions
+  namespace: agentplane-staging
+spec:
+  cluster:
+    name: postgres
+  databaseReclaimPolicy: delete
+  name: actions
+  owner: actions
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: egress
+  namespace: agentplane-staging
+spec:
+  cluster:
+    name: postgres
+  databaseReclaimPolicy: delete
+  name: egress
+  owner: egress
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-electric
+  name: agentplane-electric
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-electric
+        cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: postgres-electric
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: postgres-electric
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: host
+                  name: postgres-electric
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: port
+                  name: postgres-electric
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  key: dbname
+                  name: postgres-electric
+            - name: DATABASE_URL
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)
+            - name: ELECTRIC_INSECURE
+              value: "true"
+            - name: ELECTRIC_PORT
+              value: "3000"
+            - name: ELECTRIC_STORAGE
+              value: fast_file
+            - name: ELECTRIC_STORAGE_DIR
+              value: /var/lib/electric
+            - name: ELECTRIC_PERSISTENT_STATE
+              value: file
+            - name: ELECTRIC_MANUAL_TABLE_PUBLISHING
+              value: "true"
+            - name: ELECTRIC_REPLICATION_STREAM_ID
+              value: agentplane_conversation
+            - name: ELECTRIC_MAX_SHAPES
+              value: "1024"
+          image: docker.io/electricsql/electric:1.8.1@sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /v1/health
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: electric
+          ports:
+            - containerPort: 3000
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /v1/health
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /var/lib/electric
+              name: storage
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 65534
+        fsGroupChangePolicy: Always
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - emptyDir:
+            sizeLimit: 5120Mi
+          name: storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-electric
+  name: agentplane-electric
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 3000
+      protocol: TCP
+      targetPort: 3000
+  selector:
+    cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-electric
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: postgres
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-electric
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-llm-ingress
+  namespace: agentplane-staging
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-llm-ingress-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-llm-ingress-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-llm-ingress-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-llm-ingress
+    namespace: agentplane-staging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-llm-ingress-settings
+  namespace: agentplane-staging
+data:
+  settings.yaml: |
+    allowed_service_account_namespaces:
+      - agentplane-staging
+    log_llm_requests: true
+immutable: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    secret.reloader.stakater.com/reload: litellm-key-agentplane-staging
+  labels:
+    app.kubernetes.io/name: agentplane-llm-ingress
+  name: agentplane-llm-ingress
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-llm-ingress
+        cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - args:
+            - --token-audience=agentplane-egress
+            - --litellm-url=http://litellm.litellm.svc.cluster.local:4000
+            - --host=0.0.0.0
+            - --port=8080
+          env:
+            - name: AGENTPLANE_LLM_INGRESS_LITELLM_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api-key
+                  name: litellm-key-agentplane-staging
+            - name: AGENTPLANE_LLM_INGRESS_CONFIG_FILE
+              value: /etc/agentplane-llm-ingress/settings.yaml
+          image: git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: ingress
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/agentplane-llm-ingress
+              name: configmap-agentplane-llm-ingress-settings
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-llm-ingress
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      volumes:
+        - configMap:
+            name: agentplane-llm-ingress-settings
+          name: configmap-agentplane-llm-ingress-settings
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentplane-llm-ingress
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-llm-ingress
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            k8s:app.kubernetes.io/name: litellm
+            k8s:io.kubernetes.pod.namespace: litellm
+      toPorts:
+        - ports:
+            - port: "4000"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-llm-ingress
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-staging
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-egress-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-egress-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-egress-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-egress
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresspolicies
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egressbindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresscredentials
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-egress
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-egress
+    namespace: agentplane-staging
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agentplane-egress-root-ca
+  namespace: agentplane-staging
+spec:
+  commonName: agentplane-egress-root-ca
+  duration: 87600h
+  isCA: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-ca-bootstrap
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  renewBefore: 8760h
+  secretName: agentplane-egress-ca
+  secretTemplate:
+    annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: agentplane-egress-ca
+spec:
+  sources:
+    - useDefaultCAs: true
+    - secret:
+        key: ca.crt
+        name: cluster-root-ca-secret
+    - secret:
+        key: tls.crt
+        name: agentplane-egress-ca
+  target:
+    additionalFormats:
+      pkcs12:
+        key: ca-certificates.p12
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: Trust bundle for agentplane-staging runner HTTPS traffic intercepted by the egress proxy
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - agentplane-staging
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: agentplane-staging-egress-upstream-ca
+spec:
+  sources:
+    - useDefaultCAs: true
+    - configMap:
+        key: ca.crt
+        name: kube-root-ca.crt
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: "Trust bundle the agentplane-staging egress proxy verifies destinations with: public roots plus this cluster's CA"
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - agentplane-staging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-egress-settings
+  namespace: agentplane-staging
+data:
+  settings.yaml: |
+    allowed_service_account_namespaces:
+      - agentplane-staging
+    projected_token_audiences:
+      - https://localhost:7445
+immutable: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-egress
+  name: agentplane-egress
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-egress
+        cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - args:
+            - --rules-namespace=agentplane-staging
+            - --credentials-namespace=agentplane-staging-egress-credentials
+            - --listen-port=8888
+            - --admin-port=8081
+            - --agent-api-port=8082
+            - --ca-cert=/etc/agentplane-egress/ca/tls.crt
+            - --ca-key=/etc/agentplane-egress/ca/tls.key
+            - --confdir=/var/lib/agentplane-egress
+            - --upstream-ca-file=/etc/agentplane-egress/upstream-ca/ca-certificates.crt
+            - --token-audience=agentplane-egress
+          env:
+            - name: AGENTPLANE_EGRESS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-egress
+            - name: AGENTPLANE_EGRESS_CONFIG_FILE
+              value: /etc/agentplane-egress/settings/settings.yaml
+          image: git.allegedly.works/ducktape-ci/agentplane-egress:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /livez
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          name: proxy
+          ports:
+            - containerPort: 8888
+              name: proxy
+              protocol: TCP
+            - containerPort: 8081
+              name: admin
+              protocol: TCP
+            - containerPort: 8082
+              name: agent-api
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 1024Mi
+            requests:
+              cpu: 50m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/agentplane-egress/ca
+              name: ca
+              readOnly: true
+            - mountPath: /etc/agentplane-egress/upstream-ca
+              name: upstream-ca
+              readOnly: true
+            - mountPath: /var/lib/agentplane-egress
+              name: confdir
+            - mountPath: /etc/agentplane-egress/settings
+              name: configmap-agentplane-egress-settings
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - env:
+            - name: AGENTPLANE_EGRESS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-egress
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-migrate:unset
+          imagePullPolicy: Always
+          name: migrate
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-egress
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      volumes:
+        - name: ca
+          secret:
+            secretName: agentplane-egress-ca
+        - configMap:
+            name: agentplane-staging-egress-upstream-ca
+          name: upstream-ca
+        - emptyDir: {}
+          name: confdir
+        - configMap:
+            name: agentplane-egress-settings
+          name: configmap-agentplane-egress-settings
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8082
+    - name: proxy
+      port: 8888
+      protocol: TCP
+      targetPort: 8888
+  selector:
+    cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentplane-egress-admin
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: admin
+      port: 8081
+      protocol: TCP
+      targetPort: 8081
+  selector:
+    cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: postgres
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-llm-ingress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-actions
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/instance: forgejo
+            app.kubernetes.io/name: forgejo
+            k8s:io.kubernetes.pod.namespace: forgejo
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - world
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-sandbox
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: agentplane-workload
+  namespace: agentplane-staging
+spec:
+  description: The calling Sandbox Pod's short-lived, Pod-bound workload identity for first-party Agentplane destinations. It conveys no LiteLLM credential or operator, Agent, or Thread authority.
+  source:
+    authenticatedWorkloadToken: {}
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: github-pat
+  namespace: agentplane-staging
+spec:
+  description: A GitHub personal access token belonging to the bot account agentydragon-agent. Requests carrying it act as that account and are attributable to it. The proxy does not narrow what the token itself may do — the rule's hosts and methods are the only limit it adds, so treat anything the token can reach on those hosts as reachable.
+  source:
+    secretRef:
+      name: agentplane-github-pat
+      key: token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: kubernetes-workload
+  namespace: agentplane-staging
+spec:
+  description: "The calling Sandbox Pod's own ServiceAccount, minted for the Kubernetes API server rather than for this proxy. Requests carrying it are authorized by the API server as that account and by nothing here: what the sandbox may do is the RBAC bound to it, and this proxy adds only the rule's hosts, methods and paths on top."
+  source:
+    projectedWorkloadToken:
+      audience: https://localhost:7445
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: basic
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - agentplane-llm-ingress.agentplane-staging.svc.cluster.local
+      methods:
+        - GET
+        - POST
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+    - hosts:
+        - agentplane-actions.agentplane-staging.svc.cluster.local
+      methods:
+        - GET
+        - POST
+      paths:
+        - /mcp
+        - /openapi.json
+        - /v1/action-groups
+        - /v1/action-groups/**
+        - /v1/action-policy
+        - /v1/action-requests
+        - /v1/action-requests/**
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+    - hosts:
+        - agentplane-egress.agentplane-staging.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /openapi.json
+        - /v1/rules
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+    - hosts:
+        - kubernetes.default.svc.cluster.local
+      clusterInternal: true
+      credentialRef:
+        name: kubernetes-workload
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: packages
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - bcr.bazel.build
+        - cache.nixos.org
+        - channels.nixos.org
+        - code.forgejo.org
+        - data.forgejo.org
+        - files.pythonhosted.org
+        - ftp.gnu.org
+        - ghcr.io
+        - index.crates.io
+        - nixos.org
+        - nodejs.org
+        - pkg-containers.githubusercontent.com
+        - pypi.org
+        - registry.npmjs.org
+        - releases.bazel.build
+        - snapshot.debian.org
+        - static.crates.io
+        - static.rust-lang.org
+      methods:
+        - GET
+        - HEAD
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-agentydragon-agent
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - api.github.com
+        - github.com
+        - codeload.github.com
+        - "*.githubusercontent.com"
+      methods:
+        - GET
+        - POST
+      credentialRef:
+        name: github-pat
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-actions-logs
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - "*.blob.core.windows.net"
+      methods:
+        - GET
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-clone
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - github.com
+      methods:
+        - GET
+        - POST
+      paths:
+        - /*/*.git/info/refs
+        - /*/*.git/git-upload-pack
+        - /*/*/info/refs
+        - /*/*/git-upload-pack
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-sandbox-tool-config
+  namespace: agentplane-staging
+data:
+  bazel.bazelrc: |
+    startup --host_jvm_args=-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+    common --test_env=HTTP_PROXY --test_env=HTTPS_PROXY --test_env=http_proxy --test_env=https_proxy --test_env=NO_PROXY --test_env=no_proxy --test_env=SSL_CERT_FILE --test_env=NODE_EXTRA_CA_CERTS --test_env=CURL_CA_BUNDLE --test_env=GIT_SSL_CAINFO --test_env=REQUESTS_CA_BUNDLE --test_env=KUBECONFIG
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: in-cluster
+        cluster:
+          server: https://kubernetes.default.svc.cluster.local
+          certificate-authority: /etc/ssl/certs/ca-certificates.crt
+    users:
+      - name: workload
+        user:
+          token: agentplane-credential-kubernetes-workload
+    contexts:
+      - name: in-cluster
+        context:
+          cluster: in-cluster
+          user: workload
+    current-context: in-cluster
+immutable: false
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-agent
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-runner
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-app-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-app-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-app-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-app
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - create
+      - patch
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresspolicies
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egressbindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresscredentials
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egressbindings
+    verbs:
+      - create
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicybindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicybindings
+    verbs:
+      - create
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-app
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-app
+    namespace: agentplane-staging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-app-config
+  namespace: agentplane-staging
+data:
+  config.yaml: |
+    models:
+      models:
+        - model: anthropic-max20/ant-messages/claude-opus-5
+          display_name: Opus 5
+        - model: anthropic-max20/ant-messages/claude-sonnet-5
+          display_name: Sonnet 5
+        - model: anthropic-max20/ant-messages/claude-fable-5
+          display_name: Fable 5
+        - model: anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+          display_name: Haiku 4.5
+        - model: antigravity/ant-messages/claude-opus-4-6-thinking
+          display_name: Claude Opus 4.6 (Thinking)
+        - model: antigravity/ant-messages/claude-sonnet-4-6
+          display_name: Claude Sonnet 4.6 (Thinking)
+        - model: antigravity/ant-messages/gemini-3.6-flash-high
+          display_name: Gemini 3.6 Flash
+        - model: antigravity/ant-messages/gemini-3.7-flash-high
+          display_name: Gemini 3.7 Flash
+        - model: antigravity/ant-messages/gemini-3.8-flash-high
+          display_name: Gemini 3.8 Flash
+        - model: antigravity/ant-messages/gemini-3-flash
+          display_name: Gemini 3 Flash
+        - model: antigravity/ant-messages/gemini-3.1-flash-image
+          display_name: Gemini 3.1 Flash Image
+        - model: antigravity/ant-messages/gemini-pro-agent
+          display_name: Gemini 3.1 Pro (High)
+        - model: antigravity/ant-messages/gemini-3.1-pro-low
+          display_name: Gemini 3.1 Pro (Low)
+        - model: antigravity/ant-messages/gpt-oss-120b-medium
+          display_name: GPT-OSS 120B (Medium)
+        - model: antigravity/ant-messages/gemini-3.1-flash-lite
+          display_name: Gemini 3.1 Flash Lite
+        - model: antigravity/ant-messages/gemini-3.5-flash-lite
+          display_name: Gemini 3.5 Flash Lite
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
+        - model: ollama/oai-chat/gpt-oss-20b-128k
+          display_name: GPT-OSS 20B (128K)
+        - model: ollama/oai-chat/gpt-oss-20b-256k
+          display_name: GPT-OSS 20B (256K)
+        - model: ollama/oai-chat/gpt-oss-20b-512k
+          display_name: GPT-OSS 20B (512K)
+        - model: ollama/oai-chat/gpt-oss-20b-1m
+          display_name: GPT-OSS 20B (1M)
+        - model: ollama/oai-chat/gpt-oss-120b-128k
+          display_name: GPT-OSS 120B (128K)
+        - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          display_name: Gemma 4 31B (128K)
+        - model: chatgpt/oai-responses/gpt-6-astra
+          display_name: GPT-6 Astra
+        - model: chatgpt/oai-responses/gpt-6-luna
+          display_name: GPT-6 Luna
+        - model: chatgpt/oai-responses/gpt-6-sol
+          display_name: GPT-6 Sol
+      harnesses:
+        HARNESS_CLAUDE:
+          - anthropic-max20/ant-messages/claude-opus-5
+          - anthropic-max20/ant-messages/claude-sonnet-5
+          - anthropic-max20/ant-messages/claude-fable-5
+          - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+          - antigravity/ant-messages/claude-opus-4-6-thinking
+          - antigravity/ant-messages/claude-sonnet-4-6
+          - antigravity/ant-messages/gemini-3.6-flash-high
+          - antigravity/ant-messages/gemini-3.7-flash-high
+          - antigravity/ant-messages/gemini-3.8-flash-high
+          - antigravity/ant-messages/gemini-3-flash
+          - antigravity/ant-messages/gemini-3.1-flash-image
+          - antigravity/ant-messages/gemini-pro-agent
+          - antigravity/ant-messages/gemini-3.1-pro-low
+          - antigravity/ant-messages/gpt-oss-120b-medium
+          - antigravity/ant-messages/gemini-3.1-flash-lite
+          - antigravity/ant-messages/gemini-3.5-flash-lite
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-20b-256k
+          - ollama/oai-chat/gpt-oss-20b-512k
+          - ollama/oai-chat/gpt-oss-20b-1m
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        HARNESS_CODEX:
+          - chatgpt/oai-responses/gpt-6-astra
+          - chatgpt/oai-responses/gpt-6-luna
+          - chatgpt/oai-responses/gpt-6-sol
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-20b-256k
+          - ollama/oai-chat/gpt-oss-20b-512k
+          - ollama/oai-chat/gpt-oss-20b-1m
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+    agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
+    agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
+    thread_presets:
+      public-coder-codex:
+        title: Public coder / Codex
+        harness: HARNESS_CODEX
+        model: chatgpt/oai-responses/gpt-6-luna
+        cwd: /state/workspaces/{session_id}
+        reasoning_effort: medium
+        instructions: Work as a public-repository coding agent. You will usually work on the public GitHub repository agentydragon/ducktape. Your egress proxy gives you a full-access GitHub PAT for the user 'agentydragon-agent'. When contributing to ducktape, push branches to the fork owned by your dedicated user (agentydragon-agent/ducktape), then use the substituted agentydragon-agent GitHub PAT to open a PR in agentydragon/ducktape (requesting to merge your branch from agentydragon-agent/ducktape into agentydragon/ducktape's default branch 'devel').
+      haku-claude:
+        title: Haku
+        harness: HARNESS_CLAUDE
+        model: anthropic-max20/ant-messages/claude-sonnet-5
+        cwd: /state/workspaces/{session_id}
+        reasoning_effort: medium
+        instructions: "You are Haku, the operator's tireless background executive assistant. Your haku-state checkout -- your memory, your method, and your only write surface -- is at haku-state, with git auth already in place. It also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end. Commit and push haku-state as you go."
+    sandbox_presets:
+      public-coder:
+        title: Public coder
+        template: agentplane-runner
+        policies:
+          - basic
+          - packages
+          - github-agentydragon-agent
+          - github-clone
+          - github-actions-logs
+        action_policy_sets:
+          - public-github-reads
+          - public-ducktape-reads
+          - public-ducktape-fork-reads
+          - public-gaffer-private-reads
+        thread_preset: public-coder-codex
+        bootstrap: |
+          marker=/state/workspaces/.agentplane-public-coder-ready
+          mkdir -p /state/workspaces
+          if [ ! -f "$marker" ]; then
+            printf '%s\n' 'public-coder workspace initialized' > "$marker"
+          fi
+      haku:
+        title: Haku
+        template: agentplane-runner
+        policies:
+          - basic
+          - forgejo-haku
+          - packages
+          - google-readonly
+          - grocy-sf-readonly
+          - home-assistant-readonly
+          - activitywatch-read
+          - aiquota-read
+          - haku-mailbox
+          - coinbase
+          - plaid-pgweb
+          - github-clone
+          - github-agentydragon-agent
+          - github-actions-logs
+        thread_preset: haku-claude
+        bootstrap: |
+          marker=/state/workspaces/.agentplane-haku-ready
+          mkdir -p /state/workspaces
+          if [ ! -f "$marker" ]; then
+            git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git /state/workspaces/haku-state
+            git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git /state/workspaces/ducktape
+            printf '%s\n' 'haku workspace initialized' > "$marker"
+          fi
+    default_policies:
+      - basic
+    egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081
+    action_federation:
+      mode: exchange
+      service_url: http://agentplane-actions.agentplane-staging.svc:8080
+      token_endpoint: https://auth.allegedly.works/application/o/token/
+      login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/
+      target:
+        issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
+        audience: agentplane-staging-actions
+        jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
+      scope: openid
+immutable: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    configmap.reloader.stakater.com/reload: agentplane-app-config
+    secret.reloader.stakater.com/reload: agentplane-oidc,agentplane-staging-session-secret
+  labels:
+    app.kubernetes.io/name: agentplane-app
+  name: agentplane-app
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-app-deployment-c8d92233
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-app
+        cdk8s.io/metadata.addr: agentplane-app-deployment-c8d92233
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - args:
+            - --namespace=agentplane-staging
+            - --sandbox-namespace=agentplane-staging
+            - --runner-port=7000
+            - --host=0.0.0.0
+            - --port=8080
+          env:
+            - name: AGENTPLANE_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: postgres-app
+            - name: AGENTPLANE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: postgres-app
+            - name: AGENTPLANE_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: host
+                  name: postgres-app
+            - name: AGENTPLANE_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: port
+                  name: postgres-app
+            - name: AGENTPLANE_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  key: dbname
+                  name: postgres-app
+            - name: AGENTPLANE_DATABASE_URL
+              value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
+            - name: AGENTPLANE_ELECTRIC_URL
+              value: http://agentplane-electric.agentplane-staging.svc:3000
+            - name: AGENTPLANE_OIDC_ISSUER
+              value: https://auth.allegedly.works/application/o/agentplane-staging/
+            - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
+              value: https://agentplane-staging.allegedly.works
+            - name: AGENTPLANE_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client-id
+                  name: agentplane-oidc
+            - name: AGENTPLANE_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client-secret
+                  name: agentplane-oidc
+            - name: AGENTPLANE_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: session-secret
+                  name: agentplane-staging-session-secret
+            - name: AGENTPLANE_TOKEN_SUBJECTS
+              value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
+            - name: AGENTPLANE_CONFIG_FILE
+              value: /etc/agentplane/config.yaml
+          image: git.allegedly.works/ducktape-ci/agentplane-app:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: app
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/agentplane
+              name: configmap-agentplane-app-config
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - env:
+            - name: AGENTPLANE_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: postgres-app
+            - name: AGENTPLANE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: postgres-app
+            - name: AGENTPLANE_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: host
+                  name: postgres-app
+            - name: AGENTPLANE_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: port
+                  name: postgres-app
+            - name: AGENTPLANE_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  key: dbname
+                  name: postgres-app
+            - name: AGENTPLANE_DATABASE_URL
+              value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
+            - name: AGENTPLANE_ELECTRIC_URL
+              value: http://agentplane-electric.agentplane-staging.svc:3000
+            - name: AGENTPLANE_OIDC_ISSUER
+              value: https://auth.allegedly.works/application/o/agentplane-staging/
+            - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
+              value: https://agentplane-staging.allegedly.works
+            - name: AGENTPLANE_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client-id
+                  name: agentplane-oidc
+            - name: AGENTPLANE_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client-secret
+                  name: agentplane-oidc
+            - name: AGENTPLANE_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: session-secret
+                  name: agentplane-staging-session-secret
+            - name: AGENTPLANE_TOKEN_SUBJECTS
+              value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
+          image: git.allegedly.works/ducktape-ci/agentplane-app-migrate:unset
+          imagePullPolicy: Always
+          name: migrate
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-app
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: agentplane-app-config
+          name: configmap-agentplane-app-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-app
+  name: agentplane-app
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-app-deployment-c8d92233
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agentplane-staging
+  namespace: agentplane-staging
+spec:
+  hostnames:
+    - agentplane-staging.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: agentplane-app
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+      timeouts:
+        backendRequest: 3600s
+        request: 3600s
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-runner
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-runner
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "7000"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - auth.allegedly.works
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: server
+            app.kubernetes.io/instance: authentik
+            app.kubernetes.io/name: authentik
+            k8s:io.kubernetes.pod.namespace: authentik
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+          serverNames:
+            - auth.allegedly.works
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "7000"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-actions
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-electric
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: postgres
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-app
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-app
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  annotations:
+    sandbox-actions.agentplane.allegedly.works/description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
+  name: agentplane-runner
+  namespace: agentplane-staging
+spec:
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-runner
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --state-dir
+            - /state
+            - --listen
+            - 0.0.0.0:7000
+            - --claude-binary
+            - /bin/claude
+            - --anthropic-base-url
+            - $(LITELLM_URL)
+            - --codex-binary
+            - /bin/codex
+            - --openai-base-url
+            - $(LITELLM_URL)/v1
+            - --harness-env
+            - HOME
+            - --harness-env
+            - PATH
+            - --harness-env
+            - HTTP_PROXY
+            - --harness-env
+            - HTTPS_PROXY
+            - --harness-env
+            - http_proxy
+            - --harness-env
+            - https_proxy
+            - --harness-env
+            - NO_PROXY
+            - --harness-env
+            - no_proxy
+            - --harness-env
+            - SSL_CERT_FILE
+            - --harness-env
+            - NODE_EXTRA_CA_CERTS
+            - --harness-env
+            - CURL_CA_BUNDLE
+            - --harness-env
+            - GIT_SSL_CAINFO
+            - --harness-env
+            - REQUESTS_CA_BUNDLE
+            - --harness-env
+            - KUBECONFIG
+          env:
+            - name: LITELLM_URL
+              value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_MODEL_CONTEXT_WINDOWS
+              value: '{"ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k":262144,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k":262144}'
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:3128
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:3128
+            - name: http_proxy
+              value: http://127.0.0.1:3128
+            - name: https_proxy
+              value: http://127.0.0.1:3128
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost
+            - name: no_proxy
+              value: 127.0.0.1,localhost
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: GIT_SSL_CAINFO
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
+            - name: ANTHROPIC_AUTH_TOKEN
+              value: agentplane-credential-agentplane-workload
+            - name: OPENAI_API_KEY
+              value: agentplane-credential-agentplane-workload
+          image: git.allegedly.works/ducktape-ci/agentplane-runner:unset
+          name: runner
+          ports:
+            - containerPort: 7000
+              name: runner
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /state
+              name: state
+            - mountPath: /etc/ssl/certs/ca-certificates.crt
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+          workingDir: /state
+        - env:
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
+              value: agentplane-egress.agentplane-staging.svc.cluster.local
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
+              value: "8888"
+            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
+              value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
+            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
+              value: /var/run/agentplane-egress/token
+            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
+          name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /var/run/agentplane-egress
+              name: egress-token
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-runner
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: agentplane-egress-ca
+          name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
+        - name: egress-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 600
+                  path: token
+              - serviceAccountToken:
+                  audience: https://localhost:7445
+                  expirationSeconds: 600
+                  path: kubernetes-token
+  volumeClaimTemplates:
+    - metadata:
+        name: state
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: local-path-ovh-hdd
+  volumeClaimTemplatesPolicy: Overrides
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-staging
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-actions-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-actions-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-actions-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-actions
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicybindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicysets/status
+    verbs:
+      - patch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicybindings/status
+    verbs:
+      - patch
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - get
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-actions
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-actions
+    namespace: agentplane-staging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-actions-settings
+  namespace: agentplane-staging
+data:
+  settings.yaml: |
+    operator_oidc:
+      issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
+      audience: agentplane-staging-actions
+      jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
+    allowed_service_account_namespaces:
+      - agentplane-staging
+    direct_wait_seconds: 30
+    max_wait_seconds: 180
+    web_push:
+      subject: mailto:agentydragon@gmail.com
+      public_base_url: https://agentplane-staging.allegedly.works
+      allowed_push_hosts:
+        - fcm.googleapis.com
+        - updates.push.services.mozilla.com
+    mcp_client_metadata:
+      url: https://agentplane-actions-staging.allegedly.works/oauth/client-metadata.json
+      client_name: Agentplane staging
+    mcp_servers:
+      github:
+        server_id: github
+        server_url: https://api.githubcopilot.com/mcp/
+        client_id: configured-by-secret
+        client_secret_file: /etc/agentplane-github/client_secret
+        redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+      kubernetes_admin:
+        server_id: kubernetes_admin
+        server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
+        client_id: kubectl-passthrough-mcp
+        redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+      grocy_sf:
+        server_id: grocy_sf
+        server_url: https://grocy-mcp-sf.allegedly.works/mcp
+        use_shared_cimd: true
+        redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+    action_groups:
+      github:
+        title: GitHub MCP
+        description: GitHub's operator-linked MCP tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: GitHub MCP executed with the linked operator GitHub account.
+          config:
+            transport: streamable-http
+            url: https://api.githubcopilot.com/mcp/
+            server_id: github
+            auth: oauth
+            headers:
+              X-MCP-Toolsets: default,actions
+      kubernetes_admin:
+        title: Kubernetes admin
+        description: The Kubernetes API with the linked operator's own permissions. Use it only for what your own Kubernetes identity cannot do; each call waits for the operator's approval.
+        executor:
+          kind: mcp
+          description: kubectl-passthrough-mcp, run as the linked operator's Kubernetes identity.
+          config:
+            transport: streamable-http
+            url: https://kubectl-passthrough-mcp.allegedly.works/mcp
+            server_id: kubernetes_admin
+            auth: oauth
+      grocy_sf:
+        title: Grocy SF MCP
+        description: Grocy SF household MCP tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Grocy SF MCP executed with the linked operator Grocy account.
+          config:
+            transport: streamable-http
+            url: https://grocy-mcp-sf.allegedly.works/mcp
+            server_id: grocy_sf
+            auth: oauth
+      sandbox:
+        title: Sandbox
+        description: Sandboxes that run as the calling ServiceAccount, and bounded commands in them. A sandbox reaches what its caller's EgressBindings allow and is admitted back to this service as that same caller, so it confers no authority the caller did not hold.
+        executor:
+          kind: sandbox
+          description: Stamped and exec'd by this service, as the caller, in its own namespace.
+          namespace: agentplane-staging
+          templates:
+            - agentplane-runner
+            - agentplane-sandbox
+            - agentplane-sandbox-build
+        direct_tools:
+          - create
+          - dispose
+          - exec
+          - get
+          - get_template
+          - list
+      ssh:
+        title: SSH
+        description: SSH commands on configured targets; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: SSH MCP backend (ssh-mcp); Agentplane retains approval and execution authority.
+          config:
+            transport: streamable-http
+            url: http://ssh-mcp.ssh-mcp.svc:8080/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/ssh-mcp/bearer-token
+      home_assistant:
+        title: Home Assistant MCP
+        description: Home Assistant tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Home Assistant MCP backend (ha-mcp).
+          config:
+            transport: streamable-http
+            url: http://ha-mcp.ha-mcp.svc:8765/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/ha-mcp/bearer-token
+      tana:
+        title: Tana MCP
+        description: Tana read/write tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Tana MCP backend (tana-mcp).
+          config:
+            transport: streamable-http
+            url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/tana-mcp/bearer-token
+      gmail:
+        title: Gmail
+        description: Gmail read/write tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Gmail MCP backend (google-mcp), on a write-scoped Google credential.
+          config:
+            transport: streamable-http
+            url: http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/google-mcp/bearer-token
+      google_calendar:
+        title: Google Calendar
+        description: Google Calendar read/write tools; every Action remains subject to operator approval.
+        executor:
+          kind: mcp
+          description: Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.
+          config:
+            transport: streamable-http
+            url: http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/google-mcp/bearer-token
+immutable: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    configmap.reloader.stakater.com/reload: agentplane-actions-settings
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-client-bearer,ha-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer
+  labels:
+    app.kubernetes.io/name: agentplane-actions
+  name: agentplane-actions
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-actions
+        cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - args:
+            - --host=0.0.0.0
+            - --port=8080
+            - --token-audience=agentplane-egress
+          env:
+            - name: AGENTPLANE_ACTIONS_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: postgres-actions
+            - name: AGENTPLANE_ACTIONS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: postgres-actions
+            - name: AGENTPLANE_ACTIONS_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: host
+                  name: postgres-actions
+            - name: AGENTPLANE_ACTIONS_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: port
+                  name: postgres-actions
+            - name: AGENTPLANE_ACTIONS_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  key: dbname
+                  name: postgres-actions
+            - name: AGENTPLANE_ACTIONS_DATABASE_URL
+              value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
+            - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  key: private-key-pem
+                  name: agentplane-staging-web-push-vapid
+            - name: AGENTPLANE_ACTIONS_OAUTH
+              valueFrom:
+                secretKeyRef:
+                  key: oauth
+                  name: agentplane-mcp-oauth
+            - name: AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: haku-console-github-mcp-client-credentials
+            - name: AGENTPLANE_ACTIONS_CONFIG_FILE
+              value: /etc/agentplane-actions/settings.yaml
+          image: git.allegedly.works/ducktape-ci/agentplane-action-service:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+          name: actions
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/agentplane-mcp
+              name: secret-agentplane-mcp-oauth
+              readOnly: true
+            - mountPath: /etc/agentplane-actions
+              name: configmap-agentplane-actions-settings
+              readOnly: true
+            - mountPath: /etc/agentplane-github
+              name: secret-haku-console-github-mcp-client-credentials
+              readOnly: true
+            - mountPath: /run/secrets/ssh-mcp
+              name: secret-ssh-mcp-client-bearer
+              readOnly: true
+            - mountPath: /run/secrets/ha-mcp
+              name: secret-ha-mcp-client-bearer
+              readOnly: true
+            - mountPath: /run/secrets/tana-mcp
+              name: secret-tana-agentydragon-gmail-com-account-pat
+              readOnly: true
+            - mountPath: /run/secrets/google-mcp
+              name: secret-google-mcp-bearer
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - env:
+            - name: AGENTPLANE_ACTIONS_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: postgres-actions
+            - name: AGENTPLANE_ACTIONS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: postgres-actions
+            - name: AGENTPLANE_ACTIONS_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: host
+                  name: postgres-actions
+            - name: AGENTPLANE_ACTIONS_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: port
+                  name: postgres-actions
+            - name: AGENTPLANE_ACTIONS_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  key: dbname
+                  name: postgres-actions
+            - name: AGENTPLANE_ACTIONS_DATABASE_URL
+              value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
+            - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  key: private-key-pem
+                  name: agentplane-staging-web-push-vapid
+            - name: AGENTPLANE_ACTIONS_OAUTH
+              valueFrom:
+                secretKeyRef:
+                  key: oauth
+                  name: agentplane-mcp-oauth
+            - name: AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: haku-console-github-mcp-client-credentials
+          image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:unset
+          imagePullPolicy: Always
+          name: migrate
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-actions
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: secret-agentplane-mcp-oauth
+          secret:
+            defaultMode: 288
+            items:
+              - key: client-secret
+                path: client-secret
+              - key: encryption-key
+                path: encryption-key
+              - key: jwt-signing-key
+                path: jwt-signing-key
+            secretName: agentplane-mcp-oauth
+        - configMap:
+            name: agentplane-actions-settings
+          name: configmap-agentplane-actions-settings
+        - name: secret-haku-console-github-mcp-client-credentials
+          secret:
+            defaultMode: 288
+            items:
+              - key: client_secret
+                path: client_secret
+            secretName: haku-console-github-mcp-client-credentials
+        - name: secret-ssh-mcp-client-bearer
+          secret:
+            items:
+              - key: bearer-token
+                path: bearer-token
+            secretName: ssh-mcp-client-bearer
+        - name: secret-ha-mcp-client-bearer
+          secret:
+            items:
+              - key: bearer-token
+                path: bearer-token
+            secretName: ha-mcp-client-bearer
+        - name: secret-tana-agentydragon-gmail-com-account-pat
+          secret:
+            items:
+              - key: token
+                path: bearer-token
+            optional: true
+            secretName: tana-agentydragon-gmail-com-account-pat
+        - name: secret-google-mcp-bearer
+          secret:
+            items:
+              - key: bearer-token
+                path: bearer-token
+            secretName: google-mcp-bearer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agentplane-actions-mcp
+  namespace: agentplane-staging
+spec:
+  hostnames:
+    - agentplane-actions-staging.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: agentplane-actions
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+      matches:
+        - path:
+            type: Exact
+            value: /mcp
+        - path:
+            type: Exact
+            value: /.well-known/oauth-authorization-server
+        - path:
+            type: Exact
+            value: /.well-known/oauth-protected-resource/mcp
+        - path:
+            type: Exact
+            value: /register
+        - path:
+            type: Exact
+            value: /authorize
+        - path:
+            type: Exact
+            value: /token
+        - path:
+            type: Exact
+            value: /revoke
+        - path:
+            type: Exact
+            value: /auth/callback
+        - path:
+            type: Exact
+            value: /oauth/client-metadata.json
+      timeouts:
+        backendRequest: 3600s
+        request: 3600s
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: claude.ai
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - claude.ai
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: postgres
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: fcm.googleapis.com
+        - matchName: updates.push.services.mozilla.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - fcm.googleapis.com
+            - updates.push.services.mozilla.com
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: ssh-mcp
+            k8s:io.kubernetes.pod.namespace: ssh-mcp
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: ha-mcp
+            k8s:io.kubernetes.pod.namespace: ha-mcp
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: tana-mcp
+            k8s:io.kubernetes.pod.namespace: tana-mcp
+      toPorts:
+        - ports:
+            - port: "8263"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: google-mcp
+            k8s:io.kubernetes.pod.namespace: google-mcp
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - auth.allegedly.works
+    - toFQDNs:
+        - matchName: api.githubcopilot.com
+        - matchName: github.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.githubcopilot.com
+            - github.com
+    - toFQDNs:
+        - matchName: api.github.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.github.com
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - kubectl-passthrough-mcp.allegedly.works
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - grocy-mcp-sf.allegedly.works
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: server
+            app.kubernetes.io/instance: authentik
+            app.kubernetes.io/name: authentik
+            k8s:io.kubernetes.pod.namespace: authentik
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+          serverNames:
+            - auth.allegedly.works
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-actions
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-actions
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  annotations:
+    sandbox-actions.agentplane.allegedly.works/description: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl (configured as the caller's ServiceAccount) and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
+  name: agentplane-sandbox
+  namespace: agentplane-staging
+spec:
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-sandbox
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - bash
+            - -c
+            - trap 'exit 0' TERM; sleep infinity & wait
+          env:
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:3128
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:3128
+            - name: http_proxy
+              value: http://127.0.0.1:3128
+            - name: https_proxy
+              value: http://127.0.0.1:3128
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost
+            - name: no_proxy
+              value: 127.0.0.1,localhost
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: GIT_SSL_CAINFO
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox:unset
+          name: sandbox
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /etc/ssl/certs/ca-certificates.crt
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+            - mountPath: /etc/bazel.bazelrc
+              name: tool-config
+              readOnly: true
+              subPath: bazel.bazelrc
+        - env:
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
+              value: agentplane-egress.agentplane-staging.svc.cluster.local
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
+              value: "8888"
+            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
+              value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
+            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
+              value: /var/run/agentplane-egress/token
+            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
+          name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /var/run/agentplane-egress
+              name: egress-token
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: agentplane-egress-ca
+          name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
+        - name: egress-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 600
+                  path: token
+              - serviceAccountToken:
+                  audience: https://localhost:7445
+                  expirationSeconds: 600
+                  path: kubernetes-token
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  annotations:
+    sandbox-actions.agentplane.allegedly.works/description: "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a home directory that survives the container being killed for running out of memory, though not the box's Pod."
+  name: agentplane-sandbox-build
+  namespace: agentplane-staging
+spec:
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-sandbox
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - bash
+            - -c
+            - trap 'exit 0' TERM; sleep infinity & wait
+          env:
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:3128
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:3128
+            - name: http_proxy
+              value: http://127.0.0.1:3128
+            - name: https_proxy
+              value: http://127.0.0.1:3128
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost
+            - name: no_proxy
+              value: 127.0.0.1,localhost
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: GIT_SSL_CAINFO
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-build:unset
+          name: sandbox
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /etc/ssl/certs/ca-certificates.crt
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+            - mountPath: /etc/bazel.bazelrc
+              name: tool-config
+              readOnly: true
+              subPath: bazel.bazelrc
+            - mountPath: /home/runner
+              name: home
+        - env:
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
+              value: agentplane-egress.agentplane-staging.svc.cluster.local
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
+              value: "8888"
+            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
+              value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
+            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
+              value: /var/run/agentplane-egress/token
+            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
+          name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /var/run/agentplane-egress
+              name: egress-token
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: agentplane-egress-ca
+          name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
+        - name: egress-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 600
+                  path: token
+              - serviceAccountToken:
+                  audience: https://localhost:7445
+                  expirationSeconds: 600
+                  path: kubernetes-token
+        - emptyDir:
+            sizeLimit: 20Gi
+          name: home
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-sandbox
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-sandbox
+  ingress:
+    - {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: ESO copy of the canonical Tana PAT from external-creds.
+  name: tana-agentydragon-gmail-com-account-pat
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: tana-agentydragon-gmail-com-account-pat
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: tana-agentydragon-gmail-com-account-pat
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-ssh-mcp-bearer-reader
+  namespace: ssh-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - ssh-mcp-bearer
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-ssh-mcp-bearer-reader
+  namespace: ssh-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-ssh-mcp-bearer-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-ssh-mcp-bearer-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: ssh-mcp
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ssh-mcp-client-bearer
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: ssh-mcp-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-ssh-mcp-bearer-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: ssh-mcp-client-bearer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-google-mcp-bearer-reader
+  namespace: google-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - google-mcp-bearer
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-google-mcp-bearer-reader
+  namespace: google-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-google-mcp-bearer-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-google-mcp-bearer-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: google-mcp
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: google-mcp-bearer
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: google-mcp-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-google-mcp-bearer-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: google-mcp-bearer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-ha-mcp-bearer-reader
+  namespace: ha-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - ha-mcp-bearer
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-ha-mcp-bearer-reader
+  namespace: ha-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-ha-mcp-bearer-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-ha-mcp-bearer-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: ha-mcp
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ha-mcp-client-bearer
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: ha-mcp-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-ha-mcp-bearer-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: ha-mcp-client-bearer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-github-mcp-client-reader
+  namespace: haku-console
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-console-github-mcp-client-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-github-mcp-client-reader
+  namespace: haku-console
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-github-mcp-client-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-github-mcp-client-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: haku-console
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-console-github-mcp-client-credentials
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: haku-console-github-mcp-client-credentials
+        property: client_id
+      secretKey: client_id
+    - remoteRef:
+        key: haku-console-github-mcp-client-credentials
+        property: client_secret
+      secretKey: client_secret
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-github-mcp-client-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: haku-console-github-mcp-client-credentials
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: agentplane-staging-session-secret
+  namespace: agentplane-staging
+spec:
+  allowRepeat: true
+  digits: 16
+  length: 64
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: ESO-generated Agentplane staging session-signing key.
+  name: agentplane-staging-session-secret
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: agentplane-staging-session-secret
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Orphan
+    deletionPolicy: Retain
+    immutable: true
+    name: agentplane-staging-session-secret
+    template:
+      data:
+        session-secret: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The principal for Connections enrolled from the Claude.ai MCP connector, selected at OAuth consent.
+  labels:
+    agentplane.allegedly.works/use-action-service: "true"
+  name: claude-ai
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: "The principal for the 'haku' sandbox preset: agents that clone haku-state and work from it, the way Haku itself does."
+  labels:
+    agentplane.allegedly.works/use-action-service: "true"
+  name: haku-agent
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path.
+  name: github-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        github:
+          - find_duplicate
+          - get_commit
+          - get_file_blame
+          - get_file_contents
+          - get_label
+          - get_latest_release
+          - get_me
+          - get_release_by_tag
+          - get_tag
+          - get_team_members
+          - get_teams
+          - issue_dependency_read
+          - issue_read
+          - list_branches
+          - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
+          - list_releases
+          - list_repository_collaborators
+          - list_tags
+          - pull_request_read
+          - search_code
+          - search_commits
+          - search_issues
+          - search_pull_requests
+          - search_repositories
+          - search_users
+          - ui_get
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The caller's own GitHub identity read, with no repository or mutation surface.
+  name: github-identity-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        github:
+          - get_me
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: Reviewed GitHub reads scoped to agentydragon-agent/ducktape, the coder Agent's fork.
+  name: public-ducktape-fork-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: github_repository
+      actions:
+        github:
+          - actions_get
+          - actions_list
+          - find_duplicate
+          - get_commit
+          - get_file_blame
+          - get_file_contents
+          - get_job_logs
+          - get_label
+          - get_latest_release
+          - get_release_by_tag
+          - get_tag
+          - issue_dependency_read
+          - issue_read
+          - list_branches
+          - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
+          - list_releases
+          - list_repository_collaborators
+          - list_tags
+          - pull_request_read
+          - search_code
+          - search_issues
+          - search_pull_requests
+      owner: agentydragon-agent
+      repository: ducktape
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: Reviewed GitHub reads scoped to agentydragon/ducktape.
+  name: public-ducktape-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: github_repository
+      actions:
+        github:
+          - actions_get
+          - actions_list
+          - find_duplicate
+          - get_commit
+          - get_file_blame
+          - get_file_contents
+          - get_job_logs
+          - get_label
+          - get_latest_release
+          - get_release_by_tag
+          - get_tag
+          - issue_dependency_read
+          - issue_read
+          - list_branches
+          - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
+          - list_releases
+          - list_repository_collaborators
+          - list_tags
+          - pull_request_read
+          - search_code
+          - search_issues
+          - search_pull_requests
+      owner: agentydragon
+      repository: ducktape
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: Reviewed GitHub reads scoped to the private agentydragon/gaffer-private.
+  name: public-gaffer-private-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: github_repository
+      actions:
+        github:
+          - actions_get
+          - actions_list
+          - find_duplicate
+          - get_commit
+          - get_file_blame
+          - get_file_contents
+          - get_job_logs
+          - get_label
+          - get_latest_release
+          - get_release_by_tag
+          - get_tag
+          - issue_dependency_read
+          - issue_read
+          - list_branches
+          - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
+          - list_releases
+          - list_repository_collaborators
+          - list_tags
+          - pull_request_read
+          - search_code
+          - search_issues
+          - search_pull_requests
+      owner: agentydragon
+      repository: gaffer-private
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public.
+  name: public-github-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: github_public_repository
+      actions:
+        github:
+          - actions_get
+          - actions_list
+          - find_duplicate
+          - get_commit
+          - get_file_blame
+          - get_file_contents
+          - get_job_logs
+          - get_label
+          - get_latest_release
+          - get_release_by_tag
+          - get_tag
+          - issue_dependency_read
+          - issue_read
+          - list_branches
+          - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
+          - list_releases
+          - list_repository_collaborators
+          - list_tags
+          - pull_request_read
+          - search_code
+          - search_issues
+          - search_pull_requests
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes.
+  name: coinbase-api-credentials
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: coinbase-api-credentials
+        property: api_key
+      secretKey: api_key
+    - remoteRef:
+        key: coinbase-api-credentials
+        property: api_secret
+      secretKey: api_secret
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: coinbase-api-credentials
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: claude-ai-coinbase-reader
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - coinbase-api-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-ai-coinbase-reader
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: claude-ai-coinbase-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: claude-ai
+    namespace: agentplane-staging
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: haku-agent
+    namespace: agentplane-staging
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: coinbase
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - api.coinbase.com
+      methods:
+        - GET
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: agentplane-testing
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - agentplane-app.agentplane-testing.svc.cluster.local
+      clusterInternal: true
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-testing-app
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-downloads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - github.com
+        - codeload.github.com
+        - objects.githubusercontent.com
+        - release-assets.githubusercontent.com
+        - raw.githubusercontent.com
+      methods:
+        - GET
+        - HEAD
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressBinding
+metadata:
+  annotations:
+    description: What sandboxes running as the claude-ai ServiceAccount may reach.
+  name: claude-ai
+  namespace: agentplane-staging
+spec:
+  subjects:
+    - namespace: agentplane-staging
+      name: claude-ai
+  policies:
+    - basic
+    - forgejo-haku
+    - packages
+    - google-readonly
+    - grocy-sf-readonly
+    - home-assistant-readonly
+    - activitywatch-read
+    - aiquota-read
+    - haku-mailbox
+    - coinbase
+    - plaid-pgweb
+    - agentplane-testing
+    - github-downloads
+    - github-clone
+    - github-agentydragon-agent
+    - github-actions-logs
+    - buildbuddy
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressBinding
+metadata:
+  annotations:
+    description: What sandboxes running as the haku-agent ServiceAccount may reach.
+  name: haku-agent
+  namespace: agentplane-staging
+spec:
+  subjects:
+    - namespace: agentplane-staging
+      name: haku-agent
+  policies:
+    - basic
+    - forgejo-haku
+    - packages
+    - google-readonly
+    - grocy-sf-readonly
+    - home-assistant-readonly
+    - activitywatch-read
+    - aiquota-read
+    - haku-mailbox
+    - coinbase
+    - plaid-pgweb
+    - agentplane-testing
+    - github-downloads
+    - github-clone
+    - github-agentydragon-agent
+    - github-actions-logs
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, and reads of the templates they are made from."
+  name: sandbox-self
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        sandbox:
+          - create
+          - dispose
+          - exec
+          - get
+          - get_template
+          - list
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of Home Assistant MCP's default catalog; every other Home Assistant Action stays on the human path.
+  name: home-assistant-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        home_assistant:
+          - ha_config_get_automation
+          - ha_config_get_calendar_events
+          - ha_config_get_category
+          - ha_config_get_dashboard
+          - ha_config_get_label
+          - ha_config_get_scene
+          - ha_config_get_script
+          - ha_config_list_dashboard_resources
+          - ha_config_list_groups
+          - ha_config_list_helpers
+          - ha_get_app
+          - ha_get_automation_traces
+          - ha_get_blueprint
+          - ha_get_device
+          - ha_get_entity
+          - ha_get_entity_exposure
+          - ha_get_hacs_info
+          - ha_get_history
+          - ha_get_integration
+          - ha_get_logs
+          - ha_get_operation_status
+          - ha_get_overview
+          - ha_get_skill_guide
+          - ha_get_state
+          - ha_get_system_health
+          - ha_get_todo
+          - ha_get_zone
+          - ha_list_floors_areas
+          - ha_list_services
+          - ha_search
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path.
+  name: gmail-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        gmail:
+          - drafts_get
+          - drafts_list
+          - filters_get
+          - filters_list
+          - labels_get
+          - labels_list
+          - messages_get
+          - threads_get
+          - threads_list
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path.
+  name: google-calendar-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        google_calendar:
+          - get_event
+          - list_event_instances
+          - list_events
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path.
+  name: tana-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        tana:
+          - get_children
+          - get_or_create_calendar_node
+          - get_tag_schema
+          - list_tags
+          - list_workspaces
+          - read_node
+          - search_nodes
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path.
+  name: grocy-sf-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        grocy_sf:
+          - entities_get
+          - entities_list
+          - file_get
+          - get_below_minimum_stock
+          - get_current_user
+          - get_db_changed_time
+          - get_expired_stock
+          - get_expiring_stock
+          - get_product_stock
+          - get_system_info
+          - list_volatile_stock
+          - locations_list
+          - product_groups_list
+          - products_list
+          - quantity_units_list
+          - shopping_list_get
+          - shopping_lists_list
+          - stock_entries_list
+          - stock_get
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path.
+  name: ssh-reads
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        ssh:
+          - list_targets
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicyBinding
+metadata:
+  annotations:
+    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
+  name: claude-ai-reads
+  namespace: agentplane-staging
+spec:
+  subject:
+    namespace: agentplane-staging
+    name: claude-ai
+  policySets:
+    - github-reads
+    - github-identity-reads
+    - sandbox-self
+    - home-assistant-reads
+    - gmail-reads
+    - google-calendar-reads
+    - tana-reads
+    - grocy-sf-reads
+    - ssh-reads
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicyBinding
+metadata:
+  annotations:
+    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for the haku-agent ServiceAccount.
+  name: haku-agent-reads
+  namespace: agentplane-staging
+spec:
+  subject:
+    namespace: agentplane-staging
+    name: haku-agent
+  policySets:
+    - github-reads
+    - github-identity-reads
+    - sandbox-self
+    - home-assistant-reads
+    - gmail-reads
+    - google-calendar-reads
+    - tana-reads
+    - grocy-sf-reads
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    description: Outbound credentials readable only by the agentplane-staging egress proxy.
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+  name: agentplane-staging-egress-credentials
+spec: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-egress-credentials-reader
+  namespace: agentplane-staging-egress-credentials
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-egress
+  namespace: agentplane-staging-egress-credentials
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-egress-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-egress
+    namespace: agentplane-staging
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: agentplane-staging-egress-credentials
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: agentplane-github-pat
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: github-agentydragon-agent
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: agentplane-github-pat
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-forgejo-reader
+  namespace: haku-sandbox
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-forgejo-git
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-forgejo-reader
+  namespace: haku-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-forgejo-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-forgejo-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: haku-sandbox
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-forgejo-git
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: haku-forgejo-git
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-forgejo-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: haku-forgejo-git
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: forgejo-haku
+  namespace: agentplane-staging
+spec:
+  description: "The password of the `haku` account on the internal Forgejo, the service user that owns haku-state and haku's mirrors. Requests carrying it act as that account with its full authority -- it is the account's own password, not a scoped token, so it reaches every repository haku can reach and the web UI besides. The proxy narrows nothing but the host: treat a sandbox bound to this as holding haku's Forgejo account."
+  source:
+    secretRef:
+      name: haku-forgejo-git
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: forgejo-haku
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - forgejo-http.forgejo.svc.cluster.local
+        - forgejo-http.forgejo.svc
+        - forgejo-http.forgejo
+      clusterInternal: true
+      credentialRef:
+        name: forgejo-haku
+    - hosts:
+        - git.allegedly.works
+      credentialRef:
+        name: forgejo-haku
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: google-readonly
+  namespace: agentplane-staging
+spec:
+  description: "A Google OAuth access token minted and refreshed by Airlock (cluster/k8s/agents/airlock), mirrored into this namespace by ESO: the token of Airlock's `google` provider, whose scopes are all `.readonly` (Gmail, Calendar, Drive, Drive Activity, Tasks, Contacts, Docs, Sheets, Slides, YouTube). What the token was actually granted is whatever the operator consented to at Airlock, which can be narrower than that list -- an API outside it answers 403 `insufficientPermissions`. `google-readonly`'s rules restrict where the proxy presents it."
+  source:
+    secretRef:
+      name: google-access-token
+      key: access_token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: google-readonly
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - docs.googleapis.com
+        - gmail.googleapis.com
+        - people.googleapis.com
+        - sheets.googleapis.com
+        - slides.googleapis.com
+        - tasks.googleapis.com
+        - youtube.googleapis.com
+      methods:
+        - GET
+      credentialRef:
+        name: google-readonly
+    - hosts:
+        - www.googleapis.com
+      methods:
+        - GET
+      paths:
+        - /calendar/v3/**
+        - /drive/v3/**
+        - /youtube/v3/**
+      credentialRef:
+        name: google-readonly
+    - hosts:
+        - driveactivity.googleapis.com
+      methods:
+        - POST
+      paths:
+        - /v2/activity:query
+      credentialRef:
+        name: google-readonly
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-grocy-sf-reader
+  namespace: agents-infra
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-grocy-sf-readonly
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-grocy-sf-reader
+  namespace: agents-infra
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-grocy-sf-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-grocy-sf-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: agents-infra
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: grocy-sf-readonly
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: agentplane-grocy-sf-readonly
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-grocy-sf-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: grocy-sf-readonly
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: grocy-sf-readonly
+  namespace: agentplane-staging
+spec:
+  description: The app password of `agentplane-grocy-sf-readonly`, an Authentik service account admitted to the grocy-sf application (tf/gitops/agent-machine-access/grocy-sf.tf), copied into this namespace by ESO. Send it as HTTP Basic under that username. Grocy knows the account as a user with no permissions, and `grocy-sf-readonly`'s rule presents the password only on GETs to Grocy's read routes.
+  source:
+    secretRef:
+      name: grocy-sf-readonly
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: grocy-sf-readonly
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - grocy-sf.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /api/files/**
+        - /api/objects/**
+        - /api/stock
+        - /api/stock/**
+        - /api/system/db-changed-time
+        - /api/system/info
+        - /api/user
+      credentialRef:
+        name: grocy-sf-readonly
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-home-assistant-reader
+  namespace: home-assistant
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-home-assistant-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-home-assistant-reader
+  namespace: home-assistant
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-home-assistant-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-home-assistant-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: home-assistant
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: home-assistant-readonly
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: agentplane-home-assistant-token
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-home-assistant-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: home-assistant-readonly
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: home-assistant-readonly
+  namespace: agentplane-staging
+spec:
+  description: A long-lived token of `agentplane-reader`, a Home Assistant user in the read-only group, which the Home Assistant provisioner (homeassistant/provisioner) creates and keeps valid; ESO copies it into this namespace. Home Assistant refuses that user every service call, and `home-assistant-readonly`'s rule presents the token only on GETs of entity states and their history.
+  source:
+    secretRef:
+      name: home-assistant-readonly
+      key: token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: home-assistant-readonly
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - home-assistant.home-assistant.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/states
+        - /api/states/*
+        - /api/history/period/*
+      clusterInternal: true
+      credentialRef:
+        name: home-assistant-readonly
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-activitywatch-reader
+  namespace: activitywatch
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - activitywatch-read-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-activitywatch-reader
+  namespace: activitywatch
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-activitywatch-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-activitywatch-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: activitywatch
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: activitywatch-read-token
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: activitywatch-read-token
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-activitywatch-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: activitywatch-read-token
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: activitywatch-read
+  namespace: agentplane-staging
+spec:
+  description: The static bearer of the central ActivityWatch server's read route (cluster/docs/activitywatch/README.md), copied into this namespace by ESO. The route's own proxy admits it on GETs and on POST /api/0/query/ only, so it cannot write; what it reads is every device's window titles, URLs and AFK history.
+  source:
+    secretRef:
+      name: activitywatch-read-token
+      key: token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: activitywatch-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - activitywatch-read.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /api/0/**
+      credentialRef:
+        name: activitywatch-read
+    - hosts:
+        - activitywatch-read.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /api/0/query/
+      credentialRef:
+        name: activitywatch-read
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: aiquota-read
+  namespace: agentplane-staging
+spec:
+  description: aiquota's shared API bearer (aiquota.py), mirrored into this namespace by reflector. The API behind it serves only reads -- the Claude and Codex subscription quotas and each provider's raw usage response -- and `aiquota-read`'s rule presents it only on GETs under /v1/.
+  source:
+    secretRef:
+      name: aiquota-api-bearer-agentplane-staging
+      key: bearer-token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: aiquota-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - aiquota.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /v1/**
+      credentialRef:
+        name: aiquota-read
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-haku-mail-reader
+  namespace: flux-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-mail-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-haku-mail-reader
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-haku-mail-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-haku-mail-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: flux-system
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-mail-token
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: haku-mail-token
+        property: jwt
+      secretKey: jwt
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-haku-mail-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: haku-mail-token
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: haku-mailbox
+  namespace: agentplane-staging
+spec:
+  description: The Authentik JWT of Haku's mailbox account (haku@allegedly.works on the Stalwart server, cluster/k8s/haku/mailbox), rotated by authentik-jwt-rotation and copied into this namespace by ESO. It reads and changes the contents of that one mailbox over JMAP; it cannot send mail or administer the server (haku/docs/security.md).
+  source:
+    secretRef:
+      name: haku-mail-token
+      key: jwt
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: haku-mailbox
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - haku-mailbox.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /.well-known/jmap
+        - /jmap/**
+      credentialRef:
+        name: haku-mailbox
+    - hosts:
+        - haku-mailbox.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /jmap/**
+      credentialRef:
+        name: haku-mailbox
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: buildbuddy-api-key
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: buildbuddy-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: buildbuddy-api-key
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  description: "The shared BuildBuddy API key (cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml), the same one CI's BUILDBUDDY_API_KEY carries, copied into this namespace by ESO. BuildBuddy uses this one key for its JSON-over-HTTP API and its gRPC services alike, presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry -- this is a local-Bazel-client credential only: `bb remote`'s hosted runner copies the same value into the Bazel command it executes, which this proxy cannot see or protect (agentplane/docs/buildbuddy_remote_auth.md)."
+  source:
+    secretRef:
+      name: buildbuddy-api-key
+      key: api-key
+  targets:
+    - header: x-buildbuddy-api-key
+      method: wholeValue
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - app.buildbuddy.io
+        - remote.buildbuddy.io
+      credentialRef:
+        name: buildbuddy
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-plaid-pgweb-reader
+  namespace: plaid-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-pgweb-auth
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-plaid-pgweb-reader
+  namespace: plaid-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-plaid-pgweb-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-plaid-pgweb-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: plaid-mcp
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-pgweb-auth
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: plaid-pgweb-auth
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-plaid-pgweb-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: plaid-pgweb-auth
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: plaid-pgweb
+  namespace: agentplane-staging
+spec:
+  description: The HTTP Basic password of pgweb's `plaid` user (cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres role that can only SELECT from the Plaid mirror -- every linked account's balances, transactions and holdings -- and `plaid-pgweb`'s rules present the password only on pgweb's query API.
+  source:
+    secretRef:
+      name: plaid-pgweb-auth
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: plaid-pgweb
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/connection
+        - /api/info
+        - /api/objects
+        - /api/query
+        - /api/schemas
+        - /api/tables/**
+      clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+    - hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /api/query
+      clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-plaid-pgweb
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: plaid-pgweb
+            k8s:io.kubernetes.pod.namespace: plaid-mcp
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress

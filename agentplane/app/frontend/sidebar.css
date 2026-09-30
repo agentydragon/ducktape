@@ -178,21 +178,6 @@
   white-space: nowrap;
 }
 
-.agentplane-sidebar-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-}
-
-.agentplane-sidebar-dot.ok {
-  background: var(--mantine-color-green-6);
-}
-
-.agentplane-sidebar-dot.gray {
-  background: var(--mantine-color-gray-5);
-}
-
 .agentplane-sidebar-row-action {
   opacity: 0;
 }

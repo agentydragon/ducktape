@@ -161,7 +161,7 @@ def _users() -> dict[str, object]:
             # Scoped DDL so aiquota's own migrate init container can own its schema
             # (cluster/k8s/aiquota/schema.sql), the same pattern as the langfuse
             # user above. The aiquota database itself stays admin-created
-            # (cluster/k8s/clickhouse/schema).
+            # (cluster/cdk8s/clickhouse/schema.sql).
             "GRANT CREATE, DROP TABLE, DROP VIEW ON aiquota.*",
             "GRANT ALTER ADD COLUMN ON aiquota.*",
             # Required to execute `ON CLUSTER default` DDL, same as the langfuse

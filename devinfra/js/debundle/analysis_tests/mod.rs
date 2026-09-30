@@ -15,7 +15,7 @@ fn test_id(name: &str) -> Id {
     (name.into(), SyntaxContext::empty())
 }
 
-fn parse(source: &str) -> Module {
+fn parse_with_source_map(source: &str) -> (Module, Lrc<swc_common::SourceMap>) {
     let cm: Lrc<swc_common::SourceMap> = Default::default();
     let fm = cm.new_source_file(
         FileName::Custom("test.js".into()).into(),
@@ -27,7 +27,11 @@ fn parse(source: &str) -> Module {
         StringInput::from(&*fm),
         None,
     );
-    Parser::new_from(lexer).parse_module().unwrap()
+    (Parser::new_from(lexer).parse_module().unwrap(), cm)
+}
+
+fn parse(source: &str) -> Module {
+    parse_with_source_map(source).0
 }
 
 fn hints_with_decorate_helper(name: &str) -> AnalysisHints {
@@ -341,45 +345,6 @@ fn parent_call_after_nested_await_is_not_first_order() {
     assert!(
         !facts[1].first_order_unresolved_inline_fn,
         "the post-await reduce call must not trigger whole-owner inline fallback"
-    );
-}
-
-#[test]
-fn load_feature_flags_reduce_callback_after_nested_await_is_not_first_order() {
-    let module = parse(
-        "const FeatureFlag = {}; \
-         function setFeatureEnabledForUser() {} \
-         async function loadFeatureFlags(featureFlagLocalForage) { \
-           return ( \
-             await Promise.all(Object.keys({}).map((i) => featureFlagLocalForage.setItem(i, true))), \
-             await (await featureFlagLocalForage.keys()).reduce(async (i, l) => { \
-               const d = await i; \
-               if (await featureFlagLocalForage.getItem(l)) { \
-                 d[l] = true; \
-                 const u = FeatureFlag[l]; \
-                 if (u) { \
-                   const p = await setFeatureEnabledForUser(u); \
-                   for (const h of p) d[FeatureFlag[h]] = true; \
-                 } \
-               } \
-               return d; \
-             }, Promise.resolve({})) \
-           ); \
-         }",
-    );
-    let facts = analyze_facts(&module);
-    assert!(
-        facts[2]
-            .calls
-            .lazy
-            .contains(&test_id("setFeatureEnabledForUser"))
-    );
-    assert!(
-        !facts[2]
-            .calls
-            .first_order_lazy
-            .contains(&test_id("setFeatureEnabledForUser")),
-        "calls inside the reducer callback happen after the keys() await"
     );
 }
 

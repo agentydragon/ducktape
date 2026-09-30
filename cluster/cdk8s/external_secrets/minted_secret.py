@@ -110,13 +110,16 @@ def mint_db_role_secret(
     url_key: str = "DATABASE_URL",
     include_host_fields: bool = True,
     secret_type: str | None = "kubernetes.io/basic-auth",
+    target_labels: dict[str, str] | None = None,
+    target_annotations: dict[str, str] | None = None,
 ) -> None:
     """Mints `name` as a DB role credential: an ESO `Password` generator feeding a
     multi-field `ExternalSecret` template -- `username`/`password`, optionally `host`/
     `port`/`dbname`, plus a `{url_scheme}://...` connection string under `url_key`. The
     generator's own object is always `f"{name}-generator"`, distinct from the target
     Secret's name (unlike `mint_bearer_secret`, every DB role site already used this
-    naming).
+    naming). `target_labels` and `target_annotations` land on the generated Secret's own
+    metadata.
     """
     generator = password_generator(
         scope, f"{id}-generator", name=f"{name}-generator", namespace=namespace, length=40, digits=8
@@ -131,5 +134,11 @@ def mint_db_role_secret(
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
         refresh_interval="8760h",
         data_from=[DataFrom.from_password_generator(generator)],
-        template=ExternalSecretSpecTargetTemplate(type=secret_type, data=data),
+        template=ExternalSecretSpecTargetTemplate(
+            type=secret_type,
+            data=data,
+            metadata=ExternalSecretSpecTargetTemplateMetadata(labels=target_labels, annotations=target_annotations)
+            if target_labels or target_annotations
+            else None,
+        ),
     )

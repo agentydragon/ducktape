@@ -235,7 +235,8 @@ def flux_kustomization_depends_on_many(*dependencies: Kustomization) -> list[Kus
 
 
 class GeneratorOptions(BaseModel):
-    """A generator entry's `options`, per kustomize.config.k8s.io/v1beta1."""
+    """A generator entry's `options`, or the Kustomization's `generatorOptions` covering every
+    entry, per kustomize.config.k8s.io/v1beta1."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -261,6 +262,28 @@ class ConfigMapArgs(BaseModel):
     literals: list[str] | None = Field(default=None, description="`KEY=value` entries, split at the first `=`.")
 
 
+class PatchFile(BaseModel):
+    """A `patches` entry naming a strategic-merge patch file beside the `kustomization.yaml`;
+    each object in it names the object it patches."""
+
+    path: str
+
+
+class PatchTarget(BaseModel):
+    """A `patches` entry's `target` (kustomize's `Selector`)."""
+
+    kind: str
+    name: str
+    namespace: str
+
+
+class Json6902Patch(BaseModel):
+    """A `patches` entry holding a JSON6902 patch (RFC 6902 operations, as YAML) of `target`."""
+
+    patch: str
+    target: PatchTarget
+
+
 class _KustomizeKustomization(BaseModel):
     """The plain (non-CRD) `kustomize.config.k8s.io/v1beta1` `Kustomization`."""
 
@@ -273,10 +296,12 @@ class _KustomizeKustomization(BaseModel):
     components: list[str] | None = Field(
         default=None, description="Paths to Kustomize Component directories, per kustomize.config.k8s.io/v1beta1."
     )
+    generator_options: GeneratorOptions | None = None
     config_map_generator: list[ConfigMapArgs] | None = None
     configurations: list[str] | None = Field(
         default=None, description="Transformer configuration files, relative to the directory."
     )
+    patches: list[PatchFile | Json6902Patch] | None = None
 
 
 def kustomize_kustomization(
@@ -284,8 +309,10 @@ def kustomize_kustomization(
     resources: list[str],
     namespace: str | None = None,
     components: Sequence[str] = (),
+    generator_options: GeneratorOptions | None = None,
     config_map_generator: Sequence[ConfigMapArgs] = (),
     configurations: Sequence[str] = (),
+    patches: Sequence[PatchFile | Json6902Patch] = (),
 ) -> dict[str, object]:
     """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
 
@@ -298,7 +325,9 @@ def kustomize_kustomization(
         namespace=namespace,
         resources=resources,
         components=list(components) if components else None,
+        generator_options=generator_options,
         config_map_generator=list(config_map_generator) if config_map_generator else None,
         configurations=list(configurations) if configurations else None,
+        patches=list(patches) if patches else None,
     )
     return manifest.model_dump(by_alias=True, exclude_none=True)

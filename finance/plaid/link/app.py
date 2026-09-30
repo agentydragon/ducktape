@@ -24,8 +24,8 @@ from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlread
 from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import PlaidApiLike, sync_link, sync_transactions_only
-from finance.plaid.link.auth import install_oidc_auth
 from finance.plaid.link.webhooks import InvalidPlaidWebhookError, PlaidWebhookVerifier
+from util.oidc_login import LoginConfig, install_login
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +141,24 @@ class LinkSummary(BaseModel):
     sync_running: bool
 
 
+def _login_config(settings: PlaidWebSettings) -> LoginConfig:
+    return LoginConfig(
+        issuer=settings.oidc_issuer,
+        client_id=settings.oidc_client_id,
+        client_secret=settings.oidc_client_secret,
+        session_secret=settings.oidc_session_secret,
+        session_seconds=settings.oidc_session_seconds,
+        public_base_url=settings.public_base_url,
+        cookie_name="plaid-link-session",
+        # Plaid authenticates its webhook requests with Plaid-Verification; the route verifies the
+        # signature and raw-body hash before accepting an event.
+        public_paths={"/healthz", "/webhooks/plaid"},
+        signed_out_text="You are signed out of Plaid Link.",
+        session_created_log="Authentik session created for Plaid Link",
+        allowed_subject=None,
+    )
+
+
 class AppState:
     def __init__(self) -> None:
         self.client: PlaidClient | None = None
@@ -199,7 +217,7 @@ def create_app(
                 owned_client.close()
 
     app = FastAPI(title="Plaid Link Service", docs_url=None, redoc_url=None, lifespan=lifespan)
-    install_oidc_auth(app, settings)
+    install_login(app, _login_config(settings))
 
     def require_client() -> PlaidClient:
         if state.client is None:

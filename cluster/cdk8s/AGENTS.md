@@ -79,9 +79,9 @@ Model with constructs, deploy with one props object per environment.
 - **A cluster-wide behavior is configured once, where it runs; objects carry only the
   exceptions.** Restating the default on each object adds nothing when it matches, and
   looks like it works where the mechanism never reads it. Reloader runs with
-  `autoReloadAll` (`reloader.py`) and reads only a workload's own metadata, never its
-  pod template: a workload that must not restart says `"false"` there, and the rest say
-  nothing. Alloy discovers every ServiceMonitor, PodMonitor and PrometheusRule without a
+  `autoReloadAll` and ignores Jobs and CronJobs (`reloader.py`); it reads only a
+  workload's own metadata, never its pod template: a workload that must not restart says
+  `"false"` there, and the rest say nothing. Alloy discovers every ServiceMonitor, PodMonitor and PrometheusRule without a
   selector, so none carries a label for it.
 - **One shape per job.** Each job this layer does (build a kind, build one variant of a
   field, amend a pod spec, declare a Flux node) has one mechanism. Before writing a
@@ -116,7 +116,8 @@ its parameters. `generate_manifests.py` is the topological order, written out by
   artifact (`artifact_generators.artifact(name, directory, *shared_bases)`) just before
   the call and writes the directory in the node's argument:
   `generation.write_directory(root, artifact, *chart_builders, siblings=[...])`
-  synthesizes the charts and writes a `kustomization.yaml` listing them and the
+  synthesizes the charts into the directory's one generated file (<../docs/cdk8s.md>
+  § Shapes of a directory) and writes a `kustomization.yaml` listing it and the
   hand-written siblings, so a component is written and joined in one statement. It passes
   every artifact to `write_artifact_generators` last; a parked node's artifact is left
   out, since nothing packages a suspended directory. A directory keeping a hand-written
@@ -161,8 +162,9 @@ its parameters. `generate_manifests.py` is the topological order, written out by
 - **Output routing is by `spec.path`**, with the handful of Kustomizations whose `path`
   is not their own directory listed explicitly in the writer. Keep those explicit.
 - **A directory's root is written once**: its module's `OUTPUT_DIR` (or a named constant
-  like `BASE_DIR`) is `f"{GENERATED_ROOT}/..."` or `f"{HAND_WRITTEN_ROOT}/..."`
-  (`manifest_roots.py`), and the artifact in `generate_manifests.py` takes that constant,
+  like `BASE_DIR`) is `f"{GENERATED_ROOT}/..."` or `f"{HAND_WRITTEN_ROOT}/..."`, or
+  `f"{PARKED_ROOT}/..."` for a parked one (`manifest_roots.py`), and the artifact in
+  `generate_manifests.py` takes that constant,
   never the path spelled again. Moving a directory between roots is that one edit, plus
   the committed files; `GENERATED_ROOT` is right exactly when the generator writes every
   file the directory holds.

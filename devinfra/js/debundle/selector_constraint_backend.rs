@@ -55,58 +55,6 @@ impl ConstraintValue {
     }
 }
 
-/// How far compile-time presolve may carry one target's constraints into the
-/// domains other constraints see.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PresolveScope {
-    /// Propagate freely. A contradiction then surfaces wherever propagation
-    /// meets it, as an empty domain or table that no longer says which targets
-    /// caused it.
-    AcrossTargets,
-    /// A constraint prunes a variable's domain only when every target the
-    /// constraint is attributed to owns that variable, and `all_different`
-    /// propagates nothing. Every constraint keeps its attribution, so the
-    /// sidecar can localize an infeasible program to conflicting targets; an
-    /// owned variable whose own constraints empty its domain gets an empty
-    /// table instead, which localizes to that variable's targets alone.
-    WithinTargets,
-}
-
-/// The targets each variable belongs to: a target owns its owner variable and
-/// its binding variable. A constraint is attributed to every target owning one
-/// of its variables; a constraint over unowned variables only is hard.
-pub fn targets_by_variable(
-    projections: &[TargetProjection],
-) -> BTreeMap<ConstraintVariableId, BTreeSet<SelectorTargetId>> {
-    let mut targets = BTreeMap::<_, BTreeSet<_>>::new();
-    for projection in projections {
-        targets
-            .entry(projection.owner_variable)
-            .or_default()
-            .insert(projection.target);
-        if let Some(TargetBindingProjection::Variable(binding)) = &projection.binding_projection {
-            targets
-                .entry(*binding)
-                .or_default()
-                .insert(projection.target);
-        }
-    }
-    targets
-}
-
-pub fn constraint_targets(
-    targets_by_variable: &BTreeMap<ConstraintVariableId, BTreeSet<SelectorTargetId>>,
-    variables: &[ConstraintVariableId],
-) -> BTreeSet<SelectorTargetId> {
-    variables
-        .iter()
-        .filter_map(|variable| targets_by_variable.get(variable))
-        .flatten()
-        .copied()
-        .collect()
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum CompiledVariableDomain {
@@ -361,7 +309,6 @@ impl DomainValueDictionary {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompiledSelectorProblem {
-    pub presolve_scope: PresolveScope,
     pub value_dictionary: DomainValueDictionary,
     pub full_domains: FullDomainValues,
     #[serde(default)]
@@ -469,14 +416,8 @@ impl CompiledSelectorProblem {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CompiledSelectorProblemBuilder {
-    presolve_scope: PresolveScope,
-    targets_by_variable: BTreeMap<ConstraintVariableId, BTreeSet<SelectorTargetId>>,
-    /// `WithinTargets` only: owned variables whose own constraints left no
-    /// value. Their domain keeps its last non-empty value and `finish` adds an
-    /// empty table over each.
-    exhausted_variables: BTreeSet<ConstraintVariableId>,
     value_ids: DomainValueIds,
     value_dictionary: DomainValueDictionary,
     full_domains: FullDomainValues,
@@ -537,78 +478,28 @@ impl SharedVariableDomainIntersectionKey {
 }
 
 impl CompiledSelectorProblemBuilder {
-    pub fn new(presolve_scope: PresolveScope) -> Self {
-        Self {
-            presolve_scope,
-            targets_by_variable: BTreeMap::new(),
-            exhausted_variables: BTreeSet::new(),
-            value_ids: DomainValueIds::default(),
-            value_dictionary: DomainValueDictionary::default(),
-            full_domains: FullDomainValues::default(),
-            variables: Vec::new(),
-            target_projections: Vec::new(),
-            shared_variable_domains: Vec::new(),
-            shared_variable_domains_by_fingerprint: HashMap::new(),
-            shared_variable_domain_intersections: HashMap::new(),
-            allowed_tuple_row_sets: Vec::new(),
-            allowed_tuple_row_sets_by_fingerprint: HashMap::new(),
-            allowed_tuples: Vec::new(),
-            all_different: Vec::new(),
-            known_unsat: None,
-        }
-    }
-
     pub fn known_unsat_reason(&self) -> Option<&str> {
         self.known_unsat.as_deref()
     }
 
-    /// Whether presolve may narrow `variable` from a constraint over
-    /// `constraint_variables` (see [`PresolveScope`]).
-    pub fn may_prune(
-        &self,
-        constraint_variables: &[ConstraintVariableId],
-        variable: ConstraintVariableId,
-    ) -> bool {
-        match self.presolve_scope {
-            PresolveScope::AcrossTargets => true,
-            PresolveScope::WithinTargets => {
-                let owners = self.targets_by_variable.get(&variable);
-                constraint_targets(&self.targets_by_variable, constraint_variables)
-                    .iter()
-                    .all(|target| owners.is_some_and(|owners| owners.contains(target)))
-            }
-        }
-    }
-
-    /// Records that a table over `id` has no rows. Across targets that proves
-    /// the program unsatisfiable; within targets the empty table stays in the
-    /// problem for the sidecar to attribute.
     fn record_empty_table(&mut self, id: AllowedTupleConstraintId) {
-        if self.presolve_scope == PresolveScope::AcrossTargets {
-            self.known_unsat
-                .get_or_insert_with(|| format!("allowed tuple constraint {id:?} has no rows"));
-        }
+        self.known_unsat
+            .get_or_insert_with(|| format!("allowed tuple constraint {id:?} has no rows"));
     }
 
-    /// Installs a narrowed domain for `variable`, handling the empty case.
+    /// Installs a narrowed domain for `variable`; an empty one proves the
+    /// program unsatisfiable.
     fn set_variable_domain(
         &mut self,
         variable: ConstraintVariableId,
         values: CompiledVariableDomain,
     ) -> Result<(), CompiledSelectorProblemError> {
-        if !self.compiled_variable_domain_is_empty(&values) {
-            self.require_variable_mut(variable)?.values = values;
-            return Ok(());
-        }
-        if self.presolve_scope == PresolveScope::WithinTargets
-            && self.targets_by_variable.contains_key(&variable)
-        {
-            self.exhausted_variables.insert(variable);
-            return Ok(());
-        }
+        let empty = self.compiled_variable_domain_is_empty(&values);
         self.require_variable_mut(variable)?.values = values;
-        let reason = self.variable_empty_domain_reason(variable);
-        self.known_unsat.get_or_insert(reason);
+        if empty {
+            let reason = self.variable_empty_domain_reason(variable);
+            self.known_unsat.get_or_insert(reason);
+        }
         Ok(())
     }
 
@@ -705,18 +596,11 @@ impl CompiledSelectorProblemBuilder {
         {
             return Err(CompiledSelectorProblemError::DuplicateTargetProjection { target });
         }
-        let projection = TargetProjection {
+        self.target_projections.push(TargetProjection {
             target,
             owner_variable,
             binding_projection,
-        };
-        for (variable, targets) in targets_by_variable(std::slice::from_ref(&projection)) {
-            self.targets_by_variable
-                .entry(variable)
-                .or_default()
-                .extend(targets);
-        }
-        self.target_projections.push(projection);
+        });
         Ok(())
     }
 
@@ -1162,17 +1046,7 @@ impl CompiledSelectorProblemBuilder {
         Ok(Some(id))
     }
 
-    pub fn finish(mut self) -> Result<CompiledSelectorProblem, CompiledSelectorProblemError> {
-        for variable in std::mem::take(&mut self.exhausted_variables) {
-            let row_set = self
-                .intern_allowed_tuple_rows(CompiledAllowedTupleRows::from_unary_values(Vec::new()));
-            let id = AllowedTupleConstraintId(self.allowed_tuples.len());
-            self.allowed_tuples.push(CompiledAllowedTupleConstraint {
-                id,
-                variables: vec![variable],
-                row_set,
-            });
-        }
+    pub fn finish(self) -> Result<CompiledSelectorProblem, CompiledSelectorProblemError> {
         let variables: Vec<CompiledVariable> = self
             .variables
             .iter()
@@ -1186,7 +1060,6 @@ impl CompiledSelectorProblemBuilder {
             .collect();
 
         Ok(CompiledSelectorProblem {
-            presolve_scope: self.presolve_scope,
             value_dictionary: self.value_dictionary,
             full_domains: self.full_domains,
             shared_variable_domains: self.shared_variable_domains,
@@ -1383,13 +1256,6 @@ impl CompiledSelectorProblemBuilder {
                 kept_rows.extend_from_slice(row);
             }
         }
-        if kept_rows.is_empty() && self.presolve_scope == PresolveScope::WithinTargets {
-            return Ok(Some((
-                variables.to_vec(),
-                CompiledAllowedTupleRows::from_flat_rows(arity, Vec::new()),
-                rows.cell_count() != 0,
-            )));
-        }
         if kept_rows.is_empty() {
             if self.known_unsat.is_none() {
                 let variables = self.variables_debug_summary(variables);
@@ -1413,8 +1279,8 @@ impl CompiledSelectorProblemBuilder {
         for (column, values) in column_values.iter_mut().enumerate() {
             values.sort_unstable();
             values.dedup();
-            let can_restrict = self.may_prune(variables, variables[column])
-                && self.can_restrict_variable_to_encoded_values(variables[column], values)?;
+            let can_restrict =
+                self.can_restrict_variable_to_encoded_values(variables[column], values)?;
             column_can_restrict[column] = can_restrict;
             if can_restrict {
                 changed |= self.restrict_variable_to_encoded_values_changed(
@@ -1504,13 +1370,9 @@ impl CompiledSelectorProblemBuilder {
 
     fn simplify_all_different_entries<T>(
         &mut self,
-        entries: Vec<T>,
+        mut entries: Vec<T>,
         variable_for_entry: impl Fn(&T) -> ConstraintVariableId,
     ) -> Result<Vec<T>, CompiledSelectorProblemError> {
-        if self.presolve_scope == PresolveScope::WithinTargets {
-            return Ok(entries);
-        }
-        let mut entries = entries;
         let mut fixed_values = BTreeSet::new();
         loop {
             let mut next_entries = Vec::new();
@@ -2055,10 +1917,6 @@ pub struct BackendSolveResult {
     pub assignment_coverage: BackendAssignmentCoverage,
     pub assignments: Vec<BackendAssignment>,
     pub diagnostic: Option<String>,
-    pub solver_response_stats: Option<String>,
-    /// Unsatisfiable cores found after the plain solve was infeasible. The
-    /// status and assignments then cover only the targets outside them.
-    pub conflicts: Vec<Vec<SelectorTargetId>>,
     /// Only with [`BackendSolveStatus::Unknown`]: the projected variables
     /// proven to take one value before the backend stopped; each takes the
     /// value it has in every assignment. Every other variable is undecided.

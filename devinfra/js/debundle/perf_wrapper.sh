@@ -23,6 +23,9 @@
 #     perf_script_stacks.txt        — full perf script output, if it finishes
 #     perf_header.txt               — perf.data header
 #     perf_evlist.txt               — recorded event list
+#     perf_wrapper_env.txt          — resolved knobs, perf binary and addr2line
+#     .symbolizer-shim/             — addr2line -> llvm-addr2line symlink, made
+#                                     only when llvm-addr2line is on PATH
 #     stdout.txt                    — debundler stdout
 #     perf_record_stderr.txt        — debundler+perf stderr
 #

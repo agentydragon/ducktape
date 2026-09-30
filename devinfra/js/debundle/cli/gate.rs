@@ -62,7 +62,7 @@ enum GateCommand {
     Describe(GateDescribeArgs),
     /// Just the cut edges for one blocking SCC. The actionable subset —
     /// spec authors read this to pick which back-edge to break.
-    Cut(GateIdArgs),
+    Cut(GateCutArgs),
 }
 
 /// Shared args: paths to `owner_graph.json` (always written; carries
@@ -77,14 +77,6 @@ pub struct GateCommonArgs {
     /// Path to `owner_graph.json` (debundler analysis output).
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub owner_graph_path: PathBuf,
-
-    /// Per-module YAML tree root. Unused today; kept here so every
-    /// `debundle ...` command shares the same env/flag triple
-    /// (`--graph`/`--modules`/`--source-root`) per docs/cli.md.
-    /// Optional: nothing in `gate` reads it yet, so users need not
-    /// pass an ignored path.
-    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
-    pub modules_root: Option<PathBuf>,
 
     /// Override the default `cycles.json` location. Defaults to the
     /// sibling of `--graph`.
@@ -135,7 +127,7 @@ pub struct GateDescribeArgs {
 }
 
 #[derive(Debug, ClapArgs)]
-pub struct GateIdArgs {
+pub struct GateCutArgs {
     /// Blocking-SCC id (zero-based index into `cycles.json`).
     pub id: usize,
 
@@ -202,10 +194,6 @@ fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
         .with_context(|| format!("parsing blocking-SCC report {}", path.display()))
 }
 
-fn load_graph(common: &GateCommonArgs) -> Result<OwnerGraphReport> {
-    crate::load_owner_graph_report(&common.owner_graph_path)
-}
-
 fn run_list(args: GateListArgs) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let report = GateListReport {
@@ -247,7 +235,7 @@ fn find_entry(entries: &[BlockingSccEntry], id: usize) -> Result<&BlockingSccEnt
 fn run_describe(args: GateDescribeArgs) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
-    let graph = load_graph(&args.common)?;
+    let graph = crate::load_owner_graph_report(&args.common.owner_graph_path)?;
 
     let mut evidence = recompute_evidence(&graph, &entry.modules)?;
     if let Some(binding) = &args.binding {
@@ -320,7 +308,7 @@ fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
     }
 }
 
-fn run_cut(args: GateIdArgs) -> Result<()> {
+fn run_cut(args: GateCutArgs) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
     let report = GateCutReport {
@@ -753,9 +741,6 @@ mod tests {
     fn cycles_path_defaults_to_graph_sibling() {
         let common = GateCommonArgs {
             owner_graph_path: PathBuf::from("/tmp/reports/static/app/owner_graph.json"),
-            // `--modules` is optional and unread by gate; omitting it
-            // must not affect cycles-path resolution.
-            modules_root: None,
             cycles_path: None,
         };
         assert_eq!(
@@ -768,7 +753,6 @@ mod tests {
     fn cycles_path_override_wins() {
         let common = GateCommonArgs {
             owner_graph_path: PathBuf::from("/tmp/reports/static/app/owner_graph.json"),
-            modules_root: None,
             cycles_path: Some(PathBuf::from("/other/cycles.json")),
         };
         assert_eq!(

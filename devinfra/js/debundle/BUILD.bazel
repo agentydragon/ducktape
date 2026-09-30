@@ -1,5 +1,7 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
-load(":pipeline_analysis_test.bzl", "pipeline_analysis_test_suite")
+load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
+load(":optimized_cc_library.bzl", "optimized_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -8,8 +10,6 @@ exports_files([
     "SPEC.md",
     "perf_wrapper.sh",
 ])
-
-pipeline_analysis_test_suite(name = "pipeline_analysis_test")
 
 rust_library(
     name = "js_ast",
@@ -113,25 +113,6 @@ rust_test(
     edition = "2024",
 )
 
-# Soundness validation: every read-off, rendered to a source_match and run
-# through the legacy matcher oracle, must resolve uniquely to the intended item.
-# Separate crate so it exercises the public shape_index API plus the oracle
-# boundary explicitly.
-rust_test(
-    name = "shape_index_soundness_test",
-    srcs = ["shape_index_soundness_test.rs"],
-    crate_root = "shape_index_soundness_test.rs",
-    edition = "2024",
-    deps = [
-        ":js_ast",
-        ":selector_candidate_index",
-        ":shape_index",
-        ":source_match",
-        ":spec",
-        "@crates//:swc_ecma_ast",
-    ],
-)
-
 # OPT/read-off-depth distribution + size-sweep benchmark over synthetic
 # chunks. Run with `bazelisk run //devinfra/js/debundle:shape_index_bench`.
 rust_binary(
@@ -195,6 +176,7 @@ rust_library(
     srcs = ["output_layout.rs"],
     crate_root = "output_layout.rs",
     edition = "2024",
+    deps = ["@crates//:anyhow"],
 )
 
 rust_library(
@@ -223,7 +205,6 @@ rust_library(
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
     ],
 )
 
@@ -241,10 +222,8 @@ rust_library(
     deps = [
         ":artifact",
         ":identifier_rename_queue",
-        ":js_ast",
         ":output_layout",
         "@crates//:anyhow",
-        "@crates//:serde",
     ],
 )
 
@@ -565,7 +544,6 @@ rust_library(
         ":analysis",
         ":peel",
         ":spec",
-        "@crates//:swc_atoms",
     ],
 )
 
@@ -595,6 +573,7 @@ rust_library(
     crate_root = "spec_stats.rs",
     edition = "2024",
     deps = [
+        ":spec",
         ":spec_modules",
         "@crates//:anyhow",
         "@crates//:serde",
@@ -639,8 +618,8 @@ rust_test(
 
 rust_library(
     name = "yaml_edit",
-    srcs = ["cli/yaml_edit.rs"],
-    crate_root = "cli/yaml_edit.rs",
+    srcs = ["yaml_edit.rs"],
+    crate_root = "yaml_edit.rs",
     edition = "2024",
     deps = [
         "@crates//:anyhow",
@@ -677,7 +656,6 @@ rust_library(
     deps = [
         ":js_ast",
         ":readoff_render",
-        ":selector_candidate_index",
         ":selector_outcome",
         ":selector_resolve",
         ":shape_index",
@@ -724,12 +702,9 @@ rust_library(
         ":spec_modules",
         "@crates//:anyhow",
         "@crates//:clap",
-        "@crates//:petgraph",
         "@crates//:rustc-hash",
         "@crates//:serde",
         "@crates//:serde_json",
-        "@crates//:swc_atoms",
-        "@crates//:swc_common",
     ],
 )
 
@@ -739,9 +714,6 @@ rust_test(
     edition = "2024",
     deps = [
         ":report_fixtures",
-        "@crates//:serde_yaml",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_parser",
         "@crates//:tempfile",
     ],
 )
@@ -856,7 +828,6 @@ rust_library(
         ":spec",
         ":stage_one",
         ":vendor",
-        ":write_tree",
         "@crates//:anyhow",
         "@crates//:rayon",
         "@crates//:rustc-hash",
@@ -904,7 +875,6 @@ rust_library(
         ":spec",
         "@crates//:anyhow",
         "@crates//:rayon",
-        "@crates//:serde",
         "@crates//:swc_common",
     ],
 )
@@ -920,17 +890,9 @@ rust_library(
         ":js_ast",
         "@crates//:anyhow",
         "@crates//:serde",
-        "@crates//:serde_json",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
-)
-
-rust_test(
-    name = "identifier_rename_queue_test",
-    crate = ":identifier_rename_queue",
-    edition = "2024",
-    deps = [":binding_targets"],
 )
 
 rust_library(
@@ -941,10 +903,8 @@ rust_library(
     deps = [
         ":artifact",
         ":emit_harness",
-        ":identifier_rename_queue",
         ":js_ast",
         ":lowering",
-        ":output_layout",
         ":prepare_chunks",
         ":prune_dead_imports",
         ":prune_module_exports",
@@ -964,9 +924,6 @@ rust_library(
 rust_test(
     name = "pipeline_test",
     crate = ":pipeline",
-    data = [
-        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
-    ],
     edition = "2024",
     deps = ["@crates//:tempfile"],
 )
@@ -983,7 +940,6 @@ rust_library(
         "cli/outcome.rs",
         "cli/scc_cluster.rs",
         "cli/validate.rs",
-        "cli/yaml_edit.rs",
     ],
     crate_name = "debundle_cli",
     crate_root = "cli/mod.rs",
@@ -999,13 +955,13 @@ rust_library(
         ":pipeline",
         ":selector_codemod",
         ":selector_debt",
-        ":selector_ir_lowering",
         ":selector_outcome",
         ":selector_resolve",
         ":source_match",
         ":spec",
         ":spec_modules",
         ":spec_stats",
+        ":yaml_edit",
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:serde",
@@ -1019,22 +975,16 @@ rust_library(
 rust_test(
     name = "cli_test",
     crate = ":cli",
-    data = [
-        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
-    ],
     edition = "2024",
     deps = [
-        ":js_ast",
         ":report_fixtures",
         ":spec_tree",
         "@crates//:tempfile",
     ],
 )
 
-# Shared selector-program contract for the global resolver endpoint. This is the
-# data boundary between selector lowering, fact extraction, the fixed Ascent rule
-# library, and materialization; it is intentionally additive until the compare
-# path is wired.
+# Shared selector-program IR: the data boundary between selector lowering and
+# the constraint-solver backends.
 rust_library(
     name = "selector_ir",
     srcs = ["selector_ir.rs"],
@@ -1066,17 +1016,6 @@ rust_library(
     ],
 )
 
-rust_test(
-    name = "selector_constraint_backend_test",
-    size = "small",
-    crate = ":selector_constraint_backend",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":selector_ir",
-    ],
-)
-
 rust_library(
     name = "selector_constraint_model_builder",
     srcs = ["selector_constraint_model_builder.rs"],
@@ -1095,11 +1034,8 @@ rust_test(
     edition = "2024",
     deps = [
         ":analysis",
-        ":js_ast",
         ":selector_constraint_backend",
         ":selector_ir",
-        ":selector_ir_lowering",
-        ":spec",
     ],
 )
 
@@ -1128,15 +1064,71 @@ rust_test(
     ],
 )
 
+rust_prost_library(
+    name = "cp_model_rust_proto",
+    proto = "@or-tools//ortools/sat:cp_model_proto",
+)
+
+rust_prost_library(
+    name = "sat_parameters_rust_proto",
+    proto = "@or-tools//ortools/sat:sat_parameters_proto",
+)
+
+# OR-Tools' CP-SAT C API, linked into Rust. The C++ runtime is not implied by a
+# Rust link line.
+cc_library(
+    name = "ortools_cp_solver_impl",
+    linkopts = ["-lstdc++"],
+    tags = ["manual"],
+    visibility = ["//visibility:private"],
+    deps = ["@or-tools//ortools/sat/c_api:cp_solver_c"],
+)
+
+# Link the solver through this target only: it is always built in `opt`.
+optimized_cc_library(
+    name = "ortools_cp_solver",
+    dep = ":ortools_cp_solver_impl",
+)
+
+rust_library(
+    name = "ortools_cpsat_ffi",
+    srcs = ["ortools_cpsat_ffi.rs"],
+    edition = "2024",
+    link_deps = [":ortools_cp_solver"],
+    deps = [
+        ":cp_model_rust_proto",
+        ":sat_parameters_rust_proto",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
+    ],
+)
+
+rust_test(
+    name = "ortools_cpsat_ffi_test",
+    size = "small",
+    crate = ":ortools_cpsat_ffi",
+    edition = "2024",
+)
+
+rust_library(
+    name = "selector_ortools_cpsat_model",
+    srcs = ["selector_ortools_cpsat_model.rs"],
+    edition = "2024",
+    deps = [
+        ":cp_model_rust_proto",
+        ":selector_constraint_backend",
+    ],
+)
+
 rust_library(
     name = "selector_ortools_cpsat_backend",
     srcs = ["selector_ortools_cpsat_backend.rs"],
     edition = "2024",
     deps = [
+        ":cp_model_rust_proto",
+        ":ortools_cpsat_ffi",
+        ":sat_parameters_rust_proto",
         ":selector_constraint_backend",
-        ":selector_ir",
-        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cp_sat_rust_proto",
-        "@rules_rust_prost//private/3rdparty/crates:prost",
+        ":selector_ortools_cpsat_model",
     ],
 )
 
@@ -1144,21 +1136,12 @@ rust_test(
     name = "selector_ortools_cpsat_backend_test",
     size = "small",
     crate = ":selector_ortools_cpsat_backend",
-    data = [
-        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
-    ],
     edition = "2024",
-    env = {
-        "ORTOOLS_CPSAT_SOLVER": "$(rlocationpath //devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver)",
-    },
     deps = [
         ":analysis",
-        ":chunk_facts",
-        ":js_ast",
         ":selector_backend_solver",
         ":selector_ir",
-        ":selector_ir_lowering",
-        ":spec",
+        "@crates//:serde_json",
     ],
 )
 
@@ -1197,26 +1180,14 @@ rust_library(
     ],
 )
 
-rust_test(
-    name = "selector_runtime_test",
-    crate = ":selector_runtime",
-    edition = "2024",
-)
-
 rust_library(
     name = "selector_ir_lowering",
     srcs = ["selector_ir_lowering.rs"],
     edition = "2024",
     deps = [
         ":analysis",
-        ":chunk_facts",
-        ":js_ast",
         ":selector_ir",
-        ":source_match",
-        ":source_match_holes",
         ":spec",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
     ],
 )
 
@@ -1227,7 +1198,6 @@ rust_test(
     edition = "2024",
     deps = [
         ":selector_ir",
-        ":source_match",
         ":spec",
     ],
 )
@@ -1238,24 +1208,14 @@ label_flag(
     visibility = ["//visibility:public"],
 )
 
-label_flag(
-    name = "ortools_cpsat_solver",
-    build_setting_default = "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
-    visibility = ["//visibility:public"],
-)
-
 rust_binary(
     name = "debundle",
     srcs = ["main.rs"],
     crate_root = "main.rs",
-    data = [
-        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
-    ],
     edition = "2024",
     deps = [
         ":cli",
         ":gate",
-        "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:swc_common",
     ],

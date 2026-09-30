@@ -1,0 +1,145 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(default_visibility = ["//devinfra/claude/session_export:__pkg__"])
+
+TSCONFIG = ":tsconfig"
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+# Wire types generated from the API's own OpenAPI document, so the page's idea of a status is the
+# Pydantic model rather than a hand-kept copy. Not checked in.
+js_openapi_schema(
+    name = "schema",
+    generator = "//devinfra/claude/session_export:export_schema_bin",
+)
+
+ts_library(
+    name = "status",
+    srcs = ["status.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "api",
+    srcs = ["api.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":schema"],
+)
+
+ts_library(
+    name = "overview",
+    srcs = ["overview.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":status",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "pairing",
+    srcs = ["pairing.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":status",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "app",
+    srcs = ["app.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":overview",
+        ":pairing",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "page_css",
+    srcs = ["page.css"],
+)
+
+ts_library(
+    name = "main",
+    srcs = ["main.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":app",
+        ":page_css",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+spa_bundle(
+    name = "bundle",
+    entry_point = "main.tsx",
+    jsx = "automatic",
+    deps = [
+        ":main",
+        ":page_css",
+    ],
+)
+
+# ── Unit tests ─────────────────────────────────────────────────────────────────
+
+ts_library(
+    name = "status_test",
+    testonly = True,
+    srcs = ["status.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":status",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "api_test",
+    testonly = True,
+    srcs = ["api.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        "//:node_modules/vitest",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "vitest_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "vitest.config.mts",
+        ":api_test",
+        ":status_test",
+        "//:node_modules/vitest",
+    ],
+)

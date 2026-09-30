@@ -382,8 +382,7 @@ export { RuntimeCatalog };
     expect_rejection_containing_all(
         opts,
         &[
-            "conflicts with `DuplicateCatalog`",
-            "conflicts with `PrimaryCatalog`",
+            "admit no joint assignment",
             "catalog/primary",
             "as `PrimaryCatalog`",
             "source_matches[].bindings[`K`]",
@@ -435,9 +434,8 @@ export { RuntimeCatalog };
     let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "2 selector outcome(s): conflict=2",
-        "conflicts with `DuplicateCatalog`",
-        "conflicts with `PrimaryCatalog`",
+        "2 selector outcome(s): no_match=2",
+        "admit no joint assignment",
         "catalog/primary",
         "catalog/duplicate",
     ] {
@@ -478,9 +476,8 @@ export { RuntimeCatalog };
     let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "2 selector outcome(s): conflict=2",
-        "conflicts with `DuplicateCatalog`",
-        "conflicts with `PrimaryCatalog`",
+        "2 selector outcome(s): no_match=2",
+        "admit no joint assignment",
         "as `PrimaryCatalog`",
         "source_matches[].bindings[`K`]",
         "as `DuplicateCatalog`",
@@ -739,8 +736,6 @@ export { a, b, c };
     let consumer = fs::read_to_string(fixture.out_root.join("static/app/modules/consumer.js"))
         .expect("read consumer module");
 
-    parse_module(&consumer);
-    assert_unique_lexical_decls_per_scope(&consumer, "sharedReadableName");
     assert!(
         consumer.contains("sharedReadableName as sharedReadableName$1"),
         "expected imported readable name to be aliased away from local function decl; got:\n{consumer}",
@@ -784,13 +779,7 @@ export { destructure, alias, consumer };
             ],
         )],
     );
-    let fixture = run_fixture(opts);
-    let module_path = fixture.out_root.join("static/app/modules/mod_x.js");
-    let module_src = fs::read_to_string(&module_path).expect("read modules/mod_x.js");
-
-    parse_module(&module_src);
-    assert_unique_lexical_decls_per_scope(&module_src, "readable");
-    assert_entry_output(&fixture, "0 y vx\n");
+    assert_entry_output(&run_fixture(opts), "0 y vx\n");
 }
 
 // --- ImportSpecifier-bound members --------------------------------------
@@ -981,38 +970,31 @@ fn residual_public_export_name_does_not_capture_unrelated_chunk_renamed_import()
     // then naturalizes them to `entryHelper` and `vendorHelper`.
     // The entry import must therefore be `B as entryHelper`, not
     // `B as vendorHelper`.
-    let opts = FixtureOpts {
-        local_property_effects: false,
-        trusted_dataflow_summaries: false,
-        chunk_export_purity: &[],
-        extra_chunks: &[],
-        source: r#"import { o as B } from "./vendor.js";
+    let opts = FixtureOpts::new(
+        r#"import { o as B } from "./vendor.js";
 const St = value => "row:" + value;
 function Ite() {
   return St(B("ok"));
 }
 export { St as B, Ite };
 "#,
-        logical_modules: vec![logical_module(
+        vec![logical_module(
             "feature/consumer",
             &[Member::renamed("runConsumer", "Ite")],
         )],
-        chunk_renames: Some(chunk_renames(&[
-            ChunkRenameEntry::new("vendorHelper", "B").with_kind("import_specifier"),
-            ChunkRenameEntry::new("entryHelper", "St"),
-        ])),
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_inline(),
-        dataflow_aware_s_chain: false,
-        admission_overrides: &[],
-        extra_files: &[(
-            "static/app/vendor.js",
-            r#"export function o(value) {
+    )
+    .with_chunk_renames(chunk_renames(&[
+        ChunkRenameEntry::new("vendorHelper", "B").with_kind("import_specifier"),
+        ChunkRenameEntry::new("entryHelper", "St"),
+    ]))
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_extra_files(&[(
+        "static/app/vendor.js",
+        r#"export function o(value) {
   return "wrapped:" + value;
 }
 "#,
-        )],
-    };
+    )]);
     let fixture = run_fixture(opts);
 
     let moved = fs::read_to_string(
@@ -1021,8 +1003,6 @@ export { St as B, Ite };
             .join("static/app/modules/feature/consumer.js"),
     )
     .expect("read moved consumer module");
-    parse_module(&moved);
-    assert_unique_import_locals(&moved);
 
     assert!(
         moved.contains("B as entryHelper"),

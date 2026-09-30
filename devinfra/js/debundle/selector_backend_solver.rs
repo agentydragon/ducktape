@@ -13,7 +13,7 @@ use analysis::{OwnerId, StatementOrdinal};
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendAssignmentError, BackendSolveResult,
     BackendSolveStatus, BackendVariableAssignment, CompiledSelectorProblem, ConstraintValue,
-    ConstraintVariableId, MAX_ALTERNATIVES_PER_VARIABLE, PresolveScope, SelectorProblemBackend,
+    ConstraintVariableId, MAX_ALTERNATIVES_PER_VARIABLE, SelectorProblemBackend,
     TargetBindingProjection,
 };
 use selector_constraint_model_builder::{
@@ -21,15 +21,13 @@ use selector_constraint_model_builder::{
 };
 use selector_ir::{
     ClaimKind, ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore, SelectorProgram,
-    SelectorTargetId, SolverClaim, SolverGlobalDiagnostic, SolverResult,
+    SelectorTargetId, SolverClaim, SolverResult,
 };
 
-pub fn compile_backend_problem(
-    program: &SelectorProgram,
-    facts: &SelectorFactStore,
-) -> Result<CompiledSelectorProblem, CompiledSelectorProblemBuildError> {
-    compile_selector_problem(program, facts, PresolveScope::AcrossTargets)
-}
+/// What every target of a program that admits no assignment reports.
+const UNSATISFIABLE_REASON: &str = "selectors that interact with this one admit no joint \
+    assignment: two or more claim the same place or contradict a relation (the conflicting \
+    selectors are not localized)";
 
 pub fn solve_with_backend<B>(
     program: &SelectorProgram,
@@ -39,42 +37,13 @@ pub fn solve_with_backend<B>(
 where
     B: SelectorProblemBackend,
 {
-    let problem = compile_selector_problem(program, facts, PresolveScope::AcrossTargets)
-        .map_err(SelectorBackendSolveError::Build)?;
+    let problem =
+        compile_selector_problem(program, facts).map_err(SelectorBackendSolveError::Build)?;
     if problem.known_unsat.is_some() {
-        return solve_localizing_conflicts(program, facts, backend);
+        return Ok(unsatisfiable_result(program));
     }
     if let Some(result) = singleton_no_constraint_backend_result(&problem) {
         return decode_backend_result(program, facts, &problem, result);
-    }
-    let result = backend
-        .solve(&problem)
-        .map_err(SelectorBackendSolveError::Backend)?;
-    if result.status == BackendSolveStatus::Unsatisfiable {
-        if !result.assignments.is_empty() {
-            return Err(SelectorBackendSolveError::UnsatReturnedAssignments);
-        }
-        return solve_localizing_conflicts(program, facts, backend);
-    }
-    decode_backend_result(program, facts, &problem, result)
-}
-
-/// The program is unsatisfiable as presolved across targets. Recompile it
-/// presolved within targets, so every constraint stays attributable, and let
-/// the backend report the conflicting targets while it solves the rest.
-fn solve_localizing_conflicts<B>(
-    program: &SelectorProgram,
-    facts: &SelectorFactStore,
-    backend: &B,
-) -> Result<SolverResult, SelectorBackendSolveError<B::Error>>
-where
-    B: SelectorProblemBackend,
-{
-    let problem = compile_selector_problem(program, facts, PresolveScope::WithinTargets)
-        .map_err(SelectorBackendSolveError::Build)?;
-    if let Some(reason) = &problem.known_unsat {
-        // Within targets, presolve only empties what no target owns.
-        return Ok(no_match_result(program, Some(reason.clone())));
     }
     let result = backend
         .solve(&problem)
@@ -138,8 +107,6 @@ fn singleton_no_constraint_backend_result(
         assignment_coverage: BackendAssignmentCoverage::TargetSupportComplete,
         assignments: vec![BackendAssignment { values }],
         diagnostic: None,
-        solver_response_stats: None,
-        conflicts: Vec::new(),
         fixed_variables: BTreeSet::new(),
     })
 }
@@ -171,9 +138,6 @@ pub enum SelectorBackendSolveError<E> {
     /// sample, so they prove neither uniqueness nor the alternatives.
     SampleCoverage {
         status: BackendSolveStatus,
-    },
-    UnknownConflictTarget {
-        target: SelectorTargetId,
     },
 }
 
@@ -230,12 +194,6 @@ impl<E: fmt::Display> fmt::Display for SelectorBackendSolveError<E> {
                      target support"
                 )
             }
-            Self::UnknownConflictTarget { target } => {
-                write!(
-                    f,
-                    "selector backend reported a conflict for unknown target {target:?}"
-                )
-            }
         }
     }
 }
@@ -255,8 +213,7 @@ where
             | Self::MissingOwnerFact { .. }
             | Self::EmptySatisfyingAssignments { .. }
             | Self::UnsatReturnedAssignments
-            | Self::SampleCoverage { .. }
-            | Self::UnknownConflictTarget { .. } => None,
+            | Self::SampleCoverage { .. } => None,
         }
     }
 }
@@ -272,9 +229,7 @@ fn decode_backend_result<E>(
             if !result.assignments.is_empty() {
                 return Err(SelectorBackendSolveError::UnsatReturnedAssignments);
             }
-            // The attributed constraints were not the cause: the hard ones
-            // alone admit no assignment.
-            Ok(no_match_result(program, result.diagnostic))
+            Ok(unsatisfiable_result(program))
         }
         BackendSolveStatus::Unknown => decode_unknown_result(program, facts, problem, result),
         BackendSolveStatus::Satisfiable | BackendSolveStatus::Ambiguous => {
@@ -292,22 +247,21 @@ fn decode_backend_result<E>(
                     status: result.status,
                 });
             }
-            let conflicts = conflict_outcomes(program, &result.conflicts)?;
             decode_satisfying_assignments(
                 program,
                 facts,
                 problem,
                 &result.assignments,
                 capped,
-                &conflicts,
+                &BTreeMap::new(),
             )
         }
     }
 }
 
 /// The backend stopped before finishing. A target is resolved only when every
-/// variable it projects was proven fixed before the stop; conflict sets found
-/// before it still stand; every other target is undecided.
+/// variable it projects was proven fixed before the stop; every other target
+/// is undecided.
 fn decode_unknown_result<E>(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
@@ -322,7 +276,7 @@ fn decode_unknown_result<E>(
     let reason = result
         .diagnostic
         .unwrap_or_else(|| "the selector backend stopped before deciding".to_string());
-    let mut decided_elsewhere = conflict_outcomes(program, &result.conflicts)?;
+    let mut undecided = BTreeMap::new();
     for projection in &problem.target_projections {
         let fixed = result.fixed_variables.contains(&projection.owner_variable)
             && match &projection.binding_projection {
@@ -332,11 +286,12 @@ fn decode_unknown_result<E>(
                 Some(TargetBindingProjection::Const(_)) | None => true,
             };
         if !fixed {
-            decided_elsewhere
-                .entry(projection.target)
-                .or_insert_with(|| ClaimOutcome::Undecided {
+            undecided.insert(
+                projection.target,
+                ClaimOutcome::Undecided {
                     reason: reason.clone(),
-                });
+                },
+            );
         }
     }
     decode_satisfying_assignments(
@@ -345,36 +300,8 @@ fn decode_unknown_result<E>(
         problem,
         &result.assignments,
         false,
-        &decided_elsewhere,
+        &undecided,
     )
-}
-
-/// A core of one target means its own constraints admit no assignment, which
-/// is a plain no-match; a larger core is a conflict among its targets.
-fn conflict_outcomes<E>(
-    program: &SelectorProgram,
-    conflicts: &[Vec<SelectorTargetId>],
-) -> Result<BTreeMap<SelectorTargetId, ClaimOutcome>, SelectorBackendSolveError<E>> {
-    let mut outcomes = BTreeMap::new();
-    for conflict in conflicts {
-        for target in conflict {
-            if !program.targets.iter().any(|known| known.id == *target) {
-                return Err(SelectorBackendSolveError::UnknownConflictTarget { target: *target });
-            }
-            let with = conflict
-                .iter()
-                .copied()
-                .filter(|other| other != target)
-                .collect::<Vec<_>>();
-            let outcome = if with.is_empty() {
-                ClaimOutcome::NoMatch
-            } else {
-                ClaimOutcome::Conflict { with }
-            };
-            outcomes.insert(*target, outcome);
-        }
-    }
-    Ok(outcomes)
 }
 
 /// Targets in `decided_elsewhere` take their outcome from it; the assignments
@@ -457,7 +384,6 @@ fn decode_satisfying_assignments<E>(
                 },
             })
             .collect(),
-        global_diagnostic: None,
     })
 }
 
@@ -506,20 +432,18 @@ fn claims_to_outcome(claims: Vec<ResolvedClaim>, capped: bool) -> ClaimOutcome {
     }
 }
 
-fn no_match_result(program: &SelectorProgram, diagnostic: Option<String>) -> SolverResult {
+fn unsatisfiable_result(program: &SelectorProgram) -> SolverResult {
     SolverResult {
         claims: program
             .targets
             .iter()
             .map(|target| SolverClaim {
                 target: target.id,
-                outcome: ClaimOutcome::NoMatch,
+                outcome: ClaimOutcome::Unsatisfiable {
+                    reason: UNSATISFIABLE_REASON.to_string(),
+                },
             })
             .collect(),
-        global_diagnostic: diagnostic.map(|reason| SolverGlobalDiagnostic {
-            category: "unsatisfiable".to_string(),
-            reason,
-        }),
     }
 }
 
@@ -608,40 +532,6 @@ mod tests {
                 assignment_coverage: self.coverage,
                 assignments,
                 diagnostic: None,
-                solver_response_stats: None,
-                conflicts: Vec::new(),
-                fixed_variables: BTreeSet::new(),
-            })
-        }
-    }
-
-    /// Reports every target of the problem it receives as one conflict set.
-    #[derive(Debug, Default)]
-    struct ConflictingBackend {
-        received: std::cell::RefCell<Vec<CompiledSelectorProblem>>,
-    }
-
-    impl SelectorProblemBackend for ConflictingBackend {
-        type Error = Infallible;
-
-        fn solve(
-            &self,
-            problem: &CompiledSelectorProblem,
-        ) -> Result<BackendSolveResult, Self::Error> {
-            self.received.borrow_mut().push(problem.clone());
-            Ok(BackendSolveResult {
-                status: BackendSolveStatus::Satisfiable,
-                assignment_coverage: BackendAssignmentCoverage::TargetSupportComplete,
-                assignments: vec![BackendAssignment { values: Vec::new() }],
-                diagnostic: None,
-                solver_response_stats: None,
-                conflicts: vec![
-                    problem
-                        .target_projections
-                        .iter()
-                        .map(|projection| projection.target)
-                        .collect(),
-                ],
                 fixed_variables: BTreeSet::new(),
             })
         }
@@ -790,7 +680,7 @@ mod tests {
     #[test]
     fn builds_backend_problem_from_selector_program() {
         let (program, target) = binding_program();
-        let problem = compile_backend_problem(&program, &facts()).unwrap();
+        let problem = compile_selector_problem(&program, &facts()).unwrap();
 
         assert_eq!(problem.variables.len(), 2);
         assert_eq!(problem.target_projections[0].target, target);
@@ -819,7 +709,7 @@ mod tests {
     #[test]
     fn backend_problem_preserves_constant_binding_projection() {
         let (program, target) = const_binding_program();
-        let problem = compile_backend_problem(&program, &facts()).unwrap();
+        let problem = compile_selector_problem(&program, &facts()).unwrap();
 
         assert_eq!(problem.target_projections[0].target, target);
         assert_eq!(
@@ -914,9 +804,40 @@ mod tests {
         }
     }
 
+    fn assert_every_target_unsatisfiable(result: &SolverResult, targets: &[SelectorTargetId]) {
+        for target in targets {
+            assert!(
+                matches!(
+                    result.outcome_for(*target),
+                    Some(ClaimOutcome::Unsatisfiable { .. })
+                ),
+                "{target:?}: {result:?}"
+            );
+        }
+    }
+
+    /// Two targets, each over a variable owner and binding, so the program
+    /// reaches the backend.
     #[test]
-    fn hard_unsat_backend_result_maps_to_no_match() {
-        let (program, target) = binding_program();
+    fn backend_unsatisfiable_status_leaves_every_target_unsatisfiable() {
+        let mut program = SelectorProgram::default();
+        let targets = ["First", "Second"].map(|export_name| {
+            let owner = program.add_variable(VariableDomain::Owner, Some(export_name.to_string()));
+            let binding = program.add_variable(VariableDomain::String, None);
+            program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+                owner: OwnerTerm::Var { id: owner },
+                binding: StringTerm::Var { id: binding },
+            });
+            program.add_target(
+                ChunkId(0),
+                owner,
+                "module",
+                ClaimKind::Binding {
+                    export_name: Some(export_name.to_string()),
+                },
+                ClaimOrigin::Synthetic,
+            )
+        });
         let backend = SelectingBackend {
             status: BackendSolveStatus::Unsatisfiable,
             coverage: BackendAssignmentCoverage::Sample,
@@ -925,7 +846,22 @@ mod tests {
 
         let result = solve_with_backend(&program, &facts(), &backend).unwrap();
 
-        assert_eq!(result.outcome_for(target), Some(&ClaimOutcome::NoMatch));
+        assert_every_target_unsatisfiable(&result, &targets);
+    }
+
+    #[test]
+    fn unsatisfiable_status_with_assignments_is_a_backend_error() {
+        let (program, _target) = binding_program();
+        let backend = SelectingBackend {
+            status: BackendSolveStatus::Unsatisfiable,
+            coverage: BackendAssignmentCoverage::Sample,
+            assignments: vec![vec![(ConstraintVariableId(0), owner(1))]],
+        };
+
+        assert!(matches!(
+            solve_with_backend(&program, &facts(), &backend),
+            Err(SelectorBackendSolveError::UnsatReturnedAssignments)
+        ));
     }
 
     #[test]
@@ -987,36 +923,15 @@ mod tests {
         );
     }
 
-    /// Presolve across targets proves the two fixed targets clash before any
-    /// backend call; the program is then recompiled within targets, keeping
-    /// the clash as an attributed `all_different` for the backend to localize.
+    /// Presolve proves the two fixed targets clash before any backend call.
     #[test]
-    fn known_unsat_is_recompiled_for_conflict_localization() {
+    fn known_unsat_is_decided_without_the_backend() {
         let (program, first_target, second_target) = duplicate_fixed_target_program();
-        let backend = ConflictingBackend::default();
 
-        let result = solve_with_backend(&program, &single_binding_facts(), &backend).unwrap();
+        let result =
+            solve_with_backend(&program, &single_binding_facts(), &PanickingBackend).unwrap();
 
-        let received = backend.received.borrow();
-        let [problem] = received.as_slice() else {
-            panic!("expected one backend call, got {}", received.len());
-        };
-        assert_eq!(problem.presolve_scope, PresolveScope::WithinTargets);
-        assert_eq!(problem.known_unsat, None);
-        assert_eq!(problem.all_different.len(), 1);
-        assert_eq!(problem.all_different[0].variables.len(), 2);
-        assert_eq!(
-            result.outcome_for(first_target),
-            Some(&ClaimOutcome::Conflict {
-                with: vec![second_target]
-            })
-        );
-        assert_eq!(
-            result.outcome_for(second_target),
-            Some(&ClaimOutcome::Conflict {
-                with: vec![first_target]
-            })
-        );
+        assert_every_target_unsatisfiable(&result, &[first_target, second_target]);
     }
 
     fn fixed_binding_targets(
@@ -1047,89 +962,22 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn conflict_sets_decode_per_target_and_the_rest_resolves() {
-        let mut program = SelectorProgram::default();
-        let targets = fixed_binding_targets(&mut program, &["minA", "minB", "minC", "minD"]);
-        let [left, right, lone, resolved] = targets[..] else {
-            unreachable!()
-        };
-        let mut facts = SelectorFactStore::default();
-        for (owner, binding) in [(1, "minA"), (2, "minB"), (3, "minC"), (4, "minD")] {
-            facts.push(owner_fact(OwnerId(owner), owner * 10, "function"));
-            facts.push(binding_fact(OwnerId(owner), binding));
-        }
-        let problem =
-            compile_selector_problem(&program, &facts, PresolveScope::WithinTargets).unwrap();
-        let resolved_owner = problem
-            .target_projections
-            .iter()
-            .find(|projection| projection.target == resolved)
-            .unwrap()
-            .owner_variable;
-
-        let result = decode_backend_result::<Infallible>(
-            &program,
-            &facts,
-            &problem,
-            BackendSolveResult {
-                status: BackendSolveStatus::Satisfiable,
-                assignment_coverage: BackendAssignmentCoverage::TargetSupportComplete,
-                assignments: vec![BackendAssignment {
-                    values: vec![BackendVariableAssignment {
-                        variable: resolved_owner,
-                        value: backend_value_for(&problem, &owner(4)),
-                    }],
-                }],
-                diagnostic: None,
-                solver_response_stats: None,
-                conflicts: vec![vec![left, right], vec![lone]],
-                fixed_variables: BTreeSet::new(),
-            },
-        )
-        .unwrap();
-
-        assert_eq!(
-            result.outcome_for(left),
-            Some(&ClaimOutcome::Conflict { with: vec![right] })
-        );
-        assert_eq!(
-            result.outcome_for(right),
-            Some(&ClaimOutcome::Conflict { with: vec![left] })
-        );
-        // A core of one target is its own constraints failing: a no-match.
-        assert_eq!(result.outcome_for(lone), Some(&ClaimOutcome::NoMatch));
-        assert_eq!(
-            result.outcome_for(resolved),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    chunk_id: ChunkId(0),
-                    owner: OwnerId(4),
-                    statement_ordinal: StatementOrdinal(40),
-                    binding: Some("minD".to_string()),
-                    provenance: Vec::new(),
-                }
-            })
-        );
-    }
-
-    /// Four targets over distinct bindings, decoded from an UNKNOWN response:
+    /// Two targets over distinct bindings, decoded from an UNKNOWN response:
     /// only a target whose variables the backend proved fixed resolves,
     /// however many rows agree on the others.
     #[test]
     fn unknown_resolves_only_proven_fixed_targets() {
         let mut program = SelectorProgram::default();
-        let targets = fixed_binding_targets(&mut program, &["minA", "minB", "minC", "minD"]);
-        let [fixed, unproven, left, right] = targets[..] else {
+        let targets = fixed_binding_targets(&mut program, &["minA", "minB"]);
+        let [fixed, unproven] = targets[..] else {
             unreachable!()
         };
         let mut facts = SelectorFactStore::default();
-        for (owner, binding) in [(1, "minA"), (2, "minB"), (3, "minC"), (4, "minD")] {
+        for (owner, binding) in [(1, "minA"), (2, "minB")] {
             facts.push(owner_fact(OwnerId(owner), owner * 10, "function"));
             facts.push(binding_fact(OwnerId(owner), binding));
         }
-        let problem =
-            compile_selector_problem(&program, &facts, PresolveScope::WithinTargets).unwrap();
+        let problem = compile_selector_problem(&program, &facts).unwrap();
         let owner_variable = |target| {
             problem
                 .target_projections
@@ -1159,8 +1007,6 @@ mod tests {
                 // Both rows agree on `unproven`, but nothing proved it fixed.
                 assignments: vec![row.clone(), row],
                 diagnostic: Some(reason.to_string()),
-                solver_response_stats: None,
-                conflicts: vec![vec![left, right]],
                 fixed_variables: BTreeSet::from([owner_variable(fixed)]),
             },
         )
@@ -1184,11 +1030,6 @@ mod tests {
                 reason: reason.to_string()
             })
         );
-        // A conflict set found before the stop is still proven.
-        assert_eq!(
-            result.outcome_for(left),
-            Some(&ClaimOutcome::Conflict { with: vec![right] })
-        );
     }
 
     #[test]
@@ -1206,35 +1047,5 @@ mod tests {
             result.outcome_for(target),
             Some(ClaimOutcome::Undecided { .. })
         ));
-    }
-
-    /// Within targets, a target's own candidate restriction that leaves no
-    /// value becomes an empty table attributed to that target alone, instead
-    /// of an empty domain that would fail the whole program.
-    #[test]
-    fn within_targets_exhausted_domain_becomes_an_attributed_empty_table() {
-        let mut program = SelectorProgram::default();
-        let targets = fixed_binding_targets(&mut program, &["absent", "minA"]);
-        let problem = compile_selector_problem(
-            &program,
-            &single_binding_facts(),
-            PresolveScope::WithinTargets,
-        )
-        .unwrap();
-
-        assert_eq!(problem.known_unsat, None);
-        let absent_owner = problem
-            .target_projections
-            .iter()
-            .find(|projection| projection.target == targets[0])
-            .unwrap()
-            .owner_variable;
-        assert!(
-            problem.allowed_tuples.iter().any(|constraint| {
-                constraint.variables == [absent_owner]
-                    && problem.allowed_tuple_rows(constraint).is_empty()
-            }),
-            "{problem:#?}"
-        );
     }
 }

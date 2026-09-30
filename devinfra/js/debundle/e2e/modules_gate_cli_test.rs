@@ -11,83 +11,10 @@
 //! the same `render_cycle_summary` text the pipeline prints when
 //! the materializer's gate rejects.
 
-use debundle_e2e_support::{debundler_path, graph_with_acyclic_cross_module_read, write_text_file};
-use std::process::Command;
-
-/// Synthetic owner graph with three owners (alpha, beta, gamma)
-/// and a DAG of constraining eager-use edges that, when alpha and
-/// beta land in the same merged module, closes into a 2-cycle with
-/// gamma's module.
-///
-/// Edges (all `eager_use`, `constrains_init_order: true`):
-///   alpha (owner:0) → gamma (owner:2)
-///   gamma (owner:2) → beta  (owner:1)
-///
-/// Pre-merge with alpha in module_a, beta in module_b, gamma in
-/// module_c: the quotient is `a → c → b` — a DAG, realizable.
-///
-/// Post-merge (a+b → m): the quotient becomes `m → c`, `c → m` —
-/// a 2-cycle of constraining edges, unrealizable.
-fn graph_with_merge_cycle_potential() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "declared_bindings": [
-                    { "binding": "alpha", "export_name": "alpha" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "a"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "declared_bindings": [
-                    { "binding": "beta", "export_name": "beta" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "b"
-            },
-            {
-                "id": "owner:2",
-                "statement_ordinal": 2,
-                "declared_bindings": [
-                    { "binding": "gamma", "export_name": "gamma" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "c"
-            }
-        ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:2",
-                "edge_kind": "eager_use",
-                "binding": "gamma",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            },
-            {
-                "id": "owner_edge:1",
-                "source": "owner:2",
-                "target": "owner:1",
-                "edge_kind": "eager_use",
-                "binding": "beta",
-                "statement_ordinal": 2,
-                "constrains_init_order": true
-            }
-        ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
-    .to_string()
-}
+use debundle_e2e_support::{
+    graph_with_acyclic_cross_module_read, graph_with_merge_cycle_potential, owner_edge,
+    owner_graph, owner_node, run_debundle, write_text_file,
+};
 
 /// Synthetic owner graph where alpha (owner:0) and beta (owner:1)
 /// mutually eager-read each other. Pre-edit with alpha in module_a
@@ -97,61 +24,27 @@ fn graph_with_merge_cycle_potential() -> String {
 /// leaves the surviving binding's owner pointing at residual,
 /// which still cycles with the other module.
 fn graph_with_mutual_cross_module_reads() -> String {
-    serde_json::json!({
-        "chunk_id": "test/chunk",
-        "nodes": [
-            {
-                "id": "owner:0",
-                "statement_ordinal": 0,
-                "declared_bindings": [
-                    { "binding": "alpha", "export_name": "alpha" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "a"
-            },
-            {
-                "id": "owner:1",
-                "statement_ordinal": 1,
-                "declared_bindings": [
-                    { "binding": "beta", "export_name": "beta" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "b"
-            }
+    owner_graph(
+        "test/chunk",
+        vec![
+            owner_node("owner:0", 0, "alpha", "a"),
+            owner_node("owner:1", 1, "beta", "b"),
         ],
-        "edges": [
-            {
-                "id": "owner_edge:0",
-                "source": "owner:0",
-                "target": "owner:1",
-                "edge_kind": "eager_use",
-                "binding": "beta",
-                "statement_ordinal": 0,
-                "constrains_init_order": true
-            },
-            {
-                "id": "owner_edge:1",
-                "source": "owner:1",
-                "target": "owner:0",
-                "edge_kind": "eager_use",
-                "binding": "alpha",
-                "statement_ordinal": 1,
-                "constrains_init_order": true
-            }
+        vec![
+            owner_edge("owner_edge:0", "eager_use", "owner:0", "owner:1", "beta", 0),
+            owner_edge(
+                "owner_edge:1",
+                "eager_use",
+                "owner:1",
+                "owner:0",
+                "alpha",
+                1,
+            ),
         ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
+    )
     .to_string()
 }
 
-/// Synthetic owner graph with one cross-module read (alpha → beta).
-/// alpha lives in module_a, beta in module_b. Pre-edit quotient is
-/// the DAG `a → b`, realizable. Merging a + b drops the cross-module
-/// edge entirely (same-module). Deleting either one leaves a clean
-/// residual fallback with no cycle.
 #[test]
 fn modules_merge_rejects_when_merge_creates_cycle() {
     let dir = tempfile::tempdir().unwrap();
@@ -172,20 +65,17 @@ fn modules_merge_rejects_when_merge_creates_cycle() {
         "members:\n  - selector: { binding: { name: gamma } }\n",
     );
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "merge",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "--target",
-            "a.yaml",
-            "b.yaml",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "merge",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "--target",
+        "a.yaml",
+        "b.yaml",
+    ]);
     assert!(!out.status.success(), "expected non-zero exit");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -213,20 +103,17 @@ fn modules_merge_accepts_clean_merge() {
         "members:\n  - selector: { binding: { name: beta } }\n",
     );
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "merge",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "--target",
-            "a.yaml",
-            "b.yaml",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "merge",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "--target",
+        "a.yaml",
+        "b.yaml",
+    ]);
     assert!(
         out.status.success(),
         "expected zero exit; stderr: {}",
@@ -253,21 +140,18 @@ fn modules_merge_gate_accepts_missing_target() {
         "members:\n  - selector: { binding: { name: beta } }\n",
     );
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "merge",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "--target",
-            "merged/new_target",
-            "a.yaml",
-            "b.yaml",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "merge",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "--target",
+        "merged/new_target",
+        "a.yaml",
+        "b.yaml",
+    ]);
     assert!(
         out.status.success(),
         "expected zero exit; stderr: {}",
@@ -297,19 +181,16 @@ fn modules_delete_force_rejects_when_post_state_unrealizable() {
         "members:\n  - selector: { binding: { name: beta } }\n",
     );
 
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "delete",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "b.yaml",
-            "--force",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "delete",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "b.yaml",
+        "--force",
+    ]);
     assert!(!out.status.success(), "expected non-zero exit");
     let stderr = String::from_utf8_lossy(&out.stderr);
     // The mutual-eager-reads fixture forms one atomic unit; deleting
@@ -343,19 +224,16 @@ fn modules_delete_force_accepts_clean_deletion() {
     // Delete `b.yaml`: beta becomes unclaimed → residual. The
     // post-delete quotient is `a → residual`, still a DAG, so the
     // gate accepts.
-    let out = Command::new(debundler_path())
-        .args([
-            "modules",
-            "delete",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "b.yaml",
-            "--force",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "modules",
+        "delete",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "b.yaml",
+        "--force",
+    ]);
     assert!(
         out.status.success(),
         "expected zero exit; stderr: {}",

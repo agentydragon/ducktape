@@ -557,6 +557,26 @@ ts_library(
     ],
 )
 
+ts_library(
+    name = "thread_status_dot",
+    srcs = [
+        "css.d.ts",
+        "thread_status_dot.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_status_dot_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "thread_status_dot_css",
+    srcs = ["thread_status_dot.css"],
+)
+
 # sidebar.tsx imports this stylesheet for the bundler.
 js_library(
     name = "sidebar_css",
@@ -588,6 +608,7 @@ ts_library(
         ":sidebar_css",
         ":stream_status",
         ":thread_groups",
+        ":thread_status_dot",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",

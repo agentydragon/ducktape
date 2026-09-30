@@ -55,6 +55,7 @@ IMAGES = (
     "attic-jwt-rotation",
     "authentik-jwt-rotation",
     "aw-server",
+    "claude-session-sync",
     "cli-proxy-api",
     "cpap-gateway",
     "cpap-sync",

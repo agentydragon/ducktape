@@ -25,7 +25,8 @@ there).
 - `event_id` is a `uuid` with no index: the API repeats ids across sessions (3,492 in the archive).
 - `event_type` and `source` are plain `text`. The vocabularies are open (20 event types, one of them seen once).
 - `received_at`, `processing_at` and `processed_at` are the worker queue's stamps, present on about a fifth of
-  events. NULL means the event has not reached that stage, or never passes through the queue.
+  events. NULL means the event has not reached that stage, or never passes through the queue: only events with
+  `source: client` do (a user's message, a queued notification, a control response), never the worker's own.
 - `payload` is `jsonb`, in `lz4`-compressed TOAST.
 - `device_attestation_status` and `sent_by_account_id` are not stored: they are `DEVICE_ATTESTATION_STATUS_UNSPECIFIED`
   and null on every event observed, and an event that differs makes the sync raise rather than lose the value.
@@ -41,13 +42,53 @@ there).
 2. A session is behind when `synced_last_event_at` differs from the `last_event_at` just listed.
 3. For each behind session, read events after the resume point and store them page by page. The resume point is the
    newest stored `sequence_num`, or just before the earliest event that had `received_at` but no `processed_at` when
-   stored: whether those stamps change after first read is unobserved, and re-reading such an event refreshes them
-   at no cost when they do not. A gap in `sequence_num` raises.
+   stored: the stamps do move on after an event is first read, and re-reading it refreshes them.
+   `SessionsApi.iter_event_pages` raises on a page with a gap in `sequence_num` before yielding it, so none is
+   stored: `resume_after` reads the newest stored number, and an event stored past a gap would never be fetched.
 4. Set `synced_last_event_at` to the value listed in step 1, not a newer one: events arriving during the pass leave the
    session behind for the next cycle. A crash before this step leaves it behind, and the next cycle resumes after
    the last stored event.
 
 `last_event_at > synced_last_event_at` is the lag of one session.
+
+## Live following
+
+`serve` adds event streams between the cycles ([live.py](../live.py)); `sync` only polls. The cycle stays the source
+of truth and the streams only shorten the delay.
+
+- **Event streams.** A session that is not archived and had an event within `LIVE_WINDOW_SECONDS` gets an open
+  `events/stream` from its stored position, up to `LIVE_STREAMS` sessions, newest first. The first connection
+  starts with a page catch-up so the position is exact; each pushed event is stored as it arrives, and a closed or
+  silent stream is reopened from the stored position.
+- **Discovery.** Every 30 s the newest `LIVE_STREAMS` sessions are listed (one request) and upserted, and the followed
+  set is re-derived from the store: a new session is followed within about 30 s, and one that was archived or has
+  aged out of the window is dropped. A finished cycle triggers the same pass at once. This is the floor: it needs
+  nothing but the list route, and it is what the web client does itself when its watch is off.
+- **Session watch.** One `sessions/watch` stream pushes each session change: the change is upserted and the followed
+  set re-derived at once, so a new session is followed from its first event ([api.md](api.md) § Session watch: the
+  request needs a platform header). The page shows "watch connected", or "not connected" with the reason; discovery
+  covers meanwhile and after a gap. Every connection takes a fresh resume token, since the server answers one older
+  than about four minutes with a watch that stays open and delivers nothing, and after a reconnect the last checkpoint
+  can already be two minutes old.
+
+Rules that keep the mirror exact:
+
+- An event is stored only when its `sequence_num` is at most one past the stored position. A frame beyond that, a
+  `catch_up_truncated` frame or a 410 sends the session back to paging from its stored position before its stream is
+  reopened: `resume_after` reads the newest stored number, so an event stored past a gap would never be fetched.
+- A stream pushes a client-sent event without its worker stamps and does not send it again when they change; a
+  `delivery_update` frame says one did. The follower looks the event up by its `event_id` in the store, reads it from
+  the events route (`SessionsApi.read_event`) and stores it again, which refreshes the stamps. It does not read the
+  frame's status or copy its `timestamp`, which is not the stored stamp. An update for an event that is not stored is
+  logged as a warning and skipped.
+- Streams do not move `synced_last_event_at`. A session they touched is behind until the next cycle reads it, which
+  finds nothing new and marks it level.
+- A failing source (discovery, the watch, or one session's stream) retries with jittered backoff from 1 s to 5 min and never
+  ends the cycle. The page lists each failing source with the reason (HTTP status, route and the API's error body)
+  until it works again, and the log carries the same line. A follower that stops altogether is reported too.
+  `LIVE_STREAMS=0` turns following off.
+
+The wire contract of the streams is in [api.md](api.md) § Event stream and § Session watch.
 
 ## `payload` is `jsonb`; `json` is the open alternative
 

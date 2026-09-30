@@ -18,10 +18,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use spec_modules::{
-    ModuleFile, collect_module_files, is_residual_module_path, module_path_from_file,
-    read_module_file,
-};
+use spec::is_residual_module_path;
+use spec_modules::{ModuleFile, collect_module_files, module_path_from_file, read_module_file};
 
 /// Member-count buckets per the 2026-05-26 real-spec survey.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -68,7 +66,7 @@ pub struct SpecStats {
 /// Bucket a single module's member count. Mutates the passed
 /// [`MemberCountBuckets`] in place (the caller maintains the running
 /// aggregate across the spec).
-pub fn bucket_member_count(buckets: &mut MemberCountBuckets, count: usize, first: bool) {
+fn bucket_member_count(buckets: &mut MemberCountBuckets, count: usize, first: bool) {
     if first {
         buckets.min = count;
         buckets.max = count;

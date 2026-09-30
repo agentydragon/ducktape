@@ -323,6 +323,7 @@ py_test(
         ":health_checks",
         ":image_automation",
         ":kustomize",
+        "//cluster/cdk8s:manifest_roots",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -374,12 +375,13 @@ py_test(
     srcs = ["test_rotations_config.py"],
     data = [
         "//:sops_config",
-        "//cluster/k8s:rotations_config",
+        # Importing the generator starts jsii's Node runtime.
+        "@nodejs_linux_amd64//:bin/node",
     ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        "//cluster/rotators/authentik_jwt_rotation:rotate",
+        "//cluster/cdk8s:authentik_jwt_rotation",
         "//util/bazel:runfiles",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

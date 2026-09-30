@@ -89,7 +89,14 @@ pub(super) fn split_var_decl(
         let ids = binding_ids(&declarator.name);
         if let Some(module_index) = assigned_module_for_ids(&ids, binding_assignment) {
             let selected_var = VarDecl {
-                span: var.span,
+                // Binding comments are anchored by statement span `lo`
+                // (`js_ast::emit_js_module_with_comments`), so statements split
+                // from one comma list must not all inherit the list's `lo`.
+                span: if var.decls.len() > 1 {
+                    declarator.span
+                } else {
+                    var.span
+                },
                 ctxt: var.ctxt,
                 kind: var.kind,
                 declare: var.declare,

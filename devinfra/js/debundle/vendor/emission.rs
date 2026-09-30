@@ -37,7 +37,7 @@ use spec::PartialSwapSymbol;
 
 use crate::passthrough::{PassthroughContext, rewrite_passthrough_module};
 use crate::plan::{ChunkBundledPartialSwapPlan, VendorResolutionPlan};
-use crate::strip::{ChunkStripStats, strip_one_chunk_with_replacement_imports};
+use crate::strip::strip_one_chunk_with_replacement_imports;
 use crate::wrappers::{write_planned_bundled_assets, write_planned_wrapper};
 use crate::{
     DeferredImport, IdentRewriteTarget, MaterializedOutputChunkIndex, PartialSwapIdentRewriter,
@@ -51,8 +51,6 @@ pub struct EmissionRewriteResult {
     /// partial-swap manifests' `references_rewritten` alongside
     /// lowering's construction-time counts.
     pub references_by_symbol: BTreeMap<(ChunkId, String), usize>,
-    /// Per-chunk residual strip stats keyed by chunk path.
-    pub strip_stats: BTreeMap<String, ChunkStripStats>,
 }
 
 pub fn apply_emission_rewrites(
@@ -188,7 +186,6 @@ pub fn apply_emission_rewrites(
             .collect()
     })?;
 
-    let mut strip_stats = BTreeMap::new();
     for output in outputs {
         let js_chunk = artifact.js_chunk_mut(output.chunk_id)?;
         for (parts, ast) in output.files {
@@ -197,13 +194,11 @@ pub fn apply_emission_rewrites(
         for (key, count) in output.references_by_symbol {
             *references_by_symbol.entry(key).or_insert(0) += count;
         }
-        strip_stats.insert(output.chunk_path, output.stats);
     }
 
     Ok(EmissionRewriteResult {
         artifact,
         references_by_symbol,
-        strip_stats,
     })
 }
 
@@ -236,10 +231,8 @@ struct ResidualJob<'a> {
 
 struct ResidualOutput {
     chunk_id: ChunkId,
-    chunk_path: String,
     files: Vec<(JsFileAstParts, ParsedJsModule)>,
     references_by_symbol: BTreeMap<(ChunkId, String), usize>,
-    stats: ChunkStripStats,
 }
 
 fn extract_residual_job<'a>(
@@ -373,7 +366,7 @@ fn emit_vendor_residual(
     // matching the former stage order (strip re-appended the entry
     // after the pass-through and self-rewrite waves).
     let (_, _, entry_ast) = &mut files[entry_index];
-    let stats = strip_one_chunk_with_replacement_imports(
+    strip_one_chunk_with_replacement_imports(
         &mut entry_ast.module,
         symbols,
         chunk_path,
@@ -383,13 +376,11 @@ fn emit_vendor_residual(
     files.push(entry);
     Ok(ResidualOutput {
         chunk_id,
-        chunk_path: chunk_path.to_string(),
         files: files
             .into_iter()
             .map(|(_, parts, ast)| (parts, ast))
             .collect(),
         references_by_symbol,
-        stats,
     })
 }
 

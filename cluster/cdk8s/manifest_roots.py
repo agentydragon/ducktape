@@ -19,6 +19,9 @@ from pathlib import Path
 GENERATED_ROOT = "cluster/generated"
 HAND_WRITTEN_ROOT = "cluster/k8s"
 MANIFEST_ROOTS = (HAND_WRITTEN_ROOT, GENERATED_ROOT)
+# Decommissioned or indefinitely suspended third-party apps, kept for manual revival
+# (`cluster/AGENTS.md` § Parked). Not a manifest root: Flux applies nothing here.
+PARKED_ROOT = "cluster/parked"
 
 
 def manifest_files(repo_root: Path, pattern: str = "*.yaml") -> Iterator[Path]:

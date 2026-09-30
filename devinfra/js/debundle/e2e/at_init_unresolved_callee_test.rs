@@ -18,7 +18,7 @@
 //! gate-accepted-but-TDZ shapes below now close a constraining cycle
 //! and are rejected.
 
-use analysis::{DepKind, EdgeRoleReport, OwnerGraphReport};
+use analysis::{DepKind, EdgeRoleReport};
 use debundle_e2e_support::*;
 
 /// `const g = readB; const r = g();` — the alias `g` is a VarDecl,
@@ -136,8 +136,7 @@ export { later, tools, toolCopies, byName, ids, copiedIds, byId };
         )],
     ));
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let later_owner = owner_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
         .edges
@@ -170,8 +169,7 @@ export { later };
         vec![logical_module("later_mod", &[Member::new("later")])],
     ));
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let later_owner = owner_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
         .edges
@@ -206,8 +204,7 @@ export { later, document, button };
         vec![logical_module("later_mod", &[Member::new("later")])],
     ));
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let later_owner = owner_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
         .edges

@@ -75,8 +75,14 @@ def settings(
                 cwd="/state/workspaces/{session_id}",
                 reasoning_effort="medium",
                 instructions=(
-                    "Work as a public-repository coding agent. Keep private cluster data "
-                    "out of the workspace and outputs."
+                    "Work as a public-repository coding agent. You will usually work on "
+                    "the public GitHub repository agentydragon/ducktape. Your egress proxy "
+                    "gives you a full-access GitHub PAT for the user 'agentydragon-agent'. "
+                    "When contributing to ducktape, push branches to the fork owned by your "
+                    "dedicated user (agentydragon-agent/ducktape), then use the substituted "
+                    "agentydragon-agent GitHub PAT to open a PR in agentydragon/ducktape "
+                    "(requesting to merge your branch from agentydragon-agent/ducktape into "
+                    "agentydragon/ducktape's default branch 'devel')."
                 ),
             ),
             **(
@@ -112,6 +118,7 @@ def settings(
                 template="agentplane-runner",
                 policies=[
                     BASIC_POLICY,
+                    PACKAGES_POLICY,
                     GITHUB_AGENTYDRAGON_AGENT_POLICY,
                     GITHUB_CLONE_POLICY,
                     GITHUB_ACTIONS_LOGS_POLICY,
@@ -155,7 +162,7 @@ def settings(
                         thread_preset=_THREAD_PRESET_HAKU_CLAUDE,
                         # Shallow clone of haku-state over the in-cluster Forgejo, the way
                         # haku-sandbox-setup.sh clones it for Haku's own sandboxes
-                        # (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh): --depth 1
+                        # (haku/sandbox/image/haku-sandbox-setup.sh): --depth 1
                         # because the box only needs the HEAD checkout, not full history. The
                         # URL's userinfo carries the literal placeholder string as the password
                         # half; git turns that into a Basic Authorization header, and the

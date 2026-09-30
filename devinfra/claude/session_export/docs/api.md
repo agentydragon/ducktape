@@ -92,15 +92,83 @@ The same session is `session_<x>` in `claude.ai/code/` URLs; both prefixes are a
 | `sort_order` | `asc` or `desc`, else 400. Default `desc`.                                                   |
 | `cursor`     | A `sequence_num`, exclusive: `asc` returns greater, `desc` returns smaller. Default: an end. |
 
-- `asc` without a cursor starts at `sequence_num` 1; sequence numbers are contiguous.
+- `asc` without a cursor starts at `sequence_num` 1; sequence numbers are contiguous. `iter_event_pages` relies on
+  it and raises `ValueError` on a page that skips one, before yielding it.
 - `next_cursor` is present exactly when more events lie beyond this page in the requested direction, so the last
   page needs no empty follow-up request even when it is exactly full. A cursor past the end returns an empty
   `data`.
 - `resume_cursor` is always present; it is the last returned `sequence_num`. Use it to poll a live session.
 - A session can have zero events.
 
-Also seen in the web UI, unused here: `GET .../events/stream?from_sequence_num=<n>` (server-sent events for the
-live tail), `POST .../events` (send a user message), `POST .../client/presence`.
+Also seen in the web UI, unused here: `POST .../events` (send a user message), `POST .../client/presence`.
+
+## Event stream
+
+Read from the web client's code (capture `2026-09-29-c20643cea8`), and partly observed. The client sends the same
+headers as for the routes above, plus `Accept: text/event-stream`.
+
+`GET /v1/code/sessions/<cse_id>/events/stream[?from_sequence_num=<n>]` carries `last-event-id: <n>` as well, both
+omitted for a client with no position. Frames, by `event:`:
+
+| Frame                | Data                                                        | The client                                            |
+| -------------------- | ----------------------------------------------------------- | ----------------------------------------------------- |
+| none                 | as the stream opens, then every 12-15 s (observed)          | nothing but its idle timer: a keepalive               |
+| `client_event`       | an event as the events route sends it; `id: <sequence_num>` | stores it; a frame with no data only moves its cursor |
+| `catch_up_truncated` | none                                                        | pages for what the stream did not replay              |
+| `session_update`     | session metadata                                            | applies it                                            |
+| `ephemeral_event`    | a transient event, not persisted                            | shows it                                              |
+| `delivery_update`    | delivery status of a sent message                           | applies it                                            |
+
+An open answered 410 means the position is gone: the client restarts from nothing. Other 4xx except 429 are fatal to
+it; 429 honors `Retry-After`. It restarts a stream that delivered nothing for 35 s, backs off 1 s doubling to 30 s
+with jitter, and after two connections that delivered no frame polls `GET .../events?sort_order=asc&cursor=<n>`.
+
+Observed on 2026-09-30, with the OAuth bearer against `api.anthropic.com`, on a session in use (150 s) and on an
+archived one (100 s):
+
+- **Open.** An unnamed frame, then a `session_update` carrying only `connection_status`. The server closed neither
+  stream, and an unnamed frame came every 12-15 s, so a quiet stream stays inside the client's 35 s limit.
+- **`client_event`.** `id` is the `sequence_num`; the frames were contiguous and none was sent again. A `worker` event
+  carries `created_at`, `event_id`, `event_type`, `payload`, `sequence_num` and `source`: no `device_attestation_status`
+  and no `sent_by_account_id` (the events route sends both; `Event` defaults them) and no worker stamps. The events
+  route sends stamps only on events with `source: client` (a user's message, a queued notification, a control
+  response): 6 of a session's newest 500, and none of the 494 `worker` ones.
+- **`delivery_update`** carries `event_id`, `status` and `timestamp`. It follows a client-sent event by about 0.1 s
+  with `DELIVERY_STATUS_RECEIVED`, and later `DELIVERY_STATUS_PROCESSING`; a third status has not been seen. The
+  client event itself is pushed without stamps and is not sent again: this frame is how they change on a live stream.
+  Its `timestamp` is 12-19 ms after the `received_at` the events route reports, so it is not the stamp.
+- **Catch-up.** A `from_sequence_num` in the past replays the stored events as `client_event` frames carrying the
+  stamps the events route reports, only those that are set: 471 in 12 s, with no `catch_up_truncated`.
+- **`ephemeral_event`** carries `event_type`, `payload`, `source` and `timestamp`, no id: 44 in 150 s, all `system`
+  events of the `worker`.
+
+## Session watch
+
+`GET /v1/code/sessions/watch?exclude_tags=-&resume_token=<token>` streams changes to the account's sessions; the token
+is the list route's `resume_token`. Observed 2026-09-30 with the OAuth bearer against `api.anthropic.com`, using
+`export_sessions_bin probe`:
+
+- **It needs `anthropic-client-platform: web_claude_ai`.** Without it the answer is `404`, `text/plain`,
+  `endpoint not enabled`, whatever else is sent: with or without `anthropic-beta`, with or without a resume token,
+  with `anthropic-client-feature: ccr`. With it the answer is 200, and adding `anthropic-client-feature: ccr` changes
+  nothing. The web client sends the header on this request. `claude.ai` with the bearer answers the same way.
+- **Frames**, `event:` names and JSON data: `added` for each live session on connect, then `sync` (data `{}`, and
+  the `id` is the next resume token), then `changed` as sessions change. Only `sync` carries an id, and it recurs every
+  100-120 s as a checkpoint; a watch held open for seven minutes kept delivering `changed` throughout. `added` and `changed` carry a session as the
+  list route sends it (`id`, `title`, `status`, `created_at`, `updated_at`, `last_event_at`, `config`,
+  `worker_status`, …); `removed` carries `{id}` (from the web client's code, not seen). A frame with no `event:` name
+  and no data also arrives, seconds after connecting: a keepalive.
+- **The token must be fresh.** One up to 225 s old opened a watch that delivered `added`, `sync` and `changed`; one
+  of 240 s or more got a 200 and a keepalive, then nothing at all, not even `sync`, and no later change either. The
+  answer is not a 410, so nothing in the response says the watch is dead. The token is a nanosecond timestamp,
+  base64-encoded. Page size does not matter, and neither does an `Accept: text/event-stream` header.
+- 410 means the token expired and 400 that none was sent (both from the web client's code, not seen).
+
+`GET /v1/sessions/watch`, the older route family, needs no such header and streams `session_updated` frames of a
+different session shape (`session_status`, no `last_event_at`), 200 of them on connect. The sync does not use it.
+
+The web client itself uses the watch only while the server-side gate `amber_harbor_beacon` is on for the account, and
+otherwise polls the list every 30 s, doubling to 10 min while nothing changes.
 
 ## Event
 

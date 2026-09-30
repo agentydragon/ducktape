@@ -6,7 +6,6 @@ pub mod module;
 pub mod outcome;
 pub mod scc_cluster;
 pub mod validate;
-pub mod yaml_edit;
 
 use std::path::PathBuf;
 
@@ -28,11 +27,11 @@ use clap::{Args as ClapArgs, Parser, Subcommand};
 use peel::factorize::DEFAULT_SIZE_CAP_LINES;
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
-    PlanWorkArgs, SelectionArgs, SourceSliceArgs, UnitsArgs, print_report, run_explain_report,
+    PlanWorkArgs, SelectionKind, SourceSliceArgs, UnitsArgs, print_report, run_explain_report,
     run_graph_summary_report, run_patch_plan_report, run_plan_work_report, run_source_slice_report,
     run_units_report,
 };
-use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
+use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
 use selector_codemod::match_selector::{
     MatchSelectorConfig, render_match_selector_text, run_match_selector,
 };
@@ -45,7 +44,7 @@ use selector_debt::{
     populate_name_only_module_groups, render_selector_debt_text,
 };
 use spec_modules::{collect_module_files, module_path_from_file};
-use spec_stats::{SpecStats, compute_spec_stats, render_spec_stats_text};
+use spec_stats::{compute_spec_stats, render_spec_stats_text};
 
 /// Read and JSON-parse an `owner_graph.json` into an [`OwnerGraphReport`],
 /// the load every `cli` verb that takes `--graph` shares.
@@ -205,9 +204,8 @@ enum SpecNsCommand {
     /// binary. `--fail-fast` stops at the first problem. The source-only
     /// preflight mode (`--modules` plus `--source-file` or
     /// `--source-root --chunk`) instead resolves the module files jointly
-    /// against one chunk, with the same resolve as `run` (and its CP-SAT
-    /// sidecar), but without the pipeline build — a fast preflight for
-    /// sharding selector repairs.
+    /// against one chunk, with the same resolve as `run`, but without the
+    /// pipeline build — a fast preflight for sharding selector repairs.
     Validate(ValidateArgs),
 }
 
@@ -462,8 +460,8 @@ enum BindingsNsCommand {
     /// current comment. An unset comment reads as `null` in JSON (an
     /// empty line in text), distinct from an explicit `comment: ""`.
     /// Member comments emit as JS comment blocks above the binding's
-    /// owner statement. Comments don't affect factorization, so
-    /// `--no-verify` is a no-op; `--dry-run` previews without writing.
+    /// owner statement. Comments don't affect factorization, so there
+    /// is no `--no-verify`; `--dry-run` previews without writing.
     Comment(BindingCommentArgs),
     /// List every binding in the spec with home module + filters.
     ///
@@ -747,7 +745,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
             let dry_run = args.dry_run;
             let keep_going = !args.fail_fast;
             let cli = args.resolve()?;
-            run_transform_cli_with_options(
+            run_transform_cli(
                 &cli,
                 TransformRunOptions {
                     dry_run,
@@ -889,58 +887,37 @@ fn run_match_selector_cmd(args: MatchSelectorArgs) -> Result<()> {
     )
 }
 
-/// Dispatch an `<id>` argument into a [`SelectionArgs`] populated with
-/// exactly one field. Module paths and logical module ids resolve
-/// through the same owner-graph/spec claim path as other structured
-/// IDs, so binding members and anonymous statements stay in sync.
-pub fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Result<SelectionArgs> {
+/// Dispatch an `<id>` argument into the [`SelectionKind`] it names. Module
+/// paths and logical module ids resolve through the same owner-graph/spec
+/// claim path as other structured IDs, so binding members and anonymous
+/// statements stay in sync.
+pub fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Result<SelectionKind> {
     // Prefix-based dispatch covers the structured ID kinds emitted by
     // the analysis crate.
     if id.starts_with("owner:") {
-        return Ok(SelectionArgs {
-            owner_id: Some(id.to_string()),
-            ..SelectionArgs::default()
-        });
+        return Ok(SelectionKind::Owner(id.to_string()));
     }
     if id.starts_with("logical:") {
-        return Ok(SelectionArgs {
-            module_id: Some(id.to_string()),
-            ..SelectionArgs::default()
-        });
+        return Ok(SelectionKind::Module(id.to_string()));
     }
     if id.starts_with("atomic:") {
-        return Ok(SelectionArgs {
-            unit_id: Some(id.to_string()),
-            ..SelectionArgs::default()
-        });
+        return Ok(SelectionKind::Unit(id.to_string()));
     }
     if id.starts_with("diagnostic:") {
-        return Ok(SelectionArgs {
-            diagnostic_id: Some(id.to_string()),
-            ..SelectionArgs::default()
-        });
+        return Ok(SelectionKind::Diagnostic(id.to_string()));
     }
     // Module-path detection: try resolving `<modules>/<id>.yaml`.
     // Spec authors sometimes have flat module paths (no `/`); the
     // existence check is the only reliable disambiguator vs. binding
     // names that happen to spell a module-like word.
     if let Some(module_path) = resolve_id_as_module_path(id, modules_root)? {
-        return Ok(SelectionArgs {
-            module_path: Some(module_path),
-            ..SelectionArgs::default()
-        });
+        return Ok(SelectionKind::ModulePath(module_path));
     }
     if id.starts_with("auto_partition_") || id.starts_with("extend:") {
-        return Ok(SelectionArgs {
-            proposal_id: Some(id.to_string()),
-            ..SelectionArgs::default()
-        });
+        return Ok(SelectionKind::Proposal(id.to_string()));
     }
     // Fall through: treat as a binding name (minified or readable).
-    Ok(SelectionArgs {
-        binding_id: Some(id.to_string()),
-        ..SelectionArgs::default()
-    })
+    Ok(SelectionKind::Binding(id.to_string()))
 }
 
 fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Result<Option<String>> {
@@ -980,7 +957,6 @@ fn run_describe(args: DescribeArgs) -> Result<()> {
         source_root: args.source_root,
         limit: args.limit,
         include_proposals: args.include_proposals,
-        format: None,
     };
     let report = run_explain_report(&inner)?;
     emit_report(
@@ -999,7 +975,6 @@ fn run_show_source(args: ShowSourceArgs) -> Result<()> {
         size_cap_lines: args.size_cap_lines,
         context_lines: args.context_lines,
         source_root: args.source_root,
-        format: None,
     };
     let report = run_source_slice_report(&inner)?;
     emit_report(
@@ -1159,9 +1134,8 @@ fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()>
 }
 
 fn run_modules_list(args: ModulesListArgs) -> Result<()> {
-    use spec_modules::{
-        collect_module_files, is_residual_module_path, module_path_from_file, read_module_file,
-    };
+    use spec::is_residual_module_path;
+    use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
     let files = collect_module_files(&args.modules_root)
         .with_context(|| format!("walking {}", args.modules_root.display()))?;
     let mut entries: Vec<ModuleListEntry> = Vec::new();
@@ -1240,13 +1214,9 @@ fn run_spec_stats_cmd(args: SpecStatsArgs) -> Result<()> {
             );
             Ok(())
         }
-        _ => print_report(&stats, format, render_spec_stats_text_wrapper)
+        _ => print_report(&stats, format, render_spec_stats_text)
             .context("writing spec stats output"),
     }
-}
-
-fn render_spec_stats_text_wrapper(stats: &SpecStats, out: &mut String) {
-    render_spec_stats_text(stats, out);
 }
 
 fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
@@ -1556,7 +1526,7 @@ mod tests {
     use pipeline::{TransformArgs, TransformSpecSource};
     use tempfile::TempDir;
 
-    use super::DebundleArgs;
+    use super::{DebundleArgs, SelectionKind};
 
     fn write(root: &Path, rel: &str, body: &str) {
         let path = root.join(rel);
@@ -1800,10 +1770,9 @@ mod tests {
         let selection = super::dispatch_id_selection("auto_partition_0499", &modules_root).unwrap();
 
         assert_eq!(
-            selection.module_path.as_deref(),
-            Some("auto_partition/auto_partition_0499")
+            selection,
+            SelectionKind::ModulePath("auto_partition/auto_partition_0499".to_string())
         );
-        assert!(selection.proposal_id.is_none());
     }
 
     #[test]
@@ -1845,21 +1814,21 @@ mod tests {
         let modules = tmp.path().to_path_buf();
         std::fs::create_dir_all(&modules).unwrap();
         let sel = super::dispatch_id_selection("owner:42", &modules).unwrap();
-        assert_eq!(sel.owner_id.as_deref(), Some("owner:42"));
+        assert_eq!(sel, SelectionKind::Owner("owner:42".to_string()));
     }
 
     #[test]
     fn dispatch_id_logical_prefix() {
         let tmp = tempfile::tempdir().unwrap();
         let sel = super::dispatch_id_selection("logical:7", tmp.path()).unwrap();
-        assert_eq!(sel.module_id.as_deref(), Some("logical:7"));
+        assert_eq!(sel, SelectionKind::Module("logical:7".to_string()));
     }
 
     #[test]
     fn dispatch_id_atomic_prefix() {
         let tmp = tempfile::tempdir().unwrap();
         let sel = super::dispatch_id_selection("atomic:7", tmp.path()).unwrap();
-        assert_eq!(sel.unit_id.as_deref(), Some("atomic:7"));
+        assert_eq!(sel, SelectionKind::Unit("atomic:7".to_string()));
     }
 
     #[test]
@@ -1867,8 +1836,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let sel = super::dispatch_id_selection("diagnostic:size_cap_0001", tmp.path()).unwrap();
         assert_eq!(
-            sel.diagnostic_id.as_deref(),
-            Some("diagnostic:size_cap_0001")
+            sel,
+            SelectionKind::Diagnostic("diagnostic:size_cap_0001".to_string())
         );
     }
 
@@ -1876,7 +1845,10 @@ mod tests {
     fn dispatch_id_proposal_prefix() {
         let tmp = tempfile::tempdir().unwrap();
         let sel = super::dispatch_id_selection("auto_partition_0042", tmp.path()).unwrap();
-        assert_eq!(sel.proposal_id.as_deref(), Some("auto_partition_0042"));
+        assert_eq!(
+            sel,
+            SelectionKind::Proposal("auto_partition_0042".to_string())
+        );
     }
 
     #[test]
@@ -1886,14 +1858,17 @@ mod tests {
         std::fs::create_dir_all(modules.join("runtime")).unwrap();
         std::fs::write(modules.join("runtime/plugins.yaml"), "members: []\n").unwrap();
         let sel = super::dispatch_id_selection("runtime/plugins", modules).unwrap();
-        assert_eq!(sel.module_path.as_deref(), Some("runtime/plugins"));
+        assert_eq!(
+            sel,
+            SelectionKind::ModulePath("runtime/plugins".to_string())
+        );
     }
 
     #[test]
     fn dispatch_id_binding_otherwise() {
         let tmp = tempfile::tempdir().unwrap();
         let sel = super::dispatch_id_selection("XOe", tmp.path()).unwrap();
-        assert_eq!(sel.binding_id.as_deref(), Some("XOe"));
+        assert_eq!(sel, SelectionKind::Binding("XOe".to_string()));
     }
 
     #[test]
@@ -1904,8 +1879,6 @@ mod tests {
             "list",
             "--graph",
             "owner_graph.json",
-            "--modules",
-            "modules",
         ])
         .expect("parse cli");
         assert!(matches!(parsed.command, super::DebundleCommand::Gate(_)));
@@ -1920,8 +1893,6 @@ mod tests {
             "0",
             "--graph",
             "owner_graph.json",
-            "--modules",
-            "modules",
             "--binding",
             "XOe",
         ])
@@ -1938,8 +1909,6 @@ mod tests {
             "3",
             "--graph",
             "owner_graph.json",
-            "--modules",
-            "modules",
             "--cycles",
             "/other/cycles.json",
         ])

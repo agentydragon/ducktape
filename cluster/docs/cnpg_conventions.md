@@ -94,7 +94,7 @@ As of 2026-08, every **live** (unsuspended) cluster is 2-instance OVH-HA —
 most on the deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
 `seaweedfs-filer-db-ssd` on the `local-path-ovh-ssd` tier — with one deviation:
 
-- `study-casino-db` (`k8s/study-casino/`): 3 instances pinned
+- `study-casino-db` (`generated/study-casino/`): 3 instances pinned
   `region: hil`, one per OVH node, so it tolerates a node loss without
   quorum or primary impact. Deliberate deviation from the 2-instance
   profile; the manifest comment is the record.

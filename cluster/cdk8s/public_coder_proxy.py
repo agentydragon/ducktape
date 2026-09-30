@@ -41,7 +41,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -415,18 +415,10 @@ def _egress_policy(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name="allow-public-coder-agent-proxy-egress", namespace=NAMESPACE),
         endpoint_selector=PROXY.pods.selector,
         egress=[
-            cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
-            # `world` alone does not mean "everywhere". Cilium carves the cluster's own nodes out
-            # of it: every `*.allegedly.works` name resolves to the five OVH node ExternalIPs
-            # (Envoy binds 80/443 there in hostNetwork mode), and those addresses carry
-            # `reserved:remote-node`, not `reserved:world`. A `world`-only rule therefore
-            # black-holes the SYN and the dial times out -- which is how this proxy could reach the
-            # entire internet yet not haku.allegedly.works. `host` is here too because this
-            # Deployment has no nodeSelector: on an OVH node, that node's own IP is
-            # `reserved:host`. Widening a CIDR/FQDN rule cannot substitute --
-            # `policy-cidr-match-mode` is unset cluster-wide, so CIDR-derived selectors never match
-            # node IPs. See cluster/docs/cilium_network_policy.md.
-            EgressRule.to_entities(Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST, ports=[443, 80]),
+            # `cilium.open_internet_egress`'s docstring has the world-vs-remote-node/host
+            # mechanism -- without it, this proxy could reach the whole internet but not its own
+            # haku.allegedly.works, which resolves to a node's own ExternalIP.
+            *cilium.open_internet_egress(ports=[443, 80]),
             # The agent's normalized analytics reads leave the app through this Iron proxy, then
             # use the private ClickHouse HTTP ClusterIP service. Do not grant this egress to the
             # app Pod itself.

@@ -4,7 +4,6 @@ use std::fmt;
 use analysis::{AnalysisHints, EffectCell, LocalEffectPolicy, StatementFacts, analyze_chunk};
 use anyhow::{Result, bail};
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
-use serde::Serialize;
 use swc_common::sync::Lrc;
 use swc_common::{DUMMY_SP, SourceMap};
 use swc_ecma_ast::*;
@@ -14,20 +13,12 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use spec::PartialSwapSymbol;
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ChunkStripStats {
-    pub chunk_path: String,
-    pub stripped_export_specifiers: usize,
-    pub dropped_top_level_items: usize,
-    pub retained_top_level_items: usize,
-}
-
 #[cfg(test)]
 fn strip_one_chunk(
     module: &mut Module,
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
-) -> Result<ChunkStripStats> {
+) -> Result<()> {
     strip_one_chunk_with_replacement_imports(module, symbols, chunk_path, &BTreeSet::new())
 }
 
@@ -44,15 +35,13 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
     replacement_import_locals: &BTreeSet<Id>,
-) -> Result<ChunkStripStats> {
+) -> Result<()> {
     let swapped: BTreeSet<String> = symbols.keys().cloned().collect();
 
     split_top_level_var_decls(module);
     let stripped = strip_export_specifiers(module, symbols, chunk_path)?;
-    let stripped_export_specifiers = stripped.len();
     let post_strip_exports = super::collect_exported_names(module);
 
-    let dropped_total_before = module.body.len();
     sweep_unreachable_top_level(
         module,
         &post_strip_exports,
@@ -60,8 +49,6 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
         chunk_path,
         replacement_import_locals,
     )?;
-    let retained = module.body.len();
-    let dropped = dropped_total_before - retained;
 
     // Phase 2 must not change the export surface relative to Phase 1.
     let post_dce_exports = super::collect_exported_names(module);
@@ -90,12 +77,7 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
         );
     }
 
-    Ok(ChunkStripStats {
-        chunk_path: chunk_path.to_string(),
-        stripped_export_specifiers,
-        dropped_top_level_items: dropped,
-        retained_top_level_items: retained,
-    })
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -1502,11 +1484,10 @@ mod tests {
     #[test]
     fn strips_named_export_specifier() {
         let mut module = parse("const a = 1;\nconst b = 2;\nexport { a as foo, b as bar };\n");
-        let stats = strip_one_chunk(&mut module, &mk_symbols(&["foo"]), "chunk.js").unwrap();
+        strip_one_chunk(&mut module, &mk_symbols(&["foo"]), "chunk.js").unwrap();
         let emitted = emit(&module);
         assert!(!emitted.contains("foo"), "stripped name leaked:\n{emitted}");
         assert!(emitted.contains("bar"), "kept name missing:\n{emitted}");
-        assert_eq!(stats.stripped_export_specifiers, 1);
     }
 
     #[test]

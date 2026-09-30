@@ -27,34 +27,26 @@ fn chunk_rename_propagates_into_peeled_module_body() {
     //
     // The renaming MUST propagate to b_module.js: its import line
     // and its `const b = cx();` callsite both need the new alias.
-    let opts = FixtureOpts {
-        local_property_effects: false,
-        trusted_dataflow_summaries: false,
-        chunk_export_purity: &[],
-        extra_chunks: &[],
-        source: r#"import { f as cx } from "./vendor.js";
+    let opts = FixtureOpts::new(
+        r#"import { f as cx } from "./vendor.js";
 const a = (() => 1)();
 const b = cx();
 const c = a + b;
 console.log(c);
 export { a, b, c };
 "#,
-        logical_modules: vec![logical_module("b_module", &[Member::new("b")])],
-        chunk_renames: Some(chunk_rename_with_purity(
-            "getMobxGlobalState",
-            "cx",
-            Some("import_specifier"),
-            MemberPurity::Pure,
-        )),
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_catchall_file(None),
-        dataflow_aware_s_chain: false,
-        admission_overrides: &[],
-        extra_files: &[(
-            "static/app/vendor.js",
-            "export function f() { return 1; }\n",
-        )],
-    };
+        vec![logical_module("b_module", &[Member::new("b")])],
+    )
+    .with_chunk_renames(chunk_rename_with_purity(
+        "getMobxGlobalState",
+        "cx",
+        Some("import_specifier"),
+        MemberPurity::Pure,
+    ))
+    .with_extra_files(&[(
+        "static/app/vendor.js",
+        "export function f() { return 1; }\n",
+    )]);
     let fixture = run_fixture(opts);
 
     // Behaviour preserved: c == a + b == 1 + 1 == 2.

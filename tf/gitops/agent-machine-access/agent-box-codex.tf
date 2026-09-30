@@ -7,8 +7,8 @@
 # provider's explicit machine-principal mapping emits groups:
 # ["agent-box-codex"] only for this exact username.
 #
-# Consumer: cluster/k8s/agents/authentik-jwt-rotation/ CronJob
-# (agent-box-codex entry). It writes secrets/agent-box-codex-k8s-jwt.yaml, which
+# Consumer: the authentik-jwt-rotation CronJob (cluster/cdk8s/authentik_jwt_rotation.py,
+# agent-box-codex entry). It writes secrets/agent-box-codex-k8s-jwt.yaml, which
 # home-manager decrypts on the agent-box VM to render /home/codex/.kube/config.
 
 resource "authentik_user" "agent_box_codex" {

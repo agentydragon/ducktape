@@ -1,10 +1,9 @@
 """agentplane-testing: one replica of everything, its own Dex for operator login, and
 credentialless MCP fixtures in place of the real action groups.
 
-One Flux Kustomization (`agentplane_testing`) applies the whole environment:
-`agentplane.k8s.yaml`, the `litellm-credentials.k8s.yaml` that `litellm/credentials.py`
-writes beside it, and the hand-written `image_pins` Component its root Kustomization
-includes across the roots.
+One Flux Kustomization (`agentplane_testing`) applies the whole environment: the
+generated file, holding this chart and `litellm/credentials.py`'s, and the hand-written
+`image_pins` Component its root Kustomization includes across the roots.
 """
 
 from __future__ import annotations
@@ -55,8 +54,8 @@ _NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
-# The Terraform-owned key, replicated into this namespace by the ExternalSecret that
-# `litellm/credentials.py` writes as `litellm-credentials.k8s.yaml` beside `agentplane.k8s.yaml`.
+# The Terraform-owned key, replicated into this namespace by `litellm/credentials.py`'s
+# ExternalSecret.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
@@ -132,7 +131,7 @@ ENV = Environment(
     ),
     output_dir=f"{GENERATED_ROOT}/{_NAMESPACE}",
     image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
-    extra_resources=("litellm-credentials.k8s.yaml",),
+    extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     app_config=testing_config.config(action_federation=_ACTION_FEDERATION),
     db=DbProps(instances=1),
