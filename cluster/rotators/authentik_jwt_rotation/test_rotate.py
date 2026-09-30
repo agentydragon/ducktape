@@ -12,11 +12,8 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from cluster.rotators.authentik_jwt_rotation import rotate
+from cluster.rotators.authentik_jwt_rotation.config import Config, K8sSecretOutput, Probe, Rotation
 from cluster.rotators.authentik_jwt_rotation.rotate import (
-    Config,
-    K8sSecretOutput,
-    Probe,
-    Rotation,
     build_secret_manifest,
     encrypt_sops_file,
     jwt_payload,

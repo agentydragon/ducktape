@@ -9,7 +9,7 @@ resources:
   - cnp-haku-cloud-api-egress.k8s.yaml
   - claude-code-oauth-token.sops.yaml
   # Step two of a deliberate two-step, now complete. authentik-jwt-rotation
-  # landed openclaw-spike-kube-token.sops.yaml in 2bb0c7fbd (rotations.yaml:
+  # landed openclaw-spike-kube-token.sops.yaml in 2bb0c7fbd (rotation
   # haku-k8s-openclaw), so listing it is safe. Holding it back was not an
   # oversight: listing the file before the rotator's first run breaks
   # `kustomize build` for this whole namespace, which is the sole egress path

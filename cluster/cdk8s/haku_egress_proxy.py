@@ -449,7 +449,7 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
     # The authentik-jwt-rotation CronJob probes the tokens it publishes against their real
     # endpoints each run, which means reading back the published Secret. Its flux-system Role
     # does not cover this namespace, so it needs a read grant here, scoped to the one Secret
-    # name. Keep in sync with the k8s_secret name in rotations.yaml.
+    # name. Keep in sync with the k8s_secret name in authentik_jwt_rotation.ROTATIONS.
     k8s.KubeRole(
         chart,
         "kube-token-probe-role",

@@ -316,7 +316,6 @@ def generate_manifests(root: Path) -> None:
     tana_mcp.write_manifests(root)
     haku_egress_proxy.write_manifests(root)
     airlock.write_manifests(root)
-    authentik_jwt_rotation.write_manifests(root)
     forgejo_token_rotation.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
     activitywatch_app.write_manifests(root)
@@ -1089,9 +1088,19 @@ def generate_manifests(root: Path) -> None:
     )
     airlock_artifact = artifact("airlock", airlock.OUTPUT_DIR)
     agents_flux_kustomizations.airlock(flux_chart, airlock_artifact, external_secrets_operator_kustomization)
-    authentik_jwt_rotation_artifact = artifact("authentik-jwt-rotation", authentik_jwt_rotation.OUTPUT_DIR)
-    agents_flux_kustomizations.authentik_jwt_rotation(
-        flux_chart, authentik_jwt_rotation_artifact, external_secrets_operator_kustomization
+    authentik_jwt_rotation_artifact = artifact(
+        "authentik-jwt-rotation", authentik_jwt_rotation.OUTPUT_DIR, authentik_jwt_rotation.PINS_DIR
+    )
+    authentik_jwt_rotation.authentik_jwt_rotation(
+        flux_chart,
+        write_directory(
+            root,
+            authentik_jwt_rotation_artifact,
+            authentik_jwt_rotation.chart,
+            components=[posixpath.relpath(authentik_jwt_rotation.PINS_DIR, authentik_jwt_rotation.OUTPUT_DIR)],
+            config_map_generator=[authentik_jwt_rotation.CONFIG_MAP],
+        ),
+        external_secrets_operator_kustomization,
     )
     loki_read_proxy_artifact = artifact("loki-read-proxy", loki_read_proxy.OUTPUT_DIR, loki_read_proxy.PINS_DIR)
     loki_read_proxy.loki_read_proxy(
