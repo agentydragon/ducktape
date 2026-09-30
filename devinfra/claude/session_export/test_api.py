@@ -42,6 +42,12 @@ async def test_event_pages_cover_every_event_once_without_a_trailing_request(
     assert len(service.requests) == requests
 
 
+async def test_event_pages_resume_after_a_sequence_num(service: FakeSessionsService, api: SessionsApi) -> None:
+    service.events[SESSION_ID] = make_events(1203)
+    seqs = [e.seq async for page in api.iter_event_pages(SESSION_ID, after=500) for e in page]
+    assert seqs == list(range(501, 1204))
+
+
 async def test_newest_sequence_num_is_zero_for_a_session_without_events(
     service: FakeSessionsService, api: SessionsApi
 ) -> None:

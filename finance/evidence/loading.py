@@ -17,6 +17,7 @@ import os
 import zipfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import assert_never
 
@@ -212,6 +213,79 @@ def french_factors_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
     return frame
 
 
+FRENCH_INTERNATIONAL_MEMBER = "Ind_all.Dat"
+FRENCH_INTERNATIONAL_SECTION = "Value-Weight Dollar Returns All 4 Data Items Not Reqd"
+FRENCH_INTERNATIONAL_COLUMN = "Mkt"
+FRENCH_MISSING = -99.99
+
+
+def french_international_market_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
+    """Ken French's international index ZIP to a monthly `(month, market_total_return)` frame.
+
+    The return is `Ind_all.Dat`'s `Mkt` column (all index countries, value-weighted, USD,
+    dividends included) as a DECIMAL monthly simple return; the file publishes percent.
+
+    **Picking the section is the trap.** The member is fixed-width text holding the same
+    `Mkt High Low ...` columns four times over monthly rows — dollar and LOCAL-currency returns,
+    each over all firms and over only firms with all four valuation ratios — and again over
+    annual rows under the very same titles. Every block parses as plausible returns, so the
+    section is chosen by its exact title and six-digit dates, exactly one must match, and the
+    rows are checked gapless against their date span.
+    """
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        if FRENCH_INTERNATIONAL_MEMBER not in archive.namelist():
+            raise ValueError(
+                f"{source.provenance_label} archive has no {FRENCH_INTERNATIONAL_MEMBER}: {archive.namelist()}"
+            )
+        text = archive.read(FRENCH_INTERNATIONAL_MEMBER).decode("latin-1")
+
+    # Blocks are separated by blank lines: a title, one or two header lines, then data rows.
+    blocks: list[list[list[str]]] = [[]]
+    for line in text.splitlines():
+        if line.strip():
+            blocks[-1].append(line.split())
+        elif blocks[-1]:
+            blocks.append([])
+    candidates = [
+        block
+        for block in blocks
+        if block
+        and " ".join(block[0]) == FRENCH_INTERNATIONAL_SECTION
+        and any(len(row[0]) == FRENCH_MONTHLY_DATE_WIDTH and row[0].isdigit() for row in block[1:])
+    ]
+    if len(candidates) != 1:
+        raise ValueError(
+            f"{source.provenance_label} has {len(candidates)} monthly '{FRENCH_INTERNATIONAL_SECTION}' "
+            "sections, expected exactly 1"
+        )
+    (block,) = candidates
+    rows = [row for row in block[1:] if row[0].isdigit()]
+    headers = [row for row in block[1:] if not row[0].isdigit()]
+    if not headers or headers[-1][0] != FRENCH_INTERNATIONAL_COLUMN:
+        raise ValueError(f"{source.provenance_label} section does not lead with a {FRENCH_INTERNATIONAL_COLUMN} column")
+    if any(len(row[0]) != FRENCH_MONTHLY_DATE_WIDTH for row in rows):
+        raise ValueError(f"{source.provenance_label} monthly section holds a non-YYYYMM date")
+
+    months = [date(int(row[0][:4]), int(row[0][4:]), 1) for row in rows]
+    percent = [float(row[1]) for row in rows]
+    if FRENCH_MISSING in percent:
+        raise ValueError(
+            f"{source.provenance_label} marks {FRENCH_INTERNATIONAL_COLUMN} missing in "
+            f"{months[percent.index(FRENCH_MISSING)]}"
+        )
+    span = (months[-1].year - months[0].year) * 12 + months[-1].month - months[0].month + 1
+    if len(months) != span or any(later <= earlier for earlier, later in pairwise(months)):
+        raise ValueError(
+            f"{source.provenance_label} has {len(months)} monthly rows spanning {span} months "
+            f"({months[0]}..{months[-1]}); the series must be gapless and in order"
+        )
+    return pl.DataFrame(
+        {"month": months, "market_total_return": [value / 100.0 for value in percent]},
+        schema={"month": pl.Date, "market_total_return": pl.Float64},
+    )
+
+
 def monthly_last(series: pl.DataFrame) -> pl.DataFrame:
     """Collapse a `(date, value)` frame to `(month, value)` keeping the last observation per month."""
     out = (
@@ -247,8 +321,8 @@ def read_monthly_levels(evidence_dir: Path, source: EvidenceSource) -> list[Mont
             raise ValueError(f"{source.provenance_label}: Zillow is a wide city table, not a single level series")
         case EvidenceKind.FRENCH:
             raise ValueError(
-                f"{source.provenance_label}: a French factors file is several RETURN series, not one level "
-                f"series; use french_factors_frame and compound the column you want"
+                f"{source.provenance_label}: a French file holds RETURN series, not one level series; "
+                "use its frame parser and compound the column you want"
             )
         case _ as unreachable:
             assert_never(unreachable)

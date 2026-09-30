@@ -1232,16 +1232,17 @@ export { first, second };
     ));
 
     assert_entry_output(&fixture, "7\n");
-    assert_module_source(
+    assert_line_directly_above(
         &fixture.out_root,
         "static/app/modules/pair.js",
-        &[
-            "// First selected value.",
-            "var first_value = 1 + 2",
-            "// Second selected value.",
-            r#"var second_value = Number.parseInt("4", 10)"#,
-        ],
-        &[],
+        "// First selected value.",
+        "var first_value = 1 + 2",
+    );
+    assert_line_directly_above(
+        &fixture.out_root,
+        "static/app/modules/pair.js",
+        "// Second selected value.",
+        r#"var second_value = Number.parseInt("4", 10)"#,
     );
 }
 
@@ -1266,16 +1267,17 @@ export { primary, secondary };
     ));
 
     assert_entry_output(&fixture, "30\n");
-    assert_module_source(
+    assert_line_directly_above(
         &fixture.out_root,
         "static/app/modules/settings.js",
-        &[
-            "// Primary selected value.",
-            "const primary = 10",
-            "// Secondary selected value.",
-            "secondary = 20",
-        ],
-        &[],
+        "// Primary selected value.",
+        "const primary = 10",
+    );
+    assert_line_directly_above(
+        &fixture.out_root,
+        "static/app/modules/settings.js",
+        "// Secondary selected value.",
+        "const secondary = 20",
     );
 }
 

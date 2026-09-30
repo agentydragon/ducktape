@@ -907,14 +907,14 @@ if it ever does not, the daily buckets are scoped more narrowly than account-wid
 that is worth knowing before anything else is built on them.
 
 **The same fact unblocks the ChatGPT capacity figure**, which the tables above can only
-record as `opaque`, because OpenAI publishes no quota. The Claude calibration below works by pairing an exact local
-token count with a gauge that meters the same traffic; the ChatGPT side had the gauge
+record as `opaque`, because OpenAI publishes no quota. The Claude calibration below works by pairing a token
+count with a gauge that meters the same traffic; the ChatGPT side had the gauge
 (`wham/usage`, already polled) but no complete numerator, because Langfuse saw one
 route of several. `profiles/me` supplies it from the same account the gauge meters, so
 the conversion is the same arithmetic — and needs no window where only one client was
-running, which was the awkward part. Daily buckets are coarse against a 5-hour window,
-but the current day's bucket grows as work lands, so polling it hourly resolves the
-burn finely enough to pair with window movement.
+running, which was the awkward part. Daily buckets are coarse, but the current day's
+bucket grows as work lands, so polling it hourly records the burn between readings of
+the weekly gauge (the only Codex window; see the gauge paragraph below).
 
 **Agent traffic is essentially all input — but the extreme is cache reuse, not ratio.**
 Counting cache reads as input gives 632:1, which looks like a far outlier against AA's
@@ -991,7 +991,7 @@ ChatGPT the numerator is now known.
 
 ChatGPT is measured above; Claude is not, because Claude Code talks to Anthropic
 directly rather than through the instrumented proxy. Both expose a usage API, and both
-report the _included_ quota as a percentage with no denominator — the same limitation
+report the _included_ quota as a whole-number percentage with no denominator — the same limitation
 Z.ai's quota endpoint has. So the honest entry for the largest single line item in this
 loadout remains **unknown**, and any figure quoted for it is an assumption wearing a
 number's clothes. Back-solving from a displaced API bill shows how wide that is — and
@@ -1011,37 +1011,47 @@ of tasks and a subsidy in the same 2.5-5x range the dollar-denominated estimate
 implies. The table is kept to show how wide the uncertainty is, not as a range to plan
 against.
 
-**The token half of the calibration already exists on disk.** Claude Code writes a
-`usage` object on every assistant message into
-`~/.claude/projects/<project>/<session>.jsonl`, with the full four-way split — cache
-reads, cache writes, uncached input, output. Nothing needs instrumenting; the ledger
-is already there for every session ever run, and off-the-shelf tools (`ccusage` and
-friends) parse it. The measurement above came straight out of one such file.
+**The token half of the calibration is per machine.** Claude Code writes a `usage`
+object on every assistant message into `~/.claude/projects/<project>/<session>.jsonl`,
+with the full four-way split — cache reads, cache writes, uncached input, output — and
+off-the-shelf tools (`ccusage` and friends) parse it. That ledger covers only sessions
+run on that machine: Claude Code on the web keeps its transcript in the cloud
+container, so a workstation's files undercount, and a complete total needs the OTel
+pipeline (<devinfra/claude/README.md> § Claude Code Telemetry) or archived sessions
+(<devinfra/claude/session_export/README.md>). The measurement above came straight out
+of one such file.
 
-**The gauge half is richer than `aiquota`'s summary suggests.** It reduces each
-provider to a utilization figure, but the endpoints return more underneath, and three
-parts of it are exactly what a calibration needs:
+**The gauge half is coarse, and narrower than the endpoints' schemas suggest.** Read
+from aiquota's stored history (5-minute polls, 2026-08-28 to 2026-09-30; method and
+recheck query in <aiquota/README.md> § Gauge resolution):
 
-- **Anthropic reports separate weekly windows per model family** — `seven_day_opus`
-  and `seven_day_sonnet` alongside the combined `seven_day`. Burn can therefore be
-  attributed per family instead of disentangled from a mixed total, which is what
-  makes a short calibration accurate rather than indicative.
+- **Both providers report whole percentage points.** No stored reading of Claude's
+  `five_hour`/`seven_day` `utilization` or Codex's `used_percent` was fractional, and
+  neither were the upstream bodies of the last 30 days. Whether upstream floors or
+  rounds is not established.
+- **There is no per-model weekly window.** No Claude usage body in the last 30 days
+  carried a `seven_day_opus` or `seven_day_sonnet` object, so the gauge cannot
+  attribute burn per model family.
+- **Codex has one window, weekly.** The per-feature windows in `additional_rate_limits`
+  (`GPT-5.3-Codex-Spark`) read 0 throughout and stopped appearing on 2026-09-17.
 - **Anthropic reports extra-usage spend in absolute money** (`limit`, `used`, currency
-  and exponent — e.g. a $700.00 cap against $598.86 drawn), and extra usage bills at
-  list API rates. That is a dollar-denominated meter on real work, at known prices.
-- **OpenAI reports per-feature windows** in `additional_rate_limits`, each with its own
-  `used_percent`, `limit_window_seconds` and `reset_at`.
+  and exponent), and extra usage bills at list API rates. That is the one
+  dollar-denominated meter on real work, at known prices, and it only moves once the
+  plan quota is spent.
 
-Put the two together and the conversion is arithmetic: if N tokens of Opus work
-(summed from the session files) move `seven_day_opus` by X%, the window's capacity is
-`N / (X/100)`. Both inputs are already local and both are exact — the only missing
-ingredient is sampling the gauge before and after a known stretch of work. The
-extra-usage meter gives an independent cross-check in dollars.
+Put the two together and the conversion is arithmetic at whole-point resolution: if N
+tokens (summed across every machine that used the account) move `seven_day` by X
+points, the window's capacity is `N / (X/100)`, with X known to within one point. Span
+at least 20 points for a 5% error; a fully spent week is 100. The result is a
+mixed-model figure — a per-model capacity needs runs that isolate one model, since no
+per-model gauge exists — and it assumes the gauge is linear in raw tokens, which is not
+established (cache reads, output and models may weigh differently). The extra-usage
+meter gives an independent cross-check in dollars once the quota is spent.
 
 **Anthropic publishes nothing to check this against.** Its Max plan pages state only
 "5x or 20x more usage than Pro" — a multiple of an unstated base — while documenting
-that Opus has its own weekly window separate from other models, which is what
-`seven_day_opus` reflects. Third-party token figures circulating for these plans are
+that Opus has its own weekly window separate from other models, a limit the usage
+endpoint did not report as of 2026-09-30. Third-party token figures circulating for these plans are
 not derived from any published number and, where checkable, are wrong by orders of
 magnitude. Until the calibration is actually run, the two rows here stay blank rather
 than estimated.

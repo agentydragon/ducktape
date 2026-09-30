@@ -147,8 +147,9 @@ class SessionsApi:
                 return
             cursor = page.next_cursor
 
-    async def iter_event_pages(self, session_id: str) -> AsyncIterator[list[Event]]:
-        cursor: str | None = None
+    async def iter_event_pages(self, session_id: str, *, after: int = 0) -> AsyncIterator[list[Event]]:
+        """Pages of events with `sequence_num` above `after` (0: from the start), oldest first."""
+        cursor = str(after) if after else None
         while True:
             response = await self._get(
                 f"/v1/code/sessions/{session_id}/events",

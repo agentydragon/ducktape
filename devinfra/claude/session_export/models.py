@@ -1,6 +1,28 @@
-"""Wire models for claude.ai's private `/v1/code/sessions` API (contract: docs/api.md)."""
+"""Wire models for claude.ai's private `/v1/code/sessions` API (contract: docs/api.md).
+
+Timestamps stay strings as sent, so the archive is lossless; `parse_timestamp` converts where a caller needs a time.
+"""
+
+from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# Every event of the observed archive carries this and a null `sent_by_account_id`; the sync stores neither and
+# refuses an event that differs (see store.py).
+DEFAULT_ATTESTATION_STATUS = "DEVICE_ATTESTATION_STATUS_UNSPECIFIED"
+
+
+def canonical_id(session_id: str) -> str:
+    """The API accepts `session_<x>` and `cse_<x>` interchangeably; files and the database use `session_<x>`."""
+    return "session_" + session_id.split("_", 1)[1]
+
+
+def parse_timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        raise ValueError(f"timestamp without a UTC offset: {value=}")
+    return parsed
 
 
 class Event(BaseModel):
@@ -10,6 +32,15 @@ class Event(BaseModel):
 
     event_id: str
     sequence_num: str = Field(description="Decimal string on the wire; kept as sent so the archive is lossless.")
+    event_type: str
+    source: str
+    created_at: str
+    received_at: str | None = Field(default=None, description="Set once the worker's queue has the event.")
+    processing_at: str | None = Field(default=None, description="Set once the worker has started on the event.")
+    processed_at: str | None = Field(default=None, description="Set once the worker has finished the event.")
+    device_attestation_status: str = DEFAULT_ATTESTATION_STATUS
+    sent_by_account_id: str | None = None
+    payload: dict[str, Any]
 
     @property
     def seq(self) -> int:
@@ -27,6 +58,10 @@ class SessionSummary(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     id: str
+    title: str
+    status: str
+    created_at: str
+    updated_at: str
     last_event_at: str
 
 

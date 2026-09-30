@@ -13,7 +13,8 @@ import { command, getThread, models, resumeThread, type ThreadView } from "../cl
 import { historyRows, rowKey } from "./history_rows";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../markdown";
-import { HistoryRowView, ProjectedSession, pruneCommandErrors } from "./projected_session";
+import { HistoryRowView, ProjectedSession } from "./projected_session";
+import { pruneCommandErrors } from "./thread_commands";
 import { EntityCard } from "./thread_cards";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
@@ -613,6 +614,42 @@ function entity(
     ...refs,
   };
 }
+
+it("shows a server-only pending command as saved, not as a local delivery", async () => {
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          { operation: "change_model", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+          {}
+        ),
+      ],
+    })
+  );
+  const pending = container.querySelector('[aria-label="Pending commands"]');
+  expect(pending?.textContent).toContain("Saved · awaiting effect");
+  expect(pending?.textContent).not.toContain("Saved locally");
+  expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
+});
+
+it("shows the failure and reason for a server-only command", async () => {
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          { operation: "change_model", outcome: "failed", outcome_cursor: "1", outcome_reason: "model unavailable" },
+          {}
+        ),
+      ],
+    })
+  );
+  const pending = container.querySelector('[aria-label="Pending commands"]');
+  expect(pending?.textContent).toContain("Model change failed: model unavailable");
+});
 
 it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {
   const container = await render(

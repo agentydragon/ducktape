@@ -8,7 +8,8 @@ No official export covers these: the account data export documents no Code sessi
 This reads the private API `claude.ai/code` and the Claude Code CLI use, authenticated as you
 ([docs/api.md](docs/api.md)). It can break without notice, and the consumer terms may restrict automated access.
 
-Read-only (`GET` only). Runs on your machine; nothing leaves it.
+Read-only against the API (`GET` only). `export` writes files on your machine; `sync` writes only to the database
+you give it.
 
 ## Run
 
@@ -84,6 +85,12 @@ shred -u ~/.claude-session-export.json   # or ~/.claude-ai-cookie
 
 For the cookie, also log out of all devices (claude.ai → Settings → Account), which invalidates the `sessionKey`.
 No way to revoke an OAuth grant is known; whether logging out of all devices does is untested.
+
+## Sync to Postgres
+
+`sync` keeps a PostgreSQL database level with every session instead of writing an archive: the first cycle backfills,
+later ones read what changed. It needs an OAuth credential from `pair` and the connection string in
+`SESSION_SYNC_DATABASE_URL`. Schema, cycle semantics and the `json`/`jsonb` choice: [docs/sync.md](docs/sync.md).
 
 ## Archive
 
