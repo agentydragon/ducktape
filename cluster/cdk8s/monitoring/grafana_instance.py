@@ -335,7 +335,7 @@ def _dashboards(chart: Chart) -> None:
         grafana_com=GrafanaDashboardSpecGrafanaCom(id=3070, revision=3),
     )
     # NVIDIA DCGM Exporter dashboard (power/temp/clocks, PCIe, XID). Backed by the
-    # DCGM metrics from cluster/k8s/dcgm-exporter/ via Mimir.
+    # DCGM metrics from dcgm_exporter/exporter.py via Mimir.
     _dashboard(
         chart,
         "gpu",

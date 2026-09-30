@@ -19,14 +19,12 @@ from aiquota.models import ExtraSpend, FetchError, FetchSuccess, ProviderFetch, 
 from aiquota.providers.base import Provider
 from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
 from aiquota.providers.client import ProviderClientFactory
+from devinfra.claude.claude_api.oauth_client import CLIENT_ID, FULL_SCOPES, TOKEN_URL
 from devinfra.claude.claude_api.usage import Spend, UsageBucket, UsageResponse
 
 logger = logging.getLogger(__name__)
 
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
-TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
-OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-OAUTH_SCOPES = ["user:profile", "user:inference", "user:sessions:claude_code", "user:mcp_servers", "user:file_upload"]
 TOKEN_EXPIRY_SKEW_SECS = 30
 API_TIMEOUT_SECS = 5.0
 SHORT_WINDOW_SECS = 5 * 3600
@@ -98,8 +96,8 @@ async def _refresh_token(path: Path, creds: _Credentials, client: httpx.AsyncCli
         json={
             "grant_type": "refresh_token",
             "refresh_token": oauth.refresh_token,
-            "client_id": OAUTH_CLIENT_ID,
-            "scope": " ".join(OAUTH_SCOPES),
+            "client_id": CLIENT_ID,
+            "scope": " ".join(FULL_SCOPES),
         },
     )
     resp.raise_for_status()

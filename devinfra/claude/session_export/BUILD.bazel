@@ -5,6 +5,7 @@ py_library(
     srcs = ["api.py"],
     deps = [
         ":models",
+        ":oauth",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//tenacity",
@@ -28,7 +29,9 @@ py_library(
         ":api",
         ":archive",
         ":models",
+        ":oauth",
         "//util/bazel:workspace",
+        "@pypi//httpx",
     ],
 )
 
@@ -50,6 +53,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":api",
+        ":oauth",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -63,6 +67,7 @@ py_test(
     deps = [
         ":api",
         ":conftest",
+        ":oauth",
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//httpx",
@@ -83,6 +88,32 @@ py_test(
         ":models",
         "//:conftest",
         "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "oauth",
+    srcs = ["oauth.py"],
+    deps = [
+        "//devinfra/claude/claude_api:oauth_client",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_oauth",
+    srcs = ["test_oauth.py"],
+    deps = [
+        ":conftest",
+        ":oauth",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api:oauth_client",
+        "@pypi//httpx",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
