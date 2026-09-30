@@ -383,7 +383,7 @@ def write_manifests(root: Path, household: str, *, mcp_dir: str) -> None:
         kustomize_kustomization(
             resources=[
                 posixpath.relpath(mcp_dir, directory),
-                *write_charts(root, directory, partial(household_chart, household=household)),
+                write_charts(root, directory, partial(household_chart, household=household)),
             ]
         ),
     )

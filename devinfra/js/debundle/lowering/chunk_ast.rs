@@ -28,7 +28,7 @@ pub(super) struct ChunkAstAnalysis {
     /// single-name declarators (`const a = 1`) are not recorded —
     /// they don't need atomicity enforcement, and absence here is
     /// the signal that there are no siblings to consider. Used by
-    /// `build_module_plans` to enforce destructure-atomicity:
+    /// `pull_destructure_siblings` to enforce destructure-atomicity:
     /// claiming any one binding from a destructure pulls the rest
     /// into the same module, because the materializer's
     /// `split_var_decl` moves a destructuring declarator as one

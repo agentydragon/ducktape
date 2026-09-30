@@ -1807,10 +1807,10 @@ export { marker };
         vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
-            r#"if (true) {
+            &[r#"if (true) {
   STMT_SETUP;
   console.log("done");
-}"#,
+}"#],
         )],
     ));
 
@@ -1844,10 +1844,10 @@ export { marker };
         vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
-            r#"if (true) {
+            &[r#"if (true) {
   STMT_SETUP;
   console.log("done");
-}"#,
+}"#],
         )],
     );
 
@@ -1878,9 +1878,9 @@ export { marker };
         vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
-            r#"if (true) {
+            &[r#"if (true) {
   STMT_LIST_BODY;
-}"#,
+}"#],
         )],
     ));
 
@@ -1914,10 +1914,10 @@ export { marker };
         vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
-            r#"if (true) {
+            &[r#"if (true) {
   console.log("only");
   STMT_LIST_TAIL;
-}"#,
+}"#],
         )],
     ));
 
@@ -2302,10 +2302,10 @@ export { marker };
         vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
-            r#"if (true) {
+            &[r#"if (true) {
   STMT;
   console.log("done");
-}"#,
+}"#],
         )],
     ));
 
@@ -2546,13 +2546,13 @@ export { marker };
         vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
-            r#"if (true) {
+            &[r#"if (true) {
   STMT_LIST_HEAD;
   console.log("pinned1");
   STMT_LIST_MID;
   console.log("pinned2");
   STMT_LIST_TAIL;
-}"#,
+}"#],
         )],
     ));
 
@@ -2861,9 +2861,9 @@ export { marker };
         vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
-            r#"if (true) {
+            &[r#"if (true) {
   STMT_LIST;
-}"#,
+}"#],
         )],
     ));
     assert_entry_output(&with_stmt_list, "a\nb\nc\n");
@@ -2875,9 +2875,9 @@ export { marker };
             vec![logical_module_with_anon_alpha(
                 "init",
                 &[Member::new("marker")],
-                r#"if (true) {
+                &[r#"if (true) {
   ANYTHING;
-}"#,
+}"#],
             )],
         ),
         &["static/app::init", "did not match"],
@@ -2902,7 +2902,7 @@ export { marker };
             vec![logical_module_with_anon_alpha(
                 "init",
                 &[Member::new("marker")],
-                &format!("if (true) {{\n  {body}\n}}"),
+                &[&format!("if (true) {{\n  {body}\n}}")],
             )],
         ));
         assert_entry_output(&fixture, "only\n");

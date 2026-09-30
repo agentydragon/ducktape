@@ -30,7 +30,7 @@ def resolve_package_root(
     resolved_packages_root = (packages_root or default_packages_root()).resolve()
     package_root = resolved_packages_root.joinpath(*package_path_segments(package_name))
     assert_subpath_does_not_escape(
-        package_name, "/".join(package_path_segments(package_name)), f"Package {package_name} escapes packages root"
+        "/".join(package_path_segments(package_name)), f"Package {package_name} escapes packages root"
     )
     package_root = package_root.resolve()
     if not package_root.exists():
@@ -57,16 +57,14 @@ def resolve_package_subpath(
     # location. Calling `.resolve()` on `root / subpath` would follow those
     # leaf symlinks and produce a path outside the runfiles tree even when
     # the subpath itself is well-formed.
-    assert_subpath_does_not_escape(
-        package_name, subpath, f"Package {package_name} subpath escapes package root: {subpath}"
-    )
+    assert_subpath_does_not_escape(subpath, f"Package {package_name} subpath escapes package root: {subpath}")
     file_path = resolved_package_root / subpath
     if not file_path.exists():
         raise RuntimeError(f"Package file not found for {package_name}: {subpath} -> {file_path}")
     return file_path
 
 
-def assert_subpath_does_not_escape(package_name: str, subpath: str, message: str) -> None:
+def assert_subpath_does_not_escape(subpath: str, message: str) -> None:
     """Reject subpaths that contain absolute components or `..` escapes.
 
     Compares the lexically-normalized form of `subpath` against itself: if

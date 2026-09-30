@@ -25,14 +25,17 @@ def _chart(name: str) -> Callable[[App], Chart]:
     return functools.partial(config_map_chart, chart_name=name, configmap_name=name, namespace="test-ns", data={})
 
 
-def test_kustomization_lists_each_synthesized_file_then_the_siblings(tmp_path: Path) -> None:
+def test_every_chart_goes_into_the_directory_file_listed_before_the_siblings(tmp_path: Path) -> None:
     write_directory(tmp_path, _ARTIFACT, _chart("first"), _chart("second"), siblings=["test-secret.sops.yaml"])
     out_dir = tmp_path / artifact_directory(_ARTIFACT)
-    written = sorted(path.name for path in out_dir.iterdir() if path.name != "kustomization.yaml")
-    assert len(written) == 2
     # The sibling is hand-written, so absent here.
+    assert sorted(path.name for path in out_dir.iterdir()) == ["app.k8s.yaml", "kustomization.yaml"]
+    assert [doc["metadata"]["name"] for doc in yaml.safe_load_all((out_dir / "app.k8s.yaml").read_text())] == [
+        "first",
+        "second",
+    ]
     assert yaml.safe_load((out_dir / "kustomization.yaml").read_text())["resources"] == [
-        *written,
+        "app.k8s.yaml",
         "test-secret.sops.yaml",
     ]
 
@@ -48,9 +51,9 @@ def test_patch_charts_are_listed_as_patches_not_resources(tmp_path: Path) -> Non
         json6902_patches=[Json6902Patch(patch="[]", target=target)],
     )
     kustomization = yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())
-    assert kustomization["resources"] == ["first.k8s.yaml", "https://release.test/app.yaml"]
+    assert kustomization["resources"] == ["app.k8s.yaml", "https://release.test/app.yaml"]
     assert kustomization["patches"] == [
-        {"path": "patch.k8s.yaml"},
+        {"path": "patches.k8s.yaml"},
         {"patch": "[]", "target": {"kind": "Deployment", "name": "test-app", "namespace": "test-ns"}},
     ]
 

@@ -14,7 +14,7 @@
 //! not re-verify; soundness shifts to the spec author. See
 //! <docs/purity_soundness.md> "Declared purity".
 
-use analysis::{DepKind, EdgeRoleReport, OwnerGraphReport};
+use analysis::{DepKind, EdgeRoleReport};
 use debundle_e2e_support::*;
 use serde_json::json;
 
@@ -185,8 +185,7 @@ export { component, later };
         .with_extra_files(VENDOR_FILE),
     );
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     let component_owner = owner_for_binding(&graph, "component");
     let later_owner = owner_for_binding(&graph, "later");
     let promoted: Vec<_> = graph

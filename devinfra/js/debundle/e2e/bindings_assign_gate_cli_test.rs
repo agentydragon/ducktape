@@ -1,7 +1,6 @@
 //! End-to-end coverage of the realizability gate hookup in
 //! `debundle bindings assign` — atom-split detection and the
-//! dry-run / non-dry-run exit-code consistency contract (see
-//! `CLI_DOGFOOD.md`).
+//! dry-run / non-dry-run exit-code consistency contract.
 //!
 //! Shells out to the built `debundle` binary against synthetic
 //! `owner_graph.json` fixtures so the gate's path through CLI args +
@@ -15,11 +14,9 @@
 //! name, matching `gate_post_edit_partition`'s wire contract.
 
 use debundle_e2e_support::{
-    debundler_path, graph_with_acyclic_cross_module_read, write_atomic_unit_fixture,
-    write_text_file,
+    graph_with_acyclic_cross_module_read, run_debundle, write_atomic_unit_fixture, write_text_file,
 };
 use std::fs;
-use std::process::Command;
 
 /// Synthetic owner graph where alpha (owner:0) and beta (owner:1)
 /// form an atomic unit via a mutual `eager_rebind` edge. Per
@@ -41,18 +38,15 @@ fn bindings_assign_rejects_split_of_known_atomic_unit() {
     let (modules, graph) = write_atomic_unit_fixture(root);
     let pre_atom = fs::read_to_string(modules.join("home/atom.yaml")).unwrap();
 
-    let out = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "assign",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "alpha:dogfood/split",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "bindings",
+        "assign",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "alpha:dogfood/split",
+    ]);
     assert!(
         !out.status.success(),
         "expected non-zero exit; stdout: {}; stderr: {}",
@@ -83,19 +77,16 @@ fn bindings_assign_rejects_split_under_dry_run_too() {
     let (modules, graph) = write_atomic_unit_fixture(root);
     let pre_atom = fs::read_to_string(modules.join("home/atom.yaml")).unwrap();
 
-    let out = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "assign",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "--dry-run",
-            "alpha:dogfood/split",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "bindings",
+        "assign",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "--dry-run",
+        "alpha:dogfood/split",
+    ]);
     assert!(
         !out.status.success(),
         "dry-run on an atom-splitting plan must still exit non-zero; stdout: {}; stderr: {}",
@@ -110,39 +101,33 @@ fn bindings_assign_rejects_split_under_dry_run_too() {
 
 #[test]
 fn bindings_assign_dry_run_and_apply_share_exit_code() {
-    // CLI_DOGFOOD.md contract: `--dry-run` and non-dry-run on the same
-    // input must return the same exit code. The atom-split fixture is a
+    // `--dry-run` and non-dry-run on the same input must return the same
+    // exit code. The atom-split fixture is a
     // clean way to assert this — both should bail with exit 1.
     let dir_dry = tempfile::tempdir().unwrap();
     let (modules_dry, graph_dry) = write_atomic_unit_fixture(dir_dry.path());
-    let dry = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "assign",
-            "--modules",
-            modules_dry.to_str().unwrap(),
-            "--graph",
-            graph_dry.to_str().unwrap(),
-            "--dry-run",
-            "alpha:dogfood/split",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let dry = run_debundle(&[
+        "bindings",
+        "assign",
+        "--modules",
+        modules_dry.to_str().unwrap(),
+        "--graph",
+        graph_dry.to_str().unwrap(),
+        "--dry-run",
+        "alpha:dogfood/split",
+    ]);
 
     let dir_apply = tempfile::tempdir().unwrap();
     let (modules_apply, graph_apply) = write_atomic_unit_fixture(dir_apply.path());
-    let apply = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "assign",
-            "--modules",
-            modules_apply.to_str().unwrap(),
-            "--graph",
-            graph_apply.to_str().unwrap(),
-            "alpha:dogfood/split",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let apply = run_debundle(&[
+        "bindings",
+        "assign",
+        "--modules",
+        modules_apply.to_str().unwrap(),
+        "--graph",
+        graph_apply.to_str().unwrap(),
+        "alpha:dogfood/split",
+    ]);
 
     assert_eq!(
         dry.status.code(),
@@ -175,18 +160,15 @@ fn bindings_assign_accepts_acyclic_cross_module_move() {
 
     // Move beta into module `c`. The post-edit partition is
     // `a → c` (DAG) — no cycle, no atomic-unit conflict.
-    let out = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "assign",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "beta:c",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "bindings",
+        "assign",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "beta:c",
+    ]);
     assert!(
         out.status.success(),
         "expected zero exit; stderr: {}",
@@ -212,16 +194,13 @@ fn bindings_assign_requires_graph_or_no_verify() {
         "members:\n  - selector: { binding: { name: alpha } }\n",
     );
 
-    let out = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "assign",
-            "--modules",
-            modules.to_str().unwrap(),
-            "alpha:b",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "bindings",
+        "assign",
+        "--modules",
+        modules.to_str().unwrap(),
+        "alpha:b",
+    ]);
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(

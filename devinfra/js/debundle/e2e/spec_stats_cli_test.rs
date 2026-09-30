@@ -1,17 +1,13 @@
 //! End-to-end exercise of `debundle spec stats` by shelling out to the
 //! built binary against tiny modules-tree fixtures.
 
-use debundle_e2e_support::{debundler_path, write_text_file};
+use debundle_e2e_support::{run_debundle, write_text_file};
 use std::path::Path;
-use std::process::Command;
 
 fn run_stats(modules: &Path, extra: &[&str]) -> std::process::Output {
     let mut args = vec!["spec", "stats", "--modules", modules.to_str().unwrap()];
     args.extend_from_slice(extra);
-    let out = Command::new(debundler_path())
-        .args(&args)
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&args);
     assert!(
         out.status.success(),
         "non-zero exit: stderr={}",

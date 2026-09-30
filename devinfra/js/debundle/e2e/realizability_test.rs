@@ -10,7 +10,7 @@
 use std::fs;
 use std::path::Path;
 
-use analysis::{BindingReport, DepKind, OwnerGraphReport};
+use analysis::{BindingReport, DepKind};
 use debundle_e2e_support::*;
 
 #[test]
@@ -186,8 +186,7 @@ export { A, B, readA, readB };
     ));
     assert_entry_output(&fixture, "a-value b-value\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     assert!(
         graph.nodes.len() >= 4,
         "owner graph should expose source-owner nodes: {graph:#?}",
@@ -265,8 +264,7 @@ export { A, B, Existing };
     ));
     assert_entry_output(&fixture, "fallback fallback-b fallback-b-existing\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     assert!(
         graph.atomic_graph.nodes.iter().any(|unit| {
             unit.owner_ids.len() == 2
@@ -299,8 +297,7 @@ export { Leaf, Dep, Existing };
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "existing\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     assert!(
         graph.atomic_graph.nodes.iter().any(|unit| {
             unit.owner_ids.len() == 1
@@ -339,8 +336,7 @@ export { a, b, existing };
     ));
     assert_entry_output(&fixture, "existing\n");
 
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let graph = fixture.owner_graph();
     assert!(
         graph.atomic_graph.nodes.iter().any(|unit| {
             unit.owner_ids.len() == 2
@@ -608,8 +604,7 @@ export { a1, a2, b1 };
         rejected.stderr,
     );
 
-    let graph: OwnerGraphReport =
-        read_json(&rejected.report_root.join("static/app/owner_graph.json"));
+    let graph = rejected.owner_graph();
     assert!(
         !rejected
             .report_root
@@ -729,8 +724,7 @@ export { a1, a2, b1 };
             logical_module("mod_b", &[Member::new("b1")]),
         ],
     ));
-    let graph: OwnerGraphReport =
-        read_json(&rejected.report_root.join("static/app/owner_graph.json"));
+    let graph = rejected.owner_graph();
     assert!(
         graph
             .edges

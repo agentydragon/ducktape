@@ -71,7 +71,10 @@ class SyncStatus(BaseModel):
     pairing_started: bool = Field(description="A pairing attempt is waiting for the redirect URL to be pasted back.")
     credential: CredentialStatus | None
     sessions: int
-    sessions_behind: int
+    sessions_behind: int = Field(
+        description="Sessions the store is behind on that no live stream covers: the next poll reads them."
+    )
+    poll_interval_seconds: float = Field(description="The pause between one polling cycle and the next.")
     last_cycle: CycleStatus | None
     last_failure: FailureStatus | None = Field(description="The latest cycle's error; cleared by the next success.")
     live: LiveStatus
@@ -150,7 +153,7 @@ class SyncSupervisor:
 
     async def status(self) -> SyncStatus:
         credential = self._credentials.load() if self._credentials.exists() else None
-        counts = await self._store.counts()
+        counts = await self._store.counts(followed=self._follower.followed if self._follower else frozenset())
         return SyncStatus(
             state=self._state if credential else SyncState.UNPAIRED,
             pairing_started=self._pending is not None,
@@ -165,6 +168,7 @@ class SyncSupervisor:
             ),
             sessions=counts.sessions,
             sessions_behind=counts.behind,
+            poll_interval_seconds=self._interval,
             last_cycle=self._last_cycle,
             last_failure=self._last_failure,
             live=LiveStatus(

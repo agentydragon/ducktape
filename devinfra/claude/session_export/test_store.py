@@ -17,7 +17,7 @@ from devinfra.claude.session_export.conftest import (
     make_session,
 )
 from devinfra.claude.session_export.models import SESSION_STATUS_ARCHIVED
-from devinfra.claude.session_export.store import Base, SessionStore, dumps_jsonb
+from devinfra.claude.session_export.store import Base, SessionStore, StoreCounts, dumps_jsonb
 
 
 @pytest.mark.parametrize(
@@ -67,6 +67,12 @@ async def test_only_recent_unarchived_sessions_are_worth_a_stream(store: Session
         "session_recent0001",
     ]
     assert await store.live_session_ids(active_since=since, limit=2) == ["session_recent0003", "session_recent0002"]
+
+
+async def test_behind_leaves_out_the_sessions_a_live_stream_keeps_current(store: SessionStore) -> None:
+    await store.upsert_sessions([make_session("session_streamed"), make_session("session_polled")])  # neither is level
+    assert await store.counts(followed=set()) == StoreCounts(sessions=2, behind=2)
+    assert await store.counts(followed={"session_streamed"}) == StoreCounts(sessions=2, behind=1)
 
 
 async def test_migration_matches_the_orm_metadata(engine: AsyncEngine) -> None:

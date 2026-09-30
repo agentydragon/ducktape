@@ -213,14 +213,13 @@ def add_consumer_credentials(scope: Chart, store: OAuthStateStore) -> None:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, _namespace_chart)
-    write_charts(root, f"{OUTPUT_DIR}/db", _db_chart)
     write_yaml(
         root / OUTPUT_DIR / "db" / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{DATABASE.name}.k8s.yaml"]),
+        kustomize_kustomization(resources=[write_charts(root, f"{OUTPUT_DIR}/db", _db_chart)]),
     )
     write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=["namespace.k8s.yaml", "db"])
+        root / OUTPUT_DIR / "kustomization.yaml",
+        kustomize_kustomization(resources=[write_charts(root, OUTPUT_DIR, _namespace_chart), "db"]),
     )
 
 

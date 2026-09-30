@@ -9,24 +9,25 @@
 > is an assignment from owners/bindings to output destinations.
 > The validator quotients the owner graph by that assignment to
 > derive the imports graph `I` plus side-effect ordering graph
-> `S`, runs SCC detection, and accepts the spec iff every
-> `I ∪ S` SCC's cross-module edges are all `LazyRead` — i.e. no
-> at-init read and no side-effect ordering edge appears inside a
-> multi-module SCC. The emit is source-order: each logical
-> module's body is its assigned statements in original chunk
-> order, with explicit `import` / `export` declarations. There is no
-> init-wrapper machinery, no closure pass, no implicit binding
-> pulls — every owned binding is named explicitly in the spec,
-> and `Imported` bindings flow through `ChunkAnalysis.bindings` /
-> `BindingKind::Imported`, carrying the single re-exporter
-> `ModuleId` and public name that claimed it.
-> Anonymous (empty-`declared`) top-level statements have no name
-> to address as a member; a parallel `anonymous_statements`
-> selector list addresses each by its AST shape (verbatim source,
-> matched modulo spans). They co-move with their named-binding
-> companions when the closure requires it, but the spec is still
-> explicit — the author writes the selector, no closure pass
-> infers it.
+> `S` and runs a two-pass realizability gate: Pass 1 rejects any
+> cycle among the constraining edges (at-init reads and `S`);
+> Pass 2 accepts a cycle that also runs through lazy reads only if
+> an ESM evaluation simulator, run over the emitted import order,
+> proves every constraining edge's target evaluates before its
+> source. The emit is source-order: each logical module's body is
+> its assigned statements in original chunk order, with explicit
+> `import` / `export` declarations. There is no init-wrapper
+> machinery, no closure pass, no implicit binding pulls — every
+> owned binding is named explicitly in the spec, and `Imported`
+> bindings flow through `ChunkAnalysis.bindings` /
+> `BindingKind::Imported`, carrying the single re-exporting module
+> and public name that claimed it. Anonymous (empty-`declared`)
+> top-level statements have no name to address as a member; a
+> parallel `anonymous_statements` selector list addresses each by
+> a `source_match` shape template. They co-move with their
+> named-binding companions when the closure requires it, but the
+> spec is still explicit — the author writes the selector, no
+> closure pass infers it.
 
 ## Mission
 
@@ -79,11 +80,10 @@ statement touches. Each impure statement carries a
 `dataflow_summarizable` bit; statements failing the check fall back to
 the unconditional adjacent-impure S-edge.
 
-This is deliberate. The real input (the real-corpus bundle in
-`the private downstream repo`, `props/frontend`, and similar) is well-behaved and
-admits precise reasoning even though generic JS does not. Document each
-such optimization with the precondition it requires, where the check
-lives, and the fallback path.
+This is deliberate. The real inputs (production bundler output) are
+well-behaved and admit precise reasoning even though generic JS does not.
+Document each such optimization with the precondition it requires, where the
+check lives, and the fallback path.
 
 ## ESM execution model (the constraints)
 
@@ -158,13 +158,9 @@ bindings by name (`Atom`-only on the wire; see
 declarations, and per-chunk indexes clone `Id`s into `BTreeMap` /
 `BTreeSet` keys.
 
-A compact interned form (a `BindingId(usize)` newtype plus a
-`BindingTable` mapping names to dense indices, so hot paths do
-vector lookups instead of keying by cloned `Id`s) is **hypothetical
-and not implemented** — not a description of the code. Decided
-2026-06: implement it only if corpus profiling shows the
-binding-keyed graph paths as a material cost; such evidence would
-land in `perf/proposer.md`.
+An interned binding table (dense indices instead of cloned `Id` keys)
+is not implemented; adopt it only if profiling shows the binding-keyed graph
+paths as a material cost.
 
 Names are stable across the readability rename pass. The rename
 pass changes the _emitted_ identifier in the destination module's
@@ -182,8 +178,8 @@ made it, plus the metadata downstream stages need:
 pub enum BindingKind {
     /// Declared by a top-level `var/let/const/function/class` in
     /// this chunk. The spec assigns each owned binding to a
-    /// `ModuleId` (defaulting to `ResidualEntry` when unclaimed).
-    Owned { owner: ModuleId },
+    /// logical module (the residual module when unclaimed).
+    Owned { module: ModuleId },
     /// Introduced by an `import { imported_name as <name> } from "<chunk>"`
     /// at the chunk's top. The value lives in `imported_from`;
     /// our chunk merely aliases it. A logical module can choose
@@ -191,8 +187,9 @@ pub enum BindingKind {
     /// own choice of public name), but it cannot *own* the value
     /// — the chunk on the other side does.
     Imported {
-        imported_from: ChunkId,
-        imported_name: String,
+        imported_name: Atom,
+        /// Output-tree-rooted path of the file the value comes from.
+        imported_from: String,
         /// The single logical module that claims this imported
         /// binding via a `kind: import_specifier` member, and the
         /// public name it gives the export. The spec's
@@ -200,7 +197,7 @@ pub enum BindingKind {
         /// same import — a consumer that wants the symbol under a
         /// different local name aliases at its own import site.
         re_exporter: ModuleId,
-        public_name: BindingName,
+        public_name: Atom,
     },
 }
 ```
@@ -217,10 +214,10 @@ parallel side-channel to express re-export semantics.
 
 Let the input _chunk_ be a sequence of top-level statements
 `S_1, ..., S_n` in source order. Let the spec be a partial map
-`owner: BindingId → ModuleId` (over keys with kind `Owned`);
-bindings without an explicit owner default to the _residual
-entry_ module (a synthetic module that holds whatever is left
-over).
+`owner: binding → ModuleId` (over bindings of kind `Owned`);
+bindings without an explicit owner default to the _residual_
+module (a synthesized `LogicalModule` with `residual: true` that
+holds whatever is left over).
 
 For each statement `S`:
 
@@ -234,8 +231,7 @@ For each statement `S`:
   getter/setter bodies, and other lazy syntactic positions.
   Including: `extends`-clauses, decorator expressions, computed
   property keys, default-export expressions, RHS of var
-  declarators, `static` field initializers, static blocks, default
-  parameter values that get evaluated at class-decl time.
+  declarators, `static` field initializers, static blocks.
 - **`reads_lazy(S) ⊆ Bindings`** — bindings referenced from `S`'s
   syntactic span but only at the lazy positions
   `reads_at_init(S)` excludes (function/method bodies, instance
@@ -259,7 +255,7 @@ The spec induces, for each statement:
   with split owners are split into separate var-decls before this
   step.) For statements with `declared(S) = ∅` (bare expressions,
   side-effecting statements), `home(S)` defaults to the residual
-  entry module **unless** the spec claims `S` via an
+  module **unless** the spec claims `S` via an
   `anonymous_statements` shape selector on some logical module
   (see §"Anonymous-statement selectors"); a single shape-selector
   match overrides the default and routes `S` into the claiming
@@ -283,13 +279,15 @@ The micro owner graph is a directed, labeled graph `G = (V, E)`:
   metadata. A residual side-effect owner may have no declared
   binding.
 - **Read edges:** `O -> O_b` for every binding `b` read by owner
-  `O`, where `O_b` is the owner that declares `b`. The edge carries
-  `binding`, `read_kind` (`at_init` or `lazy`), and the source
+  `O`, where `O_b` is the owner that declares `b` (the import
+  declaration, for an imported binding). The edge carries
+  `binding`, `edge_kind` (`eager_use` or `lazy_use`), and the source
   statement ordinal.
-- **External read edges:** `O -> imported_from` for imported
-  bindings. These are not ownership claims; they describe
-  re-import/re-export requirements.
-- **Side-effect order edges:** potential `O₂ -> O₁` constraints
+- **Rebind edges:** `eager_rebind`, `lazy_rebind` or `deferred_rebind`
+  from an owner that assigns a binding to the owner that declares it.
+- **Local-effect edges:** `local_effect` from a statement whose modeled
+  mutation is local to a target owner (A10).
+- **Side-effect order edges:** potential `O₂ -> O₁` (`sequenced`) constraints
   when both owners have side-effecting top-level evaluation and
   `O₁` appears before `O₂` in the source chunk. After assignment
   they become `S` edges only when their endpoints land in different
@@ -308,7 +306,7 @@ The owner graph is the right abstraction for tooling:
 
 The emitted module graph is a **quotient** of this graph: choose a
 destination function `dest(owner)` from spec assignments (defaulting
-to residual entry), merge owners with the same destination, drop
+to the residual module), merge owners with the same destination, drop
 intra-destination edges, and aggregate all cross-destination edge
 reasons.
 
@@ -325,9 +323,9 @@ The vertex set in every case is
 V = Modules
 ```
 
-— the set of logical modules introduced by the spec, including the
-synthetic `ResidualEntry` that holds unowned bindings and any
-external (vendor / cross-chunk) modules referenced from this chunk.
+— the set of logical modules, including the synthesized residual module
+that holds unowned bindings. Other chunks are not vertices: a cross-chunk
+import is an `Imported` binding of an import-declaration owner.
 
 ### I — the imports graph (the linker's view)
 
@@ -345,8 +343,9 @@ The graph the **ESM linker** actually walks. One edge per emitted
 
 Each edge of `I` corresponds to exactly one
 `import { b } from "<M'>"` line in the emitted source of `M`.
-The linker computes a topological order of `I`; that order is
-the module evaluation order. **`I` is the realizability graph.**
+For acyclic `I` the linker computes a topological order, and that
+order is the module evaluation order. The realizability gate judges `I`
+together with `S`.
 
 ### R — the at-init read sub-graph (TDZ-relevant subset)
 
@@ -364,10 +363,10 @@ lazy ones.
 `R ⊆ I` strictly: every at-init read is a read, but lazy reads
 contribute to `I` only. `R`'s edges record which cross-module
 references would TDZ if the linker chose a wrong evaluation
-order. `R` is _not_ used for cycle detection — every `R` cycle is
-also an `I` cycle — but `R` shows up in the realizability proof
-as the sub-graph whose acyclicity guarantees no at-init read sees
-TDZ once the linker has linearized `I`.
+order. `R` is not checked on its own — every `R` cycle is also an
+`I` cycle, and Pass 1 checks the constraining subgraph `R ∪ S` — but `R`
+shows up in the realizability proof as the sub-graph whose acyclicity
+guarantees no at-init read sees TDZ once the linker has linearized `I`.
 
 ### S — the side-effect order graph
 
@@ -385,15 +384,18 @@ Edge `(M, M')` reads "`M`'s body must observe `M'`'s
 side-effecting work as already complete" — equivalently, `M'`
 evaluates before `M`.
 
-Unlike `I`, `S` is **not** encoded in any `import` directive: the
-linker doesn't see `S`. The materializer satisfies `S` by choosing
-the entry module's import order so the linker's reverse-DFS lands
-on a topological linearization of `I ∪ S`. Acyclicity of `I ∪ S`
-guarantees such a linearization exists.
+An `S` edge carries no binding, so the emitter realizes it as a
+side-effect-only `import "./<M'>.js"` in `M` (a phantom import) unless `M`
+already imports a binding from `M'` or `M'` is the residual module. The
+materializer orders those imports so the linker's DFS lands on a
+linearization of the constraining edges ("Lemma 2: entry-side import
+ordering"); acyclicity of the constraining subgraph `R ∪ S` guarantees one
+exists. The gate's I-graph (`ChunkConstrainingEdgeSet::i_successors`)
+therefore holds every non-rebind cross-module edge, `I` and `S` alike.
 
 #### Emission modes
 
-`S` is materialised at owner level (`graph.rs::emit_s_chain`) and
+`S` is materialised at owner level (`emit_s_chain` in `graph/build.rs`) and
 the chunk spec picks one of two modes via
 `chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain`:
 
@@ -405,7 +407,7 @@ the chunk spec picks one of two modes via
   every realizable schedule satisfies it.
 
 - **Dataflow-aware** (opt-in): per-statement `(writes, reads)`
-  effect summaries (`StatementEffectSummary` in `facts/mod.rs`)
+  effect summaries (`StatementEffectSummary` in `facts/statement_facts.rs`)
   drive the emission. For each impure statement `curr`, emit
   `Sequenced(curr → prev)` when `prev` is the most recent prior
   writer of a cell in `curr.reads ∪ curr.writes`
@@ -454,14 +456,11 @@ globalThis`) marks the bindings it flows into (transitively,
     suspect bails — `g.tag` touches the same cells as
     `globalThis.tag` but the summary only sees `Binding(g)`.
 
-  The bit is `dataflow_summarizable` in `facts/wire.rs`. Only the
+  The bit is `dataflow_summarizable` in `facts/statement_facts.rs`. Only the
   bailing statements pay the conservative cost, so the mode is safe
   on chunks mixing audited and unaudited code, but call-heavy
   top-level code gains little: every statement with an unproven call
   is chained.
-
-  See "Conditionally-correct optimizations" above for the
-  user-facing precondition list.
 
 ### Relationship
 
@@ -472,137 +471,82 @@ I  ∪  S            the full constraint graph
 
 ## Realizability primitive
 
-The three-clause validity predicate — importability, no cross-destination
-rebinds, no multi-module SCC in the constraining-edge subgraph — has exactly
-**one** implementation. Every code path that asks "is this destination
-assignment realizable?" reaches it through the same primitive:
+Clauses 2 and 3 of the validity predicate ("Valid peels and atomic
+modules") — no cross-destination rebinding write, and the two-pass gate of
+"Lemma 2: entry-side import ordering" — have exactly **one** implementation,
+in the `gate` crate (`realizability/`). Every code path that asks "is this
+destination assignment realizable?" reaches it through the same primitive:
 
-> `check_realizability(owner_graph, partition) → Verdict`
+> `check_realizability(owner_graph, partition) → RealizabilityVerdict`
 
-The verdict surfaces unrealizable SCCs, cross-destination rebinds, and
-non-importable reads with owner-edge provenance. An empty verdict means the
-partition is realizable per "Valid peels and atomic modules" below.
+The verdict lists the unrealizable SCCs (each an `SccDiagnosis`, rejected as
+`MutualConstrainingCycle` or `EsmEvaluationTdz`) and the cross-destination
+rebinds, with owner-edge provenance. An empty verdict means the partition is
+realizable. Clause 1 (importability) is emit policy and not part of the
+verdict ("Emit-side responsibilities").
 
-Two caller families consume it:
+The predicate has two forms:
 
-1. **The validator (the gate).** Given the spec's actual partition, the
-   verdict decides acceptance or rejection. This is the load-bearing call —
-   if it rejects, materialization stops.
-2. **Planner checks.** Read-only tools may ask hypothetical "what if these
-   owners moved?" questions against the same primitive. Advisory planning is
-   now driven primarily by the emitted atomic DAG; ordinary `debundle run`
-   does not serialize heuristic proposal projections.
+1. **The pure function `check_realizability`**, `O(N + M)` per call. The
+   validator (`validate_factorization`) calls it on the spec's actual
+   partition; a non-empty verdict stops materialization.
+2. **`RealizabilityIndex`**, a stateful index over a working partition for
+   callers that ask many hypothetical questions — the peel kernel
+   (`peel/quotient.rs`). A push of a `PartitionDelta` updates quotient edge
+   buckets and graph adjacency only for the owner edges incident to the moved
+   owners, and speculative moves are answered through a non-mutating overlay
+   of the same state.
 
-### Iterative, undo-aware shape
-
-Asking the primitive from scratch per query is `O(N + M)`. A chunk's
-planner checks can ask many hypothetical questions, so the primitive is exposed as a
-**stateful, transactional index over a working partition** rather than a
-pure function:
-
-- Callers push partition deltas (move owners, create destinations) onto the
-  index. Each push updates quotient edge buckets and graph adjacency only for
-  owner edges incident to moved owners. The verdict is always against the
-  index's current state.
-- Each push records its inverse on a journal. Callers undo deltas in LIFO
-  order to back out of a hypothetical or failed exploration. The peel
-  kernel (`peel/quotient.rs`) pushes committed merge deltas permanently
-  (journal truncated via `commit`); its speculative merge queries read the
-  index through the non-mutating overlay path instead. `peel/factorize.rs`
-  is a renderer over the kernel's quotient and never touches the journal
-  directly.
-- Candidate peel checks use the same push/read/undo API as other
-  hypothetical questions, but read only SCCs and rebinds touching the fresh
-  destination. A new directed edge `u -> v` can create a cycle exactly when
-  `v` reaches `u`; the index answers that against the maintained quotient
-  without rebuilding owner-graph state.
-- The validator does no undo: it pushes the actual partition once and reads
-  the verdict.
-
-The pure-function form `check_realizability(owner_graph, partition)` is the
-correctness reference; the incremental, undoable form is the production
-implementation. Differential tests assert the two agree across nested
-push/undo sequences.
-
-This is "the iterative graph that callers update and undo updates on":
-the quotient is built once per chunk, then walked forward by deltas
-(toward a hypothesis or a commit) and backward by undos (when backing
-out). Candidate checks use localized reachability around the affected
-destination after a scoped delta push; full validation can still run Tarjan
-over the maintained quotient. The owner graph and quotient buckets are not
-torn down and rebuilt per question.
+Differential tests (`realizability/tests.rs`,
+`peel/gate_differential_test.rs`) assert that the two forms agree.
 
 ### Invariant: no bespoke parallel walks
 
-No production code should answer the validity question by walking the
-owner graph or the quotient with its own algorithm. Bespoke per-question
-walks are how planner/gate divergence repaired in this design first
-appeared: two algorithms drift; one shared implementation cannot. If a new
-caller needs a verdict over a hypothetical partition, the answer is to
-push a delta and read the index — not to spin up a parallel walk over
-`module_pair_totals` or similar derived state. Adjacent diagnostics may
-read the verdict's owner-edge provenance, but the validity decision goes
-through the primitive only.
+No production code answers the validity question by walking the owner graph or
+the quotient with its own algorithm: two algorithms drift, one shared
+implementation cannot. A caller that needs a verdict over a hypothetical
+partition asks the index. Adjacent diagnostics may read the verdict's
+owner-edge provenance, but the validity decision goes through the primitive
+only.
 
 ### Peel planner unification
 
-The peel planner's `QuotientGraph` kernel uses the same realizability
-primitive as the materializer. It must not reimplement the gate over a
-JSON `OwnerGraphReport` projection: a constraining-only projection drops
-`LazyUse` edges and becomes blind to asymmetric `(eager forward, lazy
-back)` I-cycles that the `EsmEvaluationSimulator` pass catches.
+The peel proposer's kernel (`QuotientGraph` in `peel/quotient.rs`) decides
+every merge with the same primitive as the materializer. It must not
+reimplement the gate over a JSON `OwnerGraphReport` projection: a
+constraining-only projection drops `LazyUse` edges and becomes blind to
+asymmetric `(eager forward, lazy back)` I-cycles that the
+`EsmEvaluationSimulator` pass catches.
 
-The unified path:
-
-1. `OwnerGraph::from_report(&OwnerGraphReport) -> (OwnerGraph,
-OwnerReportIndex)` reconstructs the typed IR from the JSON wire
-   shape. The reconstructed graph carries every edge (constraining +
-   lazy) with the original `DepKind`.
-2. `QuotientGraph::from_report` stashes the reconstructed `OwnerGraph`
-   on the kernel.
-3. `would_be_cycles_after_contract` projects the current class
-   assignment back to a `Partition` (one synthetic `ModuleId` per live
-   class; the residual catchall becomes `ModuleId::logical(0)`) and
-   calls the shared realizability primitive. The verdict is the source
-   of truth — same primitive the materializer's `validate_factorization`
-   calls. `merge_preserves_invariants` stays on the cheaper boolean path
-   and avoids diagnostic evidence generation.
-4. `cycle_set()` also runs the unified gate per call.
+1. `OwnerGraph::from_report` rebuilds the typed IR from the report, with every
+   edge (constraining and lazy) and its original `DepKind`.
+2. `QuotientGraph::from_report` keeps that `OwnerGraph` and builds a
+   `RealizabilityIndex` over the class projection: each class is one
+   `ModuleId`, except that classes made only of residual-destined owners
+   (and not anchored to an existing module) share the residual
+   `ModuleId::logical(0)`. Every committed mutation — `contract`, the
+   partition-driven group merges in `from_report_with_partition_extended`, the
+   `is_pre_existing_module` promotion in `set_class_pre_existing_module` —
+   pushes the matching `PartitionDelta::MoveOwners` onto the index.
+3. The speculative queries — the boolean `merge_preserves_invariants` and the
+   evidence-producing `would_be_cycles_after_contract` — are one evaluation
+   through the index's tier ladder (below). `cycle_set()` reads the index's
+   maintained verdict.
 
 #### Cost and the tier ladder
 
-A from-scratch `check_realizability` call is `O(|V| + |E|)`. The
-kernel's merge-candidate greedy queries it `O(|V|)` times per round,
-so a naive seeding pass would be `O(|V|² · |E|)`. For the downstream corpus-scale
-inputs (`|V| ≤ ~10³`, `|E| = O(|V|)`) that's `~10⁹` ops — measurable
-but within budget.
+A from-scratch `check_realizability` call is `O(|V| + |E|)`; asking it per
+merge candidate would make a seeding pass `O(|V|² · |E|)`. The persistent
+index instead maintains the constraining-edge graph SCC state, the I-graph
+adjacency, the `EsmEvaluationSimulator` per-pair bucket, and the cross-rebind
+set incrementally.
 
-The kernel uses the persistent `RealizabilityIndex`
-(§"Realizability primitive" → "Iterative, undo-aware shape") instead of
-rebuilding from scratch per query. `QuotientGraph::from_report`
-initializes the index from the singleton-class partition projection
-and stores it alongside the typed `OwnerGraph`. Every committed
-mutation — `contract`, the partition-driven group merges in
-`from_report_with_partition_extended`, the `is_pre_existing_module`
-promotion in `set_class_pre_existing_module` — synthesizes the
-corresponding `PartitionDelta::MoveOwners` and pushes it onto the
-index. The index maintains the constraining-edge graph SCC state,
-the I-graph adjacency, the `EsmEvaluationSimulator` per-pair bucket,
-and the cross-rebind set incrementally, touching only quotient edge
-buckets incident to the moved owners.
-
-Speculative queries — the hot boolean gate
-(`merge_preserves_invariants`, called once per candidate by the
-greedy's pop loop) and the diagnostic path
-(`would_be_cycles_after_contract`) — are one evaluation: the
-index's tier ladder
-(`ladder_decision_after_moving_owners_touching`), entered with the
-merge's post-state ModuleId from
-`projected_winner_module_after_merge` (mirroring the gate-residual
-override `project_partition` would apply) and the `±edge` overlay
-from `compute_merge_deltas`. Each tier either decides — provably
-equal to the full `check_realizability` verdict, restricted to
-diagnoses touching the post-merge module — or escalates:
+A speculative merge enters the index's tier ladder
+(`ladder_decision_after_moving_owners_touching`) with the merge's post-state
+`ModuleId` (`projected_winner_module_after_merge`) and the `±edge` overlay
+from `compute_merge_deltas`. Each tier either decides — provably equal to the
+full `check_realizability` verdict, restricted to diagnoses touching the
+post-merge module — or escalates:
 
 - **Tier 0 — delta-free short-circuit.** No deltas (both classes
   already project to the post-merge module, e.g. merges inside the
@@ -645,20 +589,6 @@ targeting the single post-merge module; the ladder dispatch asserts
 this invariant, and a future non-merge speculative mutation must
 implement a multi-target overlay deliberately rather than inherit
 the merge path.
-
-The kernel's `ClassId ↔ ModuleId` mapping (`class_module_id`) is
-maintained alongside the index. Initialization assigns each
-non-residual non-gate-residual class a fresh `ModuleId::logical(N)`;
-the residual catch-all class and every gate-residual singleton
-share `ModuleId::logical(0)`. Class IDs are never reused (contracted
-classes leave empty slots), and surviving classes keep their
-ModuleId across merges. The exception is a pre-existing-module
-promotion: when `set_class_pre_existing_module` flips the
-`is_pre_existing_module` bit on a class that was previously
-gate-residual-only (and so mapped to the residual ModuleId), the
-class is promoted to a fresh non-residual ModuleId and a
-`MoveOwners` delta is pushed to keep the index's working partition
-in sync.
 
 #### References
 
@@ -705,7 +635,7 @@ algorithms from pointer-analysis literature (Fähndrich–Foster–
 Su–Aiken; Hardekopf–Lin).
 
 Pearce–Kelly's core does survive — as the heart of the
-realizability crate's `CondensationOrder` (window DFS, window Kahn,
+`gate` crate's `CondensationOrder` (window DFS, window Kahn,
 epoch visited-marks), re-keyed from kernel classes to condensation
 nodes of the index's maintained module graphs, with a union-find
 for SCC membership so the PK order lives over a structure that
@@ -730,25 +660,25 @@ cache.
 
 A function body's lazy reads/rebinds fire at module-init from the
 perspective of any caller that invokes the function at-init. The owner
-graph carries promoted **EagerUse** and **EagerRebind** edges from
-at-init callers to the transitive closure of their callees' lazy
-reads/rebinds, so the primitive's clause-3 verdict is sound for the
-canonical `console.log(readB())` shape (top-level call whose body
-crosses a module boundary).
+graph carries promoted `EagerUse` edges from at-init callers to the
+transitive closure of their callees' lazy reads and rebinds, so the
+primitive's clause-3 verdict is sound for the canonical
+`console.log(readB())` shape (top-level call whose body crosses a module
+boundary).
 
-The promotion runs once in `build_owner_graph` and is
+The promotion runs once in `build_owner_graph_with` and is
 partition-independent: intra-module promoted edges are dropped by the
 quotient automatically, so the same promoted owner graph drives
 hypothetical planner partitions and the validator's actual one.
 
-**Algorithm.** For each top-level chunk statement S with `calls.eager`
-non-empty, walk the chunk call graph (among chunk-declared functions)
-in reverse topological order to compute, per function-owner F,
-`reachable_lazy_reads[F]` and `reachable_lazy_rebinds[F]` — the
-fixpoint closure of F's body lazy reads/rebinds plus the closures of
-every chunk function F calls. Then for each callee C in S's
-`calls.eager`, emit promoted edges from S's owner to every owner
-declaring a binding in C's reachable closures.
+**Algorithm.** `promote_at_init_calls` builds the call graph among
+chunk-declared, resolvable callees from first-order lazy calls, takes its
+SCCs, and closes each SCC's first-order lazy reads and rebinds over its
+successor SCCs in reverse topological order. Then for each callee C in an
+at-init statement S's `calls.eager`, it emits promoted edges from S's owner to
+every owner declaring a binding in C's closure. Rebind targets are promoted
+as `EagerUse` too, an order constraint only: write legality is enforced by the
+direct `LazyRebind` / `DeferredRebind` edge at the write site.
 
 **Hoisted-target filter.** Promoted reads filter out targets whose
 owner is a `FnDecl` — function declarations are hoisted at Phase-1
@@ -762,7 +692,7 @@ isn't actually unrealizable at runtime.
 transitive lazy reads would otherwise emit N edges from the caller
 statement, and multiple at-init calls in the same statement would
 multiply that. The promotion pass dedupes per `(caller, target-owner)`
-pair per kind, keeping the per-statement cost bounded by the
+pair, keeping the per-statement cost bounded by the
 transitive closure size rather than (closure × call-sites).
 
 **Resolvable callees.** A callee is precisely resolvable iff its
@@ -776,7 +706,7 @@ member calls (`api.read()`), aliases (`const g = readB; g()`),
 IIFEs, optional-chain calls, tagged templates, conditional or
 rebound function bindings, and calls into resolvable functions
 whose own first-order bodies contain such calls — takes a
-conservative fallback (`graph.rs::UnresolvedCallFallback`). The
+conservative fallback (`UnresolvedCallFallback` in `graph/build.rs`). The
 fallback's premise: whatever function value the call invokes must
 have reached the call site through a binding the call expression
 mentions (callee root, arguments, computed keys) or through an
@@ -825,14 +755,13 @@ promotion pass.
 
 ## Lemma 2: entry-side import ordering
 
-The realizability primitive's relaxed clause-3 rule
-(`check_realizability` accepts a spec iff the constraining-edge
-subgraph of `Q` has no multi-module SCC) admits mixed cycles in the
-imports graph `I` — cycles where every back-edge is `LazyUse`. For
-the ESM linker to actually evaluate these without TDZ, the entry
-module's `import` directives must be emitted in a specific source
-order so that depth-first link traversal lands on a Phase-2
-evaluation order matching the constraining-edge linearization.
+Clause 3's Pass 1 (no multi-module SCC in the constraining-edge
+subgraph of `Q`) admits mixed cycles in the imports graph `I` — cycles
+whose back-edges are `LazyUse`. For the ESM linker to actually evaluate
+these without TDZ, the entry module's `import` directives must be emitted
+in a specific source order so that depth-first link traversal lands on a
+Phase-2 evaluation order matching the constraining-edge linearization;
+Pass 2 (below) checks that it does.
 
 The materializer computes the source-import order on
 `esm_import_order::EsmImportOrder` (held by `ChunkFactorization`)
@@ -931,7 +860,7 @@ evaluates without TDZ.
 Because Lemma 2 is implemented in the materializer and the
 gate's simulator decides asymmetric I-SCCs precisely, the
 validator (`validate_factorization` in
-`devinfra/js/debundle/validation.rs`) and read-only planner
+`validation.rs`) and read-only planner
 checks share the realizability primitive's verdict — a
 `peelable_now` proposal is a peel the gate accepts and Node will
 execute correctly at runtime (the contract pinned by
@@ -941,23 +870,23 @@ execute correctly at runtime (the contract pinned by
 
 ## The realizability theorem
 
-> **Theorem (correctness).** If `R ∪ S` is acyclic, the source-
-> order emit construction below produces a multi-module ESM bundle
-> observationally equivalent to the input chunk. (Note this is
-> stated over `R ∪ S`, not `I ∪ S` — see "Gating rule" below.)
+> **Theorem (correctness).** Under assumptions A1–A11, if the realizability
+> gate accepts a spec, the source-order emit construction below produces a
+> multi-module ESM bundle observationally equivalent to the input chunk.
 >
-> **Design rule (gating).** The materializer accepts a spec iff
-> every SCC in the imports + side-effect graph `I ∪ S` is
-> realizable. An SCC is realizable iff every cross-module edge
-> between its members is a `LazyRead` — equivalently, the SCC
-> contributes no `R` (at-init) and no `S` (side-effect-ordering)
-> cross-module edges. Cycles whose only back-edges are lazy reads
-> are accepted: the ESM linker walks `I` to pick _some_
-> evaluation order for the SCC, every module finishes evaluating
-> with all bindings assigned, and the lazy reads only fire later
-> (after `L`'s call sites run). Cycles with `R` or `S`
-> cross-module edges are rejected: `R` would TDZ during cycle
-> evaluation; `S` has no consistent topological emit order.
+> **Gate.** The gate accepts iff no rebinding write crosses a module boundary
+> (clause 2) and the quotient's I-graph passes both passes of clause 3
+> ("Lemma 2: entry-side import ordering"):
+>
+> 1. **Pass 1.** The constraining-edge subgraph (`R ∪ S`) has no multi-module
+>    SCC.
+> 2. **Pass 2.** In every multi-module SCC of the full I-graph (constraining ∪
+>    lazy) that contains a constraining edge, the ESM evaluation simulator
+>    evaluates each constraining edge's target before its source under the
+>    emitted import order.
+>
+> A cycle with no constraining edge (every cross-module edge lazy) is accepted
+> without simulation.
 >
 > **Implementation.** The implementation computes per-statement
 > facts, builds the owner graph, then quotients that graph by the
@@ -970,44 +899,34 @@ execute correctly at runtime (the contract pinned by
 
 Here "spec assignment" means whatever the validator sees: every
 declared binding either has an explicit `owner` from the spec or
-defaults to `ModuleId::ResidualEntry` (see [Spec explicitness
+defaults to the residual module (see [Spec explicitness
 and diagnostics](#spec-explicitness-and-diagnostics)).
 There is no implicit transformation between the spec and the
 assignment the theorem reasons about.
 
-### Why the gate is over `I ∪ S`, not `R ∪ S` or full `I ∪ S` acyclicity
+### Why two passes
 
-The validator builds the imports graph `I` (every cross-module
-reference, at-init or lazy) plus the side-effect ordering graph
-`S` (one edge per pair of cross-module side-effecting top-level
-statements in source order). It runs SCC detection on `I ∪ S`,
-then accepts SCCs whose cross-module edges are all `LazyRead`.
+The validator builds the I-graph — every cross-module edge the emitter
+realizes as an `import` directive, at-init or lazy, plus the `S` edges — and
+judges it in two passes. Two weaker gates would be wrong:
 
-Two strictly weaker checks would be wrong:
+1. **Pass 1 alone (`R ∪ S` acyclic).** A cycle in `I` whose constraining
+   projection is acyclic still affects the linker: lazy reads emit `import`
+   directives that the linker's DFS follows. Two modules that import each
+   other — one direction at-init, the other lazy — have acyclic `R` but cyclic
+   `I`; whether the at-init read TDZs depends on which member the DFS enters
+   first, that is, on the emitted import order. Pass 2 simulates that order.
+2. **Rejecting every I-cycle that contains a constraining edge.** Lemma 2
+   steers the DFS into the cycle at its dependent member, so the dependency
+   evaluates first, and Pass 2 accepts the cycles where that works. Rejecting
+   all of them would force colocation of bindings whose only relationship is
+   an eager read one way and a lazy reference back.
 
-1. **Building only `R ∪ S`.** A cycle in `I` whose at-init
-   projection (`R`) is acyclic still affects the linker: lazy
-   reads emit `import` directives that the linker uses for its
-   DFS evaluation order. A spec where two modules mutually
-   import — one direction at-init, the other lazy — has acyclic
-   `R` but cyclic `I`; the linker enters the SCC, picks an
-   evaluation order, and the at-init read TDZs when the
-   late-evaluated module hasn't finished its body. Building `I`
-   directly catches this.
-2. **Rejecting any `I ∪ S` cycle.** A cycle whose only
-   cross-module back-edges are `LazyRead` is realizable: the
-   linker still walks `I` and picks some evaluation order, but
-   no read fires until all SCC members have finished evaluating.
-   Function bodies don't run during linking; the lazy reads only
-   resolve when their call-sites do, after the entire SCC is
-   live. Rejecting these cycles would over-restrict the
-   realizable subset of `I ∪ S` and force colocation of bindings
-   whose only inter-module relationship is mutual lazy reference.
+A cycle whose every cross-module edge is lazy needs neither pass to fail: no
+read fires until every member has finished evaluating, so rejecting it would
+over-restrict.
 
-The gate as stated picks the largest realizable subset of
-`I ∪ S` and rejects everything strictly outside it.
-
-### Conditions on the input chunk (assumptions A1–A7)
+### Conditions on the input chunk (assumptions A1–A11)
 
 The proof below reasons about ECMA-262 module evaluation under a
 specific JS subset. If the input chunk falls outside this subset,
@@ -1022,7 +941,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   scope at the call site; the static analyzer cannot see what it
   references; `I` would be incomplete. **Enforced (partially)**: the
   input-chunk admission scan (`chunk_admission`, run by
-  `stage_one::compute_chunk_analysis` next to the A2 bail)
+  `stage_one::compute_chunk_analysis_from_structural` next to the A2 bail)
   rejects direct `eval(...)` and seq-indirect `(0, eval)(...)` calls
   at module top level (looking through parens and comma sequences to
   the callee), with the offending statement ordinal in the
@@ -1038,7 +957,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   `facts::analyze_chunk_structural` records the first module-top
   `AwaitExpr`, excluding lazy positions like
   function/arrow/method/getter/setter bodies and instance class
-  fields), and `stage_one::compute_chunk_analysis` `bail!`s
+  fields), and `stage_one::compute_chunk_analysis_from_structural` `bail!`s
   with the offending statement ordinal as soon as fact analysis
   returns — before any quotient or lowering work. Production
   chunks we target are TLA-free in practice; the rejection turns
@@ -1374,35 +1293,37 @@ preserved by the source-order invariant. ∎
 
 ### Theorem and proof
 
-**Theorem (correctness).** Under assumptions A1–A7, if `R ∪ S`
-is acyclic and every cycle in `I ∪ S` has only `LazyRead`
-cross-module edges between SCC members, then the source-order
-emit construction produces a multi-module ESM bundle whose
-observation-trace under ECMA-262 evaluation is identical to the
-input chunk's evaluation.
+**Theorem (correctness).** Under assumptions A1–A11, if the realizability
+gate accepts a spec (Pass 1 and Pass 2 above), the source-order emit
+construction produces a multi-module ESM bundle whose observation-trace
+under ECMA-262 evaluation is identical to the input chunk's evaluation.
 
-_Proof._ Acyclic `R ∪ S` admits a topological linearization `L`
-of the at-init read + side-effect graph. The full graph `I` may
-have additional cycles, but every such cycle has only `LazyRead`
-cross-module edges by hypothesis; the ESM linker may pick any
-DFS order through these cycles, and Lemma 4 (Lazy-read
-correctness) shows the resulting evaluation order is sound for
-lazy reads regardless of which member the DFS enters first. By
-Lemma 2 we author each emitted module's import directive list
-to make ECMA-262 produce a linker order respecting both `R` and
-`S`. By Lemmas 3 and 4 every binding read in the emitted bundle
-sees an initialized value identical to the input chunk's read
-at the same source ordinal. By Lemma 5 every side-effecting
-statement fires in the same relative order as in the input
-chunk. By the emit's same-module source-order invariant,
-statements within a
-module fire in their original source ordinal order. The
-observation-trace of the emitted bundle is therefore identical
-to the input chunk's. ∎
+_Proof._ Pass 1 makes the constraining subgraph `R ∪ S` acyclic, so it
+admits a topological linearization `L`. The full graph `I` may have
+additional cycles. A cycle whose cross-module edges are all lazy is sound
+for lazy reads regardless of which member the DFS enters first (Lemma 4). A
+cycle that also carries constraining edges is accepted only by Pass 2, which
+fixes the evaluation order the emitted imports produce and checks that every
+constraining edge's target evaluates before its source. By Lemma 2 we author
+each emitted module's import directive list to make ECMA-262 produce a
+linker order respecting both `R` and `S`. By Lemmas 3 and 4 every binding
+read in the emitted bundle sees an initialized value identical to the input
+chunk's read at the same source ordinal. By Lemma 5 every side-effecting
+statement fires in the same relative order as in the input chunk. By the
+emit's same-module source-order invariant, statements within a module fire
+in their original source ordinal order. The observation-trace of the emitted
+bundle is therefore identical to the input chunk's. ∎
+
+Scope of the argument: Lemmas 3–5 are stated for evaluation orders `L`
+respecting `I`. An I-SCC that carries both constraining and lazy edges has no
+such `L`; for it the conclusion rests on the simulator reproducing the
+ECMA-262 evaluation order under the emitted import order (both consume
+`EsmImportOrder`; `e2e/simulator_node_differential_sweep_test` compares the
+simulated order against Node), not on a proof in this document.
 
 ### Coverage gaps (what the proof does NOT cover)
 
-The proof above is a sufficient-condition theorem under A1–A7.
+The proof above is a sufficient-condition theorem under A1–A11.
 It does not establish:
 
 - **Top-level await (A2 violation).** Async modules use a
@@ -1436,72 +1357,69 @@ It does not establish:
   evaluation rules don't apply to CJS modules; a CJS module's
   `module.exports` mutation can fire mid-evaluation in arbitrary
   order. We require vendor chunks to be ESM (production corpora we target satisfy this).
-- **Lazy-only cycles** are _accepted_ by the realizability gate.
-  The theorem stated above (over `R ∪ S` acyclicity) covers
-  them: the linker walks `I` and picks some evaluation order for
-  the cycle, every module finishes evaluating with all bindings
-  assigned, and the lazy reads only fire later (after `L`'s
-  call-sites run). The architectural-fragility worry — a future
-  edit promoting a lazy read to at-init — is caught by the
-  validator the moment the new `R` edge enters the SCC.
+- **Lazy-only cycles** are _accepted_ by the realizability gate (Pass 2
+  skips an I-SCC with no constraining edge): the linker walks `I` and picks
+  some evaluation order for the cycle, every module finishes evaluating with
+  all bindings assigned, and the lazy reads only fire later (after `L`'s
+  call-sites run). The architectural-fragility worry — a future edit
+  promoting a lazy read to at-init — is judged by the gate the moment the new
+  constraining edge enters the SCC.
 
 ### Worked example: cycle through a lazy back-edge
 
-A spec that's acyclic in `R` alone but cyclic in `I` once
-lazy back-edges are counted:
+A spec that is acyclic in `R` alone but cyclic in `I` once lazy back-edges
+are counted:
 
-```
+```text
 mod_a:                                      mod_b:
-  const A = "a-value";                        const B = A + "-postfix";  // R-edge mod_b → mod_a
-  function readB() { return B; }              // (mod_b owns B; mod_a's `readB`
-  // ↑ lazy read of B; closes I-cycle        // is referenced at-init from
-  // mod_a → mod_b                           // residual entry's `readB()` call)
+  const A = "a-value";                        const B = A + "-postfix";  // constraining edge mod_b → mod_a
+  function readB() { return B; }
+  // lazy read of B closes the I-cycle mod_a → mod_b
 ```
 
-`R = {(mod_b, mod_a)}` — acyclic. But the lazy `readB` body
-still emits `import { B } from "./mod_b"` in mod_a, contributing
-edge `(mod_a, mod_b)` to `I`. The `I ∪ S` SCC is `{mod_a, mod_b}`,
-and it carries the at-init `(mod_b, mod_a)` edge — so the
-realizability gate rejects.
+The residual module calls `readB()` at top level and re-exports `A`, `B` and
+`readB`.
 
-If the gate did _not_ fire, runtime behavior would depend on
-linker DFS order: if entry imports `B` first, DFS goes
-`entry → mod_b → mod_a → mod_b (cycle, return)`, mod_a
-evaluates first, A is initialized when mod_b reads it. If entry
-imports `readB` first, DFS goes `entry → mod_a → mod_b → mod_a
-(cycle, return)`, mod_b evaluates first, mod_b's
-`const B = A + "-postfix"` runs while A is in TDZ. The bundle
-works or breaks depending on entry-import ordering.
+The constraining subgraph holds only `(mod_b, mod_a)` and is acyclic, so
+Pass 1 passes, but the lazy `readB` body emits `import { B } from "./mod_b"`
+in `mod_a`, so `I` has the cycle `{mod_a, mod_b}`. Its outcome depends on the
+linker's DFS order: entering `mod_a` first would evaluate `mod_b` first, and
+`const B = A + "-postfix"` would run while `A` is in TDZ. The emitter avoids
+that: the entry imports every module with the SCC's dependent first
+(`[mod_b, mod_a]`, Lemma 2), so the DFS runs `entry → mod_b → mod_a → mod_b`
+(cycle, no-op), `mod_a` evaluates first, and `mod_b` sees `A` initialized.
+Pass 2's simulator reproduces that order and accepts; the e2e test
+`mixed_cycle_with_lazy_back_edge_is_realizable_when_residual_imports_scc`
+(<../e2e/realizability_test.rs>) runs the emitted bundle under Node.
 
-The realizable fix is to colocate `B` with `readB` in one
-module, dissolving the SCC. This is the canonical example of a
-**spec-induced atom** in the sense of §"Two classes of atom"
-below: the owner-level read graph is a DAG, but the spec's choice
-to split `B` from `readB` makes the module-level `I ∪ S` cyclic.
-The validator's `CycleReport` names this exact binding pair (with
-the now-binding-pair-blame `render_cycle_summary` format), so the
-diagnostic points the spec author directly at "{B, readB} must
-co-locate."
+Pass 2 rejects the same cycle shape when the target of the constraining edge
+is the residual module: residual is the DFS root, so it evaluates last and a
+constraining read into it TDZs (<../e2e/pass_two_tdz_cut_diagnosis_test.rs>,
+<../e2e/runtime_tdz_on_imported_class_test.rs>). The realizable fix is then
+to colocate the read's binding with its reader. This is the canonical
+**spec-induced atom** in the sense of §"Two classes of atom" below: the
+owner-level read graph is a DAG, but the spec's choice to split the two
+bindings makes the module-level `I ∪ S` cyclic. The validator's `CycleReport`
+names the exact binding pair (with the binding-pair-blame
+`render_cycle_summary` format), so the diagnostic points the spec author
+directly at "{A, B} must co-locate."
 
-The synthetic minimization is in <../e2e/realizability_test.rs>
-(`rejects_cycle_through_lazy_back_edge`); the namespace-aggregator
-form is in <../e2e/namespace_aggregator_split_tdz_test.rs>.
+The namespace-aggregator form of a rejected split is in
+<../e2e/namespace_aggregator_split_tdz_test.rs>.
 
 ### Why a static gate, not a runtime check
 
 The gating rule is enforced **statically** by the validator. The
-materializer either emits a bundle whose `I ∪ S` is provably
-realizable (every SCC has only `LazyRead` cross-module edges)
-and therefore observationally equivalent by the theorem above,
-or refuses with cycle evidence. There is no runtime check, no
-init-wrapper safety net, no per-load TDZ guard. By construction,
-the emitter never produces JavaScript that the ESM linker has to
-puzzle through a cyclic at-init read graph for. If the spec
-describes an unrealizable analysis (`R` or `S` cycles), the
-spec is wrong; we report the cycle and let the author fix it.
+materializer either emits a bundle the gate accepts — observationally
+equivalent by the theorem above — or refuses with cycle evidence. There is
+no runtime check, no init-wrapper safety net, no per-load TDZ guard. By
+construction, the emitter never produces JavaScript that the ESM linker has
+to puzzle through a cyclic at-init read graph for. If the spec describes an
+unrealizable split, the spec is wrong; we report the cycle and let the author
+fix it.
 
 This is the contract the user-visible artifact relies on. Any
-escape hatch — accepting `R` cyclic specs that happen to work in
+escape hatch — accepting constraining-cyclic specs that happen to work in
 testing, or deferring cycle detection to runtime — gives back
 the property that "an emitted bundle from this materializer is,
 by inspection of its module graph alone, free of TDZ and
@@ -1509,32 +1427,19 @@ side-effect-ordering hazards."
 
 ### Multi-chunk extension
 
-The theorem above is stated for a single chunk. Real bundles have
-many chunks (entry, code-split routes, vendor bundles), each with
-its own logical-module split. Cross-chunk dependencies are
-edges from one chunk's logical module to another chunk's logical
-module (via `Imported` bindings).
+The theorem is stated for a single chunk. Real bundles have many chunks
+(entry, code-split routes, vendor bundles), each with its own logical-module
+split. A cross-chunk dependency is an `Imported` binding of the importing
+chunk, not a vertex of any chunk's owner graph.
 
-The extended theorem is the natural lift: take the union of every
-chunk's `I ∪ S`, with `Imported` edges contributing cross-chunk
-edges to `I`. The spec is realizable iff this combined graph is
-acyclic.
-
-In practice vendor chunks are leaves — they don't import from
-us, so they emit no edges into user-chunks. User-chunk to
-user-chunk cycles can occur (an `<primary-chunk>` ↔
-`StoryIndex-DrlmoZTE` cycle is conceivable in any
-code-split bundle) and the multi-chunk validator detects them.
-A user→vendor edge that ends up being a user→user→vendor cycle
-is an even rarer pathological case (a vendor chunk that
-re-exports something from a user-chunk); the validator detects
-it but the right fix lives in the bundler's chunking config,
-not in the spec.
-
-The validator currently runs per-chunk; cross-chunk edges appear
-as `ExternalChunk(_)` leaves in the per-chunk graph. **Future
-work**: a multi-chunk lift would have `validate_factorization` take a
-`BTreeMap<ChunkId, ChunkFactorization>` and walk the union graph.
+The natural lift — union every chunk's I-graph, with `Imported` bindings
+contributing cross-chunk edges, and require the union to pass the gate — is
+not implemented: `validate_factorization` takes one chunk's owner graph, so a
+cycle among user chunks (two code-split chunks importing each other) is
+outside its view. In practice vendor chunks are leaves — they don't import
+from us — so they add no edges into user chunks; a vendor chunk that
+re-exports something from a user chunk is a bundler-configuration problem,
+not a spec problem.
 
 ### Pipeline split (chunk analysis / materialization)
 
@@ -1544,20 +1449,24 @@ dependencies:
 - **Chunk analysis** (spec-independent): parse → per-statement facts →
   owner graph → structural atomic units. Pure function of
   `(source bytes, analysis hints, OwnerGraphOptions)`. The composer
-  is `stage_one::compute_chunk_analysis`, returning a
-  `ChunkAnalysis` that bundles `ChunkFactAnalysis` (facts +
+  is `stage_one::compute_chunk_analysis_from_structural`
+  (`compute_chunk_analysis` is its entry from a parsed module),
+  returning a `stage_one::ChunkAnalysis` — distinct from the `gate`
+  crate's `ChunkAnalysis` — that bundles `ChunkFactAnalysis` (facts +
   top-level-await detection + redundant-hint warnings) with the
   `OwnerGraphAndUnits` derived from those facts.
 - **Materialization** (spec-dependent): assemble the partition from the
-  spec's binding claims, run the realizability gate, lower to ESM.
-  Today this lives inline in `lowering::materialize_logical_chunk`.
+  spec's binding claims, run the realizability gate, lower to ESM. This is
+  `lowering::materialize_logical_modules`; per chunk it runs
+  `prepare_logical_chunk`, then `resolve_prepared_chunks` (selector
+  resolution, joint across chunks), then `finish_logical_chunk` (chunk
+  analysis, partition assembly, the gate, lowering).
 
-The materializer is the composition of both. Current code materializes
-chunk analysis in-memory through one named call site. Keep that shape:
-it makes the boundary explicit without committing the pipeline to
-cross-process fact reuse. If future work tries to cache chunk analysis
-across processes, it must first solve SWC hygiene replay for pre-filter
-facts; see
+The materializer is the composition of both, and chunk analysis is computed
+in memory at one call site in `finish_logical_chunk`. The boundary is
+explicit without committing the pipeline to cross-process fact reuse. If
+future work tries to cache chunk analysis across processes, it must first
+solve SWC hygiene replay for pre-filter facts; see
 `docs/wire_format.md` and `docs/lessons_learned/cross_process_stage_b.md`.
 
 The reason to call this out: every diagnostic in §"Two classes of
@@ -1605,7 +1514,8 @@ spec's assignment_ may still close a cycle through them. The
 worked example in §"Worked example: cycle through a lazy back-edge"
 is exactly this shape: the binding-level read graph is a DAG, but
 the spec's choice to put `B` and `readB` in different modules makes
-the module-level `I ∪ S` graph cyclic. The fix is identical in
+the module-level `I ∪ S` graph cyclic (and unrealizable whenever
+Pass 2 proves a TDZ). The fix is identical in
 _shape_ — co-locate the bindings — but the _unit being preserved_ is
 defined by the spec's quotient, not the source bytes.
 
@@ -1619,10 +1529,10 @@ cycle, after `petgraph::algo::greedy_feedback_arc_set` picks the
 cheapest cut to break).
 
 Both diagnostics name the implicated bindings at the source level,
-not the module level. A 1300-module SCC closing through one
-constraining `(mod_A, mod_B)` edge surfaces as "binding `iRe` in
-`mod_A` reads binding `Y` in `mod_B` at-init; move them together,"
-not "you have a cycle of 1300 modules." See
+not the module level. A large SCC closing through one
+constraining `(mod_A, mod_B)` edge surfaces as "binding `a` in
+`mod_A` reads binding `b` in `mod_B` at-init; move them together,"
+not "you have a cycle of many modules." See
 [validation.rs::render_cycle_summary](../validation.rs) for the
 binding-pair blame format.
 
@@ -1648,9 +1558,9 @@ apply spec assignment + assemble_partition
   ↓
 quotient owner graph by dest(owner) → I, R, S
   ↓
-validate: realizability gate over I ∪ S
+validate: realizability gate (Pass 1, then Pass 2) over the quotient
   ↓
-  ├── if any quotient SCC contains a constraining (R/S) edge:
+  ├── if Pass 1 finds a constraining-edge cycle or Pass 2 proves a TDZ:
   │   reject with CycleReport (binding-pair blame from cut edges)
   ↓
 emit (source-order)
@@ -1662,7 +1572,7 @@ graph and the conflicts/cycles report under `reports/tree/<chunk>/`
 regardless of which atom class caught the spec.
 
 A spec that passes validation is _guaranteed_ to emit correctly
-under the source-order strategy described in the proof. There is
+under the source-order strategy described in the proof, given A1–A11. There is
 no class of accepted-input that the validator may emit incorrectly
 (modulo cleanly-defined precision of `reads_at_init` and
 `has_side_effect`). The validator may reject specs that are in fact
@@ -1751,8 +1661,8 @@ The trade-off doesn't pay off in practice:
 
 **Design rule.** The spec is fully explicit. Every owned binding
 has its `owner` named in the spec or defaults to
-`ModuleId::ResidualEntry`. Empty-`declared` (anonymous) statements
-default to `ResidualEntry` unless explicitly claimed by a logical
+the residual module. Empty-`declared` (anonymous) statements
+default to the residual module unless explicitly claimed by a logical
 module's `anonymous_statements` shape selector. There is no
 implicit pulling: when an atomic unit or planner proposal includes
 anonymous statements, the spec author copies their source into
@@ -1857,23 +1767,6 @@ Ordinary `debundle run` emits owner facts, module quotient facts, and the
 atomic DAG; the read-only query surface ranks and groups those facts for
 authoring workflows.
 
-### Residual Proposal Closures
-
-The current planner answers the operational question: "which residual
-atomic units can move together next?"
-
-It starts from residual atomic units, follows outgoing constraining
-atomic-DAG edges to other residual units, coalesces overlapping closures,
-and emits the closed owner set as a proposal when it fits under the
-configured size cap. Oversized or conflicting closures become diagnostics.
-Lazy owner edges remain in the owner graph but do not close proposals unless
-they are represented by a constraining atomic edge.
-
-This makes larger peel sets unambiguous: a proposal is "minimal" only with
-respect to the current closure heuristic. The authoritative graph fact is
-the atomic DAG; agents should use `atoms`, `describe`, and `show-source`
-to decide whether the recommendation is a good module shape.
-
 ### Detailed graph side output
 
 The transform also writes a detailed graph side output, separate from
@@ -1931,24 +1824,24 @@ A destination assignment is **valid** iff:
 
 1. Every cross-destination read edge in `Q` is importable.
 2. No cross-destination rebinding write edge remains in `Q`.
-3. The constraining-edge subgraph of `Q` — the result of dropping all
-   `LazyUse` cross edges from `Q` — has no multi-module SCC.
-   Equivalently, any SCC of `Q` that contains a constraining edge
-   must already be single-module under the constraining subgraph;
-   pure lazy-read import cycles in `Q` are allowed and realizable
-   because ESM evaluates the lazy side without observing a TDZ on the
-   eager side.
+3. The I-graph of `Q` passes the two-pass gate ("Lemma 2: entry-side import
+   ordering"): its constraining-edge subgraph — `Q` with every `LazyUse`
+   cross edge dropped — has no multi-module SCC (Pass 1), and in every
+   multi-module SCC of the full I-graph that contains a constraining edge the
+   ESM evaluation simulator evaluates each constraining edge's target before
+   its source (Pass 2). Pure lazy-read import cycles are realizable because
+   ESM evaluates the lazy side without observing a TDZ on the eager side.
 
-This three-clause predicate is what the "Realizability primitive" section
-above defines as the single shared implementation. The validator and
-planner checks all consume the same primitive — none of them re-implement
-the predicate.
+Clauses 2 and 3 are what the "Realizability primitive" section above defines
+as the single shared implementation; clause 1 is emit policy ("Emit-side
+responsibilities"). The validator and planner checks all consume the same
+primitive — none of them re-implement the predicate.
 
 A peel is just a proposed destination assignment for an owner set.
 The peel is valid exactly when the resulting assignment is valid by
 the definition above. Invalid peels have three primary explanations:
 a non-importable read crosses the cut, a rebinding write crosses the
-cut, or a constraining edge remains in a quotient SCC.
+cut, or a quotient SCC keeps a constraining cycle or a simulated TDZ.
 
 This definition is intentionally a predicate over a complete
 destination assignment, not a single graph-factorization trick. Some
@@ -1964,9 +1857,7 @@ Other relations are not equivalence constraints:
   colocate. It can be satisfied by an import when the quotient stays
   realizable.
 - A lazy read never constrains evaluation order, but it still emits an
-  import. If the target binding is private to the residual entry, a
-  split containing the lazy consumer is invalid until the provider is
-  colocated or made importable.
+  import, so it still takes part in the I-cycles that Pass 2 judges.
 - A side-effect-order edge is an ordering constraint, not a value
   dependency. It may be satisfiable by the chosen module evaluation
   order, or it may participate in an unrealizable quotient SCC.
@@ -2028,222 +1919,38 @@ to invent a binding it can't resolve.
 
 ### Factorization proposals
 
-`factorize` exists to propose useful module assignments for code that
-currently lives in the residual/deferred surface. Its output has the
-same correctness contract as a handwritten YAML edit.
+`factorize` (`debundle modules propose`) proposes module assignments for code
+that currently lives in the residual surface. Its output has the same
+correctness contract as a handwritten YAML edit. The algorithm — a seed
+quotient, then lazy-priority-queue greedy contraction with every merge gated
+by the realizability primitive — is described in <peel_proposer.md>.
 
-Terminology is strict:
+- A **proposal** is an owner set plus destination assignment that is already
+  proven valid.
+- A **diagnostic** may describe why a class did not become a proposal. It is
+  never presented as a module assignment the author can land.
 
-- A **proposal** is an owner set plus destination assignment that is
-  already proven valid.
-- A **frontier item** is an internal worklist state that has not yet
-  been proven valid. Frontier items may be grown, rejected, or reported
-  as blocker diagnostics, but they are not proposals.
-- A **diagnostic** may describe why a frontier item failed. It must not
-  be presented as a module assignment the author can land.
-
-Every emitted proposal must satisfy:
+Every emitted proposal satisfies:
 
 1. It corresponds to a concrete destination assignment.
-2. The assignment passes the same validity predicate above:
-   importability, no cross-destination rebinding writes, and no
-   unrealizable quotient SCC.
-3. The proof is static and local to the owner graph. It does not rely
-   on emitting JS, running a browser, or observing production-scale
-   behavior.
+2. The assignment passes the realizability primitive: no cross-destination
+   rebinding write and no unrealizable quotient SCC. (Residual dependencies and
+   anonymous-statement addressability, which decide `landable_today`, are
+   reported separately.)
+3. The proof is static and local to the owner graph. It does not rely on
+   emitting JS, running a browser, or observing production-scale behavior.
 
-The generator may be conservative and miss valid modules. It may not
-emit an invalid module as a proposal.
+The generator may be conservative and miss valid modules. It may not emit an
+invalid module as a proposal:
 
-### Correct factorization algorithm shape
+> `factorize` emits only certified proposals.
 
-A scalable factorizer should be a certifying closure algorithm over
-precomputed owner-graph indexes:
-
-Proposal generation is not heuristic. The frontiers are generated by a
-deterministic input enumeration and monotone closure under exact static
-obligations. Heuristics are allowed only after certification, for
-ranking or display.
-
-1. Enumerate deterministic frontier starts from the input surface:
-   binding patch streams, residual owners, known extension targets, and
-   other explicitly configured surfaces. These starts are not
-   candidates and are never emitted directly.
-2. Close each frontier item under hard local requirements:
-   - include all owners in any atomic unit split by the frontier item;
-   - include owners needed to eliminate cross-destination rebinding
-     writes;
-   - include owners needed by target-local effect edges, because a
-     target-local mutation is only realizable when the mutating
-     statement and target owner are in the same destination;
-   - include provider owners for private residual bindings that the
-     frontier item reads, including lazy reads, unless the export
-     policy makes those bindings importable.
-3. Certify the resulting hypothetical assignment via the realizability
-   primitive (above). Same primitive the validator and planner checks
-   use; no parallel walk.
-4. If the verdict reports a blocker with an exact owner-level repair,
-   push the repair onto the realizability index and re-read the verdict:
-   - private residual read -> add the binding's provider owner;
-   - atomic-unit split or rebinding split -> add the unit/assigner
-     owners;
-   - constraining quotient cycle -> add a small owner-level cut or
-     companion set, then revalidate.
-     On a failed repair branch, undo the push and try the next repair —
-     the index's undo journal makes this cheap.
-5. Emit a proposal only when the verdict is empty. Otherwise stop with a
-   diagnostic when the frontier item exceeds the size cap, reaches an
-   active-module conflict the generator is not allowed to rewrite, has
-   no exact repair, or repeats a previous owner set.
-
-The "not too small, not too big" sizing of factorized quotients is the
-termination behaviour of this loop, not a separate heuristic. A frontier
-is "too small" exactly when the verdict still names an exact repair; the
-loop grows. A frontier is "too big" exactly when the size cap fires before
-the verdict is empty; the loop halts with a diagnostic. The closure rules
-and the size cap layer cleanly on top of one shared primitive instead of
-running as ad-hoc parallel passes with their own graph views.
-
-The implementation should be staged this way:
-
-1. Build immutable indexes from the owner graph:
-   - owner -> incident owner edges, grouped by edge kind and
-     constraining/non-constraining status;
-   - binding -> provider owner and export/importability metadata;
-   - owner -> current destination;
-   - atomic unit id -> member owners;
-   - owner -> atomic unit id;
-   - destination quotient adjacency with owner-edge provenance.
-2. Build frontier starts. Starts are just worklist seeds; they are not
-   displayed as proposals and do not need to be valid.
-3. Run closure for each start with a queue of exact obligations. Each
-   obligation either adds owners/atomic units, proves that an import is
-   legal, or produces a blocker that the closure logic cannot repair.
-4. Certify the closed owner set by constructing the hypothetical
-   destination assignment and running the shared validity predicate.
-5. When certification fails with an exact repair, enqueue that repair
-   and continue. When it fails without an exact repair, record a
-   diagnostic. When it succeeds, emit a proposal.
-6. Rank and coalesce only emitted proposals. This can prefer fewer
-   files, better names, larger useful reductions, or existing module
-   namespaces, but it must not affect validity.
-
-This is fast enough because the expensive facts are shared: owner
-edges, binding-to-owner, owner-to-destination, atomic units, and
-quotient adjacency are all indexed once per chunk. Each frontier item
-is grown by a monotone worklist and is abandoned as soon as it exceeds
-the review size cap. The search space is a bounded set of certified
-closures, not all subsets of residual owners.
-
-The important invariant is:
-
-> `factorize` emits only certified proposals. A reported module
-> assignment is not a candidate unless the full owner set has already
-> passed exact validation.
-
-This invariant is stronger than "the SCC algorithm found a cluster".
-It also explains why `LazyUse` is subtle: lazy reads should not be
-treated as init-order SCC edges, but they still affect importability
-and therefore proposal validity. A factorizer that simply drops
-`LazyUse` and then emits singleton lazy consumers as peelable is
-incorrect. A factorizer that drops `LazyUse` from the init-order SCC
-closure relation, records the resulting private-residual emit blocker,
-grows the frontier item to include the provider, and validates the
-closed set before emitting can be correct.
-
-It also explains why local-effect annotations belong in the shared
-analysis layer, not in factorize-specific code. Once the analyzer
-turns a recognized decorator helper call into a target-local owner
-edge, the materializer rejects a handwritten split of class and
-decorator statement, the atomic DAG records the required unit, and
-factorize can grow the frontier through the same atomic-unit repair
-path. No consumer gets to reinterpret `effect:` independently.
-
-### Planned factorization complexity
-
-Let:
-
-- `N` be the number of owners in the chunk.
-- `M` be the number of owner-level dependency edges.
-- `B` be the number of binding/provider/use facts.
-- `U` be the number of atomic units, with `U <= N`.
-- `S` be the number of frontier starts.
-- `K` be the maximum owners/atomic units reached by a frontier before
-  it is emitted or abandoned by the size cap.
-- `E_K` be the number of owner edges incident to those `K` owners.
-- `Q` and `E_Q` be the owner/destination quotient nodes and edges
-  touched by a certification pass.
-- `P` be the number of emitted proposals.
-
-The one-time preprocessing target is:
-
-- build edge, binding, destination, and provenance indexes:
-  `O(N + M + B)`;
-- compute atomic units with Tarjan over constraining owner edges:
-  `O(N + M_constraining)`, bounded by `O(N + M)`;
-- build initial quotient adjacency and reverse indexes:
-  `O(N + M)`.
-
-Each frontier should be monotone: an owner or atomic unit is added at
-most once, and each incident edge is inspected only when it becomes
-relevant. The target per-frontier cost is therefore:
-
-- closure: `O(K + E_K)` plus binding lookups for touched reads;
-- certification: `O(E_K + E_reachable)` when the quotient check can be
-  limited to affected quotient components, with a full fallback of
-  `O(Q + E_Q)`;
-- exact repairs: no asymptotic multiplier beyond closure, because each
-  repair adds new owners/units or terminates that frontier.
-
-The total target cost is:
-
-```text
-O(N + M + B)
-  + O(S * (K + E_K + E_reachable))
-  + O(P log P)
-```
-
-with `O(S * (Q + E_Q))` as the conservative bound if every frontier falls
-back to a full quotient certification pass. The implementation must
-avoid the naive shape `O(S * K * (N + M))`, where every growth step
-reruns whole-graph analysis. If production graphs make full quotient
-certification too common, the fix is incremental component invalidation,
-a denser quotient reachability representation, or narrower exact-repair
-indexing, not weakening proposal soundness.
-
-A tested non-mutating overlay predicate exists as an alternative to the
-index's rollbackable push/read/undo path, but profiling found the
-ordered-map overlay slower — don't switch without a profile saying
-otherwise. `factorize` should continue to be audited against this
-contract before large-factor output is treated as authoritative.
-
-### Graph operations for peel tooling
-
-Useful operations should be phrased against the owner graph first
-and only then projected to modules:
-
-- **Quotient:** `G / dest` produces the module graph the validator
-  already understands.
-- **Dependency closure:** starting from frontier owners, follow
-  owner-level read edges that cannot be satisfied by imports. This
-  yields the smallest "must move together" set for private residual
-  dependencies.
-- **SCC:** run on either the owner graph or the hypothetical quotient.
-  Owner-level SCCs identify mutually-recursive or mutually-dependent
-  clusters; quotient SCCs identify ESM realizability hazards.
-- **Cut:** for an unrealizable quotient SCC, compute a small set of
-  owner-level `at_init` or side-effect-order edges whose removal or
-  colocation would make the split valid. The existing module-level
-  feedback-arc cut should be reported with owner-edge provenance.
-- **Ranking:** once validity is known, rank safe proposals by
-  emitted-size reduction, number of owners, name quality, and whether
-  the target path matches an existing human module namespace. Ranking
-  is heuristic; validity is not.
-
-These operations are pure graph transforms over immutable analysis
-data. That property matters operationally: two tools reading the same
-owner graph and destination assignments should produce the same proposal
-status without building emitted JS.
+Local-effect annotations belong in the shared analysis layer, not in
+factorize-specific code. Once the analyzer turns a recognized decorator helper
+call into a target-local owner edge, the materializer rejects a handwritten
+split of the class and decorator statement, the atomic DAG records the
+required unit, and the proposer never splits it either. No consumer gets to
+reinterpret `effect:` independently.
 
 ### Pipeline trajectory
 
@@ -2281,12 +1988,11 @@ any such pipeline reshaping.
 Binding selectors (<selectors.md>) address an `Owned` binding by name.
 Anonymous (empty-`declared`) statements have no name; they are
 side-effect IIFEs, decorator applications like
-`Ww([Z], $g.prototype, "invites", 2);`, runtime init bridges, and
+`decorate([dec], $g.prototype, "items", 2);`, runtime init bridges, and
 similar bare expressions/statements. Empirically, a closure that
-peels a hub-class binding (e.g. `WorkspaceInviteState`) frequently
-must co-move several such statements — they apply decorators to
-the class prototype, register Meticulous record/replay hooks,
-push system-config bridges through helper functions — and an
+peels a hub-class binding frequently must co-move several such
+statements — they apply decorators to the class prototype, register
+instrumentation hooks, push configuration through helper functions — and an
 algorithmic refinement (treating "fire-and-forget" preludes as
 non-constraining) does not cover them: most are not preludes,
 they semantically belong with the class.
@@ -2297,16 +2003,16 @@ the named members, where each entry carries a `source_match` template
 of the target statement:
 
 ```yaml
-workspace/invite/state:
+feature/state:
   members:
     - selector: { binding: { name: $g } }
-      name: WorkspaceInviteState
+      name: FeatureState
   anonymous_statements:
     - match: |
-        Ww([Z], $g.prototype, "invites", 2);
-      note: "@observable invites"
+        decorate([dec], $g.prototype, "items", 2);
+      note: "@observable items"
     - match: |
-        Ww([Z], $g.prototype, "isChecking", 2);
+        decorate([dec], $g.prototype, "isReady", 2);
 ```
 
 When a decorator application matches an annotated
@@ -2316,25 +2022,21 @@ anonymous statement a required companion of the class owner for
 materialization and factorize. The author still
 materializes it with `anonymous_statements:` because it has no binding
 name, but the atomic-unit closure that contains the class also covers
-the anon owner, so the factorizer's proposal lists the anonymous
-owner id under `extension_owner_ids` and will not propose the class
-alone.
+the anon owner, so a proposal containing the class also contains the
+anonymous owner (listed under `anonymous_statement_owner_ids`, or
+`extension_owner_ids` when it extends an existing module) and the
+proposer never proposes the class alone.
 
 The unannotated case — `__decorate(...)`, `register(...)`, and
 target-mutating `Foo.x = ...` installs that the analyzer cannot tag
 as target-local because no helper annotation matches — relies on a
-separate route. The factorizer's emit pass walks each fresh-module
-cell and promotes it to an extension of an existing active module
-when **every** outgoing cross-module constraining edge points at one
-active module, the cell declares no named bindings, and it has no
-outgoing edges to other residual cells. The cell's owners are surfaced
-in `extension_owner_ids`; the downstream consumer reads owner shape
-(named bindings vs anonymous statements) to decide whether to write a
-`members:` or `anonymous_statements:` entry into the extended module's
-yaml. The cell-level dependency-satisfaction check (no leftover
-residual deps + unambiguous active target) is what makes the promotion
-safe: the extension can be applied without leaving a downstream
-residual dependency.
+separate route. The proposer's greedy contraction merges a residual
+class into an existing active module when the realizability gate accepts
+the merge, and the merged owners surface as an extension
+(`extends_module_id`, `extension_owner_ids`). The consumer of the proposal
+reads owner shape (named bindings vs anonymous statements) to decide whether
+to write a `members:` or `anonymous_statements:` entry into the extended
+module's yaml.
 
 ### Resolution
 
@@ -2369,19 +2071,17 @@ prettifier reformats whitespace but preserves AST structure, and
 upstream changes that touch the statement's content surface as a
 zero-match diagnostic the spec author can fix.
 
-### ChunkFactorization integration
+### Claimed anonymous owners in the partition
 
-`ChunkFactorization` validates realizability (the cycle gate over `I ∪ S`)
-by quotienting the owner graph by each owner's destination.
-Anonymous owners default to `ModuleId::ResidualEntry`; the
-factorization overrides that destination for any anon owner the spec
-claimed. Without this override, an anon owner with a constraining
-in-edge from a peeled named owner would create a fake cross-module
-edge — the validator would reject the spec even though the
-materializer would emit the closure correctly. After the override,
-the validator sees the same module dep graph the materializer
-will emit, and the cycle gate fires only on real unrealizable
-splits. See `ChunkFactorization::build` in `chunk_factorization.rs`.
+An owner with no declared binding belongs to the residual module unless a
+module claims it through `anonymous_statements`.
+`factor_assembly::compute_owner_claims` resolves those claims (each module's
+`anonymous_statement_ordinals`) into the partition that
+`ChunkFactorization::build_with` quotients by, so the gate sees the module dep
+graph the materializer will emit. Without that resolution, an anon owner with a
+constraining in-edge from a peeled named owner would create a fake
+cross-module edge, and the validator would reject a spec whose closure the
+materializer would emit correctly.
 
 ## Comma-list var-decls with split owners
 
@@ -2446,30 +2146,25 @@ bindings (e.g. `x`) pulls every sibling (`y`) into the same
 module — sibling bindings join their claimed module with their
 local name as the export name. Claiming siblings into different
 modules is rejected with an explicit error from
-`build_module_plans`; the only legal options are claim-all or
-claim-none.
+`pull_destructure_siblings`.
 
 ## Cycle resolution
 
-When the validator rejects a cycle, the spec author must remove the
-constraining cross edge from the quotient SCC. In spec-only work,
-that usually means:
+When the gate rejects a spec, the author must remove the constraining cross
+edge from the quotient SCC. In spec-only work, that usually means:
 
 **Colocate the constraining owner endpoints.** Move the owner that
 performs the at-init read or side-effecting work together with the
 owner it depends on. Once both endpoints share a destination, that
-edge disappears from `I ∪ S`.
+edge disappears from the quotient.
 
-Rewriting source so the constraining read becomes lazy can also make
-the SCC realizable, but the debundler normally does not rewrite
-program structure. Lazy read edges still emit import directives and
-still participate in `I`; they are accepted only when every
-cross-module edge in the SCC is lazy.
+Rewriting source so the constraining read becomes lazy can also help, but the
+debundler normally does not rewrite program structure. Lazy read edges still
+emit import directives and still participate in `I`, so the cycle that is left
+behind is judged by Pass 2.
 
-The validator should suggest the colocation explicitly: "Cycle
-through `M_a`, `M_b`, `M_c`. Constraining edge:
-`owner_x --at_init--> owner_y`. Resolution: colocate `owner_x`
-and `owner_y`, then re-run quotient validation."
+`render_cycle_summary` (<../validation.rs>) names the binding pairs to
+colocate, per blocking SCC.
 
 ## Architecture
 
@@ -2493,14 +2188,14 @@ files are laid out like the eventual emitted JavaScript modules. That
 shape is a debundler-owned authoring layer: `debundle` compiles it
 into the same typed flat transform spec in memory, then runs the fixed
 pipeline below. The owner-graph reports are the bridge: they expose
-source owner ids, readable member names, destinations, blockers, and
-peel-set hyperedges so authoring tools can mostly project and filter
+source owner ids, readable member names, destinations, and the atomic
+DAG so authoring tools can mostly project and filter
 debundler facts instead of re-analyzing JavaScript or private repo
 YAML conventions.
 
 The authoritative stage sequence — which stages exist, which module
 implements each, and when each runs — is the fixed composition in
-`run_transform_cli_with_options` (<../pipeline.rs>); this doc does not
+`run_transform_cli` (<../pipeline.rs>); this doc does not
 mirror it. The shape to know: spec load/validate → chunk load/prepare
 (one parallel per-chunk SWC parse) → artifact indexes → the read-only
 `build_vendor_resolution_plan` → `materialize_logical_modules` (the only
@@ -2513,14 +2208,14 @@ statement facts, owner-graph construction — <../lowering/chunk_ast.rs>,
 <../facts/mod.rs>, <../graph/>) feeds the stages that carry design
 invariants:
 
-1. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
-   the spec's explicit member list. Bindings with no spec entry
-   default to `ResidualEntry`; nothing pulls implicitly. (See
-   [Spec explicitness](#spec-explicitness-and-diagnostics).)
-2. **Quotient + validation** (<../graph/>, <../validation.rs>) —
-   collapses owners by destination, aggregates edge reasons, and
-   validates the resulting `I ∪ S`; an unrealizable cycle aborts the
-   pipeline with the cycle evidence.
+1. **Binding assignment** → a per-binding `ModuleId`
+   (`BindingKind::Owned`) from the spec's explicit member list. Bindings
+   with no spec entry default to the residual module; nothing pulls
+   implicitly. (See [Spec explicitness](#spec-explicitness-and-diagnostics).)
+2. **Quotient + validation** (<../graph/>, <../realizability/mod.rs>,
+   <../validation.rs>) — collapses owners by destination, aggregates edge
+   reasons, and runs the realizability gate over the result; a rejection
+   aborts the pipeline with the cycle evidence.
 3. **Diagnostics projections** — cycle evidence, atomic-unit conflicts,
    and atomic graph reports are projections of the same owner graph +
    quotient, not separate heuristic analyses.
@@ -2661,24 +2356,19 @@ admitted as verified aliases — the author is responsible for
 confirming the binding really is the package default (e.g. by its
 runtime identity/version).
 
-## Empty logical modules
+## Unmatched spec claims
 
-A spec entry that resolves to zero owned bindings and no re-exports
-comes out as an effectively-empty file. Either:
+A `logical_modules` member whose binding selector names no top-level
+declaration in the chunk is recorded as an `UnmatchedSpecClaim`
+(<../lowering/materialize/plan_builder.rs>); lowering continues as if the
+member were absent, so the claim neither moves the binding nor adds an export.
+After emit, vendor swaps and reports — so the generated tree and every
+chunk's offenders are available — the pipeline fails with the full list across
+chunks (<../pipeline.rs>): the named binding fell into the residual sweep and
+the destination module is one export short.
 
-- The spec author wrote a `logical_modules[chunk_id][target_path]`
-  entry whose explicit members all turned out to be names that
-  don't exist in the chunk (typo, stale spec). The validator surfaces a
-  `MissingMember` warning per name; emit proceeds with whatever
-  _did_ resolve.
-- All listed members are `Imported` bindings with no `Owned`
-  members. The module is a re-export-only file (just `import` +
-  `export {}`). Valid, common for "barrel" modules; no warning.
-
-The validator distinguishes the two and only warns on the first.
-A logical module with literally zero members in either category
-is rejected (the spec author probably meant to define something
-that didn't materialize).
+A module whose members are all `import_specifier` claims owns no bindings and
+emits a re-export-only file (re-imports and re-exports, no owned code).
 
 ## Invariants
 
@@ -2707,126 +2397,89 @@ The implementation must maintain:
    carries the load.
 6. **Static schedule check is total.** The validator inspects
    _every_ statement and _every_ read — at-init **and** lazy —
-   so the imports graph `I` it constructs matches the linker's
-   view exactly. There is no opt-out path that bypasses the dep
-   graph. If a cycle exists in `I ∪ S`, the validator surfaces
-   it.
+   so the I-graph it judges matches the linker's view. There is no
+   opt-out path that bypasses the dep graph.
 
-## What this design rejects
+## Unrealizable splits
 
-Examples of unrealizable splits — shapes that the realizability
-gate refuses:
+Examples of splits that the realizability gate refuses.
 
-### Cycle through two logical modules
+### Mutual at-init cycle
 
-```
+```js
 // chunk
-const TVe = "stop1";              // owned by mod_p
-const Vn = { stop1: TVe };        // owned by mod_p
-function buildBackgroundPattern(node) {
-  return { className: Vn.stop1 }; // lazy, owned by mod_p
+function wrap(x) {
+  return { ref: x };
 }
-
-const BackgroundPatternStyles = { stop1: TVe }; // owned by mod_bp
-class BackgroundPattern { … } // owned by mod_bp
+const A = "a";
+const B = wrap(A);
+const C = "c";
+const D = wrap(C);
 ```
 
-If the spec assigns `TVe → mod_p` and
-`BackgroundPatternStyles → mod_bp`, then `mod_bp` reads `TVe` at
-init from `mod_p`. Edge `mod_bp → mod_p`. But if `mod_p` also
-imports anything from `mod_bp` at module-top (e.g. another piece
-of the same comma-list landing in `mod_bp`), we get the reverse
-edge `mod_p → mod_bp`. Cycle. Rejected.
+With `{A, D}` in `mod_x` and `{B, C}` in `mod_y`, `B = wrap(A)` reads `A` at
+init (`mod_y → mod_x`) and `D = wrap(C)` reads `C` at init
+(`mod_x → mod_y`). Both edges constrain init order, so Pass 1 finds the SCC
+`{mod_x, mod_y}`; no import order satisfies both reads
+(<../e2e/realizability_test.rs>, `cyclic_spec_is_rejected_with_clear_error`).
 
-Resolution: colocate `TVe` with `BackgroundPatternStyles` (or vice
-versa) so they share an owner.
+Resolution: colocate `A` with `B` or `C` with `D`, so one of the cross edges
+disappears.
 
-### Class extends across cycle
+### Class extends across a cycle
 
-```
+```js
 // in mod_a
 class A { … }
 
-// in mod_b — at module-top, EAGER:
+// in mod_b — at module top, eager:
 class B extends A { … }
 ```
 
-If `mod_a` imports anything from `mod_b` at module-top (say
-because the spec assigned a binding `mod_a` reads to `mod_b`),
-the cycle `mod_a ↔ mod_b` contains a class extends-clause read.
-Class declarations are TDZ-prone, so this fails at module load
-with `ReferenceError: Cannot access A before initialization`.
+`mod_b → mod_a` is a constraining edge: the `extends` clause reads `A` at
+init, and class declarations are TDZ-prone. If `mod_a` also reads anything
+owned by `mod_b` at module top, the cycle is mutual and Pass 1 rejects it. If
+`mod_a`'s read is lazy (inside a function body), the cycle is asymmetric and
+Pass 2 decides: it accepts when the emitted import order evaluates `mod_a`
+before `mod_b`, and rejects when `mod_a` is the residual module, which as the
+DFS root evaluates last — `class B extends A` would throw
+`ReferenceError: Cannot access 'A' before initialization`.
 
-Resolution: colocate `A` and `B`, or otherwise remove every
-constraining cross edge from the SCC. Pushing only the reverse
-`mod_a` import inside a function body is not enough: the lazy read
-still emits an import directive, `I` still has both edges, and the
-SCC still contains the at-init `extends A` edge.
-
-### Cycle through lazy back-edges (mixed at-init / lazy)
-
-```
-// in mod_a — at module-top, EAGER:
-import { ssym as m } from "<mod_b>"; // I-edge mod_a → mod_b
-const askAICommandId = m.askAICommandId;  // R-edge mod_a → mod_b
-
-// in mod_b — only inside function bodies:
-import { definitions } from "<mod_a>";    // I-edge mod_b → mod_a
-function helper() { return definitions.foo; } // not in R
-```
-
-Edge set:
-
-- `R = { (mod_a, mod_b) }` — only `mod_a`'s read is at-init.
-- `I = { (mod_a, mod_b), (mod_b, mod_a) }` — both reads emit
-  imports.
-
-A validator that builds `R` (the previous design) sees no cycle
-and accepts. The ESM linker, however, walks `I`, sees the SCC,
-picks an order; whichever module evaluates second sees its
-imports as TDZ at init time. `mod_a`'s `m.askAICommandId` read
-fails with `Cannot access 'm' before initialization`.
-
-Resolution: colocate one back-edge's binding with its reader so
-the `I` cycle dissolves.
+Resolution: colocate `A` and `B`, or remove the cross edge that closes the
+cycle.
 
 ### Computed property key reading another module
 
-```
+```js
 // in mod_a
-const m = { dataTypeNumberId: "SYS_D08" };
+const m = { kind: "K1" };
 
-// in mod_b — at module-top:
-const dataTypeIconMap = { [m.dataTypeNumberId]: numberIcon };
+// in mod_b — at module top:
+const table = { [m.kind]: value };
 ```
 
-`mod_b → mod_a` edge through the computed key. If `mod_a` doesn't
-edge back to `mod_b`, fine. If it does (because the spec assigned
-something `mod_a` reads to `mod_b`), cycle, rejected.
-
-Computed keys aren't special: they read identifiers at-init like
-any other expression, and the dep graph captures that read
-without any special-case logic.
+`mod_b → mod_a` is a constraining edge through the computed key. Computed keys
+aren't special: they read identifiers at init like any other expression, and
+the dep graph captures that read without special-case logic. If the spec also
+gives `mod_a` an at-init read of something in `mod_b`, the cycle is mutual and
+rejected.
 
 ## ChunkAnalysis + ChunkFactorization: owner graph plus quotient
 
-The target runtime data structures the validator and emitter both
-consume are a pair: a per-chunk `ChunkAnalysis` (inputs + IR) and a
-`ChunkFactorization` wrapping it (partition + derived realizability
-views). Together they carry the chunk's statement facts, the binding
-catalogue, the explicit logical modules, the owner graph, and the
-module dep graph derived by quotienting that owner graph under the
-spec assignment.
+The runtime data structures the validator and emitter both consume are a pair:
+the `gate` crate's per-chunk `ChunkAnalysis` (inputs + IR; distinct from
+`stage_one::ChunkAnalysis`, the spec-independent composer output) and a
+`ChunkFactorization` wrapping it (partition + derived realizability views).
+Together they carry the chunk's statement facts, the binding catalogue, the
+explicit logical modules, the owner graph, and the module dep graph derived by
+quotienting that owner graph under the spec assignment.
 
-The implementation builds these directly: statement facts feed the
-owner graph (stored on `ChunkAnalysis`), and the module dep graph is
-a quotient of that owner graph under the current spec assignment
-(stored on `ChunkFactorization`).
+Statement facts feed the owner graph (stored on `ChunkAnalysis`), and the
+module dep graph is a quotient of that owner graph under the current spec
+assignment (stored on `ChunkFactorization`).
 
 Both are keyed per-chunk; the chunk is contextual within the
-analysis, so binding keys collapse to just `name`. Keys for the dep
-graph extend `ModuleId` with an `ExternalChunk(ChunkId)` variant so
-cross-chunk reads are first-class.
+analysis, so binding keys collapse to just `name`.
 
 Conceptually, the analysis + factorization carry:
 
@@ -2841,28 +2494,25 @@ Conceptually, the analysis + factorization carry:
 Everything downstream needs is here:
 
 - `home(stmt)`: for statements with `declared(stmt) ≠ ∅`, look
-  up any declared name in `bindings` — its `Owned.owner` is
-  `home`. For statements with empty `declared`, `home` is
-  `ResidualEntry`.
+  up any declared name in `bindings` — its `Owned.module` is
+  `home`. For statements with empty `declared`, `home` is the
+  residual module unless a module claims the statement through
+  `anonymous_statements`.
 - "What owners/statements live in module M" =
   `owner_graph.nodes.filter(dest(owner) == M)`.
-- "What does M export" = bindings whose `Owned.owner == M`
+- "What does M export" = bindings whose `Owned.module == M`
   (under their original or rename-pass-rewritten name) plus
   bindings whose `Imported.re_exporter == M` (under
   `Imported.public_name`).
 - "What imports does M need" =
   - For each owner-level read edge from an owner with `dest == M`:
-    - If `b` is `Owned { owner: other }`: `import b from <other>`.
+    - If `b` is `Owned { module: other }`: `import b from <other>`.
     - If `b` is `Imported { imported_from, imported_name, .. }`:
       `import { imported_name as b } from <imported_from>`.
 - "What can be peeled without backtracking" = candidate assignments
   whose owner-graph quotient validates, whose cross-destination reads
   are importable, and whose rebinding writes stay inside one
   destination.
-- "Identity of cross-chunk deps" = `bindings.values()` filtered
-  to `Imported { imported_from, .. }` give us the set of
-  external chunks our schedule talks to; that's the
-  `ExternalChunk(_)` nodes in `dep_graph`.
 
 The reason to make `BindingKind` explicit (rather than
 collapsing imports into the same `Owned` map):
@@ -2871,7 +2521,7 @@ collapsing imports into the same `Owned` map):
 re-exports `import { Y as X } from "<vendor>"` does not own
 `X` — modifying our spec to "claim" `X` should not rename `Y`
 in the vendor chunk; it should emit a re-export in our logical
-module. A flat `BindingName → ModuleId` map conflates these
+module. A flat binding → module map conflates these
 two cases; tagging via `Owned` vs `Imported` keeps them
 distinct. The validator additionally rejects duplicate claims
 of either kind, so each imported binding has exactly one
@@ -2890,129 +2540,21 @@ materializer/emitter path for no behavior change, so the layers stay.
 
 ### Identifiers are typed, not stringly-typed
 
-Strings that identify a thing of a known kind get a newtype.
-Untyped `String` is reserved for free-form text (error messages,
-log lines, the actual JavaScript identifier _as text_). The
-risks `String` introduces:
-
-1. **Same-shape strings, different things.** A chunk id, a
-   logical-module path, and a destination file path within a
-   chunk are all stringly-shaped. A function that takes one of
-   these has a plausible-looking signature even when called
-   with the wrong one. Newtypes turn that into a compile error.
-2. **Opaque numeric ids drift.** Synthesizing a stringified
-   sequential index per top-level decl (`owner_03565`) is
-   drift-sensitive: any source insert shifts every later
-   ordinal. The validator addresses this by identifying
-   bindings by `binding.name` (unique within a chunk's
-   top-level scope) plus optional `owner.line` for drift
-   detection.
-3. **Stringly-typed module ids leak into emit.** A module id
-   that doubles as a JS identifier suffix or a JSON report key
-   ties three unrelated concerns together; separating them
-   keeps the emit clean.
-
-The principled set of identifier types:
-
-```rust
-/// Path-style identifier for a chunk. Never a path inside a
-/// chunk; never a logical-module path.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ChunkId(String);
-
-/// Path within a single chunk's emitted file tree, relative to
-/// the chunk's root. E.g. `runtime/vendor/symbols.js`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ChunkRelativePath(String);
-
-/// Path of a logical module as named by the spec. E.g.
-/// `feature/some_module`. Does *not* include `.js`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LogicalModulePath(String);
-
-/// Stable id for a logical module within a chunk. Internal,
-/// distinct from `LogicalModulePath` (different abstraction
-/// — paths can change in a spec edit; ids stay stable through
-/// a single materialize run). Implemented as a `usize` index
-/// into `ChunkAnalysis.logical_modules`; wrapped to keep it from
-/// being mistaken for `StatementOrdinal` etc.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LogicalModuleIndex(usize);
-
-/// Position of a top-level statement in a chunk's source body.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StatementOrdinal(usize);
-
-/// Local name of a binding in a chunk's top-level scope. Used
-/// as a key in `ChunkAnalysis.bindings`. The string itself is the
-/// JavaScript identifier (scrambled in source, possibly
-/// renamed in emit).
-pub type BindingName = String;
-```
-
-`BindingName` stays a plain `String` (with a type alias for
-documentation) because it _is_ the actual identifier text — a
-JavaScript identifier passed to `Ident::new_no_ctxt()` and
-emitted into source. Wrapping it would force `.0` everywhere a
-real-text-vs-id distinction doesn't exist. The other four are
-genuinely different things and earn a wrapper.
-
-`ModuleId` (in <../ids.rs>) is a tagged
-union over these:
-
-```rust
-pub enum ModuleId {
-    Logical(LogicalModuleIndex),
-    ResidualEntry,
-    ExternalChunk(ChunkId),
-}
-```
-
-Artifact metadata follows the same rule. `FileRole` is a typed enum
-(`entry`, `module`, `runtime` in JSON via snake_case serde), and
-module extraction state is a typed `ModuleExtractionState` record. Do
-not encode known roles or extraction state as raw strings, generic maps,
-or compatibility-only JSON fields.
-
-#### Killing the `owner_NNNNN` opaque id
-
-The `OwnerRecord.id` system in <../program_analysis.rs> mints a
-stringified sequential index per top-level decl, exposes it in
-the chunk analysis output, and the the downstream corpus spec references it.
-Replacing it:
-
-- Spec entries identify bindings by `binding.name` and can use
-  `owner.line` for drift detection. Both are meaningful and unambiguous
-  within a chunk's top-level scope.
-- The chunk analysis output continues to enumerate top-level
-  decls with their `ordinal`, `name`, `kind`, `line`, etc.,
-  but no longer mints a synthetic `id` field. Tools that
-  cross-reference do so by name + ordinal + line.
-- `OwnerRecord` shrinks to a debug record without the `id`.
-- Spec entries that set a synthetic `owner.id = "owner_03565"`
-  in addition to `binding.name` are noise: the validator
-  resolves binding identity via `name` + `kind` (+ optional
-  drift-detection `line`), so the synthetic id can be dropped.
+A string that identifies a thing of a known kind gets a newtype; untyped
+`String` is reserved for free-form text (error messages, log lines, the
+actual JavaScript identifier _as text_). The identifier types live in
+<../ids.rs> and <../graph/>: `ChunkId` (an index interned by `ChunkTable`),
+`LogicalModuleIndex`, `ModuleId` (a `LogicalModuleIndex` wrapper — the
+in-process module handle), `StatementOrdinal`, `OwnerId` and `OwnerEdgeId`. A
+module's public identity is `spec::ModulePath`, never a `ModuleId`
+(<wire_format.md>). Artifact metadata follows the same rule: `FileRole` is a
+typed enum (`entry`, `module`, `runtime` in JSON via snake_case serde). Do not
+encode known roles as raw strings, generic maps, or compatibility-only JSON
+fields.
 
 ## Known sharp edges
 
-Concrete gaps, oversimplifications, or unsound corners not yet
-folded into the design body.
-
-### Soundness gaps
-
-#### Backward-direction proof is loose on "WLOG M₁ is first"
-
-The proof says "some module has to be first" in the cycle. ESM
-doesn't actually let us pick the starting module — it's
-determined by the entry's import graph and reverse-DFS order.
-The argument that _needs_ to be there: regardless of which cycle
-member ESM picks as the first to evaluate, _some_ cycle edge
-will fire in the wrong order (because a cycle has no topological
-linearizer that respects all edges). The current text's gist is
-correct; tightening it is a doc edit, not a design change.
-
-#### Side effects we can't see locally
+### Side effects we can't see locally
 
 `reads_at_init(S)` only catches local-name reads. These ordering
 constraints are real but invisible to the analyzer:
@@ -3022,7 +2564,6 @@ constraints are real but invisible to the analyzer:
   "reads" it; the dep graph has no edge.
 - `eval(some_string)` running arbitrary code at init.
 - `new Function(...)` likewise.
-- `with` statements scoping things our visitor doesn't track.
 - Mutations to objects passed across imports
   (`vendor.someConfig.foo = bar` — `vendor.someConfig` was
   imported, the mutation is observable).
@@ -3040,80 +2581,6 @@ because bundlers can't preserve them across boundaries either.
 If a real spec ever exhibits this, the response is to surface it
 as a known spec-author-side limitation.
 
-### Coverage audits the analyzer needs
-
-#### Lazy positions: complete list pending tests
-
-Current visitor handles: function bodies, method bodies (via
-`visit_function`), arrow bodies, getter/setter prop bodies,
-class instance fields, class method bodies, computed prop names
-on class members.
-
-Not yet pinned by tests (and at least some not implemented):
-
-- **Default parameter values** (`function f(x = compute()) {}`)
-  — per spec, these evaluate on call, so lazy.
-- **Decorator expressions** (`@decorator class C {}`) — eager
-  (run at class-decl time).
-- **Object literal getter/setter bodies** (vs `MethodProp`).
-- **Tagged template strings** (`` tag`...` ``) — eager (tag
-  function is read).
-- **Spread elements** (`[...x]`, `{...x}`) — eager (read x).
-- **Dynamic `import(expr)` argument** — eager (expr evaluates).
-- **Optional chaining / nullish coalescing** — eager.
-- **Top-level await** (`await expr`) at module top — eager;
-  also blocks the importer's evaluation, which our model
-  doesn't track.
-- **JSX** — usually transformed to function calls, so eager;
-  if transform isn't applied, the JSX visitor needs explicit
-  handling.
-
-Action: add a unit test per case to <../facts/mod.rs> / <../purity/mod.rs>;
-fill the visitor's gaps. Aim for an exhaustive table.
-
-#### Side-effect classification is conservative
-
-Right now `has_side_effect = true` for any non-pure expression
-(function calls, member access on possibly-mutating objects,
-etc.). That over-imposes side-effect-order edges in `G'`,
-potentially creating cycles that aren't really there.
-
-A spec where both modules' side-effecting statements are
-mutually independent (don't observe each other's effects) can
-still produce a spurious `S` cycle under the conservative
-`has_side_effect = true` for any function call. **Known impl
-gap**: pure-call inference would let the validator drop edges
-between observably-independent side effects. Pragmatic
-short-term: only add `S` edges when both statements' side
-effects are _observable_ (write to global, throw, console,
-DOM, network), not pure-by-pattern (literal-only initializers).
-
-### Out-of-scope JS features
-
-The model assumes a synchronous, single-pass ESM evaluation
-without runtime-dynamic effects. These features are out of scope:
-
-- **Top-level await.** Our model treats module evaluation as
-  synchronous; TLA changes that. Bundled output today doesn't
-  use TLA but vendored libs increasingly do. If a TLA pattern
-  appears, the cycle analysis is unsound — the awaited promise
-  yields, the importer continues evaluating with the awaited
-  value still pending. We'd need an "async-eval" extension to
-  the model.
-- **`eval` / `new Function`.** Arbitrary code at init time.
-  We can't statically see what they read or write. Conservative
-  approach: classify as side-effecting and refuse to split
-  modules that contain them across cycle boundaries.
-- **Generators with side-effecting `next()` calls** — same as
-  function calls, we treat the call site as side-effecting and
-  rely on the conservative classification.
-- **`with` statements.** Lexical scoping changes; our visitor
-  treats names as referring to a global scope. JS strict mode
-  forbids `with` so bundled output doesn't use it.
-
-Each of these should produce a clear analyzer warning if
-detected, not silent acceptance.
-
 ## Open design questions
 
 These are unresolved precision issues. Each is worth its own
@@ -3130,74 +2597,30 @@ exploration before crossing the relevant phase.
    added.
 2. **Lazy-position completeness.** `reads_at_init` is implemented
    as a visitor that descends into eager positions and stops at
-   lazy positions. The current implementation handles function
-   bodies, method bodies, instance class fields, getters, setters.
-   Open: decorator factory bodies (decorators run at class-decl
-   time but their factories close over bindings); default-parameter
-   evaluation timing (ECMAScript spec says default params evaluate
-   on call, which is lazy); dynamic `import()` arguments. The
-   visitor's gaps should be exhaustively pinned in unit tests.
-3. **Side-effect classification precision.** Without alias analysis
-   we have to assume `const X = f()` is side-effecting if `f` is
-   any function call. This over-imposes side-effect edges, which
-   may block more candidate peel sets than strictly necessary.
-   Pure-call inference is future work.
-4. **Vendor chunk modeling.** Vendor chunks are pre-existing module
-   boundaries that we don't control. They appear in the dep graph
-   as nodes with no at-init reads from our chunk (the vendor
-   doesn't import from us). The validator should sanity-check
-   this; a vendor that imports back into the user-chunk is a
-   pathological case worth detecting.
-5. **Validator UX.** The cycle report should be actionable. A
-   shape like "Cycle modules [M_a, M_b]; evidence: stmt#42 in
-   M_a reads `X` (owned by M_b); stmt#107 in M_b reads `Y`
-   (owned by M_a). Resolution: colocate X and Y in one module"
-   is the goal.
-6. **Claim-all selectors for `anonymous_statements`.** An entry claims
+   lazy positions (<../facts/lazy_boundary.rs>). Function, arrow, method,
+   getter/setter and constructor bodies and instance class-field initializers
+   are lazy; `extends` clauses, decorator expressions, computed member keys,
+   static fields and static blocks are eager. Open: an exhaustive table of unit
+   tests for these, plus default-parameter values (ECMA-262 evaluates them on
+   call), object-literal getter/setter bodies, and dynamic `import()`
+   arguments.
+3. **Claim-all selectors for `anonymous_statements`.** An entry claims
    exactly one statement, holes or not. Letting one entry claim every match of
-   a pattern (`Ww([ANYTHING], $g.prototype, ANYTHING, ANYTHING);` for every
-   decorator application on `$g.prototype`) would collapse the 6 `Ww(...)`
-   decorator applications in `WorkspaceInviteState` into one entry, but gives
-   up the exactly-one contract that makes an unintended match loud. Deferred
-   until a real spec demands it.
-7. **Factorize soundness audit.** `factorize` must be brought fully
-   into line with [Factorization proposals](#factorization-proposals).
-   The audit should pin tests for the invariant: every emitted
-   proposal is accepted by the same owner-graph quotient predicate as
-   a handwritten spec, without relying on production-scale browser
-   loads to discover invalid splits. Internal frontier states may be
-   numerous and rejected, but generated proposals must all be
-   certified.
-8. **Constraining-graph-sink refinement.** Some anonymous
+   a pattern (`decorate([ANYTHING], $g.prototype, ANYTHING, ANYTHING);` for
+   every decorator application on `$g.prototype`) would collapse N
+   near-identical entries into one, but gives up the exactly-one contract that
+   makes an unintended match loud. Deferred until a real spec demands it.
+4. **Constraining-graph-sink refinement.** Some anonymous
    statements (Sentry debug-id IIFE, Vite modulepreload polyfill)
    are sinks in the constraining edge graph: they have side
    effects but no observable cross-binding deps. An s-edge from
    a peeled named owner to such a sink could be exempted as
    non-constraining, letting the named owner peel without an
-   `anonymous_statements` co-mover. Empirically this would
-   cover ~91 of 4106 currently-blocked horizon bindings in
-   one representative bundle — a small fraction. The rest still need anon
+   `anonymous_statements` co-mover. Empirically this would cover only a small
+   fraction of the blocked bindings; the rest still need anon
    selectors because their companions (decorator applications,
    semantic init bridges) are not sinks. Worth tracking but
    not blocking.
-9. **`chunk_renames` cross-module rename propagation.**
-   `chunk_renames` members rename a binding's local-alias
-   references in entry's body via the lowerer's body-rename
-   pipeline. When a binding referenced by the chunk_rename is
-   used INSIDE a logical-module-peeled body too (e.g. an
-   imported `cx` is also called by a binding `b` that the spec
-   peels into `b_module`), the rename does NOT follow into the
-   peeled module's emit — the peeled module retains the
-   original `import { f as cx } …; const b = cx();` shape
-   while residual gets `getMobxGlobalState(...)`. To make the
-   rename uniform, the rename map would need to thread into
-   the per-module emission too (`lower_chunk` /
-   `apply_module_lowering` paths), not just the entry-body
-   rewrite. Out of scope for the purity-propagation change
-   (`lowering/` declared_pure collection now
-   pulls from chunk_renames members) — those are separate
-   passes of the same map. Track when a real spec wants
-   the renamed name everywhere.
 
 ## What this design does not solve
 
@@ -3222,9 +2645,12 @@ Entry points (the rest of the tree hangs off these; per-concern file
 rosters live in the directories, not here):
 
 - <../pipeline.rs> — fixed transform composition.
-- <../facts/mod.rs> — `StatementFacts` analyzer.
-- <../graph/> — owner graph and `ModuleDepGraph` builders.
-- <../validation.rs> — realizability checks.
+- <../facts/> — `StatementFacts` analyzer (<../facts/analyze.rs>).
+- <../graph/> — owner graph, `ModuleQuotient`, and the canonical I-graph
+  builders.
+- <../realizability/mod.rs> — the realizability gate (`check_realizability`).
+- <../validation.rs> — `validate_factorization`: renders the verdict as cycle
+  reports.
 - <../lowering/> — main splitting transform.
 - <../atomic_units.rs> — owner-level hard colocation units.
 
@@ -3236,9 +2662,9 @@ rosters live in the directories, not here):
   to match. Code that disagrees with the doc is a bug — either
   in the code or in the doc. Decide which and bring them back in
   sync.
-- Keep sections phrased as current contract or future design. Do not
-  accumulate completed phase logs in this canonical design doc; Git
-  history and dedicated lessons-learned notes carry historical detail.
+- Keep sections phrased as current contract. Planned work belongs in
+  `TODO.md` or `plans/`, and completed phase logs in Git history and
+  dedicated lessons-learned notes.
 - Open design questions go in <#open-design-questions>. Once
   resolved, move the resolution into the body of the doc and
   delete the question.

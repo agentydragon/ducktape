@@ -3,4 +3,4 @@ kind: Kustomization
 namespace: plaid-mcp
 resources:
   # cdk8s-generated (cluster/cdk8s/plaid_mcp/pgweb.py) -- see cluster/docs/cdk8s.md.
-  - plaid-pgweb.k8s.yaml
+  - pgweb.k8s.yaml

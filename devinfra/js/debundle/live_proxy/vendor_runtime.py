@@ -11,30 +11,21 @@ from devinfra.js.debundle.live_proxy.package_tree import assert_subpath_does_not
 @dataclass(frozen=True)
 class VendorRuntimeEntry:
     chunk_id: str
-    chunk_path: str
     entry_file: str
     file_path: Path
     mount_root: Path
     mounted_entry_file: str
-    package: str
-    subpath: str
-    version: str
-    generated_wrapper_path: Path | None = None
 
 
 @dataclass(frozen=True)
 class VendorRuntimeRequest:
     entry: VendorRuntimeEntry
     file_path: Path
-    request_path: str
-    request_suffix: str
 
 
 @dataclass(frozen=True)
 class PartialSwapEntry:
     package: str
-    version: str
-    subpath: str
     file_path: Path
     mount_root: Path
     mounted_subpath: str
@@ -45,7 +36,6 @@ class PartialSwapEntry:
 class PartialSwapRequest:
     entry: PartialSwapEntry
     file_path: Path
-    request_path: str
     request_suffix: str
     resolved_suffix: str
 
@@ -92,15 +82,10 @@ def load_vendor_runtime_index(
         )
         by_chunk_id[chunk_id] = VendorRuntimeEntry(
             chunk_id=chunk_id,
-            chunk_path=chunk_path,
             entry_file=entry_file,
             file_path=file_path,
             mount_root=mount_root,
             mounted_entry_file=mounted_entry_file,
-            package=entry["package"],
-            subpath=entry["subpath"],
-            version=entry["version"],
-            generated_wrapper_path=wrapper_abs_path,
         )
     return by_chunk_id
 
@@ -122,12 +107,7 @@ def resolve_vendor_runtime_request(
             if not candidate_path.startswith(prefix):
                 continue
             suffix = candidate_path[len(prefix) :]
-            return VendorRuntimeRequest(
-                entry=entry,
-                file_path=resolve_vendor_mounted_path(entry, suffix),
-                request_path=candidate_path,
-                request_suffix=suffix,
-            )
+            return VendorRuntimeRequest(entry=entry, file_path=resolve_vendor_mounted_path(entry, suffix))
     return None
 
 
@@ -157,8 +137,6 @@ def load_partial_swap_runtime_index(
             )
             by_package[package_name] = PartialSwapEntry(
                 package=package_name,
-                version=package_entry["version"],
-                subpath=package_entry["subpath"],
                 file_path=file_path,
                 mount_root=mount_root,
                 mounted_subpath=mounted_subpath,
@@ -202,15 +180,11 @@ def resolve_partial_swap_runtime_request(
             # `mount_root.resolve()`, which broke under Bazel's runfiles tree
             # because leaf files are symlinks back into `bin/node_modules`.
             assert_subpath_does_not_escape(
-                entry.package, suffix, f"Partial-swap request escapes mounted root for {entry.package}: {suffix}"
+                suffix, f"Partial-swap request escapes mounted root for {entry.package}: {suffix}"
             )
             file_path, resolved_suffix = resolve_partial_swap_asset_path(entry.mount_root, suffix)
             return PartialSwapRequest(
-                entry=entry,
-                file_path=file_path,
-                request_path=candidate_path,
-                request_suffix=suffix,
-                resolved_suffix=resolved_suffix,
+                entry=entry, file_path=file_path, request_suffix=suffix, resolved_suffix=resolved_suffix
             )
     return None
 
@@ -267,9 +241,7 @@ def resolve_vendor_mounted_path(entry: VendorRuntimeEntry, suffix: str) -> Path:
     # `bazel-out/.../bin/node_modules`, so a legitimate file inside the
     # package would appear to "escape" once resolved.
     assert_subpath_does_not_escape(
-        entry.chunk_id,
-        mounted_relative_path,
-        f"Vendor request escapes mounted root for {entry.chunk_id}: {mounted_relative_path}",
+        mounted_relative_path, f"Vendor request escapes mounted root for {entry.chunk_id}: {mounted_relative_path}"
     )
     return entry.mount_root / mounted_relative_path
 

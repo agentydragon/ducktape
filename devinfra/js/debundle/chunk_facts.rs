@@ -2061,6 +2061,16 @@ mod tests {
         })
     }
 
+    fn assert_kinds(facts: &ChunkFacts, expected: impl IntoIterator<Item = NodeKind>) {
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in expected {
+            assert!(
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
+            );
+        }
+    }
+
     #[test]
     fn extracts_member_call_with_string_arg_faithfully() {
         let facts = extract("const x = foo.bar(\"hello\");").expect("covered shape extracts");
@@ -2074,22 +2084,19 @@ mod tests {
         let strings: Vec<&str> = facts.str_lit.iter().map(|(_, s)| s.as_str()).collect();
         assert_eq!(strings, vec!["hello"], "string-literal argument value");
 
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [
-            NodeKind::VarDecl,
-            NodeKind::VarDeclarator,
-            NodeKind::BindingIdent,
-            NodeKind::Call,
-            NodeKind::Member,
-            NodeKind::PropName,
-            NodeKind::Ident,
-            NodeKind::StrLit,
-        ] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [
+                NodeKind::VarDecl,
+                NodeKind::VarDeclarator,
+                NodeKind::BindingIdent,
+                NodeKind::Call,
+                NodeKind::Member,
+                NodeKind::PropName,
+                NodeKind::Ident,
+                NodeKind::StrLit,
+            ],
+        );
 
         // Every child edge references a node that exists (the projection is a tree).
         let nodes: BTreeSet<NodeId> = facts.node_kind.iter().map(|(id, _)| *id).collect();
@@ -2107,69 +2114,59 @@ mod tests {
 
     #[test]
     fn extracts_function_declaration_body() {
-        // The bare-delegator shape — the motivating `isMeetingTranscriptionProvider`
-        // example: a function whose only identity is the call in its body.
+        // The bare-delegator shape: a function whose only identity is the call in
+        // its body.
         let facts = extract("function f(x) { return g(x); }").expect("covered shape extracts");
 
         let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
         for name in ["f", "x", "g"] {
             assert!(idents.contains(name), "ident {name} present: {idents:?}");
         }
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [
-            NodeKind::FnDecl,
-            NodeKind::Function,
-            NodeKind::Block,
-            NodeKind::Return,
-            NodeKind::Call,
-            NodeKind::Ident,
-            NodeKind::BindingIdent,
-        ] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [
+                NodeKind::FnDecl,
+                NodeKind::Function,
+                NodeKind::Block,
+                NodeKind::Return,
+                NodeKind::Call,
+                NodeKind::Ident,
+                NodeKind::BindingIdent,
+            ],
+        );
         assert_eq!(facts.top_level.len(), 1);
     }
 
     #[test]
     fn extracts_class_with_method_returning_literal() {
-        // The DocumentAccessorFactory example: identity = a getName() returning
-        // the class's own readable name, plus an `extends` edge.
-        let facts = extract(
-            "class DocumentAccessorFactory extends Base { getName() { return \"DocumentAccessorFactory\"; } }",
-        )
-        .expect("covered shape extracts");
+        // Identity = a getName() returning the class's own readable name, plus an
+        // `extends` edge.
+        let facts =
+            extract("class ReadableName extends Base { getName() { return \"ReadableName\"; } }")
+                .expect("covered shape extracts");
 
         let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
-        assert!(
-            idents.contains("DocumentAccessorFactory"),
-            "class name: {idents:?}"
-        );
+        assert!(idents.contains("ReadableName"), "class name: {idents:?}");
         assert!(idents.contains("Base"), "super class: {idents:?}");
         let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
         assert_eq!(props, vec!["getName"], "method name");
         let strings: Vec<&str> = facts.str_lit.iter().map(|(_, s)| s.as_str()).collect();
-        assert_eq!(strings, vec!["DocumentAccessorFactory"], "returned literal");
+        assert_eq!(strings, vec!["ReadableName"], "returned literal");
         assert_eq!(facts.super_class.len(), 1, "one extends edge");
 
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [
-            NodeKind::ClassDecl,
-            NodeKind::Class,
-            NodeKind::Method,
-            NodeKind::PropName,
-            NodeKind::Function,
-            NodeKind::Block,
-            NodeKind::Return,
-            NodeKind::StrLit,
-        ] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [
+                NodeKind::ClassDecl,
+                NodeKind::Class,
+                NodeKind::Method,
+                NodeKind::PropName,
+                NodeKind::Function,
+                NodeKind::Block,
+                NodeKind::Return,
+                NodeKind::StrLit,
+            ],
+        );
     }
 
     #[test]
@@ -2177,18 +2174,15 @@ mod tests {
         // (b + c) ? new D(e) : [f] — binary, conditional, new, array.
         let facts = extract("const a = b + c ? new D(e) : [f];").expect("covered shape extracts");
 
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [
-            NodeKind::Cond,
-            NodeKind::Bin,
-            NodeKind::New,
-            NodeKind::Array,
-        ] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [
+                NodeKind::Cond,
+                NodeKind::Bin,
+                NodeKind::New,
+                NodeKind::Array,
+            ],
+        );
         // The `const` declaration keyword is recorded as an operator-class label
         // (so a `let` selector cannot match a `const`), then the binary `+`.
         let operators: Vec<&str> = facts.operator.iter().map(|(_, s)| s.as_str()).collect();
@@ -2207,19 +2201,16 @@ mod tests {
     fn extracts_function_expression_and_object_literal() {
         let facts = extract("const a = { handler: function (x) { return x; }, ...rest };")
             .expect("covered shape extracts");
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [
-            NodeKind::Object,
-            NodeKind::KeyValue,
-            NodeKind::FnExpr,
-            NodeKind::Function,
-            NodeKind::Spread,
-        ] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [
+                NodeKind::Object,
+                NodeKind::KeyValue,
+                NodeKind::FnExpr,
+                NodeKind::Function,
+                NodeKind::Spread,
+            ],
+        );
         let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
         assert_eq!(props, vec!["handler"], "object key");
     }
@@ -2229,13 +2220,10 @@ mod tests {
         // `a.b = c;` — the module-export assignment shape that dominates the
         // corpus after fn/object.
         let facts = extract("a.b = c;").expect("covered shape extracts");
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [NodeKind::ExprStmt, NodeKind::Assign, NodeKind::Member] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [NodeKind::ExprStmt, NodeKind::Assign, NodeKind::Member],
+        );
         assert!(
             facts.operator.iter().any(|(_, op)| op == "="),
             "assign operator: {:?}",
@@ -2249,38 +2237,32 @@ mod tests {
     fn extracts_control_flow_statements() {
         // if/else with a block consequent and a throw alternative.
         let facts = extract("if (a) { b(); } else throw c;").expect("covered shape extracts");
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [
-            NodeKind::If,
-            NodeKind::Block,
-            NodeKind::ExprStmt,
-            NodeKind::Call,
-            NodeKind::Throw,
-        ] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [
+                NodeKind::If,
+                NodeKind::Block,
+                NodeKind::ExprStmt,
+                NodeKind::Call,
+                NodeKind::Throw,
+            ],
+        );
     }
 
     #[test]
     fn extracts_class_constructor_and_property() {
         let facts = extract("class C { x = 1; constructor(a) { this.a = a; } }")
             .expect("covered shape extracts");
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [
-            NodeKind::ClassDecl,
-            NodeKind::ClassProp,
-            NodeKind::Constructor,
-            NodeKind::This,
-            NodeKind::Assign,
-        ] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [
+                NodeKind::ClassDecl,
+                NodeKind::ClassProp,
+                NodeKind::Constructor,
+                NodeKind::This,
+                NodeKind::Assign,
+            ],
+        );
     }
 
     #[test]
@@ -2288,13 +2270,10 @@ mod tests {
         let facts =
             extract("class C { #x = 1; #m() { return this.#x; } get(other) { return other.#x; } }")
                 .expect("private members extract");
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [NodeKind::ClassDecl, NodeKind::ClassProp, NodeKind::Method] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [NodeKind::ClassDecl, NodeKind::ClassProp, NodeKind::Method],
+        );
         // The declaring `#x` key, the `this.#x` use, and the `other.#x` use
         // are all recorded under the same `#`-prefixed prop_name label.
         let x_count = facts
@@ -2326,50 +2305,41 @@ mod tests {
     fn extracts_for_of_destructuring_and_template() {
         let facts = extract("for (const { a, b } of items) { log(`x${a}`); }")
             .expect("covered shape extracts");
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [
-            NodeKind::ForOf,
-            NodeKind::ObjectPat,
-            NodeKind::PatAssign,
-            NodeKind::Tpl,
-            NodeKind::TplQuasi,
-        ] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [
+                NodeKind::ForOf,
+                NodeKind::ObjectPat,
+                NodeKind::PatAssign,
+                NodeKind::Tpl,
+                NodeKind::TplQuasi,
+            ],
+        );
     }
 
     #[test]
     fn extracts_super_await_optional_chain() {
         let facts = extract("class C extends B { async m() { return await super.n()?.p; } }")
             .expect("covered shape extracts");
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [NodeKind::SuperProp, NodeKind::Await, NodeKind::OptChain] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [NodeKind::SuperProp, NodeKind::Await, NodeKind::OptChain],
+        );
     }
 
     #[test]
     fn extracts_module_imports_and_default_export() {
         let facts = extract("import { a, b } from \"m\"; export default function () {}")
             .expect("covered shape extracts");
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [
-            NodeKind::Import,
-            NodeKind::ImportSpecifier,
-            NodeKind::ExportDefaultDecl,
-            NodeKind::Function,
-        ] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [
+                NodeKind::Import,
+                NodeKind::ImportSpecifier,
+                NodeKind::ExportDefaultDecl,
+                NodeKind::Function,
+            ],
+        );
         let imported_module = facts.str_lit.iter().any(|(_, s)| s == "m");
         assert!(
             imported_module,
@@ -2432,18 +2402,15 @@ mod tests {
         // its tag plus the template (quasis interleaved with exprs).
         let facts = extract("function f() { debugger; }\nconst a = tag`x${y}z`;")
             .expect("debugger + tagged template extract");
-        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
-        for expected in [
-            NodeKind::Debugger,
-            NodeKind::TaggedTpl,
-            NodeKind::Tpl,
-            NodeKind::TplQuasi,
-        ] {
-            assert!(
-                kinds.contains(&expected),
-                "kind {expected:?} present: {kinds:?}"
-            );
-        }
+        assert_kinds(
+            &facts,
+            [
+                NodeKind::Debugger,
+                NodeKind::TaggedTpl,
+                NodeKind::Tpl,
+                NodeKind::TplQuasi,
+            ],
+        );
     }
 
     fn member_reads(src: &str) -> BTreeMap<usize, Vec<MemberReadFact>> {

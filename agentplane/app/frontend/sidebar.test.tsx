@@ -382,7 +382,7 @@ it("routes the footer icons to Sandboxes, Actions, and Settings", async () => {
   await act(async () => footerButton("Sandboxes").click());
   expect(location()).toBe("/sandboxes");
 
-  await act(async () => footerButton("Pending approvals").click());
+  await act(async () => footerButton("Actions").click());
   expect(location()).toBe("/actions");
 
   await act(async () => footerButton("Settings").click());

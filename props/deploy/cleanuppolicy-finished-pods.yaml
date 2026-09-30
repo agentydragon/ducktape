@@ -2,7 +2,7 @@
 # that fail (e.g. critic-dev-opt-* pods sitting in Error for days). Delete
 # Succeeded/Failed pods after 3 days — recent failures stay inspectable, and
 # agent traces live in the database regardless. Running pods never match.
-# Delete RBAC: kyverno/policies/clusterrole-cleanup-controller-workloads.k8s.yaml.
+# Delete RBAC: the kyverno-cleanup-controller-workloads ClusterRole in cluster/cdk8s/kyverno/policies.py.
 apiVersion: kyverno.io/v2
 kind: CleanupPolicy
 metadata:

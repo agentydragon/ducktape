@@ -1197,6 +1197,25 @@ impl VisitMut for ShapeSignatureCanonicalizer {
 /// The module name the synthesis probes resolve under.
 const SYNTHESIS_MODULE: &str = "<selector-codemod>";
 
+/// `match_source` as a member selector projected onto `export_name`.
+fn parse_member_selector(
+    export_name: &str,
+    match_source: &str,
+) -> Result<ParsedSourceMatchSelector> {
+    ParsedSourceMatchSelector::parse(
+        SYNTHESIS_MODULE,
+        "source_match",
+        format!("<source_match needle in {SYNTHESIS_MODULE}>"),
+        &SourceMatch {
+            match_source: match_source.to_string(),
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding: Some(export_name.to_string()),
+        }
+        .selector(),
+        "source_match",
+    )
+}
+
 /// Every place `match_source`, projected onto `export_name`, matches in the
 /// chunk: the minimizer's measure of how far a candidate is from unique.
 fn match_single_member_selector(
@@ -1206,12 +1225,7 @@ fn match_single_member_selector(
 ) -> Result<Vec<MemberBindingMatch>> {
     index.chunk.matcher().member_candidates(
         SYNTHESIS_MODULE,
-        &SourceMatch {
-            match_source: match_source.to_string(),
-            identifiers: SourceMatchIdentifierMode::AlphaAll,
-            target_binding: Some(export_name.to_string()),
-        }
-        .selector(),
+        &parse_member_selector(export_name, match_source)?,
     )
 }
 
@@ -1231,20 +1245,11 @@ fn prove_synthesized_selector(
     let members = targets
         .iter()
         .map(|target| {
-            let selector = SourceMatch {
-                match_source: match_source.to_string(),
-                identifiers: SourceMatchIdentifierMode::AlphaAll,
-                target_binding: Some(target.export_name.clone()),
-            }
-            .selector();
             Ok(Member {
                 export_name: target.export_name.clone(),
-                selector: MemberSelector::SourceMatch(ParsedSourceMatchSelector::parse(
-                    SYNTHESIS_MODULE,
-                    "source_match",
-                    format!("<source_match needle in {SYNTHESIS_MODULE}>"),
-                    &selector,
-                    "source_match",
+                selector: MemberSelector::SourceMatch(parse_member_selector(
+                    &target.export_name,
+                    match_source,
                 )?),
             })
         })

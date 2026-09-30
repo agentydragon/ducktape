@@ -75,10 +75,11 @@ makes invalid operations impossible.
 
 ### Defensive comments should stay tied to a real invariant
 
-`graph/linker_order.rs::chunk_source_import_order`'s `None`-after-`Some`
-clause is "kept for robustness against future filter changes that might admit
-non-constraining members". If the filter shape changes, either turn this
-into a tested invariant or delete the defensive branch.
+`graph/linker_order.rs::chunk_source_import_order_from_adjacency`'s
+`None`-after-`Some` clause is "kept for robustness against future filter
+changes that might admit non-constraining members". If the filter shape
+changes, either turn this into a tested invariant or delete the defensive
+branch.
 
 ## Code refactor / dedup opportunities
 
