@@ -78,6 +78,7 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
                     },
                 )
                 chunks.raise_for_status()
+                assert json.loads(chunks.headers["electric-schema"])["text"]["type"] == "json"
                 values = [message["value"] for message in chunks.json() if "value" in message]
                 ordered = sorted(values, key=lambda row: int(row["chunk_index"]))
                 assert "".join(json.loads(row["text"]) for row in ordered) == "Hello world"
