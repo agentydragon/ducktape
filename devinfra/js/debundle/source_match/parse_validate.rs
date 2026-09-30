@@ -143,94 +143,29 @@ impl Visit for UnsupportedAnythingCollector {
     }
 }
 
-pub fn parse_selector_module_with_capability_check(
+pub fn parse_selector_module(
     request_id: &str,
-    selector_kind: &str,
     file_label: String,
     match_source: &str,
-    // Field path used only in the "did not parse as JS" message; usually
-    // equals `selector_kind`, but a few callers name the narrower `.match`
-    // sub-field whose source actually failed to parse.
+    // Field path used only in the "did not parse as JS" message.
     parse_label: &str,
 ) -> Result<Module> {
     let parsed = js_ast::parse_js_module_ast(&file_label, match_source).with_context(|| {
         format!("logical_module {request_id}: {parse_label} did not parse as JS:\n{match_source}")
     })?;
     validate_anything_holes(&parsed.body)?;
-    validate_selector_capabilities(request_id, selector_kind, match_source, &parsed)?;
     Ok(parsed)
 }
 
 impl ParsedSourceMatchSelector {
     pub fn parse(
         request_id: &str,
-        selector_kind: &str,
         file_label: String,
         selector: &AnonymousStatementSelector,
         parse_label: &str,
     ) -> Result<Self> {
-        let parsed = parse_selector_module_with_capability_check(
-            request_id,
-            selector_kind,
-            file_label,
-            &selector.match_source,
-            parse_label,
-        )?;
+        let parsed =
+            parse_selector_module(request_id, file_label, &selector.match_source, parse_label)?;
         Ok(Self::new(selector.clone(), parsed))
-    }
-}
-
-pub(crate) fn validate_selector_capabilities(
-    request_id: &str,
-    selector_kind: &str,
-    match_source: &str,
-    parsed: &Module,
-) -> Result<()> {
-    let mut collector = UnsupportedSelectorCapabilityCollector::default();
-    parsed.visit_with(&mut collector);
-    if collector.unsupported_holes.is_empty() {
-        return Ok(());
-    }
-
-    let holes = collector
-        .unsupported_holes
-        .iter()
-        .map(|hole| format!("`{hole}`"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    bail!(
-        "logical_module {request_id}: unsupported selector capability in {selector_kind}: \
-         hole name(s) {holes} are not supported by this debundler; upgrade the debundler or \
-         rewrite the selector with supported holes. Selector:\n{match_source}"
-    );
-}
-
-#[derive(Default)]
-pub(crate) struct UnsupportedSelectorCapabilityCollector {
-    unsupported_holes: BTreeSet<String>,
-}
-
-impl UnsupportedSelectorCapabilityCollector {
-    fn record_identifier(&mut self, name: &str) {
-        if unsupported_selector_hole_name(name).is_some() {
-            self.unsupported_holes.insert(name.to_string());
-        }
-    }
-}
-
-impl Visit for UnsupportedSelectorCapabilityCollector {
-    fn visit_ident(&mut self, ident: &Ident) {
-        self.record_identifier(ident.sym.as_ref());
-    }
-
-    fn visit_binding_ident(&mut self, ident: &BindingIdent) {
-        self.record_identifier(ident.id.sym.as_ref());
-    }
-
-    fn visit_prop_name(&mut self, name: &PropName) {
-        if let PropName::Ident(ident) = name {
-            self.record_identifier(ident.sym.as_ref());
-        }
-        name.visit_children_with(self);
     }
 }

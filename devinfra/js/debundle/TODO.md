@@ -43,7 +43,9 @@ in <docs/selector_resolution.md> § Interactive budget.
    `nearest_unclaimed`: the first unmatched item of a multi-declaration range,
    the first incompatible identifier binding or sub-expression, a
    parameter-pattern mismatch, and list-hole binding spans; and near misses
-   for multi-statement templates.
+   for multi-statement templates. Outcomes also do not yet record name-pin debt
+   annotated with `note:`, or `alpha_all` readable names that are free
+   references rather than local binders.
 2. **Selector-debt ranking improvements.** Extend `debundle spec selector-debt`
    with source-aware ranking for multi-statement windows and "stable literal by
    value" candidates. Prefer output that can feed the patch-plan dry-run.
@@ -61,9 +63,9 @@ in <docs/selector_resolution.md> § Interactive budget.
    real infeasible groups, and keep the group-level message for infeasibility
    that comes from relations. Assumption-core localization in the solver is
    rejected (<docs/selector_resolution.md> § Rejected: localizing a contradiction
-   with assumption cores). The `conflict` outcome exists but nothing in
-   selector resolution produces it, so this adds a `ClaimOutcome` variant and its
-   match arms back.
+   with assumption cores). The solver-level `ClaimOutcome` has no conflict
+   variant: `conflict` is produced by reference narrowing before the solve, so
+   explaining an infeasible group adds a solver-level variant and its match arms.
 
 ### P1 — test infrastructure
 

@@ -1,6 +1,8 @@
 //! A template's free identifiers: names it references but never declares in any
-//! of its scopes. The fact matcher binds them in its root frame (one free name,
-//! one subject name, across the whole template) and reports what each bound to.
+//! of its scopes. The fact matcher binds them in their frame like any other
+//! reference and reports what each bound to; a name that bound two different
+//! identifiers is reported unbound (<docs/selector_resolution.md> § "Rejected:
+//! binding free template names in the root frame").
 //!
 //! Classified over the matcher's own fact projection, so a name counts as
 //! declared exactly where the matcher treats it as one: a binding pattern
@@ -12,6 +14,18 @@
 use super::*;
 use chunk_facts::NodeKind;
 use selector_match::Index;
+
+/// The free identifiers of `parsed`'s template: the names every candidate's
+/// `free_bindings` may report.
+pub fn template_free_identifiers(parsed: &ParsedSourceMatchSelector) -> BTreeSet<String> {
+    let indices = parsed
+        .body()
+        .iter()
+        .filter_map(chunk_resolver::item_facts)
+        .map(|facts| Index::build(&facts))
+        .collect::<Vec<_>>();
+    free_identifiers(&indices)
+}
 
 /// The free identifiers of a template given as its statements' match indices.
 pub fn free_identifiers<'a>(template: impl IntoIterator<Item = &'a Index>) -> BTreeSet<String> {

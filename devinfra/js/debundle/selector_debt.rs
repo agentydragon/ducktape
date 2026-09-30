@@ -32,10 +32,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use spec::{AnonymousStatementSelector, MemberSelectorSpec};
 use spec_modules::{ModuleFile, collect_module_files, module_path_from_file, read_module_file};
-use swc_ecma_ast::{
-    Expr, Lit, Module as SwcModule, ModuleDecl, ModuleItem, Pat, Stmt, VarDecl, VarDeclKind,
-    VarDeclarator,
-};
+use swc_ecma_ast::{Expr, Lit, Module as SwcModule, Pat, VarDecl, VarDeclKind, VarDeclarator};
 
 /// Minified-score at or above which a name-only selector is counted as
 /// rebuild-fragile in [`SelectorDebtSummary::name_only_fragile`]. The
@@ -334,13 +331,6 @@ fn collect_drift_map(modules_root: &Path) -> Result<DriftMap> {
     Ok(map)
 }
 
-pub fn compute_selector_debt(
-    modules_root: &Path,
-    against: Option<&Path>,
-) -> Result<SelectorDebtReport> {
-    compute_selector_debt_with_source(modules_root, against, None)
-}
-
 pub fn compute_selector_debt_with_source(
     modules_root: &Path,
     against: Option<&Path>,
@@ -352,6 +342,27 @@ pub fn compute_selector_debt_with_source(
         });
     }
     compute_selector_debt_impl(modules_root, against, source_aware)
+}
+
+/// Index one `source_match` occurrence by its normalized body and, when the
+/// source-aware pass resolved it to exact body indices, by that resolution too.
+fn record_occurrence(
+    by_normalized: &mut BTreeMap<String, Vec<SourceMatchOccurrence>>,
+    exact_by_key: &mut BTreeMap<(String, Vec<usize>), Vec<SourceMatchOccurrence>>,
+    occurrence: SourceMatchOccurrence,
+    exact_body_indices: Option<Vec<usize>>,
+) {
+    let normalized = normalize_match(&occurrence.match_source);
+    if let Some(exact_body_indices) = exact_body_indices {
+        exact_by_key
+            .entry((normalized.clone(), exact_body_indices))
+            .or_default()
+            .push(occurrence.clone());
+    }
+    by_normalized
+        .entry(normalized)
+        .or_default()
+        .push(occurrence);
 }
 
 fn compute_selector_debt_impl(
@@ -450,23 +461,17 @@ fn compute_selector_debt_impl(
                     }
                 }
             }
-            let normalized = normalize_match(&selector.match_source);
-            let occurrence = SourceMatchOccurrence {
-                module: module_path.clone(),
-                site: SelectorSite::SourceMatch,
-                export_name: None,
-                match_source: selector.match_source,
-            };
-            if let Some(exact_body_indices) = exact_body_indices {
-                source_aware_exact_by_key
-                    .entry((normalized.clone(), exact_body_indices))
-                    .or_default()
-                    .push(occurrence.clone());
-            }
-            by_normalized
-                .entry(normalized)
-                .or_default()
-                .push(occurrence);
+            record_occurrence(
+                &mut by_normalized,
+                &mut source_aware_exact_by_key,
+                SourceMatchOccurrence {
+                    module: module_path.clone(),
+                    site: SelectorSite::SourceMatch,
+                    export_name: None,
+                    match_source: selector.match_source,
+                },
+                exact_body_indices,
+            );
         }
 
         for statement in &module.anonymous_statements {
@@ -485,23 +490,17 @@ fn compute_selector_debt_impl(
                 None,
                 &selector,
             )?;
-            let normalized = normalize_match(&selector.match_source);
-            let occurrence = SourceMatchOccurrence {
-                module: module_path.clone(),
-                site: SelectorSite::AnonymousStatement,
-                export_name: None,
-                match_source: selector.match_source,
-            };
-            if let Some(exact_body_indices) = exact_body_indices {
-                source_aware_exact_by_key
-                    .entry((normalized.clone(), exact_body_indices))
-                    .or_default()
-                    .push(occurrence.clone());
-            }
-            by_normalized
-                .entry(normalized)
-                .or_default()
-                .push(occurrence);
+            record_occurrence(
+                &mut by_normalized,
+                &mut source_aware_exact_by_key,
+                SourceMatchOccurrence {
+                    module: module_path.clone(),
+                    site: SelectorSite::AnonymousStatement,
+                    export_name: None,
+                    match_source: selector.match_source,
+                },
+                exact_body_indices,
+            );
         }
     }
 
@@ -658,7 +657,7 @@ fn collect_binding_group_suggestion_candidate(
     let Some(runtime_var) = runtime_module
         .body
         .get(*body_idx)
-        .and_then(module_item_var_decl)
+        .and_then(js_ast::item_var_decl)
     else {
         return Ok(None);
     };
@@ -678,7 +677,7 @@ fn collect_binding_group_suggestion_candidate(
     let [needle] = parsed.body.as_slice() else {
         return Ok(None);
     };
-    let Some(needle_var) = module_item_var_decl(needle) else {
+    let Some(needle_var) = js_ast::item_var_decl(needle) else {
         return Ok(None);
     };
     if needle_var.decls.len() < 2 {
@@ -842,8 +841,7 @@ fn selector_initializer_template(selector_local_name: &str, init: Option<&Expr>)
         Some(Expr::Lit(Lit::Bool(value))) => value.value.to_string(),
         Some(Expr::Lit(Lit::Null(_))) => "null".to_string(),
         Some(Expr::Lit(Lit::Num(value))) => value.value.to_string(),
-        Some(_) => format!("EXPR_{selector_local_name}"),
-        None => format!("EXPR_{selector_local_name}"),
+        _ => format!("EXPR_{selector_local_name}"),
     }
 }
 
@@ -875,17 +873,6 @@ fn js_string_escape(value: &str) -> String {
         }
     }
     escaped
-}
-
-fn module_item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(swc_ecma_ast::Decl::Var(var))) => Some(var),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
-            swc_ecma_ast::Decl::Var(var) => Some(var),
-            _ => None,
-        },
-        _ => None,
-    }
 }
 
 fn simple_declarator_binding_name(declarator: &VarDeclarator) -> Option<String> {
@@ -1080,6 +1067,13 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    fn compute_selector_debt(
+        modules_root: &Path,
+        against: Option<&Path>,
+    ) -> Result<SelectorDebtReport> {
+        compute_selector_debt_with_source(modules_root, against, None)
+    }
 
     fn write(root: &Path, rel: &str, body: &str) {
         let p = root.join(rel);

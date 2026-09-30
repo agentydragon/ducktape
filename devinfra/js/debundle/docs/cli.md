@@ -17,7 +17,7 @@ as the rest of ducktape.
 - Spec edits (mutate the modules tree):
   `bindings {assign,unassign,rename,comment}`,
   `modules {merge,delete,comment}`,
-  `spec {selector-codemod,synthesize-selectors}` with `--apply`
+  `spec synthesize-selectors` with `--apply`
 - Read-only queries: `bindings list`, `modules {list,propose}`,
   `spec {stats,selector-debt,match-selector,validate}`, `atoms`, `coverage`,
   `graph-summary`, `describe <id>`, `show-source <id>`, `scc`,

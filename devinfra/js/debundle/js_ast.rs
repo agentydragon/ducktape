@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Result, bail};
+use binding_targets::declaration_name_strings;
 use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
 use swc_common::{
     BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
 };
-use swc_ecma_ast::{Decl, Expr, Module, ModuleDecl, ModuleItem, Pat, Stmt, Str, VarDeclKind};
+use swc_ecma_ast::{Decl, Expr, Module, ModuleDecl, ModuleItem, Stmt, Str, VarDecl, VarDeclKind};
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
@@ -615,51 +616,24 @@ fn format_member_comment_line_texts(text: &str) -> Vec<String> {
 /// vec for statements that bind no top-level name (expression
 /// statements, side-effect calls, etc.).
 fn item_declared_names(item: &ModuleItem) -> Vec<String> {
-    let decl = match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => &export.decl,
-        _ => return Vec::new(),
-    };
-    decl_declared_names(decl)
+    item_decl(item)
+        .map(declaration_name_strings)
+        .unwrap_or_default()
 }
 
-fn decl_declared_names(decl: &Decl) -> Vec<String> {
-    match decl {
-        Decl::Fn(f) => vec![f.ident.sym.to_string()],
-        Decl::Class(c) => vec![c.ident.sym.to_string()],
-        Decl::Var(var) => {
-            let mut names = Vec::new();
-            for declarator in &var.decls {
-                pat_names_into(&declarator.name, &mut names);
-            }
-            names
-        }
-        _ => Vec::new(),
+/// The declaration a top-level item carries, bare or under `export`.
+pub fn item_decl(item: &ModuleItem) -> Option<&Decl> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => Some(decl),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => Some(&export.decl),
+        _ => None,
     }
 }
 
-fn pat_names_into(pat: &Pat, out: &mut Vec<String>) {
-    match pat {
-        Pat::Ident(ident) => out.push(ident.id.sym.to_string()),
-        Pat::Array(arr) => {
-            for elem in arr.elems.iter().flatten() {
-                pat_names_into(elem, out);
-            }
-        }
-        Pat::Object(obj) => {
-            for prop in &obj.props {
-                match prop {
-                    swc_ecma_ast::ObjectPatProp::KeyValue(kv) => pat_names_into(&kv.value, out),
-                    swc_ecma_ast::ObjectPatProp::Assign(assign) => {
-                        out.push(assign.key.id.sym.to_string());
-                    }
-                    swc_ecma_ast::ObjectPatProp::Rest(rest) => pat_names_into(&rest.arg, out),
-                }
-            }
-        }
-        Pat::Rest(rest) => pat_names_into(&rest.arg, out),
-        Pat::Assign(assign) => pat_names_into(&assign.left, out),
-        Pat::Invalid(_) | Pat::Expr(_) => {}
+pub fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
+    match item_decl(item) {
+        Some(Decl::Var(var)) => Some(var),
+        _ => None,
     }
 }
 

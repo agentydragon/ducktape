@@ -35,10 +35,7 @@ use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
 use selector_codemod::match_selector::{
     MatchSelectorConfig, render_match_selector_text, run_match_selector,
 };
-use selector_codemod::{
-    SelectorCodemodConfig, SelectorCodemodRewrite, render_selector_codemod_text,
-    run_selector_codemod,
-};
+use selector_codemod::{SelectorCodemodConfig, render_selector_codemod_text, run_selector_codemod};
 use selector_debt::{
     SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
     populate_name_only_module_groups, render_selector_debt_text,
@@ -159,17 +156,11 @@ enum SpecNsCommand {
     /// modules tree.
     #[command(name = "selector-debt")]
     SelectorDebt(SelectorDebtArgs),
-    /// Dry-run or apply mechanical selector rewrites across module YAML.
-    ///
-    /// Dry-run by default; `--apply` writes. Scope the run with
-    /// `--file`, `--module`, `--module-prefix`, or `--item`. Skipped
-    /// rows carry a machine-readable reason.
-    #[command(name = "selector-codemod")]
-    SelectorCodemod(SelectorCodemodArgs),
     /// Synthesize structural selectors for selected name-only members.
     ///
-    /// Alias for `selector-codemod --rewrite
-    /// name-binding-to-source-match`: given module exports, produce a
+    /// Dry-run by default; `--apply` writes. Scope the run with `--file`,
+    /// `--module`, `--module-prefix`, or `--item`. Skipped rows carry a
+    /// machine-readable reason. Given module exports, produce a
     /// forward-compatible `source_matches[]` selector that uniquely
     /// selects them, proven with the production matcher. Prefers the
     /// loosest readable unique form — holes and stable anchors over long
@@ -277,32 +268,12 @@ pub struct SelectorDebtArgs {
     pub format: Option<OutputFormat>,
 }
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-#[value(rename_all = "kebab-case")]
-pub enum SelectorCodemodRewriteArg {
-    /// Convert name-only binding members to source_matches selectors.
-    NameBindingToSourceMatch,
-}
-
-impl From<SelectorCodemodRewriteArg> for SelectorCodemodRewrite {
-    fn from(value: SelectorCodemodRewriteArg) -> Self {
-        match value {
-            SelectorCodemodRewriteArg::NameBindingToSourceMatch => Self::NameBindingToSourceMatch,
-        }
-    }
-}
-
-/// Args for `debundle spec selector-codemod`.
+/// Args for `debundle spec synthesize-selectors`.
 #[derive(Debug, ClapArgs)]
 pub struct SelectorCodemodArgs {
     /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
-
-    /// Rewrite to run. Only canonical source_matches[] synthesis remains after
-    /// legacy selector shapes were removed.
-    #[arg(long = "rewrite", value_enum, default_value_t = SelectorCodemodRewriteArg::NameBindingToSourceMatch)]
-    pub rewrite: SelectorCodemodRewriteArg,
 
     /// Apply edits. Without this flag the command is a dry run.
     #[arg(long = "apply")]
@@ -338,8 +309,8 @@ pub struct SelectorCodemodArgs {
     pub items: Vec<String>,
 
     /// Emit up to N ranked candidate selectors per item (a menu of alternative
-    /// anchors), not just the minimizer's single pick. Only affects
-    /// `synthesize-selectors`; the extras are reported as `alternatives`. Default 1.
+    /// anchors), not just the minimizer's single pick; the extras are reported
+    /// as `alternatives`. Default 1.
     #[arg(long = "candidates", default_value_t = 1)]
     pub candidates: usize,
 
@@ -815,11 +786,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::Spec(args) => match args.command {
             SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
             SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s),
-            SpecNsCommand::SelectorCodemod(s) => run_selector_codemod_cmd(s),
-            SpecNsCommand::SynthesizeSelectors(mut s) => {
-                s.rewrite = SelectorCodemodRewriteArg::NameBindingToSourceMatch;
-                run_selector_codemod_cmd(s)
-            }
+            SpecNsCommand::SynthesizeSelectors(s) => run_synthesize_selectors_cmd(s),
             SpecNsCommand::MatchSelector(s) => run_match_selector_cmd(s),
             SpecNsCommand::Validate(v) => {
                 run_validate_cmd(v).context("running keep-going selector validation")
@@ -848,11 +815,10 @@ where
     print_report(report, OutputFormat::resolve(format), text_render).context(context)
 }
 
-fn run_selector_codemod_cmd(args: SelectorCodemodArgs) -> Result<()> {
+fn run_synthesize_selectors_cmd(args: SelectorCodemodArgs) -> Result<()> {
     let report = run_selector_codemod(&SelectorCodemodConfig {
         modules_root: args.modules_root,
         apply: args.apply,
-        rewrite: args.rewrite.into(),
         files: args.files,
         modules: args.modules,
         module_prefixes: args.module_prefixes,
@@ -866,7 +832,7 @@ fn run_selector_codemod_cmd(args: SelectorCodemodArgs) -> Result<()> {
         args.format,
         &report,
         render_selector_codemod_text,
-        "writing selector-codemod output",
+        "writing synthesize-selectors output",
     )
 }
 

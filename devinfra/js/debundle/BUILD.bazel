@@ -17,6 +17,7 @@ rust_library(
     crate_root = "js_ast.rs",
     edition = "2024",
     deps = [
+        ":binding_targets",
         "@crates//:anyhow",
         "@crates//:swc_atoms",
         "@crates//:swc_common",
@@ -634,6 +635,7 @@ rust_library(
     crate_root = "selector_codemod.rs",
     edition = "2024",
     deps = [
+        ":binding_targets",
         ":js_ast",
         ":readoff_render",
         ":selector_outcome",
@@ -1230,9 +1232,9 @@ rust_library(
 # verdicts across identifier modes, holes, and declarator alignment, plus
 # fail-closed `Unsupported` outside the faithful subset.
 rust_test(
-    name = "selector_match_differential_test",
-    srcs = ["selector_match_differential_test.rs"],
-    crate_root = "selector_match_differential_test.rs",
+    name = "selector_match_test",
+    srcs = ["selector_match_test.rs"],
+    crate_root = "selector_match_test.rs",
     edition = "2024",
     deps = [
         ":chunk_facts",

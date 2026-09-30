@@ -37,8 +37,11 @@ build --host_per_file_copt=external/protobuf[+]/.*@-Wno-maybe-uninitialized
 #   rely on C++ operator precedence that gcc warns about.
 # -Wunused-result: OR-Tools ignores protobuf TextFormat::PrintToString's
 #   boolean result in its debug-string helpers.
-build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses,-Wno-unused-result
-build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses,-Wno-unused-result
+# -Warray-bounds and -Wmaybe-uninitialized: optimizer diagnostics in SVector
+#   and OR-Tools SAT code, including inlined Abseil helpers.
+# -Wstrict-aliasing: OR-Tools Glop's type-punned row/permutation conversions.
+build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses,-Wno-unused-result,-Wno-array-bounds,-Wno-maybe-uninitialized,-Wno-strict-aliasing
+build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses,-Wno-unused-result,-Wno-array-bounds,-Wno-maybe-uninitialized,-Wno-strict-aliasing
 
 # Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
 # Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;

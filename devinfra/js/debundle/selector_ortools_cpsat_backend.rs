@@ -399,7 +399,7 @@ mod tests {
     use analysis::{OwnerId, StatementOrdinal};
     use selector_backend_solver::solve_with_backend;
     use selector_constraint_backend::{
-        AllDifferentConstraintId, AllDifferentReason, AllowedTupleConstraintId, AllowedTupleRowsId,
+        AllDifferentConstraintId, AllowedTupleConstraintId, AllowedTupleRowsId,
         CompiledAllDifferentConstraint, CompiledAllowedTupleConstraint, CompiledAllowedTupleRowSet,
         CompiledAllowedTupleRows, CompiledSharedVariableDomain, CompiledVariable,
         CompiledVariableDomain, DomainValueDictionary, FullDomainValues, SharedVariableDomainId,
@@ -407,8 +407,7 @@ mod tests {
     };
     use selector_ir::{
         ClaimKind, ClaimOutcome, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFact,
-        SelectorFactStore, SelectorProgram, SelectorTargetId, SelectorVariableId, StringTerm,
-        VariableDomain,
+        SelectorFactStore, SelectorProgram, SelectorTargetId, StringTerm, VariableDomain,
     };
 
     use super::*;
@@ -427,14 +426,13 @@ mod tests {
             allowed_tuple_row_sets: Vec::new(),
             allowed_tuples: Vec::new(),
             all_different: Vec::new(),
-            known_unsat: None,
+            known_unsat: false,
         }
     }
 
     fn variable(id: usize, values: CompiledVariableDomain) -> CompiledVariable {
         CompiledVariable {
             id: ConstraintVariableId(id),
-            source: SelectorVariableId(id),
             domain: VariableDomain::Owner,
             debug_name: Some(format!("v{id}")),
             values,
@@ -492,9 +490,6 @@ mod tests {
                 .copied()
                 .map(ConstraintVariableId)
                 .collect(),
-            reason: AllDifferentReason::SelectorSemantics {
-                label: "test".to_string(),
-            },
         }
     }
 

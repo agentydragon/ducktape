@@ -7,7 +7,6 @@ fn parsed_source_match(
 ) -> Result<ParsedSourceMatchSelector> {
     ParsedSourceMatchSelector::parse(
         request_id,
-        selector_label,
         format!("<source_match in {request_id}>"),
         &source_match.selector(),
         selector_label,
@@ -43,7 +42,7 @@ pub fn source_match_claim_member_selectors(
         );
     }
 
-    let free = super::chunk_resolver::template_free_identifiers(&parsed);
+    let free = template_free_identifiers(&parsed);
     let mut seen_locals = BTreeSet::new();
     let mut seen_names = BTreeSet::new();
     let mut out = Vec::new();

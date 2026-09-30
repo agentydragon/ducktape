@@ -288,7 +288,6 @@ fn validate_modules_against_source(
                 .and_then(|selector| {
                     ParsedSourceMatchSelector::parse(
                         &module_path,
-                        "source_match",
                         format!("<source_match needle in {module_path}>"),
                         &selector,
                         "source_match",
