@@ -47,6 +47,7 @@ PLAID_PGWEB_POLICY = "plaid-pgweb"
 _PUBLIC_CODER_INSTRUCTIONS = (
     Path(__file__).with_name("public_coder_instructions.md").read_text(encoding="utf-8").strip()
 )
+_HAKU_BOOTSTRAP = Path(__file__).with_name("haku_bootstrap.sh").read_text(encoding="utf-8")
 
 
 def reasoning_efforts(model: str) -> list[str]:
@@ -184,19 +185,7 @@ def settings(
                         # (egress_staging_credentials.py) -- the placeholder itself is inert, so
                         # it is safe to embed literally here. ducktape is cloned too, read-only
                         # reference the same way Haku's own sandboxes carry it.
-                        bootstrap=(
-                            "marker=/state/workspaces/.agentplane-haku-ready\n"
-                            "mkdir -p /state/workspaces\n"
-                            'if [ ! -f "$marker" ]; then\n'
-                            "  git clone --depth 1 --branch main --single-branch "
-                            "http://haku:agentplane-credential-forgejo-haku@"
-                            "forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git "
-                            "/state/workspaces/haku-state\n"
-                            "  git clone --depth 1 --branch devel --single-branch "
-                            "https://github.com/agentydragon/ducktape.git /state/workspaces/ducktape\n"
-                            "  printf '%s\\n' 'haku workspace initialized' > \"$marker\"\n"
-                            "fi\n"
-                        ),
+                        bootstrap=_HAKU_BOOTSTRAP,
                     )
                 }
                 if haku_preset_model is not None

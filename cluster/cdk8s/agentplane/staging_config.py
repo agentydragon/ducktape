@@ -30,6 +30,7 @@ _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
 _FINANCE_AGENT_INSTRUCTIONS = (
     Path(__file__).with_name("finance_agent_instructions.md").read_text(encoding="utf-8").strip()
 )
+_FINANCE_AGENT_BOOTSTRAP = Path(__file__).with_name("finance_agent_bootstrap.sh").read_text(encoding="utf-8")
 # The ActionPolicySet objects actions_staging_policies creates for the public-coder
 # preset, named here because the preset binds them: reads of confirmed-public
 # repositories, of ducktape and its fork, and of the private Gaffer repository.
@@ -90,16 +91,6 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         # Placeholder password: the `forgejo-finance-agent` EgressPolicy's credentialRef
         # substitutes it for the `finance-agent` Forgejo account's real password on the
         # way out (egress_staging_credentials.py), same shape as the `haku` preset.
-        bootstrap=(
-            "marker=/state/workspaces/.agentplane-finance-agent-ready\n"
-            "mkdir -p /state/workspaces\n"
-            'if [ ! -f "$marker" ]; then\n'
-            "  git clone --branch main --single-branch "
-            "http://finance-agent:agentplane-credential-forgejo-finance-agent@"
-            "forgejo-http.forgejo.svc.cluster.local:3000/finance-agent/finance-agent.git "
-            "/state/workspaces/finance-agent\n"
-            "  printf '%s\\n' 'finance-agent workspace initialized' > \"$marker\"\n"
-            "fi\n"
-        ),
+        bootstrap=_FINANCE_AGENT_BOOTSTRAP,
     )
     return cfg
