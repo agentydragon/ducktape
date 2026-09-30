@@ -463,12 +463,13 @@ spec:
     - name: flux-image-automation-ghcr
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/gaffer-private-source
+  path: ./cluster/generated/gaffer-private-source
   prune: true
   retryInterval: 1m
   sourceRef:
-    kind: GitRepository
-    name: flux-system
+    kind: ExternalArtifact
+    name: gaffer-private-source
+    namespace: ducktape-flux
   timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

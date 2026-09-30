@@ -468,6 +468,11 @@ spec:
       name: budget-namespace
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/gaffer-private-source/**"
+          to: "@artifact/cluster/generated/gaffer-private-source/"
+      name: gaffer-private-source
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/gatus/**"
           to: "@artifact/cluster/k8s/gatus/"
       name: gatus
