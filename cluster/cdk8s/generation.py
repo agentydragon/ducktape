@@ -104,10 +104,12 @@ def write_directory(
     namespace: str | None = None,
     components: Sequence[str] = (),
     config_map_generator: Sequence[ConfigMapArgs] = (),
+    configurations: Sequence[str] = (),
 ) -> RenderedDirectory:
     """Synthesize a component's charts into the directory `artifact` packages, and write its
     `kustomization.yaml` listing them, then `siblings`: the hand-written files beside them.
-    `namespace`, `components` and `config_map_generator` are `kustomize_kustomization`'s.
+    `namespace`, `components`, `config_map_generator` and `configurations` are
+    `kustomize_kustomization`'s.
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
@@ -122,7 +124,11 @@ def write_directory(
     write_yaml(
         root / directory / "kustomization.yaml",
         kustomize_kustomization(
-            resources=resources, namespace=namespace, components=components, config_map_generator=config_map_generator
+            resources=resources,
+            namespace=namespace,
+            components=components,
+            config_map_generator=config_map_generator,
+            configurations=configurations,
         ),
     )
     return RenderedDirectory(artifact=artifact, decryption=sops_decryption(siblings))

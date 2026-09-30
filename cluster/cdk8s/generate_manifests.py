@@ -34,6 +34,7 @@ from cluster.cdk8s import (
     github_tf,
     goldilocks,
     google_mcp,
+    grafana_dashboards,
     ha_mcp,
     haku_egress_proxy,
     haku_openclaw_spike_backup,
@@ -140,15 +141,12 @@ from cluster.cdk8s.github_api_proxy import (
     flux_kustomizations as github_api_proxy_flux_kustomizations,
     proxy as github_api_proxy,
 )
-from cluster.cdk8s.github_exporter import (
-    app as github_exporter_app,
-    flux_kustomizations as github_exporter_flux_kustomizations,
-)
+from cluster.cdk8s.github_exporter import app as github_exporter_app
 from cluster.cdk8s.github_secrets_sync import (
     gitops_module as github_secrets_sync_gitops_module,
     secrets as github_secrets_sync_secrets,
 )
-from cluster.cdk8s.grafana import app as grafana_app, flux_kustomizations as grafana_flux_kustomizations
+from cluster.cdk8s.grafana import app as grafana_app
 from cluster.cdk8s.grocy import (
     app as grocy_app,
     flux_kustomizations as grocy_flux_kustomizations,
@@ -303,9 +301,6 @@ def generate_manifests(root: Path) -> None:
     nix_cache_attic.write_manifests(root)
     vm_images_publisher_publisher.write_manifests(root)
     alloy.write_manifests(root)
-    grafana_instance.write_manifests(root)
-    grafana_app.write_manifests(root)
-    github_exporter_app.write_manifests(root)
     forgejo_app.write_manifests(root)
     home_assistant_app.write_manifests(root)
     home_assistant_backup.write_manifests(root)
@@ -939,8 +934,19 @@ def generate_manifests(root: Path) -> None:
     headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
     headlamp.headlamp(flux_chart, write_directory(root, headlamp_app_artifact, headlamp.chart))
     grafana_instance_artifact = artifact("grafana-instance", grafana_instance.OUTPUT_DIR)
-    monitoring_flux_kustomizations.grafana_instance(
-        flux_chart, grafana_instance_artifact, grafana_operator_kustomization, cnpg_kustomization
+    grafana_instance.grafana_instance(
+        flux_chart,
+        write_directory(
+            root,
+            grafana_instance_artifact,
+            grafana_instance.chart,
+            config_map_generator=grafana_dashboards.config_map_generator(
+                root, grafana_instance.OUTPUT_DIR, grafana_instance.DASHBOARDS
+            ),
+            configurations=[grafana_dashboards.write_kustomize_config(root, grafana_instance.OUTPUT_DIR)],
+        ),
+        grafana_operator_kustomization,
+        cnpg_kustomization,
     )
     gatus_artifact = artifact("gatus", gatus_app.OUTPUT_DIR)
     gatus_app.gatus(
@@ -1024,8 +1030,18 @@ def generate_manifests(root: Path) -> None:
         grafana_operator_kustomization,
     )
     clickhouse_grafana_artifact = artifact("clickhouse-grafana", grafana_app.OUTPUT_DIR)
-    grafana_flux_kustomizations.clickhouse_grafana(
-        flux_chart, clickhouse_grafana_artifact, grafana_operator_kustomization
+    grafana_app.clickhouse_grafana(
+        flux_chart,
+        write_directory(
+            root,
+            clickhouse_grafana_artifact,
+            grafana_app.chart,
+            config_map_generator=grafana_dashboards.config_map_generator(
+                root, grafana_app.OUTPUT_DIR, [grafana_app.DASHBOARD]
+            ),
+            configurations=[grafana_dashboards.write_kustomize_config(root, grafana_app.OUTPUT_DIR)],
+        ),
+        grafana_operator_kustomization,
     )
     agent_box_artifact = artifact("agent-box", f"{HAND_WRITTEN_ROOT}/parked/agent-box")
     parked_flux_kustomizations.agent_box(
@@ -1136,9 +1152,18 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     github_exporter_artifact = artifact("github-exporter", github_exporter_app.OUTPUT_DIR)
-    github_exporter_flux_kustomizations.github_exporter(
+    github_exporter_app.github_exporter(
         flux_chart,
-        github_exporter_artifact,
+        write_directory(
+            root,
+            github_exporter_artifact,
+            github_exporter_app.chart,
+            components=["./image-pins"],
+            config_map_generator=grafana_dashboards.config_map_generator(
+                root, github_exporter_app.OUTPUT_DIR, [github_exporter_app.DASHBOARD]
+            ),
+            configurations=[grafana_dashboards.write_kustomize_config(root, github_exporter_app.OUTPUT_DIR)],
+        ),
         monitoring_namespace_kustomization,
         monitoring_crds_kustomization,
         external_secrets_operator_kustomization,

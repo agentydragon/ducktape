@@ -186,18 +186,21 @@ py_library(
 py_library(
     name = "grafana_instance",
     srcs = ["grafana_instance.py"],
+    data = [":dashboards"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
-        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:grafana_dashboards",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/grafana_operator:grafana",
         "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",
@@ -206,6 +209,13 @@ py_library(
         "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
     ],
+)
+
+# `grafana_instance`'s dashboard JSON, also the Grafana skill verifier's candidates.
+filegroup(
+    name = "dashboards",
+    srcs = glob(["dashboards/*.json"]),
+    visibility = ["//cluster/skills/grafana:__pkg__"],
 )
 
 py_library(

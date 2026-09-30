@@ -34,18 +34,6 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
-# Grafana's candidate verifier reads the dashboard JSON from Bazel runfiles.
-filegroup(
-    name = "grafana_dashboard_json_files",
-    srcs = [
-        "monitoring/grafana-instance/cluster-storage-io.json",
-        "monitoring/grafana-instance/flux-cluster.json",
-        "monitoring/grafana-instance/interface-flap-frequency.json",
-        "monitoring/grafana-instance/rugged-power.json",
-    ],
-    visibility = ["//cluster/skills/grafana:__pkg__"],
-)
-
 filegroup(
     name = "ssh_mcp_known_hosts",
     srcs = ["ssh-mcp/known_hosts"],

@@ -184,6 +184,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "grafana_dashboards",
+    srcs = ["grafana_dashboards.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":flux",
+        ":generation",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
+    ],
+)
+
 py_test(
     name = "test_generation",
     srcs = ["test_generation.py"],
@@ -1574,6 +1585,7 @@ py_library(
         ":github_tf",
         ":goldilocks",
         ":google_mcp",
+        ":grafana_dashboards",
         ":ha_mcp",
         ":haku_egress_proxy",
         ":haku_openclaw_spike_backup",
@@ -1664,11 +1676,9 @@ py_library(
         "//cluster/cdk8s/github_api_proxy:flux_kustomizations",
         "//cluster/cdk8s/github_api_proxy:proxy",
         "//cluster/cdk8s/github_exporter:app",
-        "//cluster/cdk8s/github_exporter:flux_kustomizations",
         "//cluster/cdk8s/github_secrets_sync:gitops_module",
         "//cluster/cdk8s/github_secrets_sync:secrets",
         "//cluster/cdk8s/grafana:app",
-        "//cluster/cdk8s/grafana:flux_kustomizations",
         "//cluster/cdk8s/grocy:app",
         "//cluster/cdk8s/grocy:flux_kustomizations",
         "//cluster/cdk8s/grocy:mcp",
