@@ -26,12 +26,3 @@ def write_manifests(root: Path) -> None:
         agent_readable=None,
         labels={"name": "haku-egress-proxy"},
     )
-    write_namespace(
-        root,
-        f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app",
-        name="haku-openclaw-spike",
-        vpa=Vpa.AUTO,
-        agent_readable=None,
-        labels={"name": "haku-openclaw-spike"},
-        annotations={"description": "Isolated OpenClaw plus Claude Code subscription compatibility spike for Haku."},
-    )

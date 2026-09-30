@@ -8,7 +8,14 @@ import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
 from cluster.cdk8s.artifact_generators import artifact
-from cluster.cdk8s.flux import Json6902Patch, PatchTarget, artifact_directory, flux_kustomization, kustomizations_chart
+from cluster.cdk8s.flux import (
+    GeneratorOptions,
+    Json6902Patch,
+    PatchTarget,
+    artifact_directory,
+    flux_kustomization,
+    kustomizations_chart,
+)
 from cluster.cdk8s.generation import config_map_chart, write_directory
 
 _ARTIFACT = artifact("test-app", "test/app")
@@ -67,6 +74,14 @@ def test_writer_refuses_an_artifact_with_shared_bases(tmp_path: Path) -> None:
 def test_writer_accepts_a_copied_component_the_directory_includes(tmp_path: Path) -> None:
     write_directory(tmp_path, artifact("test-app", "test/app", "test/pins"), _chart("first"), components=["../pins"])
     assert yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())["components"] == ["../pins"]
+
+
+def test_directory_generator_options_are_written_under_kustomizes_key(tmp_path: Path) -> None:
+    write_directory(
+        tmp_path, _ARTIFACT, _chart("first"), generator_options=GeneratorOptions(disable_name_suffix_hash=True)
+    )
+    kustomization = yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())
+    assert kustomization["generatorOptions"] == {"disableNameSuffixHash": True}
 
 
 if __name__ == "__main__":
