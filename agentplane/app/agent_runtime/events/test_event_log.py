@@ -55,6 +55,27 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
     assert await event_logs.last_cursor(other) == 0
 
 
+async def test_tool_output_with_nul_round_trips_and_later_events_are_ingested(
+    event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    output = "before\x00after"
+
+    await ingestion.record(
+        thread,
+        [
+            event_entry(1, tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text=output)),
+            event_entry(2, turn_started=event_pb2.TurnStarted(turn_id="next")),
+        ],
+        lease=lease,
+    )
+
+    entries = await event_logs.events(thread, limit=10)
+    assert [entry.cursor for entry in entries] == [1, 2]
+    assert entries[0].event.tool_output_delta.text == output
+    assert await event_logs.last_cursor(thread) == 2
+
+
 async def test_concurrent_replicas_create_one_thread(event_logs: EventLogStore, replica: Replica) -> None:
     first, second = await asyncio.gather(
         event_logs.open("sb-1", "s-1", SPEC), replica.event_logs.open("sb-1", "s-1", SPEC)
