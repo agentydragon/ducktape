@@ -1,6 +1,5 @@
 """The page's boundary as a browser meets it: a real login round trip against a mock IdP, then the API."""
 
-import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import timedelta
@@ -9,7 +8,6 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_bazel
-import uvicorn
 
 from devinfra.claude.session_export.conftest import (
     PAIRED_RESPONSE,
@@ -24,7 +22,7 @@ from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.supervisor import SyncSupervisor
 from devinfra.claude.session_export.web import create_app
 from util.net import bind_free_port
-from util.testing.asgi import serve_app
+from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 OWNER = "test-owner-subject"
@@ -68,21 +66,11 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
             live_window=timedelta(hours=1),
         )
         # The app runs in this loop, not in `serve_app`'s thread: its `store` holds this loop's asyncpg connections.
-        server = uvicorn.Server(
-            uvicorn.Config(create_app(supervisor=supervisor, settings=settings), log_level="warning")
-        )
-        async with serve_app(idp, sock=idp_sock):
-            serving = asyncio.create_task(server.serve(sockets=[app_sock]))
-            try:
-                while not server.started:  # a pre-bound socket accepts before uvicorn does
-                    if serving.done():
-                        serving.result()
-                        raise RuntimeError("uvicorn exited before starting")
-                    await asyncio.sleep(0.02)
-                yield app_url
-            finally:
-                server.should_exit = True
-                await serving
+        async with (
+            serve_app(idp, sock=idp_sock),
+            serve_app_in_loop(create_app(supervisor=supervisor, settings=settings), sock=app_sock),
+        ):
+            yield app_url
 
     return serving
 

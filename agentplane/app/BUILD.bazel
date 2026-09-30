@@ -246,7 +246,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -620,7 +619,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@pypi//uvicorn",
     ],
 )
 

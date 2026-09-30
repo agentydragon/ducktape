@@ -333,7 +333,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//uvicorn",
     ],
 )
 
