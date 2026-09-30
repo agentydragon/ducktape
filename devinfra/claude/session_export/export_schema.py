@@ -27,10 +27,9 @@ def openapi_document() -> dict[str, object]:
         oidc_session_secret="schema-export",
         oidc_allowed_subject="schema-export",
     )
-    supervisor = SyncSupervisor.for_settings(
-        settings, store=SessionStore(make_engine(settings.database_url)), token_client=httpx.AsyncClient()
-    )
-    document: dict[str, object] = create_app(supervisor=supervisor, settings=settings).openapi()
+    store = SessionStore(make_engine(settings.database_url))
+    supervisor = SyncSupervisor.for_settings(settings, store=store, token_client=httpx.AsyncClient())
+    document: dict[str, object] = create_app(supervisor=supervisor, settings=settings, store=store).openapi()
     return document
 
 
