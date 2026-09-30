@@ -3,8 +3,6 @@
 - **Status:** Haku's canonical Operator/Agent authority and enrollment cutover is complete and
   deployed. This file plans only remaining work.
 - **Updated:** 2026-07-16
-- **Completed baseline:** PR [#3197](https://github.com/agentydragon/ducktape/pull/3197), with
-  follow-up PR [#3200](https://github.com/agentydragon/ducktape/pull/3200)
 - **Implemented contract:**
   <../haku/console/README.md#canonical-agent-authority-and-enrollment>
 - **Tactical Haku backlog:** <../haku/console/TODO.md>
@@ -118,14 +116,6 @@ These are vertical product PRs, not another identity migration:
 
 The per-tool-call deep link is an independent console improvement tracked in
 <../haku/console/TODO.md>.
-
-### Haku Google connection and Airlock decoupling
-
-Haku-specific credential architecture; the full G1–G4 sequence and the mediation target live in
-<../haku/plans/google_access_mediation.md>. Status: G1–G4 done. The read-only
-`google-access-token` no longer reaches `haku-sandbox`, and the console no longer serves Google:
-Haku reaches it through agentplane-staging, whose egress proxy and `google-mcp` hold the
-Airlock-brokered grants, so no Google token reaches the agent.
 
 ### Independent security and consolidation lanes
 
