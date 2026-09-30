@@ -34,6 +34,8 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:stateful_infra",
         "//cluster/cdk8s/providers/seaweedfs:adminscript",
+        "//cluster/cdk8s/providers/seaweedfs:resource_reference_grant",
+        "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
         "//cluster/cdk8s/providers/seaweedfs:seaweed",
         "//cluster/cdk8s/seaweedfs:filer_db",
         "//cluster/cdk8s/seaweedfs:namespace",
