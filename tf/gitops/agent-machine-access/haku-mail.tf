@@ -9,7 +9,7 @@
 # service account (authentik_user.haku_grocy, haku-service-account.tf;
 # preferred_username=haku is what Stalwart's claimUsername resolves to the
 # pre-created `haku` principal) — see the haku-mail entry in
-# cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml.
+# cluster/cdk8s/authentik_jwt_rotation.py.
 
 resource "authentik_provider_oauth2" "stalwart_haku" {
   name        = "stalwart-haku"

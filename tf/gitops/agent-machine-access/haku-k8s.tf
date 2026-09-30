@@ -12,8 +12,8 @@
 # The apiserver maps that claim to oidc-ksbx-groups:haku — read-only access to
 # the haku namespace, isolated from the sandbox group.
 #
-# Consumer: cluster/k8s/agents/authentik-jwt-rotation/ CronJob (the haku-k8s
-# rotations.yaml entry). It exchanges client_id + username + app-password for a
+# Consumer: the authentik-jwt-rotation CronJob (cluster/cdk8s/authentik_jwt_rotation.py,
+# haku-k8s entry). It exchanges client_id + username + app-password for a
 # JWT and commits it SOPS-encrypted to secrets/haku-k8s-jwt.yaml.
 
 # Service account whose identity the issued JWT carries. The machine scope

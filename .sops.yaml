@@ -731,7 +731,7 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
   # The same bearer for the same `haku` k8s group, minted separately for the
-  # experimental OpenClaw runtime (rotations.yaml: haku-k8s-openclaw). No `haku`
+  # experimental OpenClaw runtime (the haku-k8s-openclaw rotation). No `haku`
   # recipient, unlike the entry above: that routine decrypts its token from this
   # file, whereas the OpenClaw runtime never sees the file at all -- iron-proxy
   # injects the bearer from the k8s Secret the rotator publishes alongside it.

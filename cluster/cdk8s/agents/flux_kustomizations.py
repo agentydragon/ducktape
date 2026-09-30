@@ -31,28 +31,6 @@ def airlock(
     )
 
 
-def authentik_jwt_rotation(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
-) -> Kustomization:
-    name = "authentik-jwt-rotation"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        wait=None,
-        depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name="github-secrets-sync-pat",
-                namespace="agents-infra",
-            )
-        ],
-        timeout="2m",
-    )
-
-
 def forgejo_token_rotation(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:

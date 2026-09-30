@@ -230,8 +230,10 @@ spec:
       name: tana-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/authentik-jwt-rotation/**"
-          to: "@artifact/cluster/k8s/agents/authentik-jwt-rotation/"
+        - from: "@repo/cluster/generated/agents/authentik-jwt-rotation/**"
+          to: "@artifact/cluster/generated/agents/authentik-jwt-rotation/"
+        - from: "@repo/cluster/k8s/agents/authentik-jwt-rotation-image-pins/**"
+          to: "@artifact/cluster/k8s/agents/authentik-jwt-rotation-image-pins/"
       name: authentik-jwt-rotation
       originRevision: "@repo"
     - copy:

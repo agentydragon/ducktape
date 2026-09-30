@@ -307,12 +307,10 @@ repos:
             # Authelia configuration files consumed via configMapGenerator, not K8s manifests
             cluster/parked/authelia/(configuration|users)\.yml|
             # rotate.py rotation list, mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/agents/authentik-jwt-rotation/rotations\.yaml|
             cluster/k8s/agents/forgejo-token-rotation/tokens\.yaml|
             # rotate.py token list, mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/nix-cache/rotators\.yaml|
             # APT manifests for Bazel rules_distroless, not K8s manifests
-            cluster/k8s/agents/authentik-jwt-rotation/trixie_authentik_rotation\.yaml|
             cluster/k8s/agents/attic-jwt-rotation/trixie_attic_rotation\.yaml|
           )$
         types: [yaml]
