@@ -206,7 +206,6 @@ fn lower_atom_constraint(
         SelectorAtom::ProjectedAllowedTuples {
             variables: projected_variables,
             rows,
-            reason: _,
         } => add_projected_allowed_tuples(model, variables, projected_variables, rows),
         SelectorAtom::OwnerReferencesOwner { owner, referenced } => {
             add_cached_owner_owner_allowed_tuples(
@@ -1564,11 +1563,7 @@ impl FactDomains {
                 self.add_owner_term(owner);
                 self.add_string_term(binding);
             }
-            SelectorAtom::ProjectedAllowedTuples {
-                variables: _,
-                rows,
-                reason: _,
-            } => {
+            SelectorAtom::ProjectedAllowedTuples { rows, .. } => {
                 for row in rows {
                     for value in row {
                         self.add_projected_value(value);
@@ -1677,12 +1672,12 @@ impl FactDomains {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::{ChunkId, OwnerId, StatementOrdinal};
+    use analysis::{OwnerId, StatementOrdinal};
     use selector_constraint_backend::{
         AllowedTupleConstraintId, BackendValueId,
         CompiledAllDifferentConstraint as AllDifferentConstraint, ConstraintValue,
     };
-    use selector_ir::{ClaimKind, ClaimOrigin};
+    use selector_ir::ClaimKind;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct AllowedTupleConstraint {
@@ -1707,7 +1702,6 @@ mod tests {
 
     fn owner_fact(owner: usize, ordinal: usize, statement_kind: &str) -> SelectorFact {
         SelectorFact::Owner {
-            chunk_id: ChunkId(0),
             owner: OwnerId(owner),
             statement_ordinal: StatementOrdinal(ordinal),
             statement_kind: statement_kind.to_string(),
@@ -1716,7 +1710,6 @@ mod tests {
 
     fn declared_binding(owner: usize, binding: &str) -> SelectorFact {
         SelectorFact::DeclaredBinding {
-            chunk_id: ChunkId(0),
             owner: OwnerId(owner),
             binding: binding.to_string(),
         }
@@ -1724,7 +1717,6 @@ mod tests {
 
     fn owner_reference(owner: usize, binding: &str, edge_kind: &str) -> SelectorFact {
         SelectorFact::OwnerReferencesBinding {
-            chunk_id: ChunkId(0),
             owner: OwnerId(owner),
             binding: binding.to_string(),
             edge_kind: edge_kind.to_string(),
@@ -1733,7 +1725,6 @@ mod tests {
 
     fn member_read(ordinal: usize, object: Option<&str>, member: &str) -> SelectorFact {
         SelectorFact::MemberRead {
-            chunk_id: ChunkId(0),
             statement_ordinal: StatementOrdinal(ordinal),
             object: object.map(str::to_string),
             member: member.to_string(),
@@ -1742,7 +1733,6 @@ mod tests {
 
     fn module_member_use(ordinal: usize, module: &str, member: &str) -> SelectorFact {
         SelectorFact::ModuleMemberUse {
-            chunk_id: ChunkId(0),
             statement_ordinal: StatementOrdinal(ordinal),
             module: module.to_string(),
             member: member.to_string(),
@@ -1756,7 +1746,6 @@ mod tests {
         arg_index: usize,
     ) -> SelectorFact {
         SelectorFact::CallArgumentUse {
-            chunk_id: ChunkId(0),
             argument: argument.to_string(),
             callee_object: callee_object.map(str::to_string),
             callee_member: callee_member.to_string(),
@@ -1766,7 +1755,6 @@ mod tests {
 
     fn decorate_call(callee: &str, class_anchor: &str, member: Option<&str>) -> SelectorFact {
         SelectorFact::DecorateCallUse {
-            chunk_id: ChunkId(0),
             callee: callee.to_string(),
             class_anchor: class_anchor.to_string(),
             member: member.map(str::to_string),
@@ -1775,7 +1763,6 @@ mod tests {
 
     fn intrinsic_alias(binding: &str, property: &str) -> SelectorFact {
         SelectorFact::IntrinsicAliasUse {
-            chunk_id: ChunkId(0),
             binding: binding.to_string(),
             property: property.to_string(),
         }
@@ -1941,7 +1928,6 @@ mod tests {
                 SelectorProjectedValue::Owner(OwnerId(7)),
                 SelectorProjectedValue::String("actual".to_string()),
             ]],
-            reason: "projected singleton test".to_string(),
         });
 
         let model = compile_selector_problem(&program, &fact_store(vec![])).unwrap();
@@ -1974,7 +1960,6 @@ mod tests {
                     SelectorProjectedValue::String("other".to_string()),
                 ],
             ],
-            reason: "projected correlation test".to_string(),
         });
 
         let model = compile_selector_problem(&program, &fact_store(vec![])).unwrap();
@@ -2002,22 +1987,18 @@ mod tests {
         let broad_owner = program.add_variable(VariableDomain::Owner, Some("broad".to_string()));
         let strict_owner = program.add_variable(VariableDomain::Owner, Some("strict".to_string()));
         let broad_target = program.add_target(
-            ChunkId(0),
             broad_owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Broad".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         let strict_target = program.add_target(
-            ChunkId(0),
             strict_owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Strict".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: broad_owner },
@@ -2081,13 +2062,11 @@ mod tests {
         let left = program.add_variable(VariableDomain::String, Some("alpha.left".to_string()));
         let right = program.add_variable(VariableDomain::String, Some("alpha.right".to_string()));
         program.add_target(
-            ChunkId(0),
             owner,
             "module",
             ClaimKind::Binding {
                 export_name: Some("Widget".to_string()),
             },
-            ClaimOrigin::Synthetic,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: owner },
@@ -2098,12 +2077,10 @@ mod tests {
         program.add_atom(SelectorAtom::ProjectedAllowedTuples {
             variables: vec![left],
             rows: vec![vec![SelectorProjectedValue::String("a".to_string())]],
-            reason: "left".to_string(),
         });
         program.add_atom(SelectorAtom::ProjectedAllowedTuples {
             variables: vec![right],
             rows: vec![vec![SelectorProjectedValue::String("b".to_string())]],
-            reason: "right".to_string(),
         });
         program.require_variables_all_different(
             vec![left, right],
@@ -2134,11 +2111,9 @@ mod tests {
         let owner_var = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
         let binding_var = program.add_variable(VariableDomain::String, Some("binding".to_string()));
         let target = program.add_target(
-            ChunkId(0),
             owner_var,
             "module",
             ClaimKind::Binding { export_name: None },
-            ClaimOrigin::Synthetic,
         );
         program.add_atom(SelectorAtom::OwnerDeclaresBinding {
             owner: OwnerTerm::Var { id: owner_var },

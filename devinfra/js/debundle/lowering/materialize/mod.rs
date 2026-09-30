@@ -232,12 +232,8 @@ pub(super) fn prepare_logical_chunk(
     // `add_explicit_request` left deferred selector members unclaimed; the
     // resolve every chunk shares assigns them and the anonymous statements
     // over the hint-free structural facts.
-    let selectors = selector_resolve::Chunk::new(
-        chunk_id,
-        chunk_id_interned,
-        &runtime_ast.module,
-        structural_analysis,
-    );
+    let selectors =
+        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis);
     let selector_modules = builder.selector_modules(
         &explicit_requests,
         chunk_top_level_mark,
@@ -403,7 +399,7 @@ pub(super) fn finish_logical_chunk(
     // Chunk analysis: hint-sensitive facts, owner graph, and structural
     // atomic units. See `stage_one/mod.rs` for the current implementation.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
-    let chunk_analysis = compute_chunk_analysis_from_structural(
+    let chunk_analysis = compute_chunk_analysis(
         chunk_id,
         &runtime_ast.module,
         structural_analysis,

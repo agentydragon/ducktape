@@ -261,7 +261,6 @@ pub(crate) fn has_untrusted_at_init_unresolved_inline_fn_call(
     let mut finder = UntrustedAtInitInlineFnFallbackFinder {
         no_sync_callback_members: &hints.no_sync_callback_members,
         found: false,
-        lazy_depth: 0,
     };
     item.visit_with(&mut finder);
     finder.found
@@ -423,7 +422,6 @@ impl Visit for NoSyncMemberArgumentSourceCollector<'_> {
 struct UntrustedAtInitInlineFnFallbackFinder<'a> {
     no_sync_callback_members: &'a BTreeMap<String, BTreeSet<String>>,
     found: bool,
-    lazy_depth: u32,
 }
 
 impl UntrustedAtInitInlineFnFallbackFinder<'_> {
@@ -446,28 +444,25 @@ impl Visit for UntrustedAtInitInlineFnFallbackFinder<'_> {
         if self.found {
             return;
         }
-        if self.lazy_depth == 0 {
-            match &node.callee {
-                Callee::Expr(callee) => match strip_parens(callee) {
-                    Expr::Ident(_) => {}
-                    _ if self.node_has_inline_fn(node)
-                        && !is_static_event_listener_registration(callee, &node.args)
-                        && !self.is_no_sync_callback_member_call(node) =>
-                    {
-                        self.found = true;
-                        return;
-                    }
-                    _ => {}
-                },
-                Callee::Import(_) | Callee::Super(_) => {}
-            }
+        match &node.callee {
+            Callee::Expr(callee) => match strip_parens(callee) {
+                Expr::Ident(_) => {}
+                _ if self.node_has_inline_fn(node)
+                    && !is_static_event_listener_registration(callee, &node.args)
+                    && !self.is_no_sync_callback_member_call(node) =>
+                {
+                    self.found = true;
+                    return;
+                }
+                _ => {}
+            },
+            Callee::Import(_) | Callee::Super(_) => {}
         }
         node.visit_children_with(self);
     }
 
     fn visit_opt_call(&mut self, node: &OptCall) {
-        if self.lazy_depth == 0
-            && self.node_has_inline_fn(node)
+        if self.node_has_inline_fn(node)
             && !is_static_event_listener_registration(&node.callee, &node.args)
         {
             self.found = true;
@@ -477,7 +472,7 @@ impl Visit for UntrustedAtInitInlineFnFallbackFinder<'_> {
     }
 
     fn visit_tagged_tpl(&mut self, node: &TaggedTpl) {
-        if self.lazy_depth == 0 && self.node_has_inline_fn(node) {
+        if self.node_has_inline_fn(node) {
             self.found = true;
             return;
         }

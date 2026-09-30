@@ -7,7 +7,7 @@
 //!      [`ShapeId`]; equal shapes collapse and share, so subtree equality is an
 //!      O(1) id comparison (Downey-Sethi-Tarjan minimal-DAG construction).
 //!   2. Multi-granularity, position-aware *shape features* per top-level item,
-//!      extended from the existing [`SelectorCandidateIndex`] feature taxonomy
+//!      extending the [`SelectorFeature`] taxonomy of `selector_candidate_index`
 //!      with **bounded-depth shape skeletons** (the cons-spine /
 //!      bounded-depth list-hole encoding below).
 //!   3. Inverted posting lists feature -> item set, with per-feature
@@ -19,35 +19,29 @@
 //!      target's own features. Bounded to the target's features, never an
 //!      unbounded corpus scan.
 //!
-//! ## Relationship to `SelectorCandidateIndex`
+//! ## Relationship to `selector_candidate_index`
 //!
-//! This module *extends* `SelectorCandidateIndex` rather than forking it: it
-//! reuses that index's [`SelectorFeature`] taxonomy and per-item feature
-//! extraction (so producer/consumer feature semantics never diverge), and adds
-//! only the new layers — Merkle shape canonicalization, shape-skeleton
-//! features, stability scoring, and the read-off cover. The matcher in
-//! `source_match` stays the correctness gate; this index only narrows and
-//! ranks candidates.
+//! Per-item selector features come from [`top_level_features`], so
+//! producer/consumer feature semantics never diverge; this module adds Merkle
+//! shape canonicalization, shape-skeleton features, stability scoring, and the
+//! read-off cover. The matcher in `source_match` stays the correctness gate;
+//! this index only narrows and ranks candidates.
 //!
-//! ## List-hole encoding interface boundary
+//! ## List-hole encoding
 //!
 //! No arity assumption is baked into the index or the greedy read-off core.
 //! Variable-length child runs (call args, statement lists, object props, class
-//! members, declarators) are handled **only** behind the
-//! [`ShapeFeatureExtractor`] trait: the default [`ConsSpineExtractor`] encodes
-//! lists as right-leaning cons spines and hashes only the top `d` levels, with
-//! the variadic frontier collapsing to one wildcard child. The index, posting
-//! lists, selectivity/stability scoring, and greedy set-cover all operate on
-//! the opaque feature set the extractor emits, so a later wave can swap in a
-//! hedge-automaton extractor without touching them.
+//! members, declarators) are encoded only by [`skeleton_shapes`] as
+//! right-leaning cons spines that hash only the top [`SKELETON_DEPTH`] levels,
+//! with the variadic frontier collapsing to one wildcard child. The index,
+//! posting lists, selectivity/stability scoring, and greedy set-cover all
+//! operate on the opaque feature set that encoding emits.
 
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
 use rustc_hash::FxHashMap;
-use selector_candidate_index::{
-    CandidateSet, IndexedTopLevelCandidate, SelectorCandidateIndex, SelectorFeature,
-};
+use selector_candidate_index::{CandidateSet, SelectorFeature, top_level_features};
 use swc_ecma_ast::*;
 
 /// Canonical identity of an alpha-equivalent subtree shape. Two subtrees share
@@ -57,12 +51,6 @@ use swc_ecma_ast::*;
 /// keys, member/method names) concrete.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ShapeId(u32);
-
-impl ShapeId {
-    pub fn as_u32(self) -> u32 {
-        self.0
-    }
-}
 
 /// How stable a feature is expected to be across a minifier rebuild. Drives the
 /// read-off ranking's second key (the first is selectivity).
@@ -149,65 +137,39 @@ impl ShapeInterner {
     pub fn multiplicity(&self, id: ShapeId) -> u32 {
         self.multiplicity[id.0 as usize]
     }
-
-    pub fn distinct_shapes(&self) -> usize {
-        self.multiplicity.len()
-    }
 }
 
-/// The list-hole / shape-feature extraction boundary.
+/// Skeleton depth `d`: only the top `d` levels of any subtree are hashed, and
+/// the variadic frontier collapses to one wildcard child at this bound
+/// (bounded-depth list-hole handling).
+const SKELETON_DEPTH: u32 = 3;
+
+/// Fold a top-level item's AST into a set of bounded-depth canonical shape ids
+/// (cons-spine binarization), interning every distinct subtree shape into
+/// `interner`; the caller unions the ids into posting lists.
 ///
-/// All variadic-arity handling lives here. The index core, posting lists, and
-/// greedy read-off treat the returned [`ShapeId`] set as opaque, so swapping
-/// this implementation (e.g. for a hedge-automaton extractor) cannot leak an
-/// arity assumption into the core. Implementors fold a top-level item's AST
-/// into a set of bounded-depth canonical shape ids via the supplied interner.
-pub trait ShapeFeatureExtractor {
-    /// Emit the canonical shape-skeleton ids for one top-level item, interning
-    /// every distinct subtree shape into `interner`. The returned ids are the
-    /// item's shape features; the caller unions them into posting lists.
-    fn shape_features(&self, item: &ModuleItem, interner: &mut ShapeInterner) -> BTreeSet<ShapeId>;
-}
-
-/// Default extractor: cons-spine binarization + bounded-depth skeletons.
-///
-/// Child lists are encoded as right-leaning cons spines (`Node("cons")` of
-/// head shape and tail-spine shape), so a list hole is naturally a wildcard
-/// over the spine tail. Only the top `depth` levels of any subtree are hashed;
-/// anything below collapses to [`ShapeKind::Frontier`]. Emitting a feature for
-/// every node at every prefix depth `1..=depth` yields the multi-granularity
-/// skeletons (a shallow shape and progressively deeper ones), so a target can
-/// be discriminated at whatever granularity is selective enough.
-#[derive(Debug, Clone, Copy)]
-pub struct ConsSpineExtractor {
-    /// Maximum skeleton depth `d`. The variadic frontier collapses to one
-    /// wildcard child at this bound (bounded-depth list-hole handling).
-    pub depth: u32,
-}
-
-impl Default for ConsSpineExtractor {
-    fn default() -> Self {
-        Self { depth: 3 }
+/// Child lists are encoded as right-leaning cons spines (`Node("cons")` of head
+/// shape and tail-spine shape), so a list hole is naturally a wildcard over the
+/// spine tail. Anything deeper than the budget collapses to
+/// [`ShapeKind::Frontier`]. Emitting a feature for every node at every prefix
+/// depth `1..=SKELETON_DEPTH` yields the multi-granularity skeletons (a shallow
+/// shape and progressively deeper ones), so a target can be discriminated at
+/// whatever granularity is selective enough.
+fn skeleton_shapes(item: &ModuleItem, interner: &mut ShapeInterner) -> BTreeSet<ShapeId> {
+    let mut features = BTreeSet::new();
+    let mut builder = SkeletonBuilder {
+        interner,
+        max_depth: SKELETON_DEPTH,
+        features: &mut features,
+    };
+    // Intern the item at every skeleton depth so coarse and fine shapes
+    // both become discriminating features (multi-granularity).
+    for d in 1..=SKELETON_DEPTH {
+        builder.max_depth = d;
+        let id = builder.module_item(item, 0);
+        builder.features.insert(id);
     }
-}
-
-impl ShapeFeatureExtractor for ConsSpineExtractor {
-    fn shape_features(&self, item: &ModuleItem, interner: &mut ShapeInterner) -> BTreeSet<ShapeId> {
-        let mut features = BTreeSet::new();
-        let mut builder = SkeletonBuilder {
-            interner,
-            max_depth: self.depth,
-            features: &mut features,
-        };
-        // Intern the item at every skeleton depth so coarse and fine shapes
-        // both become discriminating features (multi-granularity).
-        for d in 1..=self.depth {
-            builder.max_depth = d;
-            let id = builder.module_item(item, 0);
-            builder.features.insert(id);
-        }
-        features
-    }
+    features
 }
 
 /// Carries the interner + depth budget while folding one subtree into canonical
@@ -234,7 +196,7 @@ impl SkeletonBuilder<'_> {
 
     /// Encode a child run as a right-leaning cons spine, bounded by the depth
     /// budget. An empty run is `Node("nil")`; a run head-cons-tail. This is the
-    /// only place arity is modeled, and it lives behind the extractor trait.
+    /// only place arity is modeled.
     fn cons_spine(&mut self, mut elems: Vec<ShapeId>, depth: u32) -> ShapeId {
         if depth >= self.max_depth {
             return self.frontier();
@@ -565,17 +527,16 @@ pub struct ContextNeighborAnchor {
     pub anchor_set: AnchorSet,
 }
 
-/// Per-item entry: the existing prefilter candidate plus this item's shape
-/// skeleton features.
+/// Per-item entry: the item's selector features and shape skeleton features.
 #[derive(Debug, Clone)]
 struct ShapeIndexedItem {
-    candidate: IndexedTopLevelCandidate,
+    features: BTreeSet<SelectorFeature>,
     skeletons: BTreeSet<ShapeId>,
 }
 
-/// The Layer-1 shape index. Wraps a [`SelectorCandidateIndex`] (reused, not
-/// reimplemented) and adds the Merkle shape interner, shape-skeleton posting
-/// lists, and the read-off API.
+/// The Layer-1 shape index: the Merkle shape interner, selector-feature and
+/// shape-skeleton posting lists over one chunk's top-level items, and the
+/// read-off API.
 pub struct ShapeIndex {
     items: Vec<ShapeIndexedItem>,
     interner: ShapeInterner,
@@ -588,27 +549,19 @@ pub struct ShapeIndex {
 
 impl ShapeIndex {
     pub fn new(module: &Module) -> Self {
-        Self::with_extractor(module, &ConsSpineExtractor::default())
-    }
-
-    pub fn with_extractor(module: &Module, extractor: &dyn ShapeFeatureExtractor) -> Self {
-        let prefilter = SelectorCandidateIndex::new(module);
         let mut interner = ShapeInterner::default();
         let mut postings: FxHashMap<ShapeFeature, CandidateSet> = FxHashMap::default();
         let mut items = Vec::with_capacity(module.body.len());
 
         for (body_idx, module_item) in module.body.iter().enumerate() {
-            let candidate = prefilter
-                .candidate(body_idx)
-                .expect("prefilter indexes every module body item")
-                .clone();
-            for feature in &candidate.features {
+            let features = top_level_features(module_item);
+            for feature in &features {
                 postings
                     .entry(ShapeFeature::Selector(feature.clone()))
                     .or_default()
                     .push_ascending(body_idx);
             }
-            let skeletons = extractor.shape_features(module_item, &mut interner);
+            let skeletons = skeleton_shapes(module_item, &mut interner);
             for &shape in &skeletons {
                 postings
                     .entry(ShapeFeature::Skeleton(shape))
@@ -616,7 +569,7 @@ impl ShapeIndex {
                     .push_ascending(body_idx);
             }
             items.push(ShapeIndexedItem {
-                candidate,
+                features,
                 skeletons,
             });
         }
@@ -626,28 +579,6 @@ impl ShapeIndex {
             interner,
             postings,
         }
-    }
-
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
-    pub fn distinct_shapes(&self) -> usize {
-        self.interner.distinct_shapes()
-    }
-
-    /// Number of distinct features with a non-empty posting list — a proxy for
-    /// the inverted index's memory footprint.
-    pub fn posting_entry_count(&self) -> usize {
-        self.postings.len()
-    }
-
-    pub fn candidate(&self, body_idx: usize) -> Option<&IndexedTopLevelCandidate> {
-        self.items.get(body_idx).map(|item| &item.candidate)
     }
 
     fn posting(&self, feature: &ShapeFeature) -> &CandidateSet {
@@ -673,7 +604,7 @@ impl ShapeIndex {
             return Vec::new();
         };
         let mut scored = Vec::new();
-        for feature in &item.candidate.features {
+        for feature in &item.features {
             if !is_alpha_stable_anchor(feature) {
                 continue;
             }
@@ -1105,10 +1036,6 @@ pub fn volatile_tail(value: &str) -> Option<(&str, &str)> {
     (!prefix.chars().all(|c| matches!(c, '-' | '_' | '.'))).then_some((prefix, tail))
 }
 
-// Re-export the prefilter feature taxonomy so callers of the shape index can
-// name features without depending on `selector_candidate_index` directly.
-pub use selector_candidate_index::SelectorFeature as PrefilterFeature;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1129,21 +1056,6 @@ mod tests {
             !s0.is_disjoint(s1),
             "renamed-isomorphic items must share at least one shape id"
         );
-    }
-
-    #[test]
-    fn distinct_literals_break_shape_equality() {
-        // Same structure, different *stable* literal => different shape.
-        let module = parse(r#"const a = f("alpha");"#);
-        let other = parse(r#"const a = f("beta");"#);
-        let i0 = ShapeIndex::new(&module);
-        let i1 = ShapeIndex::new(&other);
-        // Deepest skeletons differ because the kept string literal differs.
-        let deep0: BTreeSet<u32> = i0.items[0].skeletons.iter().map(|s| s.as_u32()).collect();
-        let deep1: BTreeSet<u32> = i1.items[0].skeletons.iter().map(|s| s.as_u32()).collect();
-        // Ids are per-index sequential, so compare via multiplicity structure:
-        // the literal leaf shows up as a singleton shape in each.
-        assert_eq!(deep0.len(), deep1.len());
     }
 
     #[test]

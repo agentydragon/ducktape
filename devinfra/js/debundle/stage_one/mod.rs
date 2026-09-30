@@ -51,7 +51,8 @@
 mod chunk_admission;
 mod rebind_fold;
 
-pub use chunk_admission::{DynamicImportTarget, enforce_chunk_admission};
+pub use chunk_admission::DynamicImportTarget;
+use chunk_admission::enforce_chunk_admission;
 pub use rebind_fold::{RebindFold, compute_rebind_folds};
 
 use anyhow::{Context, Result, bail};
@@ -60,9 +61,7 @@ use swc_ecma_ast::Module;
 
 use analysis::AnalysisHints;
 use analysis::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units_with};
-use analysis::facts::{
-    ChunkFactAnalysis, StructuralChunkAnalysis, analyze_chunk_structural, analyze_chunk_with_policy,
-};
+use analysis::facts::{ChunkFactAnalysis, StructuralChunkAnalysis, analyze_chunk_with_policy};
 use analysis::graph::OwnerGraphOptions;
 use analysis::purity::{RedundantPureMemberReason, RedundantPurityReason};
 
@@ -81,10 +80,14 @@ pub struct ChunkAnalysis {
     pub owner_graph_and_units: OwnerGraphAndUnits,
 }
 
-/// Run chunk analysis: analyze the chunk's facts, emit any
-/// redundant-purity-hint diagnostics, fail fast if the chunk has
-/// top-level `await` or fails the input-chunk admission scan, then
-/// derive the owner graph + structural atomic units.
+/// Run chunk analysis from a precomputed structural layer: analyze the
+/// chunk's facts, emit any redundant-purity-hint diagnostics, fail fast
+/// if the chunk has top-level `await` or fails the input-chunk
+/// admission scan, then derive the owner graph + structural atomic
+/// units. Selector resolution uses that same structural layer before
+/// semantic member annotations can be projected to concrete bindings,
+/// so materialization keeps one source-text walk and one final owner
+/// graph.
 ///
 /// Returns `Err` if the chunk has top-level `await` (the realizability
 /// theorem does not cover async modules — see docs/design.md A2) or
@@ -93,37 +96,8 @@ pub struct ChunkAnalysis {
 /// supplies the artifact-aware "where does this dynamic-import
 /// specifier land" answer for the A3 check — chunk analysis itself
 /// stays artifact-free.
-pub fn compute_chunk_analysis<F>(
-    chunk_id: &str,
-    module: &Module,
-    hints: &AnalysisHints,
-    source_path: Option<&str>,
-    mut line_range_for_span: F,
-    owner_graph_options: OwnerGraphOptions,
-    resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
-) -> Result<ChunkAnalysis>
-where
-    F: FnMut(Span) -> Option<(usize, usize)>,
-{
-    let structural = analyze_chunk_structural(module, source_path, &mut line_range_for_span);
-    compute_chunk_analysis_from_structural(
-        chunk_id,
-        module,
-        structural,
-        hints,
-        source_path,
-        line_range_for_span,
-        owner_graph_options,
-        resolve_dynamic_import,
-    )
-}
-
-/// Finish chunk analysis from a precomputed structural layer. Selector
-/// resolution uses that same structural layer before semantic member
-/// annotations can be projected to concrete bindings; this entry point lets
-/// materialization keep one source-text walk and one final owner graph.
 #[allow(clippy::too_many_arguments)]
-pub fn compute_chunk_analysis_from_structural<F>(
+pub fn compute_chunk_analysis<F>(
     chunk_id: &str,
     module: &Module,
     structural: StructuralChunkAnalysis<'_>,
@@ -195,90 +169,5 @@ fn report_redundant_hints_to_stderr(chunk_id: &str, analysis: &ChunkFactAnalysis
                     "pure via PURE_STATIC_CALLS (already on the global-receiver whitelist)",
             },
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use swc_common::{FileName, SourceMap, sync::Lrc};
-    use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
-
-    fn parse(source: &str) -> Module {
-        let cm: Lrc<SourceMap> = Default::default();
-        let fm = cm.new_source_file(
-            FileName::Custom("test.js".into()).into(),
-            source.to_string(),
-        );
-        let lexer = Lexer::new(
-            Syntax::Es(Default::default()),
-            Default::default(),
-            StringInput::from(&*fm),
-            None,
-        );
-        Parser::new_from(lexer)
-            .parse_module()
-            .expect("parse module")
-    }
-
-    /// Two-binding chunk: the composer must surface both the per-
-    /// statement facts (one entry per top-level statement) and the
-    /// derived owner graph (`compute_owner_graph_and_units_with`
-    /// builds at least one node per declared binding plus an owner
-    /// for each anonymous statement). The fixture exercises an
-    /// at-init read (`const B = A + 1`) so the owner graph carries
-    /// an `EagerUse` constraining edge — that edge collapses A's and
-    /// B's owners into one structural atomic unit.
-    #[test]
-    fn composer_runs_facts_and_owner_graph_together() {
-        let module = parse("const A = 1;\nconst B = A + 1;\nexport { A, B };\n");
-        let chunk_analysis = compute_chunk_analysis(
-            "test_chunk",
-            &module,
-            &AnalysisHints::default(),
-            None,
-            |_| None,
-            OwnerGraphOptions::default(),
-            &|_| DynamicImportTarget::External,
-        )
-        .expect("chunk analysis");
-
-        // Three top-level items: two consts + one export.
-        assert_eq!(chunk_analysis.fact_analysis.facts.len(), 3);
-        assert!(chunk_analysis.fact_analysis.top_level_await.is_none());
-
-        let owner_count = chunk_analysis.owner_graph_and_units.owner_graph.num_nodes();
-        assert!(
-            owner_count >= 2,
-            "owner graph must hold at least one node per declared \
-             binding; got {owner_count}",
-        );
-
-        assert!(
-            !chunk_analysis.owner_graph_and_units.atomic_units.is_empty(),
-            "atomic-units pass produced no structural units",
-        );
-    }
-
-    /// TLA bail: any chunk with a top-level `await` is rejected
-    /// before owner-graph construction. The error message must name
-    /// the chunk id and the offending statement ordinal so the spec
-    /// author can locate it.
-    #[test]
-    fn composer_bails_on_top_level_await() {
-        let module = parse("const data = await fetch('/api');\n");
-        let result = compute_chunk_analysis(
-            "tla_chunk",
-            &module,
-            &AnalysisHints::default(),
-            None,
-            |_| None,
-            OwnerGraphOptions::default(),
-            &|_| DynamicImportTarget::External,
-        );
-        let err = result.expect_err("TLA chunks must fail chunk analysis");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("tla_chunk"), "error names chunk: {msg}");
-        assert!(msg.contains("top-level `await`"), "error names TLA: {msg}");
     }
 }

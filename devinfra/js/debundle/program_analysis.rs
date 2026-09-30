@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use swc_common::Spanned;
 use swc_ecma_ast::*;
@@ -61,10 +61,10 @@ fn worker_relative_specifier(node: &NewExpr) -> Option<String> {
 
 pub struct ProgramAnalysis {
     pub imports: Vec<ImportRecord>,
-    pub import_by_local_name: HashMap<String, ImportSpecifierRecord>,
+    pub import_local_names: HashSet<String>,
     pub export_aliases: Vec<ExportAliasRecord>,
     pub owners: Vec<OwnerRecord>,
-    pub side_effects: Vec<SideEffectRecord>,
+    pub side_effect_count: usize,
     pub dynamic_import_count: usize,
     pub observable_module_effect: bool,
     /// True when the module body contains any specifier that the
@@ -79,10 +79,8 @@ pub struct ProgramAnalysis {
 }
 
 pub struct OwnerRecord {
-    pub id: String,
     pub line: Option<usize>,
     pub names: Vec<String>,
-    pub ordinal: usize,
     pub kind: TopLevelDeclarationKind,
 }
 
@@ -114,18 +112,13 @@ fn classify_top_level_decl(item: &ModuleItem) -> Option<(TopLevelDeclarationKind
     }
 }
 
-pub struct SideEffectRecord {
-    pub id: String,
-    pub ordinal: usize,
-}
-
 pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
     let line_index = parsed.line_index();
     let mut imports = Vec::new();
-    let mut import_by_local_name = HashMap::new();
+    let mut import_local_names = HashSet::new();
     let mut export_aliases = Vec::new();
     let mut owners = Vec::new();
-    let mut side_effects = Vec::new();
+    let mut side_effect_count = 0;
     // Fused module-level walk: collects everything that previously
     // required a separate `visit_with` over the whole module
     // (dynamic-import count, observable top-level effects,
@@ -140,14 +133,15 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         has_rewritable_specifier,
     } = module_scan;
 
-    for (ordinal, item) in parsed.module.body.iter().enumerate() {
+    for item in &parsed.module.body {
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(decl)) = item {
-            let import_record = describe_import(&line_index, decl, imports.len());
-            for specifier in &import_record.specifiers {
-                let mut specifier = specifier.clone();
-                specifier.source = Some(import_record.source.clone());
-                import_by_local_name.insert(specifier.local.clone(), specifier);
-            }
+            let import_record = describe_import(&line_index, decl);
+            import_local_names.extend(
+                import_record
+                    .specifiers
+                    .iter()
+                    .map(|specifier| specifier.local.clone()),
+            );
             imports.push(import_record);
             continue;
         }
@@ -192,27 +186,22 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
 
         if let Some((kind, names)) = classify_top_level_decl(item) {
             owners.push(OwnerRecord {
-                id: format!("owner_{:05}", owners.len()),
                 line: item_line(&line_index, item),
                 names,
-                ordinal,
                 kind,
             });
             continue;
         }
 
-        side_effects.push(SideEffectRecord {
-            id: format!("side_effect_{:05}", side_effects.len()),
-            ordinal,
-        });
+        side_effect_count += 1;
     }
 
     ProgramAnalysis {
         imports,
-        import_by_local_name,
+        import_local_names,
         export_aliases,
         owners,
-        side_effects,
+        side_effect_count,
         dynamic_import_count,
         observable_module_effect,
         has_rewritable_specifier,
@@ -234,7 +223,7 @@ pub fn build_chunk_manifest_from_analysis(
                     .owners
                     .iter()
                     .any(|owner| owner.names.contains(local))
-                    && !analysis.import_by_local_name.contains_key(local)
+                    && !analysis.import_local_names.contains(local)
             })
         })
         .cloned()
@@ -243,7 +232,6 @@ pub fn build_chunk_manifest_from_analysis(
         .owners
         .iter()
         .map(|owner| KeptTopLevelDeclarationRecord {
-            id: owner.id.clone(),
             line: owner.line,
             names: owner.names.clone(),
             kind: owner.kind,
@@ -261,7 +249,7 @@ pub fn build_chunk_manifest_from_analysis(
             kept_top_level_declaration_owners: analysis.owners.len(),
             top_level_bindings: analysis.owners.iter().map(|owner| owner.names.len()).sum(),
             top_level_declaration_owners: analysis.owners.len(),
-            top_level_side_effects: analysis.side_effects.len(),
+            top_level_side_effects: analysis.side_effect_count,
             unresolved_exports: unresolved_exports.len(),
         },
         files: vec![ChunkFileRecord {
@@ -275,10 +263,9 @@ pub fn build_chunk_manifest_from_analysis(
     }
 }
 
-fn describe_import(line_index: &SourceLineIndex, decl: &ImportDecl, index: usize) -> ImportRecord {
+fn describe_import(line_index: &SourceLineIndex, decl: &ImportDecl) -> ImportRecord {
     let source = str_value(&decl.src);
     ImportRecord {
-        id: format!("import_{index:05}"),
         line: line_index.line_for_span(decl.span),
         source,
         specifiers: decl
@@ -289,13 +276,11 @@ fn describe_import(line_index: &SourceLineIndex, decl: &ImportDecl, index: usize
                     kind: ImportSpecifierKind::Default,
                     imported: None,
                     local: default.local.sym.to_string(),
-                    source: None,
                 },
                 ImportSpecifier::Namespace(namespace) => ImportSpecifierRecord {
                     kind: ImportSpecifierKind::Namespace,
                     imported: None,
                     local: namespace.local.sym.to_string(),
-                    source: None,
                 },
                 ImportSpecifier::Named(named) => ImportSpecifierRecord {
                     kind: ImportSpecifierKind::Named,
@@ -307,7 +292,6 @@ fn describe_import(line_index: &SourceLineIndex, decl: &ImportDecl, index: usize
                             .unwrap_or_else(|| named.local.sym.to_string()),
                     ),
                     local: named.local.sym.to_string(),
-                    source: None,
                 },
             })
             .collect(),
