@@ -1,6 +1,6 @@
-//! Incremental quotient maintenance: `PartitionDelta` journaling,
-//! the `QuotientOverlay` scratch layer, and the `IncrementalQuotient`
-//! the `RealizabilityIndex` queries. Split from `realizability/mod.rs`.
+//! Incremental quotient maintenance: `PartitionDelta`, the
+//! `QuotientOverlay` scratch layer, and the `IncrementalQuotient` the
+//! `RealizabilityIndex` queries. Split from `realizability/mod.rs`.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,7 +11,7 @@ use analysis::ids::ModuleId;
 use analysis::partition::Partition;
 use analysis::reports::SccCore;
 
-use crate::rollback_graph::{GraphMark, RollbackDiGraph};
+use crate::rollback_graph::RollbackDiGraph;
 
 use super::condensation_order::CondensationOrder;
 use super::esm_simulator::EsmEvaluationSimulator;
@@ -20,33 +20,13 @@ use super::{
     overlay_is_simulator_noop,
 };
 
-/// A reversible mutation of a `Partition`. Planner checks can construct
-/// deltas to describe hypothetical or actual destination assignments; the
-/// index applies and reverts them.
+/// A mutation of a `Partition` that `RealizabilityIndex::apply`
+/// commits to the index.
 #[derive(Debug, Clone)]
 pub enum PartitionDelta {
     /// Reassign every owner in `owners` to `to`. Owners not in the
-    /// list keep their current assignment. Owners already at `to` are
-    /// no-ops but recorded for journal symmetry.
+    /// list keep their current assignment.
     MoveOwners { owners: Vec<OwnerId>, to: ModuleId },
-}
-
-/// Opaque handle returned by `push`. Passing it to `undo` rolls back
-/// to the state before the corresponding push. Handles must be undone
-/// in LIFO order — the journal is a stack — and `undo` panics in
-/// debug builds on misuse so caller bugs surface early instead of
-/// silently corrupting the index.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct DeltaHandle(pub(super) usize);
-
-/// Inverse of a `MoveOwners` delta: the prior `(owner, module)` pairs
-/// so `undo` can restore them.
-#[derive(Debug, Clone)]
-pub(super) struct JournalEntry {
-    pub(super) prior_assignments: Vec<(OwnerId, ModuleId)>,
-    pub(super) impacted_edges: Vec<OwnerEdgeId>,
-    pub(super) i_graph_mark: GraphMark,
-    pub(super) constraining_graph_mark: GraphMark,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -466,10 +446,9 @@ pub(super) struct IncrementalQuotient {
     /// Tier-1 structure of the gate ladder (plan §3/§4): SCC
     /// condensation order maintained over `constraining_graph`.
     /// Updated in the same `add_current_edge` / `remove_current_edge`
-    /// funnel that maintains the graph; invalidated (lazy rebuild) by
-    /// `rollback_graphs` — undo is off the hot path. `RefCell` because
-    /// queries need `&mut` (path halving, lazy rebuild) while the
-    /// verdict/ladder API is `&self`, matching the simulator caches.
+    /// funnel that maintains the graph. `RefCell` because queries need
+    /// `&mut` (path halving, lazy rebuild) while the verdict/ladder
+    /// API is `&self`, matching the simulator caches.
     pub(super) constraining_order: RefCell<CondensationOrder<ModuleId>>,
     /// Tier-2 structure: the same condensation order over `i_graph`.
     pub(super) i_order: RefCell<CondensationOrder<ModuleId>>,
@@ -498,7 +477,7 @@ impl IncrementalQuotient {
             cached_touching_clean: RefCell::new(BTreeMap::new()),
         };
         for edge in owner_graph.iter_edges() {
-            quotient.add_current_edge(edge, partition, true);
+            quotient.add_current_edge(edge, partition);
         }
         quotient
     }
@@ -581,28 +560,10 @@ impl IncrementalQuotient {
         })
     }
 
-    pub(super) fn marks(&self) -> (GraphMark, GraphMark) {
-        (self.i_graph.mark(), self.constraining_graph.mark())
-    }
-
-    pub(super) fn rollback_graphs(&mut self, i_mark: GraphMark, constraining_mark: GraphMark) {
-        self.i_graph.rollback_to(i_mark);
-        self.constraining_graph.rollback_to(constraining_mark);
-        // Out-of-band base mutation for the condensation orders (the
-        // undo path): invalidate + lazy rebuild on the next query
-        // instead of journaled rollback — undo is off the hot path
-        // everywhere (plan §4, journal interaction).
-        self.constraining_order.get_mut().invalidate();
-        self.i_order.get_mut().invalidate();
-        // Graph topology just changed; drop the cached simulator.
-        self.invalidate_cached_simulator();
-    }
-
     pub(super) fn add_current_edge(
         &mut self,
         edge: &analysis::graph::OwnerEdge,
         partition: &Partition,
-        update_graphs: bool,
     ) {
         // Gate-side view: keep cross-module at-init promoted edges.
         // See [`analysis::graph::partition_endpoints`] for why and
@@ -633,19 +594,15 @@ impl IncrementalQuotient {
         // I-graph or constraining-bucket mutation invalidates the
         // cached base simulator.
         self.invalidate_cached_simulator();
-        if update_graphs {
-            self.i_graph.increment_edge(from, to);
-            self.i_order.get_mut().insert_edge(&self.i_graph, from, to);
-        }
+        self.i_graph.increment_edge(from, to);
+        self.i_order.get_mut().insert_edge(&self.i_graph, from, to);
         if !edge.reason.constrains_init_order() {
             return;
         }
-        if update_graphs {
-            self.constraining_graph.increment_edge(from, to);
-            self.constraining_order
-                .get_mut()
-                .insert_edge(&self.constraining_graph, from, to);
-        }
+        self.constraining_graph.increment_edge(from, to);
+        self.constraining_order
+            .get_mut()
+            .insert_edge(&self.constraining_graph, from, to);
         let bucket = self.constraining_buckets.entry((from, to)).or_default();
         bucket.insert_edge(edge.id, edge.reason.is_sequenced());
     }
@@ -654,7 +611,6 @@ impl IncrementalQuotient {
         &mut self,
         edge: &analysis::graph::OwnerEdge,
         partition: &Partition,
-        update_graphs: bool,
     ) {
         // Gate-side view: keep cross-module at-init promoted edges.
         // Must mirror `add_current_edge` (see
@@ -677,19 +633,15 @@ impl IncrementalQuotient {
         // I-graph or constraining-bucket mutation invalidates the
         // cached base simulator.
         self.invalidate_cached_simulator();
-        if update_graphs {
-            self.i_graph.decrement_edge(from, to);
-            self.i_order.get_mut().remove_edge(&self.i_graph, from, to);
-        }
+        self.i_graph.decrement_edge(from, to);
+        self.i_order.get_mut().remove_edge(&self.i_graph, from, to);
         if !edge.reason.constrains_init_order() {
             return;
         }
-        if update_graphs {
-            self.constraining_graph.decrement_edge(from, to);
-            self.constraining_order
-                .get_mut()
-                .remove_edge(&self.constraining_graph, from, to);
-        }
+        self.constraining_graph.decrement_edge(from, to);
+        self.constraining_order
+            .get_mut()
+            .remove_edge(&self.constraining_graph, from, to);
         let pair = (from, to);
         let mut remove_bucket = false;
         if let Some(bucket) = self.constraining_buckets.get_mut(&pair) {

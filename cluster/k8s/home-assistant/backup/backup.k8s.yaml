@@ -1,36 +1,4 @@
 apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  name: home-assistant-backups
-  namespace: home-assistant
-spec:
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: home-assistant-backups
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: home-assistant
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: home-assistant
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: home-assistant
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:
   annotations:
@@ -53,10 +21,21 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Credentials
+kind: S3Identity
 metadata:
   annotations:
-    description: Home Assistant's tenant-local SeaweedFS backup credentials.
+    description: Home Assistant's tenant-local SeaweedFS backup bucket.
+  name: home-assistant-backups
+  namespace: home-assistant
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
   name: home-assistant-backups
   namespace: home-assistant
 spec:

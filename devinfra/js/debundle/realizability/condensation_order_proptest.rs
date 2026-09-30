@@ -1,8 +1,8 @@
 //! Proptest differential suite for [`CondensationOrder`]: random
 //! digraphs driven through proptest-generated interleaved sequences of
-//! edge insertions / removals / invalidations with speculative overlay
-//! queries, checked **after every operation** against a petgraph
-//! `tarjan_scc` brute-force recompute (the shared reference in
+//! edge insertions / removals with speculative overlay queries,
+//! checked **after every operation** against a petgraph `tarjan_scc`
+//! brute-force recompute (the shared reference in
 //! `condensation_order::test_support`).
 //!
 //! The case count is bounded for CI (see [`ci_config`]); for a longer
@@ -28,7 +28,6 @@ const NODES: usize = 8;
 enum Op {
     InsertEdge(usize, usize),
     RemoveEdge(usize, usize),
-    Invalidate,
 }
 
 /// Speculative overlay entry: `remove` zeroes the base edge's
@@ -59,7 +58,6 @@ fn arb_op() -> impl Strategy<Value = Op> {
     prop_oneof![
         4 => (arb_node(), arb_node()).prop_map(|(a, b)| Op::InsertEdge(a, b)),
         3 => (arb_node(), arb_node()).prop_map(|(a, b)| Op::RemoveEdge(a, b)),
-        1 => Just(Op::Invalidate),
     ]
 }
 
@@ -144,7 +142,6 @@ proptest! {
                         order.remove_edge(&base, a, b);
                     }
                 }
-                Op::Invalidate => order.invalidate(),
             }
             let context = format!("step {step_index}: {:?}", step.op);
             for n in 0..NODES {

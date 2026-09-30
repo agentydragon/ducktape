@@ -16,8 +16,8 @@ use crate::quotient::testing::{
     PartitionGroup, greedy_merge_to_convergence_full_scan, module_group,
 };
 use crate::quotient::{
-    ClassId, OwnerIdx, QuotientGraph, SeedContractionRejected, SpecModuleGroup,
-    build_seed_quotient, greedy_merge_to_convergence,
+    ClassId, CycleClassSet, CycleEvidence, OwnerIdx, QuotientGraph, SeedContractionRejected,
+    SpecModuleGroup, build_seed_quotient, greedy_merge_to_convergence,
 };
 
 // ---------- Tests. ----------
@@ -433,6 +433,62 @@ fn seed_rejection_diagnostic_is_canonical() {
     assert_eq!(
         json_a, json_b,
         "rejection diagnostic must be byte-identical across runs",
+    );
+}
+
+#[test]
+fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
+    // Two independent mutual-eager module pairs, (c, d) before (a, b)
+    // in the report. Every spec module is one owner, so no seed
+    // contraction is refused and only the post-seed gate sees the
+    // cycles. The report orders them by owner ids, not by class ids.
+    let owners = [
+        active_owner("owner:c", 1, &["BindingC"], 5, "mod_c"),
+        active_owner("owner:d", 2, &["BindingD"], 5, "mod_d"),
+        active_owner("owner:a", 3, &["BindingA"], 5, "mod_a"),
+        active_owner("owner:b", 4, &["BindingB"], 5, "mod_b"),
+    ];
+    let edges = vec![
+        owner_edge("edge:0", "owner:c", "owner:d", DepKind::EagerUse, true),
+        owner_edge("edge:1", "owner:d", "owner:c", DepKind::EagerUse, true),
+        owner_edge("edge:2", "owner:a", "owner:b", DepKind::EagerUse, true),
+        owner_edge("edge:3", "owner:b", "owner:a", DepKind::EagerUse, true),
+    ];
+    let units = owners
+        .iter()
+        .enumerate()
+        .map(|(i, owner)| atomic_unit_for(&format!("atomic:{i}"), &[owner]))
+        .collect();
+    let spec: Vec<SpecModuleGroup> = owners
+        .iter()
+        .map(|owner| SpecModuleGroup {
+            module_id: owner.destination.as_str().to_string(),
+            owner_ids: vec![owner.id.clone()],
+        })
+        .collect();
+    let report = graph_of(owners.to_vec(), edges, units, vec![]);
+
+    let (_q, rejected) =
+        build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
+
+    let scc = |owner_ids: [&str; 2], classes: [usize; 2]| {
+        let owner_ids = owner_ids.map(String::from).to_vec();
+        SeedContractionRejected::PostSeedUnrealizableScc {
+            owner_ids: owner_ids.clone(),
+            cycle: CycleEvidence {
+                cycles: vec![CycleClassSet {
+                    classes: classes.map(ClassId).to_vec(),
+                    owner_ids,
+                }],
+            },
+        }
+    };
+    assert_eq!(
+        rejected,
+        vec![
+            scc(["owner:a", "owner:b"], [2, 3]),
+            scc(["owner:c", "owner:d"], [0, 1]),
+        ],
     );
 }
 

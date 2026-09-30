@@ -48,7 +48,6 @@ _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
 _NAME = "forgejo"
 _NAMESPACE = "forgejo"
 HOSTNAME = "git.allegedly.works"
-_S3_CREDENTIALS = SecretRef(namespace=_NAMESPACE, name="forgejo-s3-credentials")
 _METRICS_TOKEN = SecretRef(namespace=_NAMESPACE, name="forgejo-metrics-token").key("token")
 _GIT_CLAIM = "forgejo-git-rwx-ssd"
 _RELEASE_LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/instance": _NAME}
@@ -92,22 +91,15 @@ def _git_storage(scope: Construct) -> None:
     )
 
 
-def _object_storage(scope: Construct) -> None:
-    bucket = s3.Bucket(
+def _object_storage(scope: Construct) -> s3.PrivateBucket:
+    return s3.PrivateBucket(
         scope,
-        "bucket",
+        "object-storage",
         name=_NAME,
-        namespace=_NAMESPACE,
+        tenant=_NAMESPACE,
         adopt_existing=True,
         description="Forgejo packages, LFS, attachments, and artifacts.",
-    )
-    identity = s3.Identity(scope, "identity", name=_NAME, namespace=_NAMESPACE)
-    bucket.grant_read_write(identity)
-    identity.credentials(
-        namespace=_NAMESPACE,
-        secret=_S3_CREDENTIALS.name,
         key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
-        description="Forgejo's SeaweedFS S3 credentials.",
     )
 
 
@@ -125,7 +117,7 @@ def _metrics_token(scope: Construct) -> None:
     )
 
 
-def _values() -> dict[str, object]:
+def _values(storage: s3.PrivateBucket) -> dict[str, object]:
     return {
         "global": {"imageRegistry": ""},
         # HA: two replicas sharing the RWX git PVC. Both pods mount the same SeaweedFS
@@ -255,8 +247,8 @@ def _values() -> dict[str, object]:
             # namespace. FORGEJO__ is the chart's env -> app.ini prefix.
             "additionalConfigFromEnvs": [
                 _METRICS_TOKEN.env_var("FORGEJO__metrics__TOKEN"),
-                _S3_CREDENTIALS.key("accessKey").env_var("FORGEJO__storage__MINIO_ACCESS_KEY_ID"),
-                _S3_CREDENTIALS.key("secretKey").env_var("FORGEJO__storage__MINIO_SECRET_ACCESS_KEY"),
+                storage.access_key.env_var("FORGEJO__storage__MINIO_ACCESS_KEY_ID"),
+                storage.secret_key.env_var("FORGEJO__storage__MINIO_SECRET_ACCESS_KEY"),
             ],
         },
         # Trust cluster CA bundle (includes Let's Encrypt staging CA)
@@ -320,7 +312,7 @@ def _values() -> dict[str, object]:
     }
 
 
-def _helm_release(scope: Construct) -> None:
+def _helm_release(scope: Construct, *, storage: s3.PrivateBucket) -> None:
     helm_release(
         scope,
         _NAME,
@@ -344,7 +336,7 @@ def _helm_release(scope: Construct) -> None:
                 target_path="gitea.config.database.PASSWD",
             )
         ],
-        values=_values(),
+        values=_values(storage),
     )
 
 
@@ -407,7 +399,7 @@ def _ssh_listener(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    _helm_release(chart)
+    _helm_release(chart, storage=_object_storage(chart))
     https_route(
         chart,
         "route",
@@ -431,7 +423,6 @@ def chart(app: App) -> Chart:
             min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=_RELEASE_LABELS)
         ),
     )
-    _object_storage(chart)
     ServiceMonitor(
         chart,
         "service-monitor",

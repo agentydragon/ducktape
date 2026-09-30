@@ -722,11 +722,6 @@ spec:
       name: seaweedfs-pr-visuals-bucket
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/seaweedfs/registry-cache-bucket/**"
-          to: "@artifact/cluster/generated/seaweedfs/registry-cache-bucket/"
-      name: seaweedfs-registry-cache-bucket
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/k8s/ssh-mcp/**"
           to: "@artifact/cluster/k8s/ssh-mcp/"
       name: ssh-mcp

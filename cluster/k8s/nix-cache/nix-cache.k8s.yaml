@@ -55,6 +55,8 @@ spec:
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:
+  annotations:
+    description: attic's NAR chunks; replicated per volume by the SeaweedFS cluster's defaultReplication.
   name: attic
   namespace: nix-cache
 spec:
@@ -70,31 +72,13 @@ spec:
     name: seaweedfs
     namespace: seaweedfs
   name: attic
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: nix-cache
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: nix-cache
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: nix-cache
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: nix-cache
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
+  reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
+  annotations:
+    description: attic's NAR chunks; replicated per volume by the SeaweedFS cluster's defaultReplication.
   name: attic
   namespace: nix-cache
 spec:

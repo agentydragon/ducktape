@@ -1,3 +1,55 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Forgejo packages, LFS, attachments, and artifacts.
+  name: forgejo
+  namespace: forgejo
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: forgejo
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: forgejo
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Forgejo packages, LFS, attachments, and artifacts.
+  name: forgejo
+  namespace: forgejo
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  identityRef:
+    name: forgejo
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: accessKey
+    name: forgejo-s3-credentials
+    secretKeyField: secretKey
+---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -228,79 +280,6 @@ spec:
     matchLabels:
       app.kubernetes.io/instance: forgejo
       app.kubernetes.io/name: forgejo
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: Bucket
-metadata:
-  annotations:
-    description: Forgejo packages, LFS, attachments, and artifacts.
-  name: forgejo
-  namespace: forgejo
-spec:
-  access:
-    - actions:
-        - Read
-        - Write
-        - List
-        - Tagging
-      user: forgejo
-  adoptExisting: true
-  clusterRef:
-    name: seaweedfs
-    namespace: seaweedfs
-  name: forgejo
-  reclaimPolicy: Retain
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: forgejo
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: forgejo
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: forgejo
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: forgejo
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  name: forgejo
-  namespace: forgejo
-spec:
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Credentials
-metadata:
-  annotations:
-    description: Forgejo's SeaweedFS S3 credentials.
-  name: forgejo
-  namespace: forgejo
-spec:
-  identityRef:
-    name: forgejo
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
-  secretRef:
-    accessKeyField: accessKey
-    name: forgejo-s3-credentials
-    secretKeyField: secretKey
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

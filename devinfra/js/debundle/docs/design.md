@@ -492,10 +492,12 @@ The predicate has two forms:
    partition; a non-empty verdict stops materialization.
 2. **`RealizabilityIndex`**, a stateful index over a working partition for
    callers that ask many hypothetical questions — the peel kernel
-   (`peel/quotient.rs`). A push of a `PartitionDelta` updates quotient edge
-   buckets and graph adjacency only for the owner edges incident to the moved
-   owners, and speculative moves are answered through a non-mutating overlay
-   of the same state.
+   (`peel/quotient.rs`). Its only mutator, `apply`, commits a
+   `PartitionDelta`, updating quotient edge buckets and graph adjacency only
+   for the owner edges incident to the moved owners. Speculative moves never
+   mutate it: they go through a non-mutating overlay of the same state, since
+   the `CondensationOrder` union-find cannot be rolled back and reverting a
+   move that merged SCCs costs an `O(|V| + |E|)` rebuild.
 
 Differential tests (`realizability/tests.rs`,
 `peel/gate_differential_test.rs`) assert that the two forms agree.
@@ -526,7 +528,7 @@ asymmetric `(eager forward, lazy back)` I-cycles that the
    (and not anchored to an existing module) share the residual
    `ModuleId::logical(0)`. Every committed mutation — `contract`, the
    `is_pre_existing_module` promotion in `set_class_pre_existing_module` —
-   pushes the matching `PartitionDelta::MoveOwners` onto the index.
+   applies the matching `PartitionDelta::MoveOwners` to the index.
 3. The speculative queries — the boolean `merge_preserves_invariants` and the
    evidence-producing `would_be_cycles_after_contract` — are one evaluation
    through the index's tier ladder (below). `realizability_verdict()` reads the

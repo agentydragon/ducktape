@@ -366,6 +366,7 @@ py_library(
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -473,7 +474,6 @@ py_library(
         "//cluster/cdk8s/providers/volsync:replicationsource",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
-        "@pypi//constructs",
     ],
 )
 
@@ -1775,7 +1775,6 @@ py_library(
         "//cluster/cdk8s/seaweedfs:operator_release",
         "//cluster/cdk8s/seaweedfs:pr_visuals_bucket",
         "//cluster/cdk8s/seaweedfs:public_s3",
-        "//cluster/cdk8s/seaweedfs:registry_cache_bucket",
         "//cluster/cdk8s/seaweedfs_csi:driver",
         "//cluster/cdk8s/snapshot_controller:flux_kustomizations",
         "//cluster/cdk8s/ssh_mcp:config",

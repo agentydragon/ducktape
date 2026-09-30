@@ -10,37 +10,29 @@ metadata:
   name: loki
 spec: {}
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
+apiVersion: v1
+kind: Secret
 metadata:
-  name: loki
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Merge
+  name: loki-s3-credentials
   namespace: loki
-spec:
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
+type: Opaque
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: ResourceReferenceGrant
 metadata:
-  name: loki
-  namespace: seaweedfs
+  name: loki-s3-credentials
+  namespace: loki
 spec:
   from:
     - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: loki
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: loki
-    - group: seaweed.seaweedfs.com
       kind: S3Credentials
-      namespace: loki
+      namespace: seaweedfs
   to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
+    - group: ""
+      kind: Secret
+      name: loki-s3-credentials
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
@@ -65,10 +57,21 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Credentials
+kind: S3Identity
 metadata:
   annotations:
-    description: Loki's tenant-local SeaweedFS credentials.
+    description: Loki chunks, ruler, and admin objects.
+  name: loki
+  namespace: loki
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
   name: loki
   namespace: loki
 spec:
@@ -82,6 +85,41 @@ spec:
     accessKeyField: AWS_ACCESS_KEY_ID
     name: loki-seaweedfs-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: loki
+  namespace: seaweedfs
+spec:
+  identityRef:
+    name: loki
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: loki-s3-credentials
+    namespace: loki
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: loki
+  namespace: seaweedfs
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: loki
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: loki
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

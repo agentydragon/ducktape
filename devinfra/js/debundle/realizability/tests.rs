@@ -481,130 +481,40 @@ fn single_module_is_always_realizable() {
     assert!(verdict.is_realizable());
 }
 
-/// Pushing a delta on the index and reading the verdict matches
-/// the pure function on the post-push partition. Undo restores the
-/// pre-push verdict exactly.
-#[test]
-fn index_push_undo_roundtrips_verdict() {
-    let source = "const a = b + 1; const b = a + 1;";
-    let owner_graph = parse_and_build(source);
-
-    let baseline = Partition::new(&owner_graph, module_id(0));
-    let baseline_verdict = check_realizability(&owner_graph, &baseline);
-    assert!(baseline_verdict.is_realizable());
-
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
-    let handle = index.push(
-        &owner_graph,
+/// Verdict touching `to` after committing the move on a copy of
+/// `index`: the incrementally maintained reference for the overlay
+/// query, which must agree with it without mutating the index.
+fn verdict_touching_after_applying_move(
+    index: &RealizabilityIndex,
+    owner_graph: &OwnerGraph,
+    owners: &[OwnerId],
+    to: ModuleId,
+) -> RealizabilityVerdict {
+    let mut moved = index.clone();
+    moved.apply(
+        owner_graph,
         PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
+            owners: owners.to_vec(),
+            to,
         },
     );
-    // After push: matches the explicitly-built post-delta partition.
-    let mut hypothetical = baseline.clone();
-    hypothetical.set(OwnerId(1), module_id(1));
-    let hypothetical_verdict = check_realizability(&owner_graph, &hypothetical);
-    assert_eq!(
-        index.verdict().unrealizable_sccs.len(),
-        hypothetical_verdict.unrealizable_sccs.len(),
-    );
-    assert!(!index.verdict().is_realizable());
-
-    index.undo(&owner_graph, handle);
-    // After undo: matches the baseline exactly.
-    assert!(index.verdict().is_realizable());
-    for owner_id in 0..owner_graph.num_nodes() {
-        assert_eq!(
-            index.partition().of(OwnerId(owner_id)),
-            baseline.of(OwnerId(owner_id)),
-            "partition slot {owner_id} should be restored by undo",
-        );
-    }
+    moved.verdict_touching(to)
 }
 
 #[test]
-fn duplicate_owner_ids_are_journaled_once() {
-    let source = "const a = 1; const b = a + 1;";
-    let owner_graph = parse_and_build(source);
-    let baseline = Partition::new(&owner_graph, module_id(0));
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
-
-    let handle = index.push(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1), OwnerId(1)],
-            to: module_id(1),
-        },
-    );
-    assert_eq!(index.partition().of(OwnerId(1)), module_id(1));
-
-    index.undo(&owner_graph, handle);
-    assert_eq!(index.partition().of(OwnerId(1)), baseline.of(OwnerId(1)));
-    assert_eq!(
-        normalize_verdict(index.verdict()),
-        normalize_verdict(check_realizability(&owner_graph, &baseline)),
-    );
-}
-
-#[test]
-fn commit_drops_journal_state_and_index_stays_queryable() {
-    let source = "const a = 1; const b = a + 1;";
-    let owner_graph = parse_and_build(source);
-    let baseline = Partition::new(&owner_graph, module_id(0));
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
-
-    // Permanent push (the commit_merge shape: no matching undo).
-    index.push(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        },
-    );
-    let committed = normalize_verdict(index.verdict());
-    index.commit();
-
-    // Committed state is intact, and subsequent scoped
-    // speculative work (push + undo) still balances correctly
-    // against the new journal baseline.
-    assert_eq!(index.partition().of(OwnerId(1)), module_id(1));
-    assert_eq!(normalize_verdict(index.verdict()), committed);
-    index.scoped(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(0)],
-            to: module_id(2),
-        },
-        |idx| idx.verdict(),
-    );
-    assert_eq!(normalize_verdict(index.verdict()), committed);
-    assert!(
-        index.journal.is_empty(),
-        "scoped work must not leak entries"
-    );
-}
-
-#[test]
-fn move_overlay_matches_scoped_verdict_touching() {
+fn move_overlay_matches_applied_verdict_touching() {
     let source = "const a = b + 1; const b = a + 1;";
     let owner_graph = parse_and_build(source);
     let baseline = Partition::new(&owner_graph, module_id(0));
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
+    let index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
     let before = normalize_verdict(index.verdict());
 
     let overlay =
         index.verdict_after_moving_owners_touching(&owner_graph, &[OwnerId(1)], module_id(1));
-    let scoped = index.scoped(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        },
-        |idx| idx.verdict_touching(module_id(1)),
-    );
+    let applied =
+        verdict_touching_after_applying_move(&index, &owner_graph, &[OwnerId(1)], module_id(1));
 
-    assert_eq!(normalize_verdict(overlay), normalize_verdict(scoped));
+    assert_eq!(normalize_verdict(overlay), normalize_verdict(applied));
     assert_eq!(
         normalize_verdict(index.verdict()),
         before,
@@ -614,26 +524,20 @@ fn move_overlay_matches_scoped_verdict_touching() {
 }
 
 #[test]
-fn move_overlay_reports_cross_rebinds_like_scoped_verdict() {
+fn move_overlay_reports_cross_rebinds_like_applied_verdict() {
     let source = "let a = 0; function b() { a = 1; }";
     let owner_graph = parse_and_build(source);
     let baseline = Partition::new(&owner_graph, module_id(0));
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
+    let index = RealizabilityIndex::from_partition(&owner_graph, baseline);
 
     let overlay =
         index.verdict_after_moving_owners_touching(&owner_graph, &[OwnerId(1)], module_id(1));
-    let scoped = index.scoped(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        },
-        |idx| idx.verdict_touching(module_id(1)),
-    );
+    let applied =
+        verdict_touching_after_applying_move(&index, &owner_graph, &[OwnerId(1)], module_id(1));
 
     assert_eq!(
         normalize_verdict(overlay.clone()),
-        normalize_verdict(scoped)
+        normalize_verdict(applied)
     );
     assert!(overlay.unrealizable_sccs.is_empty());
     assert_eq!(overlay.cross_rebinds.len(), 1);
@@ -649,113 +553,54 @@ fn move_overlay_masks_removed_current_edges() {
     baseline.set(OwnerId(2), module_id(3));
     let mut explicit = baseline.clone();
     explicit.set(OwnerId(1), module_id(4));
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
+    let index = RealizabilityIndex::from_partition(&owner_graph, baseline);
 
     let overlay =
         index.verdict_after_moving_owners_touching(&owner_graph, &[OwnerId(1)], module_id(4));
-    let scoped = index.scoped(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(4),
-        },
-        |idx| idx.verdict_touching(module_id(4)),
-    );
+    let applied =
+        verdict_touching_after_applying_move(&index, &owner_graph, &[OwnerId(1)], module_id(4));
     let pure = filter_verdict_touching(&check_realizability(&owner_graph, &explicit), module_id(4));
 
     assert_eq!(
         normalize_verdict(overlay.clone()),
-        normalize_verdict(scoped)
+        normalize_verdict(applied)
     );
     assert_eq!(normalize_verdict(overlay), normalize_verdict(pure));
 }
 
-/// `scoped` runs the closure with the delta applied and undoes on
-/// return — even when the closure returns a value.
+/// Each committed move leaves the index's verdict equal to the pure
+/// from-scratch verdict on the same partition. The last move rejoins
+/// the `a`/`b` cycle's two modules, removing edges internal to a
+/// multi-module SCC.
 #[test]
-fn index_scoped_isolates_per_call_state() {
-    let source = "const a = b + 1; const b = a + 1;";
-    let owner_graph = parse_and_build(source);
-
-    let baseline = Partition::new(&owner_graph, module_id(0));
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
-
-    let inside_verdict_realizable = index.scoped(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        },
-        |idx| idx.verdict().is_realizable(),
-    );
-    assert!(
-        !inside_verdict_realizable,
-        "inside the scope the cycle exists"
-    );
-
-    // After scoped: state restored exactly.
-    assert!(index.verdict().is_realizable());
-    assert_eq!(index.partition().of(OwnerId(1)), module_id(0));
-}
-
-#[test]
-fn incremental_index_matches_pure_verdict_through_nested_push_undo() {
+fn incremental_index_matches_pure_verdict_through_sequential_moves() {
     let source = "const a = b + 1; const b = a + 1; function c() { return a; }";
     let owner_graph = parse_and_build(source);
 
     let baseline = Partition::new(&owner_graph, module_id(0));
     let mut explicit = baseline.clone();
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
+    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
 
     assert_eq!(
         normalize_verdict(index.verdict()),
         normalize_verdict(check_realizability(&owner_graph, &explicit)),
     );
 
-    let first = index.push(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        },
-    );
-    explicit.set(OwnerId(1), module_id(1));
-    assert_eq!(
-        normalize_verdict(index.verdict()),
-        normalize_verdict(check_realizability(&owner_graph, &explicit)),
-    );
-
-    let second = index.push(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(2)],
-            to: module_id(2),
-        },
-    );
-    explicit.set(OwnerId(2), module_id(2));
-    assert_eq!(
-        normalize_verdict(index.verdict()),
-        normalize_verdict(check_realizability(&owner_graph, &explicit)),
-    );
-
-    index.undo(&owner_graph, second);
-    explicit.set(OwnerId(2), module_id(0));
-    assert_eq!(
-        normalize_verdict(index.verdict()),
-        normalize_verdict(check_realizability(&owner_graph, &explicit)),
-    );
-
-    index.undo(&owner_graph, first);
-    explicit.set(OwnerId(1), module_id(0));
-    assert_eq!(
-        normalize_verdict(index.verdict()),
-        normalize_verdict(check_realizability(&owner_graph, &explicit)),
-    );
-    for owner in 0..owner_graph.num_nodes() {
-        assert_eq!(
-            index.partition().of(OwnerId(owner)),
-            baseline.of(OwnerId(owner))
+    for (owner, to, realizable) in [(1, 1, false), (2, 2, false), (1, 0, true)] {
+        index.apply(
+            &owner_graph,
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(owner)],
+                to: module_id(to),
+            },
         );
+        explicit.set(OwnerId(owner), module_id(to));
+        assert_eq!(
+            normalize_verdict(index.verdict()),
+            normalize_verdict(check_realizability(&owner_graph, &explicit)),
+            "after moving owner {owner} to module {to}",
+        );
+        assert_eq!(index.verdict().is_realizable(), realizable);
     }
 }
 
@@ -765,14 +610,14 @@ fn verdict_touching_matches_full_verdict_filtered_to_module() {
     let owner_graph = parse_and_build(source);
     let baseline = Partition::new(&owner_graph, module_id(0));
     let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
-    index.push(
+    index.apply(
         &owner_graph,
         PartitionDelta::MoveOwners {
             owners: vec![OwnerId(1)],
             to: module_id(1),
         },
     );
-    index.push(
+    index.apply(
         &owner_graph,
         PartitionDelta::MoveOwners {
             owners: vec![OwnerId(2)],
@@ -820,7 +665,7 @@ fn incremental_index_reports_cross_rebinds_without_scc_edges() {
     let mut explicit = baseline.clone();
     let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
 
-    index.push(
+    index.apply(
         &owner_graph,
         PartitionDelta::MoveOwners {
             owners: vec![OwnerId(1)],
@@ -944,15 +789,15 @@ fn assert_cached_simulator_matches_rebuild(index: &RealizabilityIndex, label: &s
 /// Property test pinning the incremental simulator cache to its
 /// from-scratch correctness reference. For each fixture, applies
 /// an arbitrary sequence of `MoveOwners` deltas through the
-/// `RealizabilityIndex`, asserting after every push and every
-/// undo that the `IncrementalQuotient`'s cached
-/// `EsmEvaluationSimulator` byte-equals what
-/// `EsmEvaluationSimulator::build(...)` would produce against the
-/// current `i_graph` / `constraining_buckets`. Also asserts the
-/// cached `(i_successors, constraining_pairs)` snapshots match.
+/// `RealizabilityIndex`, asserting after every apply that the
+/// `IncrementalQuotient`'s cached `EsmEvaluationSimulator`
+/// byte-equals what `EsmEvaluationSimulator::build(...)` would
+/// produce against the current `i_graph` / `constraining_buckets`.
+/// Also asserts the cached `(i_successors, constraining_pairs)`
+/// snapshots match.
 ///
-/// `add_current_edge` / `remove_current_edge` / `rollback_graphs` each drop
-/// the cache, so a stale simulator never outlives an edge mutation.
+/// `add_current_edge` / `remove_current_edge` each drop the cache, so
+/// a stale simulator never outlives an edge mutation.
 #[test]
 fn incremental_simulator_matches_rebuild_after_each_delta() {
     struct Fixture {
@@ -996,36 +841,23 @@ fn incremental_simulator_matches_rebuild_after_each_delta() {
         let baseline = Partition::new(&owner_graph, module_id(0));
         let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
         assert_cached_simulator_matches_rebuild(&index, fixture.label, "initial");
-        let mut handles: Vec<DeltaHandle> = Vec::new();
         for (owner_indices, dest) in &fixture.deltas {
             let owners: Vec<OwnerId> = owner_indices.iter().copied().map(OwnerId).collect();
-            let handle = index.push(
+            index.apply(
                 &owner_graph,
                 PartitionDelta::MoveOwners {
                     owners,
                     to: module_id(*dest),
                 },
             );
-            handles.push(handle);
-            assert_cached_simulator_matches_rebuild(&index, fixture.label, "after-push");
+            assert_cached_simulator_matches_rebuild(&index, fixture.label, "after-apply");
             // verdict() pulls through the cached simulator; assert
             // it stays consistent with `check_realizability`.
             let projected = index.partition().clone();
             assert_eq!(
                 normalize_verdict(index.verdict()),
                 normalize_verdict(check_realizability(&owner_graph, &projected)),
-                "{}: verdict diverged from check_realizability after push",
-                fixture.label,
-            );
-        }
-        while let Some(handle) = handles.pop() {
-            index.undo(&owner_graph, handle);
-            assert_cached_simulator_matches_rebuild(&index, fixture.label, "after-undo");
-            let projected = index.partition().clone();
-            assert_eq!(
-                normalize_verdict(index.verdict()),
-                normalize_verdict(check_realizability(&owner_graph, &projected)),
-                "{}: verdict diverged from check_realizability after undo",
+                "{}: verdict diverged from check_realizability after apply",
                 fixture.label,
             );
         }
@@ -1181,11 +1013,11 @@ fn ladder_tier3_rejects_tdz_move() {
 }
 
 /// Condensation-order maintenance: the ladder stays equal to the
-/// overlay verdict across committed pushes (incremental edge
-/// insert/remove), `commit`, and `undo` (invalidate + lazy rebuild,
-/// plan §4's journal interaction).
+/// overlay verdict across committed moves (incremental edge
+/// insert/remove), including one that removes edges internal to a
+/// multi-module SCC (stale + lazy rebuild).
 #[test]
-fn ladder_matches_verdict_across_push_commit_undo() {
+fn ladder_matches_verdict_across_applied_moves() {
     let source = "const a = b + 1; const b = a + 1; function c() { return a; }";
     let owner_graph = parse_and_build(source);
     let mut index = RealizabilityIndex::from_partition(
@@ -1205,24 +1037,14 @@ fn ladder_matches_verdict_across_push_commit_undo() {
         }
     };
     sweep(&index);
-    index.push(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        },
-    );
-    sweep(&index);
-    index.commit();
-    sweep(&index);
-    let speculative = index.push(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(2)],
-            to: module_id(2),
-        },
-    );
-    sweep(&index);
-    index.undo(&owner_graph, speculative);
-    sweep(&index);
+    for (owner, to) in [(1, 1), (2, 2), (1, 0)] {
+        index.apply(
+            &owner_graph,
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(owner)],
+                to: module_id(to),
+            },
+        );
+        sweep(&index);
+    }
 }

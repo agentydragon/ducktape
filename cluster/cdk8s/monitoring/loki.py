@@ -69,24 +69,17 @@ def _storage(chart: Chart) -> None:
             "pod-security.kubernetes.io/warn": "privileged",
         },
     )
-    identity = s3.Identity(chart, "identity", name=NAME, namespace=NAME)
     # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
     # (Loki splits them internally by key prefix). See the HelmRelease's
     # `storage.bucketNames` — all three point at the same bucket.
-    bucket = s3.Bucket(
+    s3.PrivateBucket(
         chart,
-        "bucket",
+        "storage",
         name=NAME,
-        namespace=NAME,
+        tenant=NAME,
         adopt_existing=True,
         description="Loki chunks, ruler, and admin objects.",
-    )
-    bucket.grant_read_write(identity)
-    identity.credentials(
-        namespace=NAME,
-        secret=_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        description="Loki's tenant-local SeaweedFS credentials.",
+        secret_name=_CREDENTIALS_SECRET,
     )
 
 

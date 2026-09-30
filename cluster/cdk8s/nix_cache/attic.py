@@ -1,5 +1,5 @@
 """The Attic Nix binary cache (`cache.allegedly.works`): the server and its Postgres, its
-SeaweedFS bucket, identity and credentials, the cache bootstrap Job, and the hourly JWT rotation.
+SeaweedFS `PrivateBucket`, the cache bootstrap Job, and the hourly JWT rotation.
 
 Hand-written beside the output: `server.toml` and `rotators.yaml` (the directory's
 `kustomization.yaml` generates ConfigMaps from them), the SOPS Secrets, and
@@ -40,8 +40,6 @@ SERVICE = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
 DATABASE = cnpg.PostgresRef.generated(name="attic-db", namespace=NAMESPACE)
-# The operator mints the S3 key pair straight into this namespace (`_storage` below).
-_S3 = SecretRef(namespace=NAMESPACE, name="attic-s3-credentials")
 _GITHUB_PAT = SecretRef(namespace=NAMESPACE, name="github-secrets-sync-pat")
 _ROTATOR = "attic-jwt-rotator"
 # Placeholder tag; image-pins/kustomization.yaml sets the real one.
@@ -65,25 +63,18 @@ def _database(scope: Construct) -> None:
     )
 
 
-def _storage(scope: Construct) -> None:
-    # attic's NAR chunks. Replication is per-volume (the SeaweedFS cluster's
-    # defaultReplication), so the bucket is backed by replicated storage.
-    bucket = s3.Bucket(
+def _storage(scope: Construct) -> s3.PrivateBucket:
+    return s3.PrivateBucket(
         scope,
-        "bucket",
+        "storage",
         name=NAME,
-        namespace=NAMESPACE,
+        tenant=NAMESPACE,
         adopt_existing=True,
-        # Unset: the CRD defaults to Retain.
-        reclaim_policy=None,
-        grant_name=NAMESPACE,
+        description="attic's NAR chunks; replicated per volume by the SeaweedFS cluster's defaultReplication.",
     )
-    identity = s3.Identity(scope, "identity", name=NAME, namespace=NAMESPACE)
-    bucket.grant_read_write(identity)
-    identity.credentials(namespace=NAMESPACE, secret=_S3.name, key_fields=s3.AWS_ENV_KEY_FIELDS)
 
 
-def _server(scope: Construct) -> None:
+def _server(scope: Construct, *, storage: s3.PrivateBucket) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -118,8 +109,8 @@ def _server(scope: Construct) -> None:
                                 SecretRef(namespace=NAMESPACE, name="attic-jwt-token")
                                 .key("jwt-token")
                                 .env_var("ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64"),
-                                _S3.key("AWS_ACCESS_KEY_ID").env_var("AWS_ACCESS_KEY_ID"),
-                                _S3.key("AWS_SECRET_ACCESS_KEY").env_var("AWS_SECRET_ACCESS_KEY"),
+                                storage.access_key.env_var("AWS_ACCESS_KEY_ID"),
+                                storage.secret_key.env_var("AWS_SECRET_ACCESS_KEY"),
                             ],
                             args=["-f", "/config/server.toml", "--mode", "monolithic"],
                             ports=[SERVICE.port.k8s_container_port()],
@@ -369,8 +360,7 @@ def chart(app: App) -> Chart:
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.METADATA)
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _database(chart)
-    _storage(chart)
-    _server(chart)
+    _server(chart, storage=_storage(chart))
     _rotation(chart)
     return chart
 

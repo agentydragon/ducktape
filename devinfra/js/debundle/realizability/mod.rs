@@ -20,12 +20,12 @@
 //!   function, from-scratch. The correctness reference and the cold-
 //!   start path. `O(N + M)` per call.
 //! - `RealizabilityIndex`: a stateful index that owns a working
-//!   `Partition` and supports `push`/`undo` of `PartitionDelta`s.
+//!   `Partition`; `apply` commits a `PartitionDelta` to it and
 //!   `verdict()` reads the current state. A non-mutating overlay query
-//!   answers hypothetical owner moves for planner checks without pushing.
+//!   answers hypothetical owner moves for planner checks without
+//!   applying them.
 //!
-//! The transactional API is backed by a rollbackable quotient index:
-//! owner-graph edges are fixed, so `push`/`undo` only updates quotient
+//! Owner-graph edges are fixed, so `apply` only updates quotient
 //! edge buckets incident to moved owners. Full verdicts run SCC over
 //! the maintained quotient; candidate verdicts use localized
 //! reachability around the hypothetical destination.
@@ -49,8 +49,8 @@ mod esm_simulator;
 mod incremental_quotient;
 
 use esm_simulator::EsmEvaluationSimulator;
-pub use incremental_quotient::{DeltaHandle, LadderDecision, PartitionDelta};
-use incremental_quotient::{IncrementalQuotient, JournalEntry, QuotientOverlay};
+use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
+pub use incremental_quotient::{LadderDecision, PartitionDelta};
 
 /// Canonical in-memory diagnosis of one offending module-quotient
 /// SCC. The presence of any such diagnosis on a
@@ -350,22 +350,20 @@ pub fn simulated_evaluation_post_order(
 /// predicate `check_realizability` computes (docs/design.md
 /// "Realizability primitive").
 ///
-/// Each `push` snapshots the prior assignments of the touched owners,
-/// updates only quotient edge buckets incident to those owners, and
-/// records enough graph state for LIFO undo. `verdict()` reads the
-/// maintained quotient graph instead of rebuilding it from owner edges.
+/// Each `apply` updates only quotient edge buckets incident to the
+/// moved owners. `verdict()` reads the maintained quotient graph
+/// instead of rebuilding it from owner edges.
 ///
-/// The index does NOT hold a borrow of `OwnerGraph`. Every mutating
-/// method (`push`, `undo`, `scoped`) and every `*_after_moving_owners*`
-/// verdict query takes the graph as a parameter. Storing the borrow
-/// would force callers that also own the graph (e.g., the peel kernel's
-/// `QuotientGraph`) into a self-referential struct; passing the graph
-/// per call keeps that ownership flat.
+/// The index does NOT hold a borrow of `OwnerGraph`. `apply` and every
+/// `*_after_moving_owners*` verdict query take the graph as a
+/// parameter. Storing the borrow would force callers that also own the
+/// graph (e.g., the peel kernel's `QuotientGraph`) into a
+/// self-referential struct; passing the graph per call keeps that
+/// ownership flat.
 #[derive(Debug, Clone)]
 pub struct RealizabilityIndex {
     partition: Partition,
     quotient: IncrementalQuotient,
-    journal: Vec<JournalEntry>,
 }
 
 impl RealizabilityIndex {
@@ -374,138 +372,34 @@ impl RealizabilityIndex {
         Self {
             partition,
             quotient,
-            journal: Vec::new(),
         }
     }
 
     /// Borrow the current working partition. Callers should treat this
-    /// as read-only — mutation should go through `push`/`undo` so the
-    /// journal stays consistent.
+    /// as read-only — mutation goes through [`Self::apply`] so the
+    /// quotient stays consistent.
     pub fn partition(&self) -> &Partition {
         &self.partition
     }
 
-    /// Apply `delta` and record its inverse on the journal. Returns a
-    /// handle that the matching `undo` consumes.
-    ///
-    /// Prefer [`Self::scoped`] when the delta lifetime is lexical —
-    /// the `push`/`undo` pair is then guaranteed to be balanced and
-    /// LIFO-ordered without manual bookkeeping. The raw `push`/`undo`
-    /// surface exists only for the `peel/quotient.rs` cases that
-    /// `scoped` cannot express:
-    /// * `commit_merge`: a batch of deltas lands permanently with no
-    ///   matching undo.
-    /// * `verdict_after_chained_deltas`: push a batch, read the post-
-    ///   push verdict, then undo every handle in reverse order.
-    ///
-    /// All other callers must use [`Self::scoped`]; the
-    /// `unbalanced_journal_push_undo_should_not_compile` doctest below
-    /// is the contract.
-    pub fn push(&mut self, owner_graph: &OwnerGraph, delta: PartitionDelta) -> DeltaHandle {
-        let entry = match delta {
-            PartitionDelta::MoveOwners { owners, to } => {
-                let owners: Vec<OwnerId> = owners
-                    .into_iter()
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .collect();
-                let impacted_edges = impacted_owner_edges(owner_graph, &owners);
-                let (i_graph_mark, constraining_graph_mark) = self.quotient.marks();
-                for edge_id in &impacted_edges {
-                    let edge = owner_graph.edge(*edge_id);
-                    self.quotient
-                        .remove_current_edge(edge, &self.partition, true);
-                }
-
-                let mut prior = Vec::with_capacity(owners.len());
-                for owner in owners {
-                    let was = self.partition.of(owner);
-                    if was != to {
-                        self.partition.set(owner, to);
-                    }
-                    prior.push((owner, was));
-                }
-                for edge_id in &impacted_edges {
-                    let edge = owner_graph.edge(*edge_id);
-                    self.quotient.add_current_edge(edge, &self.partition, true);
-                }
-                JournalEntry {
-                    prior_assignments: prior,
-                    impacted_edges,
-                    i_graph_mark,
-                    constraining_graph_mark,
-                }
-            }
-        };
-        let handle = DeltaHandle(self.journal.len());
-        self.journal.push(entry);
-        handle
-    }
-
-    /// Roll back the delta identified by `handle`. Must be the top of
-    /// the journal; panics otherwise — also in release builds, since
-    /// the index backs committed planner state and an out-of-LIFO
-    /// undo silently corrupts the maintained quotient. `pub` for the
-    /// same peel-internal reasons as [`Self::push`] — prefer
-    /// [`Self::scoped`].
-    pub fn undo(&mut self, owner_graph: &OwnerGraph, handle: DeltaHandle) {
-        assert_eq!(
-            handle.0 + 1,
-            self.journal.len(),
-            "RealizabilityIndex::undo called out of LIFO order \
-             (handle {:?}, journal depth {})",
-            handle,
-            self.journal.len(),
-        );
-        let entry = self
-            .journal
-            .pop()
-            .expect("journal must be non-empty for undo");
-        for edge_id in &entry.impacted_edges {
-            let edge = owner_graph.edge(*edge_id);
+    /// Commit `delta` to the working partition and quotient; it cannot
+    /// be reverted. Hypothetical moves are answered without mutation by
+    /// [`Self::verdict_after_moving_owners_touching`] and
+    /// [`Self::ladder_decision_after_moving_owners_touching`].
+    pub fn apply(&mut self, owner_graph: &OwnerGraph, delta: PartitionDelta) {
+        let PartitionDelta::MoveOwners { owners, to } = delta;
+        let impacted_edges = impacted_owner_edges(owner_graph, &owners);
+        for edge_id in &impacted_edges {
             self.quotient
-                .remove_current_edge(edge, &self.partition, false);
+                .remove_current_edge(owner_graph.edge(*edge_id), &self.partition);
         }
-        for (owner, prior) in entry.prior_assignments {
-            self.partition.set(owner, prior);
+        for owner in owners {
+            self.partition.set(owner, to);
         }
-        for edge_id in &entry.impacted_edges {
-            let edge = owner_graph.edge(*edge_id);
-            self.quotient.add_current_edge(edge, &self.partition, false);
+        for edge_id in &impacted_edges {
+            self.quotient
+                .add_current_edge(owner_graph.edge(*edge_id), &self.partition);
         }
-        self.quotient
-            .rollback_graphs(entry.i_graph_mark, entry.constraining_graph_mark);
-    }
-
-    /// Discard rollback state for every delta pushed so far. Call
-    /// after a batch of **permanent** pushes (the `commit_merge` case
-    /// above) — committed deltas are never undone, and without this
-    /// truncation their journal entries (inverse assignments,
-    /// impacted-edge lists, and the two graphs' edge journals)
-    /// accumulate for the lifetime of the index.
-    ///
-    /// Caller contract: no outstanding [`DeltaHandle`] may be undone
-    /// after `commit` (the journal is cleared, so any such `undo`
-    /// panics on the LIFO check). The peel kernel satisfies this by
-    /// construction — speculative push/undo pairs are scoped and
-    /// balanced before any commit.
-    pub fn commit(&mut self) {
-        self.journal.clear();
-        self.quotient.i_graph.commit();
-        self.quotient.constraining_graph.commit();
-    }
-
-    /// Apply `delta`, run `f` against the index in its post-push
-    /// state, then undo. The scoped form guarantees the per-call
-    /// push/undo pair regardless of `f`'s control flow.
-    pub fn scoped<F, R>(&mut self, owner_graph: &OwnerGraph, delta: PartitionDelta, f: F) -> R
-    where
-        F: FnOnce(&mut Self) -> R,
-    {
-        let handle = self.push(owner_graph, delta);
-        let result = f(self);
-        self.undo(owner_graph, handle);
-        result
     }
 
     /// Verdict against the current working partition. Reads the

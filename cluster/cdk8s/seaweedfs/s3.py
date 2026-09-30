@@ -1,59 +1,50 @@
-"""SeaweedFS operator S3 objects as constructs: `Bucket`, `Identity` (or `IdentityRef` for
-an IAM identity declared elsewhere) and the S3Credentials an identity mints, plus the
-ResourceReferenceGrants that let another namespace's objects reference them.
+"""This cluster's SeaweedFS S3 objects: `bucket`, `identity` and `credentials` build the
+`providers/seaweedfs` kinds against the one deployed `Seaweed` cluster, and `secret_grant` builds the
+ResourceReferenceGrant that lets them populate a Secret in another namespace. Each object is built
+complete, once. `PrivateBucket` is the repeated group: one consumer's bucket, its identity and key,
+rendered in the consumer's own unit.
 
 Operator behaviour these encode (`cluster/skills/seaweed_operator/SKILL.md`):
 
-- A Bucket's physical name is its `spec.name`; it is always the CR's own name.
 - An `S3Identity` claims a cluster-global IAM name; it lives in the SeaweedFS namespace
   unless its tenant keeps it local.
 - `S3Credentials` resolves `identityRef` literally when no same-namespace `S3Identity`
   exists, so it is named after the identity it holds a key for. It always retains its key
   and Secret: its CRD defaults to `Delete`.
 - A Bucket, S3Identity or S3Credentials outside the SeaweedFS namespace may reference the
-  `Seaweed` cluster only through a grant there. Each such construct adds its kind to its
-  namespace's grant, which the chart holds once per namespace. A cross-namespace
-  `secretRef` needs a grant in the Secret's namespace instead (`secret_grant`).
+  `Seaweed` cluster only through a grant there: `cluster.TENANTS` lists the namespaces its
+  `tenants` grant admits, and these functions refuse any other. A cross-namespace `secretRef`
+  needs a grant in the Secret's namespace instead (`secret_grant`).
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-from cdk8s import ApiObjectMetadata, Chart, JsonPatch
+from cdk8s import ApiObjectMetadata
 from constructs import Construct
-from seaweed_bucket_crds.com.seaweedfs.seaweed import (
-    Bucket as BucketResource,  # The construct below takes the concept's name.
-    BucketSpec,
-    BucketSpecAccessActions,
-    BucketSpecClusterRef,
-    BucketSpecReclaimPolicy,
-)
+from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecAccess, BucketSpecClusterRef, BucketSpecReclaimPolicy
 from seaweed_resourcereferencegrant_crds.com.seaweedfs.seaweed import (
     ResourceReferenceGrantSpecFrom,
     ResourceReferenceGrantSpecTo,
 )
 from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
-    S3Credentials,
-    S3CredentialsSpec,
     S3CredentialsSpecIdentityRef,
     S3CredentialsSpecReclaimPolicy,
     S3CredentialsSpecSeaweedRef,
     S3CredentialsSpecSecretRef,
 )
-from seaweed_s3identity_crds.com.seaweedfs.seaweed import (
-    S3Identity,
-    S3IdentitySpec,
-    S3IdentitySpecReclaimPolicy,
-    S3IdentitySpecSeaweedRef,
-)
+from seaweed_s3identity_crds.com.seaweedfs.seaweed import S3IdentitySpecReclaimPolicy, S3IdentitySpecSeaweedRef
 
+from cluster.cdk8s.providers.seaweedfs.bucket import Bucket, BucketAccess
 from cluster.cdk8s.providers.seaweedfs.resource_reference_grant import ResourceReferenceGrant
+from cluster.cdk8s.providers.seaweedfs.s3_credentials import S3Credentials
+from cluster.cdk8s.providers.seaweedfs.s3_identity import S3Identity
 
-# Aliased: the constructs' own `namespace` parameter is the tenant's.
+# Aliased: the functions' own `namespace` parameter is the tenant's.
 from cluster.cdk8s.seaweedfs import cluster, namespace as seaweedfs_namespace
-
-_GROUP = "seaweed.seaweedfs.com"
+from cluster.cdk8s.secret_ref import SecretRef
 
 
 @dataclass(frozen=True)
@@ -65,10 +56,20 @@ class SecretKeyFields:
 
 
 AWS_ENV_KEY_FIELDS = SecretKeyFields(access_key="AWS_ACCESS_KEY_ID", secret_key="AWS_SECRET_ACCESS_KEY")
+# What S3Credentials writes when its `secretRef` names no keys (the operator's `credentialFields`).
+_OPERATOR_KEY_FIELDS = SecretKeyFields(access_key="accessKey", secret_key="secretKey")
 
 
 def _description(description: str | None) -> dict[str, str] | None:
     return {"description": description} if description else None
+
+
+def _tenant(namespace: str) -> str:
+    """`namespace`, once it is one the Seaweed cluster admits S3 objects from: its own, or a
+    `cluster.TENANTS` one."""
+    if namespace != seaweedfs_namespace.NAME and namespace not in cluster.TENANTS:
+        raise ValueError(f"{namespace=} is not in seaweedfs.cluster.TENANTS, so no grant admits its S3 objects")
+    return namespace
 
 
 def _seaweed_ref_namespace(namespace: str) -> str | None:
@@ -76,167 +77,74 @@ def _seaweed_ref_namespace(namespace: str) -> str | None:
     return None if namespace == seaweedfs_namespace.NAME else seaweedfs_namespace.NAME
 
 
-class _ClusterGrant(Construct):
-    """The chart's one grant letting `namespace`'s objects reference the Seaweed cluster;
-    `from` lists each kind once, in first-use order."""
-
-    def __init__(self, chart: Chart, *, name: str, namespace: str, kind: str) -> None:
-        super().__init__(chart, _ClusterGrant.id(namespace))
-        self._namespace = namespace
-        self._kinds = [kind]
-        self._resource = ResourceReferenceGrant(
-            self,
-            "Resource",
-            metadata=ApiObjectMetadata(name=name, namespace=seaweedfs_namespace.NAME),
-            from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind=kind, namespace=namespace)],
-            to=[ResourceReferenceGrantSpecTo(group=_GROUP, kind="Seaweed", name=cluster.NAME)],
-        )
-
-    @staticmethod
-    def id(namespace: str) -> str:
-        return f"seaweedfs-cluster-grant-{namespace}"
-
-    def add(self, kind: str) -> None:
-        if kind not in self._kinds:
-            self._kinds.append(kind)
-            self._resource.add_json_patch(
-                JsonPatch.add("/spec/from/-", {"group": _GROUP, "kind": kind, "namespace": self._namespace})
-            )
+def bucket(
+    scope: Construct,
+    id: str,
+    *,
+    name: str,
+    namespace: str,
+    access: Sequence[BucketSpecAccess],
+    adopt_existing: bool,
+    reclaim_policy: BucketSpecReclaimPolicy | None = BucketSpecReclaimPolicy.RETAIN,
+    description: str | None = None,
+) -> Bucket:
+    """Bucket `name` of the Seaweed cluster, with `access` its whole access list.
+    `adopt_existing` takes over a physical bucket that already exists instead of failing with
+    `BucketAlreadyExists`. Our policy: `Retain`; `reclaim_policy=None` leaves the CRD default,
+    also `Retain`."""
+    return Bucket(
+        scope,
+        id,
+        metadata=ApiObjectMetadata(name=name, namespace=_tenant(namespace), annotations=_description(description)),
+        cluster_ref=BucketSpecClusterRef(name=cluster.NAME, namespace=seaweedfs_namespace.NAME),
+        access=access,
+        adopt_existing=adopt_existing,
+        reclaim_policy=reclaim_policy,
+    )
 
 
-def _grant_cluster_reference(scope: Construct, *, namespace: str, kind: str, name: str) -> None:
-    """Adds `kind` to `namespace`'s cluster grant, creating it named `name` on first use."""
-    if namespace == seaweedfs_namespace.NAME:
-        return
-    chart = Chart.of(scope)
-    grant = chart.node.try_find_child(_ClusterGrant.id(namespace))
-    if grant is None:
-        _ClusterGrant(chart, name=name, namespace=namespace, kind=kind)
-    else:
-        assert isinstance(grant, _ClusterGrant), grant
-        grant.add(kind)
+def identity(
+    scope: Construct, id: str, *, name: str, namespace: str = seaweedfs_namespace.NAME, description: str | None = None
+) -> S3Identity:
+    """The S3Identity claiming IAM name `name`. Our policy: `Retain`."""
+    return S3Identity(
+        scope,
+        id,
+        metadata=ApiObjectMetadata(name=name, namespace=_tenant(namespace), annotations=_description(description)),
+        seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
+        reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN,
+    )
 
 
-class IdentityRef(Construct):
-    """An IAM identity this chart does not declare: another Kustomization's `Identity`, or
-    one that predates the operator."""
-
-    def __init__(self, scope: Construct, id: str, *, name: str) -> None:
-        super().__init__(scope, id)
-        self.name = name
-        self._scope = scope
-
-    def credentials(
-        self,
-        *,
-        namespace: str,
-        secret: str,
-        key_fields: SecretKeyFields | None,
-        secret_namespace: str | None = None,
-        description: str | None = None,
-    ) -> S3Credentials:
-        """A key for this identity, mirrored into Secret `secret`. A same-namespace Secret is
-        created and owned by the operator; one in `secret_namespace` must already exist and
-        be granted (`secret_grant`). `key_fields=None` keeps `accessKey`/`secretKey`."""
-        _grant_cluster_reference(self, namespace=namespace, kind="S3Credentials", name=self.name)
-        # Beside this construct rather than under it, so objects render in call order.
-        return S3Credentials(
-            self._scope,
-            f"{self.node.id}-credentials-{namespace}",
-            metadata=ApiObjectMetadata(name=self.name, namespace=namespace, annotations=_description(description)),
-            spec=S3CredentialsSpec(
-                seaweed_ref=S3CredentialsSpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
-                identity_ref=S3CredentialsSpecIdentityRef(name=self.name),
-                secret_ref=S3CredentialsSpecSecretRef(
-                    name=secret,
-                    namespace=secret_namespace,
-                    access_key_field=key_fields.access_key if key_fields else None,
-                    secret_key_field=key_fields.secret_key if key_fields else None,
-                ),
-                reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
-            ),
-        )
-
-
-class Identity(IdentityRef):
-    """Declares the S3Identity claiming IAM name `name`."""
-
-    def __init__(
-        self,
-        scope: Construct,
-        id: str,
-        *,
-        name: str,
-        namespace: str = seaweedfs_namespace.NAME,
-        description: str | None = None,
-    ) -> None:
-        super().__init__(scope, id, name=name)
-        S3Identity(
-            self,
-            "Resource",
-            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=_description(description)),
-            spec=S3IdentitySpec(
-                seaweed_ref=S3IdentitySpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
-                reclaim_policy=S3IdentitySpecReclaimPolicy.RETAIN,
-            ),
-        )
-        _grant_cluster_reference(self, namespace=namespace, kind="S3Identity", name=name)
-
-
-class Bucket(Construct):
-    """A bucket of the Seaweed cluster, named `name` both as a CR and physically.
-
-    `adopt_existing` takes over a physical bucket that already exists instead of failing
-    with `BucketAlreadyExists`; `reclaim_policy=None` leaves the CRD default (`Retain`).
-    `grant_name` names the namespace's cluster grant when this Bucket creates it (default:
-    the bucket's name)."""
-
-    def __init__(
-        self,
-        scope: Construct,
-        id: str,
-        *,
-        name: str,
-        namespace: str,
-        adopt_existing: bool,
-        reclaim_policy: BucketSpecReclaimPolicy | None = BucketSpecReclaimPolicy.RETAIN,
-        description: str | None = None,
-        grant_name: str | None = None,
-    ) -> None:
-        super().__init__(scope, id)
-        self._resource = BucketResource(
-            self,
-            "Resource",
-            metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=_description(description)),
-            spec=BucketSpec(
-                name=name,
-                adopt_existing=adopt_existing or None,
-                cluster_ref=BucketSpecClusterRef(name=cluster.NAME, namespace=seaweedfs_namespace.NAME),
-                reclaim_policy=reclaim_policy,
-            ),
-        )
-        self._has_access = False
-        _grant_cluster_reference(self, namespace=namespace, kind="Bucket", name=grant_name or name)
-
-    def grant(self, user: IdentityRef | str, *actions: BucketSpecAccessActions) -> None:
-        """Adds a `spec.access` entry for an identity or a plain IAM user name (`anonymous`)."""
-        entry = {"user": user.name if isinstance(user, IdentityRef) else user, "actions": list(actions)}
-        self._resource.add_json_patch(
-            JsonPatch.add("/spec/access/-", entry) if self._has_access else JsonPatch.add("/spec/access", [entry])
-        )
-        self._has_access = True
-
-    def grant_read_write(self, user: IdentityRef | str) -> None:
-        self.grant(
-            user,
-            BucketSpecAccessActions.READ,
-            BucketSpecAccessActions.WRITE,
-            BucketSpecAccessActions.LIST,
-            BucketSpecAccessActions.TAGGING,
-        )
-
-    def grant_read(self, user: IdentityRef | str) -> None:
-        self.grant(user, BucketSpecAccessActions.READ, BucketSpecAccessActions.LIST)
+def credentials(
+    scope: Construct,
+    id: str,
+    *,
+    identity: str,
+    namespace: str,
+    secret: str,
+    key_fields: SecretKeyFields | None,
+    secret_namespace: str | None = None,
+    description: str | None = None,
+) -> S3Credentials:
+    """A key for IAM identity `identity`, mirrored into Secret `secret`. A same-namespace Secret
+    is created and owned by the operator; one in `secret_namespace` must already exist and be
+    granted (`secret_grant`). `key_fields=None` keeps `accessKey`/`secretKey`. Our policy:
+    `Retain`."""
+    return S3Credentials(
+        scope,
+        id,
+        metadata=ApiObjectMetadata(name=identity, namespace=_tenant(namespace), annotations=_description(description)),
+        seaweed_ref=S3CredentialsSpecSeaweedRef(name=cluster.NAME, namespace=_seaweed_ref_namespace(namespace)),
+        identity_ref=S3CredentialsSpecIdentityRef(name=identity),
+        secret_ref=S3CredentialsSpecSecretRef(
+            name=secret,
+            namespace=secret_namespace,
+            access_key_field=key_fields.access_key if key_fields else None,
+            secret_key_field=key_fields.secret_key if key_fields else None,
+        ),
+        reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
+    )
 
 
 def secret_grant(scope: Construct, *, secret: str, namespace: str) -> ResourceReferenceGrant:
@@ -245,6 +153,52 @@ def secret_grant(scope: Construct, *, secret: str, namespace: str) -> ResourceRe
         scope,
         f"secret-grant-{namespace}-{secret}",
         metadata=ApiObjectMetadata(name=secret, namespace=namespace),
-        from_=[ResourceReferenceGrantSpecFrom(group=_GROUP, kind="S3Credentials", namespace=seaweedfs_namespace.NAME)],
+        from_=[
+            ResourceReferenceGrantSpecFrom(
+                group=cluster.GROUP, kind="S3Credentials", namespace=seaweedfs_namespace.NAME
+            )
+        ],
         to=[ResourceReferenceGrantSpecTo(group="", kind="Secret", name=secret)],
     )
+
+
+class PrivateBucket(Construct):
+    """Bucket `name` in `tenant`, read-write for the S3Identity of the same name beside it, where the
+    S3Credentials' `identityRef` resolves. The operator writes that identity's key pair into Secret
+    `<name>-s3-credentials`, or `secret_name` where a live consumer already reads another name, under
+    `key_fields` (None: the operator's `accessKey`/`secretKey`). A `tenant` outside the SeaweedFS
+    namespace must be in `cluster.TENANTS`. Everything Retains.
+
+    A live Secret keeps its name and `key_fields`: under a new name or keys the operator finds no key
+    pair, mints one and revokes the key the consumer holds."""
+
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        name: str,
+        tenant: str,
+        adopt_existing: bool,
+        description: str,
+        secret_name: str | None = None,
+        key_fields: SecretKeyFields | None = AWS_ENV_KEY_FIELDS,
+    ) -> None:
+        super().__init__(scope, id)
+        secret = SecretRef(namespace=tenant, name=secret_name or f"{name}-s3-credentials")
+        self.bucket = bucket(
+            self,
+            "bucket",
+            name=name,
+            namespace=tenant,
+            access=[BucketAccess.read_write(name)],
+            adopt_existing=adopt_existing,
+            description=description,
+        )
+        self.identity = identity(self, "identity", name=name, namespace=tenant, description=description)
+        self.credentials = credentials(
+            self, "credentials", identity=name, namespace=tenant, secret=secret.name, key_fields=key_fields
+        )
+        fields = key_fields or _OPERATOR_KEY_FIELDS
+        self.access_key = secret.key(fields.access_key)
+        self.secret_key = secret.key(fields.secret_key)
