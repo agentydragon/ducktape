@@ -47,7 +47,7 @@ let
     hash = "sha256-M0nfeZDy6MafWCfqefwDRdL1MFLs8l1YZJmB6sV9IyU=";
     # Filled from the Nix build's fixed-output error after the wrapper lock is
     # regenerated.
-    gatewayNpmDepsHash = pkgs.lib.fakeHash;
+    gatewayNpmDepsHash = "sha256-a2pQm6DKRqLO3yesRxQZT0QNi2TqVVfF4hDyQJ6Geic=";
   };
 
   # nix-openclaw's npm wrapper (nix/npm/openclaw/) pins openclaw to an older
