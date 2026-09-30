@@ -197,6 +197,17 @@ class SessionStore:
         async with self._engine.connect() as connection:
             return (await connection.execute(query)).scalar_one()
 
+    async def sequence_num_of(self, session_id: str, event_id: UUID) -> int | None:
+        """The newest stored event of the session with this `event_id`, if any."""
+        query = (
+            select(EventRow.sequence_num)
+            .where(EventRow.session_id == session_id, EventRow.event_id == event_id)
+            .order_by(EventRow.sequence_num.desc())
+            .limit(1)
+        )
+        async with self._engine.connect() as connection:
+            return (await connection.execute(query)).scalar_one_or_none()
+
     async def append_events(self, session_id: str, events: Sequence[Event]) -> None:
         """Insert new events; one already stored only has its worker stamps refreshed."""
         async with self._engine.begin() as connection:

@@ -18,7 +18,7 @@ from tenacity.wait import wait_base
 
 from devinfra.claude.session_export.api import ResumePointLostError, SessionsApi
 from devinfra.claude.session_export.failures import describe_failure
-from devinfra.claude.session_export.models import SessionSummary
+from devinfra.claude.session_export.models import DeliveryUpdate, SessionSummary
 from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.sync import read_events_after
 
@@ -176,6 +176,9 @@ class LiveFollower:
             )
         ) as events:
             async for event in events:
+                if isinstance(event, DeliveryUpdate):
+                    await self._refresh_stamps(session_id, event)
+                    continue
                 position = self._positions[session_id]
                 if event.seq > position + 1:
                     raise ResumePointLostError(
@@ -184,3 +187,11 @@ class LiveFollower:
                 await self._store.append_events(session_id, [event])
                 self._positions[session_id] = max(position, event.seq)
                 self.last_event_at = datetime.now(UTC)
+
+    async def _refresh_stamps(self, session_id: str, update: DeliveryUpdate) -> None:
+        """Store the event again as the events route reports it, which is where its worker stamps are."""
+        sequence_num = await self._store.sequence_num_of(session_id, update.event_id)
+        if sequence_num is None:
+            logger.warning("%s: a delivery update for %s, an event that is not stored", session_id, update.event_id)
+            return
+        await self._store.append_events(session_id, [await self._api.read_event(session_id, sequence_num)])

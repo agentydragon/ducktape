@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 import pytest
@@ -15,10 +16,11 @@ from devinfra.claude.session_export.conftest import (
     TEST_ORG_UUID,
     FakeSessionsService,
     SseConnection,
+    make_delivery_update,
     make_event,
     make_events,
 )
-from devinfra.claude.session_export.models import SessionRemoved, SessionSummary
+from devinfra.claude.session_export.models import DeliveryUpdate, Event, SessionRemoved, SessionSummary
 from devinfra.claude.session_export.oauth import CredentialStore, OAuthTokenSource
 
 
@@ -75,6 +77,29 @@ async def test_event_pages_reject_a_sequence_gap_before_yielding_its_page(
         await anext(pages)
     with pytest.raises(ValueError, match=f"expected sequence_num {missing}, got {missing + 1}"):
         await anext(pages)
+
+
+async def test_read_event_returns_the_event_with_the_stamps_it_has_now(
+    service: FakeSessionsService, api: SessionsApi
+) -> None:
+    received = "2026-02-01T00:01:00+00:00"
+    events = make_events(5)
+    events[2] = make_event(3, received_at=received)
+    service.events[ONE] = events
+    event = await api.read_event(ONE, 3)
+    assert (event.seq, event.received_at) == (3, received)
+    [request] = service.requests
+    assert dict(request.url.params) == {"limit": "1", "sort_order": "asc", "cursor": "2"}
+
+
+async def test_read_event_refuses_an_event_the_route_does_not_have(
+    service: FakeSessionsService, api: SessionsApi
+) -> None:
+    events = make_events(5)
+    del events[2]
+    service.events[ONE] = events
+    with pytest.raises(ValueError, match="expected sequence_num 3, got 4"):
+        await api.read_event(ONE, 3)
 
 
 async def test_newest_sequence_num_is_zero_for_a_session_without_events(
@@ -134,7 +159,7 @@ async def test_recent_sessions_reads_one_page_of_the_newest(service: FakeSession
     assert [r.url.params["limit"] for r in service.requests] == ["100"]
 
 
-async def test_event_stream_yields_persisted_events_and_skips_everything_else(
+async def test_event_stream_yields_events_and_delivery_updates_and_skips_everything_else(
     service: FakeSessionsService, api: SessionsApi, caplog: pytest.LogCaptureFixture
 ) -> None:
     def script(stream: SseConnection) -> None:
@@ -143,14 +168,15 @@ async def test_event_stream_yields_persisted_events_and_skips_everything_else(
         stream.send("ephemeral_event", {"delta": "he"})
         stream.send("client_event", make_event(4), frame_id="4")
         stream.send("client_event", frame_id="5")  # advances the cursor only
-        stream.send("delivery_update", {"sequence_num": "4"})
+        stream.send("delivery_update", make_delivery_update(4, "DELIVERY_STATUS_RECEIVED"))
         stream.send("client_event", make_event(5), frame_id="5")
         stream.close()
 
     service.on_open = [script]
     connected: list[str] = []
-    events = [e async for e in api.stream_events(ONE, after=3, on_connected=lambda: connected.append("yes"))]
-    assert [e.seq for e in events] == [4, 5]
+    items = [i async for i in api.stream_events(ONE, after=3, on_connected=lambda: connected.append("yes"))]
+    assert [i.seq for i in items if isinstance(i, Event)] == [4, 5]
+    assert [i.event_id for i in items if isinstance(i, DeliveryUpdate)] == [UUID(int=4)]
     assert connected == ["yes"]
     assert not caplog.records  # a keepalive and the known metadata frames are not worth a warning
     [opened] = service.event_streams(ONE)
@@ -183,7 +209,7 @@ async def test_event_stream_from_the_start_sends_no_resume_position(
         stream.close()
 
     service.on_open = [script]
-    assert [e.seq async for e in api.stream_events(ONE, after=0)] == [1]
+    assert [i.seq async for i in api.stream_events(ONE, after=0) if isinstance(i, Event)] == [1]
     [opened] = service.event_streams(ONE)
     assert not opened.request.url.params
     assert "last-event-id" not in opened.request.headers

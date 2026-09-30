@@ -13,6 +13,7 @@ py_library(
         ":oauth",
         "@pypi//httpx",
         "@pypi//httpx_sse",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//tenacity",
     ],
