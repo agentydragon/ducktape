@@ -67,7 +67,11 @@ env:
 
 jobs:
   nix-wheel-check:
-    name: Build artifacts + imports check
+    name: >-
+      ${{ github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          'Fork Nix check runs in trusted-fork-pr-ci' ||
+          'Build artifacts + imports check' }}
     # Fork revisions are checked by trusted-fork-pr-ci.yml after its caller
     # either recognizes the dedicated agent fork or gates the exact head.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

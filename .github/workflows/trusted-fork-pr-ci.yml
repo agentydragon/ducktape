@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   mergeability:
-    name: PR mergeability
+    name: Refresh PR mergeability check
     if: github.event_name == 'push' || github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
@@ -43,7 +43,9 @@ jobs:
       # and publishes a check on the PR head; it never checks out PR-controlled code.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          # Always run the trusted helper from devel. Event-time base.sha can point to
+          # a commit from before this helper was added, breaking long-lived PRs.
+          ref: devel
           fetch-depth: 1
       - name: Inspect current PR mergeability
         id: inspect
@@ -113,3 +115,28 @@ jobs:
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
       SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+
+  nix-wheel-check-required:
+    # Branch protection requires this exact context. The reusable workflow's own
+    # context is prefixed with its caller job ID, so bridge its result here.
+    name: >-
+      ${{ github.event.pull_request.head.repo.full_name != github.repository &&
+          !github.event.pull_request.draft &&
+          'Build artifacts + imports check' ||
+          'Fork Nix check not applicable' }}
+    needs: [nix-wheel-check]
+    if: >-
+      always() &&
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the trusted fork Nix result
+        if: needs.nix-wheel-check.result != 'success'
+        run: |
+          echo "::error::The trusted fork Nix check did not succeed (job result: ${{ needs.nix-wheel-check.result }}). See the fork Nix job and PR mergeability check."
+          exit 1
+      - name: Confirm the trusted fork Nix result
+        if: needs.nix-wheel-check.result == 'success'
+        run: echo "Trusted fork Nix check succeeded."
