@@ -22,13 +22,12 @@ from pathlib import Path
 import yaml
 from pydantic import Field, HttpUrl, NonNegativeInt, PositiveInt, model_validator
 
-from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.portfolio_source_config import PortfolioSourcesConfig
 from finance.augur.api.schemas import ApiModel
 from finance.augur.api.wire import ActorRole, ProductInputDefaults
 from finance.augur.model.series import LocationId, SecuritySymbol
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
-from finance.augur.sim.ids import AgentId, PropertyId
+from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
 from finance.augur.sim.income import InterestCharacter
 from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
 from finance.augur.x.models.state_space import StateSpaceProviderConfig
@@ -139,7 +138,7 @@ class SecurityDistributionConfig(ApiModel):
 
 
 class LocationConfig(ApiModel):
-    """A deployment-owned location identity and its local modeling inputs.
+    """A deployment-owned location identity and where its properties are taxed.
 
     Built-in locations are available from the public catalog, but fixtures and
     private deployments should define their own IDs here instead of extending
@@ -150,7 +149,12 @@ class LocationConfig(ApiModel):
     label: str
     city: str
     state: str
-    local_regulation: LocalRegulation
+    situs: JurisdictionId = Field(
+        description=(
+            "The tax rate area (a file under `sim/data/jurisdictions/`) whose property-tax law "
+            "applies to a property here."
+        )
+    )
     notes: tuple[str, ...] = ()
 
 

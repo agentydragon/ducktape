@@ -3,14 +3,14 @@
 # (git.allegedly.works/ducktape-ci/agent-workspace) — not GHCR, so the pull
 # credential is provisioned in code (tf/gitops/forgejo-images) rather than a
 # manual "make public" GHCR click. Consumed by the workspace SandboxTemplate
-# in cluster/k8s/agents/agent-sandbox/workspaces/.
+# in cluster/generated/agents/agent-sandbox/workspaces/.
 name: Agent Workspace Image
 
 on:
   push:
     branches: [devel]
     paths:
-      - "cluster/k8s/agents/agent-sandbox/workspace-image/**"
+      - "cluster/images/agent-workspace/**"
       - ".github/workflows/agent-workspace-image.yml"
   workflow_dispatch:
 
@@ -43,6 +43,6 @@ jobs:
         run: |
           TS=$(date -u +%Y%m%d%H%M%S)
           REF="$IMAGE:${GITHUB_REF_NAME}-${TS}-${GITHUB_SHA:0:7}"
-          docker build -t "$REF" cluster/k8s/agents/agent-sandbox/workspace-image
+          docker build -t "$REF" cluster/images/agent-workspace
           docker push "$REF"
           echo "pushed \`$REF\`" >> "$GITHUB_STEP_SUMMARY"

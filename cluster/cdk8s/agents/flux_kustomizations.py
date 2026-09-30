@@ -16,20 +16,6 @@ from cluster.cdk8s.flux import (
 )
 
 
-def agent_sandbox_controller(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    name = "agent-sandbox-controller"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        timeout="5m",
-        description=(
-            "kubernetes-sigs/agent-sandbox v0.5.5 combined release asset "
-            "(Sandbox, SandboxTemplate, SandboxClaim, SandboxWarmPool CRDs)."
-        ),
-    )
-
-
 def airlock(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:
@@ -43,33 +29,6 @@ def airlock(
         decryption=SOPS_DECRYPTION,
         depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
     )
-
-
-def authentik_jwt_rotation(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
-) -> Kustomization:
-    name = "authentik-jwt-rotation"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        wait=None,
-        depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name="github-secrets-sync-pat",
-                namespace="agents-infra",
-            )
-        ],
-        timeout="2m",
-    )
-
-
-def forgejo_token_rotation(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    name = "forgejo-token-rotation"
-    return flux_kustomization(chart, name, artifact, retry_interval=None, wait=None, timeout="2m")
 
 
 def haku_egress_proxy(
@@ -93,33 +52,13 @@ def haku_egress_proxy(
     )
 
 
-def haku_openclaw_spike_app(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    seaweedfs_operator: Kustomization,
-) -> Kustomization:
-    name = "haku-openclaw-spike-app"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        timeout="10m",
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, seaweedfs_operator),
-        description=(
-            "Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy."
-        ),
-    )
-
-
 def plaid_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
-    valkey: Kustomization,
-    monitoring_crds: Kustomization,
+    authentik: Kustomization,
+    authentik_tf: Kustomization,
 ) -> Kustomization:
     name = "plaid-mcp"
     return flux_kustomization(
@@ -128,13 +67,7 @@ def plaid_mcp(
         artifact,
         timeout="10m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            cnpg,
-            external_secrets_operator,
-            valkey,
-            # ServiceMonitor
-            monitoring_crds,
-        ),
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, authentik, authentik_tf),
     )
 
 
@@ -213,7 +146,7 @@ def tana_mcp(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_operator: Kustomization,
-    valkey: Kustomization,
+    mcp_oauth_state: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     name = "tana-mcp"
@@ -225,7 +158,7 @@ def tana_mcp(
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(
             external_secrets_operator,
-            valkey,
+            mcp_oauth_state,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
         ),

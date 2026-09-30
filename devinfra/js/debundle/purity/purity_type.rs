@@ -26,7 +26,7 @@ pub enum Purity {
 pub struct PurityReason {
     pub rule: PurityRule,
     /// Resolved by `resolve_reason_locations` once the per-chunk
-    /// `line_range_for_span` is in scope (inside
+    /// source-span resolver is in scope (inside
     /// `analyze_item_facts`). The classifier itself only fills
     /// `span` — the wire-emitted reason has `source_location`
     /// populated and `span` skipped.
@@ -34,6 +34,8 @@ pub struct PurityReason {
     pub source_location: Option<SourceLocation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author_guidance: Option<String>,
     #[serde(skip)]
     pub span: Span,
 }
@@ -78,6 +80,33 @@ pub enum PurityRule {
     /// fire the iterator protocol on the bound value.
     DestructuringPattern,
     Other,
+}
+
+impl PurityRule {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AssignOrUpdate => "assign_or_update",
+            Self::AwaitOrYield => "await_or_yield",
+            Self::DeleteOperator => "delete_operator",
+            Self::ThrowStmt => "throw_stmt",
+            Self::DebuggerStmt => "debugger_stmt",
+            Self::UnknownCall => "unknown_call",
+            Self::UnknownNew => "unknown_new",
+            Self::UnknownMember => "unknown_member",
+            Self::SuperProp => "super_prop",
+            Self::TaggedTpl => "tagged_tpl",
+            Self::ArraySpread => "array_spread",
+            Self::ObjectSpread => "object_spread",
+            Self::ObjectAssignProp => "object_assign_prop",
+            Self::ClassStaticObservable => "class_static_observable",
+            Self::BareControlFlow => "bare_control_flow",
+            Self::CoercingOperator => "coercing_operator",
+            Self::ToPropertyKeyCoercion => "to_property_key_coercion",
+            Self::IterationProtocol => "iteration_protocol",
+            Self::DestructuringPattern => "destructuring_pattern",
+            Self::Other => "other",
+        }
+    }
 }
 
 impl Purity {
@@ -126,6 +155,15 @@ impl PurityReason {
             span,
             source_location: None,
             detail,
+            author_guidance: match rule {
+                PurityRule::UnknownCall => Some(
+                    "For a safe opaque call, use the member-level `purity: pure` annotation; for an imported fluent chain, declare `chunk_export_purity.<chunk>.fluent_exports`.".to_string(),
+                ),
+                PurityRule::UnknownNew => Some(
+                    "For a safe opaque constructor, use the member-level `purity: pure_new` annotation.".to_string(),
+                ),
+                _ => None,
+            },
         }
     }
 }

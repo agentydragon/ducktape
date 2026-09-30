@@ -15,22 +15,29 @@ Grocy's trusted X-authentik-username header; the sibling NetworkPolicy restricts
 
 import contextlib
 import time
+from collections.abc import Set
 from pathlib import Path
 from typing import Annotated, Any
 
 import httpx
 import typer
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 ADMIN = "admin"  # Grocy's built-in admin user (created by the schema migration)
 
 
 class Policy(BaseModel):
-    users: dict[str, set[str]] = Field(
+    users: dict[str, Set[str]] = Field(
         description="username -> permission_hierarchy names the user holds exactly"
         " (empty = no permissions, i.e. read-only)"
     )
+
+    @field_serializer("users")
+    def _sorted(self, users: dict[str, Set[str]]) -> dict[str, list[str]]:
+        """Sorted, since a set's iteration order varies between processes: the rendered policy file
+        (cluster/cdk8s/grocy/user_perms.py) and the hash in its ConfigMap's name stay stable."""
+        return {username: sorted(names) for username, names in users.items()}
 
 
 def wait_for_schema(client: httpx.Client) -> None:

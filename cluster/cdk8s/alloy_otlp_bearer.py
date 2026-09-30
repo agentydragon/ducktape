@@ -38,11 +38,7 @@ def chart(app: App) -> Chart:
 
 
 def alloy_otlp_bearer(
-    chart: Chart,
-    directory: RenderedDirectory,
-    external_secrets_operator: Kustomization,
-    claude_rbac: Kustomization,
-    haku_rbac: Kustomization,
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -52,11 +48,7 @@ def alloy_otlp_bearer(
         wait=None,
         depends_on=flux_kustomization_depends_on_many(
             # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
-            external_secrets_operator,
-            # claude-sandbox namespace
-            claude_rbac,
-            # haku-sandbox namespace
-            haku_rbac,
+            external_secrets_operator
         ),
         timeout="2m",
     )

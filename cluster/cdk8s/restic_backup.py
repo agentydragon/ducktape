@@ -11,17 +11,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMergePolicy,
     ExternalSecretSpecTargetTemplateTemplateFrom,
 )
-from external_secrets_secretstore_crds.io.external_secrets import (
-    SecretStore,
-    SecretStoreSpec,
-    SecretStoreSpecProvider,
-    SecretStoreSpecProviderKubernetes,
-    SecretStoreSpecProviderKubernetesAuth,
-    SecretStoreSpecProviderKubernetesAuthServiceAccount,
-    SecretStoreSpecProviderKubernetesServer,
-    SecretStoreSpecProviderKubernetesServerCaProvider,
-    SecretStoreSpecProviderKubernetesServerCaProviderType,
-)
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecRestic,
     ReplicationSourceSpecResticCacheCapacity,
@@ -36,6 +25,7 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
+from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
@@ -138,29 +128,11 @@ class ResticBackup(Construct):
             role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=self.role.name),
             subjects=[k8s.Subject(kind="ServiceAccount", name=self.service_account.name, namespace=namespace)],
         )
-        self.secret_store = SecretStore(
+        self.secret_store = secret_store(
             self,
             "repository-store",
             metadata=ApiObjectMetadata(name=f"{namespace}-volsync-s3", namespace=namespace),
-            spec=SecretStoreSpec(
-                provider=SecretStoreSpecProvider(
-                    kubernetes=SecretStoreSpecProviderKubernetes(
-                        server=SecretStoreSpecProviderKubernetesServer(
-                            ca_provider=SecretStoreSpecProviderKubernetesServerCaProvider(
-                                type=SecretStoreSpecProviderKubernetesServerCaProviderType.CONFIG_MAP,
-                                name="kube-root-ca.crt",
-                                key="ca.crt",
-                            )
-                        ),
-                        auth=SecretStoreSpecProviderKubernetesAuth(
-                            service_account=SecretStoreSpecProviderKubernetesAuthServiceAccount(
-                                name=self.service_account.name, namespace=namespace
-                            )
-                        ),
-                        remote_namespace=namespace,
-                    )
-                )
-            ),
+            reader=self.service_account,
         )
         self.external_secret = ExternalSecret(
             self,

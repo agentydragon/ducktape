@@ -1,9 +1,8 @@
-# Build and push the OpenClaw derivative to GHCR with Nix.
+# Build and push the public-coder-agent OpenClaw image with Nix.
 #
 # This is a dockerTools archive rather than a Dockerfile build. The gateway is
 # packaged by nix-openclaw and openclaw/default.nix adds the proxy preload plus
-# the small public-coder command-line toolset. Keeping the existing image name
-# lets Flux roll public-coder-agent without a registry migration.
+# the small public-coder command-line toolset.
 name: OpenClaw Image
 
 on:
@@ -15,7 +14,7 @@ on:
       - ".github/scripts/smoke-openclaw-image.sh"
       - ".github/workflows/nix-image.yml"
       - ".github/workflows/openclaw-image.yml"
-      - "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml"
+      - "cluster/k8s/agents/public-coder-agent/app/app.k8s.yaml"
       - "flake.lock"
       - "flake.nix"
       - "nix/artifact-pins.json"
@@ -37,7 +36,7 @@ on:
       - ".github/scripts/smoke-openclaw-image.sh"
       - ".github/workflows/nix-image.yml"
       - ".github/workflows/openclaw-image.yml"
-      - "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml"
+      - "cluster/k8s/agents/public-coder-agent/app/app.k8s.yaml"
       - "flake.lock"
       - "flake.nix"
       - "nix/artifact-pins.json"
@@ -58,21 +57,24 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   image:
     uses: ./.github/workflows/nix-image.yml
     with:
       attr: openclaw-image
-      image: ghcr.io/${{ github.repository_owner }}/openclaw
-      registry: ghcr
+      image: git.allegedly.works/ducktape-ci/public-coder-agent
+      registry: forgejo
       smoke: |
         pip install --quiet pyyaml
         python3 -c '
         import yaml
-        with open("cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml") as f:
-            config_map = yaml.safe_load(f)
+        with open("cluster/k8s/agents/public-coder-agent/app/app.k8s.yaml") as f:
+            config_map = next(
+                doc
+                for doc in yaml.safe_load_all(f)
+                if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "public-coder-agent-config"
+            )
         with open("/tmp/public-coder-agent-openclaw.json5", "w") as out:
             out.write(config_map["data"]["openclaw.json5"])
         '

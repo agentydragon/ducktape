@@ -9,14 +9,13 @@ repository.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
 from cert_manager_issuer_crds.io.cert_manager import Issuer, IssuerSpec, IssuerSpecSelfSigned
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "external-secrets"
 NAMESPACE = "external-secrets-system"
@@ -82,24 +81,18 @@ def _values(webhook_issuer: str) -> dict[str, object]:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "external-secrets-operator", disable_resource_name_hashes=True)
-    k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=NAMESPACE))
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None)
     webhook_issuer = Issuer(
         chart,
         "webhook-issuer",
         metadata=ApiObjectMetadata(name="external-secrets-selfsigned-issuer", namespace=NAMESPACE),
         spec=IssuerSpec(self_signed=IssuerSpecSelfSigned()),
     )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.external-secrets.io"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://charts.external-secrets.io"),
         chart="external-secrets",
         version="2.10.0",
         interval="15m",

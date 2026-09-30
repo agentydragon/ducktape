@@ -18,7 +18,7 @@ Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
 <../../../cluster/docs/container-images.md> § Forgejo-hosted images.
 
 The former SSH bootstrap identity and Forgejo `tea` token manifests remain parked
-under `cluster/k8s/parked/codex-pod/`; they are intentionally excluded from this
+under `cluster/parked/codex-pod/`; they are intentionally excluded from this
 Kustomization. Before reactivation, replace those SOPS-encrypted credentials with
 runtime-managed secrets. The deployment still expects those credentials, so this
 archived Kustomization is not ready to apply as-is.
@@ -130,7 +130,7 @@ this non-root image pod has not) and no boot-time render script:
 
 - **Replace the parked SOPS credentials before reactivation** — the SSH bootstrap
   key and Forgejo `tea` API token remain in
-  `cluster/k8s/parked/codex-pod/`, outside this Kustomization. Those credentials
+  `cluster/parked/codex-pod/`, outside this Kustomization. Those credentials
   should probably not be stored as SOPS files; choose a runtime secret source and
   wire it before restoring deployment.
 - **Attic cache (auto-rotated)** — wire `cache.allegedly.works/{main,gaffer}` as

@@ -1,17 +1,20 @@
 """The Talos Cloud Controller Manager's HelmRepository and HelmRelease.
 
-`helmrelease.k8s.yaml` holds only the HelmRelease because `cluster/terraform/main/talos-ccm.tf`
-`yamldecode`s it to render the same chart and values as the bootstrap inline manifest.
+The HelmRelease is the one generated resource outside its directory's generated file:
+`cluster/terraform/main/talos-ccm.tf` `yamldecode`s `helmrelease.k8s.yaml` to render the same
+chart and values as the bootstrap inline manifest, and `yamldecode` reads a single document.
 """
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec, HelmRepositorySpecType
+from pathlib import Path
+
+from cdk8s import App, Chart
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref
+from cluster.cdk8s.generation import write_yaml
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "talos-cloud-controller-manager"
@@ -19,20 +22,16 @@ NAMESPACE = "kube-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/talos-cloud-controller-manager"
 _REPOSITORY = "siderolabs"
 _PORT = 50258
+_HELMRELEASE_FILE = "helmrelease.k8s.yaml"
 
 
 def helmrepository_chart(app: App) -> Chart:
     chart = Chart(app, "helmrepository", disable_resource_name_hashes=True)
-    HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=_REPOSITORY, namespace=NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", type=HelmRepositorySpecType.OCI, url="oci://ghcr.io/siderolabs/charts"),
-    )
+    oci_helm_repository(chart, _REPOSITORY, NAMESPACE, url="oci://ghcr.io/siderolabs/charts")
     return chart
 
 
-def helmrelease_chart(app: App) -> Chart:
+def _helmrelease_chart(app: App) -> Chart:
     chart = Chart(app, "helmrelease", disable_resource_name_hashes=True)
     helm_release(
         chart,
@@ -73,6 +72,15 @@ def helmrelease_chart(app: App) -> Chart:
         },
     )
     return chart
+
+
+def write_helmrelease(root: Path) -> str:
+    """Write `helmrelease.k8s.yaml`, the HelmRelease alone; return its name for the directory's
+    `kustomization.yaml`."""
+    (release,) = _helmrelease_chart(App()).to_json()
+    (root / OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+    write_yaml(root / OUTPUT_DIR / _HELMRELEASE_FILE, release)
+    return _HELMRELEASE_FILE
 
 
 def talos_cloud_controller_manager(chart: Chart, directory: RenderedDirectory) -> Kustomization:

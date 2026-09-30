@@ -29,7 +29,6 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
@@ -37,16 +36,24 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
 NAME = "cli-proxy-api"
 NAMESPACE = "cli-proxy-api"
-_LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/cli-proxy-api:unset"
 PORT = 8317
+SERVICE = ServiceRef(
+    name=NAME,
+    port=Port(name="http", number=PORT),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+)
 _CONFIG_SECRET = "cli-proxy-api-config"
 _DATA_CLAIM = "cli-proxy-api-data"
-_ADMIN_OIDC_SECRET = "cli-proxy-api-admin-oidc"
+_ADMIN_OIDC = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-admin-oidc")
+# The SOPS-managed management key; aiquota reads it too.
+MANAGEMENT_PASSWORD = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-management").key("management-password")
 KEY_FILES = ("client-key.sops.yaml", "management-key.sops.yaml")
 
 _CONFIG = textwrap.dedent(
@@ -116,18 +123,18 @@ def _config(scope: Construct) -> None:
 
 
 def _deployment(scope: Construct) -> None:
-    tcp_probe = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(PORT))
+    tcp_probe = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(SERVICE.pod_port))
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             # Recreate: single owner of the refresh-rotated OAuth tokens on the PVC.
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
@@ -157,11 +164,9 @@ def _deployment(scope: Construct) -> None:
                             image=_IMAGE,
                             args=["-config", "/config/config.yaml"],
                             env=[
-                                secret_env_var(
-                                    "MANAGEMENT_PASSWORD", "cli-proxy-api-management", "management-password"
-                                ),
+                                MANAGEMENT_PASSWORD.env_var("MANAGEMENT_PASSWORD"),
                                 *(
-                                    secret_env_var(key, _ADMIN_OIDC_SECRET, key)
+                                    _ADMIN_OIDC.key(key).env_var(key)
                                     for key in (
                                         "MANAGEMENT_OIDC_ISSUER",
                                         "MANAGEMENT_OIDC_CLIENT_ID",
@@ -171,7 +176,7 @@ def _deployment(scope: Construct) -> None:
                                     )
                                 ),
                             ],
-                            ports=[k8s.ContainerPort(name="http", container_port=PORT, protocol="TCP")],
+                            ports=[SERVICE.port.k8s_container_port()],
                             readiness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=30, period_seconds=30),
                             resources=k8s.ResourceRequirements(
@@ -207,13 +212,8 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(name="http", port=PORT, target_port=k8s.IntOrString.from_string("http"), protocol="TCP")
-            ],
-        ),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()]),
     )
 
 
@@ -224,8 +224,7 @@ def _routes(scope: Construct) -> None:
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=["cli-proxy-api.allegedly.works"],
-        backend=NAME,
-        port=PORT,
+        backend=SERVICE,
         path_prefix="/v1",
         timeout="600s",
         hsts=False,
@@ -236,8 +235,7 @@ def _routes(scope: Construct) -> None:
         "admin-route",
         metadata=ApiObjectMetadata(name="cli-proxy-api-admin", namespace=NAMESPACE),
         hostnames=["cli-proxy-api-admin.allegedly.works"],
-        backend=NAME,
-        port=PORT,
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )
@@ -249,18 +247,18 @@ def _network_policy(scope: Construct) -> None:
         scope,
         "network-policy",
         metadata=ApiObjectMetadata(name="cli-proxy-api-ingress", namespace=NAMESPACE),
-        endpoint_selector=_LABELS,
+        endpoint_selector=SERVICE.pods.selector,
         ingress=[
             # cilium-envoy hostNetwork traffic carries reserved:ingress identity. Preserves the
             # existing cli-proxy-api.allegedly.works /v1 HTTPRoute, which routes straight to this
             # Service, unauthenticated, for LiteLLM's model traffic.
-            IngressRule.from_gateway(PORT),
+            IngressRule.from_gateway(SERVICE.pod_port),
             # LiteLLM's codex-*/chatgpt-* upstreams (litellm/config.py) call the
             # in-cluster Service by cluster DNS, not through the Gateway.
-            IngressRule.from_endpoints(cilium.endpoint_labels("litellm", "litellm"), ports=[PORT]),
+            IngressRule.from_endpoints(cilium.endpoint_labels("litellm", "litellm"), ports=[SERVICE.pod_port]),
             # aiquota retrieves Claude and Codex subscription usage through the authenticated
             # CLIProxyAPI management endpoint.
-            IngressRule.from_endpoints(cilium.endpoint_labels(NAMESPACE, "aiquota"), ports=[PORT]),
+            IngressRule.from_endpoints(cilium.endpoint_labels(NAMESPACE, "aiquota"), ports=[SERVICE.pod_port]),
             # Kubelet readiness/liveness tcpSocket probes originate from the node host.
             CiliumNetworkPolicySpecIngress(
                 from_entities=[CiliumNetworkPolicySpecIngressFromEntities.HOST],
@@ -268,7 +266,8 @@ def _network_policy(scope: Construct) -> None:
                     CiliumNetworkPolicySpecIngressToPorts(
                         ports=[
                             CiliumNetworkPolicySpecIngressToPortsPorts(
-                                port=str(PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
+                                port=str(SERVICE.pod_port),
+                                protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
                             )
                         ]
                     )

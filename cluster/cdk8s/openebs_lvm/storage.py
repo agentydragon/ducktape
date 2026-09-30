@@ -17,11 +17,12 @@ from external_snapshotter_volumesnapshotclass_crds.io.k8s.storage.snapshot impor
     VolumeSnapshotClass,
     VolumeSnapshotClassDeletionPolicy,
 )
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 NAME = "openebs-lvm"
 NAMESPACE = "openebs"
@@ -60,30 +61,23 @@ def _storage_classes(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-                "rbac.ducktape.io/agent-readable-logs": "true",
-            },
-        ),
-    )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=RELEASE, namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://openebs.github.io/lvm-localpv"),
+        name=NAMESPACE,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=AgentReadable.LOGS,
+        labels={
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+        },
     )
     helm_release(
         chart,
         RELEASE,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(chart, RELEASE, "flux-system", url="https://openebs.github.io/lvm-localpv"),
         chart="lvm-localpv",
         version="1.10.1",
         interval="30m",

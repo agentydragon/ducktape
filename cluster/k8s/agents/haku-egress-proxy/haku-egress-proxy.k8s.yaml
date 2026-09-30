@@ -1,3 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+    name: haku-egress-proxy
+  name: haku-egress-proxy
+spec: {}
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -119,6 +128,7 @@ spec:
           ports:
             - containerPort: 8080
               name: proxy
+              protocol: TCP
           readinessProbe:
             periodSeconds: 5
             tcpSocket:
@@ -164,6 +174,7 @@ spec:
   ports:
     - name: proxy
       port: 8080
+      protocol: TCP
       targetPort: 8080
   selector:
     app.kubernetes.io/name: haku-egress-proxy
@@ -386,8 +397,10 @@ spec:
           ports:
             - containerPort: 8181
               name: proxy
+              protocol: TCP
             - containerPort: 9090
               name: metrics
+              protocol: TCP
           resources:
             limits:
               cpu: 500m
@@ -432,10 +445,12 @@ spec:
   ports:
     - name: proxy
       port: 8181
-      targetPort: proxy
+      protocol: TCP
+      targetPort: 8181
     - name: metrics
       port: 9090
-      targetPort: metrics
+      protocol: TCP
+      targetPort: 9090
   selector:
     app.kubernetes.io/name: haku-openclaw-spike-proxy
 ---
@@ -528,3 +543,200 @@ spec:
         operator: In
         values:
           - haku-sandbox
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-haku-openclaw-spike-proxy-egress
+  namespace: haku-egress-proxy
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "**.cluster.local"
+              - matchName: api.anthropic.com
+              - matchName: api.github.com
+              - matchName: bcr.bazel.build
+              - matchName: cache.nixos.org
+              - matchName: channels.nixos.org
+              - matchName: code.forgejo.org
+              - matchName: codeload.github.com
+              - matchName: data.forgejo.org
+              - matchName: files.pythonhosted.org
+              - matchName: forgejo-http.forgejo
+              - matchName: ftp.gnu.org
+              - matchName: ghcr.io
+              - matchName: github.com
+              - matchName: haku.allegedly.works
+              - matchName: index.crates.io
+              - matchName: kubeapi.allegedly.works
+              - matchName: nixos.org
+              - matchName: nodejs.org
+              - matchName: objects.githubusercontent.com
+              - matchName: pkg-containers.githubusercontent.com
+              - matchName: pypi.org
+              - matchName: raw.githubusercontent.com
+              - matchName: registry.npmjs.org
+              - matchName: release-assets.githubusercontent.com
+              - matchName: releases.bazel.build
+              - matchName: snapshot.debian.org
+              - matchName: static.crates.io
+              - matchName: static.rust-lang.org
+    - toEntities:
+        - world
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:app.kubernetes.io/name: forgejo
+            k8s:io.kubernetes.pod.namespace: forgejo
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-openclaw-spike-proxy
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-haku-cloud-api-egress
+  namespace: haku-egress-proxy
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "**.cluster.local"
+              - matchPattern: "*.ankiweb.net"
+              - matchName: alloy-otlp.allegedly.works
+              - matchName: api.anthropic.com
+              - matchName: api.coinbase.com
+              - matchName: bcr.bazel.build
+              - matchName: cache.nixos.org
+              - matchName: channels.nixos.org
+              - matchName: code.forgejo.org
+              - matchName: codeload.github.com
+              - matchName: data.forgejo.org
+              - matchName: files.pythonhosted.org
+              - matchName: ftp.gnu.org
+              - matchName: ghcr.io
+              - matchName: github.com
+              - matchName: go.dev
+              - matchName: haku-mailbox.allegedly.works
+              - matchName: index.crates.io
+              - matchName: mirrors.kernel.org
+              - matchName: nixos.org
+              - matchName: nodejs.org
+              - matchName: objects.githubusercontent.com
+              - matchName: pkg-containers.githubusercontent.com
+              - matchName: pypi.org
+              - matchName: raw.githubusercontent.com
+              - matchName: registry.npmjs.org
+              - matchName: release-assets.githubusercontent.com
+              - matchName: releases.bazel.build
+              - matchName: snapshot.debian.org
+              - matchName: static.crates.io
+              - matchName: static.rust-lang.org
+    - toFQDNs:
+        - matchName: ghcr.io
+        - matchName: pkg-containers.githubusercontent.com
+        - matchName: alloy-otlp.allegedly.works
+        - matchName: haku-mailbox.allegedly.works
+        - matchName: api.coinbase.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: pypi.org
+        - matchName: files.pythonhosted.org
+        - matchName: registry.npmjs.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: cache.nixos.org
+        - matchName: nixos.org
+        - matchName: channels.nixos.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: bcr.bazel.build
+        - matchName: codeload.github.com
+        - matchName: ftp.gnu.org
+        - matchName: github.com
+        - matchName: go.dev
+        - matchName: index.crates.io
+        - matchName: mirrors.kernel.org
+        - matchName: nodejs.org
+        - matchName: objects.githubusercontent.com
+        - matchName: raw.githubusercontent.com
+        - matchName: release-assets.githubusercontent.com
+        - matchName: releases.bazel.build
+        - matchName: snapshot.debian.org
+        - matchName: static.crates.io
+        - matchName: static.rust-lang.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: code.forgejo.org
+        - matchName: data.forgejo.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: api.anthropic.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchPattern: "*.ankiweb.net"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "8000"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
+            - port: "11434"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-egress-proxy

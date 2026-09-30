@@ -11,38 +11,24 @@ from more_itertools import one
 
 from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.actions import DecisionActions
-from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
+from finance.augur.sim.books import AccountRef
+from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.locations import Location
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase
+from finance.augur.sim.money import USD
+from finance.augur.sim.property import Housing, MortgageFinancing, Parcel, ScheduledPurchase
 from finance.augur.sim.property_tax import PropertyTaxPolicy
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.rollouts import book, cash
+from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
 ALICE, SELLER, BANK = AgentId("alice"), AgentId("seller"), AgentId("bank")
 CHECKING = AccountId("checking")
-
-SAN_FRANCISCO = Location(
-    location_id=LocationId("san_francisco"),
-    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")),
-    annual_special_assessment=0,
-)
-# Mare Island (Vallejo) carries flat-USD CFD special assessments on top of the ad-valorem rate.
-VALLEJO_MARE_ISLAND = Location(
-    location_id=LocationId("vallejo_mare_island"),
-    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0115")),
-    annual_special_assessment=int(currency_amount_to_quanta(Decimal(2300), quantum=QUANTUM)),
-)
-
-
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
 def usd(quanta: Any) -> float:
@@ -57,13 +43,14 @@ def cents(value: float) -> float:
 
 def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
     """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=CHECKING), money(balance)
+    return AccountRef(agent_id=agent_id, account_id=CHECKING), USD.quanta(balance)
 
 
 def purchase(
     cause_id: str,
     property_id: PropertyId,
-    location_id: LocationId,
+    parcel: Parcel,
+    market: LocationId,
     *,
     price: int,
     down: int,
@@ -74,14 +61,15 @@ def purchase(
         month=0,
         cause_id=cause_id,
         property_id=property_id,
-        location_id=location_id,
+        parcel=parcel,
+        market=market,
         buyer_agent_id=ALICE,
         buyer_account_id=CHECKING,
         seller_agent_id=SELLER,
         seller_account_id=CHECKING,
-        purchase_price=money(price),
-        down_payment=money(down),
-        buyer_closing_cost=money(closing),
+        purchase_price=USD.quanta(price),
+        down_payment=USD.quanta(down),
+        buyer_closing_cost=USD.quanta(closing),
         rented_fraction_ppb=0,
         land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
         mortgage=mortgage,
@@ -95,22 +83,20 @@ def financing(
         liability_id=liability_id,
         lender_agent_id=BANK,
         lender_account_id=CHECKING,
-        principal=money(principal),
+        principal=USD.quanta(principal),
         annual_interest_rate_ppb=rate_to_ppb(annual_rate),
         term_months=term_months,
     )
 
 
-def property_tax(
-    property_id: PropertyId, collector: AgentId, *, annual_rate: Decimal | int | None
-) -> PropertyTaxPolicy:
+def property_tax(property_id: PropertyId, collector: AgentId) -> PropertyTaxPolicy:
     return PropertyTaxPolicy(
         property_id=property_id,
         owner_agent_id=ALICE,
         from_account_id=CHECKING,
         tax_authority_agent_id=collector,
         tax_authority_account_id=CHECKING,
-        annual_tax_rate_ppb=None if annual_rate is None else rate_to_ppb(annual_rate),
+        start_year=START_YEAR,
         start_month=0,
         end_month=None,
     )
@@ -124,7 +110,6 @@ class Situation:
     accounts: tuple[tuple[AccountRef, int], ...]
     purchases: tuple[ScheduledPurchase, ...]
     tax_policies: tuple[PropertyTaxPolicy, ...] = ()
-    locations: tuple[Location, ...] = (SAN_FRANCISCO,)
 
 
 def compose(case: Situation) -> World:
@@ -133,38 +118,13 @@ def compose(case: Situation) -> World:
     )
     for opened, balance in case.accounts:
         world.declare_account(account=opened, opening_balance=balance)
-    world.declare_housing(Housing(purchases=case.purchases), case.tax_policies, case.locations)
+    world.declare_housing(Housing(purchases=case.purchases), case.tax_policies)
     return world
 
 
 def run(case: Situation) -> Rollout:
     """Alice pays every due claim in full, in order: here the installment and the property tax."""
-    household = ClaimPayer(AgentId(ALICE))
-    session = ActionSession({0: compose(case)}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id, decision.observation.month, household.decide(decision.observation)
-                    )
-                    for decision in batch
-                ]
-            )
-    finally:
-        session.close()
-    return one(batch.rollouts)
-
-
-def book(rollout: Rollout, month: int) -> Book:
-    assert rollout.trace is not None
-    return one(entry for entry in rollout.trace.books if entry.month == month)
-
-
-def cash(rollout: Rollout, agent_id: AgentId, month: int) -> float:
-    account_ = AccountRef(agent_id=agent_id, account_id=CHECKING)
-    return usd(one(row.balance for row in book(rollout, month).balances if row.account == account_))
+    return one(finish(ActionSession({0: compose(case)}, ALICE), each(ClaimPayer(AgentId(ALICE)).decide)).rollouts)
 
 
 def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
@@ -180,6 +140,7 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
                 purchase(
                     "alice_buys_sf_home",
                     PropertyId("sf_home"),
+                    flat_parcel(Decimal("0.012")),
                     LocationId("san_francisco"),
                     price=500_000,
                     down=100_000,
@@ -189,9 +150,7 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
                     ),
                 ),
             ),
-            tax_policies=(
-                property_tax(PropertyId("sf_home"), AgentId("sf_tax_collector"), annual_rate=Decimal("0.012")),
-            ),
+            tax_policies=(property_tax(PropertyId("sf_home"), AgentId("sf_tax_collector")),),
         )
     )
     assert rollout.trace is not None
@@ -199,7 +158,7 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
     final_properties = book(rollout, 2).properties
     assert final_properties is not None
     final_property = one(final_properties)
-    assert final_property.location_id == "san_francisco"
+    assert final_property.market == "san_francisco"
     assert final_property.purchase_month == 0
     assert usd(final_property.adjusted_basis) == pytest.approx(510_000.0)
 
@@ -220,80 +179,6 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
     assert events.mortgage_originations.height == 1
     assert events.mortgage_payments.height == 1
     assert events.transfers.filter(pl.col("cause_id") == "sf_home_property_tax_m1").height == 1
-
-
-def test_real_estate_purchase_requires_known_location() -> None:
-    """The declaration rejects a purchase whose location the world was not given."""
-    with pytest.raises(
-        ValueError,
-        match=(
-            "scheduled property purchase 'alice_buys_typo_home' references unknown location_id "
-            "'san_francsico'; known location ids: 'san_francisco'"
-        ),
-    ):
-        compose(
-            Situation(
-                horizon_months=1,
-                accounts=(account(ALICE, 600_000), account(SELLER)),
-                purchases=(
-                    purchase(
-                        "alice_buys_typo_home",
-                        PropertyId("typo_home"),
-                        LocationId("san_francsico"),
-                        price=500_000,
-                        down=500_000,
-                    ),
-                ),
-            )
-        )
-
-
-def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset() -> None:
-    """With no rate on the policy the authority reads the rate of the location the world declared."""
-    rollout = run(
-        Situation(
-            horizon_months=2,
-            accounts=(account(ALICE, 600_000), account(SELLER), account(AgentId("sf_tax_collector"))),
-            purchases=(
-                purchase(
-                    "alice_buys_sf_home",
-                    PropertyId("sf_home"),
-                    LocationId("san_francisco"),
-                    price=500_000,
-                    down=500_000,
-                ),
-            ),
-            tax_policies=(property_tax(PropertyId("sf_home"), AgentId("sf_tax_collector"), annual_rate=None),),
-        )
-    )
-    # SF: 500_000 * 0.01180 / 12 = 491.6666..., rounded to cents at the obligation boundary.
-    assert cash(rollout, AgentId("sf_tax_collector"), 2) == pytest.approx(cents(500_000.0 * 0.01180 / 12.0))
-
-
-def test_property_tax_routes_flat_usd_special_assessment_from_location() -> None:
-    """A flat-USD CFD special assessment stacks on the ad-valorem tax: ad-valorem + special_usd / 12."""
-    rollout = run(
-        Situation(
-            horizon_months=2,
-            accounts=(account(ALICE, 700_000), account(SELLER), account(AgentId("vallejo_tax_collector"))),
-            purchases=(
-                purchase(
-                    "alice_buys_mare_island_home",
-                    PropertyId("mare_island_home"),
-                    LocationId("vallejo_mare_island"),
-                    price=500_000,
-                    down=500_000,
-                ),
-            ),
-            tax_policies=(
-                property_tax(PropertyId("mare_island_home"), AgentId("vallejo_tax_collector"), annual_rate=None),
-            ),
-            locations=(VALLEJO_MARE_ISLAND,),
-        )
-    )
-    # Mare Island: 500_000 * 0.0115 / 12 + 2300 / 12 per month, rounded to cents.
-    expected = cents(500_000.0 * 0.0115 / 12.0 + 2_300.0 / 12.0)
-    assert cash(rollout, AgentId("vallejo_tax_collector"), 2) == pytest.approx(expected)
 
 
 if __name__ == "__main__":

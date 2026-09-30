@@ -513,16 +513,16 @@
 
         # agent-box - headless CLI-only KubeVirt VM hosting agent users, each under
         # its own scoped identity. `codex` runs OpenAI Codex. See
-        # cluster/k8s/parked/agent-box/README.md.
+        # cluster/parked/agent-box/README.md.
         agent-box = mkNixos {
           hostname = "agent-box";
           username = "codex";
-          hostModule = ./cluster/k8s/parked/agent-box/nix/nixos.nix;
+          hostModule = ./cluster/parked/agent-box/nix/nixos.nix;
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./cluster/k8s/parked/agent-box/nix/home/codex.nix;
+            module = ./cluster/parked/agent-box/nix/home/codex.nix;
           };
         };
 
@@ -546,11 +546,11 @@
           hostname = "gecko";
           username = "agentydragon";
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
-          hostModule = ./cluster/k8s/parked/gecko/nix/nixos.nix;
+          hostModule = ./cluster/parked/gecko/nix/nixos.nix;
           inlineHomeManager = {
             enableGui = false;
             isK8sWorker = false;
-            module = ./cluster/k8s/parked/gecko/nix/home.nix;
+            module = ./cluster/parked/gecko/nix/home.nix;
           };
         };
 

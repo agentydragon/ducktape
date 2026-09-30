@@ -162,7 +162,7 @@ describe("ActionRequests", () => {
       close = close;
       constructor(url: string) {
         super();
-        expect(url).toBe("/actions/stream");
+        expect(url).toBe("/actions/stream?state=decision_pending");
         stream = this;
       }
     }

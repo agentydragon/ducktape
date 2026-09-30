@@ -75,10 +75,11 @@ makes invalid operations impossible.
 
 ### Defensive comments should stay tied to a real invariant
 
-`graph/linker_order.rs::chunk_source_import_order`'s `None`-after-`Some`
-clause is "kept for robustness against future filter changes that might admit
-non-constraining members". If the filter shape changes, either turn this
-into a tested invariant or delete the defensive branch.
+`graph/linker_order.rs::chunk_source_import_order_from_adjacency`'s
+`None`-after-`Some` clause is "kept for robustness against future filter
+changes that might admit non-constraining members". If the filter shape
+changes, either turn this into a tested invariant or delete the defensive
+branch.
 
 ## Code refactor / dedup opportunities
 
@@ -86,47 +87,37 @@ Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
 
 **Structural findings (full-package review):**
 
-1. `realizability/mod.rs` — extract `gate_perf_counters` (~490-line `pub mod`).
-   Entangled with index internals (`use super::*`, `pub(super)` recording APIs
-   called from `RealizabilityIndex` / `IncrementalQuotient` query methods, and
-   the timing-only `IncrementalQuotient::base_snapshot_stale` shadow state); a
-   clean move needs a narrow recording trait first, not just a file move.
-2. `vendor/mod.rs` further split (~1.3k lines + tests remain after the
+1. `vendor/mod.rs` further split (~1.3k lines + tests remain after the
    emission/manifests/passthrough/plan/strip/validate/wrappers extraction):
    package/subpath resolution helpers, export-surface collection,
    `MaterializedOutputChunkIndex`, the shared import factories
    (`DeferredImport` / `IdentRewriteTarget` / `PartialSwapIdentRewriter` and
    the `make_*` constructors), and the post-strip consumer scan are each
    liftable.
-3. Two parallel top-level fact extractors:
+2. Two parallel top-level fact extractors:
    `program_analysis.rs::analyze_program_shallow` keeps its own traversal and
    `classify_top_level_decl` alongside the `facts/` walk; the two rule sets
    can drift independently. Fold the shallow extractor into the facts
    traversal or derive its records from `StatementFacts`.
-4. `lowering/lower.rs` — extract the remaining inline phases of `lower_chunk`
+3. `lowering/lower.rs` — extract the remaining inline phases of `lower_chunk`
    (naturalization, disambiguation, import planning, the per-module loop);
    each needs substantial captured state from `LowerChunkInputs` (15–20
    fields). Related: `lowering/mod.rs` carries a ~95-line import block from
    wildcard `use super::*` in every sub-module.
-5. `output_layout.rs` — replace the 10 identical `self.root.join(CONSTANT)`
+4. `output_layout.rs` — replace the 10 identical `self.root.join(CONSTANT)`
    accessors with a data-driven `report_path(name)` plus constants.
-6. Encapsulation/type design: BTree collections in hot-path graph structures
-   (`rollback_graph.rs`, `artifact.rs`, `realizability/`) where hash-based
+5. Encapsulation/type design: BTree collections in hot-path graph structures
+   (`counted_digraph.rs`, `artifact.rs`, `realizability/`) where hash-based
    would be measurably faster — document determinism where it is required;
    make `DepKind`'s constraining vs non-constraining axis
    (`constrains_init_order()`) a first-class type distinction; the three-layer
-   edge representation (domain graph → rollback graph → realizability index)
+   edge representation (domain graph → counted graph → realizability index)
    has fragile bridging; `pub(super)` blankets `lowering/` field and function
    visibility; `SourceImportResolution = Option<(String, String, String)>`
    (`plan_references.rs`) needs a named struct.
-7. Tests: `e2e/comma_list_owner_split_test.rs` asserts emitted shapes via
-   whitespace OR-chains — parse or normalize instead;
-   `peel/quotient_integration_test.rs` references share too much code with the
-   system under test (most verdicts compare against the kernel's own
-   `project_partition`; only `replay_partition` rebuilds independently, and
-   compares only `cycle_set()`), and randomized merge/partition sequences and
-   gate-residual promotion transitions are uncovered.
-8. `ChunkBundle` ownership ping-pong through every stage
+6. Tests: `e2e/comma_list_owner_split_test.rs` asserts emitted shapes via
+   whitespace OR-chains — parse or normalize instead.
+7. `ChunkBundle` ownership ping-pong through every stage
    (`artifact = result.artifact`) — cosmetic now that each stage is a pure
    function.
 
@@ -160,12 +151,6 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
 files by responsibility — <selector_codemod.rs>, <peel/quotient.rs>,
 <lowering/rename_ledger.rs>.
 
-**Defer (high risk):** unifying the union-find / Tarjan-SCC / incremental
-cycle-detection between <peel/quotient.rs> and
-<realizability/condensation_order.rs>. They look parallel but encode different
-correctness invariants for the realizability gate; a shared impl risks hiding
-drift. Audit before attempting.
-
 ## Quick wins (≤30 min each)
 
 1. **Carry chunk-top-level `Mark` on `ChunkContext`** so `top_level_id`
@@ -189,22 +174,6 @@ checking. This is a pre-existing inline-mode-only under-restriction; catchall
 chunks keep no TDZ-prone bindings in the entry file. Extending candidate
 enumeration with the universal entry edges would close it at the cost of much
 larger SCCs in the incremental planner path.
-
-### CLI common args via clap `#[command(flatten)]` (DECIDED: declined)
-
-The
-recurring flags (`--modules` / `--source-root` / `--format`) occur in
-incompatible combinations across the `Args` structs with inconsistent attrs
-(`source-root` carries `env` on some structs, not others; `MatchSelector` /
-`Describe` / `ShowSource` have no `--modules`), so there is no cohesive group to
-extract. Flattening `{modules, format}` would add `args.common.*` indirection
-for a semantically-incohesive bundle (input locator + output format) without a
-real clarity or LOC win. `peel`'s `CommonArgs` (`{graph, modules}`) stays as the
-one cohesive case.
-
-### `BindingId`/`BindingTable` interning (DECIDED 2026-06: defer, perf-triggered)
-
-Implement only if corpus profiling (`perf/proposer.md`) shows the binding-keyed graph paths as a material cost; docs/design.md marks the sketch as hypothetical with the same trigger. Until then it stays unimplemented — do not treat the design.md sketch as a description of the code.
 
 ### A11 intrinsic integrity: from observed assumption to checked precondition
 

@@ -1,3 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+    name: cpap-sync
+    pod-security.kubernetes.io/enforce: baseline
+  name: cpap-sync
+spec: {}
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -16,6 +26,156 @@ spec:
     template:
       mergePolicy: Merge
       type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forgejo-secret-reader
+  namespace: cpap-sync
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cpap-sync-cpap-data-git-write-reader
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - cpap-data-git-write
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cpap-sync-cpap-data-git-write-reader
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cpap-sync-cpap-data-git-write-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: forgejo-secret-reader
+    namespace: cpap-sync
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-cpap-sync-cpap-data-git-write-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - cpap-sync
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: forgejo-secret-reader
+      remoteNamespace: forgejo
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cpap-data-git-write
+  namespace: cpap-sync
+spec:
+  dataFrom:
+    - extract:
+        key: cpap-data-git-write
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cpap-sync-cpap-data-git-write-secret-store
+  target:
+    creationPolicy: Owner
+    name: cpap-data-git-write
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cpap-sync-cpap-data-git-read-reader
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - cpap-data-git-read
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cpap-sync-cpap-data-git-read-reader
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cpap-sync-cpap-data-git-read-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: forgejo-secret-reader
+    namespace: cpap-sync
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-cpap-sync-cpap-data-git-read-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - cpap-sync
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: forgejo-secret-reader
+      remoteNamespace: forgejo
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cpap-data-git-read
+  namespace: cpap-sync
+spec:
+  dataFrom:
+    - extract:
+        key: cpap-data-git-read
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cpap-sync-cpap-data-git-read-secret-store
+  target:
+    creationPolicy: Owner
+    name: cpap-data-git-read
+    template:
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: claude-sandbox
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: claude-sandbox
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -47,7 +207,7 @@ spec:
           containers:
             - args:
                 - --base-url
-                - http://cpap-card.cpap-sync.svc.cluster.local
+                - http://cpap-card.cpap-sync.svc:80
                 - --git-url
                 - $(GIT_REPO_URL)
                 - --wifi-interface
@@ -205,7 +365,7 @@ spec:
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: cpap-sync
-            k8s:kubevirt.io/domain: cpap-gateway
+            kubevirt.io/domain: cpap-gateway
       toPorts:
         - ports:
             - port: "18080"

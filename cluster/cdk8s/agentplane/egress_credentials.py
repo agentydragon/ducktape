@@ -6,20 +6,23 @@ environment's own module copies in the credentials that environment gets
 """
 
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import Namespace, Role, RoleBinding, RolePolicyRule, ServiceAccount
+from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, ServiceAccount
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 STAGING_NAMESPACE = "agentplane-staging-egress-credentials"
 TESTING_NAMESPACE = "agentplane-testing-egress-credentials"
 # The Secret `egress.py`'s `github-pat` EgressCredential reads, in both environments.
 GITHUB_PAT_SECRET = "agentplane-github-pat"
+BUILDBUDDY_API_KEY_SECRET = "buildbuddy-api-key"
 EXTERNAL_CREDS_STORE = "kubernetes-external-creds-secret-store"
 # The store authenticates as this ServiceAccount in the consuming namespace (ESO referent auth), so a
 # namespace that copies from external-creds needs its own.
@@ -31,15 +34,13 @@ class EgressCredentials(Construct):
 
     def __init__(self, scope: Construct, id: str, *, namespace: str, proxy_namespace: str) -> None:
         super().__init__(scope, id)
-        Namespace(
+        namespaces.namespace(
             self,
             "namespace",
-            metadata=ApiObjectMetadata(
-                name=namespace,
-                annotations={
-                    "description": f"Outbound credentials readable only by the {proxy_namespace} egress proxy."
-                },
-            ),
+            name=namespace,
+            vpa=Vpa.RECOMMEND,
+            agent_readable=None,
+            annotations={"description": f"Outbound credentials readable only by the {proxy_namespace} egress proxy."},
         )
         proxy_role = Role(
             self,

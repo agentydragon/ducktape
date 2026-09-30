@@ -57,6 +57,10 @@ py_binary(
 py_library(
     name = "adapter",
     srcs = ["adapter.py"],
+    deps = [
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+    ],
 )
 
 py_library(
@@ -64,7 +68,9 @@ py_library(
     srcs = ["claude.py"],
     deps = [
         ":adapter",
+        ":claude_history",
         ":config",
+        ":recovery",
         ":session",
         "//agentplane/native/claude:blocks",
         "//agentplane/native/claude:driver",
@@ -94,7 +100,9 @@ py_library(
     srcs = ["codex.py"],
     deps = [
         ":adapter",
+        ":codex_history",
         ":config",
+        ":recovery",
         ":session",
         "//agentplane/native/codex:facade",
         "//agentplane/native/codex:scenarios",
@@ -192,6 +200,7 @@ py_library(
         ":harness_process",
         ":journal",
         ":observation",
+        ":recovery",
         ":store",
         "//agentplane/native:transport",
         "//agentplane/protocol:command_pb2",
@@ -635,6 +644,56 @@ py_test(
         ":conftest",
         "//:conftest",
         "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "claude_history",
+    srcs = ["claude_history.py"],
+    deps = [
+        ":recovery",
+        "//agentplane/native/claude:blocks",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "recovery",
+    srcs = ["recovery.py"],
+    deps = [
+        ":journal",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "codex_history",
+    srcs = ["codex_history.py"],
+    deps = [
+        ":recovery",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_recovery",
+    srcs = ["test_recovery.py"],
+    deps = [
+        ":claude_history",
+        ":codex_history",
+        ":conftest",
+        ":journal",
+        ":recovery",
+        "//:conftest",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -9,10 +9,6 @@
 //! `run` and `validate` list only entities that did not resolve, plus
 //! resolved-by-elimination warnings; `match-selector` reports its one
 //! entity's outcome, resolved or not.
-//!
-//! Not yet recorded as outcomes: name-pin debt annotated with `note:`, and
-//! `alpha_all` readable names that are free references rather than local
-//! binders.
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -86,8 +82,6 @@ pub struct EntityRef {
 pub enum SelectorKind {
     #[serde(rename = "source_matches")]
     SourceMatches,
-    #[serde(rename = "members.source_match")]
-    MemberSourceMatch,
     #[serde(rename = "anonymous_statements.source_match")]
     AnonymousStatement,
     #[serde(rename = "members.binding")]
@@ -226,6 +220,11 @@ pub enum Outcome {
         /// first.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         nearest_unclaimed: Vec<NearMiss>,
+        /// Set when the selector matches places but the entities solved
+        /// together with it admit no joint assignment, which of them are at
+        /// fault not being determined; then `nearest_unclaimed` is empty.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     Ambiguous {
         candidates: Vec<Candidate>,
@@ -237,8 +236,8 @@ pub enum Outcome {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         differentiators: Vec<Differentiator>,
     },
-    /// In an unsatisfiable core of the joint solve with `with`; the set need
-    /// not be minimal.
+    /// None of its selector's matches agrees with where `with`, the entities
+    /// its template references, resolve.
     Conflict {
         with: Vec<EntityRef>,
     },
@@ -330,29 +329,10 @@ impl Serialize for OutcomeKind {
 }
 
 impl Outcome {
-    /// The outcome of a selector matched on its own, from every place it
-    /// matched.
     pub fn no_match() -> Self {
         Self::NoMatch {
             nearest_unclaimed: Vec::new(),
-        }
-    }
-
-    pub fn from_matches(mut candidates: Vec<Candidate>) -> Self {
-        candidates.sort();
-        candidates.dedup();
-        match candidates.len() {
-            0 => Self::no_match(),
-            1 => {
-                let Candidate { owner, binding } = candidates.remove(0);
-                Self::Resolved {
-                    owner,
-                    binding,
-                    resolved_by: ResolvedBy::OwnSelector,
-                }
-            }
-            count if count > MAX_CANDIDATES_PER_SELECTOR => Self::too_broad(count),
-            _ => Self::ambiguous(candidates, false),
+            reason: None,
         }
     }
 
@@ -440,10 +420,18 @@ impl Outcome {
                     ),
                 }
             }
-            Self::NoMatch { nearest_unclaimed } if nearest_unclaimed.is_empty() => {
+            Self::NoMatch {
+                reason: Some(reason),
+                ..
+            } => reason.clone(),
+            Self::NoMatch {
+                nearest_unclaimed, ..
+            } if nearest_unclaimed.is_empty() => {
                 format!("did not match any {places}")
             }
-            Self::NoMatch { nearest_unclaimed } => format!(
+            Self::NoMatch {
+                nearest_unclaimed, ..
+            } => format!(
                 "did not match any {places}; nearest unclaimed: {}",
                 nearest_unclaimed
                     .iter()
@@ -480,8 +468,7 @@ impl Outcome {
                 )
             }
             Self::Conflict { with } => format!(
-                "conflicts with {}: these selectors admit no joint assignment (the listed set \
-                 need not be minimal)",
+                "conflicts with {}: none of its matches agrees with where they resolve",
                 render_refs(with)
             ),
             Self::TooBroad { count, limit } => {
@@ -539,7 +526,6 @@ impl SelectorKind {
         match (self, target_binding) {
             (Self::SourceMatches, Some(target)) => format!("source_matches[].bindings[`{target}`]"),
             (Self::SourceMatches, None) => "source_matches[]".to_string(),
-            (Self::MemberSourceMatch, _) => "members[].selector.source_match".to_string(),
             (Self::AnonymousStatement, _) => "anonymous_statements[]".to_string(),
             (Self::Binding, _) => "members[].selector.binding".to_string(),
             (Self::CrossRef, _) => "members[].selector.cross_ref".to_string(),

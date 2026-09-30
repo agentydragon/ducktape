@@ -3,14 +3,14 @@ and the background controller's extra RoleBinding read access."""
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "kyverno"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/app"
@@ -123,18 +123,12 @@ def _values() -> dict[str, object]:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "kyverno", disable_resource_name_hashes=True)
-    namespace = k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=NAME))
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name=NAME, namespace=_FLUX_NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://kyverno.github.io/kyverno/"),
-    )
+    namespace = namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.RECOMMEND, agent_readable=None)
     helm_release(
         chart,
         NAME,
         _FLUX_NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(chart, NAME, _FLUX_NAMESPACE, url="https://kyverno.github.io/kyverno/"),
         chart="kyverno",
         # MODULE.bazel pins the kyverno.io CRD bindings to this chart's appVersion.
         version="3.9.1",

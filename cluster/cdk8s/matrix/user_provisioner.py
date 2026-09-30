@@ -1,8 +1,8 @@
 """The Job that registers Matrix users against Synapse's admin API.
 
-The image tag is the placeholder "unset"; the hand-written
-cluster/k8s/matrix/user-provisioner/image-pins/kustomization.yaml overrides it at
-`kustomize build` time via Flux's image-automation marker.
+The image tag is the placeholder "unset"; the hand-written `PINS_DIR` Component, which the
+kustomization includes across the roots, overrides it at `kustomize build` time via Flux's
+image-automation marker.
 """
 
 from __future__ import annotations
@@ -11,13 +11,14 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.matrix.matrix import NAMESPACE, SYNAPSE
+from cluster.cdk8s.secret_ref import SecretRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix/user-provisioner"
+OUTPUT_DIR = f"{GENERATED_ROOT}/matrix/user-provisioner"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/matrix/user-provisioner-image-pins"
 _NAME = "matrix-user-provisioner"
 # Script baked in via Bazel (//cluster/provisioners/matrix_user_provisioner:image).
 _IMAGE = "git.allegedly.works/ducktape-ci/matrix-user-provisioner:unset"
@@ -40,6 +41,7 @@ def chart(app: App) -> Chart:
             ttl_seconds_after_finished=3600,
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     restart_policy="OnFailure",
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     containers=[
@@ -48,15 +50,15 @@ def chart(app: App) -> Chart:
                             image=_IMAGE,
                             image_pull_policy="Always",
                             env=[
-                                secret_env_var(
-                                    "REGISTRATION_SECRET", "synapse-registration-secret", "registration_shared_secret"
-                                ),
-                                secret_env_var("ADMIN_PASSWORD", "synapse-admin-credentials", "password"),
-                                secret_env_var(
-                                    "PUBLIC_CODER_AGENT_BOT_PASSWORD",
-                                    "public-coder-agent-matrix-bot-password",
-                                    "password",
-                                ),
+                                SecretRef(namespace=NAMESPACE, name="synapse-registration-secret")
+                                .key("registration_shared_secret")
+                                .env_var("REGISTRATION_SECRET"),
+                                SecretRef(namespace=NAMESPACE, name="synapse-admin-credentials")
+                                .key("password")
+                                .env_var("ADMIN_PASSWORD"),
+                                SecretRef(namespace=NAMESPACE, name="public-coder-agent-matrix-bot-password")
+                                .key("password")
+                                .env_var("PUBLIC_CODER_AGENT_BOT_PASSWORD"),
                             ],
                         )
                     ],

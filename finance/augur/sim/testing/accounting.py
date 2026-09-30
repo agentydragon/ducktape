@@ -34,6 +34,7 @@ def flat_rules(jurisdiction: JurisdictionId, rate: int) -> TaxRules:
         0,
         law_year=2024,
         indexed=frozenset(),
+        itemizes_real_property_tax=False,
     )
 
 

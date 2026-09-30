@@ -20,6 +20,7 @@ from cluster.cdk8s.model_rosters import (
     GEMINI_EMBEDDING_COMPAT_ALIAS,
     GEMINI_EMBEDDING_MODELS,
     GEMINI_MODELS,
+    GPT6_CODEX_MODELS,
     MISTRAL_MODELS,
     OLLAMA_CHAT_MODELS,
     OLLAMA_EMBEDDING_MODEL,
@@ -31,17 +32,15 @@ from cluster.cdk8s.model_rosters import (
     exposed_name,
     ollama_chat_variant,
 )
+from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
-# The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
-# (codex-pod and agent-workspaces-codex) -- served by CLIProxyAPI. Agentplane staging
-# intentionally uses only GPT-6 from this roster.
-OAI_LANE_MODELS = [codex_responses_name(model) for model in CLIPROXY_MODELS]
-# Agentplane staging's default Codex harness and server-held key expose GPT-6 only.
-AGENTPLANE_STAGING_OAI_MODELS = [codex_responses_name(model) for model in CLIPROXY_MODELS if model.startswith("gpt-6-")]
-# The same models on the Anthropic Messages surface -- Claude Code clients
-# (laptop codex-claude, agent-box, codex-pod).
+# GPT-6 Codex-subscription models on LiteLLM's Responses and Anthropic Messages surfaces.
+GPT6_OAI_LANE_MODELS = [codex_responses_name(model.id) for model in GPT6_CODEX_MODELS]
+GPT6_CODEX_CLIENT_MODELS = [codex_messages_name(model.id) for model in GPT6_CODEX_MODELS]
+# The same models on the Anthropic Messages surface -- laptop and agent-box Claude Code
+# clients. Codex pod has a separate GPT-6-only key.
 CODEX_CLIENT_MODELS = [codex_messages_name(model) for model in CLIPROXY_MODELS]
 # Claude-subscription models on the Anthropic Messages surface, fronted through
 # CLIProxyAPI's Claude OAuth session -- the laptop litellm-claude wrapper and the
@@ -117,8 +116,8 @@ def model_allowlists() -> dict[str, list[str]]:
     """The lanes keyed as main.tf's `var.model_allowlists` reads them."""
     served = {entry["model_name"] for entry in main_proxy_config()["model_list"]}
     lanes = {
-        "oai_lane_models": OAI_LANE_MODELS,
-        "agentplane_staging_oai_models": AGENTPLANE_STAGING_OAI_MODELS,
+        "gpt6_oai_lane_models": GPT6_OAI_LANE_MODELS,
+        "gpt6_codex_client_models": GPT6_CODEX_CLIENT_MODELS,
         "tana_client_models": TANA_CLIENT_MODELS,
         "codex_client_models": CODEX_CLIENT_MODELS,
         "claude_client_models": CLAUDE_CLIENT_MODELS,
@@ -158,7 +157,9 @@ def keys_chart(app: App) -> Chart:
             # The narrow SOPS age private key (litellm-clients-sops-age-key.sops.yaml
             # beside this CR) that decrypts the module's pinned client-key files for
             # its `sops_file` data sources -- single-purpose, not the broad cluster key.
-            terraform.secret_env("SOPS_AGE_KEY", "litellm-clients-sops-age-key", "key")
+            terraform.secret_env(
+                "SOPS_AGE_KEY", SecretRef(namespace=terraform.NAMESPACE, name="litellm-clients-sops-age-key").key("key")
+            )
         ],
     )
     return chart

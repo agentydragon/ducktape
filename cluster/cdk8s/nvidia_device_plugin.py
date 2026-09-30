@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from cdk8s import App, Chart
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 NAME = "nvidia-device-plugin"
 NAMESPACE = "nvidia-device-plugin"
@@ -17,25 +17,19 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/nvidia-device-plugin"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={"pod-security.kubernetes.io/enforce": "privileged", "rbac.ducktape.io/agent-readable-logs": "true"},
-        ),
-    )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name="nvidia", namespace=NAMESPACE),
-        spec=HelmRepositorySpec(interval="24h", url="https://nvidia.github.io/k8s-device-plugin"),
+        name=NAMESPACE,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=AgentReadable.LOGS,
+        labels={"pod-security.kubernetes.io/enforce": "privileged"},
     )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(chart, "nvidia", NAMESPACE, url="https://nvidia.github.io/k8s-device-plugin"),
         chart=NAME,
         version="0.20.0",
         interval="15m",

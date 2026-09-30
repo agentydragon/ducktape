@@ -1,54 +1,29 @@
 //! Regression test for the lowerer's object-literal shorthand-collapse +
-//! import-planning bug originally pinned RED in PR #1631 alongside the
-//! PR #1627 / #1630 path-normalization thread.
+//! import-planning interaction.
 //!
-//! ## Context
-//!
-//! PR #1630 fixed the path-normalization layer in
-//! `source_chunk_imports_for_moved_body` so peeled modules emit
-//! canonical `"../foo.js"` instead of `".././foo.js"`. The companion
-//! bug — `object_literal_import_collapse_test`'s synthetic fixture
-//! deliberately doesn't repro it — is the import-dropping shape
-//! covered here.
-//!
-//! ## Failure mode (pre-fix)
+//! ## Shape
 //!
 //! When the heuristic naturalizer (`collect_return_object_alias_renames`)
-//! scans a peeled function body and finds `return { key: value }`, it
-//! adds `value → key` to the rename map. The
-//! `RenameAndShorthandNaturalizer` then:
-//!
-//! 1. Renames every `value` identifier to `key` (including the ones
-//!    inside the returned object's value positions — so `{ key:
-//!    value }` becomes `{ key: key }`).
-//! 2. Collapses `{ key: key }` to the shorthand `{ key }`.
-//!
-//! After this pass, `collect_module_body_facts` walked the body and
-//! saw `key` referenced — but the source chunk's `runtime_imports`
-//! map is keyed by the original local name `value`. The planner
-//! looked up `key` in `runtime_imports`, missed, and emitted no
-//! import for it. The emitted module had
-//! `function makeConfig() { return { key }; }` with `key` as a free
-//! variable. Node threw `ReferenceError: key is not defined` at
-//! module-load time.
-//!
-//! ## Fix
-//!
-//! `plan_module_reference_needs` now takes the heuristic-rename map
-//! produced by `naturalize_module_body` and, on a miss for a
-//! post-rename name, reverse-resolves to the pre-rename original and
-//! looks *that* up in `runtime_imports`. The carried `RuntimeImportInfo`
-//! still has `imported = "value"`, so emit produces
-//! `import { value as key } from "../provider.js"`. See the
-//! "Rename pipeline" entry in <devinfra/js/debundle/TODO.md> for the
+//! scans a peeled function body and finds `return { key: value }`, it adds
+//! `value → key` to the rename map. The `RenameAndShorthandNaturalizer` then
+//! renames every `value` identifier to `key` (so `{ key: value }` becomes
+//! `{ key: key }`) and collapses it to the shorthand `{ key }`. The source
+//! chunk's `runtime_imports` map is keyed by the original local name
+//! `value`, so `plan_module_reference_needs` takes the heuristic-rename map
+//! produced by `naturalize_module_body` and, on a miss for a post-rename
+//! name, reverse-resolves to the pre-rename original and looks *that* up in
+//! `runtime_imports`. The carried `RuntimeImportInfo` still has
+//! `imported = "value"`, so emit produces
+//! `import { value as key } from "../provider.js"`; a dropped import would
+//! leave `key` free (`ReferenceError: key is not defined` at module load).
+//! See the "Rename pipeline" entry in <devinfra/js/debundle/TODO.md> for the
 //! architectural follow-up that would let this defensive bridge retire.
 //!
 //! ## Repro shape
 //!
-//! Generic naming — `targetFn` is the peel target, `sA`/`sB` are the
-//! minified import locals, `propKeyA`/`propKeyB` are the readable
-//! property keys that drive the heuristic rename. The exact shape the
-//! the upstream `someObjectLiteralExport` peel hit.
+//! Generic naming — `sA`/`sB` are the minified import locals,
+//! `propKeyA`/`propKeyB` are the readable property keys that drive the
+//! heuristic rename.
 
 use debundle_e2e_support::*;
 use std::fs;

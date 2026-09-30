@@ -121,11 +121,8 @@ def _view(
     last_at: datetime | None,
     attached: dict[str, object] | None,
 ) -> ThreadView:
-    harness_state = (
-        ParseDict(attached, protocol_pb2.Attached()).harness_state
-        if attached is not None
-        else protocol_pb2.HARNESS_STATE_UNSPECIFIED
-    )
+    attachment = ParseDict(attached, protocol_pb2.Attached()) if attached is not None else None
+    harness_state = attachment.harness_state if attachment is not None else protocol_pb2.HARNESS_STATE_UNSPECIFIED
     return ThreadView(
         id=log.id,
         sandbox=log.sandbox,
@@ -139,4 +136,5 @@ def _view(
         last_cursor=last_cursor or 0,
         last_event_at=last_at,
         harness_state=protocol_pb2.HarnessState.Name(harness_state),
+        active_turn_id=(attachment.active_turn_id or None) if attachment is not None else None,
     )

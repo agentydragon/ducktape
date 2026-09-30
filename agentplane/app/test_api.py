@@ -21,7 +21,7 @@ from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
 from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_http_error
-from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
@@ -55,8 +55,12 @@ from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 
 TEST_MODELS = ModelCatalog(
     models=[
-        ModelOption(model="test-claude-model", display_name="Test Claude Model"),
-        ModelOption(model="test-codex-model", display_name="Test Codex Model"),
+        ModelOption(
+            model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
+        ModelOption(
+            model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
     ],
     harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
 )
@@ -774,8 +778,16 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
     """The catalog the session form offers; a thread carries its model, a sandbox does not."""
     assert client.get("/models").json() == {
         "models": [
-            {"model": "test-claude-model", "display_name": "Test Claude Model"},
-            {"model": "test-codex-model", "display_name": "Test Codex Model"},
+            {
+                "model": "test-claude-model",
+                "display_name": "Test Claude Model",
+                "reasoning_efforts": list(TEST_REASONING_EFFORTS),
+            },
+            {
+                "model": "test-codex-model",
+                "display_name": "Test Codex Model",
+                "reasoning_efforts": list(TEST_REASONING_EFFORTS),
+            },
         ],
         "harnesses": {"HARNESS_CLAUDE": ["test-claude-model"], "HARNESS_CODEX": ["test-codex-model"]},
     }
@@ -964,6 +976,61 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
 
         assert (await http.post("/threads/00000000-0000-0000-0000-000000000000/archive")).status_code == 404
         assert (await http.post("/threads/00000000-0000-0000-0000-000000000000/unarchive")).status_code == 404
+
+
+async def test_a_running_thread_cannot_be_archived(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    database_updates: DatabaseUpdates,
+    operator_sessions: OperatorSessionStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+    content: ContentStore,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
+    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    thread_id = await event_logs.open("live", "s-1", spec)
+
+    async def running_sessions(_sandbox: str) -> list[protocol_pb2.SessionSummary]:
+        return [
+            protocol_pb2.SessionSummary(session_id="s-1", spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING)
+        ]
+
+    monkeypatch.setattr(bridge, "list_sessions", running_sessions)
+    app = create_app(
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
+        database_updates=database_updates,
+        operator_sessions=operator_sessions,
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        response = await http.post(f"/threads/{thread_id}/archive")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "stop the harness before archiving this thread"
+    thread = await store.get_thread(thread_id)
+    assert thread is not None
+    assert thread.archived is False
 
 
 async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(

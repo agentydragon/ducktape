@@ -32,6 +32,10 @@ py_binary(
 py_library(
     name = "api",
     srcs = ["api.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":action_federation",
         ":action_policy",
@@ -65,6 +69,7 @@ py_library(
         "//agentplane/app/agent_runtime/view:fold",
         "//agentplane/app/agent_runtime/view:views",
         "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//httpx",
@@ -78,6 +83,10 @@ py_library(
 py_library(
     name = "presets",
     srcs = ["presets.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = ["@pypi//pydantic"],
 )
 
@@ -237,7 +246,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -356,13 +364,15 @@ py_test(
         "//agentplane/runner:service",
         "//agentplane/runner:session",
         "//agentplane/runner/testing:scripted_model",
+        "//util:net",
+        "//util/testing:asgi",
         "//util/testing:undeclared_outputs",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
         "@pypi//tenacity",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -610,7 +620,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -721,6 +730,10 @@ py_library(
 py_library(
     name = "action_federation",
     srcs = ["action_federation.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":identity",
         ":oidc",

@@ -1,0 +1,93 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - authentik-jwt-rotation.k8s.yaml
+components:
+  - ../../../k8s/agents/authentik-jwt-rotation-image-pins
+configMapGenerator:
+  - name: authentik-jwt-rotations-config
+    namespace: agents-infra
+    literals:
+      - |
+        rotations.yaml=rotations:
+          - name: claude-web-k8s
+            provider_slug: kubectl-sandbox-client-credentials
+            scopes: openid profile email groups
+            credentials_dir: /var/run/secrets/authentik/claude-web-k8s
+            sops_file: secrets/claude-web-k8s-jwt.yaml
+            token_field: jwt
+            expected_group: kubectl-sandbox-users
+          - name: haku-k8s
+            provider_slug: kubectl-sandbox-client-credentials
+            scopes: openid profile email groups
+            credential_mode: user_password
+            credentials_dir: /var/run/secrets/authentik/haku-k8s
+            sops_file: secrets/haku-k8s-jwt.yaml
+            token_field: jwt
+            expected_group: haku
+            expected_audiences:
+              - kubectl-sandbox-client-credentials
+            k8s_secret:
+              path: cluster/parked/cloud-agent-tf/haku-kube-token.sops.yaml
+              name: haku-cloud-kube-token
+              namespace: flux-system
+            probe:
+              url: https://kubeapi.allegedly.works/apis
+          - name: haku-k8s-openclaw
+            provider_slug: kubectl-sandbox-client-credentials
+            scopes: openid profile email groups
+            credential_mode: user_password
+            credentials_dir: /var/run/secrets/authentik/haku-k8s
+            sops_file: secrets/haku-k8s-openclaw-jwt.yaml
+            token_field: jwt
+            expected_group: haku
+            expected_audiences:
+              - kubectl-sandbox-client-credentials
+            k8s_secret:
+              path: cluster/k8s/agents/haku-egress-proxy/openclaw-spike-kube-token.sops.yaml
+              name: haku-openclaw-spike-kube-token
+              namespace: haku-egress-proxy
+            probe:
+              url: https://kubeapi.allegedly.works/apis
+          - name: agent-box-codex
+            provider_slug: kubectl-sandbox-client-credentials
+            scopes: openid profile email groups
+            credential_mode: user_password
+            credentials_dir: /var/run/secrets/authentik/agent-box-codex
+            sops_file: secrets/agent-box-codex-k8s-jwt.yaml
+            token_field: jwt
+            expected_group: agent-box-codex
+            expected_audiences:
+              - kubectl-sandbox-client-credentials
+          - name: haku-mail
+            provider_slug: stalwart-haku
+            scopes: openid profile email
+            credential_mode: user_password
+            credentials_dir: /var/run/secrets/authentik/haku-mail
+            sops_file: secrets/haku-mail-jwt.yaml
+            token_field: jwt
+            expected_audiences:
+              - stalwart-haku
+            expected_claims:
+              email: haku@allegedly.works
+            k8s_secret:
+              path: cluster/k8s/haku/mailbox/haku-mail-token.sops.yaml
+              name: haku-mail-token
+              namespace: flux-system
+            probe:
+              url: https://haku-mailbox.allegedly.works/jmap/session
+          - name: alloy-otlp
+            provider_slug: alloy-otlp-client-credentials
+            scopes: openid profile email
+            credentials_dir: /var/run/secrets/authentik/alloy-otlp
+            sops_file: secrets/alloy-otlp-bearer-token.yaml
+            token_field: token
+            exchange_scopes: openid profile email ak_proxy
+            k8s_secret:
+              path: cluster/k8s/agents/alloy-otlp-bearer/alloy-otlp-bearer.sops.yaml
+              name: alloy-otlp-bearer
+              namespace: flux-system
+              token_key: token
+            probe:
+              url: https://alloy-otlp.allegedly.works/v1/metrics
+              method: POST

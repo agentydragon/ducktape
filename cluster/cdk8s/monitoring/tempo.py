@@ -1,4 +1,4 @@
-"""Tempo (traces) with its tenant-local SeaweedFS bucket and credentials."""
+"""Tempo (traces) with its tenant-local SeaweedFS `PrivateBucket`."""
 
 from __future__ import annotations
 
@@ -9,31 +9,28 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.monitoring import grafana_helmrepository, mimir
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "tempo"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/tempo"
 _NAMESPACE = "monitoring"
 _CREDENTIALS_SECRET = "tempo-seaweedfs-credentials"
+# The chart's Service exposes OTLP/gRPC on the receiver's port.
+_OTLP_GRPC_PORT = 4317
+OTLP_GRPC_ENDPOINT = f"{NAME}.{_NAMESPACE}.svc.cluster.local:{_OTLP_GRPC_PORT}"
 
 
 def _storage(chart: Chart) -> None:
-    bucket = s3.Bucket(
+    s3.PrivateBucket(
         chart,
-        "bucket",
+        "storage",
         name=NAME,
-        namespace=_NAMESPACE,
+        tenant=_NAMESPACE,
         adopt_existing=True,
         description="Tempo's tenant-local SeaweedFS trace bucket.",
-    )
-    identity = s3.Identity(chart, "identity", name=NAME)
-    bucket.grant_read_write(identity)
-    identity.credentials(
-        namespace=_NAMESPACE,
-        secret=_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        description="Tempo's tenant-local SeaweedFS credentials.",
+        # Not the default `tempo-s3-credentials`: that is the legacy Secret below.
+        secret_name=_CREDENTIALS_SECRET,
     )
     # Retain the previous credential Secret during the staged handoff. The old
     # S3Credentials resource is retired separately; revoking its retained key and
@@ -63,7 +60,12 @@ def chart(app: App) -> Chart:
         values={
             "tempo": {
                 "receivers": {
-                    "otlp": {"protocols": {"grpc": {"endpoint": "0.0.0.0:4317"}, "http": {"endpoint": "0.0.0.0:4318"}}}
+                    "otlp": {
+                        "protocols": {
+                            "grpc": {"endpoint": f"0.0.0.0:{_OTLP_GRPC_PORT}"},
+                            "http": {"endpoint": "0.0.0.0:4318"},
+                        }
+                    }
                 },
                 "storage": {
                     "trace": {
@@ -78,7 +80,7 @@ def chart(app: App) -> Chart:
                 # because there are no metrics-generator instances registered in the ring.
                 "metricsGenerator": {
                     "enabled": True,
-                    "remoteWriteUrl": "http://mimir-gateway.monitoring.svc.cluster.local/api/v1/push",
+                    "remoteWriteUrl": mimir.PUSH_URL,
                     "processor": {"local_blocks": {}, "service_graphs": {}, "span_metrics": {}},
                 },
                 "overrides": {

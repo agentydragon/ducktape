@@ -1,7 +1,7 @@
 """Developer credential loading for plaid (sandbox smoke test, ad-hoc scripts).
 
-Kept out of `plaid.client` so the MCP server's dependency path never bundles the
-sops/subprocess machinery — the server constructs `PlaidCreds` from env settings.
+Kept out of `plaid.client` so deployed Link and sync entrypoints never bundle
+developer-only sops/subprocess loading; both construct `PlaidCreds` from env settings.
 """
 
 import os

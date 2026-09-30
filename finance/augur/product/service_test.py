@@ -358,7 +358,6 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
         }
     )
     assert counting_model.sample_requests[0].required_private_equity_issuers == frozenset({"private_holding_a"})
-    assert fan.model_id == "composite"
     assert fan.currency_code == "USD"
     assert fan.currency_quantum == "0.01"
     assert fan.metric == "cash"
@@ -396,7 +395,6 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8)]
-    assert terminal_distribution.model_id == "composite"
     assert terminal_distribution.currency_code == "USD"
     assert terminal_distribution.currency_quantum == "0.01"
     assert terminal_distribution.metric == "cash"
@@ -415,7 +413,6 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     detail = product.rollout(_rollout_request(scenario_key))
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,)]
-    assert detail.model_id == "composite"
     assert detail.rollout.seed == 7
     assert detail.currency_code == "USD"
     assert detail.currency_quantum == "0.01"
@@ -460,7 +457,7 @@ def test_fan_and_selected_rollout_metrics_share_one_reducer(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
     seeds = (7, 8)
-    situation, worlds, _model_id = product._worlds(scenario_key, seeds)
+    situation, worlds = product._worlds(scenario_key, seeds)
     metrics = simulate_product_metrics(
         worlds,
         horizon_months=situation.horizon_months,
@@ -477,9 +474,7 @@ def test_fan_and_selected_rollout_metrics_share_one_reducer(
     for name, expected_series in expected_metrics.items():
         if name == "month_index":
             continue
-        summary, _model_id = product._simulate_product_summary(
-            scenario_key, seeds, metric=name, percentiles=percentiles
-        )
+        summary = product._simulate_product_summary(scenario_key, seeds, metric=name, percentiles=percentiles)
         assert summary.failed_count == int((expected_failed >= 0).sum())
         expected_monthly_percentiles = np.asarray(
             [currency_quantiles(month, percentiles) for month in expected_series], dtype=np.int64
@@ -507,7 +502,7 @@ def test_concurrent_fan_and_terminal_requests_run_serially(
 
     def slow_simulate_product_summary(
         scenario: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
-    ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
+    ) -> ProductMetricFanSummary | ProductTerminalSummary:
         nonlocal active_simulations, max_active_simulations
         with active_lock:
             active_simulations += 1
@@ -552,7 +547,6 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     model = ConstantFrameModel(
         levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
         private_equity={issuer_id: PrivateEquityChannels(mark_usd_per_unit=mark_by_rollout)},
-        model_id="pe_mark_by_rollout_fixture",
     )
     product = make_product_service(model)
     scenario = ScenarioKey(
@@ -570,7 +564,6 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     )
 
     assert [request.rollout_seeds for request in model.sample_requests] == [(101, 102, 103)]
-    assert distribution.model_id == "pe_mark_by_rollout_fixture"
     assert distribution.terminal_metric_percentiles == {
         "percentile": [0.0, 50.0, 100.0],
         "value_quanta": [_usd_quanta(value) for value in [10_000.0, 20_000.0, 30_000.0]],
@@ -591,7 +584,6 @@ def test_selected_detail_executes_financially_once(
         ConstantFrameModel(
             levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
             private_equity={IssuerId("private_holding_a"): PrivateEquityChannels(mark_usd_per_unit=25.0)},
-            model_id="flat_selected_detail",
         )
     )
     original = service.execute
@@ -1000,7 +992,6 @@ def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_se
                     liquidity_blocked=event_matrix_with_step(default=False, override=True, month=1),
                 )
             },
-            model_id="collapsed_pe_fixture",
         )
     )
 
@@ -1049,7 +1040,6 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
                     ),
                 )
             },
-            model_id="tender_opportunity_fixture",
         )
     )
 
@@ -1423,14 +1413,16 @@ def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
         assert _usd_from_quanta(event.amount_quanta) == pytest.approx(monthly_payment)
         assert int(event.interest_quanta) + int(event.principal_quanta) == int(event.amount_quanta)
 
-    property_taxes = [event for event in detail.rollout.events if event.kind == "property_tax_payment"]
-    monthly_property_tax = 900_000.0 * 0.01 / 12.0
-    assert property_taxes
-    for tax_event in property_taxes:
-        assert isinstance(tax_event, PropertyTaxPaymentEvent)
-        assert _usd_from_quanta(tax_event.amount_due_quanta) == pytest.approx(monthly_property_tax)
-        assert tax_event.amount_paid_quanta == tax_event.amount_due_quanta
-        assert tax_event.shortfall_quanta == _usd_quanta(0.0)
+    # Location A's situs is San Francisco, and the app's month 0 is January 2024. February is the
+    # eighth month of FY 2023-24, billed on the $900,000 price at 1.17769382% with no exemption (the
+    # owner was not there on its lien date): $10,599.24 a year, of which February pays the eighth
+    # cumulative twelfth, $7,066.16 - $6,182.89 = $883.27.
+    [tax_event] = [event for event in detail.rollout.events if event.kind == "property_tax_payment"]
+    assert isinstance(tax_event, PropertyTaxPaymentEvent)
+    assert tax_event.month_index == 1
+    assert tax_event.amount_due_quanta == _usd_quanta(883.27)
+    assert tax_event.amount_paid_quanta == tax_event.amount_due_quanta
+    assert tax_event.shortfall_quanta == _usd_quanta(0.0)
 
 
 def test_product_lowers_primary_residence_assignments_to_housing(

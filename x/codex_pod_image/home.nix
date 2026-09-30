@@ -8,7 +8,7 @@ let
   keys = import ../../nix/ssh-keys.nix;
   # Humans authorised to `ssh codex-pod` (over `kubectl exec`) — same workstation
   # keys agent-box authorises for inbound login; see
-  # cluster/k8s/parked/agent-box/nix/nixos.nix.
+  # cluster/parked/agent-box/nix/nixos.nix.
   loginKeys = [
     keys.wyrm2
     keys.atlas
@@ -133,7 +133,7 @@ in
 
   # Codex runs fully unattended in this isolated agent pod — never prompt, no
   # sandbox — mirroring agent-box's `ducktape.codex` profile at
-  # cluster/k8s/parked/agent-box/nix/home/codex.nix. The upstream programs.codex
+  # cluster/parked/agent-box/nix/home/codex.nix. The upstream programs.codex
   # module writes config.toml from a home-manager *activation* script (merge.py),
   # but this image bakes only static home-files and never runs activation — so we
   # bake config.toml directly.

@@ -111,7 +111,7 @@ let
   path = pkgs.lib.makeBinPath ([ gatewayWithRuntimePlugins ] ++ tools);
 in
 pkgs.dockerTools.buildLayeredImage {
-  name = "ghcr.io/agentydragon/openclaw";
+  name = "git.allegedly.works/ducktape-ci/public-coder-agent";
   # CI supplies the sortable devel-* tag selected by Flux.
   tag = null;
 

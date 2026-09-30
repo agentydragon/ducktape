@@ -22,10 +22,6 @@ class EntityKind(StrEnum):
     COMMAND = "command"
 
 
-# Kinds positioned in the thread and paged by cursor; view state and command rows sync whole.
-SEGMENT_KINDS = (EntityKind.ITEM, EntityKind.CONFIRMED_INPUT, EntityKind.LIFECYCLE)
-
-
 class ThreadPayloadReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -79,6 +75,8 @@ class ThreadItemState(BaseModel):
     tool_name: str
     completion: str | None
     tool_succeeded: bool | None
+    recovery: int | None
+    recovery_reason: str
 
 
 class ThreadConfirmedInputState(BaseModel):
@@ -173,4 +171,7 @@ class ThreadView(BaseModel):
     harness_state: str = Field(
         description="The protocol's HarnessState enum member, by name: HARNESS_STATE_RUNNING, "
         "HARNESS_STATE_STOPPED, or HARNESS_STATE_UNSPECIFIED while no feed has ever attached to this thread."
+    )
+    active_turn_id: str | None = Field(
+        default=None, description="The runner's currently active turn, or None when it is idle."
     )

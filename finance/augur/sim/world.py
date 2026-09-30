@@ -49,15 +49,20 @@ from finance.augur.sim.income import (
     TransferIncomeCategory,
     income_source_wire_id,
 )
-from finance.augur.sim.locations import Location
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, Portfolio, TlhStatement
-from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath
+from finance.augur.sim.market_path import INFLATION, Amount, IndexedAmount, MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
 from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
 from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
 from finance.augur.sim.private_equity import TenderPolicy
 from finance.augur.sim.property import Housing, Properties, ScheduledPurchase, mortgage_terms
-from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill, PropertyTaxPolicy
+from finance.augur.sim.property_tax import (
+    PropertyTaxAuthority,
+    PropertyTaxBill,
+    PropertyTaxPolicy,
+    calendar_year,
+    fiscal_year,
+)
 from finance.augur.sim.schedule import Once, Recurring, Schedule, is_due
 from finance.augur.sim.tax_authority import Assessment, MortgageInterestDeduction, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw
@@ -313,10 +318,10 @@ class World:
         ):
             raise ValueError(f"invalid bond terms for {bond.bond_id!r}")
         if isinstance(bond.coupon, IndexedCoupon):
-            if "inflation" not in self.market.series:
+            if INFLATION not in self.market.series:
                 raise ValueError(f"missing inflation series for indexed bond {bond.bond_id!r}")
             if max(0, bond.purchase_month_index) > self.horizon_months or any(
-                value <= 0 for value in self.market.path("inflation")
+                value <= 0 for value in self.market.path(INFLATION)
             ):
                 raise ValueError(f"invalid bond inflation path for {bond.bond_id!r}")
 
@@ -445,9 +450,7 @@ class World:
     def _purchases(self) -> tuple[ScheduledPurchase, ...]:
         return () if self.properties is None else self.properties.housing.purchases
 
-    def declare_housing(
-        self, housing: Housing, tax_policies: Sequence[PropertyTaxPolicy] = (), locations: Sequence[Location] = ()
-    ) -> None:
+    def declare_housing(self, housing: Housing, tax_policies: Sequence[PropertyTaxPolicy] = ()) -> None:
         """Properties bought on a scripted schedule (month zero for one held from the start), their scripted
         lifecycle, and the authorities that tax them. Declared once per world."""
         self._composing()
@@ -455,7 +458,6 @@ class World:
             raise ValueError("housing is already declared")
         housing.check(self.horizon_months)
         purchases = {purchase.property_id: purchase for purchase in housing.purchases}
-        located = {location.location_id: location for location in locations}
         for liability_id in self.mortgages:
             if any(
                 purchase.mortgage is not None and purchase.mortgage.liability_id == liability_id
@@ -468,12 +470,6 @@ class World:
             if not any(account.agent_id == agent_id for account in self.accounting.declared):
                 raise ValueError(f"primary residence names unknown agent {agent_id!r}")
         for purchase in housing.purchases:
-            if purchase.location_id not in located:
-                known = ", ".join(repr(id_) for id_ in sorted(located)) or "<none>"
-                raise ValueError(
-                    f"scheduled property purchase {purchase.cause_id!r} references unknown location_id "
-                    f"{purchase.location_id!r}; known location ids: {known}"
-                )
             for account in (
                 AccountRef(agent_id=purchase.buyer_agent_id, account_id=purchase.buyer_account_id),
                 AccountRef(agent_id=purchase.seller_agent_id, account_id=purchase.seller_account_id),
@@ -493,12 +489,12 @@ class World:
         for sale in housing.sales:
             if sale.property_id not in purchases:
                 raise ValueError(f"sale references unknown property {sale.property_id!r}")
-            # A sale prices the property off its location's path; nothing else reads that series.
-            series_id = f"home_value:{purchases[sale.property_id].location_id}"
+            # A sale prices the property off its market's path; nothing else reads that series.
+            series_id = f"home_value:{purchases[sale.property_id].market}"
             if series_id not in self.market.series:
                 raise ValueError(f'missing series "{series_id}"')
-        # A held property is marked off its location's path wherever the path carries one.
-        for series_id in {f"home_value:{purchase.location_id}" for purchase in housing.purchases}:
+        # A held property is marked off its market's path wherever the path carries one.
+        for series_id in {f"home_value:{purchase.market}" for purchase in housing.purchases}:
             if series_id in self.market.series:
                 self.market.require_prices(series_id)
         taxed: dict[tuple[PropertyId, int], int] = {}
@@ -519,13 +515,49 @@ class World:
                         f"overlapping property tax policies for {policy.property_id!r} at month {month}: "
                         f"indexes {previous} and {index}"
                     )
+            self._check_situs(policy, owned)
+        # Whoever charges a transfer tax the owner owes is the parcel's authority.
+        transfers = [
+            (purchase.property_id, purchase.month, purchase.buyer_transfer_tax_share_ppb)
+            for purchase in housing.purchases
+        ] + [
+            (sale.property_id, sale.month, MONEY_FACTOR_SCALE - sale.buyer_transfer_tax_share_ppb)
+            for sale in housing.sales
+        ]
+        for property_id, month, share in transfers:
+            if not 0 <= share <= MONEY_FACTOR_SCALE:
+                raise ValueError(f"a transfer tax share for {property_id!r} is outside [0, 1]")
+            if share and purchases[property_id].parcel.situs.transfer_taxes and taxed.get((property_id, month)) is None:
+                raise ValueError(
+                    f"{property_id!r} owes transfer tax at month {month}, which no property tax policy charges"
+                )
         self.properties = Properties(housing, self.accounting)
         self.property_tax_authorities = [
-            PropertyTaxAuthority(
-                policy, purchases[policy.property_id], located[purchases[policy.property_id].location_id]
-            )
-            for policy in tax_policies
+            PropertyTaxAuthority(policy, purchases[policy.property_id]) for policy in tax_policies
         ]
+
+    def _check_situs(self, policy: PropertyTaxPolicy, purchase: ScheduledPurchase) -> None:
+        """The situs publishes a debt rate for the parcel's first billed fiscal year, and a lien date
+        with no published inflation factor finds the modeled CPI it is measured by."""
+        law = purchase.parcel.situs
+        law.debt_rate(fiscal_year(policy, purchase.month + 1))
+        prior = purchase.parcel.prior_assessed_value
+        if prior is not None and not 0 <= prior <= purchase.purchase_price:
+            raise ValueError(
+                f"{policy.property_id!r} is bought below its prior assessed value, whose supplemental refund "
+                "is not modeled"
+            )
+        latest = max(law.inflation_factors, default=None)
+        simulated = [
+            month
+            for month in range(12 * (purchase.month // 12 + 1), self.horizon_months, 12)
+            if latest is None or calendar_year(policy, month) > latest
+        ]
+        if simulated and INFLATION not in self.market.series:
+            raise ValueError(
+                f"property tax on {policy.property_id!r} factors simulated lien dates from month {simulated[0]}, "
+                "which needs a modeled inflation path"
+            )
 
     def declare_flow(
         self,
@@ -649,9 +681,9 @@ class World:
         if isinstance(actor, TaxAuthority):
             self._composing()
             if isinstance(actor.indexation, CpiIndexedLaw):
-                if "inflation" not in self.market.series:
+                if INFLATION not in self.market.series:
                     raise ValueError("CPI-indexed tax needs a modeled inflation path")
-                if min(self.market.path("inflation")) <= 0:
+                if min(self.market.path(INFLATION)) <= 0:
                     raise ValueError("CPI-indexed tax needs a positive inflation path")
             self.accounting.enroll(actor.profile)
             self.tax_authorities.append(actor)
@@ -1097,6 +1129,8 @@ class World:
             )
             if statement is not None and property_authority.handle(statement):
                 raise ValueError("a property statement takes no reply")
+            if property_authority.handle(self.market.statement(month)):
+                raise ValueError("a market statement takes no reply")
             for property_bill in property_authority.handle(opened):
                 self.register(property_bill)
         for authority in self.tax_authorities:

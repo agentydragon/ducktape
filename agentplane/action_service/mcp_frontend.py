@@ -31,7 +31,7 @@ from agentplane.action_service.catalog import (
     UnknownActionError,
 )
 from agentplane.action_service.db import ActionConflictError, ActionNotFoundError
-from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE, DIRECT_WAIT_SECONDS, DirectToolProvider, refusal
+from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE, DirectToolProvider, refusal
 from agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -52,7 +52,7 @@ from agentplane.action_service.service import (
 )
 from agentplane.action_service.tool_results import tool_result
 from agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
-from agentplane.action_service.waits import ActionWaiter, WaitOptions
+from agentplane.action_service.waits import ActionWaiter, WaitLimitExceededError, WaitOptions
 from agentplane.subjects import ServiceAccountRef
 
 PageSize = Annotated[int, Field(ge=1, le=100, description="Maximum entries in this page (1-100).")]
@@ -109,8 +109,6 @@ class PolicyField(StrEnum):
     SYNCED = "synced"
     BINDINGS = "bindings"
     AUTO_APPROVE_IF = "auto_approve_if"
-    AUTO_DENY_IF = "auto_deny_if"
-    AUTO_DENY_UNLESS = "auto_deny_unless"
 
 
 DEFAULT_POLICY_FIELDS: Final[list[PolicyField]] = [PolicyField.SUBJECT, PolicyField.SYNCED, PolicyField.BINDINGS]
@@ -259,6 +257,7 @@ def _tool_errors[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitab
             UnknownActionError,
             InvalidActionArgumentsError,
             UpdatesUnavailableError,
+            WaitLimitExceededError,
         ) as error:
             # Re-raised as ToolError (a FastMCPError) so mask_error_details=True still lets this
             # message through: FastMCP only preserves FastMCPError text, masking any other exception.
@@ -335,9 +334,11 @@ def create_server(
     updates: ActionUpdates,
     verifier: CallerTokenVerifier,
     *,
-    direct_wait_seconds: float = DIRECT_WAIT_SECONDS,
+    direct_wait_seconds: float,
+    max_wait_seconds: float,
 ) -> FastMCP:
-    waiter = ActionWaiter(service, updates)
+    direct_wait_seconds = min(direct_wait_seconds, max_wait_seconds)
+    waiter = ActionWaiter(service, updates, max_wait_seconds=max_wait_seconds)
     # strict_input_validation is left at FastMCP's own default (False): its own tool dispatch
     # validates arguments via TypeAdapter.validate_python on the already-JSON-decoded arguments
     # dict, never validate_json on the raw request bytes, and pydantic's "a JSON string coerces to
@@ -352,9 +353,12 @@ def create_server(
     # it relaxes the input's Python type, not the value check.
     server = FastMCP(
         "Agentplane Actions",
-        instructions="Discover Action identifiers, fetch details only when needed, then submit each request once under "
-        "a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; recover a "
-        "lost response with get_action_request(idempotency_key=...), never with a replacement key.",
+        instructions=(
+            "Discover Action identifiers, fetch details only when needed, then submit each request once under "
+            "a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; "
+            "recover a lost response with get_action_request(idempotency_key=...), never with a replacement key. "
+            f"This instance allows wait.wait_seconds up to {max_wait_seconds:g} seconds."
+        ),
         auth=verifier,
         mask_error_details=True,
         tasks=False,
@@ -417,7 +421,7 @@ def create_server(
             return refusal(action, str(undecided))
         view = await wait_for_receipt(view.id, principal, WaitOptions(wait_seconds=direct_wait_seconds))
         await revalidate(principal)
-        return tool_result(view, catalog.groups[action.group].executor)
+        return tool_result(view, catalog.groups[action.group].executor, max_wait_seconds=max_wait_seconds)
 
     server.add_provider(DirectToolProvider(catalog, service, external_caller, call_direct, direct_wait_seconds))
 
@@ -474,7 +478,7 @@ def create_server(
     ) -> ToolResult:
         """Read what bindings auto-decide for a target: your own ("self", the default), or a named
         ServiceAccount. include_fields is a pure allowlist over subject (self-target only), synced,
-        bindings, auto_approve_if, auto_deny_if, and auto_deny_unless, defaulting to
+        bindings, and auto_approve_if, defaulting to
         subject/synced/bindings. Name auto_approve_if before request_action to learn which Actions and
         arguments are approved without an operator -- each entry names the binding, set and index a
         Decision's policy_evidence names; a request matching nothing waits for one, and until synced is
@@ -501,10 +505,11 @@ def create_server(
     ) -> ToolResult:
         """Submit one Action for policy evaluation, human decision if needed, and single-shot execution.
         Supply a stable idempotency_key with structured action group/name, validated arguments, and a title the deciding operator reads.
-        Answers once wait ends as get_action_result would: a finished Action's own result exactly as its tool answered, otherwise what it waits on or why it has none. wait.wait_seconds (0-30, default 0) optionally waits for wait.wait_until ("decision" or "terminal", default terminal).
+        Answers once wait ends as get_action_result would: a finished Action's own result exactly as its tool answered, otherwise what it waits on or why it has none. wait.wait_seconds (0 through this instance's configured maximum, default 0) optionally waits for wait.wait_until ("decision" or "terminal", default terminal).
         respond_with="receipt" answers with a compact receipt (id, state, version, created_at, updated_at) instead. include_fields, for a receipt only, is a pure allowlist: input (the submitted idempotency_key/action/arguments/title/description as one unit), origin, correlation, caller, external_grant, decision, and execution (state, error and timing, never the result) widen it.
         Pending is not success. A key this caller already used is refused; after response loss read the request with get_action_request or get_action_result(idempotency_key=...), never submit a new key.
         """
+        waiter.validate(wait)
         if respond_with is ResponseForm.RESULT and set(include_fields) != set(DEFAULT_RECEIPT_FIELDS):
             raise ToolError('include_fields shapes a receipt; pass respond_with="receipt" to get one.')
         principal = caller.principal
@@ -513,7 +518,7 @@ def create_server(
             view = await wait_for_receipt(view.id, principal, wait)
             await revalidate(principal)
         if respond_with is ResponseForm.RESULT:
-            return tool_result(view, catalog.groups[view.action.group].executor)
+            return tool_result(view, catalog.groups[view.action.group].executor, max_wait_seconds=max_wait_seconds)
         return _result(_receipt(view, set(include_fields)), exclude_unset=True)
 
     @server.tool(annotations={"readOnlyHint": True})
@@ -527,10 +532,11 @@ def create_server(
     ) -> ToolResult:
         """Read your submitted Action's current receipt: its Decision and its execution's state and error; read the result with get_action_result.
         Name the request by exactly one of the request ID returned by request_action or the idempotency_key you submitted it under; the key recovers a submission whose response was lost.
-        wait.wait_seconds (0-30) optionally waits for wait.wait_until ("decision" or "terminal", default terminal); a deadline returns the current pending receipt.
+        wait.wait_seconds (0 through this instance's configured maximum) optionally waits for wait.wait_until ("decision" or "terminal", default terminal); a deadline returns the current pending receipt.
         Returns a compact receipt by default -- see request_action for what include_fields widens; request decision/execution once state is terminal to see how it ended.
         This never submits, retries, or cancels execution, and other callers' requests are not readable.
         """
+        waiter.validate(wait)
         principal = caller.principal
         view = await wait_for_receipt(await named_request(request_id, idempotency_key, principal), principal, wait)
         if wait.wait_seconds:
@@ -548,10 +554,11 @@ def create_server(
         """Read your Action's outcome as the tool it ran answered: its own content blocks, images included, and
         structured content. No receipt carries the result.
         Name the request by exactly one of request_id or idempotency_key, as for get_action_request.
-        wait.wait_seconds (0-30) optionally waits for wait.wait_until ("decision" or "terminal", default terminal); until it finishes the result says what it waits on and is not an error.
+        wait.wait_seconds (0 through this instance's configured maximum) optionally waits for wait.wait_until ("decision" or "terminal", default terminal); until it finishes the result says what it waits on and is not an error.
         Denied, cancelled, failed and unknown outcomes are error results; unknown means it may have run.
         This never submits, retries, or cancels execution, and other callers' requests are not readable.
         """
+        waiter.validate(wait)
         principal = caller.principal
         view = await wait_for_receipt(await named_request(request_id, idempotency_key, principal), principal, wait)
         if wait.wait_seconds:
@@ -559,7 +566,7 @@ def create_server(
         group = catalog.groups.get(view.action.group)
         if group is None:
             raise ToolError("This Action's group is no longer configured; read the request with get_action_request.")
-        return tool_result(view, group.executor)
+        return tool_result(view, group.executor, max_wait_seconds=max_wait_seconds)
 
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors

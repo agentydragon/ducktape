@@ -60,9 +60,10 @@ class RenderedDirectory:
     decryption: KustomizationSpecDecryption | None
 
 
-def artifact_directory(artifact: ArtifactGeneratorSpecArtifacts) -> str:
-    """The repo-relative directory `artifact` copies first: its consumer's Kustomization directory.
-    Later copies are shared bases the Kustomization references.
+def artifact_directories(artifact: ArtifactGeneratorSpecArtifacts) -> list[str]:
+    """The repo-relative directories `artifact` copies, in copy order. The first is its consumer's
+    Kustomization directory; later ones are shared bases and Components that Kustomization
+    references.
 
     Raises on any shape `artifact_generators.artifact` does not build -- no copies, or a copy
     that is not one whole directory copied to the same path -- since the Kustomization's `path`
@@ -82,7 +83,12 @@ def artifact_directory(artifact: ArtifactGeneratorSpecArtifacts) -> str:
         directories.append(directory)
     if not directories:
         raise ValueError(f"{artifact.name=} copies nothing")
-    return directories[0]
+    return directories
+
+
+def artifact_directory(artifact: ArtifactGeneratorSpecArtifacts) -> str:
+    """The directory `artifact` copies first: its consumer's Kustomization directory."""
+    return artifact_directories(artifact)[0]
 
 
 @jsii.implements(IValidation)
@@ -229,7 +235,8 @@ def flux_kustomization_depends_on_many(*dependencies: Kustomization) -> list[Kus
 
 
 class GeneratorOptions(BaseModel):
-    """A generator entry's `options`, per kustomize.config.k8s.io/v1beta1."""
+    """A generator entry's `options`, or the Kustomization's `generatorOptions` covering every
+    entry, per kustomize.config.k8s.io/v1beta1."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -244,12 +251,37 @@ class ConfigMapArgs(BaseModel):
     (`ConfigMap.from_config_map_name`)."""
 
     name: str
-    namespace: str
+    namespace: str | None = Field(
+        description="None only in a base whose overlays set the namespace, as on the objects that mount it: "
+        "kustomize rewrites a reference to the hashed name only within one namespace."
+    )
     options: GeneratorOptions | None = None
     files: list[str] | None = Field(
         default=None, description="File names relative to the directory; each becomes a key of that name."
     )
     literals: list[str] | None = Field(default=None, description="`KEY=value` entries, split at the first `=`.")
+
+
+class PatchFile(BaseModel):
+    """A `patches` entry naming a strategic-merge patch file beside the `kustomization.yaml`;
+    each object in it names the object it patches."""
+
+    path: str
+
+
+class PatchTarget(BaseModel):
+    """A `patches` entry's `target` (kustomize's `Selector`)."""
+
+    kind: str
+    name: str
+    namespace: str
+
+
+class Json6902Patch(BaseModel):
+    """A `patches` entry holding a JSON6902 patch (RFC 6902 operations, as YAML) of `target`."""
+
+    patch: str
+    target: PatchTarget
 
 
 class _KustomizeKustomization(BaseModel):
@@ -264,7 +296,12 @@ class _KustomizeKustomization(BaseModel):
     components: list[str] | None = Field(
         default=None, description="Paths to Kustomize Component directories, per kustomize.config.k8s.io/v1beta1."
     )
+    generator_options: GeneratorOptions | None = None
     config_map_generator: list[ConfigMapArgs] | None = None
+    configurations: list[str] | None = Field(
+        default=None, description="Transformer configuration files, relative to the directory."
+    )
+    patches: list[PatchFile | Json6902Patch] | None = None
 
 
 def kustomize_kustomization(
@@ -272,7 +309,10 @@ def kustomize_kustomization(
     resources: list[str],
     namespace: str | None = None,
     components: Sequence[str] = (),
+    generator_options: GeneratorOptions | None = None,
     config_map_generator: Sequence[ConfigMapArgs] = (),
+    configurations: Sequence[str] = (),
+    patches: Sequence[PatchFile | Json6902Patch] = (),
 ) -> dict[str, object]:
     """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
 
@@ -285,6 +325,9 @@ def kustomize_kustomization(
         namespace=namespace,
         resources=resources,
         components=list(components) if components else None,
+        generator_options=generator_options,
         config_map_generator=list(config_map_generator) if config_map_generator else None,
+        configurations=list(configurations) if configurations else None,
+        patches=list(patches) if patches else None,
     )
     return manifest.model_dump(by_alias=True, exclude_none=True)

@@ -1,5 +1,5 @@
-"""Mimir (metrics storage and the ruler) with its tenant-local SeaweedFS buckets and
-credentials."""
+"""Mimir (metrics storage and the ruler) with its tenant-local SeaweedFS buckets, identity
+and credentials."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "mimir"
@@ -19,6 +20,9 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/mimir"
 _NAMESPACE = "monitoring"
 _CREDENTIALS_SECRET = "mimir-seaweedfs-credentials"
 _S3_ENDPOINT = "seaweedfs-s3.seaweedfs.svc:8333"
+# The chart's nginx gateway Service, on port 80, named after the release.
+GATEWAY_URL = f"http://{NAME}-gateway.{_NAMESPACE}.svc.cluster.local"
+PUSH_URL = f"{GATEWAY_URL}/api/v1/push"
 
 
 def _s3(bucket: str) -> dict[str, object]:
@@ -48,18 +52,21 @@ def _storage(chart: Chart) -> None:
     # Tenant-local ownership for Mimir's existing Seaweed buckets and credentials.
     # The old seaweedfs-namespace resources remain until the consumer cutover and
     # data-path verification are complete.
-    identity = s3.Identity(chart, "identity", name=NAME)
+    identity = s3.identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
     for bucket, description in (("mimir-blocks", "Mimir blocks."), ("mimir-ruler", "Mimir ruler state.")):
-        s3.Bucket(
+        s3.bucket(
             chart,
             bucket,
             name=bucket,
             namespace=_NAMESPACE,
+            access=[BucketAccess.read_write(identity.name)],
             adopt_existing=True,
             description=description,
-            grant_name=NAME,
-        ).grant_read_write(identity)
-    identity.credentials(
+        )
+    s3.credentials(
+        chart,
+        "credentials",
+        identity=identity.name,
         namespace=_NAMESPACE,
         # A new Secret during the staged handoff: the existing one is populated by the old
         # cross-namespace S3Credentials object and cannot be adopted here.

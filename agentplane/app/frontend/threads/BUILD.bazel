@@ -1,0 +1,319 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+TSCONFIG = "//agentplane/app/frontend:tsconfig"
+
+ts_library(
+    name = "chronological_debug",
+    srcs = [
+        "chronological_debug.tsx",
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:json_view",
+    ],
+)
+
+ts_library(
+    name = "history_rows",
+    srcs = ["history_rows.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "history_rows_test",
+    testonly = True,
+    srcs = ["history_rows.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_rows",
+        ":thread_entity_fixture",
+        ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "local_commands",
+    srcs = ["local_commands.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_log_pb",
+    ],
+)
+
+ts_library(
+    name = "local_commands_test",
+    testonly = True,
+    srcs = ["local_commands.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":local_commands",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "projected_session",
+    srcs = [
+        "projected_session.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":chronological_debug",
+        ":history_rows",
+        ":projected_session_css",
+        ":retained_disclosures",
+        ":thread_cards",
+        ":thread_commands",
+        ":thread_sync",
+        ":thread_title",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@tanstack/react-virtual",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:stream_status",
+        "//agentplane/app/frontend:thread_status_dot",
+        "//agentplane/app/frontend:topbar",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+# projected_session.tsx imports this stylesheet for the bundler.
+js_library(
+    name = "projected_session_css",
+    srcs = ["projected_session.css"],
+)
+
+ts_library(
+    name = "projected_session_test",
+    testonly = True,
+    srcs = ["projected_session.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_rows",
+        ":local_commands",
+        ":projected_session",
+        ":retained_disclosures",
+        ":thread_cards",
+        ":thread_commands",
+        ":thread_entity_fixture",
+        ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:stream_status",
+        "//agentplane/app/frontend:test_model_catalog",
+        "//agentplane/app/frontend:topbar",
+        "//agentplane/protocol:command_pb",
+        "//agentplane/protocol:event_log_pb",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "retained_disclosures",
+    srcs = ["retained_disclosures.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "retained_disclosures_test",
+    testonly = True,
+    srcs = ["retained_disclosures.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":retained_disclosures",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "thread_cards",
+    srcs = ["thread_cards.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_rows",
+        ":retained_disclosures",
+        ":thread_evidence",
+        ":thread_sync",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:json_view",
+        "//agentplane/app/frontend:markdown",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "thread_commands",
+    srcs = ["thread_commands.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":local_commands",
+        ":thread_cards",
+        ":thread_evidence",
+        ":thread_sync",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/protocol:command_pb",
+    ],
+)
+
+ts_library(
+    name = "thread_evidence",
+    srcs = [
+        "tabler_icons.d.ts",
+        "thread_evidence.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":chronological_debug",
+        ":retained_disclosures",
+        ":thread_sync",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:json_view",
+    ],
+)
+
+ts_library(
+    name = "thread_entity_fixture",
+    testonly = True,
+    srcs = ["thread_entity_fixture.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_sync",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "thread_store",
+    srcs = ["thread_store.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_sync",
+        "//:node_modules/@electric-sql/client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:live_stream",
+    ],
+)
+
+ts_library(
+    name = "thread_store_test",
+    testonly = True,
+    srcs = ["thread_store.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_store",
+        ":thread_sync",
+        "//:node_modules/@electric-sql/client",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "thread_sync",
+    srcs = ["thread_sync.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:live_stream",
+    ],
+)
+
+ts_library(
+    name = "thread_title",
+    srcs = [
+        "thread_title.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_title_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+    ],
+)
+
+# thread_title.tsx imports this stylesheet for the bundler.
+js_library(
+    name = "thread_title_css",
+    srcs = ["thread_title.css"],
+)
+
+ts_library(
+    name = "thread_title_test",
+    testonly = True,
+    srcs = ["thread_title.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_title",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
+    ],
+)

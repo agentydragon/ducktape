@@ -38,6 +38,7 @@ from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
+from agentplane.app.conftest import TEST_REASONING_EFFORTS
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -285,8 +286,16 @@ async def _serve(
             store,
             ModelCatalog(
                 models=[
-                    ModelOption(model="test-model-before", display_name="Test Model Before"),
-                    ModelOption(model="test-model-after", display_name="Test Model After"),
+                    ModelOption(
+                        model="test-model-before",
+                        display_name="Test Model Before",
+                        reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                    ),
+                    ModelOption(
+                        model="test-model-after",
+                        display_name="Test Model After",
+                        reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                    ),
                 ],
                 harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
             ),

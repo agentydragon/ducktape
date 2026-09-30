@@ -1,4 +1,4 @@
-//! Differential harness for the gate-ladder unification.
+//! Differential harness for the gate ladder.
 //!
 //! Compares the kernel's hot boolean merge gate
 //! (`QuotientGraph::merge_preserves_invariants`) against the
@@ -6,32 +6,33 @@
 //! `check_realizability_touching(owner_graph, post_partition, M)` is
 //! realizable, where `M` is the post-merge module and
 //! `post_partition` is built by an independent reference projection
-//! (NOT the kernel's own `project_partition`).
+//! over the kernel's public class-membership surface.
 //!
-//! Since the §8 PR 4 cutover, `check_merge_boolean` routes through
-//! the index's tier ladder, so the harness asserts **strict
-//! equality** on every precondition-passing query — the pre-cutover
-//! known-divergence catalog is gone. Every comparison also asserts
-//! per-tier skip soundness (§7.1) against the ladder's decision so a
-//! ladder bug localizes to its tier. The deterministic fixtures pin
-//! the three semantic fixes the cutover landed (the atomic-unit /
-//! residual-pile over-rejection, Pass-2 blindness, module-granularity
-//! Pass 1) plus the clause-2 cross-rebind caveat.
-//!
-//! Skeleton caveat (completed by Track F1 in later PRs): generation
-//! uses a deterministic xorshift sweep over small synthetic reports
-//! rather than proptest (no proptest dep in the crate universe yet).
+//! `check_merge_boolean` routes through the index's tier ladder, so
+//! the harness asserts **strict equality** on every
+//! precondition-passing query. Every comparison also asserts per-tier
+//! skip soundness against the ladder's decision so a ladder bug
+//! localizes to its tier. The deterministic fixtures pin the
+//! module-level gate's decisions where a class-level or
+//! constraining-only gate would differ (residual-pile merges, Pass-2
+//! TDZ, module-granularity Pass 1) plus the clause-2 cross-rebind
+//! case.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::ids::{LogicalModuleIndex, ModuleId};
 use analysis::partition::Partition;
 use analysis::{DepKind, OwnerGraphNodeReport, OwnerGraphReport};
-use gate::{LadderDecision, RealizabilityVerdict, SccRejection, check_realizability_touching};
-use peel::quotient::{ClassId, QuotientGraph, SpecModuleGroup, build_seed_quotient, greedy_step};
-use report_fixtures::{
-    active_owner, atomic_unit_for, graph_of, module_group, owner_edge, residual_owner,
+use gate::{
+    LadderDecision, RealizabilityVerdict, SccRejection, check_realizability,
+    check_realizability_touching,
 };
+use report_fixtures::{
+    active_owner, atomic_unit_for, graph_of, owner_edge, promoted_owner_edge, residual_owner,
+};
+
+use crate::quotient::testing::{greedy_step, module_group};
+use crate::quotient::{ClassId, QuotientGraph, SpecModuleGroup, build_seed_quotient};
 
 const CAP_LINES: usize = 10_000;
 
@@ -43,13 +44,12 @@ fn module_id(index: usize) -> ModuleId {
 // Independent reference projection.
 //
 // Rebuilds the module-level partition from the kernel's *public*
-// class-membership surface plus the report's own residual flags —
-// per the Track F note, deliberately not the kernel's
-// `project_partition`. Projection rules (docs/design.md / plan §2):
-//   * a class maps to the residual module `logical(0)` iff it is the
-//     marked residual catch-all, or it is not anchored to a
-//     pre-existing module and every member owner is residual-destined
-//     per the report;
+// class-membership surface plus the report's own residual flags, so
+// it shares no projection code with the kernel. Projection rules
+// (docs/design.md "Peel planner unification"):
+//   * a class maps to the residual module `logical(0)` iff it is not
+//     anchored to a pre-existing module and every member owner is
+//     residual-destined per the report;
 //   * every other class gets a distinct module id, assigned in
 //     ascending `ClassId` order starting at 1.
 // ---------------------------------------------------------------------
@@ -70,10 +70,9 @@ fn class_maps_to_residual(
     residual_ids: &BTreeSet<String>,
     class: ClassId,
 ) -> bool {
-    q.class_is_residual(class)
-        || (!q.class_is_pre_existing_module(class)
-            && q.class_members(class)
-                .all(|owner| residual_ids.contains(q.owner_id(owner))))
+    !q.class_is_pre_existing_module(class)
+        && q.class_members(class)
+            .all(|owner| residual_ids.contains(q.owner_id(owner)))
 }
 
 /// Pre-state class → module map plus the next free module index.
@@ -108,9 +107,6 @@ fn reference_post_module(
     c2: ClassId,
 ) -> ModuleId {
     let (winner, loser) = (c1.min(c2), c1.max(c2));
-    if q.class_is_residual(winner) || q.class_is_residual(loser) {
-        return module_id(0);
-    }
     let pre_existing =
         q.class_is_pre_existing_module(winner) || q.class_is_pre_existing_module(loser);
     if !pre_existing
@@ -137,7 +133,7 @@ fn reference_partition(
     overlay: Option<(ClassId, ClassId, ModuleId)>,
 ) -> Partition {
     let residual = module_id(0);
-    let mut of = vec![residual; q.owner_graph_for_tests().num_nodes()];
+    let mut of = vec![residual; q.owner_graph().num_nodes()];
     for class in q.iter_classes() {
         let module = match overlay {
             Some((c1, c2, post)) if class == c1 || class == c2 => post,
@@ -150,26 +146,42 @@ fn reference_partition(
     Partition::from_assignments(of, residual)
 }
 
+/// The index's committed verdict must agree with a from-scratch
+/// `check_realizability` over the reference projection of the same
+/// class membership: the index's maintained partition stays in step
+/// with the class projection across committed mutations.
+fn assert_committed_verdict_matches_reference(report: &OwnerGraphReport, q: &QuotientGraph) {
+    let (class_modules, _) = reference_class_modules(q, &residual_owner_ids(report));
+    let reference = check_realizability(
+        q.owner_graph(),
+        &reference_partition(q, &class_modules, None),
+    );
+    assert_eq!(
+        q.realizability_verdict().is_realizable(),
+        reference.is_realizable(),
+        "committed index verdict diverges from the reference: {reference:#?}",
+    );
+}
+
 // ---------------------------------------------------------------------
 // Query comparison.
 // ---------------------------------------------------------------------
 
 /// Public replica of the kernel's non-cycle merge preconditions
-/// (same class / emptiness / residual stickiness / line cap). The
-/// reference predicate covers only the realizability clause, so the
-/// harness compares only when these pass.
+/// (same class / emptiness / line cap). The reference predicate covers
+/// only the realizability clause, so the harness compares only when
+/// these pass.
 fn preconditions_pass(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
     c1 != c2
         && q.class_members(c1).next().is_some()
         && q.class_members(c2).next().is_some()
-        && q.class_is_residual(c1) == q.class_is_residual(c2)
         && q.class_lines(c1).saturating_add(q.class_lines(c2)) <= CAP_LINES
 }
 
 /// The tier ladder must equal the reference predicate on EVERY query,
 /// and each deciding tier must be certified by the reference shape its
-/// skip-condition theorem names (plan §7.1 tier-skip soundness), so a
-/// ladder bug localizes to its tier.
+/// skip-condition theorem names (tier-skip soundness), so a ladder
+/// bug localizes to its tier.
 fn assert_ladder_matches_reference(
     c1: ClassId,
     c2: ClassId,
@@ -237,7 +249,7 @@ fn compare_gate_to_reference(
     let (pre_modules, next_fresh) = reference_class_modules(q, &residual_ids);
     let post_module = reference_post_module(q, &residual_ids, &pre_modules, next_fresh, c1, c2);
     let post_partition = reference_partition(q, &pre_modules, Some((c1, c2, post_module)));
-    let owner_graph = q.owner_graph_for_tests();
+    let owner_graph = q.owner_graph();
     let reference = check_realizability_touching(owner_graph, &post_partition, post_module);
     let gate_accepts = q.merge_preserves_invariants(c1, c2);
     let ladder = q.ladder_decision_for_merge(c1, c2);
@@ -252,10 +264,9 @@ fn compare_gate_to_reference(
 }
 
 // ---------------------------------------------------------------------
-// Deterministic fixtures pinning the semantic fixes the §8 PR 4
-// cutover landed. Pre-cutover, each was a cataloged divergence of the
-// class-level gate; post-cutover the gate equals the reference and
-// each fixture pins the decision's direction.
+// Deterministic fixtures pinning the direction of the gate's decision
+// on shapes where a class-level or constraining-only gate would
+// differ from the reference.
 // ---------------------------------------------------------------------
 
 /// Sanity anchor: on a clean acyclic shape the gate and the reference
@@ -280,12 +291,12 @@ fn gate_matches_reference_on_clean_chain() {
         vec![],
     );
     let groups = vec![
-        module_group("ui/a", vec![0]),
-        module_group("ui/h", vec![1]),
-        module_group("ui/b", vec![2]),
+        module_group(vec![0]),
+        module_group(vec![1]),
+        module_group(vec![2]),
     ];
     let (mut q, _) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
+        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
     let live: Vec<ClassId> = q.iter_classes().collect();
     for i in 0..live.len() {
         for j in (i + 1)..live.len() {
@@ -296,10 +307,9 @@ fn gate_matches_reference_on_clean_chain() {
     }
 }
 
-/// Plan §2's atomic-unit anomaly, fixed: merging two members of a
-/// residual-pile constraining 3-cycle is a delta-free no-op for the
-/// module-level predicate and must be accepted. The deleted
-/// class-level gate over-rejected it.
+/// Merging two members of a residual-pile constraining 3-cycle is a
+/// delta-free no-op for the module-level predicate and must be
+/// accepted (a class-level cycle check would reject it).
 #[test]
 fn gate_accepts_residual_pile_cycle_merge() {
     let a = residual_owner("owner:a", 1, &["BindingA"], 5);
@@ -331,9 +341,9 @@ fn gate_accepts_residual_pile_cycle_merge() {
     );
 }
 
-/// Plan §1 item 1, fixed: a merge that closes an asymmetric I-SCC
-/// whose constraining pair TDZs is rejected at the merge (tier 3,
-/// `EsmEvaluationTdz`). The deleted hot gate was Pass-2-blind here.
+/// A merge that closes an asymmetric I-SCC whose constraining pair
+/// TDZs is rejected at the merge (tier 3, `EsmEvaluationTdz`); a
+/// Pass-1-only gate is blind to it.
 #[test]
 fn gate_rejects_pass2_tdz_merge() {
     let x = active_owner("owner:x", 1, &["BindingX"], 10, "ui/x");
@@ -352,9 +362,9 @@ fn gate_rejects_pass2_tdz_merge() {
         ],
         vec![],
     );
-    let groups = vec![module_group("ui/x", vec![0])];
+    let groups = vec![module_group(vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
+        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
     let cx = group_ids[0];
     let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, cx, ch).unwrap();
@@ -365,11 +375,11 @@ fn gate_rejects_pass2_tdz_merge() {
     );
 }
 
-/// Plan §1 item 2, fixed: the class graph is finer than the module
-/// projection. `a → r1` and `r2 → b` involve two distinct residual
-/// classes, so promoting `b` into `ui/a` closes the module-level
-/// mutual cycle `M ↔ R` without any class-level cycle — invisible to
-/// the deleted class-granularity gate, rejected by tier 1.
+/// The class graph is finer than the module projection. `a → r1`
+/// and `r2 → b` involve two distinct residual classes, so promoting
+/// `b` into `ui/a` closes the module-level mutual cycle `M ↔ R`
+/// without any class-level cycle — invisible to a class-granularity
+/// gate, rejected by tier 1.
 #[test]
 fn gate_rejects_module_granularity_pass1_cycle() {
     let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
@@ -390,9 +400,9 @@ fn gate_rejects_module_granularity_pass1_cycle() {
         ],
         vec![],
     );
-    let groups = vec![module_group("ui/a", vec![0])];
+    let groups = vec![module_group(vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
+        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
     let ca = group_ids[0];
     let cb = q.class_of(q.owner_idx_of("owner:b").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
@@ -403,10 +413,9 @@ fn gate_rejects_module_granularity_pass1_cycle() {
     );
 }
 
-/// Clause-2 caveat to plan §3, fixed: a rebind between two
-/// residual-pile owners is intra-module pre-merge; promoting the
-/// writer's class into `ui/a` makes it a cross-module rebind, which
-/// tier 1 rejects. The deleted hot gate never checked rebinds.
+/// Clause 2: a rebind between two residual-pile owners is
+/// intra-module pre-merge; promoting the writer's class into `ui/a`
+/// makes it a cross-module rebind, which tier 1 rejects.
 #[test]
 fn gate_rejects_promotion_created_cross_rebind() {
     let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
@@ -428,9 +437,9 @@ fn gate_rejects_promotion_created_cross_rebind() {
         ],
         vec![],
     );
-    let groups = vec![module_group("ui/a", vec![0])];
+    let groups = vec![module_group(vec![0])];
     let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
+        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
     let ca = group_ids[0];
     let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, ch).unwrap();
@@ -446,8 +455,7 @@ fn gate_rejects_promotion_created_cross_rebind() {
 // Randomized sweep over small synthetic reports.
 // ---------------------------------------------------------------------
 
-/// Deterministic xorshift64 — placeholder for the Track F1 proptest
-/// generator; no external dep, fully reproducible.
+/// Deterministic xorshift64: reproducible generation for the sweep.
 struct Rng(u64);
 
 impl Rng {
@@ -470,9 +478,10 @@ impl Rng {
 }
 
 /// Random small report: mixed residual/active owners, mixed
-/// `DepKind`s (including lazy back-edges and rebinds), singleton
-/// atomic units plus the occasional multi-member unit, and spec
-/// module groups derived from the active destinations.
+/// `DepKind`s (including lazy back-edges and rebinds, and eager
+/// edges promoted at init), singleton atomic units plus the
+/// occasional multi-member unit, and spec module groups derived from
+/// the active destinations.
 fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
     let owner_count = 4 + rng.below(5);
     let nodes: Vec<OwnerGraphNodeReport> = (0..owner_count)
@@ -500,13 +509,27 @@ fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
                 6 => (DepKind::Sequenced, true),
                 _ => (DepKind::EagerRebind, true),
             };
-            edges.push(owner_edge(
-                &format!("edge:{}", edges.len()),
-                &nodes[source].id,
-                &nodes[target].id,
-                kind,
-                constrains,
-            ));
+            let id = format!("edge:{}", edges.len());
+            edges.push(if kind == DepKind::EagerUse && rng.chance(30) {
+                // The analysis only promotes eager reads: half the
+                // promoted edges are conservative fallbacks (callee is
+                // the caller), the rest name another owner as callee.
+                let callee = if rng.chance(50) {
+                    source
+                } else {
+                    rng.below(owner_count)
+                };
+                promoted_owner_edge(
+                    &id,
+                    &nodes[source].id,
+                    &nodes[target].id,
+                    kind,
+                    constrains,
+                    &nodes[callee].id,
+                )
+            } else {
+                owner_edge(&id, &nodes[source].id, &nodes[target].id, kind, constrains)
+            });
         }
     }
 
@@ -558,12 +581,15 @@ fn randomized_gate_equals_reference() {
     // distribution — plus "preconditions_failed".
     let mut tally: BTreeMap<String, usize> = BTreeMap::new();
     let mut compared = 0usize;
+    let mut promoted_edges = 0usize;
     for seed in 1..=60u64 {
         let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
         let (report, spec) = random_report(&mut rng);
+        promoted_edges += report.edges.iter().filter(|e| e.role.is_some()).count();
         let (mut q, _rejected) =
             build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, CAP_LINES).unwrap();
         for _round in 0..6 {
+            assert_committed_verdict_matches_reference(&report, &q);
             let live: Vec<ClassId> = q.iter_classes().collect();
             let mut accepted_pair: Option<(ClassId, ClassId)> = None;
             for i in 0..live.len() {
@@ -599,5 +625,6 @@ fn randomized_gate_equals_reference() {
         "sweep must exercise a meaningful number of in-domain \
          queries; tally: {tally:?}",
     );
+    assert!(promoted_edges > 0, "sweep must generate promoted edges");
     eprintln!("gate-vs-reference sweep tier tally ({compared} compared): {tally:?}");
 }

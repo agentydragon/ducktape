@@ -11,22 +11,20 @@
 
 mod chunk_analysis;
 mod chunk_factorization;
+mod counted_digraph;
 mod esm_import_order;
 mod realizability;
 mod report_builders;
-mod rollback_graph;
 mod validation;
 
 pub use chunk_analysis::ChunkAnalysis;
 pub use chunk_factorization::ChunkFactorization;
 pub use esm_import_order::EsmImportOrder;
 pub use realizability::{
-    CondensationOrder, CrossRebindEdge, DeltaHandle, LadderDecision, PartitionDelta,
-    RealizabilityIndex, RealizabilityVerdict, SccDiagnosis, SccRejection, SccTimingReporter,
-    check_realizability, check_realizability_touching, record_gate_diagnostic_translation,
+    LadderDecision, PartitionDelta, RealizabilityIndex, RealizabilityVerdict, SccDiagnosis,
+    SccRejection, check_realizability, check_realizability_touching,
     simulated_evaluation_post_order,
 };
-pub use rollback_graph::RollbackDiGraph;
 pub use validation::{
     BlockingSccEntry, CycleEdge, CycleReport, FactorizationReport,
     render_atomic_unit_conflict_summary, render_cycle_summary, validate_factorization,

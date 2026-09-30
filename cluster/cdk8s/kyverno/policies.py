@@ -23,7 +23,6 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesMatchAnyResources,
     ClusterPolicySpecRulesMatchAnyResourcesOperations,
     ClusterPolicySpecRulesMatchAnyResourcesSelector,
-    ClusterPolicySpecRulesMatchAnyResourcesSelectorMatchExpressions,
     ClusterPolicySpecRulesMatchAnySubjects,
     ClusterPolicySpecRulesMutate,
     ClusterPolicySpecRulesValidateCelExpressions,
@@ -638,77 +637,6 @@ def generate_agent_diagnostics_readers_chart(app: App) -> Chart:
     return chart
 
 
-def ignore_cnpg_jobs_for_reloader_chart(app: App) -> Chart:
-    """Keeps Reloader from restarting Jobs owned by CloudNativePG.
-
-    Reloader treats Jobs as reloadable workloads, but its Job strategy is destructive: it
-    deletes the old Job and creates a new one. That is suitable for an ordinary one-shot
-    Job, but not for a CNPG bootstrap or recovery Job, which is an operator-owned step in
-    the Cluster reconciliation state machine. In particular, deleting a CNPG initdb Job
-    can remove its Pod while CNPG is still waiting for that Job to complete.
-
-    This policy is deliberately CREATE-only. It puts the opt-out on a CNPG Job before
-    Reloader can observe it, and puts it back on any Job that Reloader attempts to delete
-    and recreate. It does not mutate UPDATEs, so it cannot compete with CNPG's
-    reconciliation of the Job or with Kubernetes' Job controller. Only the Job's
-    top-level metadata is changed: Reloader reads workload annotations there, and
-    mutating the Pod template is unnecessary.
-
-    Both labels are required. `app.kubernetes.io/managed-by` identifies CNPG's objects,
-    while `cnpg.io/jobRole` limits this to CNPG's role-bearing Jobs and avoids changing
-    unrelated Jobs that happen to use the managed-by label.
-    """
-    chart = _chart(app, "ignore-cnpg-jobs-for-reloader")
-    ClusterPolicy(
-        chart,
-        "policy",
-        metadata=ApiObjectMetadata(
-            name="ignore-cnpg-jobs-for-reloader",
-            annotations=_annotations(
-                autogen=False,
-                title="Exclude CloudNativePG Jobs from Reloader",
-                category="Reliability",
-                severity="medium",
-                subject="Job",
-                description=(
-                    "Prevents Reloader from deleting and recreating CloudNativePG-owned Jobs. CNPG bootstrap and "
-                    "recovery Jobs are part of the operator reconciliation state machine, so replacing them can "
-                    "remove their Pod before the operation completes. The exclusion is applied at Job creation and "
-                    "is reapplied if a Job is recreated."
-                ),
-            ),
-        ),
-        admission=True,
-        background=False,
-        mutate_existing_on_policy_update=False,
-        rules=[
-            ClusterPolicySpecRules(
-                name="exclude-cnpg-jobs-from-reloader",
-                match=match_resources(
-                    ClusterPolicySpecRulesMatchAnyResources(
-                        kinds=["Job"],
-                        operations=[_CREATE],
-                        selector=ClusterPolicySpecRulesMatchAnyResourcesSelector(
-                            match_expressions=[
-                                ClusterPolicySpecRulesMatchAnyResourcesSelectorMatchExpressions(
-                                    key="app.kubernetes.io/managed-by", operator="In", values=["cloudnative-pg"]
-                                ),
-                                ClusterPolicySpecRulesMatchAnyResourcesSelectorMatchExpressions(
-                                    key="cnpg.io/jobRole", operator="Exists"
-                                ),
-                            ]
-                        ),
-                    )
-                ),
-                mutate=ClusterPolicySpecRulesMutate(
-                    patch_strategic_merge={"metadata": {"annotations": {"reloader.stakater.com/auto": "false"}}}
-                ),
-            )
-        ],
-    )
-    return chart
-
-
 def cleanup_controller_jobs_chart(app: App) -> Chart:
     chart = _chart(app, "clusterrole-cleanup-controller-jobs")
     k8s.KubeClusterRole(
@@ -747,7 +675,7 @@ def cleanup_controller_workloads_chart(app: App) -> Chart:
 
 
 def cleanup_controller_sandboxes_chart(app: App) -> Chart:
-    """Consumer: the workspace-janitor CleanupPolicy (agents/agent-sandbox/workspaces/)."""
+    """Consumers: the janitors reaping `janitor.SANDBOX_KINDS`."""
     chart = _chart(app, "clusterrole-cleanup-controller-sandboxes")
     k8s.KubeClusterRole(
         chart,
@@ -777,7 +705,6 @@ CHARTS = (
     cleanup_controller_jobs_chart,
     cleanup_controller_workloads_chart,
     cleanup_controller_sandboxes_chart,
-    ignore_cnpg_jobs_for_reloader_chart,
 )
 
 

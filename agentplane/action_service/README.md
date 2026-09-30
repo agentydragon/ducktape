@@ -223,23 +223,23 @@ each Action retains immutable submitting Connection/grant/revision/issuer/client
 Production admission and dispatch use the same Connection authority. Sandbox bearers still use
 live workload validation and egress substitution; OAuth does not grant an operator bearer bypass.
 
-| Tool                         | Use                                                                                                                                                                    |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                         |
-| `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, the three lists (`policy_view.py`). |
-| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.                      |
-| `request_action`             | The request envelope under `request`, validated as on HTTP; a used key is refused. Answers like `get_action_result`, or `respond_with: receipt`.                       |
-| `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                              |
-| `get_action_result`          | The outcome as the tool that ran answered, named and waited on like `get_action_request`; see below.                                                                   |
-| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                             |
-| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                                  |
+| Tool                         | Use                                                                                                                                                                               |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                                    |
+| `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, and the auto-approval list (`policy_view.py`). |
+| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.                                 |
+| `request_action`             | The request envelope under `request`, validated as on HTTP; a used key is refused. Answers like `get_action_result`, or `respond_with: receipt`.                                  |
+| `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                                         |
+| `get_action_result`          | The outcome as the tool that ran answered, named and waited on like `get_action_request`; see below.                                                                              |
+| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                                        |
+| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                                             |
 
 Every tool that returns a wide model takes `include_fields` as a **pure allowlist over every
 top-level field of that model** (top-level only, never a dotted path into a nested one), defaulting
 to a curated compact list rather than `None`, so the default is visible directly in the tool's own
 schema instead of living only in prose: the catalog reads (`get_action`/`list_actions`) default to
 neither `input_schema` nor `description`; `get_action_policy` defaults to `subject`/`synced`/
-`bindings`, widened by naming `auto_approve_if`/`auto_deny_if`/`auto_deny_unless`; and
+`bindings`, widened by naming `auto_approve_if`; and
 `get_action_request`/`cancel_action_request`, and `request_action` under `respond_with: receipt`,
 default to `id`/`state`/`version`/
 `created_at`/`updated_at` on the receipt -- `state` alone already distinguishes
@@ -267,8 +267,13 @@ decision's note or reason, or the executor's error. `request_action` answers the
 wait ends unless asked for its receipt, so an Action a policy approves comes back as its tool's own
 answer from the one call. A receipt's `execution` has its state, error and timing but no result.
 
-Submission, receipt and result reads take one shared `wait` object (`wait_seconds`, 0–30 default 0;
+Submission, receipt and result reads take one shared `wait` object (`wait_seconds`, 0 through this
+instance's `max_wait_seconds` setting, default 0; the setting defaults to 30 seconds;
 `wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
+Set `max_wait_seconds` in the Action Service settings file or with
+`AGENTPLANE_ACTIONS_MAX_WAIT_SECONDS`. Direct tool calls initially wait for
+`direct_wait_seconds` (30 seconds by default), capped by `max_wait_seconds`; configure it in the
+settings file or with `AGENTPLANE_ACTIONS_DIRECT_WAIT_SECONDS`.
 Waits use commit notifications rather than periodic queries. A deadline returns a receipt, not a
 cancellation. On an ambiguous response, reuse the original request/key; transport or notification
 failure must not prompt a new Action. Workload authorization is revalidated after a bounded wait,
@@ -293,8 +298,9 @@ must be in its roster at startup.
 A call submits through `ActionService.submit_decided` with a server-minted idempotency key and the
 title `Direct tool call`. If no provider decides it, nothing is persisted and the call answers an
 error naming each policy's reason (`UndecidedRequestError`) and pointing at `request_action`. A
-decided call waits up to 30 seconds and answers through `tool_results.py`, as `get_action_result`
-does, so an unfinished one names its request to keep waiting on. A configured name the caller's
+decided call waits up to this instance's `direct_wait_seconds` setting, capped by
+`max_wait_seconds`, and answers through `tool_results.py`, as `get_action_result` does, so an
+unfinished one names its request to keep waiting on. A configured name the caller's
 policy does not cover still resolves, so it is refused with a reason rather than unknown. Listing
 is per request with no `tools/list_changed`: a client holding an older list only meets refusals,
 and `request_action` reaches any Action whatever the list says.
@@ -370,6 +376,14 @@ partially started adapter. Drain fences claims and reconnects but retains publis
 through execution completion persistence. Shutdown joins supervisors and bounded connection cleanup
 after draining service tasks, then closes Kubernetes and database resources.
 
+Each linked MCP server is configured with either a fixed `client_id` or `use_shared_cimd`. The
+Action Service has one `mcp_client_metadata` setting for its public CIMD identity, served without
+authentication at `/oauth/client-metadata.json` on its origin; that exact path is added to its
+public HTTPRoute. The document uses its own URL as `client_id`, lists the callbacks of every
+configured MCP linkage using it, and declares public token authentication. Link start uses the
+shared CIMD only when authorization-server discovery advertises
+`client_id_metadata_document_supported`; it fails closed otherwise.
+
 Requests, execution payloads and durable rows use `action: {"group": "everything", "name": "echo"}`.
 The fields remain separate throughout discovery, validation and dispatch; no concatenated identity
 or legacy name is accepted. Migration `0005_structured_action` removes the unused string column
@@ -379,7 +393,7 @@ transactionally if unexpected preexisting rows exist.
 ## Action policy sets and bindings
 
 `policies/resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
-`cluster/k8s/agentplane-crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
+`agentplane/crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
 a subject that is not a namespaced ServiceAccount makes the object an `InvalidResource`. `policy_informer` list-and-watches both kinds and the labeled caller
 ServiceAccounts in every `allowed_service_account_namespaces` entry into one `PolicyIndex`, and
 writes each set's and binding's `Ready` condition with `observedGeneration`, so `kubectl get`
@@ -401,9 +415,9 @@ unexpired valid bindings and the valid sets they name, nothing before sync) and
 from the workload principal, `ServiceAccountCaller` from the grant) and those bindings; the
 provider's allow carries `PolicyEvidence`, persisted on the Decision (migration
 `0014_action_policies`) and projected as `DecisionView.policy_evidence`, whose `matched.repository`
-names the repository a GitHub kind resolved and whether the public lookup confirmed it. Deny lists
-are parsed and reported but decide nothing yet. Dispatch is unchanged: it re-checks caller
-authority, never policy.
+names the repository a GitHub kind resolved and whether the public lookup confirmed it. A set has
+no deny form: `autoApproveIf` is the only list, and what it does not match waits for a human. Dispatch
+is unchanged: it re-checks caller authority, never policy.
 
 `policy_view` projects that same `resolve_bindings` for readers: `GET /v1/action-policy` answers
 the authenticated caller (the ServiceAccount its Pod runs as, on the workload route) and the
@@ -446,7 +460,7 @@ Kubernetes ServiceAccount lists are the final operator design.
 Migrations run separately through `:migrate`; the server verifies the migrated schema and never
 creates tables at startup. `:image` and `:migration_image` are separate OCI targets. Each deployed
 environment gives the service its own `actions` database and login role on the namespace's shared
-CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane.k8s.yaml`),
+CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
 
 ## MCP executor transports

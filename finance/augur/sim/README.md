@@ -30,8 +30,8 @@ Shared proposal helpers live in <../policy/>; they do not settle trades or taxes
 Each declaration takes its fact as keyword arguments in exact integer money and quantities.
 The typed values some of them take live with their readers: an `Amount` and the supplied
 `Series` beside the `MarketPath` that prices and reads them (<market_path.py>), a bond's
-coupon in <observations.py>, a `Location` in <locations.py>, and when a cashflow or bill is due
-in <schedule.py>. The housing, tender and deduction declarations take the record their
+coupon in <observations.py>, a purchase's `Parcel` in <property.py> with the law <situs.py> compiles
+from its situs, and when a cashflow or bill is due in <schedule.py>. The housing, tender and deduction declarations take the record their
 component keeps: a `property.Housing` schedule of purchases, sales and lifecycle events,
 `property_tax.PropertyTaxPolicy`, `private_equity.TenderPolicy`, and
 `tax_authority.MortgageInterestDeduction` or `SaltDeduction`. Callers convert money

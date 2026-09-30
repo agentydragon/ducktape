@@ -1,0 +1,20 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+filegroup(
+    name = "files",
+    srcs = [
+        "env.py",
+        "script.py.mako",
+        "//devinfra/claude/session_export/migrations/versions:0001_sessions.py",
+    ],
+    visibility = ["//devinfra/claude/session_export:__pkg__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    deps = [
+        "//devinfra/claude/session_export:store",
+        "@pypi//alembic",
+    ],
+)

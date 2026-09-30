@@ -7,7 +7,8 @@ runs bounded Bash commands through `pods/exec`, and disposes claims. It does not
 install the controller, create templates or pools, or define RBAC.
 
 The agent-facing tool surface lives in <../console/tools/sandbox.py>; this package
-is the Kubernetes half it calls.
+is the Kubernetes half it calls. The image the pool's Pods run, with the
+`haku-sandbox-setup.sh` bootstrap below, is built from <image/>.
 
 ## Configuration
 

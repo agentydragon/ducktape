@@ -11,10 +11,10 @@
 # cluster DNS, and the same URL then works for every consumer (CronJob,
 # laptops, Claude Code web). Mirrors tf/gitops/augur-evidence otherwise.
 #
-# The Secrets land directly in the ducktape-owned `cpap-sync` namespace (no
-# cross-repo reflection dance like budget -> augur); the read Secret is
-# additionally reflected (emberstack) into `claude-sandbox` so Claude Code web
-# sessions can read it through the connected Kubernetes MCP path.
+# The Secrets land in the `forgejo` namespace. The `cpap-sync` namespace copies
+# both in through ESO (cluster/cdk8s/cpap_sync/app.py), and Reflector mirrors its
+# copy of the read Secret into `claude-sandbox` so Claude Code web sessions can
+# read it through the connected Kubernetes MCP path.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -90,11 +90,11 @@ resource "forgejo_collaborator" "haku" {
   permission    = "read"
 }
 
-# Write credentials for the sync CronJob, consumed in place in cpap-sync.
-resource "kubernetes_secret" "cpap_data_git_write" {
+# Write credentials for the sync CronJob.
+resource "kubernetes_secret" "cpap_data_git_write_source" {
   metadata {
     name      = "cpap-data-git-write"
-    namespace = "cpap-sync"
+    namespace = "forgejo"
   }
 
   data = {
@@ -104,22 +104,33 @@ resource "kubernetes_secret" "cpap_data_git_write" {
   }
 }
 
-# Read credentials for Claude Code, reflected into claude-sandbox.
-resource "kubernetes_secret" "cpap_data_git_read" {
+# Read credentials for Claude Code.
+resource "kubernetes_secret" "cpap_data_git_read_source" {
   metadata {
     name      = "cpap-data-git-read"
-    namespace = "cpap-sync"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "claude-sandbox"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "claude-sandbox"
-    }
+    namespace = "forgejo"
   }
 
   data = {
     username = forgejo_user.reader.login
     password = random_password.reader.result
     repo_url = "https://git.allegedly.works/${forgejo_user.writer.login}/${forgejo_repository.data.name}.git"
+  }
+}
+
+# The cpap-sync ExternalSecrets adopt the Secrets these addresses created there.
+# CLEANUP(added 2026-09-28): Remove once the cpap_data state has forgotten both
+# addresses. Never destroy the ESO-owned Secrets.
+removed {
+  from = kubernetes_secret.cpap_data_git_write
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = kubernetes_secret.cpap_data_git_read
+  lifecycle {
+    destroy = false
   }
 }

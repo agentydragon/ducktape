@@ -4,7 +4,7 @@ scanning each image and one ImagePolicy selecting its newest tag.
 Every entry has the same shape -- same registry, scan interval, pull credential and tag
 policy -- so the roster below is just the names. The `ImageUpdateAutomation` that writes
 the selected tags back into each directory's `image-pins/` Component lives in
-`cluster/k8s/flux-image-automation-ghcr`, not here; nothing in this chart carries an
+`cluster/generated/flux-image-automation-ghcr`, not here; nothing in this chart carries an
 `$imagepolicy` marker, so Flux never rewrites this generated file.
 """
 
@@ -12,24 +12,13 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from constructs import Construct
-from flux_imagepolicy_crds.io.fluxcd.toolkit.image import (
-    ImagePolicy,
-    ImagePolicySpec,
-    ImagePolicySpecFilterTags,
-    ImagePolicySpecImageRepositoryRef,
-    ImagePolicySpecPolicy,
-    ImagePolicySpecPolicyAlphabetical,
-    ImagePolicySpecPolicyAlphabeticalOrder,
-)
-from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
-    ImageRepository,
-    ImageRepositorySpec,
-    ImageRepositorySpecSecretRef,
-)
+from flux_imagerepository_crds.io.fluxcd.toolkit.image import ImageRepositorySpecSecretRef
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.flux.image_repository import ImageRepository
 
 NAME = "flux-image-automation-forgejo"
 # Flux's own namespace, where the image-reflector controller reads these.
@@ -40,8 +29,6 @@ _SCAN_INTERVAL = "5m"
 # The ducktape-ci pull credential, reflected here from cluster/k8s/forgejo-images/;
 # the registry is private, so an unauthenticated scan finds nothing.
 _PULL_SECRET = "forgejo-images-creds"
-# CI pushes {branch}-YYYYMMDDHHMMSS-{sha7}, which makes alphabetical order chronological.
-_TAG_PATTERN = r"^devel-\d{14}-[0-9a-f]{7}$"
 
 # Every CI image Flux watches. The ImagePolicy takes the entry's name, and that name is
 # what an image-pins/ Component's marker references
@@ -68,6 +55,7 @@ IMAGES = (
     "attic-jwt-rotation",
     "authentik-jwt-rotation",
     "aw-server",
+    "claude-session-sync",
     "cli-proxy-api",
     "cpap-gateway",
     "cpap-sync",
@@ -96,6 +84,7 @@ IMAGES = (
     "props-backend",
     "props-llm-proxy",
     "props-registry-proxy",
+    "public-coder-agent",
     "public-coder-devbox",
     "rtl-tcp",
     "ssh-mcp",
@@ -117,26 +106,15 @@ class ForgejoImageAutomation(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         for name in IMAGES:
-            ImageRepository(
+            newest_ci_tag_policy(
                 self,
-                f"{name}-repository",
-                metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-                spec=ImageRepositorySpec(
+                ImageRepository(
+                    self,
+                    f"{name}-repository",
+                    metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
                     image=f"{_REGISTRY}/{_REPOSITORIES.get(name, name)}",
                     interval=_SCAN_INTERVAL,
                     secret_ref=ImageRepositorySpecSecretRef(name=_PULL_SECRET),
-                ),
-            )
-            ImagePolicy(
-                self,
-                f"{name}-policy",
-                metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-                spec=ImagePolicySpec(
-                    image_repository_ref=ImagePolicySpecImageRepositoryRef(name=name),
-                    filter_tags=ImagePolicySpecFilterTags(pattern=_TAG_PATTERN),
-                    policy=ImagePolicySpecPolicy(
-                        alphabetical=ImagePolicySpecPolicyAlphabetical(order=ImagePolicySpecPolicyAlphabeticalOrder.ASC)
-                    ),
                 ),
             )
 

@@ -8,20 +8,14 @@ import respx
 from pydantic import SecretStr
 
 from aiquota.models import FetchSuccess
-from aiquota.providers.claude import (
-    TOKEN_URL,
-    USAGE_URL,
-    ClaudeProvider,
-    ClaudeSettings,
-    _spend_to_extra_spend,
-    _to_success,
-)
+from aiquota.providers.claude import USAGE_URL, ClaudeProvider, ClaudeSettings, _spend_to_extra_spend, _to_success
 from aiquota.providers.cli_proxy_api import (
     MANAGEMENT_API_CALL_PATH,
     MANAGEMENT_AUTH_FILES_PATH,
     CLIProxyAPIManagementClient,
 )
 from aiquota.providers.client import provider_client
+from devinfra.claude.claude_api.oauth_client import TOKEN_URL
 from devinfra.claude.claude_api.usage import UsageResponse
 
 if __name__ == "__main__":

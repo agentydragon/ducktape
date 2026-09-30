@@ -7,20 +7,38 @@ ServiceMonitors for the controller and webhook metrics Services the chart create
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "cert-manager"
 NAMESPACE = "cert-manager"
 OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/app"
+_REPOSITORY_NAME = "jetstack"
+_REPOSITORY_NAMESPACE = "flux-system"
+# trust-manager installs from this repository too, from its own chart.
+JETSTACK_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE)
+
+
+def _component(component: str) -> Pods:
+    """One chart component's Pods; the chart labels its metrics Service the same way."""
+    return Pods(
+        namespace=NAMESPACE, labels=(("app.kubernetes.io/instance", NAME), ("app.kubernetes.io/component", component))
+    )
+
+
+# The chart's metrics Services. A ServiceMonitor endpoint names the Service port, not the targetPort.
+_CONTROLLER_METRICS = ServiceRef(name=NAME, port=Port(name="http-metrics", number=9402), pods=_component("controller"))
+_WEBHOOK_METRICS = ServiceRef(
+    name=f"{NAME}-webhook", port=Port(name="metrics", number=9402), pods=_component("webhook")
+)
 
 
 def _values() -> dict[str, object]:
@@ -83,37 +101,26 @@ def _values() -> dict[str, object]:
     }
 
 
-def _service_monitor(chart: Chart, name: str, *, component: str, port: str) -> None:
+def _service_monitor(chart: Chart, service: ServiceRef) -> None:
     ServiceMonitor(
         chart,
-        name,
-        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-        selector=ServiceMonitorSpecSelector(
-            match_labels={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/component": component}
-        ),
-        # ServiceMonitor.port matches the Service port name, not the targetPort.
-        endpoints=[Endpoint.plain(port=port)],
+        service.name,
+        metadata=ApiObjectMetadata(name=service.name, namespace=NAMESPACE),
+        selector=ServiceMonitorSpecSelector(match_labels=service.labels),
+        endpoints=[Endpoint.plain(port=service.port.name)],
     )
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
-        chart,
-        "namespace",
-        metadata=k8s.ObjectMeta(name=NAMESPACE, labels={"rbac.ducktape.io/agent-readable-logs": "true"}),
-    )
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name="jetstack", namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://charts.jetstack.io"),
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=AgentReadable.LOGS)
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(
+            chart, _REPOSITORY_NAME, _REPOSITORY_NAMESPACE, url="https://charts.jetstack.io"
+        ),
         chart="cert-manager",
         version="v1.21.2",
         interval="30m",
@@ -121,8 +128,8 @@ def chart(app: App) -> Chart:
         install=RETRY_FAILED_INSTALL,
         values=_values(),
     )
-    _service_monitor(chart, "cert-manager", component="controller", port="tcp-prometheus-servicemonitor")
-    _service_monitor(chart, "cert-manager-webhook", component="webhook", port="metrics")
+    _service_monitor(chart, _CONTROLLER_METRICS)
+    _service_monitor(chart, _WEBHOOK_METRICS)
     return chart
 
 

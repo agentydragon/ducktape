@@ -60,7 +60,7 @@ Each actor's messages are a closed typed union defined beside it, not a generic 
 subscription protocol or global event registry.
 When a month opens the counterparties act first: each `Biller`, `Mortgage`,
 `PropertyTaxAuthority` and `TaxAuthority` is posted the statement it reads
-(`PropertyStatement`, `ServicingStatement`, `TaxLiabilityStatement`) and
+(`PropertyStatement` and `MarketStatement`, `ServicingStatement`, `TaxLiabilityStatement`) and
 `MonthOpened`, and the demand it returns is registered as this month's claim on its
 payer, in that tier order. Then the world posts each agent's mail — every emitter's
 statement (`MarketStatement`, `AccountStatement`, `PositionStatement`,

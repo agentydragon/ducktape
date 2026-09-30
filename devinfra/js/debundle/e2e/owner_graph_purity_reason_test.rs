@@ -9,12 +9,7 @@
 //! sub-expression's reason is concatenated alongside the outer
 //! `unknown_new` umbrella reason in source order.
 
-use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
-
-fn load_owner_graph(fixture: &Fixture) -> OwnerGraphReport {
-    read_json(&fixture.report_root.join("static/app/owner_graph.json"))
-}
 
 #[test]
 fn pure_const_decl_reports_pure_purity() {
@@ -26,7 +21,7 @@ export { a };
         vec![logical_module("a_module", &[Member::new("a")])],
     ));
     assert_entry_output(&fixture, "1\n");
-    let graph = load_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     let owner = graph
         .nodes
         .iter()
@@ -55,7 +50,7 @@ export { a };
     ));
     assert_entry_output(&fixture, "1\n");
 
-    let graph = load_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     let owner = graph
         .nodes
         .iter()
@@ -111,7 +106,7 @@ export { a };
     ));
     assert_entry_output(&fixture, "1\n");
 
-    let graph = load_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     let owner = graph
         .nodes
         .iter()
@@ -150,7 +145,7 @@ export { a };
     ));
     assert_entry_output(&fixture, "0\n");
 
-    let graph = load_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     let owner = graph
         .nodes
         .iter()
@@ -183,7 +178,7 @@ export { a };
     ));
     assert_entry_output(&fixture, "2\n");
 
-    let graph = load_owner_graph(&fixture);
+    let graph = fixture.owner_graph();
     let owner = graph
         .nodes
         .iter()

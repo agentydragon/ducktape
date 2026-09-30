@@ -96,6 +96,8 @@ class Item:
     arguments: PayloadRef | None = None
     output: PayloadRef | None = None
     completion: Completion | None = None
+    recovery: int | None = None
+    recovery_reason: str = ""
 
     def payload(self, field: PayloadField) -> PayloadRef | None:
         match field:
@@ -252,6 +254,14 @@ def touched_keys(batch: EventBatch) -> TouchedKeys:
                         completed.add((event.item_completed.item_id, PayloadField.TEXT))
                     case "tool":
                         completed.add((event.item_completed.item_id, PayloadField.OUTPUT))
+            case "conversation_reconciled":
+                for recovered in event.conversation_reconciled.items:
+                    items.add(recovered.item_id)
+                    if recovered.HasField("replacement"):
+                        completed.update(
+                            (recovered.item_id, field)
+                            for field in (PayloadField.TEXT, PayloadField.ARGUMENTS, PayloadField.OUTPUT)
+                        )
             case "command_admitted":
                 commands.add(event.command_admitted.command.command_id)
             case "command_failed":
@@ -562,6 +572,32 @@ class _Fold:
                     case _:
                         raise ObservationNotUnderstoodError(cursor, "item_completed.outcome")
                 self._evidence(item, entry)
+            case "conversation_reconciled":
+                for recovered in event.conversation_reconciled.items:
+                    if recovered.disposition not in {
+                        event_pb2.RECOVERY_DISPOSITION_RETAINED,
+                        event_pb2.RECOVERY_DISPOSITION_ABSENT,
+                        event_pb2.RECOVERY_DISPOSITION_UNKNOWN,
+                        event_pb2.RECOVERY_DISPOSITION_REVISED,
+                    }:
+                        raise ObservationNotUnderstoodError(cursor, "conversation_reconciled.disposition")
+                    item = self._item(cursor, recovered.item_id)
+                    revised = recovered.disposition == event_pb2.RECOVERY_DISPOSITION_REVISED
+                    if revised != recovered.HasField("replacement"):
+                        raise FoldContractError(cursor, "revised recovery requires replacement content")
+                    if revised:
+                        content = recovered.replacement
+                        if item.kind == event_pb2.ITEM_KIND_TOOL_CALL:
+                            self._complete(cursor, item.item_id, PayloadField.ARGUMENTS, content.arguments_json)
+                            item = self._complete(cursor, item.item_id, PayloadField.OUTPUT, content.output)
+                        else:
+                            item = self._complete(cursor, item.item_id, PayloadField.TEXT, content.text)
+                    self._evidence(
+                        self._save_item(
+                            replace(item, recovery=recovered.disposition, recovery_reason=recovered.reason), cursor
+                        ),
+                        entry,
+                    )
             case "harness_user_message_confirmed":
                 confirmed = event.harness_user_message_confirmed
                 owner = PayloadOwner(

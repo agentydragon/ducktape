@@ -41,7 +41,10 @@ fn analyze_redundant_hints(
 ) -> Vec<(String, RedundantPurityReason)> {
     analyze_chunk(
         module,
-        &AnalysisHints::from_declared_pure(declared_pure),
+        &AnalysisHints {
+            declared_pure: declared_pure.clone(),
+            ..AnalysisHints::default()
+        },
         None,
         |_| None,
     )

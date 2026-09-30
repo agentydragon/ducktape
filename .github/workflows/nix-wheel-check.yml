@@ -60,6 +60,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   GIT_REPO_DEFAULT_BRANCH: devel
@@ -77,6 +78,7 @@ jobs:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
       - uses: actions/checkout@v7
+        name: "Check out source (source unavailable: no tests/build ran; inspect PR mergeability)"
         with:
           ref: ${{ inputs.source_ref || inputs.source_commit || github.sha }}
           fetch-depth: 0
@@ -85,28 +87,10 @@ jobs:
       - name: Resolve and verify source revision
         id: source
         env:
-          EXPECTED_HEAD_SHA: ${{ inputs.pr_head_sha }}
+          EXPECTED_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha }}
           SOURCE_COMMIT: ${{ inputs.source_commit }}
           SOURCE_REF: ${{ inputs.source_ref }}
-        run: |
-          set -euo pipefail
-          resolved_sha=$(git rev-parse HEAD)
-          if [[ -z "$SOURCE_REF" ]]; then
-            expected_sha="${SOURCE_COMMIT:-$GITHUB_SHA}"
-            if [[ "$resolved_sha" != "$expected_sha" ]]; then
-              echo "::error::checked out $resolved_sha, expected $expected_sha"
-              exit 1
-            fi
-          fi
-          if [[ -n "$EXPECTED_HEAD_SHA" ]]; then
-            actual_head=$(git rev-parse HEAD^2)
-            if [[ "$actual_head" != "$EXPECTED_HEAD_SHA" ]]; then
-              echo "::error::merge head $actual_head, expected trusted PR head $EXPECTED_HEAD_SHA"
-              exit 1
-            fi
-          fi
-          echo "sha=$resolved_sha" >> "$GITHUB_OUTPUT"
-          echo "Resolved source revision: $resolved_sha"
+        run: python3 devinfra/ci/pr_mergeability.py verify-source
 
       # setup-nix-attic (not setup-nix-devtools) so the checks below can substitute
       # from cache.allegedly.works/main instead of building from source. Packages

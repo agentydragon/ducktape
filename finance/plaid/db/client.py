@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Protocol
 
 import certifi
 import plaid
@@ -12,23 +12,43 @@ from plaid.api import plaid_api
 from plaid.exceptions import ApiException as PlaidApiException
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 from plaid.model.accounts_get_request import AccountsGetRequest
+from plaid.model.accounts_get_response import AccountsGetResponse
 from plaid.model.country_code import CountryCode
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
 from plaid.model.institutions_get_by_id_request_options import InstitutionsGetByIdRequestOptions
+from plaid.model.institutions_get_by_id_response import InstitutionsGetByIdResponse
 from plaid.model.institutions_search_request import InstitutionsSearchRequest
+from plaid.model.institutions_search_response import InstitutionsSearchResponse
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
+from plaid.model.investments_holdings_get_response import InvestmentsHoldingsGetResponse
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
+from plaid.model.investments_transactions_get_response import InvestmentsTransactionsGetResponse
 from plaid.model.item_get_request import ItemGetRequest
+from plaid.model.item_get_response import ItemGetResponse
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+from plaid.model.item_public_token_exchange_response import ItemPublicTokenExchangeResponse
 from plaid.model.item_remove_request import ItemRemoveRequest
+from plaid.model.item_remove_response import ItemRemoveResponse
+from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
+from plaid.model.item_webhook_update_response import ItemWebhookUpdateResponse
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
+from plaid.model.liabilities_get_response import LiabilitiesGetResponse
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.link_token_create_response import LinkTokenCreateResponse
+from plaid.model.link_token_transactions import LinkTokenTransactions
 from plaid.model.products import Products
 from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCreateRequest
+from plaid.model.sandbox_public_token_create_response import SandboxPublicTokenCreateResponse
 from plaid.model.transactions_get_request import TransactionsGetRequest
+from plaid.model.transactions_get_response import TransactionsGetResponse
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
+from plaid.model.transactions_sync_response import TransactionsSyncResponse
+from plaid.model.webhook_verification_key_get_request import WebhookVerificationKeyGetRequest
+from plaid.model.webhook_verification_key_get_response import WebhookVerificationKeyGetResponse
+from pydantic import ValidationError
 
+from finance.plaid.db.models import PlaidError
 from finance.plaid.db.products import Product
 
 # Plaid removed the `development` environment in 2024; only sandbox/production remain.
@@ -74,14 +94,12 @@ class InstitutionDetail:
 
 
 class PlaidClientError(RuntimeError):
-    def __init__(
-        self, *, endpoint: str, status_code: int, text: str, payload: dict[str, JsonValue] | None = None
-    ) -> None:
+    def __init__(self, *, endpoint: str, status_code: int, text: str, payload: PlaidError | None = None) -> None:
         self.endpoint = endpoint
         self.status_code = status_code
         self.text = text
         self.payload = payload
-        message = payload.get("error_message") if payload else text
+        message = payload.error_message if payload else text
         super().__init__(f"Plaid {endpoint} {status_code}: {message}")
 
     def public_detail(self) -> dict[str, JsonValue]:
@@ -95,28 +113,11 @@ class PlaidClientError(RuntimeError):
                 "documentation_url",
                 "request_id",
             ):
-                if key in self.payload:
-                    detail[key] = self.payload[key]
+                if key in self.payload.model_fields_set:
+                    detail[key] = getattr(self.payload, key)
         else:
             detail["error_message"] = self.text
         return detail
-
-
-class LinkTokenCreateResponse(Protocol):
-    link_token: str
-
-
-class ItemPublicTokenExchangeResponse(Protocol):
-    access_token: str
-    item_id: str
-
-
-class SandboxPublicTokenCreateResponse(Protocol):
-    public_token: str
-
-
-class DictResponse(Protocol):
-    def to_dict(self) -> dict[str, object]: ...
 
 
 class PlaidPoolManagerLike(Protocol):
@@ -141,20 +142,26 @@ class PlaidSdkApiLike(Protocol):
     def item_public_token_exchange(
         self, request: ItemPublicTokenExchangeRequest, /
     ) -> ItemPublicTokenExchangeResponse: ...
-    def item_remove(self, request: ItemRemoveRequest, /) -> object: ...
-    def item_get(self, request: ItemGetRequest, /) -> object: ...
-    def accounts_get(self, request: AccountsGetRequest, /) -> DictResponse: ...
-    def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> object: ...
-    def transactions_get(self, request: TransactionsGetRequest, /) -> object: ...
-    def transactions_sync(self, request: TransactionsSyncRequest, /) -> DictResponse: ...
-    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> object: ...
-    def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object: ...
-    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object: ...
+    def item_remove(self, request: ItemRemoveRequest, /) -> ItemRemoveResponse: ...
+    def item_get(self, request: ItemGetRequest, /) -> ItemGetResponse: ...
+    def item_webhook_update(self, request: ItemWebhookUpdateRequest, /) -> ItemWebhookUpdateResponse: ...
+    def webhook_verification_key_get(
+        self, request: WebhookVerificationKeyGetRequest, /
+    ) -> WebhookVerificationKeyGetResponse: ...
+    def accounts_get(self, request: AccountsGetRequest, /) -> AccountsGetResponse: ...
+    def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> AccountsGetResponse: ...
+    def transactions_get(self, request: TransactionsGetRequest, /) -> TransactionsGetResponse: ...
+    def transactions_sync(self, request: TransactionsSyncRequest, /) -> TransactionsSyncResponse: ...
+    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> InvestmentsHoldingsGetResponse: ...
+    def investments_transactions_get(
+        self, request: InvestmentsTransactionsGetRequest, /
+    ) -> InvestmentsTransactionsGetResponse: ...
+    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> LiabilitiesGetResponse: ...
     def sandbox_public_token_create(
         self, request: SandboxPublicTokenCreateRequest, /
     ) -> SandboxPublicTokenCreateResponse: ...
-    def institutions_search(self, request: InstitutionsSearchRequest, /) -> DictResponse: ...
-    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest, /) -> DictResponse: ...
+    def institutions_search(self, request: InstitutionsSearchRequest, /) -> InstitutionsSearchResponse: ...
+    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest, /) -> InstitutionsGetByIdResponse: ...
 
 
 class PlaidClient:
@@ -189,13 +196,12 @@ class PlaidClient:
         # type-checks every kwarg it receives and rejects None for both.
         request = InstitutionsSearchRequest(query=query, country_codes=[CountryCode("US")])
         try:
-            response = self._api.institutions_search(request).to_dict()
+            response = self._api.institutions_search(request)
         except PlaidApiException as exc:
             raise _plaid_api_error("/institutions/search", exc) from exc
-        institutions = cast(list[dict[str, object]], response.get("institutions") or [])
         return [
-            InstitutionSummary(institution_id=str(item["institution_id"]), name=str(item["name"]))
-            for item in institutions[:count]
+            InstitutionSummary(institution_id=item.institution_id, name=item.name)
+            for item in (response.institutions or [])[:count]
         ]
 
     def get_institution(self, institution_id: str) -> InstitutionDetail:
@@ -205,16 +211,15 @@ class PlaidClient:
             options=InstitutionsGetByIdRequestOptions(include_optional_metadata=True),
         )
         try:
-            response = self._api.institutions_get_by_id(request).to_dict()
+            response = self._api.institutions_get_by_id(request)
         except PlaidApiException as exc:
             raise _plaid_api_error("/institutions/get_by_id", exc) from exc
-        institution = cast(dict[str, object], response["institution"])
-        url = institution.get("url")
+        institution = response.institution
         return InstitutionDetail(
-            institution_id=str(institution["institution_id"]),
-            name=str(institution["name"]),
-            products=[str(product) for product in cast(list[object], institution.get("products") or [])],
-            url=str(url) if url else None,
+            institution_id=institution.institution_id,
+            name=institution.name,
+            products=[product.value for product in institution.products or []],
+            url=institution.url or None,
         )
 
     def create_link_token(
@@ -224,6 +229,7 @@ class PlaidClient:
         redirect_uri: str,
         client_user_id: str,
         transaction_days_requested: int = 730,
+        webhook_url: str | None = None,
         client_name: str = "Plaid MCP",
     ) -> LinkTokenResult:
         """Create a Link token for an explicit product set.
@@ -241,19 +247,20 @@ class PlaidClient:
         the flow, so a product that turns out not to apply is simply skipped.
         """
         anchor, conditional = _split_link_products(products)
-        request_args: dict[str, object] = {
-            "client_name": client_name,
-            "user": LinkTokenCreateRequestUser(client_user_id=client_user_id),
-            "products": [Products(anchor)],
-            "country_codes": [CountryCode("US")],
-            "language": "en",
-            "redirect_uri": redirect_uri,
-        }
+        request = LinkTokenCreateRequest(
+            client_name=client_name,
+            user=LinkTokenCreateRequestUser(client_user_id=client_user_id),
+            products=[Products(anchor)],
+            country_codes=[CountryCode("US")],
+            language="en",
+            redirect_uri=redirect_uri,
+        )
+        if webhook_url is not None:
+            request.webhook = webhook_url
         if conditional:
-            request_args["required_if_supported_products"] = [Products(product) for product in conditional]
+            request.required_if_supported_products = [Products(product) for product in conditional]
         if Product.TRANSACTIONS.value in products:
-            request_args["transactions"] = {"days_requested": transaction_days_requested}
-        request = LinkTokenCreateRequest(**request_args)
+            request.transactions = LinkTokenTransactions(days_requested=transaction_days_requested)
         try:
             response = self._api.link_token_create(request)
         except PlaidApiException as exc:
@@ -304,37 +311,47 @@ class PlaidClient:
         except PlaidApiException as exc:
             raise _plaid_api_error("/item/remove", exc) from exc
 
-    def link_token_create(self, request: LinkTokenCreateRequest, /) -> LinkTokenCreateResponse:
-        return self._api.link_token_create(request)
-
     def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest, /) -> ItemPublicTokenExchangeResponse:
         return self._api.item_public_token_exchange(request)
 
-    def item_remove(self, request: ItemRemoveRequest, /) -> object:
-        return self._api.item_remove(request)
-
-    def item_get(self, request: ItemGetRequest, /) -> object:
+    def item_get(self, request: ItemGetRequest, /) -> ItemGetResponse:
         return self._api.item_get(request)
 
-    def accounts_get(self, request: AccountsGetRequest, /) -> DictResponse:
+    def item_webhook_update(self, request: ItemWebhookUpdateRequest, /) -> ItemWebhookUpdateResponse:
+        try:
+            return self._api.item_webhook_update(request)
+        except PlaidApiException as exc:
+            raise _plaid_api_error("/item/webhook/update", exc) from exc
+
+    def webhook_verification_key_get(
+        self, request: WebhookVerificationKeyGetRequest, /
+    ) -> WebhookVerificationKeyGetResponse:
+        try:
+            return self._api.webhook_verification_key_get(request)
+        except PlaidApiException as exc:
+            raise _plaid_api_error("/webhook_verification_key/get", exc) from exc
+
+    def accounts_get(self, request: AccountsGetRequest, /) -> AccountsGetResponse:
         return self._api.accounts_get(request)
 
-    def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> object:
+    def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> AccountsGetResponse:
         return self._api.accounts_balance_get(request)
 
-    def transactions_get(self, request: TransactionsGetRequest, /) -> object:
+    def transactions_get(self, request: TransactionsGetRequest, /) -> TransactionsGetResponse:
         return self._api.transactions_get(request)
 
-    def transactions_sync(self, request: TransactionsSyncRequest, /) -> DictResponse:
+    def transactions_sync(self, request: TransactionsSyncRequest, /) -> TransactionsSyncResponse:
         return self._api.transactions_sync(request)
 
-    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> object:
+    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> InvestmentsHoldingsGetResponse:
         return self._api.investments_holdings_get(request)
 
-    def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object:
+    def investments_transactions_get(
+        self, request: InvestmentsTransactionsGetRequest, /
+    ) -> InvestmentsTransactionsGetResponse:
         return self._api.investments_transactions_get(request)
 
-    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object:
+    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> LiabilitiesGetResponse:
         return self._api.liabilities_get(request)
 
     def sandbox_public_token_create(
@@ -349,8 +366,8 @@ def _create_sdk_api(creds: PlaidCreds) -> plaid_api.PlaidApi:
     )
     # plaid-python (urllib3) passes ca_certs=ssl_ca_cert; left unset urllib3 falls back to the
     # system trust store, which the debian_slim runtime image ships empty -> production.plaid.com
-    # fails with CERTIFICATE_VERIFY_FAILED. Point it at certifi's bundle (already in the image via
-    # fastmcp -> httpx), matching how the other MCP servers get their CA roots.
+    # fails with CERTIFICATE_VERIFY_FAILED. Point it at certifi's bundle; the Debian slim image
+    # ships without a system CA bundle.
     configuration.ssl_ca_cert = certifi.where()
     return plaid_api.PlaidApi(plaid.ApiClient(configuration))
 
@@ -380,5 +397,8 @@ def _plaid_api_error(endpoint: str, exc: PlaidApiException) -> PlaidClientError:
     except ValueError:
         parsed = None
     if isinstance(parsed, dict):
-        payload = cast(dict[str, JsonValue], parsed)
+        try:
+            payload = PlaidError.model_validate(parsed)
+        except ValidationError:
+            payload = None
     return PlaidClientError(endpoint=endpoint, status_code=exc.status or 500, text=text, payload=payload)

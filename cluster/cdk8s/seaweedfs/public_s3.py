@@ -47,16 +47,17 @@ from cluster.cdk8s.seaweedfs import (
     namespace,
     s3,
 )
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "public-s3"
 OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/public-s3"
-_PORT = 8333
-_METRICS_PORT = 9327
 _CONFIG_MAP = "public-s3-bootstrap-config"
 _CONFIG_KEY = "seaweedfs_s3_config.json"
 _CONFIG_DIR = "/etc/sw"
-_SELECTOR = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "s3"}
-_LABELS = {**_SELECTOR, "app.kubernetes.io/part-of": "seaweedfs"}
+_PODS = Pods(namespace=namespace.NAME, labels=(("app.kubernetes.io/name", NAME), ("app.kubernetes.io/component", "s3")))
+_S3 = ServiceRef(name=NAME, port=Port(name="s3-http", number=8333), pods=_PODS)
+_METRICS = ServiceRef(name=NAME, port=Port(name="s3-metrics", number=9327), pods=_PODS)
+_LABELS = {**_PODS.selector, "app.kubernetes.io/part-of": "seaweedfs"}
 _CLAUDE_READER = "claude-reader"
 _CLAUDE_READER_POLICY = "claude-reader-buckets"
 # Buckets claude-reader may list and read.
@@ -65,7 +66,11 @@ _CLAUDE_READABLE_BUCKETS = ("attic", drivefs_artifacts_bucket.NAME, "vm-images",
 
 def _external_identity(scope: Construct, name: str, *, secret: str, access_key: str, secret_key: str) -> None:
     """An S3Identity plus the S3Credentials registering its externally managed key pair as-is."""
-    s3.Identity(scope, name, name=name).credentials(
+    identity = s3.identity(scope, name, name=name)
+    s3.credentials(
+        scope,
+        f"{name}-credentials",
+        identity=identity.name,
         namespace=namespace.NAME,
         secret=secret,
         secret_namespace=external_credentials.NAMESPACE,
@@ -174,10 +179,11 @@ def _gateway(scope: Construct) -> None:
         ),
         spec=k8s.DeploymentSpec(
             replicas=2,
-            selector=k8s.LabelSelector(match_labels=_SELECTOR),
+            selector=k8s.LabelSelector(match_labels=_PODS.selector),
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
@@ -189,15 +195,14 @@ def _gateway(scope: Construct) -> None:
                             command=[
                                 "/bin/sh",
                                 "-ec",
-                                f"weed -logtostderr=true s3 -port={_PORT} -filer=seaweedfs-filer:8888"
-                                f" -config={_CONFIG_DIR}/{_CONFIG_KEY} -metricsPort={_METRICS_PORT} -ip.bind=0.0.0.0",
+                                f"weed -logtostderr=true s3 -port={_S3.pod_port} -filer=seaweedfs-filer:8888"
+                                f" -config={_CONFIG_DIR}/{_CONFIG_KEY} -metricsPort={_METRICS.pod_port} -ip.bind=0.0.0.0",
                             ],
-                            ports=[
-                                k8s.ContainerPort(name="s3-http", container_port=_PORT, protocol="TCP"),
-                                k8s.ContainerPort(name="s3-metrics", container_port=_METRICS_PORT, protocol="TCP"),
-                            ],
+                            ports=[_S3.port.k8s_container_port(), _METRICS.port.k8s_container_port()],
                             readiness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(path="/status", port=k8s.IntOrString.from_number(_PORT)),
+                                http_get=k8s.HttpGetAction(
+                                    path="/status", port=k8s.IntOrString.from_number(_S3.pod_port)
+                                ),
                                 initial_delay_seconds=10,
                                 timeout_seconds=3,
                                 period_seconds=15,
@@ -232,21 +237,11 @@ def _gateway(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=namespace.NAME, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=_S3.name, namespace=namespace.NAME, labels=_LABELS),
         spec=k8s.ServiceSpec(
             type="ClusterIP",
-            selector=_SELECTOR,
-            ports=[
-                k8s.ServicePort(
-                    name="s3-http", protocol="TCP", port=_PORT, target_port=k8s.IntOrString.from_string("s3-http")
-                ),
-                k8s.ServicePort(
-                    name="s3-metrics",
-                    protocol="TCP",
-                    port=_METRICS_PORT,
-                    target_port=k8s.IntOrString.from_string("s3-metrics"),
-                ),
-            ],
+            selector=_PODS.selector,
+            ports=[_S3.port.k8s_service_port(), _METRICS.port.k8s_service_port()],
         ),
     )
     https_route(
@@ -254,8 +249,7 @@ def _gateway(scope: Construct) -> None:
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=namespace.NAME),
         hostnames=["s3.allegedly.works"],
-        backend=NAME,
-        port=_PORT,
+        backend=_S3,
         timeout="3600s",
         hsts=False,
         listener=None,

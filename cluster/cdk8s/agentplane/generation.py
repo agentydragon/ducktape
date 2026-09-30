@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import posixpath
 from collections.abc import Callable
 from pathlib import Path
 
@@ -10,8 +11,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.flux import health_checks as flux_health_checks, kustomize_kustomization
-from cluster.cdk8s.generation import write_yaml
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.generation import write_app, write_yaml
 
 _HEALTH_CHECK_KINDS = ("Namespace", "Cluster", "Database", "Deployment", "Certificate", "Bundle")
 
@@ -19,7 +19,8 @@ _HEALTH_CHECK_KINDS = ("Namespace", "Cluster", "Database", "Deployment", "Certif
 def environment_health_checks(chart: Chart, namespace: str) -> list[KustomizationSpecHealthChecks]:
     """Derive Flux health-check values from an Agentplane environment chart."""
     checks = flux_health_checks(chart, _HEALTH_CHECK_KINDS)
-    # trust-manager names a Bundle's target ConfigMap after the Bundle.
+    # trust-manager writes a Bundle's target ConfigMap, named after the Bundle, asynchronously
+    # and outside the artifact, so the Kustomization checks it explicitly.
     return [
         *checks,
         *(
@@ -30,34 +31,26 @@ def environment_health_checks(chart: Chart, namespace: str) -> list[Kustomizatio
     ]
 
 
-def output_dir(env: Environment) -> str:
-    return f"{HAND_WRITTEN_ROOT}/{env.namespace}"
-
-
 def write_environment_manifests(
-    root: Path, env: Environment, build: Callable[[App], Chart], *, write_kustomization: bool = True
+    root: Path, env: Environment, build: Callable[[App], Chart], *more_charts: Callable[[App], Chart]
 ) -> Chart:
-    """Synthesize the environment's chart into `output_dir(env)` as a single
-    `agentplane.k8s.yaml`. Single failure domain by design -- including the CNPG Postgres
+    """Synthesize the environment's chart, then `more_charts`, into `env.output_dir`'s one
+    generated file. Single failure domain by design -- including the CNPG Postgres
     `Cluster` -- accepted for both non-production environments.
 
-    Optionally rewrites the root Kustomization: the generated file plus the environment's
-    hand-written `extra_resources`. Agentplane testing keeps its root Kustomization
-    hand-written because Flux image automation updates its inline `images:` tags. Returns
-    the chart so the per-environment Flux factory can build health checks from these same
-    objects.
+    Writes the root Kustomization: the generated file, the environment's `extra_resources`
+    and its `image_pins` Component. Returns the environment's chart so the per-environment
+    Flux factory can build health checks from these same objects.
     """
-    out_dir = root / output_dir(env)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
+    app = App()
     chart = build(app)
-    app.synth()
-
-    if write_kustomization:
-        write_yaml(
-            out_dir / "kustomization.yaml",
-            kustomize_kustomization(
-                resources=["agentplane.k8s.yaml", *env.extra_resources], components=["./image-pins"]
-            ),
-        )
+    for build_more in more_charts:
+        build_more(app)
+    write_yaml(
+        root / env.output_dir / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=[write_app(root, env.output_dir, app), *env.extra_resources],
+            components=[posixpath.relpath(env.image_pins, env.output_dir)],
+        ),
+    )
     return chart

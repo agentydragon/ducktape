@@ -110,6 +110,29 @@ class RunnerBridge:
                     await waiter.wait()
         return attached
 
+    async def resume_thread(
+        self, thread_id: UUID, *, expected_harness: str, expected_cwd: str
+    ) -> protocol_pb2.Attached:
+        """Resume the native session already bound to this Thread, using its runner-owned spec."""
+        runner_session = await self._event_logs.runner_session(thread_id)
+        if runner_session is None:
+            raise ThreadNotFoundError(thread_id)
+        sessions = await self.list_sessions(runner_session.sandbox)
+        summary = next((row for row in sessions if row.session_id == runner_session.session_id), None)
+        if summary is None:
+            raise RunnerError(
+                f"runner has no retained session {runner_session.session_id!r}; this Thread cannot be resumed"
+            )
+        if (
+            summary.spec.harness not in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX)
+            or not summary.spec.cwd
+            or not summary.spec.model
+        ):
+            raise RunnerError(f"runner session {runner_session.session_id!r} has no recoverable session spec")
+        if protocol_pb2.Harness.Name(summary.spec.harness) != expected_harness or summary.spec.cwd != expected_cwd:
+            raise RunnerError("runner's retained session spec does not match this Thread's harness and workspace")
+        return await self.open_session(runner_session.sandbox, runner_session.session_id, summary.spec)
+
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Return only after this Thread's matching runner admission is in the app archive."""
         if admitted := await self._content.admitted_command(thread_id, command):

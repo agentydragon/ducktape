@@ -131,8 +131,8 @@ pub fn kept_spans_for_anchor_set(
 }
 
 /// Walks the target item collecting the byte span of every token that exhibits
-/// a chosen [`ValueAnchor`], mirroring the `SelectorCandidateIndex` feature
-/// taxonomy so the span-level pin matches the feature the read-off scored.
+/// a chosen [`ValueAnchor`], mirroring the `SelectorFeature` taxonomy so the
+/// span-level pin matches the feature the read-off scored.
 struct SpanCollector<'a> {
     anchors: &'a BTreeSet<ValueAnchor>,
     kept: BTreeSet<AnchorSpan>,

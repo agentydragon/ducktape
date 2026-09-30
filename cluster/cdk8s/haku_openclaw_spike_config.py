@@ -1,9 +1,10 @@
-"""The haku-openclaw-spike app: its openclaw.json (see model_rosters.py for ANTHROPIC_MODELS),
-the gateway Deployment and everything around it.
+"""The haku-openclaw-spike app: its namespace, openclaw.json (see model_rosters.py for
+ANTHROPIC_MODELS), the gateway Deployment and everything around it.
 
-The image tag is the placeholder "unset"; the hand-written
-cluster/k8s/agents/haku-openclaw-spike/app/image-pins/kustomization.yaml overrides it at
-`kustomize build` time via Flux's image-automation marker.
+The image tag is the placeholder "unset"; the hand-written `PINS_DIR` Component, which the
+directory includes across the roots, overrides it at `kustomize build` time via Flux's
+image-automation marker. The kubeconfig ConfigMap's payload is `kube-client-config` beside this
+module, copied verbatim.
 """
 
 from __future__ import annotations
@@ -18,37 +19,53 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import haku_egress_proxy, namespaces, node_scheduling
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
+from cluster.cdk8s.flux import (
+    ConfigMapArgs,
+    GeneratorOptions,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import config_map_chart, write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.generation import config_map_chart, copy_source_file
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
     haku_console_mcp,
     session_memory_hook,
     trusted_proxy_gateway,
 )
+from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAMESPACE = "haku-openclaw-spike"
 _NAME = "haku-openclaw-spike"
-_LABELS = {"app.kubernetes.io/name": _NAME}
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/haku-openclaw-spike/app"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app-image-pins"
+# Authentik's outpost reaches it by FQDN (cluster/k8s/authentik/app/blueprints/haku-openclaw-spike-sso.yaml).
+_GATEWAY = ServiceRef(
+    name=_NAME,
+    port=Port(name="gateway", number=18789),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+)
 _CONFIG_MAP_NAME = "haku-openclaw-spike-config"
-# Rendered from the hand-written kube-client-config by the kustomization.yaml's configMapGenerator.
 _KUBECONFIG_CONFIG_MAP_NAME = "haku-openclaw-spike-kubeconfig"
-_GATEWAY_PASSWORD_NAME = "haku-openclaw-spike-gateway-password"
+_KUBECONFIG_KEY = "config"
+_GATEWAY_PASSWORD = SecretRef(namespace=_NAMESPACE, name="haku-openclaw-spike-gateway-password").key("password")
 _STATE_CLAIM_NAME = "haku-openclaw-spike-state-v2"
 _IMAGE = "git.allegedly.works/ducktape-ci/haku-openclaw-spike:unset"
-_GATEWAY_PORT_NAME = "gateway"
-_GATEWAY_PORT = 18789
 _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
-_EGRESS_PROXY = "http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181"
-_EGRESS_PROXY_PORT = 8181
 _NO_PROXY = "127.0.0.1,localhost"
 
 # OpenClaw's own native `anthropic/<model>` id, not the `{provider}/{shape}/{model}`
@@ -133,6 +150,20 @@ def claude_config() -> dict:
             }
         },
     }
+
+
+def namespace_chart(app: App) -> Chart:
+    chart = Chart(app, "namespace", disable_resource_name_hashes=True)
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=_NAMESPACE,
+        vpa=Vpa.AUTO,
+        agent_readable=None,
+        labels={"name": _NAMESPACE},
+        annotations={"description": "Isolated OpenClaw plus Claude Code subscription compatibility spike for Haku."},
+    )
+    return chart
 
 
 def chart(app: App) -> Chart:
@@ -266,12 +297,7 @@ def _openclaw_container() -> k8s.Container:
             # Authentik authenticates proxied browser traffic. Local backend clients have
             # no proxy identity headers, so use OpenClaw's documented trusted-proxy
             # local-password fallback.
-            k8s.EnvVar(
-                name="OPENCLAW_GATEWAY_PASSWORD",
-                value_from=k8s.EnvVarSource(
-                    secret_key_ref=k8s.SecretKeySelector(name=_GATEWAY_PASSWORD_NAME, key="password")
-                ),
-            ),
+            _GATEWAY_PASSWORD.env_var("OPENCLAW_GATEWAY_PASSWORD"),
             _CLAUDE_CODE_OAUTH_TOKEN,
             # OpenClaw clears ambient Claude credentials by default so auth profiles cannot
             # accidentally inherit host credentials. This deployment intentionally supplies
@@ -287,11 +313,11 @@ def _openclaw_container() -> k8s.Container:
             # Keep both cases: Node honors the uppercase variables, while curl/libcurl (and
             # therefore Git over plain HTTP) require the lowercase form and intentionally
             # ignore uppercase HTTP_PROXY.
-            _env("HTTP_PROXY", _EGRESS_PROXY),
-            _env("HTTPS_PROXY", _EGRESS_PROXY),
+            _env("HTTP_PROXY", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
+            _env("HTTPS_PROXY", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
             _env("NO_PROXY", _NO_PROXY),
-            _env("http_proxy", _EGRESS_PROXY),
-            _env("https_proxy", _EGRESS_PROXY),
+            _env("http_proxy", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
+            _env("https_proxy", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
             _env("no_proxy", _NO_PROXY),
             _env("NODE_EXTRA_CA_CERTS", _CA_BUNDLE),
             # Python is the other runtime that ignores the mounted system bundle: pip trusts
@@ -304,7 +330,7 @@ def _openclaw_container() -> k8s.Container:
             _env("REQUESTS_CA_BUNDLE", _CA_BUNDLE),
             _env("PIP_CERT", _CA_BUNDLE),
         ],
-        ports=[k8s.ContainerPort(name=_GATEWAY_PORT_NAME, container_port=_GATEWAY_PORT)],
+        ports=[_GATEWAY.port.k8s_container_port()],
         # Without this the Deployment reports 1/1 Running whenever a process exists, which
         # hid two different outages during the 2026.8.1 recovery: a gateway crash-looping
         # every ~4 minutes, and one that started but never bound its port. /healthz answers
@@ -316,7 +342,7 @@ def _openclaw_container() -> k8s.Container:
         # measured reading ~940 KB/s, hundreds of MB in, still progressing. A restarting
         # probe would kill that and never let it finish.
         readiness_probe=k8s.Probe(
-            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(_GATEWAY_PORT_NAME)),
+            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(_GATEWAY.port.name)),
             initial_delay_seconds=10,
             period_seconds=10,
             timeout_seconds=5,
@@ -336,7 +362,7 @@ def _openclaw_container() -> k8s.Container:
             # kubeapi.allegedly.works only; with no service account token mounted, this
             # path grants exactly what RBAC binds to oidc-ksbx-groups:haku. subPath because
             # the state volume owns /home/openclaw.
-            _mount("kubeconfig", f"{_HOME}/.kube/config", sub_path="config", read_only=True),
+            _mount("kubeconfig", f"{_HOME}/.kube/config", sub_path=_KUBECONFIG_KEY, read_only=True),
             _STATE_MOUNT,
             # Ephemeral Bazel output base + disk cache (targeted by the init bazelrc), kept
             # off the persistent state volume.
@@ -351,13 +377,13 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_GATEWAY.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_GATEWAY.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_GATEWAY.pods.selector),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     # State is on the worker-local state-v2 PVC. Exclude control-plane nodes
@@ -449,9 +475,10 @@ def _gateway_password(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "gateway-password",
-        name=_GATEWAY_PASSWORD_NAME,
-        namespace=_NAMESPACE,
-        generator_name=f"{_GATEWAY_PASSWORD_NAME}-generator",
+        name=_GATEWAY_PASSWORD.secret.name,
+        namespace=_GATEWAY_PASSWORD.secret.namespace,
+        key=_GATEWAY_PASSWORD.key,
+        generator_name=f"{_GATEWAY_PASSWORD.secret.name}-generator",
         # The generator value is stable. Avoid automatic rotation, which would
         # interrupt active local Gateway clients unnecessarily.
         refresh="8760h",
@@ -465,17 +492,8 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name=_GATEWAY_PORT_NAME,
-                    port=_GATEWAY_PORT,
-                    target_port=k8s.IntOrString.from_string(_GATEWAY_PORT_NAME),
-                )
-            ],
-        ),
+        metadata=k8s.ObjectMeta(name=_GATEWAY.name, namespace=_NAMESPACE),
+        spec=k8s.ServiceSpec(selector=_GATEWAY.pods.selector, ports=[_GATEWAY.port.k8s_service_port()]),
     )
 
 
@@ -487,7 +505,7 @@ def _network_policies(scope: Construct) -> None:
         "ingress",
         metadata=k8s.ObjectMeta(name="haku-openclaw-spike-ingress", namespace=_NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=_GATEWAY.pods.selector),
             policy_types=["Ingress"],
             ingress=[
                 k8s.NetworkPolicyIngressRule(
@@ -504,7 +522,7 @@ def _network_policies(scope: Construct) -> None:
                             ),
                         )
                     ],
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_GATEWAY_PORT), protocol="TCP")],
+                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_GATEWAY.pod_port), protocol="TCP")],
                 )
             ],
         ),
@@ -516,7 +534,7 @@ def _network_policies(scope: Construct) -> None:
         "egress",
         metadata=k8s.ObjectMeta(name="haku-openclaw-spike-egress", namespace=_NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=_LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=_GATEWAY.pods.selector),
             policy_types=["Egress"],
             egress=[
                 k8s.NetworkPolicyEgressRule(
@@ -537,14 +555,21 @@ def _network_policies(scope: Construct) -> None:
                     to=[
                         k8s.NetworkPolicyPeer(
                             namespace_selector=k8s.LabelSelector(
-                                match_labels={"kubernetes.io/metadata.name": "haku-egress-proxy"}
+                                match_labels={
+                                    "kubernetes.io/metadata.name": haku_egress_proxy.OPENCLAW_SPIKE_PROXY.pods.namespace
+                                }
                             ),
                             pod_selector=k8s.LabelSelector(
-                                match_labels={"app.kubernetes.io/name": "haku-openclaw-spike-proxy"}
+                                match_labels=haku_egress_proxy.OPENCLAW_SPIKE_PROXY.pods.selector
                             ),
                         )
                     ],
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_EGRESS_PROXY_PORT), protocol="TCP")],
+                    ports=[
+                        k8s.NetworkPolicyPort(
+                            port=k8s.IntOrString.from_number(haku_egress_proxy.OPENCLAW_SPIKE_PROXY.pod_port),
+                            protocol="TCP",
+                        )
+                    ],
                 ),
             ],
         ),
@@ -553,20 +578,22 @@ def _network_policies(scope: Construct) -> None:
 
 def _backup_bucket(scope: Construct) -> None:
     """The VolSync backup bucket and the credentials Secret ../backup's SecretStore reads."""
+    # No S3Identity declares this IAM identity; S3Credentials uses the existing one by name.
+    identity = "haku-openclaw-spike-backups"
     # Restic retention/pruning is managed by VolSync, not by Bucket deletion.
-    bucket = s3.Bucket(
+    s3.bucket(
         scope,
         "backup-bucket",
         name="haku-openclaw-spike-backups",
         namespace=_NAMESPACE,
+        access=[BucketAccess.read_write(identity)],
         adopt_existing=True,
         description="Haku OpenClaw spike VolSync backup bucket.",
-        grant_name=_NAME,
     )
-    # No S3Identity declares this IAM identity; S3Credentials uses the existing one by name.
-    identity = s3.IdentityRef(scope, "backup-identity", name="haku-openclaw-spike-backups")
-    bucket.grant_read_write(identity)
-    identity.credentials(
+    s3.credentials(
+        scope,
+        "backup-credentials",
+        identity=identity,
         namespace=_NAMESPACE,
         # Generated directly where the VolSync SecretStore reads it.
         secret="haku-openclaw-spike-volsync-s3-credentials",
@@ -588,5 +615,33 @@ def app_chart(app: App) -> Chart:
     return workload
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app", chart, app_chart)
+GENERATOR_OPTIONS = GeneratorOptions(disable_name_suffix_hash=True)
+
+
+def write_kubeconfig_config_map(root: Path) -> ConfigMapArgs:
+    """Copy `kube-client-config` into `OUTPUT_DIR`; return the `configMapGenerator` entry packaging
+    it under the key the Deployment mounts at ~/.kube/config."""
+    return ConfigMapArgs(
+        name=_KUBECONFIG_CONFIG_MAP_NAME,
+        namespace=_NAMESPACE,
+        files=[f"{_KUBECONFIG_KEY}=" + copy_source_file(root, OUTPUT_DIR, "cluster/cdk8s/kube-client-config")],
+    )
+
+
+def haku_openclaw_spike_app(
+    chart: Chart,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
+    seaweedfs_operator: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        "haku-openclaw-spike-app",
+        directory,
+        timeout="10m",
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, seaweedfs_operator),
+        description=(
+            "Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy."
+        ),
+    )

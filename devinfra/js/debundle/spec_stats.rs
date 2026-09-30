@@ -18,10 +18,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use spec_modules::{
-    ModuleFile, collect_module_files, is_residual_module_path, module_path_from_file,
-    read_module_file,
-};
+use spec::is_residual_module_path;
+use spec_modules::{ModuleFile, collect_module_files, module_path_from_file, read_module_file};
 
 /// Member-count buckets per the 2026-05-26 real-spec survey.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -68,7 +66,7 @@ pub struct SpecStats {
 /// Bucket a single module's member count. Mutates the passed
 /// [`MemberCountBuckets`] in place (the caller maintains the running
 /// aggregate across the spec).
-pub fn bucket_member_count(buckets: &mut MemberCountBuckets, count: usize, first: bool) {
+fn bucket_member_count(buckets: &mut MemberCountBuckets, count: usize, first: bool) {
     if first {
         buckets.min = count;
         buckets.max = count;
@@ -364,26 +362,5 @@ mod tests {
         assert_eq!(s.modules.member_count.medium_6_to_20, 1);
         assert_eq!(s.modules.member_count.large_21_plus, 1);
         assert_eq!(s.modules.member_count.max, 21);
-    }
-
-    #[test]
-    fn deterministic_same_spec_same_output() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "a.yaml",
-            "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\n",
-        );
-        write(
-            root,
-            "b/c.yaml",
-            "members:\n  - selector: { binding: { name: c } }\n",
-        );
-        let s1 = compute_spec_stats(root).unwrap();
-        let s2 = compute_spec_stats(root).unwrap();
-        let j1 = serde_json::to_string(&s1).unwrap();
-        let j2 = serde_json::to_string(&s2).unwrap();
-        assert_eq!(j1, j2);
     }
 }

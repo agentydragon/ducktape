@@ -348,12 +348,11 @@ pub fn gate_post_edit_partition(
 ) -> Result<()> {
     let owner_graph_report = crate::load_owner_graph_report(owner_graph_path)?;
 
-    // The gate algorithm walks edges + partition, not declared sets.
-    // Pass `&[]` for facts — `from_report` leaves `declared` empty,
-    // which is fine for `check_realizability`/`validate_factorization`
-    // (both consume the partition we build below, not the per-owner
-    // declared field).
-    let (owner_graph, _index) = OwnerGraph::from_report(&owner_graph_report, &[])
+    // The gate algorithm walks edges + partition, not declared sets:
+    // `from_report` leaves `declared` empty, which is fine for
+    // `check_realizability`/`validate_factorization` (both consume the
+    // partition we build below, not the per-owner declared field).
+    let owner_graph = OwnerGraph::from_report(&owner_graph_report)
         .with_context(|| format!("reconstructing owner graph {}", owner_graph_path.display()))?;
 
     // owner_by_binding_name uses the Atom-only declared_bindings the
@@ -447,14 +446,16 @@ pub fn gate_post_edit_partition(
     let atomic_conflicts =
         detect_atomic_unit_conflicts(&atomic_units, &partition, &owner_graph_report);
     if !atomic_conflicts.is_empty() {
-        let conflicts = AtomicUnitConflictReport::from_conflicts(&atomic_conflicts, &module_path);
+        let conflicts =
+            AtomicUnitConflictReport::from_conflicts(&atomic_conflicts, &module_path, &owner_graph);
         write_rejection_artifact(
             owner_graph_path,
             output_layout::ATOMIC_UNIT_CONFLICTS_REPORT,
             &conflicts,
         )?;
         remove_rejection_artifact(owner_graph_path, output_layout::CYCLES_REPORT)?;
-        let summary = render_atomic_unit_conflict_summary(&atomic_conflicts, &module_path);
+        let summary =
+            render_atomic_unit_conflict_summary(&atomic_conflicts, &module_path, &owner_graph);
         eprintln!("error: post-edit spec splits one or more atomic units:\n{summary}");
         return Err(GateRejection {
             report: GateRejectionReport::AtomSplit { conflicts },
@@ -586,6 +587,7 @@ mod tests {
                 source_path: "static/index.js".to_string(),
                 start_line: ordinal + 1,
                 end_line: ordinal + 1,
+                start_column: None,
             }),
             statement_kind: if bindings.is_empty() {
                 StatementKind::SideEffect

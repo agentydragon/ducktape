@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
-from cluster.cdk8s.generation import write_namespace
+from cluster.cdk8s.generation import namespace_chart, write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
+
+NAMESPACE = "forgejo"
 
 
 def write_manifests(root: Path) -> None:
-    write_namespace(
+    write_charts(
         root,
         f"{HAND_WRITTEN_ROOT}/forgejo",
-        name="forgejo",
-        labels={"goldilocks.fairwinds.com/enabled": "true", "goldilocks.fairwinds.com/vpa-update-mode": "auto"},
+        partial(namespace_chart, name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None),
     )

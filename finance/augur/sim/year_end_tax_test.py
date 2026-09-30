@@ -6,7 +6,6 @@ from decimal import Decimal
 from fractions import Fraction
 from typing import Any
 
-import numpy as np
 import polars as pl
 import pytest
 import pytest_bazel
@@ -15,15 +14,9 @@ from more_itertools import one
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.cash_band_household import CashBandHousehold, SecuritySleeve
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.actions import DecisionActions, LotSale, Sell
-from finance.augur.sim.books import AccountRef, Book, TaxLiabilityState
-from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.fixed_point import (
-    currency_amount_to_quanta,
-    quantity_scale_for_asset,
-    quantity_to_quanta,
-    round_currency_amount,
-)
+from finance.augur.sim.actions import LotSale, Sell
+from finance.augur.sim.books import AccountRef, TaxLiabilityState
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import (
     ORDINARY_INCOME,
@@ -36,13 +29,16 @@ from finance.augur.sim.income import (
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.results import Finished, RejectedAction, Rollout
+from finance.augur.sim.results import RejectedAction, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.rollouts import book, cash
 from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -51,10 +47,6 @@ CHECKING = AccountId("checking")
 FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 IXUS = SecurityKey(symbol=SecuritySymbol("ixus"))
-
-
-def money(amount: Decimal | int) -> int:
-    return int(currency_amount_to_quanta(Decimal(amount), quantum=QUANTUM))
 
 
 def usd(quanta: Any) -> float:
@@ -112,12 +104,12 @@ class Monthly:
 def monthly(
     cause_id: str, payer: AgentId, payee: AgentId, amount: Decimal, *, income: bool, end_month: int | None = 11
 ) -> Monthly:
-    return Monthly(cause_id, payer, payee, money(amount), ORDINARY_INCOME if income else None, end_month)
+    return Monthly(cause_id, payer, payee, USD.quanta(amount), ORDINARY_INCOME if income else None, end_month)
 
 
 def monthly_interest(cause_id: str, character: InterestCharacter, amount: Decimal) -> Monthly:
     """A year of monthly coupons of `character` into Alice's checking."""
-    return Monthly(cause_id, PAYROLL, ALICE, money(amount), InterestIncome(character=character), 11)
+    return Monthly(cause_id, PAYROLL, ALICE, USD.quanta(amount), InterestIncome(character=character), 11)
 
 
 def sell_into_cash(asset: SecurityKey) -> CashBandHousehold:
@@ -164,15 +156,8 @@ def indexation(request: pytest.FixtureRequest) -> TaxIndexation:
 
 def compose(case: Situation, indexation: TaxIndexation) -> World:
     horizon = case.horizon_months
-    series = compile_series(
-        ExternalSeriesContext.from_level_blocks(
-            [(asset, np.asarray([levels], dtype=np.float64)) for asset, levels in case.prices.items()],
-            rollout_count=1,
-            horizon_months=horizon,
-        ),
-        rollout_count=1,
-        horizon_months=horizon,
-        currency=USD,
+    series = level_series(
+        {asset: [levels] for asset, levels in case.prices.items()}, rollout_count=1, horizon_months=horizon
     )
     if isinstance(indexation, CpiIndexedLaw):
         cpi = (100,) * (horizon + 1) if case.cpi is None else case.cpi
@@ -192,7 +177,8 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
     )
     for opened in case.accounts:
         world.declare_account(
-            account=AccountRef(agent_id=opened.agent_id, account_id=CHECKING), opening_balance=money(opened.balance)
+            account=AccountRef(agent_id=opened.agent_id, account_id=CHECKING),
+            opening_balance=USD.quanta(opened.balance),
         )
     if case.jurisdiction_ids:
         world.track(
@@ -228,7 +214,7 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
             purchase_month=held.purchase_month,
             quantity_scale=scale,
             units=quantity_to_quanta(held.quantity, scale=scale),
-            basis=money(held.cost_basis),
+            basis=USD.quanta(held.cost_basis),
         )
     for flow in case.recurring_transfers:
         world.declare_flow(
@@ -246,31 +232,7 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
 def run(case: Situation, indexation: TaxIndexation) -> Rollout:
     """Alice makes her scripted sales, sells on her band, then pays every due claim in full, in order."""
     household = Scripted(ClaimPayer(ALICE) if case.funded_by is None else sell_into_cash(case.funded_by), case.sales)
-    session = ActionSession({0: compose(case, indexation)}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id, decision.observation.month, household.decide(decision.observation)
-                    )
-                    for decision in batch
-                ]
-            )
-    finally:
-        session.close()
-    return one(batch.rollouts)
-
-
-def book(rollout: Rollout, month: int) -> Book:
-    assert rollout.trace is not None
-    return one(entry for entry in rollout.trace.books if entry.month == month)
-
-
-def cash(rollout: Rollout, agent_id: AgentId, month: int) -> float:
-    account_ = AccountRef(agent_id=agent_id, account_id=CHECKING)
-    return usd(one(row.balance for row in book(rollout, month).balances if row.account == account_))
+    return one(finish(ActionSession({0: compose(case, indexation)}, ALICE), each(household.decide)).rollouts)
 
 
 def owed(rollout: Rollout, month: int) -> list[TaxLiabilityState]:

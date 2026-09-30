@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import LocationId, RentKey
-from finance.augur.sim.actions import DecisionActions, PayClaim
+from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.claims import ObligationType
@@ -18,9 +18,10 @@ from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import USD
-from finance.augur.sim.results import Finished, Paid, Rollout
+from finance.augur.sim.results import Paid, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 RENT = RentKey(location_id=LocationId("san_francisco_ca"))
@@ -115,33 +116,11 @@ def _rent_worlds(amount: IndexedAmount, levels: list[list[float]], *, horizon_mo
 
 
 def _run(worlds: dict[int, World]) -> list[Rollout]:
-    session = ActionSession(worlds, AgentId("alice"), capture="forensic")
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id,
-                        decision.observation.month,
-                        [
-                            PayClaim(
-                                request_id=index,
-                                cause_id=claim.cause_id,
-                                claim=claim,
-                                from_account=claim.from_account,
-                                amount=claim.amount_due,
-                            )
-                            for index, claim in enumerate(decision.observation.claims)
-                        ],
-                    )
-                    for decision in batch
-                ]
-            )
-        assert all(result.stop is None for result in batch.rollouts)
-        return batch.rollouts
-    finally:
-        session.close()
+    rollouts = finish(
+        ActionSession(worlds, AgentId("alice"), capture="forensic"), each(ClaimPayer(AgentId("alice")).decide)
+    ).rollouts
+    assert all(result.stop is None for result in rollouts)
+    return rollouts
 
 
 def _cash(book: Book, agent_id: AgentId) -> int:

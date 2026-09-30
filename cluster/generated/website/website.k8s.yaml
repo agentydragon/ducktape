@@ -2,9 +2,9 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: auto
   name: website
+spec: {}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -140,6 +140,7 @@ spec:
       labels:
         app.kubernetes.io/name: website
     spec:
+      automountServiceAccountToken: false
       containers:
         - image: nginxinc/nginx-unprivileged:1.31-alpine
           livenessProbe:

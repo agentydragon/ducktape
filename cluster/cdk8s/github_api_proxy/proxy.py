@@ -29,8 +29,6 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 from gateway_api_gateway_crds.io.k8s.networking.gateway import (
-    Gateway,
-    GatewaySpec,
     GatewaySpecListeners,
     GatewaySpecListenersAllowedRoutes,
     GatewaySpecListenersAllowedRoutesNamespaces,
@@ -51,26 +49,36 @@ from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.gateway import GATEWAY_CLASS
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.gateway_api.gateway import Gateway
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _IDENTITY_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/identity"
 _APP_DIR = f"{HAND_WRITTEN_ROOT}/github-api-proxy/app"
 _NAME = "github-api-proxy"
 _NAMESPACE = "github-api-proxy"
-_LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/github-api-proxy:unset"
 _HOSTNAME = "github-proxy.allegedly.works"
 _SERVER_TLS_SECRET = "github-api-proxy-server-tls"
 _INTERCEPTION_CA = "github-api-proxy-interception-ca"
 _CAPTURE_CLAIM = "github-api-proxy-capture"
-_PROXY_PORT = 8080
-_METRICS_PORT = 9090
+_PROXY = Port(name="proxy", number=8080)
+# Scraped from the Pods by the PodMonitor; the Service does not carry it.
+_METRICS = Port(name="metrics", number=9090)
+# The TLS passthrough route's backend; the proxy terminates the clients' TLS on `_PROXY`.
+_SERVICE = ServiceRef(
+    name=_NAME,
+    port=Port(name="proxy-tls", number=443),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+    target_port=_PROXY.number,
+)
 _RUN_DIR = "/run/github-api-proxy"
 _CLIENTS = ("wyrm2", "rugged")
 _TLS_LISTENER = "proxy-tls"
@@ -261,10 +269,7 @@ def _proxy_container() -> k8s.Container:
         image=_IMAGE,
         image_pull_policy="IfNotPresent",
         args=["--config", f"{_RUN_DIR}/config/config.json"],
-        ports=[
-            k8s.ContainerPort(name="proxy", container_port=_PROXY_PORT, protocol="TCP"),
-            k8s.ContainerPort(name="metrics", container_port=_METRICS_PORT, protocol="TCP"),
-        ],
+        ports=[_PROXY.k8s_container_port(), _METRICS.k8s_container_port()],
         security_context=k8s.SecurityContext(
             allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
         ),
@@ -273,7 +278,7 @@ def _proxy_container() -> k8s.Container:
             limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("2Gi")},
         ),
         readiness_probe=k8s.Probe(
-            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string("metrics")),
+            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(_METRICS.name)),
             initial_delay_seconds=3,
             period_seconds=5,
             timeout_seconds=2,
@@ -293,13 +298,13 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     # No explicit zone nodeSelector: github-api-proxy-capture's seaweedfs-ovh
                     # StorageClass already pins scheduling to topology.kubernetes.io/zone=hil-ovh
@@ -368,12 +373,15 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=_NAMESPACE),
         spec=k8s.ServiceSpec(
-            selector=_LABELS,
+            selector=_SERVICE.pods.selector,
             ports=[
                 k8s.ServicePort(
-                    name="proxy-tls", port=443, target_port=k8s.IntOrString.from_string("proxy"), protocol="TCP"
+                    name=_SERVICE.port.name,
+                    port=_SERVICE.port.number,
+                    target_port=k8s.IntOrString.from_number(_SERVICE.pod_port),
+                    protocol="TCP",
                 )
             ],
         ),
@@ -385,15 +393,12 @@ def _network_policy(scope: Construct) -> None:
         scope,
         "network-policy",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        endpoint_selector=_LABELS,
+        endpoint_selector=_SERVICE.pods.selector,
         ingress=[
-            IngressRule.from_gateway(_PROXY_PORT),
-            IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy"), ports=[_METRICS_PORT]),
+            IngressRule.from_gateway(_SERVICE.pod_port),
+            IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy"), ports=[_METRICS.number]),
         ],
-        egress=[
-            cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
-            EgressRule.to_entities(Entity.WORLD, ports=[80, 443]),
-        ],
+        egress=[*cilium.open_internet_egress(ports=[80, 443], entities=(Entity.WORLD,))],
         # These non-public ranges can be outside Cilium's cluster identity set.
         # Limit the deny to web ports so the explicit cluster-DNS exception remains.
         # Runtime destination validation also fences loopback and DNS rebinding.
@@ -442,23 +447,21 @@ def _gateway(scope: Construct) -> None:
                 )
             },
         ),
-        spec=GatewaySpec(
-            gateway_class_name="cilium",
-            listeners=[
-                GatewaySpecListeners(
-                    name=_TLS_LISTENER,
-                    hostname=_HOSTNAME,
-                    port=8443,
-                    protocol="TLS",
-                    tls=GatewaySpecListenersTls(mode=GatewaySpecListenersTlsMode.PASSTHROUGH),
-                    allowed_routes=GatewaySpecListenersAllowedRoutes(
-                        namespaces=GatewaySpecListenersAllowedRoutesNamespaces(
-                            from_=GatewaySpecListenersAllowedRoutesNamespacesFrom.SAME
-                        )
-                    ),
-                )
-            ],
-        ),
+        gateway_class_name=GATEWAY_CLASS,
+        listeners=[
+            GatewaySpecListeners(
+                name=_TLS_LISTENER,
+                hostname=_HOSTNAME,
+                port=8443,
+                protocol="TLS",
+                tls=GatewaySpecListenersTls(mode=GatewaySpecListenersTlsMode.PASSTHROUGH),
+                allowed_routes=GatewaySpecListenersAllowedRoutes(
+                    namespaces=GatewaySpecListenersAllowedRoutesNamespaces(
+                        from_=GatewaySpecListenersAllowedRoutesNamespacesFrom.SAME
+                    )
+                ),
+            )
+        ],
     )
     TlsRoute(
         scope,
@@ -467,7 +470,11 @@ def _gateway(scope: Construct) -> None:
         spec=TlsRouteSpec(
             parent_refs=[TlsRouteSpecParentRefs(name=_NAME, section_name=_TLS_LISTENER)],
             hostnames=[_HOSTNAME],
-            rules=[TlsRouteSpecRules(backend_refs=[TlsRouteSpecRulesBackendRefs(name=_NAME, port=443)])],
+            rules=[
+                TlsRouteSpecRules(
+                    backend_refs=[TlsRouteSpecRulesBackendRefs(name=_SERVICE.name, port=_SERVICE.port.number)]
+                )
+            ],
         ),
     )
 
@@ -477,8 +484,8 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "pod-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        selector=PodMonitorSpecSelector(match_labels=_LABELS),
-        pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
+        selector=PodMonitorSpecSelector(match_labels=_SERVICE.pods.selector),
+        pod_metrics_endpoints=[Endpoint.plain(port=_METRICS.name, scrape_timeout="10s")],
     )
     PrometheusRule(
         scope,

@@ -11,7 +11,7 @@ upstream JSON verbatim.
 
 The server itself holds a single account-wide `x-api-key` and does **no**
 per-caller authentication. Its Kubernetes app is decommissioned and its manifests
-are parked at <../../cluster/k8s/parked/postscanmail-mcp/>. The former deployment
+are parked at <../../cluster/parked/postscanmail-mcp/>. The former deployment
 used an `mcp-oauth-facade` sidecar and a Terraform-managed Authentik client. The
 OAuth client is being retired; this source is not currently registered with
 haku-console or exposed through a deployed OAuth facade. Any revival must restore

@@ -59,22 +59,60 @@ The resolve is two halves, so `run` can do the first per chunk in parallel:
    `all_different` keeps it distinct from. A group that is exactly one
    `source_match` or anonymous-statement entity is decided from its own
    candidates, and a lone name pin with one place is a constant. Every other
-   group is one request to the OR-Tools CP-SAT sidecar
-   (`solver_backends/ortools_cpsat`), a required tool of the
-   `debundle_pipeline` rule and a runfile of the `debundle` binary, over the
-   program sliced to the group; requests run in parallel.
+   group is one CP-SAT problem over the program sliced to the group, solved
+   inside the `debundle` process (§ The solver); groups solve in parallel.
 
 No constraint relates two chunks' entities, so every group lies in one chunk,
 and a place is always one chunk's: two chunks never compete for it.
 
+## The solver
+
+`selector_ortools_cpsat_backend.rs` implements `SelectorProblemBackend` over
+OR-Tools' CP-SAT, linked into the `debundle` binary: a released `debundle` is one
+file that needs nothing beside it. `selector_ortools_cpsat_model.rs` builds
+OR-Tools' own `CpModelProto` (prost bindings of its `cp_model.proto`) from the
+compiled problem, and `ortools_cpsat_ffi.rs` — the only `unsafe` in the crate —
+calls CP-SAT's C API. The support search solves the model repeatedly, each time
+forbidding what it has found, until every projected variable is proven fixed or
+lists its alternatives (`MAX_ALTERNATIVES_PER_VARIABLE`).
+
+| Variable                                             | Meaning                                                                                                                              |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_NUM_SEARCH_WORKERS` | Search threads of one CP-SAT solve, default 1. Groups solve concurrently, so the process runs up to that many times the group count. |
+| `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS`   | CP-SAT's `max_time_in_seconds` for each solve of the support search (not for a whole group), default none.                           |
+
+CP-SAT built without `NDEBUG` is about an order of magnitude slower and logs
+`CP-SAT is running in debug mode` to stderr. The library is linked only through
+`//devinfra/js/debundle:ortools_cp_solver`, which builds OR-Tools, protobuf and
+Abseil with `--compilation_mode=opt` whatever the consumer's mode is
+(<bazel_integration.md> § Solver build). That warning means a target links
+`@or-tools//ortools/sat/c_api:cp_solver_c` around it.
+
+Solving in process means a solve's failures are the process's:
+
+- An OR-Tools `CHECK` failure, or a group that exhausts memory, ends the whole
+  `debundle` process; `settle_references` keeping groups small is also what keeps
+  a solve's memory down.
+- CP-SAT checks `max_time_in_seconds` between presolve steps, so a step in
+  progress runs past it: on synthetic 400,000-tuple table models a 0.5 s limit
+  returned after 7.4 s and 7.9 s, and limits of 10 s to 60 s returned within 2 s
+  of the limit (2026-09-30). `SolveCpStopSearch` from a watchdog thread is
+  checked at the same points and returned no sooner, so none is used.
+- CP-SAT's default SIGINT handler replaces the process's own for good, so the
+  solver runs with `catch_sigint_signal` off and `^C` still ends `debundle`.
+- A solve runs on a thread with an 8 MiB stack, not on the caller's (a rayon
+  worker's is 2 MiB).
+
 ## Order
 
-A chunk's `Resolution` lists its outcomes in a fixed order: entities rejected
-before the solve (anonymous statements, then `source_matches[]` groups, then
-single `source_match` members, each in module order), name pins with no
-place, then the other anonymous statements, then the other members (name pins
-and relational selectors, then `source_matches[]` groups, then single
-`source_match` members, each in module order).
+A chunk's `Resolution` lists its outcomes in a fixed order: entities the matcher
+failed on (`invalid`), then entities rejected once their template references
+narrowed their places (§ Template references: `no_match`, `too_broad`,
+`conflict`, `invalid`), each set as anonymous statements, then `source_matches[]`
+groups, then single `source_match` members, in module order; then name pins
+with no place, then the other anonymous statements, then the other members
+(name pins and relational selectors, then `source_matches[]` groups, then
+single `source_match` members, each in module order).
 
 `run` records outcomes in two passes over the chunks, each in chunk-id order:
 first the claims it makes itself (duplicate claims, in request order), then,
@@ -89,11 +127,10 @@ its constants live in `selector_outcome.rs`. `MAX_LISTED_CANDIDATES` also bounds
 the solver's alternative search (`MAX_ALTERNATIVES_PER_VARIABLE`), so an
 `ambiguous` target lists what the solver found, not every place.
 
-`undecided` means the sidecar stopped (its
-`DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS` limit, per request) before
-deciding the entity. The sidecar reports which projected variables it had proven fixed by
-then; an entity all of whose variables are among them still resolves, and a
-conflict set found before the stop still stands.
+`undecided` means CP-SAT stopped (at its `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS`
+limit) before deciding the entity. The solver reports which projected variables
+it had proven fixed by then; an entity all of whose variables are among them
+still resolves.
 
 ## Template references
 
@@ -110,8 +147,8 @@ directly. Only a reference to an entity still open reaches the solver, as a
 column of the referencer's candidate table over the referenced entity's binding
 variable (`projected_binding_variable`), so equality comes from the shared
 variable. Settling first keeps groups small: with a column for every reference,
-the largest downstream spec chained 9,055 targets into one request and the sidecar was
-killed for memory (2026-09-24). An entity whose rows all disagree with a
+the largest downstream spec chained 9,055 targets into one group and the solver
+ran out of memory (2026-09-24). An entity whose rows all disagree with a
 reference is `conflict` with the entities referenced.
 
 After the solve, an entity that had several rows before its references narrowed
@@ -157,53 +194,51 @@ place might share the anchor, so none is given.
 
 ## Unsatisfiable programs
 
-A contradiction stays inside its group, since each group is its own request.
-Within the group it must not hide every other result either, so an
-unsatisfiable request is localized to the targets that cause it
-(`selector_backend_solver::solve_localizing_conflicts`).
+A contradiction stays inside its group, since each group is its own solve.
+A group's program is unsatisfiable when compile-time presolve proves it
+(`all_different` propagates fixed values and a relation table narrows both of
+its variables until a domain or table is empty) or CP-SAT proves it
+infeasible (`selector_backend_solver::solve_with_backend`). Every target of
+the group then comes out `no_match` with one fixed `reason`: two or more of the
+group's selectors claim the same place or contradict a relation, and which ones
+is not determined. Other groups resolve as usual.
 
-The first compile presolves across targets
-(`PresolveScope::AcrossTargets`): `all_different` propagates fixed values and a
-relation table narrows both of its variables. That is what keeps requests small,
-but a contradiction then surfaces as an empty domain wherever propagation met
-it, not where it started. When that compile or its solve is unsatisfiable, the
-program is recompiled within targets (`PresolveScope::WithinTargets`) and solved
-again with every constraint attributed:
+A `conflict` outcome is not a solver result: an entity whose rows all disagree
+with a reference is rejected before the solve (§ Template references).
 
-- **Ownership.** A target owns its owner variable and its binding variable. A
-  constraint is attributed to every target owning one of its variables: a
-  candidate table to its own target, a relation table to its owner and anchor,
-  a `source_matches[]` group table to every target in the group, and each
-  `all_different` entry to the target(s) owning that variable.
-- **Hard constraints.** A constraint over variables no target owns carries no
-  attribution and stays hard.
-- **Presolve within targets** narrows a variable only from constraints attributed
-  solely to targets owning it, and `all_different` propagates nothing. A target
-  whose own constraints empty its domain gets an empty table instead of an empty
-  domain.
+### Rejected: localizing a contradiction with assumption cores
 
-The sidecar gives each target an assumption literal and enforces a constraint
-only while every target it is attributed to is enabled; a disabled
-`all_different` entry takes a value no other entry can. It takes CP-SAT's
-sufficient assumptions for infeasibility as one conflict set, disables those
-targets, and repeats until the rest is feasible, then solves the rest with the
-conflicting targets disabled. CP-SAT's cores are not necessarily minimal, so a
-conflict set may name a target that is not strictly needed for the
-contradiction.
+Attributing every constraint to the targets owning its variables, presolving
+within targets only, and re-solving with one assumption literal per target
+reported each contradiction as a `conflict` among the targets of a CP-SAT core
+(sufficient assumptions for infeasibility) while the rest of the group
+resolved. It was dropped because each round is a full CP-SAT solve of a model
+that presolve across targets no longer shrinks, and CP-SAT returns one core per
+solve: the cost is (conflicts + 1) × the model's load time, not search.
 
-Each target in a conflict set of two or more comes out `conflict`, naming the
-others; a set of one is that target's own constraints failing and comes out
-`no_match`. Every other target resolves as usual. A target that depends on a
-conflicting one, such as a relation anchored on it, loses that relation with it
-and may come out ambiguous. Only when the hard constraints alone are
-unsatisfiable does every target of the group come out `no_match`.
+Measured with an optimized CP-SAT on one real 96 KB problem, 216 targets in
+one group, infeasible because two pairs of entities claimed the same
+declaration: proving the plain across-targets program infeasible took 22 ms.
+Localization ran three full solves, about 28 s each with presolve on (86 s in
+all, finding the same two size-2 cores) and about 3 s each with
+`cp_model_presolve:false` (9.4 s in all). Stack samples put the time in model
+expansion and loading (`ExpandCpModel`, `FullyCompressTuples`, `LoadBaseModel`,
+probing), not in search, and the `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS`
+limit does not interrupt a presolve step (§ The solver). Duplicate claims are not a rare path:
+authoring specs in parallel produces several at once.
 
 ## Landing a new relation
 
 1. Add the fact to `chunk_facts` if it is not derivable from what is there.
    Extraction stays fail-closed.
-2. Lower it to a table over candidate ids in the resolve, with a compiled
-   encoding in `selector_constraint_model_builder`.
+2. Lower it through the selector program. `selector_ir`: a `SelectorAtom`
+   variant with arms in `variable_ids`, `remap_variables` and `validate_atom`,
+   and a `SelectorFact` variant for a new kind of fact. `selector_ir_lowering`:
+   an arm of `lower_selector_atoms`. `selector_resolve`: a `selector_fact_store`
+   branch that extracts its facts only when the program holds the atom.
+   `selector_constraint_model_builder`: an arm of `lower_atom_constraint`,
+   `DerivedFactRequirements::from_program` and `add_atom_constants`, and its
+   tables in `FactDomains` and `RelationSupportCache`.
 3. Prove it through `debundle run` on a fixture whose chunk also exports and
    uses the anchor, as <../e2e/cross_ref_lowering_test.rs> does: real graphs
    model `export { … }` and side-effect statements as owners that reference
@@ -217,7 +252,7 @@ unsatisfiable does every target of the group come out `no_match`.
 selectors against it, so a chunk with thousands of selectors pays setup once.
 `selector_match` is the homomorphism itself: hole-skipping, alpha-equivalence
 bijections, and run-hole subsequence alignment, with
-<../selector_match_differential_test.rs> pinning the exact semantics.
+<../selector_match_test.rs> pinning the exact semantics.
 
 Two properties make it near-linear rather than quadratic in selector count:
 needle-only validation is hoisted out of the candidate loop, and exact-mode
@@ -225,6 +260,9 @@ identifier spellings are indexed so an identifier-only needle prunes through
 postings instead of scanning every top-level statement. Scaling on a synthetic
 corpus of the same shape class measures an exponent of ≈1.30 (synthetic
 10k/40k-statement corpus, 2026-06-21).
+
+`STR_LITERAL_MATCHING_RE` predicates are compiled once per needle; compiling per
+candidate was the hot path.
 
 `chunk_facts` extraction is fail-closed: a construct it cannot project
 faithfully is `Unsupported` rather than approximated.
@@ -262,6 +300,8 @@ bound two different identifiers as unbound.
 Root `AGENTS.md` § Profiling applies. Interactive commands target under 10s on
 warmed inputs for the largest known downstream specs; sustained runs over 60s
 are priority bugs unless the command is an explicit offline/profile mode.
+Matcher and index changes show a material wall-time drop on a broad workload,
+not only a microbenchmark win.
 
 Always record the compilation mode with a selector timing. A `fastbuild` binary
 measured 5.1× slower than `-c opt` on the same `match-selector` probe, and 35×

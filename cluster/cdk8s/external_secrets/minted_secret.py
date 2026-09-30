@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecRefreshPolicy,
     ExternalSecretSpecTargetCreationPolicy,
@@ -19,17 +18,21 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.providers.external_secrets.password import Password
 
 
-def _password_generator(scope: Construct, id: str, *, name: str, namespace: str, length: int, digits: int) -> str:
+def password_generator(scope: Construct, id: str, *, name: str, namespace: str, length: int, digits: int) -> str:
     """Mints a `Password` generator named `name`, returning that name for
-    `DataFrom.from_password_generator`. `symbols`/`no_upper`/`allow_repeat` never vary
-    across callers, so they aren't parameters."""
+    `DataFrom.from_password_generator`. Our policy: no symbols, upper case and repeats allowed."""
     Password(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        spec=PasswordSpec(length=length, digits=digits, symbols=0, no_upper=False, allow_repeat=True),
+        length=length,
+        digits=digits,
+        symbols=0,
+        no_upper=False,
+        allow_repeat=True,
     )
     return name
 
@@ -63,7 +66,7 @@ def mint_bearer_secret(
     Secret's own metadata (e.g. reflector mirroring config); `description` is this
     `ExternalSecret` object's own `metadata.annotations.description`.
     """
-    generator = _password_generator(
+    generator = password_generator(
         scope, f"{id}-generator", name=generator_name or name, namespace=namespace, length=length, digits=digits
     )
     template = (
@@ -107,15 +110,18 @@ def mint_db_role_secret(
     url_key: str = "DATABASE_URL",
     include_host_fields: bool = True,
     secret_type: str | None = "kubernetes.io/basic-auth",
+    target_labels: dict[str, str] | None = None,
+    target_annotations: dict[str, str] | None = None,
 ) -> None:
     """Mints `name` as a DB role credential: an ESO `Password` generator feeding a
     multi-field `ExternalSecret` template -- `username`/`password`, optionally `host`/
     `port`/`dbname`, plus a `{url_scheme}://...` connection string under `url_key`. The
     generator's own object is always `f"{name}-generator"`, distinct from the target
     Secret's name (unlike `mint_bearer_secret`, every DB role site already used this
-    naming).
+    naming). `target_labels` and `target_annotations` land on the generated Secret's own
+    metadata.
     """
-    generator = _password_generator(
+    generator = password_generator(
         scope, f"{id}-generator", name=f"{name}-generator", namespace=namespace, length=40, digits=8
     )
     data = {"username": role, "password": "{{ .password }}"}
@@ -128,5 +134,11 @@ def mint_db_role_secret(
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
         refresh_interval="8760h",
         data_from=[DataFrom.from_password_generator(generator)],
-        template=ExternalSecretSpecTargetTemplate(type=secret_type, data=data),
+        template=ExternalSecretSpecTargetTemplate(
+            type=secret_type,
+            data=data,
+            metadata=ExternalSecretSpecTargetTemplateMetadata(labels=target_labels, annotations=target_annotations)
+            if target_labels or target_annotations
+            else None,
+        ),
     )

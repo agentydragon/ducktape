@@ -13,7 +13,6 @@ from pydantic import HttpUrl
 from finance.augur.api.catalog import build_catalog, build_settings
 from finance.augur.api.config import LocationConfig, PropertyAssetConfig
 from finance.augur.api.conftest import MakeCatalogConfig
-from finance.augur.api.local_regulation import TaxRegime
 from finance.augur.sim.ids import PropertyId
 
 LOCATION_B_PROPERTY = PropertyId("location_b_property")
@@ -28,7 +27,7 @@ def test_catalog_locations_default_to_loaded_property_source(
     assert [property_.id for property_ in catalog.properties] == ["location_a_property", "location_b_property"]
 
 
-def test_catalog_san_francisco_location_carries_modeled_tax_defaults(
+def test_catalog_san_francisco_location_carries_its_labels(
     builtin_properties_path: Path, make_catalog_config: MakeCatalogConfig
 ) -> None:
     catalog = build_catalog(make_catalog_config(builtin_properties_path))
@@ -36,8 +35,6 @@ def test_catalog_san_francisco_location_carries_modeled_tax_defaults(
 
     assert location.label == "San Francisco, CA"
     assert location.city == "San Francisco"
-    assert location.local_regulation.property_tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
-    assert TaxRegime.SAN_FRANCISCO_TRANSFER_TAX in location.local_regulation.default_tax_regimes
 
 
 def test_catalog_applies_public_property_asset_urls(

@@ -85,9 +85,6 @@ and no parameter uncertainty, and historical replay has only US history.
 - **SALT phase-out:** the SALT cap's income phase-out.
 - **NIIT:** net rental income becomes net investment income (`OrdinaryIncome` merges rent with
   wages today); Form 8960 line 9 deductions.
-- **Housing basis:** `Properties.sell` leaves out the closing costs `sim/property.py`
-  capitalized at purchase. Pin which acquisition costs are capitalized, then test purchase,
-  depreciation and disposal against independently calculated basis and gains.
 - **TIPS check:** independently reconcile maturity-period CPI change, indexed redemption and
   final taxable accretion in the existing indexed-bond slice.
 - Pin cases to the selected year's IRS inflation adjustments, Publications 550 and 505,
@@ -97,45 +94,60 @@ and no parameter uncertainty, and historical replay has only US history.
 ### Property taxes (San Francisco and Vallejo)
 
 Goal: Augur computes a homeowner's and a landlord's property-related taxes correctly in San
-Francisco, mainland Vallejo and Mare Island. Today `sim/property_tax.py` bills purchase price
-× one flat rate plus one flat assessment, in monthly twelfths, fixed for the whole horizon,
-and a sale pays one flat `closing_cost_ppb`. The old `augur/core` engine (deleted 2026-05-20)
-had Proposition 13 growth, inflation-indexed special assessments and a local transfer tax;
-none came back. Each item names its location facts and is checked against a hand calculation
-per location over a purchase, hold, rent-out and sale horizon.
+Francisco, mainland Vallejo and Mare Island. San Francisco and mainland Vallejo are done at county
+and city level (`sim/property_tax_lifecycle_test.py` holds each one's ten-year hand calculation);
+Mare Island needs its districts.
 
-- **ASSESS:** assessed value is its own state. It resets to the purchase price on change of
-  ownership, grows each lien date by the California CPI change capped at 2%, and grows by
-  capital improvements (new construction) at their cost. The ad-valorem bill is the 1% base
-  plus the location's voter-approved debt rate for that fiscal year, on assessed value less
-  the homeowners' exemption for a primary residence.
-- **SUPPLEMENTAL:** the purchase-year supplemental assessment and bill for the difference
-  between the new and prior assessed value, prorated over the rest of the fiscal year.
-- **DECLINE** (after ASSESS): a Proposition 8 decline-in-value reduction when the home-value
-  path falls below the factored base, recovering toward that base as the market recovers.
-- **INSTALLMENTS** (after MIDYEAR): the secured bill for a July–June fiscal year is paid in
-  its two installments on their due dates, not in monthly twelfths.
-- **PARCEL:** each flat per-parcel charge is its own line with its own escalation rule and
-  end date: San Francisco's parcel taxes and Mare Island's three CFD special taxes (CFD
-  2002-1, 2005-1A and 2005-1B) from the district's rate-and-method document, including any
-  sunset within the horizon.
-- **DEDUCT** (after PARCEL): SALT and the rental schedule take the right parts. Only
-  ad-valorem tax is an itemizable real-property tax; flat per-parcel service charges are not
-  (today `TaxAuthority` itemizes the whole bill, special assessment included). On a rented
-  share, service charges are deductible expenses and local-benefit assessments are added to
-  basis, for federal and California.
-- **TRANSFER:** a sale pays the transfer taxes where the property is: San Francisco's tiered
-  real property transfer tax on the whole price at its bracket's rate, Solano County's
-  documentary transfer tax, and any Vallejo city transfer tax. Seller-paid by default and
-  reducing the amount realized; a buyer-paid share is added to basis. `closing_cost_ppb`
-  splits into commissions, escrow/title and these taxes. Joins **Housing basis** above.
-- **LOCATION** (with the first of the above to land): the simulator's `Location` carries
-  these typed rules (debt rate by fiscal year, parcel charges, transfer-tax schedule) in
-  place of one rate and one assessment.
-- Pin cases to the San Francisco Assessor-Recorder and Treasurer-Tax Collector (secured rate,
-  transfer-tax table), the Solano County Auditor-Controller's rate book, the City of Vallejo's
-  CFD reports, the California Board of Equalization's inflation factor, and IRS Publications
-  530 and 527.
+**Model.**
+
+- **Law is one jurisdiction tree.** Property-tax law goes in the same `sim/data/jurisdictions/`
+  files as income-tax law, each file naming its parent: `federal` → `california` → a county
+  tax rate area → special districts. Each level holds only what it sets, tagged with its
+  `law_year` or fiscal year and sourced in comments beside the values. `california` holds
+  Proposition 13's rules; a rate area its voter-approved debt rate per fiscal year and the
+  county's documentary transfer tax; a city its transfer tax; a district its per-parcel
+  charge rules.
+- **A parcel names its situs; a taxpayer its residence.** A purchase carries the parcel's rate
+  area and the districts that levy on it, and inherits everything above them. Income tax keeps
+  following `TaxProfile.jurisdiction_ids`. "Mare Island" is Vallejo's rate area plus three CFDs,
+  not a location of its own. The `home_value:`/`rent:` series key stays a market region,
+  separate from the situs.
+- **One authority per concern, linked by facts.** A per-parcel `PropertyTaxAuthority` computes
+  the parcel's bills from its situs's rules and charges transfer tax at a sale. The per-taxpayer
+  `TaxAuthority` stays as it is. Settled property-tax payments reach it through the `TaxBook`
+  classified as ad-valorem tax or per-parcel charge, and it applies SALT and the rental
+  schedule to them. The CA CPI factor reuses the income-tax indexation machinery.
+- **The caller supplies facts about its property only:** price, dates, improvements,
+  primary-residence status, and the parcel's category under each district's rate formula.
+- **Data holds only what is modeled.** A field exists only where the engine reads it and a
+  test pins it, and the loader rejects unknown keys. A known tax that is not modeled yet stays
+  in this plan, never in the data. This is how the old files and the app's `TaxRegime` labels
+  came to promise behavior that nothing implemented.
+- **Two kinds of test.** Rule tests pin each rule to a published example: a
+  Proposition 13 year where CPI exceeds 2%, a transfer-tax amount at a bracket edge, a CFD
+  charge from Vallejo's annual report. A hand-calculated lifecycle per location buys, holds,
+  rents out and sells, with every bill and deduction worked independently of the engine.
+
+**Caller shape.** A purchase's `parcel` gains its districts (DISTRICTS) beside its situs and the
+seller's prior assessed value.
+
+Annual totals are right without DECLINE and INSTALLMENTS; Mare Island is not without DISTRICTS.
+
+**Items**, each landing its rule, data and tests together:
+
+- **DISTRICTS**: district files with a per-category maximum, escalation and
+  end date from each district's rate-and-method document: Mare Island's CFDs 2002-1, 2005-1A
+  and 2005-1B (research so far: <docs/mare_island_special_taxes.md>), and San Francisco's parcel
+  taxes. A district's charge is never an itemizable real-property tax: on a rented share a
+  service charge is an expense and a local-benefit assessment is added to basis, federal and
+  California. Mare Island gets the same ten-year hand-calculated lifecycle as the other two
+  locations, and its cases pin to the City of Vallejo's CFD reports.
+- **DEBTPATH**: a rate area's debt rate for unpublished fiscal years comes from a supplied
+  exogenous series, in place of carrying the last published rate forward.
+- **DECLINE**: a Proposition 8 reduction while the home-value path is below the
+  factored base, recovering toward it.
+- **INSTALLMENTS** (after MIDYEAR): the July–June secured bill is paid in its two
+  installments on their due dates.
 
 ### Calendar
 

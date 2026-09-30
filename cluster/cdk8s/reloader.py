@@ -3,11 +3,10 @@ Secret or ConfigMap they reference changes, so secret rotation needs no manual r
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
+from cdk8s import App, Chart
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "reloader"
@@ -40,6 +39,13 @@ def _values() -> dict[str, object]:
             # manual restart (the 2026-06-08 attic `InvalidAccessKeyId` incident). Opt a
             # workload out with `reloader.stakater.com/auto: "false"`.
             "autoReloadAll": True,
+            # Jobs and CronJobs are never reloaded. Reloader "reloads" a Job by deleting and
+            # recreating it, which kills a running one (a CNPG initdb Job mid-bootstrap) and
+            # reruns a finished one; when a CronJob's hash-suffixed ConfigMap is renamed, every
+            # finished Job still kept is recreated against the pruned name and never mounts. A
+            # CronJob reads its current ConfigMaps and Secrets at its next scheduled run.
+            "ignoreJobs": True,
+            "ignoreCronJobs": True,
             # The Altinity operator hot-reloads its generated ClickHouse user config. Watching
             # clickhouse causes a feedback loop: each generated users ConfigMap update restarts
             # ClickHouse, the new Pod IP changes the next generated config, and Reloader
@@ -67,17 +73,13 @@ def _values() -> dict[str, object]:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    repository = HelmRepository(
-        chart,
-        "repository",
-        metadata=ApiObjectMetadata(name="stakater", namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="24h", url="https://stakater.github.io/stakater-charts"),
-    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(
+            chart, "stakater", "flux-system", url="https://stakater.github.io/stakater-charts"
+        ),
         chart=NAME,
         version="2.*",
         interval="30m",

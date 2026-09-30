@@ -32,6 +32,17 @@ cdk8s_import(
 )
 
 py_library(
+    name = "clusterwide_network_policy",
+    srcs = ["clusterwide_network_policy.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":ciliumclusterwidenetworkpolicy",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "network_policy",
     srcs = ["network_policy.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],

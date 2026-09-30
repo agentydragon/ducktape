@@ -6,27 +6,31 @@ from __future__ import annotations
 
 import asyncio
 import json
-import socket
-from collections.abc import AsyncIterator
+import os
+import shlex
+import shutil
+import signal
+from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import httpx
 import pytest
 import pytest_bazel
-import uvicorn
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.timestamp_pb2 import Timestamp
+from sqlalchemy import select
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.agent_runtime.events.event_log import EventLogStore, FeedError
 from agentplane.app.agent_runtime.events.stream import follow
 from agentplane.app.agent_runtime.ingestion import Feed, Ingester, Ingestion
-from agentplane.app.agent_runtime.models import ThreadCheckpoint, ThreadEntity
+from agentplane.app.agent_runtime.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.app.agent_runtime.runner.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
@@ -34,7 +38,7 @@ from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadOperationalState
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.changes import Changes
-from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
+from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -50,7 +54,9 @@ from agentplane.runner import protocol_pb2, service
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.session import Session
-from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
+from util.net import bind_free_port
+from util.testing.asgi import serve_app_in_loop
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -63,11 +69,17 @@ SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 
 @pytest.fixture
 async def failed_native_journal(request: pytest.FixtureRequest, runner: RunnerHandle) -> AsyncIterator[None]:
-    """Preserve native stderr when an app-level bridge case fails during harness launch."""
+    """Preserve native history and journal evidence when an app-level bridge case fails."""
     yield
     report = request.node.stash.get(_CALL_REPORT, None)
     if report is None or not report.failed:
         return
+    for session_id, session in runner.runner.sessions.items():
+        target = undeclared_outputs_dir() / request.node.name / session_id
+        for dialect, history in (("claude", "projects"), ("codex", "sessions")):
+            source = session.directory / dialect / history
+            if source.exists():
+                shutil.copytree(source, target / dialect / history, dirs_exist_ok=True)
     sessions: dict[str, list[dict[str, Any]]] = {}
     for session_id, session in runner.runner.sessions.items():
         entries = await session.journal.since(0, limit=512)
@@ -154,9 +166,6 @@ async def app_url(
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
     server is real because SSE needs a response that streams, which an in-process ASGI transport
     would buffer."""
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = int(probe.getsockname()[1])
     ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
     bridge = RunnerBridge(
         runners=local_runners,
@@ -165,44 +174,33 @@ async def app_url(
         ingester=ingester,
         thread_changes=database_updates.changes[Channel.THREADS],
     )
-    server = uvicorn.Server(
-        uvicorn.Config(
-            create_app(
-                inventory,
-                bridge,
-                store,
-                ModelCatalog(
-                    models=[ModelOption(model="bridge-model", display_name="Bridge Model")],
-                    harnesses={harness: ["bridge-model"] for harness in Harness},
-                ),
-                egress,
-                decisions,
-                live_index,
-                action_policy,
-                reviewer=reviewer,
-                event_logs=event_logs,
-                content=content,
-                database_updates=database_updates,
-                operator_sessions=operator_sessions,
-            ),
-            host="127.0.0.1",
-            port=port,
-            log_level="warning",
-        )
+    app = create_app(
+        inventory,
+        bridge,
+        store,
+        ModelCatalog(
+            models=[
+                ModelOption(
+                    model="bridge-model", display_name="Bridge Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+                )
+            ],
+            harnesses={harness: ["bridge-model"] for harness in Harness},
+        ),
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        event_logs=event_logs,
+        content=content,
+        database_updates=database_updates,
+        operator_sessions=operator_sessions,
     )
-    serving = asyncio.create_task(server.serve())
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(OSError)
-    ):
-        with attempt:
-            _, writer = await asyncio.open_connection("127.0.0.1", port)
-            writer.close()
-            await writer.wait_closed()
+    sock = bind_free_port()
     try:
-        yield f"http://127.0.0.1:{port}"
+        async with serve_app_in_loop(app, sock=sock):
+            yield f"http://127.0.0.1:{sock.getsockname()[1]}"
     finally:
-        server.should_exit = True
-        await serving
         await ingester.close()
 
 
@@ -312,8 +310,51 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         (summary,) = (await http.get(SESSIONS)).json()
         assert summary["harnessState"] == "HARNESS_STATE_STOPPED"
 
+        resumed = await http.post(f"/threads/{thread_id}/resume")
+        assert resumed.status_code == 200, resumed.text
+        assert resumed.json()["sessionId"] == SESSION
+        assert resumed.json()["spec"]["harness"] == protocol_pb2.Harness.Name(spec.harness)
+        assert resumed.json()["harnessState"] == "HARNESS_STATE_RUNNING"
+        assert (await http.get("/threads")).json()[0]["id"] == thread_id
 
-async def _stored_events(http: httpx.AsyncClient, thread_id: str, *, until: str) -> list[dict[str, Any]]:
+        # The Thread route resumes the session from the runner-owned stored spec. The event stream
+        # continues after the previous shutdown and the native request still has both completed
+        # turns in context.
+        previous_cursor = int(stored[-1]["cursor"])
+        async with http.stream(
+            "GET", f"/threads/{thread_id}/events/stream", headers={"Last-Event-ID": str(previous_cursor)}
+        ) as resumed_stream:
+            resumed_lines = resumed_stream.aiter_lines()
+            await next_message(resumed_lines)
+            started = await read_until(resumed_lines, "harnessStarted")
+            assert started[-1].data["event"]["harnessStarted"]["resumed"] is True
+            accepted = await http.post(
+                _commands(thread_id),
+                json={"commandId": "input-after-resume", "submitInput": {"text": "Reply with exactly: BRIDGE_RESUMED"}},
+            )
+            assert accepted.status_code == 200, accepted.text
+            request = await model.request()
+            assert request.user_texts == [
+                "Reply with exactly: BRIDGE_OK",
+                "Reply with exactly: BRIDGE_TWO",
+                "Reply with exactly: BRIDGE_RESUMED",
+            ]
+            assert request.assistant_texts == ["BRIDGE_OK", "BRIDGE_TWO"]
+            await model.reply(request, Text("BRIDGE_RESUMED"))
+            continued = await read_until(resumed_lines, "turnCompleted")
+            assert [message.id for message in [*started, *continued]] == list(
+                range(previous_cursor + 1, previous_cursor + len(started) + len(continued) + 1)
+            )
+            assert continued[-1].data["event"]["turnCompleted"]["status"] == "TURN_STATUS_COMPLETED"
+
+
+async def _stored_events(
+    http: httpx.AsyncClient,
+    thread_id: str,
+    *,
+    until: str,
+    matches: Callable[[list[dict[str, Any]]], bool] | None = None,
+) -> list[dict[str, Any]]:
     """The thread's stored entries once one carrying `until` has landed; the feed writes them as
     they arrive, a moment after the runner emitted them."""
     async for attempt in AsyncRetrying(
@@ -324,7 +365,439 @@ async def _stored_events(http: httpx.AsyncClient, thread_id: str, *, until: str)
             assert response.status_code == 200, response.text
             entries: list[dict[str, Any]] = response.json()
             assert any(until in entry["event"] for entry in entries), f"no {until} stored yet"
+            assert matches is None or matches(entries), f"stored events have not reached the expected state: {entries=}"
     return entries
+
+
+async def _folded_items(store: ThreadStore, thread_id: str) -> tuple[dict[str, ThreadEntity], list[ThreadPayloadChunk]]:
+    """The current item rows and payload chunks from the app's materialized thread fold."""
+    async with store._sessions() as session:
+        checkpoint = await session.get(ThreadCheckpoint, UUID(thread_id))
+        if checkpoint is None:
+            return {}, []
+        rows = await session.scalars(
+            select(ThreadEntity).where(
+                ThreadEntity.thread_id == UUID(thread_id),
+                ThreadEntity.projection_epoch == checkpoint.projection_epoch,
+                ThreadEntity.entity_kind == "item",
+            )
+        )
+        chunks = await session.scalars(
+            select(ThreadPayloadChunk).where(
+                ThreadPayloadChunk.thread_id == UUID(thread_id),
+                ThreadPayloadChunk.projection_epoch == checkpoint.projection_epoch,
+            )
+        )
+        return {row.entity_id: row for row in rows}, list(chunks)
+
+
+def _folded_body(chunks: list[ThreadPayloadChunk], reference: dict[str, Any] | None) -> str:
+    if reference is None:
+        return ""
+    indexed = {
+        chunk.chunk_index: chunk.text
+        for chunk in chunks
+        if chunk.projection_epoch == reference["projection_epoch"]
+        and chunk.owner_cursor == int(reference["owner_cursor"])
+        and chunk.owner_id == reference["owner_id"]
+        and chunk.field == reference["field"]
+        and str(chunk.generation) == str(reference["generation"])
+    }
+    return "".join(indexed[index] for index in range(int(reference["chunk_count"])) if index in indexed)
+
+
+async def _wait_for_folded_items(
+    store: ThreadStore, thread_id: str, matches: Callable[[dict[str, ThreadEntity], list[ThreadPayloadChunk]], bool]
+) -> tuple[dict[str, ThreadEntity], list[ThreadPayloadChunk]]:
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(10), wait=wait_fixed(0.2), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            items, chunks = await _folded_items(store, thread_id)
+            details = {
+                item_id: {
+                    "state": item.state,
+                    "text": _folded_body(chunks, item.text_ref),
+                    "arguments": _folded_body(chunks, item.arguments_ref),
+                    "output": _folded_body(chunks, item.output_ref),
+                }
+                for item_id, item in items.items()
+            }
+            assert matches(items, chunks), f"folded items did not reach the expected state: {details=}"
+            return items, chunks
+    raise AssertionError("unreachable")
+
+
+async def _next_model_request(model: ScriptedModel) -> Any:
+    async with asyncio.timeout(30):
+        return await model.request()
+
+
+async def _open_thread_with_seed(
+    http: httpx.AsyncClient,
+    model: ScriptedModel,
+    spec: protocol_pb2.SessionSpec,
+    *,
+    session_id: str,
+    seed_prompt: str,
+    seed_answer: str,
+) -> str:
+    opened = await http.post(
+        f"/sandboxes/{SANDBOX}/sessions", json={"session_id": session_id, "spec": MessageToDict(spec)}
+    )
+    assert opened.status_code == 201, opened.text
+    thread_id = await _thread_id(http, session_id)
+    accepted = await http.post(
+        _commands(thread_id), json={"commandId": "seed-input", "submitInput": {"text": seed_prompt}}
+    )
+    assert accepted.status_code == 200, accepted.text
+    request = await _next_model_request(model)
+    assert request.user_texts[-1] == seed_prompt
+    await model.reply(request, Text(seed_answer))
+    await _stored_events(http, thread_id, until="turnCompleted")
+    return thread_id
+
+
+def _has_turn_status(entries: list[dict[str, Any]], status: str) -> bool:
+    return any(entry["event"].get("turnCompleted", {}).get("status") == status for entry in entries)
+
+
+@pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
+async def test_stream_recovery_reports_the_content_the_model_receives(
+    app_url: str,
+    model: ScriptedModel,
+    runner: RunnerHandle,
+    store: ThreadStore,
+    spec: protocol_pb2.SessionSpec,
+    failed_native_journal: None,
+    stop_mode: str,
+) -> None:
+    seed_prompt, seed_answer = "Remember the seed prompt", "SEED_ANSWER_FOR_STREAM_RECOVERY"
+    partial = "PARTIAL_STREAM_MUST_STAY_UNFINISHED"
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+        thread_id = await _open_thread_with_seed(
+            http, model, spec, session_id=SESSION, seed_prompt=seed_prompt, seed_answer=seed_answer
+        )
+        accepted = await http.post(
+            _commands(thread_id), json={"commandId": "streaming-input", "submitInput": {"text": "Start a long answer"}}
+        )
+        assert accepted.status_code == 200, accepted.text
+        request = await _next_model_request(model)
+        await model.hold_after_first_delta(request, Text(partial))
+        items, chunks = await _wait_for_folded_items(
+            store,
+            thread_id,
+            lambda rows, payloads: any(_folded_body(payloads, row.text_ref) == partial for row in rows.values()),
+        )
+        item_id = next(row.entity_id for row in items.values() if _folded_body(chunks, row.text_ref) == partial)
+        assert items[item_id].state["completion"] is None
+        recovery_cursor = await _interrupt_and_recover(http, runner, thread_id, stop_mode)
+        items, chunks = await _wait_for_folded_items(
+            store,
+            thread_id,
+            lambda rows, payloads: (
+                rows[item_id].revision_cursor >= recovery_cursor
+                and rows[item_id].state["recovery"]
+                in {event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT}
+            ),
+        )
+        assert _folded_body(chunks, items[item_id].text_ref) == partial
+        disposition = items[item_id].state["recovery"]
+        accepted = await http.post(
+            _commands(thread_id),
+            json={"commandId": "stream-recovery-input", "submitInput": {"text": "Continue after recovery"}},
+        )
+        assert accepted.status_code == 200, accepted.text
+        request = await _next_model_request(model)
+        assert seed_prompt in request.user_texts
+        assert seed_answer in request.assistant_texts
+        assert (partial in request.assistant_texts) == (disposition == event_pb2.RECOVERY_DISPOSITION_RETAINED)
+        await model.reply(request, Text("STREAM_RECOVERY_DONE"))
+        await _stored_events(
+            http,
+            thread_id,
+            until="turnCompleted",
+            matches=lambda entries: any(
+                entry["event"].get("itemCompleted", {}).get("text") == "STREAM_RECOVERY_DONE" for entry in entries
+            ),
+        )
+
+
+async def _interrupt_and_recover(http: httpx.AsyncClient, runner: RunnerHandle, thread_id: str, mode: str) -> int:
+    session = runner.runner.sessions[SESSION]
+    process = session.process
+    assert process is not None
+    turn_id = session.active_turn_id
+    before = session.journal.last_cursor
+    if mode == "kill":
+        os.killpg(process.native_pid, signal.SIGKILL)
+    else:
+        operation = {"interruptTurn": {"turnId": turn_id}} if mode == "interrupt" else {"stopRunnerSession": {}}
+        response = await http.post(_commands(thread_id), json={"commandId": "interrupt-for-recovery", **operation})
+        assert response.status_code == 200, response.text
+    expected = "TURN_STATUS_PROCESS_LOST" if mode == "kill" else "TURN_STATUS_INTERRUPTED"
+    await _stored_events(
+        http,
+        thread_id,
+        until="turnCompleted",
+        matches=lambda entries: any(
+            entry["event"].get("turnCompleted", {}).get("turnId") == turn_id
+            and entry["event"]["turnCompleted"]["status"] == expected
+            for entry in entries
+        ),
+    )
+    if mode != "interrupt":
+        await _stored_events(http, thread_id, until="harnessExited")
+        resumed = await http.post(f"/threads/{thread_id}/resume")
+        assert resumed.status_code == 200, resumed.text
+        assert resumed.json()["sessionId"] == SESSION
+    else:
+        assert session.process is process
+        assert process.running
+    await _stored_events(
+        http,
+        thread_id,
+        until="conversationReconciled",
+        matches=lambda entries: any(
+            entry["event"].get("conversationReconciled", {}).get("turnId") == turn_id for entry in entries
+        ),
+    )
+    reports = [
+        entry
+        for entry in await session.journal.since(before, limit=512)
+        if entry.event.HasField("conversation_reconciled") and entry.event.conversation_reconciled.turn_id == turn_id
+    ]
+    assert reports
+    expected_report = reports[-1].cursor
+    entries = await _stored_events(
+        http,
+        thread_id,
+        until="conversationReconciled",
+        matches=lambda entries: any(
+            int(entry["origin"]["sequence"]) == expected_report
+            and entry["event"].get("conversationReconciled", {}).get("turnId") == turn_id
+            for entry in entries
+        ),
+    )
+
+    return next(
+        int(entry["cursor"])
+        for entry in entries
+        if int(entry["origin"]["sequence"]) == expected_report
+        and entry["event"].get("conversationReconciled", {}).get("turnId") == turn_id
+    )
+
+
+@pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
+async def test_tool_recovery_reports_context_without_repeating_side_effects(
+    app_url: str,
+    model: ScriptedModel,
+    runner: RunnerHandle,
+    store: ThreadStore,
+    spec: protocol_pb2.SessionSpec,
+    workspace: Path,
+    failed_native_journal: None,
+    stop_mode: str,
+) -> None:
+    seed_prompt, seed_answer = "Remember the tool test seed", "SEED_ANSWER_FOR_TOOL_RECOVERY"
+    recovery_prompt = "After resume, answer without rerunning the old tool"
+    marker = workspace / "tool-side-effects"
+    ready = workspace / "tool-started"
+    token = "UNKNOWN_TOOL_SIDE_EFFECT"
+    command = (
+        f"printf '%s\\n' {shlex.quote(token)} >> {shlex.quote(str(marker))}; "
+        f"printf '%s\\n' ready > {shlex.quote(str(ready))}; "
+        "printf 'partial tool output'; exec sleep 3600"
+    )
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+        thread_id = await _open_thread_with_seed(
+            http, model, spec, session_id=SESSION, seed_prompt=seed_prompt, seed_answer=seed_answer
+        )
+        accepted = await http.post(
+            _commands(thread_id),
+            json={"commandId": "tool-input", "submitInput": {"text": "Run the blocking side effect once"}},
+        )
+        assert accepted.status_code == 200, accepted.text
+        request = await _next_model_request(model)
+        await model.reply(request, ShellCall("inflight-tool", command))
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                assert ready.exists(), "the shell tool did not reach its controlled blocking point"
+        assert marker.read_text().splitlines() == [token]
+        items, chunks = await _wait_for_folded_items(
+            store,
+            thread_id,
+            lambda rows, payloads: any(
+                row.state["completion"] is None and token in _folded_body(payloads, row.arguments_ref)
+                for row in rows.values()
+            ),
+        )
+        incomplete_tools = [
+            row
+            for row in items.values()
+            if row.state["completion"] is None and token in _folded_body(chunks, row.arguments_ref)
+        ]
+        assert len(incomplete_tools) == 1
+        assert _folded_body(chunks, incomplete_tools[0].output_ref) == ""
+
+        item_id = incomplete_tools[0].entity_id
+        recovery_cursor = await _interrupt_and_recover(http, runner, thread_id, stop_mode)
+        items, chunks = await _wait_for_folded_items(
+            store,
+            thread_id,
+            lambda rows, payloads: (
+                rows[item_id].revision_cursor >= recovery_cursor
+                and rows[item_id].state["recovery"]
+                in {
+                    event_pb2.RECOVERY_DISPOSITION_RETAINED,
+                    event_pb2.RECOVERY_DISPOSITION_ABSENT,
+                    event_pb2.RECOVERY_DISPOSITION_REVISED,
+                }
+            ),
+        )
+        recovered = items[item_id]
+        assert recovered.state["tool_succeeded"] is not True
+        if stop_mode == "kill":
+            assert recovered.state["completion"] is None
+        assert marker.read_text().splitlines() == [token]
+        accepted = await http.post(
+            _commands(thread_id), json={"commandId": "tool-recovery-input", "submitInput": {"text": recovery_prompt}}
+        )
+        assert accepted.status_code == 200, accepted.text
+        request = await _next_model_request(model)
+        assert seed_prompt in request.user_texts
+        assert seed_answer in request.assistant_texts
+        assert ("inflight-tool" in request.tool_calls) == (
+            recovered.state["recovery"] != event_pb2.RECOVERY_DISPOSITION_ABSENT
+        )
+        recovered_output = _folded_body(chunks, recovered.output_ref)
+        if recovered_output and recovered.state["recovery"] != event_pb2.RECOVERY_DISPOSITION_ABSENT:
+            assert any(recovered_output in output.text for output in request.tool_outputs)
+        assert marker.read_text().splitlines() == [token]
+        await model.reply(request, Text("TOOL_RECOVERY_DONE"))
+        await _stored_events(
+            http,
+            thread_id,
+            until="turnCompleted",
+            matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_COMPLETED"),
+        )
+        assert marker.read_text().splitlines() == [token]
+
+
+@pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
+async def test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it(
+    app_url: str,
+    model: ScriptedModel,
+    runner: RunnerHandle,
+    store: ThreadStore,
+    spec: protocol_pb2.SessionSpec,
+    workspace: Path,
+    failed_native_journal: None,
+    stop_mode: str,
+) -> None:
+    seed_prompt, seed_answer = "Remember the completed tool seed", "SEED_ANSWER_FOR_COMPLETED_TOOL"
+    recovery_prompt = "Continue after the earlier tool and interrupted answer"
+    marker = workspace / "completed-tool-side-effects"
+    token = "COMPLETED_TOOL_SIDE_EFFECT"
+    tool_output = "COMPLETED_TOOL_OUTPUT"
+    command = (
+        f"printf '%s\\n' {shlex.quote(token)} >> {shlex.quote(str(marker))}; printf '%s' {shlex.quote(tool_output)}"
+    )
+    partial = "PARTIAL_AFTER_COMPLETED_TOOL"
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+        thread_id = await _open_thread_with_seed(
+            http, model, spec, session_id=SESSION, seed_prompt=seed_prompt, seed_answer=seed_answer
+        )
+        accepted = await http.post(
+            _commands(thread_id),
+            json={"commandId": "completed-tool-input", "submitInput": {"text": "Run one completed tool"}},
+        )
+        assert accepted.status_code == 200, accepted.text
+        request = await _next_model_request(model)
+        await model.reply(request, ShellCall("completed-tool", command))
+        continuation = await _next_model_request(model)
+        assert any(tool_output in result.text for result in continuation.tool_outputs)
+        assert marker.read_text().splitlines() == [token]
+        await model.hold_after_first_delta(continuation, Text(partial))
+        await _stored_events(
+            http,
+            thread_id,
+            until="textDelta",
+            matches=lambda entries: any(
+                entry["event"].get("textDelta", {}).get("text") == partial for entry in entries
+            ),
+        )
+        await _wait_for_folded_items(
+            store,
+            thread_id,
+            lambda rows, payloads: (
+                any(
+                    row.state["completion"] == "tool"
+                    and row.state["tool_succeeded"] is True
+                    and tool_output in _folded_body(payloads, row.output_ref)
+                    for row in rows.values()
+                )
+                and any(
+                    row.state["completion"] is None and _folded_body(payloads, row.text_ref) == partial
+                    for row in rows.values()
+                )
+            ),
+        )
+
+        recovery_cursor = await _interrupt_and_recover(http, runner, thread_id, stop_mode)
+        items, chunks = await _folded_items(store, thread_id)
+        completed_tools = [
+            row
+            for row in items.values()
+            if row.state["completion"] == "tool" and tool_output in _folded_body(chunks, row.output_ref)
+        ]
+        assert len(completed_tools) == 1
+        assert completed_tools[0].state["tool_succeeded"] is True
+        accepted = await http.post(
+            _commands(thread_id),
+            json={"commandId": "completed-tool-recovery-input", "submitInput": {"text": recovery_prompt}},
+        )
+        assert accepted.status_code == 200, accepted.text
+        request = await _next_model_request(model)
+        async with request._exchange as exchange:
+            assert seed_prompt in request.user_texts
+            assert seed_answer in request.assistant_texts
+            items, chunks = await _wait_for_folded_items(
+                store,
+                thread_id,
+                lambda rows, payloads: (
+                    rows[completed_tools[0].entity_id].revision_cursor >= recovery_cursor
+                    and rows[completed_tools[0].entity_id].state["recovery"]
+                    in {event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT}
+                ),
+            )
+            recovered_tool = items[completed_tools[0].entity_id]
+            assert recovered_tool.state["tool_succeeded"] is True
+            assert tool_output in _folded_body(chunks, recovered_tool.output_ref)
+            assert any(tool_output in result.text for result in request.tool_outputs) == (
+                recovered_tool.state["recovery"] == event_pb2.RECOVERY_DISPOSITION_RETAINED
+            )
+            assert marker.read_text().splitlines() == [token]
+            await exchange.send(*model.stream([Text("COMPLETED_TOOL_RECOVERY_DONE")]))
+        await _stored_events(
+            http,
+            thread_id,
+            until="turnCompleted",
+            matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_COMPLETED"),
+        )
+        assert marker.read_text().splitlines() == [token]
+
+
+async def test_thread_resume_reports_missing_runner_recovery_state(
+    app_url: str, event_logs: EventLogStore, spec: protocol_pb2.SessionSpec
+) -> None:
+    thread_id = await event_logs.open(SANDBOX, "missing-runner-session", spec)
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+        response = await http.post(f"/threads/{thread_id}/resume")
+    assert response.status_code == 409
+    assert "no retained session 'missing-runner-session'" in response.json()["detail"]
 
 
 async def test_the_feed_records_a_turn_nobody_is_watching(

@@ -8,14 +8,13 @@ and its `DeschedulerPolicy` is a Go type with no CRD for `cdk8s_import` to inges
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
 from cluster.cdk8s import stateful_infra
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
+from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "descheduler"
@@ -82,17 +81,13 @@ def _values() -> dict[str, object]:
 class Descheduler(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        repository = HelmRepository(
-            self,
-            "repository",
-            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-            spec=HelmRepositorySpec(interval="24h", url="https://kubernetes-sigs.github.io/descheduler"),
-        )
         helm_release(
             self,
             NAME,
             NAMESPACE,
-            repository=repository,
+            repository=https_helm_repository(
+                self, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/descheduler"
+            ),
             chart="descheduler",
             version="0.36.0",
             interval="30m",

@@ -24,6 +24,13 @@ js_openapi_schema(
 )
 
 ts_library(
+    name = "test_model_catalog",
+    testonly = True,
+    srcs = ["test_model_catalog.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "client",
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
@@ -169,7 +176,9 @@ ts_library(
         ":actions_requests",
         ":client",
         ":json_view",
+        ":live_stream",
         ":stream_status",
+        ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -492,70 +501,6 @@ ts_library(
     ],
 )
 
-ts_library(
-    name = "launch_presets",
-    srcs = ["launch_presets.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":client"],
-)
-
-ts_library(
-    name = "launch_presets_test",
-    srcs = ["launch_presets.test.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":launch_presets",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "command_state",
-    srcs = ["command_state.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//agentplane/protocol:command_pb",
-        "//agentplane/protocol:event_log_pb",
-    ],
-)
-
-ts_library(
-    name = "command_state_test",
-    testonly = True,
-    srcs = ["command_state.test.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":command_state",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/vitest",
-        "//agentplane/runner:protocol_pb",
-    ],
-)
-
-ts_library(
-    name = "local_commands",
-    srcs = ["local_commands.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/protocol:command_pb",
-        "//agentplane/protocol:event_log_pb",
-    ],
-)
-
-ts_library(
-    name = "local_commands_test",
-    testonly = True,
-    srcs = ["local_commands.test.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":local_commands",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/vitest",
-        "//agentplane/runner:protocol_pb",
-    ],
-)
-
 # The lifecycle controls both sandbox views share: suspend/resume, and delete with its confirmation.
 ts_library(
     name = "lifecycle",
@@ -589,7 +534,6 @@ ts_library(
         ":actions_client",
         ":actions_policy",
         ":client",
-        ":launch_presets",
         ":lifecycle",
         ":live",
         ":stream_status",
@@ -620,13 +564,33 @@ ts_library(
     ],
 )
 
-# sidebar.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+ts_library(
+    name = "thread_status_dot",
+    srcs = [
+        "css.d.ts",
+        "thread_status_dot.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_status_dot_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "thread_status_dot_css",
+    srcs = ["thread_status_dot.css"],
+)
+
+# sidebar.tsx imports this stylesheet for the bundler.
 js_library(
     name = "sidebar_css",
     srcs = ["sidebar.css"],
 )
 
-# app.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+# app.tsx imports this stylesheet for the bundler.
 js_library(
     name = "shell_css",
     srcs = ["shell.css"],
@@ -651,6 +615,7 @@ ts_library(
         ":sidebar_css",
         ":stream_status",
         ":thread_groups",
+        ":thread_status_dot",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -738,11 +703,11 @@ ts_library(
         ":client",
         ":egress",
         ":json_view",
-        ":launch_presets",
         ":lifecycle",
         ":live",
         ":raw_switch",
         ":stream_status",
+        ":topbar",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -762,6 +727,7 @@ ts_library(
         ":client",
         ":live",
         ":sandbox_page",
+        ":test_model_catalog",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -772,7 +738,7 @@ ts_library(
     ],
 )
 
-# markdown.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+# markdown.tsx imports this stylesheet for the bundler.
 js_library(
     name = "markdown_css",
     srcs = ["markdown.css"],
@@ -788,12 +754,29 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":markdown_css",
+        ":syntax_highlight",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
         "//:node_modules/dompurify",
         "//:node_modules/marked",
         "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "markdown_test",
+    testonly = True,
+    srcs = ["markdown.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":markdown",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -866,276 +849,15 @@ ts_library(
     ],
 )
 
-# frame.tsx imports this for the bundler; esbuild resolves it beside the emitted frame.js and folds
-# it into the SPA's stylesheet, so it travels as a dep of the library that imports it.
-js_library(
-    name = "frame_css",
-    srcs = ["frame.css"],
-)
-
 ts_library(
-    name = "frame",
-    srcs = [
-        "frame.tsx",
-        # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
-    ],
+    name = "topbar",
+    srcs = ["topbar.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":command_state",
-        ":frame_css",
-        ":json_view",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/runner:protocol_pb",
-    ],
-)
-
-ts_library(
-    name = "frame_test",
-    testonly = True,
-    srcs = ["frame.test.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":frame",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-        "//agentplane/runner:protocol_pb",
-    ],
-)
-
-ts_library(
-    name = "thread_sync",
-    srcs = ["thread_sync.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":live_stream",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "thread_store",
-    srcs = ["thread_store.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":live_stream",
-        ":thread_sync",
-        "//:node_modules/@electric-sql/client",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-ts_library(
-    name = "thread_store_test",
-    testonly = True,
-    srcs = ["thread_store.test.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":thread_store",
-        ":thread_sync",
-        "//:node_modules/@electric-sql/client",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "retained_disclosures",
-    srcs = ["retained_disclosures.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "retained_disclosures_test",
-    testonly = True,
-    srcs = ["retained_disclosures.test.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":retained_disclosures",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "chronological_debug",
-    srcs = [
-        "chronological_debug.tsx",
-        "tabler_icons.d.ts",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":json_view",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-# projected_session.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
-js_library(
-    name = "projected_session_css",
-    srcs = ["projected_session.css"],
-)
-
-ts_library(
-    name = "history_rows",
-    srcs = ["history_rows.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":thread_sync",
-        "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/protocol:event_pb",
-    ],
-)
-
-ts_library(
-    name = "history_rows_test",
-    testonly = True,
-    srcs = ["history_rows.test.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":history_rows",
-        ":thread_entity_fixture",
-        ":thread_sync",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/vitest",
-        "//agentplane/protocol:event_pb",
-    ],
-)
-
-ts_library(
-    name = "thread_entity_fixture",
-    testonly = True,
-    srcs = ["thread_entity_fixture.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":thread_sync",
-        "//agentplane/protocol:event_pb",
-    ],
-)
-
-ts_library(
-    name = "projected_session",
-    srcs = [
-        "projected_session.tsx",
-        # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
-        "tabler_icons.d.ts",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":chronological_debug",
-        ":client",
-        ":history_rows",
-        ":json_view",
-        ":live",
-        ":local_commands",
-        ":markdown",
-        ":projected_session_css",
-        ":retained_disclosures",
-        ":stream_status",
-        ":thread_sync",
-        ":thread_title",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
-        "//:node_modules/@tanstack/react-virtual",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/protocol:command_pb",
-        "//agentplane/protocol:event_pb",
-    ],
-)
-
-# thread_title.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
-js_library(
-    name = "thread_title_css",
-    srcs = ["thread_title.css"],
-)
-
-ts_library(
-    name = "thread_title",
-    srcs = [
-        "thread_title.tsx",
-        # `declare module "*.css"` for the stylesheet import above.
-        "css.d.ts",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":thread_title_css",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "thread_title_test",
-    testonly = True,
-    srcs = ["thread_title.test.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":thread_title",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "projected_session_test",
-    testonly = True,
-    srcs = ["projected_session.test.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":history_rows",
-        ":local_commands",
-        ":projected_session",
-        ":retained_disclosures",
-        ":stream_status",
-        ":thread_entity_fixture",
-        ":thread_sync",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-        "//agentplane/protocol:command_pb",
-        "//agentplane/protocol:event_log_pb",
-        "//agentplane/protocol:event_pb",
     ],
 )
 
@@ -1170,19 +892,20 @@ ts_library(
         ":actions_history",
         ":actions_requests",
         ":consent",
-        ":projected_session",
         ":sandbox_page",
         ":sandboxes",
         ":settings",
         ":shell_css",
         ":sidebar",
-        ":thread_store",
-        ":thread_sync",
+        ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend/threads:projected_session",
+        "//agentplane/app/frontend/threads:thread_store",
+        "//agentplane/app/frontend/threads:thread_sync",
     ],
 )
 
@@ -1230,6 +953,7 @@ ts_library(
         ":actions_client",
         ":client",
         ":sandboxes",
+        ":test_model_catalog",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -1254,19 +978,17 @@ vitest_bin.vitest_test(
         ":actions_requests_test",
         ":actions_call_tool_result_test",
         ":client_test",
-        ":command_state_test",
         ":connections_test",
         ":consent_test",
-        ":frame_test",
-        ":history_rows_test",
+        "//agentplane/app/frontend/threads:history_rows_test",
         ":json_view_test",
-        ":launch_presets_test",
         ":live_stream_test",
-        ":local_commands_test",
+        "//agentplane/app/frontend/threads:local_commands_test",
+        ":markdown_test",
         ":mcp_servers_test",
-        ":projected_session_test",
+        "//agentplane/app/frontend/threads:projected_session_test",
         ":push_test",
-        ":retained_disclosures_test",
+        "//agentplane/app/frontend/threads:retained_disclosures_test",
         ":sandbox_page_test",
         ":sandboxes_test",
         ":settings_test",
@@ -1274,8 +996,8 @@ vitest_bin.vitest_test(
         ":stream_status_test",
         ":syntax_highlight_test",
         ":thread_groups_test",
-        ":thread_store_test",
-        ":thread_title_test",
+        "//agentplane/app/frontend/threads:thread_store_test",
+        "//agentplane/app/frontend/threads:thread_title_test",
         "//:node_modules/happy-dom",
         # syntax_highlight.test.ts runs in jsdom; see the note there.
         "//:node_modules/jsdom",
@@ -1309,8 +1031,8 @@ ts_library(
         ":client",
         ":connections_fixture",
         ":live",
-        ":local_commands",
         ":stream_status",
+        ":test_model_catalog",
         ":theme",
         ":visual_scenarios",
         "//:node_modules/@bufbuild/protobuf",
@@ -1319,6 +1041,7 @@ ts_library(
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/runner:protocol_pb",
     ],
 )

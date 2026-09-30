@@ -1,4 +1,4 @@
-"""Synchronous v0 full-refresh sync from Plaid into Postgres."""
+"""Sync Plaid Items and their product snapshots into Postgres."""
 
 from __future__ import annotations
 
@@ -18,11 +18,24 @@ from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetR
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
 from plaid.model.investments_transactions_get_request_options import InvestmentsTransactionsGetRequestOptions
 from plaid.model.item_get_request import ItemGetRequest
+from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
-from plaid.model.transactions_get_request import TransactionsGetRequest
-from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
+from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
-from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink
+from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
+from finance.plaid.db.models import (
+    AccountsGetResponse,
+    InvestmentsHoldingsGetResponse,
+    InvestmentsTransactionsGetResponse,
+    ItemGetResponse,
+    ItemWebhookUpdateResponse,
+    LiabilitiesGetResponse,
+    PlaidApiResponse,
+    PlaidInvestmentTransaction,
+    PlaidRemovedTransaction,
+    PlaidTransaction,
+    TransactionsSyncResponse,
+)
 from finance.plaid.db.products import Product
 from finance.plaid.db.secret_store import SecretStore
 
@@ -48,8 +61,9 @@ class PlaidApiLike(Protocol):
     def api_client(self) -> PlaidApiClientLike: ...
 
     def item_get(self, request: ItemGetRequest, /) -> object: ...
+    def item_webhook_update(self, request: ItemWebhookUpdateRequest, /) -> object: ...
     def accounts_get(self, request: AccountsGetRequest, /) -> object: ...
-    def transactions_get(self, request: TransactionsGetRequest, /) -> object: ...
+    def transactions_sync(self, request: TransactionsSyncRequest, /) -> object: ...
     def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> object: ...
     def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object: ...
     def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object: ...
@@ -57,14 +71,10 @@ class PlaidApiLike(Protocol):
 
 @dataclass(frozen=True)
 class SyncWindows:
-    transaction_days: int = 730
     investment_transaction_days: int = 730
 
-    def as_dict(self) -> dict[str, int]:
-        return {
-            "transaction_days": self.transaction_days,
-            "investment_transaction_days": self.investment_transaction_days,
-        }
+    def as_dict(self) -> dict[str, int | str]:
+        return {"transactions": "cursor", "investment_transaction_days": self.investment_transaction_days}
 
 
 def redact_payload(value: Any) -> Any:
@@ -86,6 +96,7 @@ async def sync_all(
     secrets: SecretStore,
     trigger: str = "cron",
     windows: SyncWindows | None = None,
+    webhook_url: str | None = None,
 ) -> list[UUID]:
     """Sync every active link; one link's failure must not starve the links after it."""
     sync_windows = windows or SyncWindows()
@@ -95,9 +106,17 @@ async def sync_all(
         try:
             run_ids.append(
                 await sync_link(
-                    api=api, storage=storage, secrets=secrets, link=link, trigger=trigger, windows=sync_windows
+                    api=api,
+                    storage=storage,
+                    secrets=secrets,
+                    link=link,
+                    trigger=trigger,
+                    windows=sync_windows,
+                    webhook_url=webhook_url,
                 )
             )
+        except SyncAlreadyRunningError:
+            logger.info("skipping already-running sync for item %s", link.item_id)
         except Exception as exc:
             logger.exception("sync failed for item %s (%s)", link.item_id, link.institution_name)
             failures.append(exc)
@@ -114,6 +133,7 @@ async def sync_link(
     link: StoredLink,
     trigger: str,
     windows: SyncWindows | None = None,
+    webhook_url: str | None = None,
 ) -> UUID:
     sync_windows = windows or SyncWindows()
     run_id = await storage.begin_sync_run(
@@ -121,8 +141,58 @@ async def sync_link(
     )
     try:
         await _sync_link_inner(
-            api=api, storage=storage, secrets=secrets, link=link, run_id=run_id, windows=sync_windows
+            api=api,
+            storage=storage,
+            secrets=secrets,
+            link=link,
+            run_id=run_id,
+            windows=sync_windows,
+            webhook_url=webhook_url,
         )
+    except asyncio.CancelledError:
+        await storage.finish_sync_run(run_id, status="failed", error_summary="sync task was cancelled")
+        raise
+    except Exception as exc:
+        await storage.finish_sync_run(run_id, status="failed", error_summary=f"{type(exc).__name__}: {exc}")
+        raise
+    await storage.finish_sync_run(run_id, status="succeeded")
+    return run_id
+
+
+async def sync_transactions_only(
+    *, api: PlaidApiLike, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink, trigger: str = "webhook"
+) -> UUID:
+    run_id = await storage.begin_sync_run(
+        trigger=trigger, item_id=link.item_id, configured_windows={"transactions": "cursor"}
+    )
+    try:
+        access_token = await secrets.read_access_token(link.access_token_secret)
+        captured_at = datetime.now(UTC)
+        accounts_payload = await _call(
+            api,
+            storage,
+            run_id,
+            "accounts/get",
+            api.accounts_get,
+            AccountsGetRequest(access_token=access_token),
+            link.item_id,
+            response_model=AccountsGetResponse,
+        )
+        await storage.apply_accounts(
+            item_id=link.item_id, accounts=accounts_payload.accounts or [], captured_at=captured_at
+        )
+        await _sync_transactions_inner(
+            api=api,
+            storage=storage,
+            run_id=run_id,
+            access_token=access_token,
+            item_id=link.item_id,
+            cursor=link.transactions_cursor,
+            captured_at=captured_at,
+        )
+    except asyncio.CancelledError:
+        await storage.finish_sync_run(run_id, status="failed", error_summary="sync task was cancelled")
+        raise
     except Exception as exc:
         await storage.finish_sync_run(run_id, status="failed", error_summary=f"{type(exc).__name__}: {exc}")
         raise
@@ -138,26 +208,49 @@ async def _sync_link_inner(
     link: StoredLink,
     run_id: UUID,
     windows: SyncWindows,
+    webhook_url: str | None,
 ) -> None:
     access_token = await secrets.read_access_token(link.access_token_secret)
     captured_at = datetime.now(UTC)
 
     item = await _call(
-        api, storage, run_id, "item/get", api.item_get, ItemGetRequest(access_token=access_token), link.item_id
+        api,
+        storage,
+        run_id,
+        "item/get",
+        api.item_get,
+        ItemGetRequest(access_token=access_token),
+        link.item_id,
+        response_model=ItemGetResponse,
     )
-    item_payload = item.get("item", {})
+    item_payload = item.item
     await storage.upsert_link(
         item_id=link.item_id,
         access_token_secret=link.access_token_secret,
         products_requested=link.products_requested,
         transaction_days_requested=link.transaction_days_requested,
-        products_authorized=item_payload.get("products") or link.products_authorized,
-        products_billed=item_payload.get("billed_products") or link.products_billed,
-        institution_id=item_payload.get("institution_id") or link.institution_id,
-        institution_name=item_payload.get("institution_name") or link.institution_name,
+        products_authorized=item_payload.products or link.products_authorized,
+        products_billed=item_payload.billed_products or link.products_billed,
+        institution_id=item_payload.institution_id or link.institution_id,
+        institution_name=item_payload.institution_name or link.institution_name,
         label=link.label,
         status="active",
     )
+    if (
+        Product.TRANSACTIONS.value in link.products_requested
+        and webhook_url is not None
+        and item_payload.webhook != webhook_url
+    ):
+        await _call(
+            api,
+            storage,
+            run_id,
+            "item/webhook/update",
+            api.item_webhook_update,
+            ItemWebhookUpdateRequest(access_token=access_token, webhook=webhook_url),
+            link.item_id,
+            response_model=ItemWebhookUpdateResponse,
+        )
 
     accounts_payload = await _call(
         api,
@@ -167,17 +260,21 @@ async def _sync_link_inner(
         api.accounts_get,
         AccountsGetRequest(access_token=access_token),
         link.item_id,
+        response_model=AccountsGetResponse,
     )
     await storage.apply_accounts(
-        item_id=link.item_id, accounts=accounts_payload.get("accounts") or [], captured_at=captured_at
+        item_id=link.item_id, accounts=accounts_payload.accounts or [], captured_at=captured_at
     )
 
     if Product.TRANSACTIONS.value in link.products_requested:
-        end = captured_at.date()
-        start = end - timedelta(days=windows.transaction_days)
-        transactions = await _fetch_transactions(api, storage, run_id, access_token, link.item_id, start, end)
-        await storage.reconcile_transactions(
-            item_id=link.item_id, start_date=start, end_date=end, transactions=transactions, captured_at=captured_at
+        await _sync_transactions_inner(
+            api=api,
+            storage=storage,
+            run_id=run_id,
+            access_token=access_token,
+            item_id=link.item_id,
+            cursor=link.transactions_cursor,
+            captured_at=captured_at,
         )
 
     if Product.INVESTMENTS.value in link.products_requested:
@@ -190,6 +287,7 @@ async def _sync_link_inner(
                 api.investments_holdings_get,
                 InvestmentsHoldingsGetRequest(access_token=access_token),
                 link.item_id,
+                response_model=InvestmentsHoldingsGetResponse,
             )
         except PlaidApiException as exc:
             if _plaid_error_code(exc) != "NO_INVESTMENT_ACCOUNTS":
@@ -202,8 +300,8 @@ async def _sync_link_inner(
         else:
             await storage.apply_holdings(
                 item_id=link.item_id,
-                securities=holdings.get("securities") or [],
-                holdings=holdings.get("holdings") or [],
+                securities=holdings.securities or [],
+                holdings=holdings.holdings or [],
                 captured_at=captured_at,
             )
             end = captured_at.date()
@@ -223,6 +321,7 @@ async def _sync_link_inner(
                 api.liabilities_get,
                 LiabilitiesGetRequest(access_token=access_token),
                 link.item_id,
+                response_model=LiabilitiesGetResponse,
             )
         except PlaidApiException as exc:
             if _plaid_error_code(exc) != "NO_LIABILITY_ACCOUNTS":
@@ -232,47 +331,70 @@ async def _sync_link_inner(
             logger.warning("liabilities/get: item %s has no liability accounts; skipping", link.item_id)
         else:
             await storage.append_liability_snapshots(
-                item_id=link.item_id, liabilities=liabilities.get("liabilities") or {}, captured_at=captured_at
+                item_id=link.item_id, liabilities=liabilities.liabilities or {}, captured_at=captured_at
             )
 
 
-async def _fetch_transactions(
-    api: PlaidApiLike, storage: PlaidLinkStorage, run_id: UUID, access_token: str, item_id: str, start: date, end: date
-) -> list[dict[str, Any]]:
-    offset = 0
-    count = 500
-    out: list[dict[str, Any]] = []
-    total = None
-    while total is None or offset < total:
-        payload = await _call(
-            api,
-            storage,
-            run_id,
-            "transactions/get",
-            api.transactions_get,
-            TransactionsGetRequest(
-                access_token=access_token,
-                start_date=start,
-                end_date=end,
-                options=TransactionsGetRequestOptions(offset=offset, count=count),
-            ),
-            item_id,
+async def _sync_transactions_inner(
+    *,
+    api: PlaidApiLike,
+    storage: PlaidLinkStorage,
+    run_id: UUID,
+    access_token: str,
+    item_id: str,
+    cursor: str | None,
+    captured_at: datetime | None = None,
+) -> None:
+    original_cursor = cursor
+    for attempt in range(3):
+        page_cursor = original_cursor
+        added: list[PlaidTransaction] = []
+        modified: list[PlaidTransaction] = []
+        removed: list[PlaidRemovedTransaction] = []
+        try:
+            while True:
+                request_args: dict[str, object] = {"access_token": access_token}
+                if page_cursor is not None:
+                    request_args["cursor"] = page_cursor
+                payload = await _call(
+                    api,
+                    storage,
+                    run_id,
+                    "transactions/sync",
+                    api.transactions_sync,
+                    TransactionsSyncRequest(**request_args),
+                    item_id,
+                    response_model=TransactionsSyncResponse,
+                )
+                added.extend(payload.added)
+                modified.extend(payload.modified)
+                removed.extend(payload.removed)
+                page_cursor = payload.next_cursor
+                if not payload.has_more:
+                    break
+        except Exception as exc:
+            if _plaid_error_code(exc) != "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION" or attempt == 2:
+                raise
+            logger.warning("transactions/sync pagination changed for item %s; restarting from saved cursor", item_id)
+            continue
+
+        await storage.apply_transaction_delta(
+            item_id=item_id,
+            added=[txn.model_dump(mode="json", exclude_unset=True) for txn in added],
+            modified=[txn.model_dump(mode="json", exclude_unset=True) for txn in modified],
+            removed=[txn.model_dump(mode="json", exclude_unset=True) for txn in removed],
+            next_cursor=page_cursor,
+            captured_at=captured_at or datetime.now(UTC),
         )
-        total = payload["total_transactions"]
-        page = payload.get("transactions") or []
-        out.extend(page)
-        offset += len(page)
-        if not page:
-            break
-    return out
+        return
 
 
 async def _fetch_investment_transactions(
     api: PlaidApiLike, storage: PlaidLinkStorage, run_id: UUID, access_token: str, item_id: str, start: date, end: date
-) -> list[dict[str, Any]]:
+) -> list[PlaidInvestmentTransaction]:
     offset = 0
     count = 500
-    out: list[dict[str, Any]] = []
+    out: list[PlaidInvestmentTransaction] = []
     total = None
     while total is None or offset < total:
         payload = await _call(
@@ -288,9 +410,10 @@ async def _fetch_investment_transactions(
                 options=InvestmentsTransactionsGetRequestOptions(offset=offset, count=count),
             ),
             item_id,
+            response_model=InvestmentsTransactionsGetResponse,
         )
-        total = payload["total_investment_transactions"]
-        page = payload.get("investment_transactions") or []
+        total = payload.total_investment_transactions
+        page = payload.investment_transactions or []
         out.extend(page)
         offset += len(page)
         if not page:
@@ -298,7 +421,7 @@ async def _fetch_investment_transactions(
     return out
 
 
-async def _call[PlaidRequestT: PlaidRequestLike](
+async def _call[PlaidRequestT: PlaidRequestLike, ResponseT: PlaidApiResponse](
     api: PlaidApiLike,
     storage: PlaidLinkStorage,
     run_id: UUID,
@@ -306,12 +429,16 @@ async def _call[PlaidRequestT: PlaidRequestLike](
     call: Callable[[PlaidRequestT], object],
     request: PlaidRequestT,
     item_id: str,
-) -> dict[str, Any]:
+    *,
+    response_model: type[ResponseT],
+) -> ResponseT:
     started = time.monotonic()
     request_json = _request_json(request)
     try:
         response = await asyncio.to_thread(call, request)
-        response_json = cast(dict[str, Any], api.api_client.sanitize_for_serialization(response))
+        serialized = api.api_client.sanitize_for_serialization(response)
+        typed_response = response_model.model_validate(serialized)
+        response_json = typed_response.model_dump(mode="json", exclude_unset=True)
     except Exception as exc:
         await storage.record_api_event(
             ApiEvent(
@@ -331,14 +458,14 @@ async def _call[PlaidRequestT: PlaidRequestLike](
             sync_run_id=run_id,
             endpoint=endpoint,
             item_id=item_id,
-            request_id=_extract_request_id(response_json),
+            request_id=_extract_request_id(typed_response),
             status="ok",
             duration_ms=int((time.monotonic() - started) * 1000),
             request_json=redact_payload(request_json),
             response_json=redact_payload(response_json),
         )
     )
-    return response_json
+    return typed_response
 
 
 def _request_json(request: PlaidRequestLike) -> dict[str, Any]:
@@ -359,5 +486,5 @@ def _plaid_error_code(exc: Exception) -> str | None:
     return str(exc.status) if exc.status is not None else None
 
 
-def _extract_request_id(response: dict[str, Any]) -> str | None:
-    return response.get("request_id") or response.get("requestId")
+def _extract_request_id(response: PlaidApiResponse) -> str | None:
+    return response.request_id

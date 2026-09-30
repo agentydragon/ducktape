@@ -11,7 +11,7 @@ use analysis::partition::Partition;
 use spec::ModulePath;
 use swc_atoms::Atom;
 
-use analysis::{DepKind, ModuleId, OwnerGraph, StatementOrdinal};
+use analysis::{DepKind, ModuleId, OwnerGraph, Purity, SequencedOwnerCause, StatementOrdinal};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
@@ -152,6 +152,8 @@ pub struct CycleEdge {
     /// (`eager_use` and `sequenced`) vs.
     /// inert-but-graph-present (`lazy_use`).
     pub kind: DepKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequenced_owner: Option<SequencedOwnerCause>,
 }
 
 /// Render the per-cycle summary used in the materializer's bail
@@ -267,6 +269,8 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
         out.push_str(
             "  Fix: co-locate each (source, target) binding pair above into one logical module, or break the SCC's back-edges in the spec.\n",
         );
+        let causes = sequenced_causes_from_cycle(cycle);
+        render_sequenced_owner_causes(&causes, &mut out);
     }
     out
 }
@@ -477,6 +481,13 @@ fn cycle_edges_for(
                     .get(&edge.reason.statement_ordinal)
                     .cloned(),
                 kind: edge.reason.kind,
+                sequenced_owner: (edge.reason.kind == DepKind::Sequenced)
+                    .then(|| {
+                        analysis::reports::schema::sequenced_owner_causes(owner_graph, &[edge.from])
+                            .into_iter()
+                            .next()
+                    })
+                    .flatten(),
             }
         })
         .collect();
@@ -537,6 +548,7 @@ fn lazy_closure_edges(
 pub fn render_atomic_unit_conflict_summary(
     conflicts: &[AtomicUnitConflict],
     module_path: &dyn Fn(ModuleId) -> ModulePath,
+    owner_graph: &OwnerGraph,
 ) -> String {
     let mut out = String::new();
     for (idx, c) in conflicts.iter().enumerate() {
@@ -584,8 +596,68 @@ pub fn render_atomic_unit_conflict_summary(
                 module_path(claim.module),
             ));
         }
+        let causes = analysis::reports::schema::sequenced_owner_causes(owner_graph, &c.members);
+        render_sequenced_owner_causes(&causes, &mut out);
     }
     out
+}
+
+fn sequenced_causes_from_cycle(cycle: &CycleReport) -> Vec<SequencedOwnerCause> {
+    let mut causes = BTreeMap::new();
+    for edge in &cycle.cut {
+        if let Some(cause) = &edge.sequenced_owner {
+            causes.insert(cause.owner_id.clone(), cause.clone());
+        }
+    }
+    causes.into_values().collect()
+}
+
+pub(crate) fn render_sequenced_owner_causes(causes: &[SequencedOwnerCause], out: &mut String) {
+    if causes.is_empty() {
+        return;
+    }
+    out.push_str("  Impure initializers behind side-effect edges:\n");
+    for cause in causes {
+        let names = if cause.binding_names.is_empty() {
+            cause.owner_id.clone()
+        } else {
+            cause
+                .binding_names
+                .iter()
+                .map(Atom::as_ref)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let Purity::NotPure { reasons } = &cause.purity else {
+            continue;
+        };
+        for reason in reasons {
+            let location = reason
+                .source_location
+                .as_ref()
+                .or(cause.source_location.as_ref())
+                .map(|loc| {
+                    format!(
+                        "{}:{}:{}",
+                        loc.source_path,
+                        loc.start_line,
+                        loc.start_column
+                            .map_or_else(|| "?".to_string(), |col| col.to_string()),
+                    )
+                })
+                .unwrap_or_else(|| "<location unavailable>".to_string());
+            let rule = reason.rule.as_str();
+            let detail = reason
+                .detail
+                .as_deref()
+                .map(|detail| format!(" ({detail})"))
+                .unwrap_or_default();
+            out.push_str(&format!("    `{names}` at {location}: {rule}{detail}\n"));
+            if let Some(guidance) = &reason.author_guidance {
+                out.push_str(&format!("      {guidance}\n"));
+            }
+        }
+    }
 }
 
 /// Compute a near-minimum cut of realizability-constraining edges

@@ -10,7 +10,7 @@ from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, BondCashflowO
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, AgentId, BondId
 from finance.augur.sim.income import InterestCharacter, InterestIncome
-from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.market_path import INFLATION, MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import FixedCoupon, HeldBond, IndexedCoupon
 
@@ -55,8 +55,8 @@ class HeldBonds:
             return bond.face_value
         return mul_div(
             bond.face_value,
-            self.market.value("inflation", month),
-            self.market.value("inflation", max(0, bond.purchase_month_index)),
+            self.market.value(INFLATION, month),
+            self.market.value(INFLATION, max(0, bond.purchase_month_index)),
             "bond indexed principal",
         )
 

@@ -9,12 +9,12 @@ import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mj
 import IconBox from "@tabler/icons-react/dist/esm/icons/IconBox.mjs";
 import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
-import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
 import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
 import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
 import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
+import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
 import { type JSX, useEffect, useRef, useState, type PointerEvent } from "react";
 import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
@@ -24,6 +24,7 @@ import { stateDetail } from "./sandboxes";
 import "./sidebar.css";
 import { ConnectionIndicator } from "./stream_status";
 import { archivedCount, groupThreads, type ThreadGroup } from "./thread_groups";
+import { ThreadStatusDot } from "./thread_status_dot";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "agentplane-sidebar-width";
 const SIDEBAR_DEFAULT_WIDTH = 240;
@@ -134,6 +135,22 @@ function SidebarResizeHandle({
   );
 }
 
+// Matches sidebar.css's own phone breakpoint.
+const PHONE_QUERY = "(max-width: 560px)";
+
+/** Whether the sidebar is currently rendering as the phone-width full-screen overlay rather than a
+ * docked desktop column -- the two need different close-on-navigate behavior below. */
+function usePhoneWidth(): boolean {
+  const [phone, setPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches);
+  useEffect(() => {
+    const query = window.matchMedia(PHONE_QUERY);
+    const onChange = (event: MediaQueryListEvent): void => setPhone(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return phone;
+}
+
 function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Element {
   if (sandbox === null) {
     return (
@@ -177,7 +194,8 @@ function ThreadRow({
 }): JSX.Element {
   const label = thread.name ?? thread.session_id;
   const readonly = sandbox === null;
-  const dot = fresh && sandbox?.state === "running" && thread.harness_state === "HARNESS_STATE_RUNNING" ? "ok" : "gray";
+  const harnessRunning = fresh && sandbox?.state === "running" && thread.harness_state === "HARNESS_STATE_RUNNING";
+  const activeTurn = harnessRunning && Boolean(thread.active_turn_id);
   const className = [
     "agentplane-sidebar-row",
     current ? "current" : "",
@@ -200,17 +218,36 @@ function ThreadRow({
         }
       }}
     >
-      <span
-        className={`agentplane-sidebar-dot ${dot}`}
-        title={dot === "ok" ? "Last observed harness running" : "No live harness confirmed"}
+      <ThreadStatusDot
+        color={harnessRunning ? "green" : "gray"}
+        label={
+          activeTurn
+            ? "Turn running · Runner feed active · harness running"
+            : harnessRunning
+              ? "Last observed harness running"
+              : "No live harness confirmed"
+        }
+        pulse={activeTurn}
+        size="small"
       />
       <span className="agentplane-sidebar-row-name">{label}</span>
-      <Tooltip label={thread.archived ? "Unarchive" : "Archive"} withArrow>
+      <Tooltip
+        label={thread.archived ? "Unarchive" : harnessRunning ? "Stop the harness before archiving" : "Archive"}
+        withArrow
+      >
         <ActionIcon
           className="agentplane-sidebar-row-action"
           size="xs"
           variant="subtle"
-          aria-label={thread.archived ? `Unarchive ${label}` : `Archive ${label}`}
+          disabled={!thread.archived && harnessRunning}
+          aria-label={
+            thread.archived
+              ? `Unarchive ${label}`
+              : harnessRunning
+                ? `Stop harness before archiving ${label}`
+                : `Archive ${label}`
+          }
+          title={!thread.archived && harnessRunning ? "Stop the harness before archiving" : undefined}
           onClick={(event) => {
             event.stopPropagation();
             onToggleArchived(thread);
@@ -281,16 +318,15 @@ function ThreadGroupSection({
 export function Sidebar({
   settingsOpen,
   onOpenSettings,
-  mobileOpen,
-  onMobileClose,
+  open,
+  onClose,
 }: {
   settingsOpen: boolean;
   onOpenSettings: () => void;
-  /** Whether the sidebar is showing as a phone-width overlay drawer. No effect at desktop width,
-   * where the sidebar is always visible regardless of this prop -- sidebar.css's phone media query
-   * is what makes it matter. */
-  mobileOpen: boolean;
-  onMobileClose: () => void;
+  /** Whether the sidebar is showing at all. sidebar.css's phone-width media query decides what
+   * "showing" renders as: a docked column at desktop width, a full-screen overlay at phone width. */
+  open: boolean;
+  onClose: () => void;
 }): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
@@ -301,15 +337,19 @@ export function Sidebar({
   const data = live.snapshot;
   const fresh = live.stream.standing === "current" && live.health?.fresh === true && data?.updates_connected === true;
   const [error, setError] = useState<string | null>(null);
+  const phone = usePhoneWidth();
 
   useEffect(() => {
-    if (!mobileOpen) return;
+    // Escape dismisses the phone-width overlay, the way it would any other full-screen modal.
+    // At desktop width there's nothing modal to dismiss -- collapsing the persistent column would
+    // just be a surprising side effect of a keypress unrelated to the sidebar.
+    if (!open || !phone) return;
     function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === "Escape") onMobileClose();
+      if (event.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [mobileOpen, onMobileClose]);
+  }, [open, phone, onClose]);
 
   const threads = data?.threads ?? [];
   const groups = groupThreads(
@@ -329,30 +369,35 @@ export function Sidebar({
     }
   }
 
-  /** Every navigation out of the sidebar also closes the phone-width drawer -- harmless at desktop
-   * width, where `onMobileClose` just resets state nothing reads. */
+  /** Every navigation out of the sidebar also closes it, but only at phone width, where it's a
+   * full-screen overlay standing in the way of the page it just navigated to. At desktop width
+   * this is a no-op: collapsing the persistent column on every click would undo the reader's own
+   * choice to keep it open just because they used it. */
+  function closeIfPhone(): void {
+    if (phone) onClose();
+  }
+
   function goTo(path: string): void {
-    onMobileClose();
+    closeIfPhone();
     void navigate(path);
   }
 
-  function open(thread: ThreadView): void {
+  function openThread(thread: ThreadView): void {
     goTo(`/threads/${encodeURIComponent(thread.id)}`);
   }
 
   return (
-    <>
-      {mobileOpen && <div className="agentplane-sidebar-backdrop" aria-hidden="true" onClick={onMobileClose} />}
-      <nav
-        className={`agentplane-sidebar${mobileOpen ? " agentplane-sidebar-mobile-open" : ""}`}
-        aria-label="Threads"
-        style={{ width: `${width}px` }}
-      >
-        <SidebarResizeHandle width={width} onDrag={setWidth} onStep={resizeBy} />
-        <div className="agentplane-sidebar-header">
-          <Text fw={700} size="xs" tt="uppercase" c="dimmed">
-            Threads
-          </Text>
+    <nav
+      className={`agentplane-sidebar${open ? " agentplane-sidebar-open" : ""}`}
+      aria-label="Threads"
+      style={{ width: `${width}px` }}
+    >
+      <SidebarResizeHandle width={width} onDrag={setWidth} onStep={resizeBy} />
+      <div className="agentplane-sidebar-header">
+        <Text fw={700} size="xs" tt="uppercase" c="dimmed">
+          Threads
+        </Text>
+        <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
           {/* The unscoped new-thread composer isn't built yet, so "+" sends the operator to the
               Sandbox list to start one the existing way -- label says exactly that rather than
               promising a composer that isn't there yet. */}
@@ -361,95 +406,96 @@ export function Sidebar({
               <IconPlus size={13} />
             </ActionIcon>
           </Tooltip>
+          {/* Only shown by sidebar.css's phone-width, drawer-open state: at desktop width the
+              always-visible shell topbar's own toggle already collapses this column. */}
+          <ActionIcon
+            className="agentplane-sidebar-close"
+            variant="subtle"
+            aria-label="Close navigation"
+            onClick={onClose}
+          >
+            <IconX size={16} />
+          </ActionIcon>
         </div>
-        <div className="agentplane-sidebar-body">
-          <LiveStatus live={live} />
-          {data?.updates_connected === false && (
-            <Alert color="orange" p="xs">
-              Thread updates disconnected; showing the last snapshot.
-            </Alert>
-          )}
-          {error && (
-            <Text c="red" size="xs" px={4}>
-              {error}
-            </Text>
-          )}
-          {data === null && !error && (
-            <Text c="dimmed" size="xs" px={4}>
-              Loading threads…
-            </Text>
-          )}
-          {data !== null && groups.length === 0 && (
-            <Text c="dimmed" size="xs" px={4}>
-              No threads yet.
-            </Text>
-          )}
-          {groups.map((group) => (
-            <ThreadGroupSection
-              key={group.sandboxName}
-              group={group}
-              fresh={fresh}
-              current={current}
-              onNavigate={onMobileClose}
-              onOpen={open}
-              onToggleArchived={(thread) => void toggleArchived(thread)}
+      </div>
+      <div className="agentplane-sidebar-body">
+        <LiveStatus live={live} />
+        {data?.updates_connected === false && (
+          <Alert color="orange" p="xs">
+            Thread updates disconnected; showing the last snapshot.
+          </Alert>
+        )}
+        {error && (
+          <Text c="red" size="xs" px={4}>
+            {error}
+          </Text>
+        )}
+        {data === null && !error && (
+          <Text c="dimmed" size="xs" px={4}>
+            Loading threads…
+          </Text>
+        )}
+        {data !== null && groups.length === 0 && (
+          <Text c="dimmed" size="xs" px={4}>
+            No threads yet.
+          </Text>
+        )}
+        {groups.map((group) => (
+          <ThreadGroupSection
+            key={group.sandboxName}
+            group={group}
+            fresh={fresh}
+            current={current}
+            onNavigate={closeIfPhone}
+            onOpen={openThread}
+            onToggleArchived={(thread) => void toggleArchived(thread)}
+          />
+        ))}
+        {threads.length > 0 && (
+          <div className="agentplane-sidebar-archived-toggle">
+            <Text size="xs">Show archived ({archived})</Text>
+            <Switch
+              size="xs"
+              checked={includeArchived}
+              onChange={(event) => setIncludeArchived(event.currentTarget.checked)}
+              aria-label="Show archived threads"
             />
-          ))}
-          {threads.length > 0 && (
-            <div className="agentplane-sidebar-archived-toggle">
-              <Text size="xs">Show archived ({archived})</Text>
-              <Switch
-                size="xs"
-                checked={includeArchived}
-                onChange={(event) => setIncludeArchived(event.currentTarget.checked)}
-                aria-label="Show archived threads"
-              />
-            </div>
-          )}
-        </div>
-        <div className="agentplane-sidebar-footer">
-          <ConnectionIndicator />
-          <Tooltip label="Sandboxes" withArrow>
-            <ActionIcon
-              variant={location.pathname === "/sandboxes" ? "light" : "subtle"}
-              aria-label="Sandboxes"
-              onClick={() => goTo("/sandboxes")}
-            >
-              <IconBox size={15} />
-            </ActionIcon>
-          </Tooltip>
-          <Tooltip label="Pending approvals" withArrow>
-            <ActionIcon
-              variant={location.pathname === "/actions" ? "light" : "subtle"}
-              aria-label="Pending approvals"
-              onClick={() => goTo("/actions")}
-            >
-              <IconListCheck size={15} />
-            </ActionIcon>
-          </Tooltip>
-          <Tooltip label="Action history" withArrow>
-            <ActionIcon
-              variant={location.pathname === "/actions/history" ? "light" : "subtle"}
-              aria-label="Action history"
-              onClick={() => goTo("/actions/history")}
-            >
-              <IconHistory size={15} />
-            </ActionIcon>
-          </Tooltip>
-          <Tooltip label="Settings" withArrow>
-            <ActionIcon
-              variant={settingsOpen ? "light" : "subtle"}
-              aria-label="Settings"
-              onClick={() => {
-                onMobileClose();
-                onOpenSettings();
-              }}
-            >
-              <IconSettings size={15} />
-            </ActionIcon>
-          </Tooltip>
-        </div>
-      </nav>
-    </>
+          </div>
+        )}
+      </div>
+      <div className="agentplane-sidebar-footer">
+        <ConnectionIndicator />
+        <Tooltip label="Sandboxes" withArrow>
+          <ActionIcon
+            variant={location.pathname === "/sandboxes" ? "light" : "subtle"}
+            aria-label="Sandboxes"
+            onClick={() => goTo("/sandboxes")}
+          >
+            <IconBox size={15} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Actions" withArrow>
+          <ActionIcon
+            variant={location.pathname === "/actions" ? "light" : "subtle"}
+            aria-label="Actions"
+            onClick={() => goTo("/actions")}
+          >
+            <IconListCheck size={15} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Settings" withArrow>
+          <ActionIcon
+            variant={settingsOpen ? "light" : "subtle"}
+            aria-label="Settings"
+            onClick={() => {
+              closeIfPhone();
+              onOpenSettings();
+            }}
+          >
+            <IconSettings size={15} />
+          </ActionIcon>
+        </Tooltip>
+      </div>
+    </nav>
   );
 }

@@ -488,6 +488,71 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     if !auto_grow.is_empty() {
         entry_body.push(export_named_for_bindings(&auto_grow));
     }
+    // A readable name assigned to a chunk-exported binding is additive:
+    // retain the source chunk's original public export (needed by chunks
+    // outside the pipeline, dynamic imports, and namespace consumers) and
+    // expose the same live binding under its readable name as well.
+    // Candidates are ordered by name then source binding so collisions are
+    // deterministic; a collision simply leaves that alias unavailable.
+    let mut readable_export_candidates = Vec::<(String, String)>::new();
+    for plan in module_plans {
+        for (binding, readable) in &plan.bindings {
+            if plan.spec_named_bindings.contains(binding)
+                && pre_existing_entry_exports.contains(&top_level_id(binding, chunk_top_level_mark))
+            {
+                readable_export_candidates.push((readable.clone(), binding.clone()));
+            }
+        }
+    }
+    readable_export_candidates.sort();
+    let mut taken_public_names = pre_existing_public_export_names.clone();
+    taken_public_names.extend(auto_grow.values().cloned());
+    let mut readable_exports = BTreeMap::new();
+    for (readable, binding) in readable_export_candidates {
+        if !taken_public_names.insert(readable.clone()) {
+            continue;
+        }
+        let local = entry_binding_renames
+            .get(&binding)
+            .cloned()
+            .unwrap_or(binding);
+        readable_exports.insert(local, readable);
+    }
+    let mut cross_chunk_import_aliases = Vec::<(String, String)>::new();
+    if !readable_exports.is_empty() {
+        // Record only aliases that were actually emitted, associated with
+        // the pre-existing public names of the same local binding. A name
+        // that merely happens to equal another binding's spec name is not
+        // enough to authorize rewriting its imports.
+        for item in &entry_body {
+            let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) = item else {
+                continue;
+            };
+            if export.src.is_some() {
+                continue;
+            }
+            for specifier in &export.specifiers {
+                let ExportSpecifier::Named(named) = specifier else {
+                    continue;
+                };
+                let ModuleExportName::Ident(local) = &named.orig else {
+                    continue;
+                };
+                let Some(readable) = readable_exports.get(local.sym.as_ref()) else {
+                    continue;
+                };
+                let public = named
+                    .exported
+                    .as_ref()
+                    .map(module_export_name_string)
+                    .unwrap_or_else(|| local.sym.to_string());
+                cross_chunk_import_aliases.push((public, readable.clone()));
+            }
+        }
+        cross_chunk_import_aliases.sort();
+        cross_chunk_import_aliases.dedup();
+        entry_body.push(export_named_for_bindings(&readable_exports));
+    }
     trim_dead_named_specifiers(&mut entry_body, factorization.analysis.bindings());
     let entry_exports_by_original_local = collect_entry_exports_by_original_local(
         &entry_body,
@@ -596,7 +661,9 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     for output in module_outputs {
         files.push(output.file);
         file_records.push(output.record);
-        applied.push(output.lowering);
+        let mut lowering = output.lowering;
+        lowering.cross_chunk_import_aliases = cross_chunk_import_aliases.clone();
+        applied.push(lowering);
         for (key, count) in output.vendor_reference_rewrites {
             *vendor_reference_rewrites.entry(key).or_insert(0) += count;
         }
@@ -1082,6 +1149,11 @@ fn build_module_output(
         .iter()
         .map(|(_, v)| (*v).clone())
         .collect();
+    let spec_named_export_names: Vec<String> = sorted_plan_bindings
+        .iter()
+        .filter(|(binding, _)| plan.spec_named_bindings.contains(binding.as_str()))
+        .map(|(_, exported)| (*exported).clone())
+        .collect();
     let binding_ids: Vec<Id> = binding_names
         .iter()
         .map(|name| top_level_id(name, context.chunk_top_level_mark))
@@ -1158,6 +1230,8 @@ fn build_module_output(
         binding_names,
         chunk_id: context.chunk_id.to_string(),
         exported_names,
+        spec_named_export_names,
+        cross_chunk_import_aliases: Vec::new(),
         file: context.entry_file.to_string(),
         owner_ids,
         residual: !plan.explicit,
@@ -1165,6 +1239,13 @@ fn build_module_output(
         target_path: plan.target_path.clone(),
     };
     (file, record, lowering)
+}
+
+fn module_export_name_string(name: &ModuleExportName) -> String {
+    match name {
+        ModuleExportName::Ident(ident) => ident.sym.to_string(),
+        ModuleExportName::Str(string) => string.value.to_string_lossy().to_string(),
+    }
 }
 
 fn anonymous_statement_comments_by_span(

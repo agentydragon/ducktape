@@ -13,7 +13,6 @@ from typing import Literal
 
 from pydantic import Field, PositiveInt
 
-from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.schemas import ApiModel, NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.model.series import IssuerId, LocationId
 from finance.augur.product.wire import SpendIndex
@@ -34,7 +33,6 @@ class Location(ApiModel):
     label: str
     city: str
     state: str
-    local_regulation: LocalRegulation
     notes: tuple[str, ...] = ()
 
 

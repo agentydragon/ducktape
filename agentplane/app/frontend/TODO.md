@@ -13,34 +13,27 @@ build time.
 
 ## Thread view UX
 
-- **Mobile topbar's only content is an inert hamburger**: `.agentplane-mobile-topbar` (`app.tsx`, `shell.css`) shows
-  below 560px width and holds only the `IconMenu2` button that opens the sidebar -- nothing else fills that bar's
-  width. Consider moving `ThreadTitle` (`thread_title.tsx`) into it on mobile, since `ProjectedSession` currently
-  renders its own title/id row inline in the thread page rather than sharing the shell's topbar.
-- **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`projected_session.tsx`, the
+- Give the browser document `<title>` useful context, including the open thread's title, and reflect
+  the thread status in the tab/favicon using the existing status dot's visual language, colors, and
+  animations.
+- **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`threads/thread_evidence.tsx`, the
   magnifying-glass `IconZoomCode` button) renders unconditionally at every one of its 7 call sites, one per
   message/entity, whether or not a reader is looking at that row. Consider a per-message overflow affordance
   instead -- e.g. a vertical-dots button, shown only on hover (desktop) or tap (mobile), holding this and other
-  message-level debug actions. This would be its own menu, separate from the composer's thread-level one below
-  (`Menu` + `IconDotsVertical`, "Debug history" / "Shut down harness" / thread id) -- a per-message menu and a
+  message-level debug actions. This would be its own menu, separate from the thread's topbar menu (`topbar.tsx`'s
+  `TopbarActions`, holding "Debug history" / "Shut down harness" / thread id) -- a per-message menu and a
   per-thread menu, not one merged control, even though both would share the dots-icon pattern.
-- **A pending sent message shows in its own box below the thread, not inline as a message**: a `submitInput`
-  command still `outcome: "pending"` renders in the "Pending commands" region (`projected_session.tsx`'s
-  `hasPendingCommands` `Stack`, ~line 1326) as a bordered `Paper` with a "Saved · awaiting effect" caption, separate
-  from the conversation history -- rather than where the confirmed message will eventually land, styled like the
-  `confirmed_input` bubble (`.agentplane-user-bubble`, same file ~line 349). Consider rendering it inline in the
-  history instead, using that same bubble style but visually marked pending (italic, reduced opacity, or similar).
 - **Reasoning disclosure toggle with nothing behind it**: the reasoning branch of `EntityCard`'s body
-  (`projected_session.tsx` ~line 404) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure` -- a
-  `<details>` (`retained_disclosures.tsx`) whose payload isn't fetched until expanded -- whenever `entity.textRef`
+  (`threads/thread_cards.tsx`) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure` -- a
+  `<details>` (`threads/retained_disclosures.tsx`) whose payload isn't fetched until expanded -- whenever `entity.textRef`
   is non-null. A reasoning item can still resolve to empty text once that payload loads, and by then the toggle
   has already invited a click for nothing. Unlike the `textRef === null` case just below it (plain dimmed
   "Reasoning" text, no toggle at all), there's no cheap signal to suppress the toggle before the lazy fetch
   resolves; worth figuring out one (e.g. from the fold/view layer) rather than always rendering it optimistically.
 - **Collapsing a long expanded block requires scrolling back up to its toggle**: `RetainedDisclosure`
-  (`retained_disclosures.tsx`) is a plain `<details>`/`<summary>` -- opening a long one (`LazyBody`'s
+  (`threads/retained_disclosures.tsx`) is a plain `<details>`/`<summary>` -- opening a long one (`LazyBody`'s
   Reasoning/Arguments/Output, or `CollapsibleRows`'s "N tool call(s), N reasoning step(s)" run/lifecycle wrapper,
-  both in `projected_session.tsx`) and scrolling down through its content scrolls the `<summary>` that collapses
+  both in `threads/projected_session.tsx`) and scrolling down through its content scrolls the `<summary>` that collapses
   it off the top of the screen, so collapsing means scrolling back up first -- and a long enough run (many tool
   calls and reasoning steps spanning several screens) makes this worse, not just more of the same, since the
   toggle can be scrolled arbitrarily far out of reach. One direction: keep the summary/toggle stuck to the
@@ -54,36 +47,16 @@ build time.
   outward into `runner/observation.py`'s `Observation` type, the archive/API layer
   (`app/agent_runtime/events/event_log.py`'s `observations()`/`observation_entry()`, `api.py`'s
   `/observations/{cursor}` and `/evidence/{observation_cursor}/frames` routes), and the debug UI
-  (`chronological_debug.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth
+  (`threads/chronological_debug.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth
   keeping or whether it should just say "Event" everywhere a stored `Event` is meant.
-- **Conversation text reads larger and looser than it needs to**: `.agentplane-markdown` (`markdown.css`) and
-  `VerbatimText` (`projected_session.tsx` ~line 126, the user-bubble/plain-text renderer) both leave Mantine's
-  default `md` font size and line height untouched -- unlike `frame.css`'s explicit `--mantine-font-size-xs` or
-  `sidebar.css`'s 11px/13px, nothing in the transcript itself scales text or line spacing down. Agent sessions run
-  long and text-heavy; feedback was that both should shrink so more of a turn fits on screen without scrolling.
 - **Bubble chrome and the user bubble's blue read as unnecessary decoration**: `.agentplane-user-bubble`
-  (`projected_session.css` ~line 40) fills the operator's bubble with `var(--mantine-color-blue-light)`; feedback
+  (`threads/projected_session.css` ~line 40) fills the operator's bubble with `var(--mantine-color-blue-light)`; feedback
   was grey would do, since role already reads from position (right-aligned) without needing a hue. More broadly,
   consider dropping bubble/card chrome across `EntityCard` altogether -- the user bubble's background, and the
-  bordered `Paper` around tool calls and reasoning (`projected_session.tsx` ~line 423) -- and distinguishing rows
+  bordered `Paper` around tool calls and reasoning (`threads/projected_session.tsx` ~line 423) -- and distinguishing rows
   by their text and a light shade of grey instead, reserving actual color for when it's semantically meaningful
   (as the prominent-lifecycle `Alert color="red"` at ~line 376 and the failed-tool-call `Badge color="red"` at
   ~line 444 already do).
-- **Markdown code fences in agent prose aren't syntax highlighted**: `Markdown` (`markdown.tsx`) allows `pre`/`code`
-  through its sanitizer but never runs them through `highlight()` (`syntax_highlight.tsx`), unlike tool call
-  Arguments/Output (`LazyBody ... format="code"`), which get `.agentplane-hljs` highlighting. Worth extending
-  `Markdown` to highlight fenced code blocks by their declared language, and once it does, telling agents about it
-  through the session's standing instructions (`SessionSpec.instructions`, sent via `RunnerClient.attach` per
-  `agentplane/runner/test_instructions.py`) or whichever preset default supplies them -- so they know fenced code
-  renders highlighted and are encouraged to tag the language.
-- **Composer's More menu might read better as a top-right icon, without its own color**: the `Menu` +
-  `IconDotsVertical` `ActionIcon` (`projected_session.tsx` ~line 1422, `variant="light"` -- which takes a color
-  from Mantine's default primary) currently sits at the bottom, next to the composer. One idea: move it to the
-  top right, beside `ThreadTitle` (`projected_session.tsx` ~line 1550, which today renders alone with no header
-  row to share), and drop the color so it reads as a plain utility control. This is the thread-level menu; the
-  per-message overflow affordance above is a separate, per-row menu, not something to merge into this one -- but
-  the two sharing the same dots icon in one view might still want a visual distinction of their own (position
-  alone may be enough: one per row, one at the top).
 
 ## Approval-arrival attention, and merging the pending/history Action pages
 

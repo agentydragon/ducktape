@@ -6,7 +6,7 @@ Hand-written beside the generated output: `grafana-admin-password.sops.yaml`.
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
+from cdk8s import App, Chart, JsonPatch
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -17,15 +17,14 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeRemediation,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
-from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.helm import helm_release
+from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 NAME = "monitoring-stack"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/stack"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring"
 _NAMESPACE = "monitoring"
 _HELM_REPOSITORY = "prometheus-community"
 _CONTROL_PLANE_TOKEN = "alloy-control-plane-token"
@@ -334,7 +333,7 @@ def _values() -> dict[str, object]:
                 "retention": "120h",
             },
         },
-        # Grafana disabled — managed by grafana-operator (cluster/k8s/monitoring/grafana-instance/).
+        # Grafana disabled — managed by grafana-operator (grafana_instance.py).
         # Dashboards, datasources, and service accounts are GrafanaDashboard/GrafanaDatasource/
         # GrafanaServiceAccount CRs. JWT auth eliminates admin password bootstrap dependency.
         "grafana": {"enabled": False},
@@ -417,11 +416,11 @@ def _values() -> dict[str, object]:
             "resources": {"requests": {"cpu": "10m", "memory": "128Mi"}, "limits": {"cpu": "100m", "memory": "512Mi"}},
         },
         "kubeApiServer": {
-            # Scraped natively from cluster/k8s/monitoring/alloy/config.alloy instead,
+            # Scraped natively from cluster/cdk8s/monitoring/config.alloy instead,
             # preserving the explicit auth and rule labels used by that configuration.
             "enabled": False
         },
-        # Same as kubeApiServer: scraped natively in cluster/k8s/monitoring/alloy/config.alloy.
+        # Same as kubeApiServer: scraped natively in cluster/cdk8s/monitoring/config.alloy.
         "kubelet": {"enabled": False},
         "kubeControllerManager": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
         # `serviceMonitor.authorization: null` is patched in below.
@@ -435,12 +434,12 @@ def _values() -> dict[str, object]:
     }
 
 
-def _prometheus_ingress_rule(namespace: str, app: str) -> k8s.NetworkPolicyIngressRule:
+def _prometheus_ingress_rule(namespace: str, pod_labels: dict[str, str]) -> k8s.NetworkPolicyIngressRule:
     return k8s.NetworkPolicyIngressRule(
         from_=[
             k8s.NetworkPolicyPeer(
                 namespace_selector=k8s.LabelSelector(match_labels={"kubernetes.io/metadata.name": namespace}),
-                pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": app}),
+                pod_selector=k8s.LabelSelector(match_labels=pod_labels),
             )
         ],
         ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_PROMETHEUS_PORT), protocol="TCP")],
@@ -462,17 +461,17 @@ def chart(app: App) -> Chart:
         ),
         type="kubernetes.io/service-account-token",
     )
-    repository = HelmRepository(
-        chart,
-        "helm-repository",
-        metadata=ApiObjectMetadata(name=_HELM_REPOSITORY, namespace="flux-system"),
-        spec=HelmRepositorySpec(interval="12h", url="https://prometheus-community.github.io/helm-charts"),
-    )
     release = helm_release(
         chart,
         "kube-prometheus-stack",
         _NAMESPACE,
-        repository=repository,
+        repository=https_helm_repository(
+            chart,
+            _HELM_REPOSITORY,
+            "flux-system",
+            url="https://prometheus-community.github.io/helm-charts",
+            interval="12h",
+        ),
         chart="kube-prometheus-stack",
         version="91.3.0",
         interval="30m",
@@ -516,11 +515,11 @@ def chart(app: App) -> Chart:
             policy_types=["Ingress"],
             ingress=[
                 # Grafana: datasource queries for dashboards
-                _prometheus_ingress_rule(_NAMESPACE, "grafana"),
+                _prometheus_ingress_rule(_NAMESPACE, {"app.kubernetes.io/name": "grafana"}),
                 # Alertmanager: Prometheus pushes alerts to Alertmanager; allow return traffic
-                _prometheus_ingress_rule(_NAMESPACE, "alertmanager"),
+                _prometheus_ingress_rule(_NAMESPACE, {"app.kubernetes.io/name": "alertmanager"}),
                 # Gatus: health check probes
-                _prometheus_ingress_rule("gatus", "gatus"),
+                _prometheus_ingress_rule(cilium.PROBER.namespace, cilium.PROBER.selector),
             ],
         ),
     )

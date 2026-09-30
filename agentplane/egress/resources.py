@@ -1,7 +1,7 @@
 """The resources the proxy reads off the API server, parsed once at the boundary.
 
 `EgressPolicy`, `EgressBinding` and `EgressCredential` are Agentplane's own kinds (group
-`agentplane.allegedly.works`, `v1alpha1`; the CRDs live in `cluster/k8s/agentplane-crds`).
+`agentplane.allegedly.works`, `v1alpha1`; the CRDs live in `agentplane/crds`).
 A binding names its subjects as ServiceAccounts, and `Secret` holds the credentials the rules
 substitute, in the credentials namespace. Only the fields the proxy reads are modelled; everything
 else on the wire is ignored.

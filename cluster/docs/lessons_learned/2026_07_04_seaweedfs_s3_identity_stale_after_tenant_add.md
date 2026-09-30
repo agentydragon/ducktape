@@ -12,7 +12,7 @@ static JSON. The restart behavior below still applies to legacy static identitie
 ## Symptom
 
 A new SeaweedFS S3 tenant (identity added under
-`cluster/k8s/seaweedfs/secrets/identities/`) can't write:
+`cluster/k8s/seaweedfs/cluster/identities/`) can't write:
 
 ```text
 s3aws: InvalidAccessKeyId: The access key ID you provided does not exist in our records. (403)

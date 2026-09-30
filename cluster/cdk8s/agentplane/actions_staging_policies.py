@@ -16,11 +16,7 @@ from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import (
     ActionPolicyBindingSpecSubject,
 )
 from agentplane_actionpolicyset_crds.works.allegedly.agentplane import ActionPolicySetSpecAutoApproveIf
-from agentplane_egressbinding_crds.works.allegedly.agentplane import (
-    EgressBinding,
-    EgressBindingSpec,
-    EgressBindingSpecSubjects,
-)
+from agentplane_egressbinding_crds.works.allegedly.agentplane import EgressBindingSpecSubjects
 from agentplane_egresspolicy_crds.works.allegedly.agentplane import EgressPolicySpecRules, EgressPolicySpecRulesMethods
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
@@ -32,7 +28,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s import external_creds
 from cluster.cdk8s.agentplane import app as app_component, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
@@ -48,8 +44,8 @@ from cluster.cdk8s.agentplane.app_settings import (
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
-    KUBERNETES_POLICY,
     PACKAGES_POLICY,
+    PLAID_PGWEB_POLICY,
 )
 from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_DUCKTAPE_FORK_READS_SET,
@@ -58,8 +54,9 @@ from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_GITHUB_READS_SET,
 )
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
+from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 _NAMESPACE = "agentplane-staging"
@@ -106,6 +103,21 @@ def _binding(
         ActionPolicyBinding(
             scope, id, metadata=metadata, spec=ActionPolicyBindingSpec(subject=subject, policy_sets=list(policy_sets))
         ).to_json()["spec"]
+    )
+
+
+def _sandbox_egress_binding(scope: Construct, account: ServiceAccount, *, policies: Sequence[str]) -> None:
+    """What sandboxes running as `account` may reach: the named EgressPolicies."""
+    EgressBinding(
+        scope,
+        f"egressbinding-{account.name}",
+        metadata=ApiObjectMetadata(
+            name=account.name,
+            namespace=_NAMESPACE,
+            annotations={"description": f"What sandboxes running as the {account.name} ServiceAccount may reach."},
+        ),
+        subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name=account.name)],
+        policies=policies,
     )
 
 
@@ -465,26 +477,21 @@ def add_staging_action_policies(scope: Construct) -> None:
     # hairpin out through the Gateway and back. Plain HTTP, so the proxy reads the request without
     # bumping TLS. Nothing is substituted: the suite presents the app token it mints in
     # agentplane-testing (rbac.AcceptanceToken), so any method may pass.
+    testing_app = app_component.service(testing.ENV.namespace)
     EgressPolicy(
         scope,
         "egresspolicy-agentplane-testing",
         metadata=ApiObjectMetadata(name=_AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
-        rules=[
-            EgressPolicySpecRules(
-                hosts=[f"{app_component.NAME}.{testing.ENV.namespace}.svc.cluster.local"], cluster_internal=True
-            )
-        ],
+        # The proxy matches a request's host on the exact string, and clients spell the full name.
+        rules=[EgressPolicySpecRules(hosts=[testing_app.fqdn], cluster_internal=True)],
     )
+    proxy = egress.proxy(_NAMESPACE)
     NetworkPolicy(
         scope,
         "networkpolicy-egress-to-testing-app",
-        metadata=ApiObjectMetadata(name=f"{egress.NAME}-to-testing-app", namespace=_NAMESPACE),
-        endpoint_selector={"app.kubernetes.io/name": egress.NAME},
-        egress=[
-            EgressRule.to_endpoints(
-                cilium.endpoint_labels(testing.ENV.namespace, app_component.NAME), app_component.CONTAINER_PORT
-            )
-        ],
+        metadata=ApiObjectMetadata(name=f"{proxy.name}-to-testing-app", namespace=_NAMESPACE),
+        endpoint_selector=proxy.pods.selector,
+        egress=[testing_app.egress()],
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
     # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.
@@ -529,7 +536,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     # API. `haku-mailbox` presents the JWT of Haku's own mailbox: JMAP reads and changes that one
     # mailbox and cannot send. It and `forgejo-haku` are Haku's credentials, bound here because
     # claude-ai is the connection Haku runs through (haku/TODO.md). `coinbase` presents nothing: the
-    # sandbox signs with the key above.
+    # sandbox signs with the key above. `plaid-pgweb` presents pgweb's HTTP Basic password on its
+    # query API, so a sandbox of this caller's can run SQL over the Plaid mirror as `plaid_ro`,
+    # which can only SELECT (egress_staging_credentials.py).
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol
@@ -555,71 +564,55 @@ def add_staging_action_policies(scope: Construct) -> None:
     # identity the same *logical* Haku agent runs as from Claude.ai/Claude Code's own
     # out-of-cluster infrastructure, so it still needs Haku's credentials. Revisit whether
     # claude-ai should keep carrying them once haku-agent has been in use for a while.
-    EgressBinding(
+    _sandbox_egress_binding(
         scope,
-        "egressbinding-claude-ai",
-        metadata=ApiObjectMetadata(
-            name="claude-ai",
-            namespace=_NAMESPACE,
-            annotations={"description": "What sandboxes running as the claude-ai ServiceAccount may reach."},
-        ),
-        spec=EgressBindingSpec(
-            subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="claude-ai")],
-            policies=[
-                BASIC_POLICY,
-                KUBERNETES_POLICY,
-                FORGEJO_HAKU_POLICY,
-                PACKAGES_POLICY,
-                GOOGLE_READONLY_POLICY,
-                GROCY_SF_READONLY_POLICY,
-                HOME_ASSISTANT_READONLY_POLICY,
-                ACTIVITYWATCH_READ_POLICY,
-                AIQUOTA_READ_POLICY,
-                HAKU_MAILBOX_POLICY,
-                COINBASE_POLICY,
-                _AGENTPLANE_TESTING_POLICY,
-                _GITHUB_DOWNLOADS_POLICY,
-                GITHUB_CLONE_POLICY,
-                GITHUB_AGENTYDRAGON_AGENT_POLICY,
-                GITHUB_ACTIONS_LOGS_POLICY,
-                BUILDBUDDY_POLICY,
-            ],
-        ),
+        claude_ai,
+        policies=[
+            BASIC_POLICY,
+            FORGEJO_HAKU_POLICY,
+            PACKAGES_POLICY,
+            GOOGLE_READONLY_POLICY,
+            GROCY_SF_READONLY_POLICY,
+            HOME_ASSISTANT_READONLY_POLICY,
+            ACTIVITYWATCH_READ_POLICY,
+            AIQUOTA_READ_POLICY,
+            HAKU_MAILBOX_POLICY,
+            COINBASE_POLICY,
+            PLAID_PGWEB_POLICY,
+            _AGENTPLANE_TESTING_POLICY,
+            _GITHUB_DOWNLOADS_POLICY,
+            GITHUB_CLONE_POLICY,
+            GITHUB_AGENTYDRAGON_AGENT_POLICY,
+            GITHUB_ACTIONS_LOGS_POLICY,
+            BUILDBUDDY_POLICY,
+        ],
     )
 
     # What a sandbox of haku-agent's may reach: at least everything claude-ai's sandboxes may
     # reach (see the comment above), so the "haku" preset (app_settings.py) -- which clones
     # haku-state over `forgejo-haku` and works from it -- has no less reach than claude-ai's
     # Haku-flavored sandboxes already have.
-    EgressBinding(
+    _sandbox_egress_binding(
         scope,
-        "egressbinding-haku-agent",
-        metadata=ApiObjectMetadata(
-            name="haku-agent",
-            namespace=_NAMESPACE,
-            annotations={"description": "What sandboxes running as the haku-agent ServiceAccount may reach."},
-        ),
-        spec=EgressBindingSpec(
-            subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name="haku-agent")],
-            policies=[
-                BASIC_POLICY,
-                KUBERNETES_POLICY,
-                FORGEJO_HAKU_POLICY,
-                PACKAGES_POLICY,
-                GOOGLE_READONLY_POLICY,
-                GROCY_SF_READONLY_POLICY,
-                HOME_ASSISTANT_READONLY_POLICY,
-                ACTIVITYWATCH_READ_POLICY,
-                AIQUOTA_READ_POLICY,
-                HAKU_MAILBOX_POLICY,
-                COINBASE_POLICY,
-                _AGENTPLANE_TESTING_POLICY,
-                _GITHUB_DOWNLOADS_POLICY,
-                GITHUB_CLONE_POLICY,
-                GITHUB_AGENTYDRAGON_AGENT_POLICY,
-                GITHUB_ACTIONS_LOGS_POLICY,
-            ],
-        ),
+        haku_agent,
+        policies=[
+            BASIC_POLICY,
+            FORGEJO_HAKU_POLICY,
+            PACKAGES_POLICY,
+            GOOGLE_READONLY_POLICY,
+            GROCY_SF_READONLY_POLICY,
+            HOME_ASSISTANT_READONLY_POLICY,
+            ACTIVITYWATCH_READ_POLICY,
+            AIQUOTA_READ_POLICY,
+            HAKU_MAILBOX_POLICY,
+            COINBASE_POLICY,
+            PLAID_PGWEB_POLICY,
+            _AGENTPLANE_TESTING_POLICY,
+            _GITHUB_DOWNLOADS_POLICY,
+            GITHUB_CLONE_POLICY,
+            GITHUB_AGENTYDRAGON_AGENT_POLICY,
+            GITHUB_ACTIONS_LOGS_POLICY,
+        ],
     )
 
     # Every sandbox Action, auto-approved. Approving each one individually would not be a

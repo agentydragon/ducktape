@@ -77,8 +77,8 @@ async function pushSnapshot(stream: EventTarget, value: ThreadsSnapshot): Promis
 async function render(
   threads: ThreadView[],
   sandboxes: Record<string, SandboxView>,
-  options: { initialPath?: string; settingsOpen?: boolean; mobileOpen?: boolean } = {}
-): Promise<{ onOpenSettings: ReturnType<typeof vi.fn>; onMobileClose: ReturnType<typeof vi.fn>; stream: EventTarget }> {
+  options: { initialPath?: string; settingsOpen?: boolean; open?: boolean } = {}
+): Promise<{ onOpenSettings: ReturnType<typeof vi.fn>; onClose: ReturnType<typeof vi.fn>; stream: EventTarget }> {
   const streams: EventTarget[] = [];
   vi.stubGlobal(
     "EventSource",
@@ -110,7 +110,7 @@ async function render(
   document.body.append(container);
   root = createRoot(container);
   const onOpenSettings = vi.fn();
-  const onMobileClose = vi.fn();
+  const onClose = vi.fn();
   await act(async () =>
     root.render(
       <MantineProvider env="test">
@@ -118,8 +118,8 @@ async function render(
           <Sidebar
             settingsOpen={options.settingsOpen ?? false}
             onOpenSettings={onOpenSettings}
-            mobileOpen={options.mobileOpen ?? false}
-            onMobileClose={onMobileClose}
+            open={options.open ?? false}
+            onClose={onClose}
           />
           <Routes>
             <Route path="*" element={<LocationProbe />} />
@@ -128,7 +128,7 @@ async function render(
       </MantineProvider>
     )
   );
-  return { onOpenSettings, onMobileClose, stream: streams[0] };
+  return { onOpenSettings, onClose, stream: streams[0] };
 }
 
 function rows(): HTMLElement[] {
@@ -155,7 +155,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   });
   const sandboxes = { "test-sandbox": sandbox("test-sandbox") };
   const { stream } = await render([running], sandboxes, { initialPath: "/threads/t-1" });
-  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(1);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(1);
 
   const renamed = { ...running, name: "Renamed in another replica" };
   await pushSnapshot(
@@ -168,7 +168,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   expect(container.textContent).not.toContain("Before rename");
   expect(row(renamed.name).className).toContain("current");
   expect(container.querySelector(".agentplane-sidebar-state-icon.suspended")).not.toBeNull();
-  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(0);
   expect(container.textContent).toContain("test-threadless");
   expect(container.textContent).toContain("0 threads");
   expect(fetchMock).not.toHaveBeenCalled();
@@ -177,6 +177,26 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   expect(container.querySelector('a[href="/sandboxes/test-sandbox"]')).toBeNull();
   await act(async () => row(renamed.name).click());
   expect(location()).toBe("/threads/t-1");
+});
+
+it("uses the shared pulsing status dot when a fresh sidebar thread has an active turn", async () => {
+  const active = thread({
+    id: "t-1",
+    sandbox: "test-sandbox",
+    session_id: "s-1",
+    name: "Active thread",
+    harness_state: "HARNESS_STATE_RUNNING",
+    active_turn_id: "turn-1",
+  });
+  const { stream } = await render([active], { "test-sandbox": sandbox("test-sandbox") });
+  const dot = container.querySelector('.agentplane-thread-status-dot[aria-label^="Turn running"]');
+  expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(true);
+
+  const stale = snapshot([active], { "test-sandbox": sandbox("test-sandbox") });
+  stale.watch.fresh = false;
+  await pushSnapshot(stream, stale);
+  const staleDot = container.querySelector('.agentplane-thread-status-dot[aria-label="No live harness confirmed"]');
+  expect(staleDot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(false);
 });
 
 it("keeps retained rows but withdraws live indicators when any update source is unavailable", async () => {
@@ -195,30 +215,30 @@ it("keeps retained rows but withdraws live indicators when any update source is 
   // A drop shorter than the grace is a blip, and changes nothing on screen.
   await act(async () => stream.dispatchEvent(new Event("error")));
   expect(container.querySelector("[data-connection]")).toBeNull();
-  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(1);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(1);
   await act(async () => vi.advanceTimersByTime(DEGRADED_AFTER_MS));
   expect(container.querySelector('[data-connection="degraded"]')?.getAttribute("aria-label")).toBe(
     "Threads: reconnecting since 17:21:04 · attempt 1"
   );
   expect(container.textContent).toContain("Retained thread");
-  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(0);
 
   await pushSnapshot(stream, { ...snapshot(threads, sandboxes), updates_connected: false });
   expect(container.querySelector("[data-connection]")).toBeNull();
   expect(container.textContent).toContain("Thread updates disconnected");
-  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(0);
 
   const stale = snapshot(threads, sandboxes);
   stale.watch.fresh = false;
   await pushSnapshot(stream, stale);
   expect(container.textContent).toContain("watch has stopped moving");
   expect(container.textContent).not.toContain("Thread updates disconnected");
-  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(0);
 
   await pushSnapshot(stream, snapshot([{ ...threads[0], name: "Current thread" }], sandboxes));
   expect(container.textContent).not.toContain("Retained thread");
   expect(container.textContent).not.toContain("watch has stopped moving");
-  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(1);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(1);
 });
 
 it("groups threads by sandbox, showing each group's state, name and visible thread count", async () => {
@@ -274,12 +294,12 @@ it("opens the details of a provisioning Sandbox with no Threads", async () => {
 });
 
 it.each([false, true])(
-  "links a Sandbox name to its details without changing Thread navigation (mobile=%s)",
-  async (mobileOpen) => {
-    const { onMobileClose } = await render(
+  "links a Sandbox name to its details without changing Thread navigation (open=%s)",
+  async (open) => {
+    await render(
       [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
       { "demo-a1b2": sandbox("demo-a1b2") },
-      { initialPath: "/threads/t-1", mobileOpen }
+      { initialPath: "/threads/t-1", open }
     );
     const link = container.querySelector('a[href="/sandboxes/demo-a1b2"]');
     if (!(link instanceof HTMLAnchorElement)) throw new Error("missing Sandbox details link");
@@ -287,7 +307,6 @@ it.each([false, true])(
 
     await act(async () => link.click());
     expect(location()).toBe("/sandboxes/demo-a1b2");
-    expect(onMobileClose).toHaveBeenCalledOnce();
 
     await act(async () => row("First thread").click());
     expect(location()).toBe("/threads/t-1");
@@ -357,20 +376,18 @@ function footerButton(label: string): HTMLButtonElement {
   return found;
 }
 
-it("routes the footer icons to Sandboxes, pending approvals, Action history, and Settings", async () => {
+it("routes the footer icons to Sandboxes, Actions, and Settings", async () => {
   const { onOpenSettings } = await render([], {});
 
   await act(async () => footerButton("Sandboxes").click());
   expect(location()).toBe("/sandboxes");
 
-  await act(async () => footerButton("Pending approvals").click());
+  await act(async () => footerButton("Actions").click());
   expect(location()).toBe("/actions");
-
-  await act(async () => footerButton("Action history").click());
-  expect(location()).toBe("/actions/history");
 
   await act(async () => footerButton("Settings").click());
   expect(onOpenSettings).toHaveBeenCalledOnce();
+  expect(container.querySelector('[aria-label="Action history"]')).toBeNull();
 });
 
 function sidebarWidth(): number {
@@ -429,44 +446,72 @@ it("persists the resized width across a remount", async () => {
   expect(sidebarWidth()).toBe(256);
 });
 
-function backdrop(): HTMLElement | null {
-  return container.querySelector(".agentplane-sidebar-backdrop");
+function closeButton(): HTMLElement {
+  const found = container.querySelector('button[aria-label="Close navigation"]');
+  if (!(found instanceof HTMLButtonElement)) throw new Error("missing close button");
+  return found;
 }
 
-it("renders a backdrop and the mobile-open class only while mobileOpen is true", async () => {
-  await render([], {}, { mobileOpen: false });
-  expect(backdrop()).toBeNull();
-  expect(container.querySelector("nav.agentplane-sidebar")?.className).not.toContain("agentplane-sidebar-mobile-open");
-
-  await act(async () => root.unmount());
-  container.remove();
-  await render([], {}, { mobileOpen: true });
-  expect(backdrop()).not.toBeNull();
-  expect(container.querySelector("nav.agentplane-sidebar")?.className).toContain("agentplane-sidebar-mobile-open");
-});
-
-it("closes the mobile drawer on backdrop click and on Escape", async () => {
-  const { onMobileClose } = await render([], {}, { mobileOpen: true });
-
-  await act(async () => backdrop()?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-  expect(onMobileClose).toHaveBeenCalledOnce();
-
-  await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
-  expect(onMobileClose).toHaveBeenCalledTimes(2);
-});
-
-it("closes the mobile drawer when opening a thread, the Sandboxes stub, or a footer icon", async () => {
-  const { onMobileClose: closeOnOpenThread } = await render(
-    [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
-    { "demo-a1b2": sandbox("demo-a1b2") },
-    { mobileOpen: true }
+/** `Sidebar` reads the phone breakpoint itself via `matchMedia`, independent of the fixed 1024px
+ * width happy-dom reports for `window.innerWidth` -- so a test picks phone-vs-desktop behavior by
+ * stubbing this, not by resizing anything. */
+function stubPhoneWidth(phone: boolean): void {
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) =>
+      ({
+        matches: phone,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }) as unknown as MediaQueryList
   );
-  await act(async () => row("First thread").click());
-  expect(closeOnOpenThread).toHaveBeenCalledOnce();
+}
+
+it("applies the open class only while open is true", async () => {
+  await render([], {}, { open: false });
+  expect(container.querySelector("nav.agentplane-sidebar")?.className).not.toContain("agentplane-sidebar-open");
 
   await act(async () => root.unmount());
   container.remove();
-  const { onMobileClose: closeOnFooter } = await render([], {}, { mobileOpen: true });
-  await act(async () => footerButton("Sandboxes").click());
-  expect(closeOnFooter).toHaveBeenCalledOnce();
+  await render([], {}, { open: true });
+  expect(container.querySelector("nav.agentplane-sidebar")?.className).toContain("agentplane-sidebar-open");
+});
+
+it("closes on its own close button regardless of width, but on Escape only at phone width", async () => {
+  stubPhoneWidth(false);
+  const { onClose: desktopClose } = await render([], {}, { open: true });
+  await act(async () => closeButton().click());
+  expect(desktopClose).toHaveBeenCalledOnce();
+  await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+  expect(desktopClose).toHaveBeenCalledOnce();
+
+  await act(async () => root.unmount());
+  container.remove();
+  stubPhoneWidth(true);
+  const { onClose: phoneClose } = await render([], {}, { open: true });
+  await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+  expect(phoneClose).toHaveBeenCalledOnce();
+});
+
+it("closes the phone-width overlay, but leaves the desktop column open, on opening a thread, the Sandboxes stub, or a footer icon", async () => {
+  for (const phone of [true, false]) {
+    stubPhoneWidth(phone);
+    const { onClose: closeOnOpenThread } = await render(
+      [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
+      { "demo-a1b2": sandbox("demo-a1b2") },
+      { open: true }
+    );
+    await act(async () => row("First thread").click());
+    expect(closeOnOpenThread).toHaveBeenCalledTimes(phone ? 1 : 0);
+
+    await act(async () => root.unmount());
+    container.remove();
+    const { onClose: closeOnFooter } = await render([], {}, { open: true });
+    await act(async () => footerButton("Sandboxes").click());
+    expect(closeOnFooter).toHaveBeenCalledTimes(phone ? 1 : 0);
+
+    await act(async () => root.unmount());
+    container.remove();
+  }
 });

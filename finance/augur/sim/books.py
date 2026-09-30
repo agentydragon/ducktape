@@ -76,7 +76,7 @@ class TaxLiabilityState(Record):
 
 class PropertyState(Record):
     property_id: PropertyId
-    location_id: LocationId
+    market: LocationId
     owner_agent_id: AgentId
     purchase_month: int
     adjusted_basis: int

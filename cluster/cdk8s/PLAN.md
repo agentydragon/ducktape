@@ -1,12 +1,5 @@
 # cdk8s adoption: remaining work
 
-Review baseline: `origin/devel` at `f84301e72c` (2026-09-28). This is a source
-audit, not a fresh synthesis, CI result, or live-cluster health report.
-
-The central chart contains 171 Flux Kustomizations. The broad resource conversion,
-ArtifactGenerator wiring, two output roots, and removal of redundant single-file
-Kustomize wrappers are implemented. They are no longer migration waves.
-
 Adoption is not complete: mixed directories still contain hand-written overlays and
 configuration, project-owned deployment packages remain outside that conversion, and
 some Python constructs still encode relationships as independent strings or patches.
@@ -18,18 +11,6 @@ live in [the design](../docs/cdk8s.md) and [AGENTS.md](AGENTS.md).
 
 These are recommendations for subsequent implementation PRs. Updating this plan does
 not approve a new abstraction, resource owner, authorization grant, or deployment.
-
-### A. Split generic cdk8s builders from ducktape's cluster-specific wiring
-
-Each CRD family's `cdk8s_import` bindings and generic constructors live in
-`cluster/cdk8s/providers/<name>/`, in the shape
-[the builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states. Kinds still
-built raw at several call sites, each its own call: Flux `HelmRepository` (30
-sites) and `GitRepository` (8), then `CiliumClusterwideNetworkPolicy`, `CleanupPolicy`,
-`SandboxWarmPool`, Terraform and `VirtualMachine` (2 or 3 each).
-
-Done: no ducktape-specific module builds a CRD's generated dataclasses raw at more than
-one call site, with no rendered-output diff from `//cluster/cdk8s:test_generate_manifests`.
 
 ### B. Restore dependency-update ownership
 
@@ -49,9 +30,9 @@ passes the generation gate, and leaves no independently editable duplicate pin.
 
 ### C. Convert useful YAML seams
 
-Start with Grocy's household overlays, then Airlock's typed configuration and the
-rotator rosters. The remainder backlog names the existing models, semantic hazards, and acceptance
-conditions. Authentik blueprints need a separate ownership decision consistent with
+Start with Airlock's typed configuration, then the rotator rosters. The remainder
+backlog names the existing models, semantic hazards, and acceptance conditions.
+Authentik blueprints need a separate ownership decision consistent with
 `cluster/docs/sso.md`; embedding their text in Python is not completion.
 
 Generate non-secret configuration through the application's existing model where one
@@ -100,8 +81,6 @@ Prefer fluent constructs when they remove independent selectors, names, ports or
 references. Preserve exact behavior with typed core/CRD bindings when the fluent layer
 would require several compensating patches. Treat these as targeted improvements:
 
-- `seaweedfs/s3.py`: use generated structs for grant/access patch values; keep the
-  useful Bucket/Identity API and assess its chart-local grant mutation separately.
 - Keep the shared typed pod-seccomp patch while the pinned API requires it. Review
   Helm's explicit-null patch against its actual schema; do not erase it merely to reduce
   a count.

@@ -4,7 +4,6 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ResolvedMemberBinding {
     pub binding_name: String,
-    pub kind: Option<BindingSourceKind>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
@@ -31,9 +30,16 @@ pub struct MemberBindingMatch {
     pub free_bindings: BTreeMap<String, String>,
 }
 
+/// A binding claimed at the top-level statement that declares it.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MatchedBinding {
+    pub body_idx: usize,
+    pub binding: ResolvedMemberBinding,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MemberBindingGroupMatch {
-    pub bindings: BTreeMap<String, MemberBindingMatch>,
+    pub bindings: BTreeMap<String, MatchedBinding>,
     pub free_bindings: BTreeMap<String, String>,
 }
 
@@ -45,21 +51,12 @@ pub struct AnonymousGroupMatch {
     pub free_bindings: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct ResolvedMemberBindingGroup {
-    pub body_idx: usize,
-    pub bindings: BTreeMap<String, ResolvedMemberBinding>,
-}
-
 /// One canonical `source_matches[].bindings[]` projection as an internal
 /// source-match member selector. Each selector carries the shared source
 /// pattern plus `target_binding` set to one selector-local binding.
 pub struct BindingGroupMemberSelector {
     pub export_name: String,
-    pub selector: AnonymousStatementSelector,
     pub parsed_selector: ParsedSourceMatchSelector,
-    pub comment: Option<String>,
-    pub note: Option<String>,
 }
 
 #[derive(Clone)]

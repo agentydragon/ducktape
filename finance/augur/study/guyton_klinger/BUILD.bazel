@@ -150,6 +150,7 @@ py_test(
         "//finance/augur/sim:tax_indexation",
         "//finance/augur/sim:tax_profile",
         "//finance/augur/sim:world",
+        "//finance/augur/sim/testing:session",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

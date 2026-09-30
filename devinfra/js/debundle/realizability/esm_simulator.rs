@@ -1,6 +1,6 @@
 //! ECMA-262 Phase-2 evaluation-order simulator for the gate's
-//! Lemma-2 rescue check. Split from `realizability/mod.rs`; the
-//! shared import ordering itself lives in `esm_import_order`.
+//! Lemma-2 rescue check. The shared import ordering itself lives in
+//! `esm_import_order`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -123,8 +123,7 @@ impl EsmEvaluationSimulator {
 /// Cycle no-op: a back-edge to a module already on the link-DFS
 /// stack is skipped. petgraph's `DfsPostOrder` filters neighbors
 /// already in its `discovered` set, which covers both back-edges
-/// (discovered-but-not-finished) and cross-edges (already finished),
-/// matching the hand-rolled walker's `on_stack` + `visited` checks.
+/// (discovered-but-not-finished) and cross-edges (already finished).
 pub(super) fn simulate_esm_post_order(
     residual: ModuleId,
     i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
@@ -152,8 +151,7 @@ pub(super) fn simulate_esm_post_order(
 /// module to its I-successors in module-import order. Neighbors are
 /// yielded in REVERSE sort-key order so that `DfsPostOrder`'s
 /// push-all-then-pop-top semantics visits the smallest-key successor
-/// first (matching the hand-rolled walker's reverse-push of
-/// `sorted_successors`).
+/// first.
 pub(super) struct EsmIGraph<'a> {
     pub(super) i_successors: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
     pub(super) residual: ModuleId,

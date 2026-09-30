@@ -8,22 +8,15 @@ are reviewed in.
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from kyverno_cleanuppolicy_crds.io.kyverno import (
-    CleanupPolicy,
-    CleanupPolicySpec,
-    CleanupPolicySpecConditions,
-    CleanupPolicySpecConditionsAll,
-    CleanupPolicySpecConditionsAllOperator,
-    CleanupPolicySpecMatch,
-    CleanupPolicySpecMatchAny,
-    CleanupPolicySpecMatchAnyResources,
-)
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.kyverno.janitor import janitor
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "agent-rbac-base"
 NAMESPACE = "claude-sandbox"
@@ -47,13 +40,13 @@ def _cluster_role(chart: Chart, name: str, *rules: k8s.PolicyRule) -> None:
 
 
 def _add_sandbox(chart: Chart) -> None:
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            labels={"name": NAMESPACE, "environment": "development", "goldilocks.fairwinds.com/enabled": "true"},
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=None,
+        labels={"name": NAMESPACE, "environment": "development"},
     )
     k8s.KubeResourceQuota(
         chart,
@@ -141,35 +134,17 @@ def _add_sandbox(chart: Chart) -> None:
     )
     # The sandbox is ephemeral by contract: agents get full CRUD and a shared quota, and nothing
     # here is GitOps-managed, so forgotten experiments otherwise linger and pin the quota forever.
-    # Reap anything older than 7 days. CronJob is included deliberately -- an orphaned CronJob is
-    # self-renewing litter that keeps spawning fresh Jobs. Owned children (ReplicaSets, Job pods) go
-    # via cascade when their parent is reaped. Delete RBAC comes from the two aggregated
-    # ClusterRoles in kyverno/policies/ (cleanup-controller-{jobs,workloads}).
-    CleanupPolicy(
+    # CronJob is included deliberately -- an orphaned CronJob is self-renewing litter that keeps
+    # spawning fresh Jobs. Owned children (ReplicaSets, Job pods) go via cascade when their parent
+    # is reaped. Delete RBAC comes from the two aggregated ClusterRoles in kyverno/policies/
+    # (cleanup-controller-{jobs,workloads}).
+    janitor(
         chart,
         "janitor",
-        metadata=ApiObjectMetadata(name="sandbox-janitor", namespace=NAMESPACE),
-        spec=CleanupPolicySpec(
-            schedule="20 * * * *",
-            match=CleanupPolicySpecMatch(
-                any=[
-                    CleanupPolicySpecMatchAny(
-                        resources=CleanupPolicySpecMatchAnyResources(
-                            kinds=["Pod", "Deployment", "StatefulSet", "Job", "CronJob", "Service"]
-                        )
-                    )
-                ]
-            ),
-            conditions=CleanupPolicySpecConditions(
-                all=[
-                    CleanupPolicySpecConditionsAll(
-                        key="{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}",
-                        operator=CleanupPolicySpecConditionsAllOperator.GREATER_THAN,
-                        value="168h",
-                    )
-                ]
-            ),
-        ),
+        name="sandbox-janitor",
+        namespace=NAMESPACE,
+        schedule="20 * * * *",
+        kinds=["Pod", "Deployment", "StatefulSet", "Job", "CronJob", "Service"],
     )
 
 

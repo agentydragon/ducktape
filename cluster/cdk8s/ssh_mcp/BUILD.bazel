@@ -18,6 +18,7 @@ py_library(
     ],
     deps = [
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:service_ref",
         "//util/bazel:runfiles",
         "//x/ssh_mcp_server:server",
         "@pypi//cdk8s",
@@ -40,6 +41,8 @@ py_library(
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:public_coder_devbox",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",

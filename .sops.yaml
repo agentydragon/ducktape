@@ -20,7 +20,7 @@ keys:
   # Codex cloud agent key (OpenAI Codex, private key stored in Codex env secrets)
   # TODO: consider splitting shared tokens (buildbuddy, k8s jwt) into codex-specific variants
   - &codex-cloud-agent age1hy7al8s2cxjhehgf93mnkfdv2plr579t9uhvtdaxlmh3rx0j2g7sludsex
-  # Self-hosted agent-box VM (cluster/k8s/parked/agent-box). agent-box-host = the VM's
+  # Self-hosted agent-box VM (cluster/parked/agent-box). agent-box-host = the VM's
   # persisted SSH host key (installed via cloud-init); agent-box-codex-user = the
   # codex user's id_ed25519, planted by NixOS sops-nix and doubling as the codex
   # user's age decryption identity.
@@ -165,7 +165,7 @@ creation_rules:
   # ExternalSecret templates; operator-managed identities keep policy in the
   # Bucket/S3Identity resources instead. More specific than the generic
   # cluster/k8s/* rule below, so this match wins.
-  - path_regex: cluster/k8s/seaweedfs/secrets/identities/.*\.sops\.yaml$
+  - path_regex: cluster/k8s/seaweedfs/cluster/identities/.*\.sops\.yaml$
     encrypted_regex: ^(accessKey|secretKey)$
     key_groups:
       - age:
@@ -286,8 +286,8 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
-  # Cluster, Props, Wayback, and Haku managed-agent deployment secrets (Flux + admin can decrypt).
-  - path_regex: (cluster/k8s|props/deploy|loom/wayback/deploy|haku/runtime/managed_agent/self_hosted/deploy)/.*\.sops\.yaml$
+  # Cluster (active and parked), Props, Wayback, and Haku managed-agent deployment secrets (Flux + admin can decrypt).
+  - path_regex: (cluster/k8s|cluster/parked|props/deploy|loom/wayback/deploy|haku/runtime/managed_agent/self_hosted/deploy)/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:
@@ -731,7 +731,7 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
   # The same bearer for the same `haku` k8s group, minted separately for the
-  # experimental OpenClaw runtime (rotations.yaml: haku-k8s-openclaw). No `haku`
+  # experimental OpenClaw runtime (the haku-k8s-openclaw rotation). No `haku`
   # recipient, unlike the entry above: that routine decrypts its token from this
   # file, whereas the OpenClaw runtime never sees the file at all -- iron-proxy
   # injects the bearer from the k8s Secret the rotator publishes alongside it.

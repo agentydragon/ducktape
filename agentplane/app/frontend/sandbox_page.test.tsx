@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
+import { TEST_REASONING_EFFORTS } from "./test_model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
@@ -77,7 +78,7 @@ async function render(
     if (path === "/models") {
       return Promise.resolve(
         Response.json({
-          models: [{ model: "test-model", display_name: "Test Model" }],
+          models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
           harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
         })
       );
@@ -193,4 +194,30 @@ it("hides an archived thread's session by default, reveals it via Show archived,
   expect(archiveRequests.map((request) => [request.method, new URL(request.url).pathname])).toEqual([
     ["POST", "/threads/test-thread-1/unarchive"],
   ]);
+});
+
+it("disables archiving a thread while its harness is running", async () => {
+  live.snapshot.threads = [thread({ id: "test-thread-1", session_id: "existing-session" })];
+  await render(async () =>
+    Response.json([
+      {
+        sessionId: "existing-session",
+        spec: {},
+        lastCursor: "0",
+        harnessState: "HARNESS_STATE_RUNNING",
+      },
+    ])
+  );
+  const menuButton = [...container.querySelectorAll("button")].find(
+    (node) => node.getAttribute("aria-label") === "More actions for existing-session"
+  );
+  if (!menuButton) throw new Error("Missing per-session actions menu");
+  await act(async () => menuButton.click());
+  const archiveItem = menuItem("Stop harness before archiving");
+  expect(archiveItem).toBeInstanceOf(HTMLButtonElement);
+  expect((archiveItem as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => archiveItem.click());
+  expect(
+    fetchMock.mock.calls.some(([request]) => new URL((request as Request).url).pathname.endsWith("/archive"))
+  ).toBe(false);
 });

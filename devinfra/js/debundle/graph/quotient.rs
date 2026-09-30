@@ -1,74 +1,30 @@
-use std::collections::BTreeSet;
-
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 
 use crate::ModuleId;
 use crate::partition::Partition;
 
-use super::edge::{EdgeMetadata, EdgeReason, EdgeRole, OwnerEdge};
-use super::owner_graph::OwnerGraph;
+use super::edge::{EdgeRole, OwnerEdge};
+use super::owner_graph::{OwnerGraph, OwnerId};
 
-/// Module dep graph built from per-statement facts and a binding →
-/// module assignment.
+/// The I∪S module dependency graph: the quotient of an [`OwnerGraph`]
+/// by a [`Partition`], one edge per directed `(from, to)` module pair.
 ///
-/// Thin newtype around `petgraph::DiGraphMap<ModuleId,
-/// EdgeMetadata>`: one edge per directed `(from, to)` pair, weight =
-/// `EdgeMetadata`. Multiple reasons for the same physical edge (e.g.
-/// several at-init reads of bindings owned by the same target
-/// module) accumulate into the edge's reason list. Cycle detection
-/// runs through petgraph's `tarjan_scc`.
-///
-/// The inner `DiGraphMap` is private. Mutation happens only inside
-/// [`build_module_quotient`] (and the constructor-private
-/// `record_reason` helper); callers go through the read-only
-/// accessors `all_edges`, `contains_edge`, `edge_weight`,
-/// `has_init_order_constraining_edge`, and the convenience
-/// `sccs` wrapper around `petgraph::algo::tarjan_scc`. The
-/// newtype keeps the semantic name "the I∪S module-dep quotient"
-/// distinct from arbitrary `DiGraphMap<ModuleId, EdgeMetadata>`
-/// instances.
+/// Newtype around `petgraph::DiGraphMap<ModuleId, ()>`. Mutation
+/// happens only inside [`build_module_quotient`]; callers go through
+/// the read-only accessors `all_edges`, `contains_edge` and `sccs`.
 #[derive(Debug, Clone, Default)]
-pub struct ModuleQuotient(DiGraphMap<ModuleId, EdgeMetadata>);
+pub struct ModuleQuotient(DiGraphMap<ModuleId, ()>);
 
 impl ModuleQuotient {
-    fn record_reason(&mut self, from: ModuleId, to: ModuleId, reason: EdgeReason) {
-        if from == to {
-            return;
-        }
-        if !self.0.contains_edge(from, to) {
-            self.0.add_edge(from, to, EdgeMetadata::default());
-        }
-        self.0
-            .edge_weight_mut(from, to)
-            .unwrap()
-            .reasons
-            .push(reason);
-    }
-
-    /// Iterate over every `(from, to, weight)` tuple in the quotient.
-    /// Forwards to `petgraph::DiGraphMap::all_edges`.
-    pub fn all_edges(&self) -> impl Iterator<Item = (ModuleId, ModuleId, &EdgeMetadata)> + '_ {
-        self.0.all_edges()
+    /// Iterate over every `(from, to)` pair in the quotient.
+    pub fn all_edges(&self) -> impl Iterator<Item = (ModuleId, ModuleId)> + '_ {
+        self.0.all_edges().map(|(from, to, _)| (from, to))
     }
 
     /// `true` iff the directed edge `(from, to)` is present.
     pub fn contains_edge(&self, from: ModuleId, to: ModuleId) -> bool {
         self.0.contains_edge(from, to)
-    }
-
-    /// The metadata for `(from, to)` if the edge exists, else `None`.
-    pub fn edge_weight(&self, from: ModuleId, to: ModuleId) -> Option<&EdgeMetadata> {
-        self.0.edge_weight(from, to)
-    }
-
-    /// `true` if the edge `(from, to)` exists and constrains
-    /// realizable evaluation order (at-init read or side-effect
-    /// ordering). Used by the realizability gate to decide
-    /// whether an `I ∪ S` SCC is unrealizable.
-    pub fn has_init_order_constraining_edge(&self, from: ModuleId, to: ModuleId) -> bool {
-        self.edge_weight(from, to)
-            .is_some_and(EdgeMetadata::constrains_init_order)
     }
 
     /// Strongly-connected components of the quotient, via
@@ -97,7 +53,7 @@ pub enum EndpointView {
 /// `view` selects which projection rule the caller wants:
 ///
 /// - [`EndpointView::Lenient`] — used by `build_module_quotient` and
-///   `report_builders::build_quotient_edge_reports` (gate crate). Drops same-module edges
+///   the gate crate's quotient edge report builder. Drops same-module edges
 ///   AND drops cross-module [`EdgeRole::PromotedAtInit`] edges when
 ///   the callee module differs from the caller module. ESM
 ///   justification: the body read fires inside a call into a
@@ -119,15 +75,32 @@ pub enum EndpointView {
 ///   for the regression fixture.
 ///
 /// Invariant: every quotient-projecting consumer of the owner graph
-/// MUST route through this function so the lenient-vs-gate decision
-/// stays welded to the edge's [`EdgeRole`] at one source-level point.
+/// MUST route through this function (or [`project_endpoints`], its form
+/// for an owner assignment that is not a materialised [`Partition`]) so
+/// the lenient-vs-gate decision stays welded to the edge's [`EdgeRole`]
+/// at one source-level point.
 pub fn partition_endpoints(
     edge: &OwnerEdge,
     partition: &Partition,
     view: EndpointView,
 ) -> Option<(ModuleId, ModuleId)> {
-    let from = partition.of(edge.from);
-    let to = partition.of(edge.to);
+    project_endpoints(edge, partition.residual(), view, |owner| {
+        partition.of(owner)
+    })
+}
+
+/// [`partition_endpoints`] under an arbitrary owner → module
+/// assignment `module_of`, with `residual` the assignment's ESM DFS
+/// root. Lets the gate's speculative move overlay project edges under
+/// the post-move assignment without cloning the partition.
+pub fn project_endpoints(
+    edge: &OwnerEdge,
+    residual: ModuleId,
+    view: EndpointView,
+    module_of: impl Fn(OwnerId) -> ModuleId,
+) -> Option<(ModuleId, ModuleId)> {
+    let from = module_of(edge.from);
+    let to = module_of(edge.to);
     if from == to {
         return None;
     }
@@ -144,7 +117,7 @@ pub fn partition_endpoints(
     // for entry.
     if let EdgeRole::PromotedAtInit { callee_owner } = edge.reason.role
         && callee_owner == edge.from
-        && from == partition.residual()
+        && from == residual
     {
         return None;
     }
@@ -152,7 +125,7 @@ pub fn partition_endpoints(
         && edge
             .reason
             .role
-            .is_cross_module_promotion(edge.from, partition)
+            .is_cross_module_promotion(edge.from, module_of)
     {
         return None;
     }
@@ -164,16 +137,11 @@ pub fn partition_endpoints(
 /// public construction path; validation and reports both go through
 /// this for any non-hypothetical quotient.
 pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) -> ModuleQuotient {
-    let mut graph = ModuleQuotient(DiGraphMap::new());
-    let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
+    let mut graph = DiGraphMap::new();
     for edge in owner_graph.iter_edges() {
-        let Some((from, to)) = partition_endpoints(edge, partition, EndpointView::Lenient) else {
-            continue;
-        };
-        if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {
-            continue;
+        if let Some((from, to)) = partition_endpoints(edge, partition, EndpointView::Lenient) {
+            graph.add_edge(from, to, ());
         }
-        graph.record_reason(from, to, edge.reason.clone());
     }
-    graph
+    ModuleQuotient(graph)
 }

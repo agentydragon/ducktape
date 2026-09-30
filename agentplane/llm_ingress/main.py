@@ -41,6 +41,13 @@ class Settings(BaseSettings):
         "authenticated and sent on is refused here if its namespace is missing.",
     )
     token_audience: str = Field(default="agentplane-egress", description="Accepted projected-token audience.")
+    log_llm_requests: bool = Field(
+        default=False,
+        description=(
+            "Log full LLM request bodies and streamed response chunks. These logs can contain prompts, "
+            "reasoning, generated text, and tool arguments."
+        ),
+    )
     litellm_url: str = Field(description="Internal LiteLLM base URL.")
     litellm_key: SecretStr = Field(description="The one server-held LiteLLM virtual key.")
     host: str = Field(default="0.0.0.0", description="Listener bind address.")
@@ -99,6 +106,7 @@ async def async_main(settings: Settings) -> None:
                 authenticate=WorkloadPrincipalAuthenticator(resolver),
                 backend=backend,
                 litellm_key=settings.litellm_key.get_secret_value(),
+                log_llm_requests=settings.log_llm_requests,
             )
         )
         logger.info("forwarding authenticated Sandbox model traffic to %s", settings.litellm_url)

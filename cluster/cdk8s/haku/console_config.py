@@ -131,8 +131,8 @@ def config() -> dict[str, Any]:
         # authoritative even if a client constructs a wider duration than the tool schema
         # recommends.
         "kubernetes_grant_max_lifetime_seconds": 3600,
-        # The one Agent Sandbox environment the `sandbox` server hands out: the Haku pool in
-        # cluster/k8s/haku/workspaces/ and the reviewed bootstrap each claim runs. Each claim
+        # The one Agent Sandbox environment the `sandbox` server hands out: the Haku pool
+        # (haku/workspaces.py) and the reviewed bootstrap each claim runs. Each claim
         # records the pod-describing fields it was created for, so editing one leaves live
         # claims usable and flags them in `warnings`; the budgets are read live and never
         # recorded (haku/sandbox/README.md).
@@ -155,7 +155,7 @@ def config() -> dict[str, Any]:
                 "timeout_seconds": 300,
                 # The reviewed per-claim bootstrap is one baked script -- egress CA trust, git
                 # identity, git credentials, and the haku-state checkout -- kept in its native
-                # file (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh) so shfmt/
+                # file (haku/sandbox/image/haku-sandbox-setup.sh) so shfmt/
                 # shellcheck lint it. Changing bootstrap behavior therefore means an image
                 # rebuild + rollout, not a ConfigMap edit.
                 "script": "set -euo pipefail\n/usr/local/bin/haku-sandbox-setup.sh\n",

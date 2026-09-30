@@ -245,18 +245,13 @@ class SampledExogenousBundle:
     Everything a consumer READS is a typed field. What used to be one
     `metadata: Mapping[str, object]` carried two unrelated things under one type: load-bearing
     data that consumers reached for by string key, and free-form provenance nobody parses. The
-    load-bearing data now lives in the typed level and private-equity protocol bundles; `model_id`
-    is explicit, while `provenance` keeps the descriptive remainder and is named for what it is,
-    so a future field cannot quietly hide in it again.
+    load-bearing data now lives in the typed level and private-equity protocol bundles, while
+    `provenance` keeps the descriptive remainder and is named for what it is, so a future field
+    cannot quietly hide in it again.
     """
 
     levels: LevelFrames = field(default_factory=LevelFrames.empty)
     private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
-    # The provider's own label for what produced this sample, which can differ from the preset
-    # id the caller asked for (a composite reports itself, not its macro half). `None` is a
-    # real state: a sampler is not obliged to name itself, and the caller falls back to the id
-    # it requested.
-    model_id: str | None = None
     # Descriptive only — version ids, generator names, training window, anchors, notes. Nothing
     # branches on it; it exists to be logged and read by humans. Anything that acquires a
     # programmatic consumer stops belonging here and becomes a field.
@@ -482,7 +477,6 @@ def anchor_sampled_series_levels(
             }
         ),
         private_equity=private_equity,
-        model_id=sampled.model_id,
         provenance={**sampled.provenance, **provenance_extras},
     )
 

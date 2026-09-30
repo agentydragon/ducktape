@@ -32,8 +32,6 @@ const EMPTY: ActionPolicyView = {
   synced: true,
   bindings: [],
   auto_approve_if: [],
-  auto_deny_if: [],
-  auto_deny_unless: [],
 };
 
 it("says an unbound sandbox waits for the operator on every Action", async () => {
@@ -115,8 +113,6 @@ it("shows each set's state, the missing one, and the effective lists in evaluati
         },
       },
     ],
-    auto_deny_if: [],
-    auto_deny_unless: [],
   });
   const text = container.textContent ?? "";
   expect(text).toContain("test-sandbox-launch");
@@ -128,5 +124,4 @@ it("shows each set's state, the missing one, and the effective lists in evaluati
   expect(text).toContain("test-sandbox-launch · test-reads[1]");
   expect(text).toContain("github: create_issue");
   expect(text).toContain('"owner"');
-  expect(text).toContain("not yet enforced");
 });

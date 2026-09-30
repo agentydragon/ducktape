@@ -1,4 +1,8 @@
-"""Authentik login and the browser's short-lived Airlock session."""
+"""Authentik login and the browser's short-lived Airlock session.
+
+Shares only the claims check and client registration with `util/oidc_login.py`; its docstring says why the routes and
+guard stay here.
+"""
 
 from __future__ import annotations
 
@@ -17,10 +21,10 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from starlette import status
 
 from airlock.config import Settings
+from util.oidc_login import CLIENT_NAME, valid_claims
 
 logger = logging.getLogger(__name__)
 
-CLIENT_NAME = "authentik"
 SECURE_SESSION_COOKIE = "__Host-airlock_session"
 INSECURE_SESSION_COOKIE = "airlock_session"
 
@@ -39,19 +43,6 @@ class OperatorSession(BaseModel):
 def session_cookie_name(settings: Settings) -> str:
     """Use the host-only secure cookie name on HTTPS and a local-dev name on HTTP."""
     return SECURE_SESSION_COOKIE if settings.public_base_url.startswith("https://") else INSECURE_SESSION_COOKIE
-
-
-def build_oauth(settings: Settings) -> OAuth:
-    """Register the server-side Authentik client with Authorization Code + PKCE."""
-    oauth = OAuth()
-    oauth.register(
-        name=CLIENT_NAME,
-        client_id=settings.oidc_client_id,
-        client_secret=settings.oidc_client_secret.get_secret_value(),
-        server_metadata_url=f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid profile email", "code_challenge_method": "S256"},
-    )
-    return oauth
 
 
 def current_operator_session(request: Request, settings: Settings) -> OperatorSession | None:
@@ -110,7 +101,7 @@ def create_auth_router(settings: Settings) -> APIRouter:
             return _sign_in_failed()
 
         claims: Any = token.get("userinfo") or {}
-        if not _valid_claims(claims, settings):
+        if not valid_claims(claims, issuer=settings.oidc_issuer, client_id=settings.oidc_client_id):
             logger.warning("OIDC sign-in returned invalid identity claims")
             return _sign_in_failed()
 
@@ -143,32 +134,3 @@ def _redirect_uri(settings: Settings) -> str:
 
 def _sign_in_failed() -> RedirectResponse:
     return RedirectResponse(url="/?auth=failed", status_code=status.HTTP_303_SEE_OTHER)
-
-
-def _valid_claims(claims: Any, settings: Settings) -> bool:
-    if not isinstance(claims, dict):
-        return False
-    if claims.get("iss") != settings.oidc_issuer:
-        return False
-
-    aud = claims.get("aud")
-    if isinstance(aud, str):
-        audiences = {aud}
-    elif isinstance(aud, list) and all(isinstance(value, str) for value in aud):
-        audiences = set(aud)
-    else:
-        return False
-
-    azp = claims.get("azp")
-    if settings.oidc_client_id not in audiences or (azp is not None and azp != settings.oidc_client_id):
-        return False
-    if len(audiences) > 1 and azp != settings.oidc_client_id:
-        return False
-
-    expiry = claims.get("exp")
-    if isinstance(expiry, bool) or not isinstance(expiry, (float, int)) or not math.isfinite(expiry):
-        return False
-    if expiry <= time.time():
-        return False
-
-    return all(isinstance(claims.get(name), str) and claims[name] for name in ("sub", "preferred_username"))

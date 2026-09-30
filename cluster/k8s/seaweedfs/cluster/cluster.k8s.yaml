@@ -1,0 +1,441 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweedfs
+  namespace: seaweedfs
+spec:
+  filer:
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+            weight: 100
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: filer
+                app.kubernetes.io/name: seaweedfs
+            topologyKey: kubernetes.io/hostname
+    config: ""
+    env:
+      - name: GOMEMLIMIT
+        value: 700MiB
+      - name: WEED_POSTGRES2_USERNAME
+        valueFrom:
+          secretKeyRef:
+            key: username
+            name: seaweedfs-filer-db-ssd-creds
+      - name: WEED_POSTGRES2_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            key: password
+            name: seaweedfs-filer-db-ssd-creds
+    limits:
+      memory: 768Mi
+    metricsPort: 9326
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    priorityClassName: stateful-infra
+    replicas: 2
+    requests:
+      cpu: 50m
+      memory: 384Mi
+  image: chrislusf/seaweedfs:4.46
+  master:
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: master
+                app.kubernetes.io/name: seaweedfs
+            topologyKey: kubernetes.io/hostname
+    defaultReplication: "001"
+    limits:
+      memory: 512Mi
+    metricsPort: 9321
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    priorityClassName: stateful-infra
+    replicas: 3
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    volumeSizeLimitMB: 16000
+  s3:
+    configSecret:
+      key: seaweedfs_s3_config.json
+      name: seaweedfs-s3-config
+    env:
+      - name: GOMEMLIMIT
+        value: 1800MiB
+    extraArgs:
+      - -ip.bind=0.0.0.0
+    limits:
+      memory: 2Gi
+    metricsPort: 9327
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    priorityClassName: stateful-infra
+    replicas: 2
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+  volumeServerDiskCount: 1
+  volumeTopology:
+    hdd:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: seaweedfs
+                  seaweedfs/topology: hdd
+              topologyKey: kubernetes.io/hostname
+      dataCenter: hil
+      env:
+        - name: GOMEMLIMIT
+          value: 1400MiB
+      extraArgs:
+        - -disk=hdd
+      limits:
+        memory: 1536Mi
+      maxVolumeCounts: 400
+      metricsPort: 9325
+      minFreeSpacePercent: 10
+      nodeSelector:
+        storage.allegedly.works/tier: hdd
+      priorityClassName: stateful-infra
+      rack: hil-ovh-h109b04
+      replicas: 3
+      requests:
+        cpu: 100m
+        memory: 512Mi
+        storage: 1800Gi
+      storageClassName: local-path-ovh-hdd
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+    ssd:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: seaweedfs
+                  seaweedfs/topology: ssd
+              topologyKey: kubernetes.io/hostname
+      dataCenter: hil
+      env:
+        - name: GOMEMLIMIT
+          value: 1400MiB
+      extraArgs:
+        - -disk=ssd
+      limits:
+        memory: 1536Mi
+      maxVolumeCounts: 200
+      metricsPort: 9325
+      minFreeSpacePercent: 10
+      nodeSelector:
+        storage.allegedly.works/tier: ssd
+      priorityClassName: stateful-infra
+      rack: hil-ovh-h108b01
+      replicas: 3
+      requests:
+        cpu: 100m
+        memory: 512Mi
+        storage: 250Gi
+      storageClassName: local-path-ovh-ssd
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: AdminScript
+metadata:
+  annotations:
+    description: Hourly copy-only repair of SeaweedFS volume replica placement.
+  name: replication-repair
+  namespace: seaweedfs
+spec:
+  activeDeadlineSeconds: 21600
+  backoffLimit: 0
+  clusterRef:
+    name: seaweedfs
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  restartPolicy: Never
+  schedule: 17 * * * *
+  script: |
+    lock
+    volume.fix.replication -apply -doDelete=false -maxParallelization=2 -maxParallelizationPerServer=1 -retry=5
+    unlock
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  timeZone: Etc/UTC
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-master
+  namespace: seaweedfs
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: master
+      app.kubernetes.io/name: seaweedfs
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-volume
+  namespace: seaweedfs
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: volume
+      app.kubernetes.io/name: seaweedfs
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-filer
+  namespace: seaweedfs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: filer
+      app.kubernetes.io/name: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  annotations:
+    description: Lets the tenant namespaces' Buckets, S3Identities and S3Credentials reference this cluster.
+  name: tenants
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespaceSelector:
+        matchExpressions:
+          - key: kubernetes.io/metadata.name
+            operator: In
+            values:
+              - authentik
+              - flux-system
+              - forgejo
+              - haku-openclaw-spike
+              - home-assistant
+              - langfuse
+              - loki
+              - monitoring
+              - nix-cache
+              - oci-cache
+              - public-coder-agent
+              - vm-images-publisher
+    - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespaceSelector:
+        matchExpressions:
+          - key: kubernetes.io/metadata.name
+            operator: In
+            values:
+              - authentik
+              - flux-system
+              - forgejo
+              - haku-openclaw-spike
+              - home-assistant
+              - langfuse
+              - loki
+              - monitoring
+              - nix-cache
+              - oci-cache
+              - public-coder-agent
+              - vm-images-publisher
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespaceSelector:
+        matchExpressions:
+          - key: kubernetes.io/metadata.name
+            operator: In
+            values:
+              - authentik
+              - flux-system
+              - forgejo
+              - haku-openclaw-spike
+              - home-assistant
+              - langfuse
+              - loki
+              - monitoring
+              - nix-cache
+              - oci-cache
+              - public-coder-agent
+              - vm-images-publisher
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eso-reader
+  namespace: seaweedfs
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eso-reader
+  namespace: seaweedfs
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eso-reader
+  namespace: seaweedfs
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eso-reader
+subjects:
+  - kind: ServiceAccount
+    name: eso-reader
+    namespace: seaweedfs
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  annotations:
+    description: Reads per-tenant s3-identity-* Secrets and the per-tenant intermediate Secrets that the assembly ExternalSecrets produce.
+  name: seaweedfs-identities
+  namespace: seaweedfs
+spec:
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: eso-reader
+          namespace: seaweedfs
+      remoteNamespace: seaweedfs
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: Assembles the s3 gateway config Secret from per-tenant identity Secrets.
+  name: seaweedfs-s3-config
+  namespace: seaweedfs
+spec:
+  dataFrom:
+    - find:
+        name:
+          regexp: ^s3-identity-.+-json$
+  refreshInterval: 1m
+  secretStoreRef:
+    kind: SecretStore
+    name: seaweedfs-identities
+  target:
+    creationPolicy: Owner
+    name: seaweedfs-s3-config
+    template:
+      data:
+        seaweedfs_s3_config.json: |
+          {"identities":[
+            {{- $first := true -}}
+            {{- range $sName, $sJson := . -}}
+            {{- $sData := $sJson | fromJson -}}
+            {{- if not $first }},{{ end -}}{{ $sData.identity }}{{- $first = false -}}
+            {{- end -}}
+          ]}
+      type: Opaque
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    description: SeaweedFS filer metadata DB on the SSD tier (physically cloned from the retired seaweedfs-filer-db, Case B git-latency migration)
+  name: seaweedfs-filer-db-ssd
+  namespace: seaweedfs
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: seaweedfs
+      owner: seaweedfs
+      secret:
+        name: seaweedfs-filer-db-ssd-creds
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  resources:
+    limits:
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 512Mi
+  storage:
+    size: 2Gi
+    storageClass: local-path-ovh-ssd
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  annotations:
+    description: Stateful infrastructure (databases, object storage, quorum members). Deprioritizes these pods for descheduler eviction and scheduler preemption without making them system-critical.
+  name: stateful-infra
+description: "Stateful infrastructure: defer eviction/preemption, not system-critical."
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+value: 1000000

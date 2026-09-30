@@ -11,18 +11,17 @@
 //! Convention: a test destination key's string **is** the module's
 //! canonical path (e.g. `"residual"`, `"ui/plugins"`), so [`module_table`]
 //! recovers the path by parsing the key and derives `residual` from
-//! [`spec::ModulePath::is_residual`].
+//! [`spec::is_residual_module_path`].
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::{
-    AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind, LineRange,
-    ModuleEntry, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
-    OwnerGraphReport, Purity, SourceLocation, StatementKind, StatementOrdinal,
+    AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind,
+    EdgeRoleReport, LineRange, ModuleEntry, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport,
+    OwnerGraphQuotientReport, OwnerGraphReport, Purity, SourceLocation, StatementKind,
+    StatementOrdinal,
 };
-use peel::quotient::{OwnerIdx, PartitionGroup};
-use spec::ModulePath;
-use swc_atoms::Atom;
+use spec::{ModulePath, is_residual_module_path};
 
 /// A destination key whose string is the module's canonical path.
 pub fn module_ref(path: &str) -> ModuleKey {
@@ -33,7 +32,7 @@ pub fn module_ref(path: &str) -> ModuleKey {
 /// `ModulePath` (parsed from the key) and its residual flag.
 pub fn module_entry(key: &ModuleKey) -> ModuleEntry {
     let path = ModulePath::parse(key.as_str(), "").expect("test module key is a valid path");
-    let residual = path.is_residual();
+    let residual = is_residual_module_path(path.as_str());
     ModuleEntry {
         key: key.clone(),
         path,
@@ -79,16 +78,6 @@ pub fn no_claims() -> BTreeMap<String, ModulePath> {
     BTreeMap::new()
 }
 
-/// Pre-existing spec module group for quotient/peel fixtures. The
-/// owner indexes are owner-report positions.
-pub fn module_group(module_id: &str, owner_idxs: Vec<usize>) -> PartitionGroup {
-    PartitionGroup {
-        owner_idxs: owner_idxs.into_iter().map(OwnerIdx).collect(),
-        is_pre_existing_module: true,
-        label: Some(module_id.to_string()),
-    }
-}
-
 /// Owner node with an explicit destination. The source location is
 /// synthesized from the ordinal (`start_line = ordinal * 100`) so
 /// distinct owners never overlap. Prefer [`residual_owner`] /
@@ -110,6 +99,7 @@ pub fn owner(
             source_path: "x.js".to_string(),
             start_line: ordinal * 100,
             end_line: ordinal * 100 + lines.saturating_sub(1),
+            start_column: None,
         }),
         destination,
     )
@@ -165,27 +155,34 @@ pub fn owner_edge(
     kind: DepKind,
     constrains: bool,
 ) -> OwnerGraphEdgeReport {
-    owner_edge_for_binding(id, source, target, kind, constrains, None)
-}
-
-/// Owner-level edge labeled with the binding the source reads.
-pub fn owner_edge_for_binding(
-    id: &str,
-    source: &str,
-    target: &str,
-    kind: DepKind,
-    constrains: bool,
-    binding: Option<&str>,
-) -> OwnerGraphEdgeReport {
     OwnerGraphEdgeReport {
         id: id.to_string(),
         source: source.to_string(),
         target: target.to_string(),
         edge_kind: kind,
-        binding: binding.map(Atom::from),
+        binding: None,
         statement_ordinal: StatementOrdinal(0),
         constrains_init_order: constrains,
         role: None,
+    }
+}
+
+/// [`owner_edge`] promoted at init from an at-init call into
+/// `callee`'s body; `callee == source` is the conservative fallback
+/// for a call the analysis cannot resolve.
+pub fn promoted_owner_edge(
+    id: &str,
+    source: &str,
+    target: &str,
+    kind: DepKind,
+    constrains: bool,
+    callee: &str,
+) -> OwnerGraphEdgeReport {
+    OwnerGraphEdgeReport {
+        role: Some(EdgeRoleReport::PromotedAtInit {
+            callee_owner: callee.to_string(),
+        }),
+        ..owner_edge(id, source, target, kind, constrains)
     }
 }
 

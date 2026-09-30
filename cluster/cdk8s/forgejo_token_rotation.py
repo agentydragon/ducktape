@@ -1,40 +1,133 @@
-"""The forgejo-token-rotation CronJob (cluster/k8s/agents/forgejo-token-rotation): mints
-Forgejo API tokens for agent service accounts. Source: cluster/rotators/.
+"""The forgejo-token-rotation CronJob (cluster/generated/agents/forgejo-token-rotation): mints
+Forgejo API tokens for agent service accounts. Source: cluster/rotators/forgejo_token_rotation.
+Also the copy of the `haku` and `claude` accounts' passwords that it mints their tokens with,
+and `ROTATIONS`, the roster it runs.
 
-Hand-written beside the output: `tokens.yaml`, which the directory's `kustomization.yaml`
-renders into the ConfigMap the job mounts, and `image-pins/kustomization.yaml`, which
-overrides the placeholder image tag via Flux's image-automation marker.
+`ROTATIONS` is the rotator's own `Config`, rendered into the hash-suffixed ConfigMap the job
+mounts. It only names each output: the rotator alone writes the SOPS files and the tea config
+Secret manifests. The image tag is the placeholder "unset"; the hand-written `PINS_DIR`
+Component, which the kustomization includes across the roots, overrides it at
+`kustomize build` time via Flux's image-automation marker (cluster/cdk8s/AGENTS.md § the
+`:tag` Setters marker).
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.flux import (
+    ConfigMapArgs,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.forgejo_images import SECRET_NAME
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.reflector import mirror_annotations
+from cluster.rotators.forgejo_token_rotation.config import Config, Rotation, TeaSecretOutput
 
 NAME = "forgejo-token-rotation"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/forgejo-token-rotation"
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/forgejo-token-rotation"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/forgejo-token-rotation-image-pins"
 _NAMESPACE = "agents-infra"  # owned by authentik-jwt-rotation
 _IMAGE = "git.allegedly.works/ducktape-ci/forgejo-token-rotation:unset"
-# Rendered from tokens.yaml by the hand-written kustomization's configMapGenerator.
-_CONFIG_MAP = "forgejo-token-rotations-config"
+_GITHUB_PAT = "github-secrets-sync-pat"
+_CONFIG_DIR = "/config"
+_CONFIG_FILE = "tokens.yaml"
 
-# (volume, Secret, mount path) for every credential the rotator reads.
-_SECRET_MOUNTS = (
-    ("github-pat", "github-secrets-sync-pat", "/var/run/secrets/github-pat"),
-    ("haku-forgejo", "forgejo-token-mint-haku", "/var/run/secrets/forgejo/haku"),
-    ("claude-forgejo", "forgejo-token-mint-claude", "/var/run/secrets/forgejo/claude"),
-    ("agent-box-codex-forgejo", "forgejo-token-mint-agent-box-codex", "/var/run/secrets/forgejo/agent-box-codex"),
+
+@dataclass(frozen=True)
+class _MintCredentials:
+    """An agent account's Forgejo username/password Secret in agents-infra, and the directory the
+    job mounts it at: the `credentials_dir` of that account's rotation."""
+
+    name: str
+    secret: str
+
+    @property
+    def volume(self) -> str:
+        return f"{self.name}-forgejo"
+
+    @property
+    def directory(self) -> Path:
+        return Path("/var/run/secrets/forgejo") / self.name
+
+
+# haku's and claude's are copies of what tf/gitops/haku-state and tf/gitops/forgejo-claude write
+# into the forgejo namespace (`chart`); tf/gitops/forgejo-agentydragon-repos writes
+# agent-box-codex's into agents-infra itself.
+_HAKU = _MintCredentials(name="haku", secret="forgejo-token-mint-haku")
+_CLAUDE = _MintCredentials(name="claude", secret="forgejo-token-mint-claude")
+_AGENT_BOX_CODEX = _MintCredentials(name="agent-box-codex", secret="forgejo-token-mint-agent-box-codex")
+_MINT_CREDENTIALS = (_HAKU, _CLAUDE, _AGENT_BOX_CODEX)
+
+# Forgejo API tokens for agent service accounts. Omitted `repositories` means full-account
+# repository access in Forgejo 15's token API; account-level grants still constrain what each
+# agent can do.
+ROTATIONS = Config(
+    rotations=[
+        Rotation(
+            name="haku",
+            credentials_dir=_HAKU.directory,
+            sops_file=Path("secrets/haku-forgejo-tea-token.yaml"),
+            token_prefix="forgejo-tea-haku",
+            tea_secret=TeaSecretOutput(
+                path=Path("cluster/k8s/haku/forgejo-tea/haku-forgejo-tea.sops.yaml"),
+                name="haku-forgejo-tea",
+                namespace="haku-sandbox",
+                # KEDA is the only extra consumer. Reflector creates the destination Secret, and
+                # the haku-ci runner itself never mounts it.
+                annotations=mirror_annotations(["haku-ci"]),
+            ),
+        ),
+        Rotation(
+            name="claude",
+            credentials_dir=_CLAUDE.directory,
+            sops_file=Path("secrets/claude-forgejo-tea-token.yaml"),
+            token_prefix="forgejo-tea-claude",
+            tea_secret=TeaSecretOutput(
+                path=Path("cluster/k8s/agents/claude-sandbox-secrets/claude-forgejo-tea.sops.yaml"),
+                name="claude-forgejo-tea",
+                namespace="claude-sandbox",
+            ),
+        ),
+        Rotation(
+            name="agent-box-codex",
+            credentials_dir=_AGENT_BOX_CODEX.directory,
+            sops_file=Path("secrets/agent-box-codex-forgejo-tea-token.yaml"),
+            token_prefix="forgejo-tea-agent-box-codex",
+        ),
+    ]
 )
+
+# The content hash in the ConfigMap's name rolls the CronJob's template on a roster change.
+CONFIG_MAP = ConfigMapArgs(
+    name="forgejo-token-rotations-config",
+    namespace=_NAMESPACE,
+    literals=[f"{_CONFIG_FILE}={yaml_config(ROTATIONS.model_dump(mode='json', exclude_unset=True))}"],
+)
+
+
+def _secret_volume(name: str, secret: str) -> k8s.Volume:
+    return k8s.Volume(name=name, secret=k8s.SecretVolumeSource(secret_name=secret))
+
+
+def _mount(name: str, path: str) -> k8s.VolumeMount:
+    return k8s.VolumeMount(name=name, mount_path=path, read_only=True)
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    reader = secret_copy.reader(chart, _NAMESPACE)
+    secret_copy.secret_copy(chart, _HAKU.secret, reader=reader)
+    secret_copy.secret_copy(chart, _CLAUDE.secret, reader=reader)
     k8s.KubeCronJob(
         chart,
         "cronjob",
@@ -71,12 +164,10 @@ def chart(app: App) -> Chart:
                             restart_policy="OnFailure",
                             volumes=[
                                 k8s.Volume(
-                                    name="rotations-config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP)
+                                    name="rotations-config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name)
                                 ),
-                                *(
-                                    k8s.Volume(name=volume, secret=k8s.SecretVolumeSource(secret_name=secret))
-                                    for volume, secret, _ in _SECRET_MOUNTS
-                                ),
+                                _secret_volume("github-pat", _GITHUB_PAT),
+                                *(_secret_volume(c.volume, c.secret) for c in _MINT_CREDENTIALS),
                             ],
                             security_context=k8s.PodSecurityContext(
                                 run_as_non_root=True,
@@ -87,16 +178,14 @@ def chart(app: App) -> Chart:
                                 k8s.Container(
                                     name="rotate",
                                     image=_IMAGE,
-                                    args=["--config", "/config/tokens.yaml"],
+                                    args=["--config", f"{_CONFIG_DIR}/{_CONFIG_FILE}"],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),
                                     volume_mounts=[
-                                        k8s.VolumeMount(name="rotations-config", mount_path="/config", read_only=True),
-                                        *(
-                                            k8s.VolumeMount(name=volume, mount_path=path, read_only=True)
-                                            for volume, _, path in _SECRET_MOUNTS
-                                        ),
+                                        _mount("rotations-config", _CONFIG_DIR),
+                                        _mount("github-pat", "/var/run/secrets/github-pat"),
+                                        *(_mount(c.volume, str(c.directory)) for c in _MINT_CREDENTIALS),
                                     ],
                                     resources=k8s.ResourceRequirements(
                                         requests={
@@ -116,5 +205,15 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+def forgejo_token_rotation(
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        directory,
+        retry_interval=None,
+        wait=None,
+        timeout="2m",
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
+    )

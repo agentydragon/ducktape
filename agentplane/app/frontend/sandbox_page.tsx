@@ -41,6 +41,7 @@ import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
 import { RawSwitch } from "./raw_switch";
 import { StaleNotice } from "./stream_status";
+import { TopbarTitle } from "./topbar";
 import { HarnessState, SessionSpecSchema, type SessionSummary } from "../../runner/protocol_pb";
 
 const HARNESSES: { value: Harness; label: string }[] = [
@@ -236,8 +237,15 @@ export function SandboxPage({
       setModel((current) =>
         current && offered.some((option) => option.model === current) ? current : (offered[0]?.model ?? null)
       );
+      const options = offered[0]?.reasoning_efforts ?? [];
+      setEffort((current) => (options.includes(current) ? current : (options[0] ?? "")));
     })();
   }, [harness]);
+
+  useEffect(() => {
+    const efforts = models.find((option) => option.model === model)?.reasoning_efforts ?? [];
+    if (!efforts.includes(effort)) setEffort(efforts[0] ?? "");
+  }, [effort, model, models]);
 
   useEffect(() => {
     const binding = sandbox?.binding;
@@ -318,13 +326,33 @@ export function SandboxPage({
 
   return (
     <Stack>
+      <TopbarTitle>
+        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+          <Title
+            order={1}
+            size="h4"
+            style={{
+              flex: "1 1 auto",
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {name}
+          </Title>
+          {sandbox && <Badge style={{ flexShrink: 0 }}>{sandbox.state}</Badge>}
+          {defaultsLabel && (
+            <Badge variant="light" style={{ flexShrink: 0 }}>
+              {defaultsLabel}
+            </Badge>
+          )}
+        </Group>
+      </TopbarTitle>
       <Group>
         <Button variant="subtle" onClick={onBack}>
           ← Sandboxes
         </Button>
-        <Title order={2}>{name}</Title>
-        {sandbox && <Badge>{sandbox.state}</Badge>}
-        {defaultsLabel && <Badge variant="light">{defaultsLabel}</Badge>}
         {sandbox && (
           <Group gap="xs" ml="auto" wrap="nowrap">
             <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
@@ -391,12 +419,14 @@ export function SandboxPage({
                 value={model}
                 onChange={setModel}
               />
-              <Select
-                label="Reasoning effort"
-                data={["low", "medium", "high"]}
-                value={effort}
-                onChange={(v) => v && setEffort(v)}
-              />
+              {(models.find((option) => option.model === model)?.reasoning_efforts ?? []).length > 0 && (
+                <Select
+                  label="Reasoning effort"
+                  data={models.find((option) => option.model === model)?.reasoning_efforts ?? []}
+                  value={effort}
+                  onChange={(v) => v && setEffort(v)}
+                />
+              )}
               <Button
                 onClick={() => void createSession()}
                 loading={creatingSession}
@@ -450,7 +480,14 @@ export function SandboxPage({
                               {thread.archived ? (
                                 <Menu.Item onClick={() => void threadAct(thread.id, "unarchive")}>Unarchive</Menu.Item>
                               ) : (
-                                <Menu.Item onClick={() => void threadAct(thread.id, "archive")}>Archive</Menu.Item>
+                                <Menu.Item
+                                  disabled={session.harnessState === HarnessState.RUNNING}
+                                  onClick={() => void threadAct(thread.id, "archive")}
+                                >
+                                  {session.harnessState === HarnessState.RUNNING
+                                    ? "Stop harness before archiving"
+                                    : "Archive"}
+                                </Menu.Item>
                               )}
                             </Menu.Dropdown>
                           </Menu>

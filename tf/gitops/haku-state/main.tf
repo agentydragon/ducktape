@@ -4,9 +4,13 @@
 # Provisions a private `haku/haku-state` repo owned by a dedicated `haku`
 # service user (full read/write on its own repo; scan runs commit+push items,
 # intake, steering, and log as this user), plus a read-only grant for the
-# `claude` agent account. A Kubernetes Secret in the `haku-sandbox` namespace
-# carries the git credentials, consumed by in-cluster scan runs. Mirrors
-# tf/gitops/augur-evidence. The repo starts empty (auto_init only) — no seed.
+# `claude` agent account. A Kubernetes Secret carries the git credentials,
+# consumed by in-cluster scan runs. Mirrors tf/gitops/augur-evidence. The repo
+# starts empty (auto_init only) — no seed.
+#
+# Every Kubernetes Secret here lands in the `forgejo` namespace. Each consumer
+# namespace copies its Secret in through ESO (cluster/cdk8s/forgejo/secret_copy.py);
+# the comment on each resource names the copy.
 #
 # It also owns a haku-owned in-cluster mirror `haku/ducktape` (a Forgejo pull-mirror)
 # so haku-ci's Bazel build can fetch ducktape source as a bzlmod git_override without
@@ -95,8 +99,8 @@ resource "forgejo_collaborator" "claude" {
   permission    = "read"
 }
 
-# Write credentials for the haku-state git consumers. Terraform owns one canonical
-# Secret in haku-sandbox; Reflector mirrors it into:
+# Write credentials for the haku-state git consumers, copied into haku-sandbox
+# (cluster/cdk8s/haku/workspaces.py). Reflector mirrors that copy into:
 #   - haku-egress-proxy: the isolated OpenClaw spike's iron-proxy substitutes
 #     the password into Forgejo Authorization headers; the agent sees only a
 #     placeholder.
@@ -105,21 +109,15 @@ resource "forgejo_collaborator" "claude" {
 #     constrained SA (cluster/generated/haku/workloads). Read-only pull — Flux never
 #     pushes; the haku user is just the only principal on the repo.
 #   - agentplane-index: the haku-state index worker keeps its own bare clone of the repo
-#     and fetches with these credentials (cluster/k8s/agentplane-index). Read-only pull.
+#     and fetches with these credentials (cluster/generated/agentplane-index). Read-only pull.
 # Agentplane staging reads only the password through ESO, with an exact-name source grant
 # in cluster/cdk8s/agentplane/egress_staging_credentials.py; it is not a Reflector target.
-# The canonical copy serves in-cluster scan runs / the self-hosted worker + the
+# The haku-sandbox copy serves in-cluster scan runs / the self-hosted worker + the
 # haku-ui backend (operator clicks/feedback → Forgejo writes).
-resource "kubernetes_secret" "haku_forgejo_git" {
+resource "kubernetes_secret" "haku_forgejo_git_source" {
   metadata {
     name      = "haku-forgejo-git"
-    namespace = "haku-sandbox"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-egress-proxy,flux-system,agentplane-index"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-egress-proxy,flux-system,agentplane-index"
-    }
+    namespace = "forgejo"
   }
 
   data = {
@@ -129,38 +127,20 @@ resource "kubernetes_secret" "haku_forgejo_git" {
   }
 }
 
-# Preserve the original singleton -> per-namespace migration, then collapse the
-# haku-sandbox instance back into one canonical Secret without rotating its data.
-# Reflector owns the target copies.
-moved {
-  from = kubernetes_secret.haku_state_git_write
-  to   = kubernetes_secret.haku_forgejo_git["haku-sandbox"]
-}
-
-moved {
-  from = kubernetes_secret.haku_forgejo_git["haku-sandbox"]
-  to   = kubernetes_secret.haku_forgejo_git
-}
-
 resource "random_password" "haku_console_agent_api" {
   length  = 48
   special = false
 }
 
 # Shared static-Agent bearer for the haku-ui backend / Haku worker -> haku-console MCP server.
-# It does NOT approve calls; approval stays in trusted console chrome. Terraform owns the
-# canonical copy beside Haku Console, and Reflector mirrors it into haku-sandbox and the
-# spike's destination-scoped substitution proxy namespace.
-resource "kubernetes_secret" "haku_console_agent_api" {
+# It does NOT approve calls; approval stays in trusted console chrome. Copied into
+# haku-console beside Haku Console (cluster/cdk8s/haku/charts.py), and Reflector mirrors
+# that copy into haku-sandbox and the spike's destination-scoped substitution proxy
+# namespace.
+resource "kubernetes_secret" "haku_console_agent_api_source" {
   metadata {
     name      = "haku-console-agent-api"
-    namespace = "haku-console"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-sandbox,haku-egress-proxy"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-sandbox,haku-egress-proxy"
-    }
+    namespace = "forgejo"
   }
 
   data = {
@@ -168,20 +148,14 @@ resource "kubernetes_secret" "haku_console_agent_api" {
   }
 }
 
-# Preserve the existing haku-console instance as the canonical Secret; Reflector
-# replaces the former Terraform-owned target copies.
-moved {
-  from = kubernetes_secret.haku_console_agent_api["haku-console"]
-  to   = kubernetes_secret.haku_console_agent_api
-}
-
-# Source credential for forgejo-token-rotation. The rotator uses Basic auth only
-# to mint full-account API tokens, then writes the distributed `tea` configs as
-# SOPS outputs in git.
-resource "kubernetes_secret" "haku_forgejo_token_mint" {
+# Source credential for forgejo-token-rotation, copied into agents-infra
+# (cluster/cdk8s/forgejo_token_rotation.py). The rotator uses Basic auth only to
+# mint full-account API tokens, then writes the distributed `tea` configs as SOPS
+# outputs in git.
+resource "kubernetes_secret" "haku_forgejo_token_mint_source" {
   metadata {
     name      = "forgejo-token-mint-haku"
-    namespace = "agents-infra"
+    namespace = "forgejo"
   }
 
   data = {
@@ -192,7 +166,8 @@ resource "kubernetes_secret" "haku_forgejo_token_mint" {
   }
 }
 
-# dockerconfigjson for the private git.allegedly.works/haku/ui package, in haku-sandbox:
+# dockerconfigjson for the private git.allegedly.works/haku/ui package, copied into
+# haku-sandbox (cluster/cdk8s/haku/workspaces.py):
 #   - the imagePullSecret Haku's UI Deployment uses to pull the image its Forgejo CI builds
 #     (kubelet pulls over HTTPS via the public host — node-level, not subject to the pod's
 #     mitmproxy egress), and
@@ -200,10 +175,10 @@ resource "kubernetes_secret" "haku_forgejo_token_mint" {
 #     automation is reconciled into haku-sandbox; see haku/state_template/k8s/haku-ui-image-automation).
 # The CI push credential is a repo Action secret (below), NOT this pull secret.
 # See cluster/cdk8s/haku_ci + haku/PLAN.md.
-resource "kubernetes_secret" "haku_forgejo_registry_pull" {
+resource "kubernetes_secret" "haku_forgejo_registry_pull_source" {
   metadata {
     name      = "haku-forgejo-registry-pull"
-    namespace = "haku-sandbox"
+    namespace = "forgejo"
   }
 
   type = "kubernetes.io/dockerconfigjson"
@@ -305,10 +280,10 @@ resource "terraform_data" "ducktape_mirror_secret_refresh" {
 # Registration token for the contained Forgejo Actions runner (cluster/cdk8s/haku_ci),
 # which builds Haku's UI image from haku-state. The svalabs/forgejo provider has no
 # runner-token resource, so fetch it from the repo's registration-token API as the
-# repo-owning haku user (owner ⇒ repo admin) and deliver it to the haku-ci namespace
-# as the Secret the runner registers with. GET returns the repo's *current* token
-# (it doesn't rotate on read), so repeated applies don't churn the Secret.
-# depends_on forces the read to apply-time, after the repo exists.
+# repo-owning haku user (owner ⇒ repo admin) and deliver it as the Secret the runner
+# registers with, copied into haku-ci (cluster/cdk8s/haku_ci/runner.py). GET returns
+# the repo's *current* token (it doesn't rotate on read), so repeated applies don't
+# churn the Secret. depends_on forces the read to apply-time, after the repo exists.
 data "http" "haku_ci_registration_token" {
   url    = "${var.forgejo_url}/api/v1/repos/${forgejo_user.haku.login}/${forgejo_repository.state.name}/actions/runners/registration-token"
   method = "GET"
@@ -319,12 +294,10 @@ data "http" "haku_ci_registration_token" {
   depends_on = [forgejo_repository.state]
 }
 
-# The haku-ci namespace is created by its own Flux kustomization (cluster/cdk8s/haku_ci);
-# this resource retries until it exists. Replaces the manual SOPS bootstrap token.
-resource "kubernetes_secret" "haku_ci_runner_token" {
+resource "kubernetes_secret" "haku_ci_runner_token_source" {
   metadata {
     name      = "haku-ci-runner-token"
-    namespace = "haku-ci"
+    namespace = "forgejo"
   }
 
   data = {
@@ -333,7 +306,8 @@ resource "kubernetes_secret" "haku_ci_runner_token" {
 }
 
 # Webhook token shared between the Forgejo package webhook and the Flux generic
-# Receiver `haku-ui-forgejo` (cluster/k8s/haku/ui-image-automation). The Receiver's
+# Receiver `haku-ui-forgejo`, which reads the copy in flux-system
+# (cluster/cdk8s/haku/ui_image_webhook.py). The Receiver's
 # webhook path is sha256(token + receiver-name + namespace), so the token must match
 # on both ends. Don't rotate after creation — the path would change and orphan the
 # Forgejo webhook URL.
@@ -342,10 +316,10 @@ resource "random_password" "forgejo_webhook_token" {
   special = false
 }
 
-resource "kubernetes_secret" "forgejo_webhook_token" {
+resource "kubernetes_secret" "forgejo_webhook_token_source" {
   metadata {
     name      = "forgejo-webhook-token"
-    namespace = "flux-system"
+    namespace = "forgejo"
   }
 
   data = {
@@ -392,5 +366,51 @@ resource "forgejo_repository_webhook" "haku_ui_image" {
   config = {
     content_type = "json"
     url          = "https://flux-webhook.allegedly.works/hook/${sha256(join("", [random_password.forgejo_webhook_token.result, "haku-ui-forgejo", "flux-system"]))}"
+  }
+}
+
+# The consumer namespaces' ExternalSecrets adopt the Secrets these addresses created
+# there.
+# CLEANUP(added 2026-09-28): Remove once the haku_state state has forgotten all six
+# addresses. Never destroy the ESO-owned Secrets.
+removed {
+  from = kubernetes_secret.haku_forgejo_git
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = kubernetes_secret.haku_console_agent_api
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = kubernetes_secret.haku_forgejo_token_mint
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = kubernetes_secret.haku_forgejo_registry_pull
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = kubernetes_secret.haku_ci_runner_token
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = kubernetes_secret.forgejo_webhook_token
+  lifecycle {
+    destroy = false
   }
 }

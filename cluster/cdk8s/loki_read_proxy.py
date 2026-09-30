@@ -1,10 +1,9 @@
-"""The Loki read proxy (cluster/k8s/agents/loki-read-proxy): a read-only,
-namespace-filtering Loki query proxy for agents, its Service, pull credentials and the
-CiliumNetworkPolicy that is the whole access control for anonymous requests. The proxy's
-source and image build live in //cluster/proxies/loki_read_proxy.
+"""The Loki read proxy: a read-only, namespace-filtering Loki query proxy for agents, its
+Service, pull credentials and the CiliumNetworkPolicy that is the whole access control for
+anonymous requests. The proxy's source and image build live in //cluster/proxies/loki_read_proxy.
 
-The image tag is the placeholder "unset"; the hand-written `image-pins/kustomization.yaml`
-beside the output overrides it via Flux's image-automation marker.
+The image tag is the placeholder "unset"; the hand-written `PINS_DIR` Component, which the
+directory includes across the roots, overrides it via Flux's image-automation marker.
 """
 
 from __future__ import annotations
@@ -15,15 +14,21 @@ from cdk8s_plus_34 import k8s
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "loki-read-proxy"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/loki-read-proxy"
-_LABELS = {"app.kubernetes.io/name": NAME}
+OUTPUT_DIR = f"{GENERATED_ROOT}/agents/loki-read-proxy"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/loki-read-proxy-image-pins"
 _IMAGE = "git.allegedly.works/ducktape-ci/loki-read-proxy:unset"
-_PORT = 8080
+SERVICE = ServiceRef(
+    name=NAME,
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=NAME, labels=(("app.kubernetes.io/name", NAME),)),
+    target_port=8080,
+)
 
 # Namespaces an *anonymous* request may query. A request carrying a Kubernetes bearer token
 # ignores this list: its namespaces are authorized by the token's RBAC instead.
@@ -72,7 +77,7 @@ NAMESPACE_ALLOWLIST = (
 
 def _healthz(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
     return k8s.Probe(
-        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string("http")),
+        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(SERVICE.port.name)),
         initial_delay_seconds=initial_delay_seconds,
         period_seconds=period_seconds,
     )
@@ -85,7 +90,7 @@ def _deployment(chart: Chart) -> None:
         metadata=k8s.ObjectMeta(
             name=NAME,
             namespace=NAME,
-            labels=_LABELS,
+            labels=SERVICE.pods.selector,
             annotations={
                 "description": (
                     "Read-only namespace-filtering Loki query proxy for agents. Exposes only GET"
@@ -99,9 +104,9 @@ def _deployment(chart: Chart) -> None:
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     automount_service_account_token=False,
@@ -120,7 +125,11 @@ def _deployment(chart: Chart) -> None:
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
-                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            ports=[
+                                k8s.ContainerPort(
+                                    name=SERVICE.port.name, container_port=SERVICE.pod_port, protocol="TCP"
+                                )
+                            ],
                             env=[
                                 k8s.EnvVar(name="NAMESPACE_ALLOWLIST", value=",".join(NAMESPACE_ALLOWLIST)),
                                 # Points at loki-read directly, bypassing loki-gateway's nginx —
@@ -170,11 +179,16 @@ def chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAME, labels=SERVICE.labels),
         spec=k8s.ServiceSpec(
-            selector=_LABELS,
+            selector=SERVICE.pods.selector,
             ports=[
-                k8s.ServicePort(name="http", port=80, target_port=k8s.IntOrString.from_string("http"), protocol="TCP")
+                k8s.ServicePort(
+                    name=SERVICE.port.name,
+                    port=SERVICE.port.number,
+                    target_port=k8s.IntOrString.from_number(SERVICE.pod_port),
+                    protocol="TCP",
+                )
             ],
             type="ClusterIP",
         ),
@@ -197,9 +211,11 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        endpoint_selector=_LABELS,
+        endpoint_selector=SERVICE.pods.selector,
         # Haku agent sandboxes → proxy (namespace-filtered log reads)
-        ingress=[IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "haku-sandbox"}, ports=[_PORT])],
+        ingress=[
+            IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "haku-sandbox"}, ports=[SERVICE.pod_port])
+        ],
         egress=[
             # kube-dns (resolve loki-read.loki.svc)
             cilium.dns_egress(),

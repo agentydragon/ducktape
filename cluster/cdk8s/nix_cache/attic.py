@@ -1,5 +1,5 @@
 """The Attic Nix binary cache (`cache.allegedly.works`): the server and its Postgres, its
-SeaweedFS bucket and credentials, the cache bootstrap Job, and the hourly JWT rotation.
+SeaweedFS `PrivateBucket`, the cache bootstrap Job, and the hourly JWT rotation.
 
 Hand-written beside the output: `server.toml` and `rotators.yaml` (the directory's
 `kustomization.yaml` generates ConfigMaps from them), the SOPS Secrets, and
@@ -21,23 +21,26 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cnpg, external_creds, forgejo_images, namespaces, node_scheduling
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "attic"
 NAMESPACE = "nix-cache"
+HOSTNAME = "cache.allegedly.works"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/nix-cache"
-_PORT = 8080
-_SELECTOR = {"app.kubernetes.io/name": NAME}
-_DB = "attic-db"
-# The operator mints the S3 key pair straight into this namespace (`_storage` below).
-_S3_SECRET = "attic-s3-credentials"
-_GITHUB_PAT_SECRET = "github-secrets-sync-pat"
+SERVICE = ServiceRef(
+    name=NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+)
+DATABASE = cnpg.PostgresRef.generated(name="attic-db", namespace=NAMESPACE)
+_GITHUB_PAT = SecretRef(namespace=NAMESPACE, name="github-secrets-sync-pat")
 _ROTATOR = "attic-jwt-rotator"
 # Placeholder tag; image-pins/kustomization.yaml sets the real one.
 _ROTATOR_IMAGE = "git.allegedly.works/ducktape-ci/attic-jwt-rotation:unset"
@@ -50,46 +53,39 @@ def _database(scope: Construct) -> None:
     cnpg.cluster(
         scope,
         "db",
-        name=_DB,
-        namespace=NAMESPACE,
+        ref=DATABASE,
         image_name=None,
-        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        placement=node_scheduling.HIL_OVH,
         storage_class="local-path-ovh",
         size="2Gi",
-        # CNPG generates the credentials in Secret attic-db-app.
         initdb=cnpg.same_owner_initdb("attic"),
+        wal_archive=False,
     )
 
 
-def _storage(scope: Construct) -> None:
-    # attic's NAR chunks. Replication is per-volume (the SeaweedFS cluster's
-    # defaultReplication), so the bucket is backed by replicated storage.
-    bucket = s3.Bucket(
+def _storage(scope: Construct) -> s3.PrivateBucket:
+    return s3.PrivateBucket(
         scope,
-        "bucket",
+        "storage",
         name=NAME,
-        namespace=NAMESPACE,
+        tenant=NAMESPACE,
         adopt_existing=True,
-        # Unset: the CRD defaults to Retain.
-        reclaim_policy=None,
-        grant_name=NAMESPACE,
+        description="attic's NAR chunks; replicated per volume by the SeaweedFS cluster's defaultReplication.",
     )
-    identity = s3.Identity(scope, "identity", name=NAME)
-    bucket.grant_read_write(identity)
-    identity.credentials(namespace=NAMESPACE, secret=_S3_SECRET, key_fields=s3.AWS_ENV_KEY_FIELDS)
 
 
-def _server(scope: Construct) -> None:
+def _server(scope: Construct, *, storage: s3.PrivateBucket) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         spec=k8s.DeploymentSpec(
             replicas=1,
-            selector=k8s.LabelSelector(match_labels=_SELECTOR),
+            selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_SELECTOR),
+                metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     # Co-located with SeaweedFS and attic-db on OVH kimsufi workers.
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     # Stateless S3-backed service; allow control-plane nodes as overflow capacity.
@@ -109,27 +105,31 @@ def _server(scope: Construct) -> None:
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
                             env=[
-                                secret_env_var("ATTIC_SERVER_DATABASE_URL", f"{_DB}-app", "uri"),
-                                secret_env_var(
-                                    "ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64", "attic-jwt-token", "jwt-token"
-                                ),
-                                secret_env_var("AWS_ACCESS_KEY_ID", _S3_SECRET, "AWS_ACCESS_KEY_ID"),
-                                secret_env_var("AWS_SECRET_ACCESS_KEY", _S3_SECRET, "AWS_SECRET_ACCESS_KEY"),
+                                DATABASE.app_secret.key("uri").env_var("ATTIC_SERVER_DATABASE_URL"),
+                                SecretRef(namespace=NAMESPACE, name="attic-jwt-token")
+                                .key("jwt-token")
+                                .env_var("ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64"),
+                                storage.access_key.env_var("AWS_ACCESS_KEY_ID"),
+                                storage.secret_key.env_var("AWS_SECRET_ACCESS_KEY"),
                             ],
                             args=["-f", "/config/server.toml", "--mode", "monolithic"],
-                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            ports=[SERVICE.port.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/config", read_only=True),
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                             ],
                             liveness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("http")),
+                                http_get=k8s.HttpGetAction(
+                                    path="/", port=k8s.IntOrString.from_string(SERVICE.port.name)
+                                ),
                                 initial_delay_seconds=10,
                                 period_seconds=30,
                                 timeout_seconds=5,
                             ),
                             readiness_probe=k8s.Probe(
-                                http_get=k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string("http")),
+                                http_get=k8s.HttpGetAction(
+                                    path="/", port=k8s.IntOrString.from_string(SERVICE.port.name)
+                                ),
                                 initial_delay_seconds=5,
                                 period_seconds=10,
                                 timeout_seconds=3,
@@ -147,24 +147,15 @@ def _server(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            ports=[
-                k8s.ServicePort(
-                    port=_PORT, target_port=k8s.IntOrString.from_string("http"), protocol="TCP", name="http"
-                )
-            ],
-            selector=_SELECTOR,
-        ),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.port.k8s_service_port()], selector=SERVICE.pods.selector),
     )
     https_route(
         scope,
         "route",
         metadata=ApiObjectMetadata(name=NAMESPACE, namespace=NAMESPACE),
-        hostnames=["cache.allegedly.works"],
-        backend=NAME,
-        port=_PORT,
+        hostnames=[HOSTNAME],
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )
@@ -179,7 +170,7 @@ def _rotation(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "github-pat",
-        metadata=ApiObjectMetadata(name=_GITHUB_PAT_SECRET, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=_GITHUB_PAT.name, namespace=NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
         data=[remote_data("github-agentydragon-2", "token")],
@@ -253,6 +244,8 @@ def _rotation(scope: Construct) -> None:
                     template=k8s.PodTemplateSpec(
                         spec=k8s.PodSpec(
                             service_account_name=_ROTATOR,
+                            # The rotator runs `kubectl exec deploy/attic` with this token.
+                            automount_service_account_token=True,
                             restart_policy="OnFailure",
                             volumes=[
                                 k8s.Volume(
@@ -270,7 +263,7 @@ def _rotation(scope: Construct) -> None:
                                     name="rotate",
                                     image=_ROTATOR_IMAGE,
                                     args=["rotate", "--config", "/config/rotators.yaml"],
-                                    env=[secret_env_var("GIT_TOKEN", _GITHUB_PAT_SECRET, "token")],
+                                    env=[_GITHUB_PAT.key("token").env_var("GIT_TOKEN")],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),
@@ -316,6 +309,7 @@ def _rotation(scope: Construct) -> None:
                     # atticadm against deploy/attic. The bootstrap subcommand doesn't touch SOPS
                     # or git, so it doesn't need the rotator's GitHub PAT.
                     service_account_name=_ROTATOR,
+                    automount_service_account_token=True,
                     # Keep the registry credential explicit on the Pod. The Secret is reflected
                     # into nix-cache; this avoids relying on ServiceAccount admission timing for
                     # the image pull.
@@ -366,8 +360,7 @@ def chart(app: App) -> Chart:
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.METADATA)
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _database(chart)
-    _storage(chart)
-    _server(chart)
+    _server(chart, storage=_storage(chart))
     _rotation(chart)
     return chart
 

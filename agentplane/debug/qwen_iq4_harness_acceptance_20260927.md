@@ -100,7 +100,7 @@ It lives in `agentplane-midturn/` under the existing IQ4 SSD directory. Live
 `/api/show` returned the checked-in Jinja template with SHA256
 `ee4884b3b976b3d31b47e33420fdb29a324f12058a4436178690044e43eab96b`
 (excluding the final newline), and `num_ctx` 131072 / 262144 for the two aliases.
-The [canonical derivation command](../../cluster/k8s/ollama/README.md)
+The [canonical derivation command](../../cluster/cdk8s/ollama/README.md)
 was also rerun idempotently in
 [invocation 3d43c031](https://app.buildbuddy.io/invocation/3d43c031-cee0-4f5d-8a35-467ead87b171).
 
@@ -144,7 +144,7 @@ The completed Job has no TTL, preventing Flux from recreating it daily.
 The serving SSD mount remains read-only.
 
 The durable handoff procedure is in the
-[Ollama README](../../cluster/k8s/ollama/README.md). Changes:
+[Ollama README](../../cluster/cdk8s/ollama/README.md). Changes:
 [Reloader exclusion](https://github.com/agentydragon/ducktape/pull/8270),
 [temporary pause](https://github.com/agentydragon/ducktape/pull/8273),
 [serving restoration and Job retention](https://github.com/agentydragon/ducktape/pull/8275).

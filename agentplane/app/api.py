@@ -23,7 +23,13 @@ from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
-from agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
+from agentplane.action_service.models import (
+    ActionEventView,
+    ActionHistoryPage,
+    ActionRequestView,
+    ActionState,
+    DecisionInput,
+)
 from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
@@ -80,6 +86,7 @@ from agentplane.app.oidc import OIDCSettings, build_oauth
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
 from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
+from agentplane.runner import protocol_pb2
 from agentplane.runner.client import OpenTimeoutError, RunnerError
 from agentplane.subjects import ServiceAccountRef
 
@@ -100,6 +107,9 @@ class ModelOption(BaseModel):
 
     model: str = Field(description="The route name a session opens with; opaque to the operator.")
     display_name: str = Field(description='Short human name for the session form, e.g. "Sonnet 5".')
+    reasoning_efforts: list[str] = Field(
+        description="Reasoning effort values supported by this model; empty means unsupported."
+    )
 
 
 class ModelCatalog(BaseModel):
@@ -121,6 +131,9 @@ class ModelCatalog(BaseModel):
         if len(ids) != len(set(ids)):
             raise ValueError(f"ModelCatalog.models has duplicate model ids: {ids}")
         known = set(ids)
+        for option in self.models:
+            if len(option.reasoning_efforts) != len(set(option.reasoning_efforts)):
+                raise ValueError(f"Model {option.model!r} has duplicate reasoning efforts")
         for harness, referenced in self.harnesses.items():
             if unknown := [model for model in referenced if model not in known]:
                 raise ValueError(f"{harness} references models outside ModelCatalog.models: {unknown}")
@@ -448,6 +461,13 @@ async def unbind_connection(connection_id: UUID, body: ConnectionVersion, client
     return await client.unbind_connection(connection_id, body)
 
 
+@actions_router.get("/history")
+async def action_history(
+    client: OperatorActions, limit: Annotated[int, Query(ge=1, le=100)] = 50, cursor: str | None = None
+) -> ActionHistoryPage:
+    return await client.history(limit=limit, cursor=cursor)
+
+
 @actions_router.get("")
 async def list_actions(
     client: OperatorActions,
@@ -466,17 +486,25 @@ def _operator_sessions(request: Request) -> OperatorSessionStore:
 OperatorSessions = Annotated[OperatorSessionStore, Depends(_operator_sessions)]
 
 
-async def _action_chunks(client: OperatorActions) -> AsyncIterator[AsyncIterator[bytes]]:
+async def _action_chunks(
+    client: OperatorActions, state: Annotated[ActionState | None, Query()] = None
+) -> AsyncIterator[AsyncIterator[bytes]]:
     async with AsyncExitStack() as stack:
         try:
             async with asyncio.timeout(30):
-                chunks = await stack.enter_async_context(client.stream_requests())
+                upstream = client.stream_requests(state=state) if state else client.stream_requests()
+                chunks = await stack.enter_async_context(upstream)
         except TimeoutError as error:
             raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "Action stream startup timed out") from error
-        yield _without_repeated_snapshots(_renewed(client, chunks))
+        renewed = _renewed(client, chunks, state=state)
+        # A filtered snapshot is small and also the resync signal on reconnect. Do not suppress
+        # it when it happens to be identical: history may have changed while we were offline.
+        yield renewed if state else _without_repeated_snapshots(renewed)
 
 
-async def _renewed(client: OperatorActionServiceClient, opened: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+async def _renewed(
+    client: OperatorActionServiceClient, opened: AsyncIterator[bytes], *, state: ActionState | None = None
+) -> AsyncIterator[bytes]:
     """`opened`, then the upstream opened again under a freshly exchanged token each time one ends, as
     one does when the minute-long token it was opened with expires. One that ends before its first
     chunk refused the token at the door; it is not opened again, so a refusal cannot loop."""
@@ -489,7 +517,7 @@ async def _renewed(client: OperatorActionServiceClient, opened: AsyncIterator[by
                 yield chunk
         if not delivered:
             return
-        upstream = client.stream_requests()
+        upstream = client.stream_requests(state=state) if state else client.stream_requests()
 
 
 async def _without_repeated_snapshots(chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
@@ -668,6 +696,18 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
     return view
 
 
+@threads.post("/{thread_id}/resume")
+async def resume_thread(store: Store, bridge: runner_bridge.Bridge, thread_id: UUID) -> dict[str, object]:
+    thread = await store.get_thread(thread_id)
+    if thread is None:
+        raise ThreadNotFoundError(thread_id)
+    if thread.archived:
+        raise HTTPException(status.HTTP_409_CONFLICT, "an archived Thread cannot be resumed")
+    return MessageToDict(
+        await bridge.resume_thread(thread_id, expected_harness=thread.harness.value, expected_cwd=thread.cwd)
+    )
+
+
 @threads.post("/{thread_id}/commands/reconcile")
 async def reconcile_commands(
     content: Content, thread_id: UUID, body: CommandReconciliationRequest
@@ -691,7 +731,23 @@ async def rename_thread(store: Store, thread_id: UUID, body: ThreadRename) -> Th
 
 
 @threads.post("/{thread_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
-async def archive_thread(store: Store, thread_id: UUID) -> Response:
+async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: Inventory, thread_id: UUID) -> Response:
+    thread = await store.get_thread(thread_id)
+    if thread is None:
+        raise ThreadNotFoundError(thread_id)
+    try:
+        sandbox = await inventory.get(thread.sandbox)
+    except SandboxNotFoundError:
+        # A deleted Sandbox has no running harness to keep visible.
+        pass
+    else:
+        if sandbox.state == "running":
+            sessions = await bridge.list_sessions(thread.sandbox)
+            if any(
+                session.session_id == thread.session_id and session.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
+                for session in sessions
+            ):
+                raise HTTPException(status.HTTP_409_CONFLICT, "stop the harness before archiving this thread")
     await store.archive(thread_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -899,6 +955,12 @@ def create_app(
     for name, preset in configured_presets.threads.items():
         if preset.model not in catalog.harnesses[preset.harness]:
             raise ValueError(f"ThreadPreset {name!r} names model {preset.model!r} outside the configured catalog")
+        option = next(option for option in catalog.models if option.model == preset.model)
+        if preset.reasoning_effort is not None and preset.reasoning_effort not in option.reasoning_efforts:
+            raise ValueError(
+                f"ThreadPreset {name!r} reasoning effort {preset.reasoning_effort!r} "
+                f"is not supported by {preset.model!r}"
+            )
     app = FastAPI(title="Agentplane", version="0")
     app.state.inventory = inventory
     app.state.bridge = bridge

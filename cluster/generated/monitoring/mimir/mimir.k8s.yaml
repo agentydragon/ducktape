@@ -2,11 +2,12 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: mimir
-  namespace: seaweedfs
+  namespace: monitoring
 spec:
   reclaimPolicy: Retain
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
@@ -29,24 +30,6 @@ spec:
     namespace: seaweedfs
   name: mimir-blocks
   reclaimPolicy: Retain
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: mimir
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: monitoring
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: monitoring
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket

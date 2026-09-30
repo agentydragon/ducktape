@@ -39,34 +39,27 @@ bazel build //path/to:debundle \
   --@ducktape//devinfra/js/debundle:debundler=@my_debundle_bin//file
 ```
 
-The rule declares `@ducktape//devinfra/js/debundle:ortools_cpsat_solver` as an
-action tool and passes its execroot path to the debundler. The materializer uses
-that OR-Tools CP-SAT sidecar for global selector assignment. Consumers can
-override the solver tool with the matching label flag when needed.
+## Solver build
+
+The debundler links OR-Tools' CP-SAT for selector assignment, so its binary is
+the action's only tool. The solver library, `//devinfra/js/debundle:ortools_cp_solver`,
+is always built with `--compilation_mode=opt`: `optimized_cc_library.bzl` applies
+a configuration transition to it and its whole dependency subtree (OR-Tools,
+protobuf, Abseil), because `NDEBUG`-dependent inline code must not mix across the
+libraries of one binary. Every consumer links it through that target, in
+whatever mode it builds; linking `@or-tools//ortools/sat/c_api:cp_solver_c`
+directly gives a debug-mode solver, which logs `CP-SAT is running in debug mode`.
+<selector_resolution.md> § The solver has the rest.
+
+Deviation: a consumer that replaces `debundler` runs that binary's own solver.
 
 ## Profiling
 
-`debundle_pipeline` creates the normal pipeline target plus local profiling
-sibling targets that reuse the exact same action command, inputs, package
-roots, working directory, and debundler binary. For `name = "debundle"`:
-
-- `:debundle`
-- `:debundle_profile_time`
-- `:debundle_profile_perf`
-- `:debundle_profile_massif_heap`
-- `:debundle_profile_heaptrack`
-
-Profile actions are tagged `manual` and use local/no-remote/no-cache/no-sandbox
-execution requirements. Build them with full output downloads when remote
-execution is configured:
-
-```sh
-bazel build //path/to:debundle_profile_perf --remote_download_outputs=all
-```
-
-The standalone `perf_wrapper.sh` helper post-processes `perf` output for
-ad-hoc local runs; its header lists the report files it writes and the `PERF_*`
-knobs:
+`debundle_pipeline` has no profiling targets: `perf` needs the host kernel and
+massif/heaptrack need their own binaries on `PATH`, so sandboxed profile actions
+produced empty or misleading output. Run an `-c opt` debundler binary under
+`perf_wrapper.sh` directly. It writes the reports next to a rerunnable command
+stub; its header lists the report files and the `PERF_*` knobs:
 
 ```sh
 PERF_RECORD_FREQ=49 \

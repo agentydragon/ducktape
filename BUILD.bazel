@@ -7,7 +7,7 @@
 # Deliberately unbazelized trees: one-off scripts, investigations, doc-run
 # artifacts, host configs. Pull a tree out of this list to bazelize it.
 # gazelle:exclude cluster/docs/inference
-# gazelle:exclude cluster/k8s/parked
+# gazelle:exclude cluster/parked
 # gazelle:exclude devinfra/debug/agent_fleet
 # gazelle:exclude debug/atlas
 # gazelle:exclude debug/kernel_6_18_amd_kvm_stall

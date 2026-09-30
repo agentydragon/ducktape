@@ -21,6 +21,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
     check_egress_bindings_resolve_policies,
@@ -115,7 +116,7 @@ def test_image_policy_markers_resolve(cluster: ParsedCluster, k8s_dir: Path) -> 
 
 
 def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
-    cluster: ParsedCluster, k8s_dir: Path
+    cluster: ParsedCluster, k8s_dir: Path, generated_dir: Path
 ) -> None:
     """A Namespace opt-in for Kubernetes pod logs must also permit its Loki logs.
 
@@ -125,7 +126,7 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
     """
     deployment = one(
         obj
-        for obj in yaml.safe_load_all((k8s_dir / "agents/loki-read-proxy/loki-read-proxy.k8s.yaml").read_text())
+        for obj in yaml.safe_load_all((generated_dir / "agents/loki-read-proxy/loki-read-proxy.k8s.yaml").read_text())
         if obj["kind"] == "Deployment"
     )
     container = next(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "proxy")
@@ -199,29 +200,27 @@ def test_flux_kustomizations_chart_is_root_wired(cluster: ParsedCluster, k8s_dir
 
 
 def test_flux_kustomizations_under_parked_path_are_annotated(k8s_dir: Path) -> None:
-    """A local Flux source path under cluster/k8s/parked must carry the parked annotation."""
+    """A Flux Kustomization whose path is under the parked tree must carry the parked annotation."""
     errors = []
     chart = k8s_dir / "flux/kustomizations.k8s.yaml"
     for name, spec in parse_flux_kustomizations(chart).items():
-        flux_path = Path(spec.path.removeprefix("./"))
-        under_parked = flux_path.parts[:3] == ("cluster", "k8s", "parked")
-        if under_parked and not spec.parked:
+        if Path(spec.path.removeprefix("./")).is_relative_to(PARKED_ROOT) and not spec.parked:
             errors.append(
                 f"{name} ({spec.path}): ducktape.org/parked annotation={spec.parked}, "
-                "but its source path is under cluster/k8s/parked/"
+                f"but its source path is under {PARKED_ROOT}/"
             )
     assert not errors, "\n".join(errors)
 
 
 def test_goldilocks_namespace_labels(cluster: ParsedCluster) -> None:
-    """Namespaces with goldilocks vpa-update-mode must also have goldilocks enabled."""
+    """A namespace with a goldilocks vpa-update-mode is not opted out of goldilocks."""
     errors = check_goldilocks_namespace_labels(cluster)
     assert not errors, "\n".join(errors)
 
 
-def test_goldilocks_explicit_decision(cluster: ParsedCluster) -> None:
-    """Namespaces with workloads must explicitly set goldilocks enabled label."""
-    errors = check_goldilocks_explicit_decision(cluster)
+def test_goldilocks_explicit_decision(cluster: ParsedCluster, repo_root: Path) -> None:
+    """Every generated Namespace labels its goldilocks decision."""
+    errors = check_goldilocks_explicit_decision(cluster, repo_root)
     assert not errors, "\n".join(errors)
 
 

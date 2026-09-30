@@ -11,12 +11,12 @@ for it.
 ## Model
 
 Two namespaced Kubernetes resources in `agentplane.allegedly.works/v1alpha1`
-(`cluster/k8s/agentplane-crds/`), watched by the Action Service, plus ordinary ServiceAccounts as
+(`agentplane/crds/`), watched by the Action Service, plus ordinary ServiceAccounts as
 the external-caller principal.
 
 | Kind                  | Spec                                                                           |
 | --------------------- | ------------------------------------------------------------------------------ |
-| `ActionPolicySet`     | `autoApproveIf`, `autoDenyIf`, `autoDenyUnless`: lists of typed policies       |
+| `ActionPolicySet`     | `autoApproveIf`: a list of typed policies                                      |
 | `ActionPolicyBinding` | `subject` (`{namespace, name}` of a ServiceAccount), `policySets`, `expiresAt` |
 
 **Every caller is a Kubernetes ServiceAccount.** One principal then carries native permissions
@@ -35,9 +35,9 @@ new kind, never a DSL. Kinds that consult state outside the arguments arrive wit
 need them, as `github_public_repository` did with its live visibility lookup.
 
 **A policy set is the shared unit** and the only thing a subject references; a one-off grant is a
-small set of its own. `autoApproveIf` auto-approves a matching request, `autoDenyIf` auto-denies
-one, `autoDenyUnless` auto-denies a request matching none of its policies; deny wins over approve,
-and a request matching nothing takes the human path. Only `autoApproveIf` decides today.
+small set of its own. `autoApproveIf` auto-approves a matching request; a request matching nothing
+takes the human path. A set has no deny form -- see [Rejected](#rejected) and the `DENY_LISTS` entry
+in [`plans/task_dag.md`](../plans/task_dag.md).
 
 **A binding joins one subject to sets, by reference only.** A subject may have many bindings; the
 effective policy is the union of the unexpired bindings' sets. `expiresAt` makes an expired binding
@@ -89,7 +89,7 @@ would need its own state, so that `decision_pending` keeps meaning a human is be
 Staging's Git-owned half is the `github-reads` `ActionPolicySet`, the `claude-ai`
 `ServiceAccount`, and the `claude-ai-github-reads` `ActionPolicyBinding`, defined in
 `cluster/cdk8s/agentplane/actions_staging_policies.py` and generated into
-`cluster/k8s/agentplane-staging/agentplane.k8s.yaml`. The runtime half,
+`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`. The runtime half,
 for a Sandbox `coder-7f3a` launched from a preset naming `github-reads`:
 
 ```yaml
@@ -141,6 +141,19 @@ binding revision they used.
 - **Preset language on the binding** (a `<sandbox>-<preset>` name or a preset field). The service
   would then hold something only the app defines and nothing reads; the binding carries only the
   app's managed-by label, and the preset stays on the Sandbox's own annotation.
+- **`autoDenyIf` and `autoDenyUnless` as accepted-but-unevaluated fields.** A set once carried two
+  more lists that `autoApproveIf` shared its schema anchor with, were parsed and validated, were
+  reported to callers and to the Sandbox page, and decided nothing. `Ready=True` said the spec
+  parsed, so a deny-only set was indistinguishable in `kubectl get` from a fence, and
+  `get_action_policy` told an agent its denials were real when nothing enforced them -- the one
+  surface where a reader is guaranteed not to double-check, and the opposite of the guarantee this
+  page makes, that what the view reports and what a Decision decides cannot drift. An inert control
+  is worse than an absent one, so the fields are gone; `v1alpha1` makes each cheap to add back when
+  an evaluator exists to make it true. What a re-add has to settle first is in the `DENY_LISTS`
+  entry of [`plans/task_dag.md`](../plans/task_dag.md): whether a deny belongs on the set at all,
+  since a set is the _shared_ unit and a deny is per-subject, and the two cases that look like a
+  deny -- hiding a tool the operator will never approve, and refusing what the caller's own
+  identity already covers -- are a catalog question and a caller-side one rather than policy kinds.
 - **Re-evaluating policy at dispatch.** An approval a later object edit could withdraw is a
   different contract from a human approval; dispatch re-checks caller authority only.
 - **Persisting the request before evaluation and deciding in a second transaction.** The request

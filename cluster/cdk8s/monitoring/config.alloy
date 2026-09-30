@@ -1,0 +1,276 @@
+// --- Metrics scraping (replaces Prometheus) ---
+
+// Discover and scrape all ServiceMonitor targets cluster-wide.
+prometheus.operator.servicemonitors "cluster" {
+  kubernetes_role = "endpointslice"
+
+  // kube-prometheus-stack ServiceMonitors use Secret-backed authorization or no
+  // authentication. Alloy rejects any ServiceMonitor referencing a local file --
+  // `bearerTokenFile` or `tlsConfig.{ca,cert,key}File` -- and local file access is
+  // intentionally disabled here.
+  //
+  // A rejected ServiceMonitor produces no scrape config at all, so there is no
+  // `up` series to fall to 0 and TargetDown cannot fire: the only trace is one
+  // error line in Alloy's own log. That is how the entire control-plane and
+  // cAdvisor surface (`container_cpu_usage_seconds_total`, `kubelet_*`,
+  // `apiserver_request_*`, `coredns_*`) went missing while every rule built on
+  // it kept evaluating against no data.
+  //
+  // ServiceMonitors arrive only through Flux. Authenticated targets must use
+  // Secret-backed credentials; unauthenticated targets must clear auth fields.
+
+  scrape {
+    default_scrape_interval = "60s"
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+// Discover and scrape all PodMonitor targets cluster-wide.
+prometheus.operator.podmonitors "cluster" {
+  scrape {
+    default_scrape_interval = "60s"
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+// Push scraped metrics to Mimir.
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = sys.env("MIMIR_PUSH_URL")
+  }
+}
+
+// --- Control-plane and kubelet scraping ---
+
+// kube-prometheus-stack's API-server and kubelet ServiceMonitors are disabled in
+// ../stack/helmrelease.yaml because Alloy scrapes those surfaces natively below.
+// The chart-managed controller-manager and scheduler monitors use the
+// Alloy-owned Secret, while CoreDNS is chart-managed without authentication.
+//
+// `job` and `metrics_path` are load-bearing, not cosmetic: the deployed
+// kubernetes-mixin rules select on job="kubelet" (35 rules), job="apiserver"
+// (90), metrics_path="/metrics" (27) and metrics_path="/metrics/cadvisor" (8).
+// Prometheus attaches `job` and `instance` on its own but NOT `metrics_path` --
+// prometheus-operator adds it when it renders a ServiceMonitor -- so every
+// scrape below sets it explicitly. Omit it and the rules go back to evaluating
+// against no data, with nothing logged.
+
+discovery.kubernetes "nodes" {
+  role = "node"
+}
+
+// One relabel per kubelet path: the `metrics_path` label has to be a literal,
+// and it is what separates cAdvisor series from kubelet's own on a shared job.
+discovery.relabel "kubelet_metrics" {
+  targets = discovery.kubernetes.nodes.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_node_name"]
+    target_label  = "node"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics"
+  }
+}
+
+discovery.relabel "kubelet_cadvisor" {
+  targets = discovery.kubernetes.nodes.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_node_name"]
+    target_label  = "node"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics/cadvisor"
+  }
+}
+
+discovery.relabel "kubelet_probes" {
+  targets = discovery.kubernetes.nodes.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_node_name"]
+    target_label  = "node"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics/probes"
+  }
+}
+
+// insecure_skip_verify mirrors the chart's own kubelet ServiceMonitor: the
+// kubelet serving certificate is node-local and not signed by the cluster CA.
+prometheus.scrape "kubelet_metrics" {
+  targets           = discovery.relabel.kubelet_metrics.output
+  job_name          = "kubelet"
+  scheme            = "https"
+  metrics_path      = "/metrics"
+  honor_labels      = true
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.scrape "kubelet_cadvisor" {
+  targets           = discovery.relabel.kubelet_cadvisor.output
+  job_name          = "kubelet"
+  scheme            = "https"
+  metrics_path      = "/metrics/cadvisor"
+  honor_labels      = true
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.scrape "kubelet_probes" {
+  targets           = discovery.relabel.kubelet_probes.output
+  job_name          = "kubelet"
+  scheme            = "https"
+  metrics_path      = "/metrics/probes"
+  honor_labels      = true
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+// The apiserver is reached through the `kubernetes` Service in `default`, whose
+// certificate the cluster CA does sign -- so this one verifies properly rather
+// than skipping.
+discovery.kubernetes "apiserver" {
+  role = "endpoints"
+
+  namespaces {
+    names = ["default"]
+  }
+}
+
+discovery.relabel "apiserver" {
+  targets = discovery.kubernetes.apiserver.targets
+
+  rule {
+    source_labels = [
+      "__meta_kubernetes_service_label_component",
+      "__meta_kubernetes_service_label_provider",
+      "__meta_kubernetes_endpoint_port_name",
+    ]
+    regex  = "apiserver;kubernetes;https"
+    action = "keep"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics"
+  }
+}
+
+// Copied from the chart ServiceMonitor's metricRelabelings.
+// apiserver_request_duration_seconds_bucket is high-cardinality enough that
+// keeping every bucket is a real cost against `ingestion_rate_mb`.
+prometheus.relabel "apiserver" {
+  forward_to = [prometheus.remote_write.mimir.receiver]
+
+  rule {
+    source_labels = ["__name__", "le"]
+    regex         = "(etcd_request|apiserver_request_slo|apiserver_request_sli|apiserver_request)_duration_seconds_bucket;(0\\.15|0\\.2|0\\.3|0\\.35|0\\.4|0\\.45|0\\.6|0\\.7|0\\.8|0\\.9|1\\.25|1\\.5|1\\.75|2|3|3\\.5|4|4\\.5|6|7|8|9|15|20|40|45|50)(\\.0)?"
+    action        = "drop"
+  }
+}
+
+prometheus.scrape "apiserver" {
+  targets           = discovery.relabel.apiserver.output
+  job_name          = "apiserver"
+  scheme            = "https"
+  metrics_path      = "/metrics"
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    ca_file     = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    server_name = "kubernetes"
+  }
+  forward_to = [prometheus.relabel.apiserver.receiver]
+}
+
+// --- Rule sync (replaces Prometheus rule evaluation) ---
+
+// Sync PrometheusRule CRDs to Mimir Ruler for evaluation.
+mimir.rules.kubernetes "rules" {
+  address = sys.env("MIMIR_GATEWAY_URL")
+}
+
+// --- OTLP ingestion (OpenClaw traces, logs, metrics) ---
+
+otelcol.receiver.otlp "openclaw" {
+  http {
+    endpoint = sys.env("OTLP_HTTP_LISTEN_ADDRESS")
+  }
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.prometheus.default.input]
+    logs    = [otelcol.exporter.loki.default.input]
+    traces  = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+// Convert OTLP metrics to Prometheus format and push to Mimir.
+otelcol.exporter.prometheus "default" {
+  forward_to          = [prometheus.remote_write.mimir.receiver]
+  add_metric_suffixes = false
+}
+
+// Forward OTel logs to Loki.
+otelcol.exporter.loki "default" {
+  forward_to = [loki.write.monitoring.receiver]
+}
+
+loki.write "monitoring" {
+  endpoint {
+    url = sys.env("LOKI_PUSH_URL")
+  }
+}
+
+// Forward traces to Tempo via OTLP/gRPC.
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = sys.env("TEMPO_OTLP_GRPC_ENDPOINT")
+    tls {
+      insecure = true
+    }
+  }
+}
+
+// --- Kubernetes events ---
+
+// Events live ~1h in the apiserver; this is the only durable copy. It is also
+// the only channel for HelmRelease drift: helm-controller reports drift solely
+// as an info-severity `DriftDetected` Event, with no corresponding metric, so
+// `driftDetection: mode: warn` is unobservable without this.
+//
+// Must run on exactly one Alloy instance -- the watch is cluster-wide, so a
+// second replica (or a DaemonSet conversion) ingests every event twice. The
+// `controller.type: deployment` / `replicas: 1` in helmrelease.yaml is
+// load-bearing here.
+//
+// json over the logfmt default: event messages are free text with spaces and
+// quotes, and `| json | reason="DriftDetected"` is the query shape wanted.
+loki.source.kubernetes_events "cluster" {
+  job_name   = "kubernetes-events"
+  log_format = "json"
+  forward_to = [loki.write.monitoring.receiver]
+}

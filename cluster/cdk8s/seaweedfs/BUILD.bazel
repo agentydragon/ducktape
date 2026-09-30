@@ -19,8 +19,6 @@ py_library(
     srcs = ["namespace.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
     ],
@@ -36,6 +34,8 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:stateful_infra",
         "//cluster/cdk8s/providers/seaweedfs:adminscript",
+        "//cluster/cdk8s/providers/seaweedfs:resource_reference_grant",
+        "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
         "//cluster/cdk8s/providers/seaweedfs:seaweed",
         "//cluster/cdk8s/seaweedfs:filer_db",
         "//cluster/cdk8s/seaweedfs:namespace",
@@ -54,6 +54,8 @@ py_library(
         ":s3",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
     ],
@@ -67,6 +69,8 @@ py_library(
         ":s3",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
     ],
@@ -84,46 +88,6 @@ py_library(
 )
 
 py_library(
-    name = "forgejo_bucket",
-    srcs = ["forgejo_bucket.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":cluster",
-        ":namespace",
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/seaweedfs:s3",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_library(
-    name = "public_coder_agent_backups_bucket",
-    srcs = ["public_coder_agent_backups_bucket.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":cluster",
-        ":namespace",
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/seaweedfs:s3",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_library(
-    name = "registry_cache_bucket",
-    srcs = ["registry_cache_bucket.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":s3",
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_library(
     name = "pr_visuals_bucket",
     srcs = ["pr_visuals_bucket.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
@@ -131,7 +95,9 @@ py_library(
         ":s3",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
+        "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
         "@pypi//cdk8s",
     ],
 )
@@ -145,7 +111,6 @@ py_library(
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:helmrelease",
-        "//cluster/cdk8s/providers/flux:helmrepository",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
     ],
@@ -159,8 +124,8 @@ py_library(
         ":s3",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -170,9 +135,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
@@ -185,11 +149,9 @@ py_library(
     srcs = ["s3_config.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/external_secrets:secretstore",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -206,6 +168,7 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/seaweedfs:s3policy",
         "//cluster/cdk8s/providers/seaweedfs:s3policybinding",
         "//cluster/cdk8s/seaweedfs:cluster",
@@ -224,14 +187,35 @@ py_library(
     srcs = ["s3.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
+        "//cluster/cdk8s/providers/seaweedfs:resource_reference_grant",
         "//cluster/cdk8s/providers/seaweedfs:resourcereferencegrant",
+        "//cluster/cdk8s/providers/seaweedfs:s3_credentials",
+        "//cluster/cdk8s/providers/seaweedfs:s3_identity",
         "//cluster/cdk8s/providers/seaweedfs:s3credentials",
         "//cluster/cdk8s/providers/seaweedfs:s3identity",
+        "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
         "//cluster/cdk8s/seaweedfs:cluster",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
         "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_s3",
+    srcs = ["test_s3.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":cluster",
+        ":namespace",
+        ":s3",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

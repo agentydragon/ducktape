@@ -42,20 +42,18 @@ gotk-sync.yaml linguist-generated=true
 # files still need path-scoped lines because that filename is shared with hand-written
 # directories. Every file under cluster/generated is generated.
 cluster/k8s/**/*.k8s.yaml linguist-generated=true
+cluster/parked/**/*.k8s.yaml linguist-generated=true
 cluster/generated/** linguist-generated=true
 cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/keys-tf/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/aiquota/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/public-coder-agent/devbox/kustomization.yaml linguist-generated=true
 cluster/k8s/cpap-sync/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/app/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/cluster/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/operator/kustomization.yaml linguist-generated=true
-cluster/k8s/clickhouse/schema/kustomization.yaml linguist-generated=true
-cluster/k8s/agentplane-index/kustomization.yaml linguist-generated=true
 cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
 # Agentplane testing's root Kustomization is hand-maintained because Flux image
 # automation updates its inline `images:` pins.
@@ -67,33 +65,24 @@ cluster/k8s/agents/public-coder-agent/sshpiper/kustomization.yaml linguist-gener
 cluster/k8s/forgejo/db/kustomization.yaml linguist-generated=true
 cluster/k8s/langfuse/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/claude-sandbox-secrets/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/loki-read-proxy/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/db/kustomization.yaml linguist-generated=true
-cluster/k8s/seaweedfs/db/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/external-credentials/kustomization.yaml linguist-generated=true
 cluster/k8s/github-secrets-sync-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo-images/kustomization.yaml linguist-generated=true
-cluster/k8s/monitoring/stack/kustomization.yaml linguist-generated=true
+cluster/k8s/monitoring/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/plaid-mcp/db/kustomization.yaml linguist-generated=true
-cluster/k8s/grocy/mcp-base/kustomization.yaml linguist-generated=true
 cluster/k8s/cli-proxy-api/kustomization.yaml linguist-generated=true
 cluster/k8s/matrix/kustomization.yaml linguist-generated=true
-cluster/k8s/matrix/user-provisioner/kustomization.yaml linguist-generated=true
 cluster/k8s/user-agentydragon/kustomization.yaml linguist-generated=true
 cluster/k8s/ssh-mcp/kustomization.yaml linguist-generated=true
-cluster/k8s/google-mcp/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/agent-sandbox/workspaces/kustomization.yaml linguist-generated=true
-cluster/k8s/haku/workspaces/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/alloy-otlp-bearer/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/haku-openclaw-spike/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/public-coder-agent/backup/kustomization.yaml linguist-generated=true
 cluster/k8s/home-assistant/app/kustomization.yaml linguist-generated=true
 cluster/k8s/home-assistant/backup/kustomization.yaml linguist-generated=true
-cluster/k8s/seaweedfs/secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo/app/kustomization.yaml linguist-generated=true
-cluster/k8s/flux-image-automation-ghcr/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/forgejo-tea/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/shared-secrets/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
@@ -140,15 +129,11 @@ nix/nixos/hosts/cpap-gateway/** filename-conventions-ignored=true
 # (pygit2) and skips the file from orphan detection + resource parsing.
 cluster/k8s/**/trixie_*.yaml cluster-manifest-ignored=true
 # Parked manifests are retained for possible revival but are not active cluster config.
-cluster/k8s/parked/** cluster-manifest-ignored=true
+cluster/parked/** cluster-manifest-ignored=true
 # The retired Codex pod's manifests are kept beside their source, not active cluster config.
 x/codex_pod_image/deploy/** cluster-manifest-ignored=true
-# rotate.py's rotation list, mounted via configMapGenerator — not a K8s manifest.
-cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignored=true
 # rotate.py's token list, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=true
-# provision.py's user→permission policy, mounted via configMapGenerator — not a K8s manifest.
-cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
 haku/x/dispatch/deploy/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.

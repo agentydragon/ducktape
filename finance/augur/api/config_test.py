@@ -24,7 +24,6 @@ from finance.augur.api.config import (
 )
 from finance.augur.api.conftest import MinimalConfig
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.portfolio import (
     HoldingKind,
     HoldingTaxLotConfig,
@@ -41,7 +40,7 @@ from finance.augur.api.portfolio_source_config import (
 )
 from finance.augur.api.wire import ActorRole
 from finance.augur.model.series import IssuerId, LocationId, SecuritySymbol
-from finance.augur.sim.ids import AccountId, AgentId, LotId, PropertyId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PropertyId
 from finance.augur.sim.income import Taxable, Treasury
 from finance.augur.x.models.independent import IndependentProviderConfig
 from finance.augur.x.models.private_equity_risk import PrivateEquityRiskProviderConfig
@@ -179,9 +178,7 @@ def test_location_selection_accepts_location_strings(minimal_config: MinimalConf
     assert config.location_selection == ("san_francisco_ca", "vallejo_ca")
 
 
-def test_config_can_define_deployment_owned_locations(
-    minimal_config: MinimalConfig, fixture_regulation: LocalRegulation
-) -> None:
+def test_config_can_define_deployment_owned_locations(minimal_config: MinimalConfig) -> None:
     config = minimal_config(
         locations=(
             LocationConfig(
@@ -189,7 +186,7 @@ def test_config_can_define_deployment_owned_locations(
                 label="Location A",
                 city="Location A",
                 state="Fixture",
-                local_regulation=fixture_regulation,
+                situs=JurisdictionId("san_francisco"),
             ),
         ),
         location_selection=("location_a",),
