@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.claude.session_export import archive
+from devinfra.claude.session_export import progress
 from devinfra.claude.session_export.api import SessionsApi
 from devinfra.claude.session_export.archive import (
     ManifestRecord,
@@ -15,8 +15,7 @@ from devinfra.claude.session_export.archive import (
     sessions_to_export,
     verify_archive,
 )
-from devinfra.claude.session_export.conftest import FakeSessionsService, make_events
-from devinfra.claude.session_export.models import SessionSummary
+from devinfra.claude.session_export.conftest import FakeSessionsService, make_events, make_session
 
 SESSION_ID = "session_test0001"
 
@@ -32,7 +31,7 @@ async def test_export_session_archives_every_event_losslessly(
     events = make_events(1203)
     service.events[SESSION_ID] = events
     # A `cse_` id names the same session as the `session_` one the archive files use.
-    record = await export_session(api, SessionSummary(id="cse_test0001", last_event_at="test-time"), tmp_path)
+    record = await export_session(api, make_session("cse_test0001"), tmp_path)
     assert [json.loads(line) for line in read_lines(tmp_path / f"{SESSION_ID}.jsonl.gz")] == events
     assert record.event_count == 1203
     assert record.is_complete
@@ -45,10 +44,10 @@ async def test_export_session_reports_progress_against_the_expected_total(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    monkeypatch.setattr(archive, "PROGRESS_INTERVAL_SECONDS", 0)  # report after every page
+    monkeypatch.setattr(progress, "REPORT_INTERVAL_SECONDS", 0)  # report after every page
     service.events[SESSION_ID] = make_events(1203)
-    with caplog.at_level(logging.INFO, logger=archive.logger.name):
-        await export_session(api, SessionSummary(id=SESSION_ID, last_event_at="test-time"), tmp_path)
+    with caplog.at_level(logging.INFO, logger=progress.logger.name):
+        await export_session(api, make_session(SESSION_ID), tmp_path)
     reports = [record.getMessage() for record in caplog.records]
     assert len(reports) == 3  # pages of 500, 500 and 203
     assert reports[0].startswith(f"{SESSION_ID}: 500/1203 events")
@@ -62,7 +61,7 @@ async def test_export_session_rejects_a_sequence_gap_and_leaves_no_finished_file
     del events[2]
     service.events[SESSION_ID] = events
     with pytest.raises(ValueError, match="expected sequence_num 3, got 4"):
-        await export_session(api, SessionSummary(id=SESSION_ID, last_event_at="test-time"), tmp_path)
+        await export_session(api, make_session(SESSION_ID), tmp_path)
     assert not (tmp_path / f"{SESSION_ID}.jsonl.gz").exists()
 
 
@@ -81,7 +80,7 @@ def test_sessions_to_export_skips_only_complete_unchanged_sessions() -> None:
         "session_live": record("live", newest=6),
         "session_changed": record("changed", last_event_at="t0"),
     }
-    sessions = [SessionSummary(id=f"cse_{name}", last_event_at="t1") for name in ("done", "live", "changed", "new")]
+    sessions = [make_session(f"cse_{name}", last_event_at="t1") for name in ("done", "live", "changed", "new")]
     assert [s.id for s in sessions_to_export(sessions, manifest)] == ["cse_live", "cse_changed", "cse_new"]
 
 

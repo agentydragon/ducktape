@@ -8,6 +8,8 @@ Usage:
     bb run //devinfra/claude/session_export:export_sessions_bin -- export --credentials-file F --out DIR
     bb run //devinfra/claude/session_export:export_sessions_bin -- count --cookie-file F
     bb run //devinfra/claude/session_export:export_sessions_bin -- verify --out DIR
+    SESSION_SYNC_DATABASE_URL=postgresql://... \\
+        bb run //devinfra/claude/session_export:export_sessions_bin -- sync --credentials-file F
 """
 
 import argparse
@@ -19,11 +21,15 @@ from contextlib import asynccontextmanager
 from enum import StrEnum
 
 import httpx
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
-from devinfra.claude.session_export.archive import canonical_id, export_all, verify_archive
-from devinfra.claude.session_export.models import SessionSummary
+from devinfra.claude.session_export.archive import export_all, verify_archive
+from devinfra.claude.session_export.database_migrate import RUNNER
+from devinfra.claude.session_export.models import SessionSummary, canonical_id
 from devinfra.claude.session_export.oauth import CALLBACK_PORT, CredentialStore, OAuthTokenSource, pair
+from devinfra.claude.session_export.store import SessionStore, make_engine
+from devinfra.claude.session_export.sync import sync_once
 from util.bazel.workspace import get_build_working_directory
 
 logger = logging.getLogger(__name__)
@@ -37,6 +43,15 @@ class Command(StrEnum):
     EXPORT = "export"
     COUNT = "count"
     VERIFY = "verify"
+    SYNC = "sync"
+
+
+class SyncSettings(BaseSettings):
+    """The connection string is a secret, so it comes from the environment rather than the command line."""
+
+    model_config = SettingsConfigDict(env_prefix="SESSION_SYNC_")
+
+    database_url: str
 
 
 def announce(url: str) -> None:
@@ -81,6 +96,22 @@ async def open_api(args: argparse.Namespace) -> AsyncIterator[SessionsApi]:
         yield api
 
 
+async def run_sync(args: argparse.Namespace) -> None:
+    database_url = SyncSettings().database_url
+    await asyncio.to_thread(RUNNER.apply, database_url)
+    engine = make_engine(database_url)
+    store = SessionStore(engine)
+    try:
+        async with open_api(args) as api:
+            while True:
+                await sync_once(api, store, workers=args.workers)
+                if args.once:
+                    return
+                await asyncio.sleep(args.interval)
+    finally:
+        await engine.dispose()
+
+
 async def async_main(command: Command, args: argparse.Namespace) -> None:
     if command is Command.PAIR:
         store = CredentialStore(get_build_working_directory() / args.credentials_file)
@@ -90,6 +121,9 @@ async def async_main(command: Command, args: argparse.Namespace) -> None:
                     await pair(client, store, scopes=args.scope or DEFAULT_SCOPES, port=args.port, announce=announce)
             except TimeoutError as e:
                 raise TimeoutError(f"no authorization callback on port {args.port} within {args.timeout:.0f}s") from e
+        return
+    if command is Command.SYNC:
+        await run_sync(args)
         return
     async with open_api(args) as api:
         if command is Command.EXPORT:
@@ -125,6 +159,14 @@ def main() -> None:
     count = commands.add_parser(Command.COUNT, help="print how many events the account holds; downloads nothing")
     verify = commands.add_parser(Command.VERIFY, help="re-read --out and check it; no network")
     verify.add_argument("--out", required=True)
+    sync = commands.add_parser(
+        Command.SYNC, help="keep a Postgres database level with every session's events, until stopped"
+    )
+    sync.add_argument("--credentials-file", required=True, help="OAuth credential written by `pair`")
+    sync.set_defaults(cookie_file=None)
+    sync.add_argument("--workers", type=int, default=3, help="sessions fetched concurrently")
+    sync.add_argument("--interval", type=float, default=300, help="seconds between cycles")
+    sync.add_argument("--once", action="store_true", help="run one cycle and exit")
     for network_command, default_workers in ((export, 3), (count, 4)):
         credential = network_command.add_mutually_exclusive_group(required=True)
         credential.add_argument("--credentials-file", help="OAuth credential written by `pair`")

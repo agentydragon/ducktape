@@ -1,0 +1,15 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+exports_files(
+    ["0001_sessions.py"],
+    visibility = ["//devinfra/claude/session_export/migrations:__pkg__"],
+)
+
+py_library(
+    name = "0001_sessions",
+    srcs = ["0001_sessions.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)

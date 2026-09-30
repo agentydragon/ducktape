@@ -1,19 +1,28 @@
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
 from pydantic import SecretStr
+from sqlalchemy.ext.asyncio import AsyncEngine
 from tenacity import wait_none
+from testcontainers.postgres import PostgresContainer
 
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
+from devinfra.claude.session_export.database_migrate import RUNNER
+from devinfra.claude.session_export.models import DEFAULT_ATTESTATION_STATUS, SessionSummary
 from devinfra.claude.session_export.oauth import OAuthCredential
+from devinfra.claude.session_export.store import SessionStore, make_engine
+from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres_fixtures import postgres_container
 
 TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid="test-org-uuid")
 TEST_ACCESS_TOKEN = "test-access-token"
+TEST_EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def make_credential(*, expires_in: timedelta = timedelta(hours=1)) -> OAuthCredential:
@@ -26,16 +35,36 @@ def make_credential(*, expires_in: timedelta = timedelta(hours=1)) -> OAuthCrede
     )
 
 
+def make_session(
+    session_id: str, *, title: str = "Test session", last_event_at: str = TEST_EPOCH.isoformat()
+) -> SessionSummary:
+    return SessionSummary(
+        id=session_id,
+        title=title,
+        status="archived",
+        created_at=TEST_EPOCH.isoformat(),
+        updated_at=TEST_EPOCH.isoformat(),
+        last_event_at=last_event_at,
+    )
+
+
+def make_event(seq: int, **fields: Any) -> dict[str, Any]:
+    """An event as the API sends the ones that never pass through the worker's queue: no processing stamps."""
+    return {
+        "event_id": str(UUID(int=seq)),
+        "event_type": "user" if seq % 2 else "assistant",
+        "source": "worker",
+        "sequence_num": str(seq),
+        "created_at": (TEST_EPOCH + timedelta(seconds=seq)).isoformat(),
+        "device_attestation_status": DEFAULT_ATTESTATION_STATUS,
+        "sent_by_account_id": None,
+        "payload": {"text": f"héllo {seq}", "nested": {"n": seq}},
+        **fields,
+    }
+
+
 def make_events(count: int) -> list[dict[str, Any]]:
-    return [
-        {
-            "event_id": f"test-event-{seq}",
-            "event_type": "user" if seq % 2 else "assistant",
-            "sequence_num": str(seq),
-            "payload": {"text": f"héllo {seq}", "nested": {"n": seq}},
-        }
-        for seq in range(1, count + 1)
-    ]
+    return [make_event(seq) for seq in range(1, count + 1)]
 
 
 @dataclass
@@ -43,8 +72,15 @@ class FakeSessionsService:
     """In-memory claude.ai session API following the contract in docs/api.md."""
 
     events: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    titles: dict[str, str] = field(default_factory=dict)  # overrides the generated title of a listed session
     fail_next: list[int] = field(default_factory=list)  # HTTP statuses answered before any real response
     requests: list[httpx.Request] = field(default_factory=list)
+
+    def list_item(self, session_id: str) -> dict[str, Any]:
+        events = self.events[session_id]
+        last_event_at = events[-1]["created_at"] if events else TEST_EPOCH.isoformat()
+        title = self.titles.get(session_id, "Test session")
+        return make_session(session_id, title=title, last_event_at=last_event_at).model_dump()
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -62,7 +98,7 @@ class FakeSessionsService:
         if request.url.path == "/v1/code/sessions":
             ids = list(self.events)
             listed = ids[cursor : cursor + limit]
-            sessions_body: dict[str, Any] = {"data": [{"id": i, "last_event_at": f"test-time-{i}"} for i in listed]}
+            sessions_body: dict[str, Any] = {"data": [self.list_item(i) for i in listed]}
             if cursor + limit < len(ids):
                 sessions_body["next_cursor"] = str(cursor + limit)
             return httpx.Response(200, json=sessions_body)
@@ -91,3 +127,28 @@ async def api(service: FakeSessionsService) -> AsyncIterator[SessionsApi]:
     transport = httpx.MockTransport(service.handle)
     async with SessionsApi.for_cookie(TEST_COOKIE, transport=transport, retry_wait=wait_none()) as api:
         yield api
+
+
+@pytest.fixture
+def database_url(postgres_container: PostgresContainer) -> Iterator[str]:
+    admin_url = (
+        f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
+        f":{postgres_container.get_exposed_port(5432)}/postgres"
+    )
+    name = f"sessions_{uuid4().hex}"
+    url = create_database_sync(admin_url, name)
+    RUNNER.apply(url)
+    yield url
+    force_drop_database_sync(admin_url, name)
+
+
+@pytest.fixture
+async def engine(database_url: str) -> AsyncIterator[AsyncEngine]:
+    engine = make_engine(database_url)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+def store(engine: AsyncEngine) -> SessionStore:
+    return SessionStore(engine)

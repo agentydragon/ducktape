@@ -18,6 +18,7 @@ py_library(
     deps = [
         ":api",
         ":models",
+        ":progress",
         "@pypi//pydantic",
     ],
 )
@@ -28,10 +29,14 @@ py_library(
     deps = [
         ":api",
         ":archive",
+        ":database_migrate",
         ":models",
         ":oauth",
+        ":store",
+        ":sync",
         "//util/bazel:workspace",
         "@pypi//httpx",
+        "@pypi//pydantic_settings",
     ],
 )
 
@@ -53,11 +58,18 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":api",
+        ":database_migrate",
+        ":models",
         ":oauth",
+        ":store",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//sqlalchemy",
         "@pypi//tenacity",
+        "@pypi//testcontainers",
     ],
 )
 
@@ -85,7 +97,7 @@ py_test(
         ":api",
         ":archive",
         ":conftest",
-        ":models",
+        ":progress",
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//pytest",
@@ -116,5 +128,76 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
+    data = ["//devinfra/claude/session_export/migrations:files"],
+    deps = [
+        ":store",
+        "//util:db_migrations",
+    ],
+)
+
+py_library(
+    name = "progress",
+    srcs = ["progress.py"],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    visibility = ["//devinfra/claude/session_export/migrations:__pkg__"],
+    deps = [
+        ":models",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "sync",
+    srcs = ["sync.py"],
+    deps = [
+        ":api",
+        ":models",
+        ":progress",
+        ":store",
+    ],
+)
+
+py_test(
+    name = "test_store",
+    srcs = ["test_store.py"],
+    deps = [
+        ":conftest",
+        ":store",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_sync",
+    size = "medium",
+    srcs = ["test_sync.py"],
+    requires_docker = True,
+    deps = [
+        ":api",
+        ":conftest",
+        ":models",
+        ":store",
+        ":sync",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//alembic",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
