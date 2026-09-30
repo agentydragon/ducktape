@@ -1502,6 +1502,35 @@ pub fn assert_module_source(
     }
 }
 
+/// Asserts that the one line of `module_path` starting with `below_prefix`
+/// is immediately preceded by the line `above` (e.g. a `// comment` line).
+pub fn assert_line_directly_above(
+    out_root: &Path,
+    module_path: &str,
+    above: &str,
+    below_prefix: &str,
+) {
+    let code = fs::read_to_string(out_root.join(module_path))
+        .unwrap_or_else(|e| panic!("read {module_path}: {e}"));
+    let lines: Vec<&str> = code.lines().collect();
+    let below_indices: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.starts_with(below_prefix))
+        .map(|(index, _)| index)
+        .collect();
+    let [below_index] = below_indices[..] else {
+        panic!(
+            "expected exactly one line starting with {below_prefix:?} in {module_path}, found {}\n--- {module_path} ---\n{code}",
+            below_indices.len(),
+        );
+    };
+    assert!(
+        below_index > 0 && lines[below_index - 1] == above,
+        "expected {above:?} directly above {below_prefix:?} in {module_path}\n--- {module_path} ---\n{code}",
+    );
+}
+
 pub fn assert_pure_cycle_break(
     source: &str,
     logical_modules: Vec<LogicalModuleEntry>,
