@@ -7,6 +7,7 @@ that they do, and the request forms that work.
 """
 
 import asyncio
+import json
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
@@ -257,7 +258,7 @@ async def test_bodies_load_as_subsets_of_one_shape_per_field() -> None:
                     ordered = sorted(
                         (row for row in rows if row["owner_id"] == owner), key=lambda row: int(row["chunk_index"])
                     )
-                    return "".join(row["text"] for row in ordered)
+                    return "".join(json.loads(row["text"]) for row in ordered)
 
                 # The bodies of the rows in view, in one request: each owner at the generation its
                 # reference names, so a replaced body's old chunks stay behind.

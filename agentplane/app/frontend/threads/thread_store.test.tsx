@@ -714,9 +714,13 @@ it("decodes a NUL-containing JSON payload chunk from Electric as the original st
   sync.chunks = [chunk("nul", 0, "before\u0000after")];
   const container = await renderThread(
     <Shown>
-      {(rows) =>
-        rows.map((row) => (row.textRef ? <Body key={row.entityId} id={row.entityId} reference={row.textRef} /> : null))
-      }
+      {(rows) => (
+        <>
+          {rows.map((row) =>
+            row.textRef ? <Body key={row.entityId} id={row.entityId} reference={row.textRef} /> : null
+          )}
+        </>
+      )}
     </Shown>
   );
 
