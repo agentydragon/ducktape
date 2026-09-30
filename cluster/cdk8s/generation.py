@@ -16,7 +16,7 @@ from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     ConfigMapArgs,
     RenderedDirectory,
-    artifact_directory,
+    artifact_directories,
     kustomize_kustomization,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -94,24 +94,17 @@ def write_directory(
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
-    an `image-pins` Component, a generated ConfigMap's source file). A `components` entry
-    outside the directory, a hand-written `image-pins` Component across the roots
-    (cluster/docs/cdk8s_remainder.md § Mixed-directory layout), is the one other directory
-    `artifact` copies, after it.
+    an `image-pins` Component, a generated ConfigMap's source file).
     One keeping a hand-written `kustomization.yaml` uses `write_charts`. The returned
-    directory's `decryption` is set exactly when a sibling is SOPS ciphertext.
+    directory's `decryption` is set exactly when a sibling is SOPS ciphertext. Every copy of
+    `artifact` after the first must be a Component `components` names: the `image-pins`
+    directory a `GENERATED_ROOT` directory includes across the roots
+    (cluster/docs/cdk8s_remainder.md § Mixed-directory layout).
     """
-    directory = artifact_directory(artifact)
-    outside = [
-        path
-        for path in (posixpath.normpath(posixpath.join(directory, component)) for component in components)
-        if not path.startswith(f"{directory}/")
-    ]
-    if [copy.to for copy in artifact.copy[1:]] != [f"@artifact/{path}/" for path in outside]:
-        raise ValueError(
-            f"{artifact.name=} must copy the directory, then exactly the Components outside it"
-            f" ({outside=}); it copies {[copy.to for copy in artifact.copy]}"
-        )
+    directory, *copied = artifact_directories(artifact)
+    included = {posixpath.normpath(posixpath.join(directory, component)) for component in components}
+    if shared := [base for base in copied if base not in included]:
+        raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies {shared=}")
     resources = [*write_charts(root, directory, *chart_builders), *siblings]
     write_yaml(
         root / directory / "kustomization.yaml",

@@ -41,31 +41,14 @@ def test_flux_decrypts_exactly_when_a_sibling_is_sops(tmp_path: Path, siblings: 
     assert ("decryption" in rendered["spec"]) is decrypted
 
 
-def test_writer_includes_a_component_the_artifact_copies_across_the_roots(tmp_path: Path) -> None:
-    write_directory(
-        tmp_path,
-        artifact("test-app", "test/generated/app", "test/k8s/app-image-pins"),
-        _chart("first"),
-        components=["../../k8s/app-image-pins"],
-    )
-    kustomization = yaml.safe_load((tmp_path / "test/generated/app/kustomization.yaml").read_text())
-    assert kustomization["components"] == ["../../k8s/app-image-pins"]
+def test_writer_refuses_an_artifact_with_shared_bases(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="also copies"):
+        write_directory(tmp_path, artifact("test-app", "test/app", "test/base"), _chart("first"))
 
 
-@pytest.mark.parametrize(
-    ("directories", "components"),
-    [
-        # A shared base the kustomization does not name.
-        (("test/app", "test/base"), ()),
-        # A Component outside the directory the artifact leaves out: Flux's build would fail.
-        (("test/generated/app",), ("../../k8s/app-image-pins",)),
-    ],
-)
-def test_writer_refuses_an_artifact_that_does_not_copy_exactly_the_components_outside_it(
-    tmp_path: Path, directories: tuple[str, ...], components: tuple[str, ...]
-) -> None:
-    with pytest.raises(ValueError, match="exactly the Components outside it"):
-        write_directory(tmp_path, artifact("test-app", *directories), _chart("first"), components=components)
+def test_writer_accepts_a_copied_component_the_directory_includes(tmp_path: Path) -> None:
+    write_directory(tmp_path, artifact("test-app", "test/app", "test/pins"), _chart("first"), components=["../pins"])
+    assert yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())["components"] == ["../pins"]
 
 
 if __name__ == "__main__":
