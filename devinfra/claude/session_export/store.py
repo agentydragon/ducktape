@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from itertools import batched
 from typing import Any
@@ -135,6 +136,12 @@ def event_values(session_id: str, event: Event) -> dict[str, Any]:
     }
 
 
+@dataclass(frozen=True)
+class StoreCounts:
+    sessions: int
+    behind: int
+
+
 class SessionStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -158,6 +165,15 @@ class SessionStore:
         async with self._engine.connect() as connection:
             rows = await connection.execute(select(SessionRow.session_id, SessionRow.synced_last_event_at))
             return dict(rows.tuples().all())
+
+    async def counts(self) -> StoreCounts:
+        """How many sessions are stored and how many of those are behind the API."""
+        behind = SessionRow.synced_last_event_at.is_distinct_from(SessionRow.last_event_at)
+        async with self._engine.connect() as connection:
+            sessions, lagging = (
+                await connection.execute(select(func.count(), func.count().filter(behind)).select_from(SessionRow))
+            ).one()
+        return StoreCounts(sessions=sessions, behind=lagging)
 
     async def resume_after(self, session_id: str) -> int:
         """The `sequence_num` to read after: the newest stored, or just before the earliest event the worker had

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from dataclasses import dataclass
 
 from devinfra.claude.session_export.api import SessionsApi
 from devinfra.claude.session_export.models import SessionSummary, canonical_id, parse_timestamp
@@ -9,6 +10,13 @@ from devinfra.claude.session_export.progress import Progress
 from devinfra.claude.session_export.store import SessionStore
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CycleResult:
+    sessions: int
+    behind: int
+    events_read: int
 
 
 async def sync_session(api: SessionsApi, store: SessionStore, session: SessionSummary) -> int:
@@ -30,7 +38,7 @@ async def sync_session(api: SessionsApi, store: SessionStore, session: SessionSu
     return position - after
 
 
-async def sync_once(api: SessionsApi, store: SessionStore, *, workers: int) -> None:
+async def sync_once(api: SessionsApi, store: SessionStore, *, workers: int) -> CycleResult:
     """One cycle: refresh every session's metadata, then read the events of the sessions that have moved on.
 
     The whole list is read each time rather than stopping at the first unchanged session: a cycle that died
@@ -53,3 +61,4 @@ async def sync_once(api: SessionsApi, store: SessionStore, *, workers: int) -> N
         for session in behind:
             tasks.create_task(sync_one(session))
     logger.info("synced %d sessions, read %d events", len(behind), events)
+    return CycleResult(sessions=len(sessions), behind=len(behind), events_read=events)

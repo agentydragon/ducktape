@@ -18,7 +18,7 @@ py_library(
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//devinfra/claude/session_export:export_sessions",
+        "//devinfra/claude/session_export:settings",
         "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

@@ -22,7 +22,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
-from devinfra.claude.session_export.export_sessions import SyncSettings
+from devinfra.claude.session_export.settings import SyncSettings
 from util.settings_contract import env_name
 
 NAME = "claude-session-sync"
