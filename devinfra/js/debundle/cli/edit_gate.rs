@@ -446,14 +446,16 @@ pub fn gate_post_edit_partition(
     let atomic_conflicts =
         detect_atomic_unit_conflicts(&atomic_units, &partition, &owner_graph_report);
     if !atomic_conflicts.is_empty() {
-        let conflicts = AtomicUnitConflictReport::from_conflicts(&atomic_conflicts, &module_path, &owner_graph);
+        let conflicts =
+            AtomicUnitConflictReport::from_conflicts(&atomic_conflicts, &module_path, &owner_graph);
         write_rejection_artifact(
             owner_graph_path,
             output_layout::ATOMIC_UNIT_CONFLICTS_REPORT,
             &conflicts,
         )?;
         remove_rejection_artifact(owner_graph_path, output_layout::CYCLES_REPORT)?;
-        let summary = render_atomic_unit_conflict_summary(&atomic_conflicts, &module_path, &owner_graph);
+        let summary =
+            render_atomic_unit_conflict_summary(&atomic_conflicts, &module_path, &owner_graph);
         eprintln!("error: post-edit spec splits one or more atomic units:\n{summary}");
         return Err(GateRejection {
             report: GateRejectionReport::AtomSplit { conflicts },

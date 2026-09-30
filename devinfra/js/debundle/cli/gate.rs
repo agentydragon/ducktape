@@ -29,7 +29,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use ::gate::{BlockingSccEntry, CycleEdge};
-use analysis::{DepKind, EdgeRoleReport, ModuleKey, OwnerGraphReport, Purity, SequencedOwnerCause, StatementOrdinal};
+use analysis::{
+    DepKind, EdgeRoleReport, ModuleKey, OwnerGraphReport, Purity, SequencedOwnerCause,
+    StatementOrdinal,
+};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use serde::Serialize;
@@ -352,10 +355,42 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
     if let Some(cause) = &edge.sequenced_owner {
         if let Purity::NotPure { reasons } = &cause.purity {
             for reason in reasons {
-                let binding = if cause.binding_names.is_empty() { cause.owner_id.clone() } else { cause.binding_names.iter().map(Atom::as_ref).collect::<Vec<_>>().join(", ") };
-                let location = reason.source_location.as_ref().or(cause.source_location.as_ref()).map(|loc| format!("{}:{}:{}", loc.source_path, loc.start_line, loc.start_column.map_or_else(|| "?".to_string(), |column| column.to_string()))).unwrap_or_else(|| "<location unavailable>".to_string());
-                out.push_str(&format!("      impure initializer `{binding}` at {location}: {:?}{}\n", reason.rule, reason.detail.as_deref().map(|detail| format!(" ({detail})")).unwrap_or_default()));
-                if let Some(guidance) = &reason.author_guidance { out.push_str(&format!("        {guidance}\n")); }
+                let binding = if cause.binding_names.is_empty() {
+                    cause.owner_id.clone()
+                } else {
+                    cause
+                        .binding_names
+                        .iter()
+                        .map(Atom::as_ref)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                let location = reason
+                    .source_location
+                    .as_ref()
+                    .or(cause.source_location.as_ref())
+                    .map(|loc| {
+                        format!(
+                            "{}:{}:{}",
+                            loc.source_path,
+                            loc.start_line,
+                            loc.start_column
+                                .map_or_else(|| "?".to_string(), |column| column.to_string())
+                        )
+                    })
+                    .unwrap_or_else(|| "<location unavailable>".to_string());
+                out.push_str(&format!(
+                    "      impure initializer `{binding}` at {location}: {:?}{}\n",
+                    reason.rule,
+                    reason
+                        .detail
+                        .as_deref()
+                        .map(|detail| format!(" ({detail})"))
+                        .unwrap_or_default()
+                ));
+                if let Some(guidance) = &reason.author_guidance {
+                    out.push_str(&format!("        {guidance}\n"));
+                }
             }
         }
     }
@@ -519,15 +554,27 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
             from_binding,
             kind: edge.edge_kind,
             sequenced_owner: if edge.edge_kind == DepKind::Sequenced {
-                graph.nodes.iter().find(|node| node.id == edge.source).and_then(|node| {
-                    matches!(&node.purity, Purity::NotPure { .. }).then(|| SequencedOwnerCause {
-                        owner_id: node.id.clone(),
-                        binding_names: node.declared_bindings.iter().map(|binding| binding.binding.clone()).collect(),
-                        source_location: node.source_location.clone(),
-                        purity: node.purity.clone(),
+                graph
+                    .nodes
+                    .iter()
+                    .find(|node| node.id == edge.source)
+                    .and_then(|node| {
+                        matches!(&node.purity, Purity::NotPure { .. }).then(|| {
+                            SequencedOwnerCause {
+                                owner_id: node.id.clone(),
+                                binding_names: node
+                                    .declared_bindings
+                                    .iter()
+                                    .map(|binding| binding.binding.clone())
+                                    .collect(),
+                                source_location: node.source_location.clone(),
+                                purity: node.purity.clone(),
+                            }
+                        })
                     })
-                })
-            } else { None },
+            } else {
+                None
+            },
         });
     }
     out.sort_by(|a, b| {

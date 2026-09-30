@@ -483,12 +483,9 @@ fn cycle_edges_for(
                 kind: edge.reason.kind,
                 sequenced_owner: (edge.reason.kind == DepKind::Sequenced)
                     .then(|| {
-                        analysis::reports::schema::sequenced_owner_causes(
-                            owner_graph,
-                            &[edge.from],
-                        )
-                        .into_iter()
-                        .next()
+                        analysis::reports::schema::sequenced_owner_causes(owner_graph, &[edge.from])
+                            .into_iter()
+                            .next()
                     })
                     .flatten(),
             }
@@ -624,7 +621,12 @@ pub(crate) fn render_sequenced_owner_causes(causes: &[SequencedOwnerCause], out:
         let names = if cause.binding_names.is_empty() {
             cause.owner_id.clone()
         } else {
-            cause.binding_names.iter().map(Atom::as_ref).collect::<Vec<_>>().join(", ")
+            cause
+                .binding_names
+                .iter()
+                .map(Atom::as_ref)
+                .collect::<Vec<_>>()
+                .join(", ")
         };
         let Purity::NotPure { reasons } = &cause.purity else {
             continue;
@@ -639,7 +641,8 @@ pub(crate) fn render_sequenced_owner_causes(causes: &[SequencedOwnerCause], out:
                         "{}:{}:{}",
                         loc.source_path,
                         loc.start_line,
-                        loc.start_column.map_or_else(|| "?".to_string(), |col| col.to_string()),
+                        loc.start_column
+                            .map_or_else(|| "?".to_string(), |col| col.to_string()),
                     )
                 })
                 .unwrap_or_else(|| "<location unavailable>".to_string());

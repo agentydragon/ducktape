@@ -67,11 +67,19 @@ fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() 
         "unknown_call",
         "member-level `purity: pure` annotation",
     ] {
-        assert!(rejected.stderr.contains(required), "missing {required:?} in rejection:\n{}", rejected.stderr);
+        assert!(
+            rejected.stderr.contains(required),
+            "missing {required:?} in rejection:\n{}",
+            rejected.stderr
+        );
     }
     let cycles: serde_json::Value = read_json(&rejected.report_root.join("static/app/cycles.json"));
-    let cause = cycles[0]["cut"].as_array().unwrap().iter()
-        .find_map(|edge| edge.get("sequenced_owner")).filter(|cause| !cause.is_null())
+    let cause = cycles[0]["cut"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|edge| edge.get("sequenced_owner"))
+        .filter(|cause| !cause.is_null())
         .expect("sequenced cycle edge carries purity owner cause");
     assert_eq!(cause["binding_names"][0], "B");
     let reason = &cause["purity"]["reasons"][0];
@@ -79,9 +87,20 @@ fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() 
     assert_eq!(reason["source_location"]["source_path"], "static/app.js");
     assert_eq!(reason["source_location"]["start_line"], 3);
     assert_eq!(reason["source_location"]["start_column"], 11);
-    assert!(reason["author_guidance"].as_str().unwrap().contains("purity: pure"));
+    assert!(
+        reason["author_guidance"]
+            .as_str()
+            .unwrap()
+            .contains("purity: pure")
+    );
 
-    let text = run_gate(&["gate", "describe", "0", "--graph", graph_path(&rejected).to_str().unwrap()]);
+    let text = run_gate(&[
+        "gate",
+        "describe",
+        "0",
+        "--graph",
+        graph_path(&rejected).to_str().unwrap(),
+    ]);
     let text = String::from_utf8_lossy(&text.stdout);
     assert!(text.contains("`B` at static/app.js:3:11"), "{text}");
     assert!(text.contains("unknown_call"), "{text}");

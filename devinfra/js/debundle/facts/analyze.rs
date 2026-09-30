@@ -77,11 +77,13 @@ where
             );
             item.visit_with(&mut collector);
             let source_location = source_path.and_then(|source_path| {
-                line_range_for_span(item.span()).map(|(start_line, end_line, start_column)| SourceLocation {
-                    source_path: source_path.to_string(),
-                    start_line,
-                    end_line,
-                    start_column: Some(start_column),
+                line_range_for_span(item.span()).map(|(start_line, end_line, start_column)| {
+                    SourceLocation {
+                        source_path: source_path.to_string(),
+                        start_line,
+                        end_line,
+                        start_column: Some(start_column),
+                    }
                 })
             });
             StructuralStatementFacts {
@@ -171,15 +173,14 @@ where
                 && let Purity::NotPure { reasons } = &mut fact.purity
             {
                 for reason in reasons.iter_mut() {
-                    reason.source_location =
-                        line_range_for_span(reason.span).map(|(start_line, end_line, start_column)| {
-                            SourceLocation {
-                                source_path: source_path.to_string(),
-                                start_line,
-                                end_line,
-                                start_column: Some(start_column),
-                            }
-                        });
+                    reason.source_location = line_range_for_span(reason.span).map(
+                        |(start_line, end_line, start_column)| SourceLocation {
+                            source_path: source_path.to_string(),
+                            start_line,
+                            end_line,
+                            start_column: Some(start_column),
+                        },
+                    );
                 }
             }
             fact
