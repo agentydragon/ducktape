@@ -1,10 +1,10 @@
 """agentplane-testing: one replica of everything, its own Dex for operator login, and
 credentialless MCP fixtures in place of the real action groups.
 
-One Flux Kustomization (`agentplane_testing`) applies the whole environment from the root of
-its artifact: `agentplane.k8s.yaml`, the `litellm-credentials.k8s.yaml` that
-`litellm/credentials.py` writes beside it, and the hand-written `image_pins` Component the
-root Kustomization includes across the roots.
+One Flux Kustomization (`agentplane_testing`) applies the whole environment:
+`agentplane.k8s.yaml`, the `litellm-credentials.k8s.yaml` that `litellm/credentials.py`
+writes beside it, and the hand-written `image_pins` Component its root Kustomization
+includes across the roots.
 """
 
 from __future__ import annotations
