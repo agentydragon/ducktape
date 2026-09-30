@@ -334,7 +334,6 @@ def generate_manifests(root: Path) -> None:
     litellm_credentials.write_agentplane_testing_manifests(root)
     ducktape_flux.write_manifests(root)
     flux_sources.write_manifests(root)
-    gaffer_private_source.write_manifests(root)
     dcgm_exporter_exporter.write_manifests(root)
 
     flux_output = root / f"{HAND_WRITTEN_ROOT}/flux"
@@ -433,8 +432,11 @@ def generate_manifests(root: Path) -> None:
     )
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
     valkey_kustomization = valkey.valkey(flux_chart, write_directory(root, valkey_artifact, valkey.chart))
-    gaffer_private_source_flux_kustomizations.gaffer_private_source(
-        flux_chart, flux_image_automation_ghcr_kustomization
+    gaffer_private_source_artifact = artifact("gaffer-private-source", gaffer_private_source.OUTPUT_DIR)
+    gaffer_private_source.gaffer_private_source(
+        flux_chart,
+        write_directory(root, gaffer_private_source_artifact, gaffer_private_source.chart),
+        flux_image_automation_ghcr_kustomization,
     )
     kubevirt_artifact = artifact("kubevirt", kubevirt_app.OUTPUT_DIR)
     kubevirt_kustomization = kubevirt_app.kubevirt(
@@ -1472,6 +1474,7 @@ def generate_manifests(root: Path) -> None:
             flux_webhook_artifact,
             forgejo_gitops_artifact,
             budget_namespace_artifact,
+            gaffer_private_source_artifact,
             gatus_artifact,
             github_api_proxy_artifact,
             github_tf_artifact,
