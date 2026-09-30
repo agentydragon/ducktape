@@ -16,7 +16,7 @@ use proptest::test_runner::TestCaseError;
 
 use super::condensation_order::CondensationOrder;
 use super::condensation_order::test_support::{brute_would_join, in_multi_scc};
-use crate::rollback_graph::RollbackDiGraph;
+use crate::counted_digraph::CountedDiGraph;
 
 /// Node universe size. Small enough that the brute-force recompute
 /// after every operation stays cheap; large enough for nontrivial
@@ -84,7 +84,7 @@ fn arb_step() -> impl Strategy<Value = Step> {
 /// graph: `remove` entries zero out an existing edge's multiplicity,
 /// additions contribute `+1` — the `QuotientOverlay` delta shape.
 fn build_overlay(
-    base: &RollbackDiGraph<usize>,
+    base: &CountedDiGraph<usize>,
     entries: &[OverlayEntry],
 ) -> BTreeMap<(usize, usize), isize> {
     let mut overlay = BTreeMap::new();
@@ -126,7 +126,7 @@ proptest! {
     fn mutation_sequences_match_brute_force(
         steps in proptest::collection::vec(arb_step(), 1..50),
     ) {
-        let mut base = RollbackDiGraph::new();
+        let mut base = CountedDiGraph::new();
         let mut order = CondensationOrder::new();
         for (step_index, step) in steps.iter().enumerate() {
             match step.op {
@@ -175,7 +175,7 @@ proptest! {
         entries in arb_overlay_entries(),
         n in arb_node(),
     ) {
-        let mut base = RollbackDiGraph::new();
+        let mut base = CountedDiGraph::new();
         for &(a, b) in &edges {
             if a != b {
                 base.increment_edge(a, b);

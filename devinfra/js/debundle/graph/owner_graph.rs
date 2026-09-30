@@ -39,14 +39,6 @@ pub struct OwnerGraph {
     pub(crate) out_edges: Vec<Vec<OwnerEdgeId>>,
     /// CSR adjacency by target owner.
     pub(crate) in_edges: Vec<Vec<OwnerEdgeId>>,
-    /// CSR-style "edges referencing this owner as their at-init
-    /// callee", indexed by owner index. Empty for owners that no edge
-    /// references via [`EdgeRole::PromotedAtInit`]. Lets
-    /// `impacted_owner_edges` look up callee-referencing edges in
-    /// `O(|edges of that callee|)` instead of scanning the full edge
-    /// list per call (a `verdict_with_overlay_touching` per-candidate
-    /// hot path on gaffer-scale inputs).
-    pub(crate) callee_edges: Vec<Vec<OwnerEdgeId>>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,8 +80,7 @@ impl OwnerGraph {
     }
 
     /// Owner-edge row by `OwnerEdgeId`. The CSR adjacency the graph
-    /// exposes (`out_edges_of` / `in_edges_of` / `callee_edges_of`)
-    /// returns ids; callers dereference those ids back to rows
+    /// exposes (`out_edges_of` / `in_edges_of`) returns ids; callers dereference those ids back to rows
     /// through this accessor instead of indexing the private edge
     /// table directly.
     pub fn edge(&self, id: OwnerEdgeId) -> &OwnerEdge {
@@ -107,15 +98,6 @@ impl OwnerGraph {
     /// Edges terminating at `owner`.
     pub fn in_edges_of(&self, owner: OwnerId) -> &[OwnerEdgeId] {
         self.in_edges.get(owner.0).map(Vec::as_slice).unwrap_or(&[])
-    }
-
-    /// Edges referencing `owner` as their at-init callee. Mirrors
-    /// `out_edges_of`/`in_edges_of` but for the callee-owner index.
-    pub fn callee_edges_of(&self, owner: OwnerId) -> &[OwnerEdgeId] {
-        self.callee_edges
-            .get(owner.0)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
     }
 }
 
@@ -206,17 +188,11 @@ impl OwnerGraph {
     pub(super) fn from_parts(nodes: Vec<OwnerNode>, edges: Vec<OwnerEdge>) -> Self {
         let mut out_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
         let mut in_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
-        let mut callee_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
         for edge in &edges {
             if let Some(slot) = out_edges.get_mut(edge.from.0) {
                 slot.push(edge.id);
             }
             if let Some(slot) = in_edges.get_mut(edge.to.0) {
-                slot.push(edge.id);
-            }
-            if let Some(callee) = edge.reason.role.promoted_callee()
-                && let Some(slot) = callee_edges.get_mut(callee.0)
-            {
                 slot.push(edge.id);
             }
         }
@@ -225,7 +201,6 @@ impl OwnerGraph {
             edges,
             out_edges,
             in_edges,
-            callee_edges,
         }
     }
 }

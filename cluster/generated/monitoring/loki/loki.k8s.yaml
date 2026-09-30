@@ -10,30 +10,6 @@ metadata:
   name: loki
 spec: {}
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/ssa: Merge
-  name: loki-s3-credentials
-  namespace: loki
-type: Opaque
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: loki-s3-credentials
-  namespace: loki
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: seaweedfs
-  to:
-    - group: ""
-      kind: Secret
-      name: loki-s3-credentials
----
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:
@@ -85,41 +61,6 @@ spec:
     accessKeyField: AWS_ACCESS_KEY_ID
     name: loki-seaweedfs-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Credentials
-metadata:
-  name: loki
-  namespace: seaweedfs
-spec:
-  identityRef:
-    name: loki
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
-  secretRef:
-    accessKeyField: AWS_ACCESS_KEY_ID
-    name: loki-s3-credentials
-    namespace: loki
-    secretKeyField: AWS_SECRET_ACCESS_KEY
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: Bucket
-metadata:
-  name: loki
-  namespace: seaweedfs
-spec:
-  access:
-    - actions:
-        - Read
-        - Write
-        - List
-        - Tagging
-      user: loki
-  clusterRef:
-    name: seaweedfs
-    namespace: seaweedfs
-  name: loki
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

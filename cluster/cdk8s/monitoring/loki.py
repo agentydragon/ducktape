@@ -11,7 +11,6 @@ from __future__ import annotations
 import textwrap
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgress,
     CiliumNetworkPolicySpecEgressToEndpoints,
@@ -36,14 +35,11 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
-from cluster.cdk8s.seaweedfs import namespace, s3
+from cluster.cdk8s.seaweedfs import s3
 
 NAME = "loki"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/loki"
 _SEAWEEDFS = "seaweedfs"
-# Written by the old cross-namespace S3Credentials in seaweedfs.
-_LEGACY_CREDENTIALS_SECRET = "loki-s3-credentials"
 # Written by the tenant-local S3Credentials; what the Loki pods read.
 _CREDENTIALS_SECRET = "loki-seaweedfs-credentials"
 WRITE_URL = "http://loki-write.loki.svc.cluster.local:3100"
@@ -73,53 +69,17 @@ def _storage(chart: Chart) -> None:
             "pod-security.kubernetes.io/warn": "privileged",
         },
     )
-    # S3Credentials owns the credential values; Flux owns only this target shell.
-    k8s.KubeSecret(
-        chart,
-        "legacy-credentials",
-        metadata=k8s.ObjectMeta(
-            name=_LEGACY_CREDENTIALS_SECRET, namespace=NAME, annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"}
-        ),
-        type="Opaque",
-    )
-    # Permit only the SeaweedFS operator's S3Credentials resource to populate
-    # this exact workload Secret across namespaces.
-    s3.secret_grant(chart, secret=_LEGACY_CREDENTIALS_SECRET, namespace=NAME)
-    # Tenant-local ownership for Loki's existing Seaweed bucket and credentials.
-    # The old seaweedfs-namespace resources remain until the consumer cutover and
-    # data-path verification are complete.
-    storage = s3.PrivateBucket(
+    # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
+    # (Loki splits them internally by key prefix). See the HelmRelease's
+    # `storage.bucketNames` — all three point at the same bucket.
+    s3.PrivateBucket(
         chart,
         "storage",
         name=NAME,
         tenant=NAME,
         adopt_existing=True,
         description="Loki chunks, ruler, and admin objects.",
-        # Not the default `loki-s3-credentials`: that is the legacy Secret above, populated by the
-        # old cross-namespace S3Credentials, which this one cannot adopt.
         secret_name=_CREDENTIALS_SECRET,
-    )
-    s3.credentials(
-        chart,
-        "legacy-s3-credentials",
-        identity=storage.identity.name,
-        namespace=namespace.NAME,
-        secret=_LEGACY_CREDENTIALS_SECRET,
-        secret_namespace=NAME,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-    )
-    # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
-    # (Loki splits them internally by key prefix). See the HelmRelease's
-    # `storage.bucketNames` — all three point at the same bucket.
-    s3.bucket(
-        chart,
-        "legacy-bucket",
-        name=NAME,
-        namespace=namespace.NAME,
-        access=[BucketAccess.read_write(storage.identity.name)],
-        adopt_existing=False,
-        # Unset: the CRD defaults to Retain.
-        reclaim_policy=None,
     )
 
 

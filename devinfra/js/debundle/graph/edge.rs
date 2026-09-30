@@ -38,18 +38,6 @@ pub enum EdgeRole {
 }
 
 impl EdgeRole {
-    /// `Some(callee_owner)` iff this is a `PromotedAtInit` role.
-    /// Read by the CSR-builder in `OwnerGraph::from_report` /
-    /// `build_owner_graph_with` to populate `callee_edges`, and by
-    /// `reports::edge_role_report` to serialize the callee through
-    /// `OwnerGraphEdgeReport.role`.
-    pub fn promoted_callee(self) -> Option<OwnerId> {
-        match self {
-            EdgeRole::Direct => None,
-            EdgeRole::PromotedAtInit { callee_owner } => Some(callee_owner),
-        }
-    }
-
     /// `true` if this is a `PromotedAtInit` role and the callee owner
     /// lives in a different module than the caller per `module_of`.
     /// The lenient projection view (quotient, reports) drops such

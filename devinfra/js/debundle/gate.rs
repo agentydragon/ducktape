@@ -11,10 +11,10 @@
 
 mod chunk_analysis;
 mod chunk_factorization;
+mod counted_digraph;
 mod esm_import_order;
 mod realizability;
 mod report_builders;
-mod rollback_graph;
 mod validation;
 
 pub use chunk_analysis::ChunkAnalysis;

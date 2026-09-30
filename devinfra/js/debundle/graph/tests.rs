@@ -286,9 +286,7 @@ mod from_report_tests {
 
     /// Promoted edges carry an `EdgeRoleReport::PromotedAtInit` on
     /// the wire and reconstruct as `EdgeRole::PromotedAtInit` with
-    /// the resolved `OwnerId`. The CSR `callee_edges` adjacency must
-    /// also populate so `impacted_owner_edges` can find the edge by
-    /// callee owner.
+    /// the resolved `OwnerId`.
     #[test]
     fn promoted_at_init_role_round_trips_with_callee_owner() {
         let report = OwnerGraphReport {
@@ -324,9 +322,6 @@ mod from_report_tests {
                 callee_owner: OwnerId(2),
             }
         );
-        // CSR by-callee adjacency populated for owner:2.
-        assert_eq!(graph.callee_edges_of(OwnerId(2)).len(), 1);
-        assert_eq!(graph.callee_edges_of(OwnerId(0)).len(), 0);
     }
 
     /// Strict mapping: an edge referencing an owner id missing from
