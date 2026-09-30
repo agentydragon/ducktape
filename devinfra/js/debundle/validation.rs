@@ -646,10 +646,7 @@ pub(crate) fn render_sequenced_owner_causes(causes: &[SequencedOwnerCause], out:
                     )
                 })
                 .unwrap_or_else(|| "<location unavailable>".to_string());
-            let rule = serde_json::to_value(reason.rule)
-                .ok()
-                .and_then(|value| value.as_str().map(str::to_owned))
-                .unwrap_or_else(|| "unknown".to_string());
+            let rule = reason.rule.as_str();
             let detail = reason
                 .detail
                 .as_deref()

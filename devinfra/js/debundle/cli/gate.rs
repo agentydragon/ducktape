@@ -380,8 +380,8 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
                     })
                     .unwrap_or_else(|| "<location unavailable>".to_string());
                 out.push_str(&format!(
-                    "      impure initializer `{binding}` at {location}: {:?}{}\n",
-                    reason.rule,
+                    "      impure initializer `{binding}` at {location}: {}{}\n",
+                    reason.rule.as_str(),
                     reason
                         .detail
                         .as_deref()
