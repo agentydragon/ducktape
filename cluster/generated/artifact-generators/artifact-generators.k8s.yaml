@@ -642,8 +642,8 @@ spec:
       name: oci-cache
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/ollama/**"
-          to: "@artifact/cluster/k8s/ollama/"
+        - from: "@repo/cluster/generated/ollama/**"
+          to: "@artifact/cluster/generated/ollama/"
       name: ollama-app
       originRevision: "@repo"
     - copy:

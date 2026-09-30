@@ -1,0 +1,18 @@
+server {
+    listen 11435;
+
+    location / {
+        set $expected "Bearer ${OLLAMA_DIRECT_TOKEN}";
+        if ($http_authorization != $expected) {
+            return 401 '{"error": "unauthorized"}';
+        }
+
+        proxy_pass http://127.0.0.1:11434;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Connection "";
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+}
