@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import posixpath
 from collections.abc import Callable, Mapping, Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from cdk8s import ApiObjectMetadata, App, Chart, Names, Yaml
 from cdk8s_plus_34 import ConfigMap
@@ -21,6 +21,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 CNPG_DATABASE_READY = (
     "has(status.applied) && status.applied && "
@@ -46,6 +47,16 @@ def write_generated_readme(root: Path) -> None:
 
 def write_yaml(path: Path, manifest: dict[str, object]) -> None:
     path.write_text(Yaml.format_objects([manifest]))
+
+
+def copy_source_file(root: Path, directory: str, source: str) -> str:
+    """Copy `source`, a repo-relative native file shipped as this generator's runfiles data,
+    into `directory` under its own name; return that name for the `kustomization.yaml`."""
+    name = PurePosixPath(source).name
+    out_dir = root / directory
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / name).write_bytes(get_required_path(own_repo_rlocation(source)).read_bytes())
+    return name
 
 
 def config_map_chart(app: App, *, chart_name: str, configmap_name: str, namespace: str, data: dict[str, str]) -> Chart:
@@ -74,10 +85,12 @@ def write_directory(
     namespace: str | None = None,
     components: Sequence[str] = (),
     config_map_generator: Sequence[ConfigMapArgs] = (),
+    configurations: Sequence[str] = (),
 ) -> RenderedDirectory:
     """Synthesize a component's charts into the directory `artifact` packages, and write its
     `kustomization.yaml` listing them, then `siblings`: the hand-written files beside them.
-    `namespace`, `components` and `config_map_generator` are `kustomize_kustomization`'s.
+    `namespace`, `components`, `config_map_generator` and `configurations` are
+    `kustomize_kustomization`'s.
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
@@ -103,7 +116,11 @@ def write_directory(
     write_yaml(
         root / directory / "kustomization.yaml",
         kustomize_kustomization(
-            resources=resources, namespace=namespace, components=components, config_map_generator=config_map_generator
+            resources=resources,
+            namespace=namespace,
+            components=components,
+            config_map_generator=config_map_generator,
+            configurations=configurations,
         ),
     )
     return RenderedDirectory(artifact=artifact, decryption=sops_decryption(siblings))

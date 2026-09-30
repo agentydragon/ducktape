@@ -1,5 +1,3 @@
-# Kustomize transformer configuration; not a Kubernetes manifest
-# (kubeconform-excluded, cluster-manifest-ignored).
 nameReference:
   - kind: ConfigMap
     version: v1
