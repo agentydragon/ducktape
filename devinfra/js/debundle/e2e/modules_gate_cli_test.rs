@@ -1,7 +1,7 @@
 //! End-to-end coverage of the realizability gate hookup in
 //! `debundle modules merge` and `debundle modules delete --force`
-//! (task #84). Shells out to the built `debundle` binary against
-//! synthetic owner_graph.json fixtures.
+//! Shells out to the built `debundle` binary against synthetic
+//! owner_graph.json fixtures.
 //!
 //! Fixtures are hand-rolled JSON so the cycle topology is precise:
 //! the constraining edges in the owner graph, combined with the

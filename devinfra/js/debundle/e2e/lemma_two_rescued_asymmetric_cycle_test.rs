@@ -52,16 +52,11 @@
 //!      evaluated; skip. Entry body runs. `console.log(...)`
 //!      sees all bindings initialized.
 //!
-//! ## Expected outcomes
+//! ## Expected outcome
 //!
-//! - **Today (RED)**: the over-tightened gate rejects this
-//!   shape unconditionally — the second Tarjan pass over the
-//!   I-graph reports the `{mod_dep, mod_dependent}` SCC and
-//!   bails because it contains a constraining edge.
-//! - **After the fix**: the gate recognizes that every external
-//!   entrant into the SCC is residual, so Lemma 2's reversal
-//!   applies; gate accepts; Node runs the emitted entry and
-//!   prints `alpha alpha-beta alpha-beta`.
+//! The gate recognizes that every external entrant into the SCC is
+//! residual, so Lemma 2's reversal applies; the gate accepts and Node runs
+//! the emitted entry, printing `alpha alpha-beta alpha-beta`.
 
 use debundle_e2e_support::*;
 

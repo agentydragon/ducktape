@@ -16,7 +16,7 @@
 //!
 //! Generalizes the single-shape unit pin
 //! `realizability::tests::simulator_post_order_matches_emitted_evaluation_order`
-//! (the gaffer asymmetric cycle) into a sweep; that pin keeps the
+//! (an asymmetric cycle) into a sweep; that pin keeps the
 //! hand-derived expected order at the unit level, this sweep pins the
 //! simulator against the live Node runtime across the family.
 
@@ -43,9 +43,8 @@ struct SweepCase {
 }
 
 const SWEEP: &[SweepCase] = &[
-    // The gaffer over-rejection shape (#2071): asymmetric I-cycle
-    // whose only residual-side reference points at the constraining
-    // edge's TARGET (the dependency). Node side originally pinned by
+    // Asymmetric I-cycle whose only residual-side reference points at the
+    // constraining edge's TARGET (the dependency). Node side also pinned by
     // `asymmetric_non_residual_cycle_test::dependency_only_residual_reference_into_asymmetric_cycle_runs_under_node`.
     SweepCase {
         name: "asymmetric_dependency_only_residual_reference",
