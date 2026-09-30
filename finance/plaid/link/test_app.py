@@ -42,7 +42,6 @@ from finance.plaid.db.client import PlaidClient, PlaidSdkApiLike
 from finance.plaid.db.config import PlaidWebSettings
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
 from finance.plaid.link.app import create_app
-from finance.plaid.link.auth import session_cookie_name
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -263,7 +262,11 @@ def _institution(*, url: str | None = None) -> Institution:
 
 
 def _client(
-    *, storage: _FakeStorage | None = None, secrets: _FakeSecrets | None = None, api: _FakePlaidApi | None = None
+    *,
+    storage: _FakeStorage | None = None,
+    secrets: _FakeSecrets | None = None,
+    api: _FakePlaidApi | None = None,
+    signed_in: bool = True,
 ) -> TestClient:
     settings = PlaidWebSettings(
         plaid_env="sandbox",
@@ -288,18 +291,36 @@ def _client(
         base_url=settings.public_base_url,
         headers={"Origin": settings.public_base_url},
     )
-    session = {
-        "user": {
-            "issuer": settings.oidc_issuer,
-            "subject": "test-subject",
-            "username": "agentydragon",
-            "expires_at": time.time() + 3600,
+    if signed_in:
+        session = {
+            "user": {
+                "issuer": settings.oidc_issuer,
+                "subject": "test-subject",
+                "username": "agentydragon",
+                "expires_at": time.time() + 3600,
+            }
         }
-    }
-    encoded_session = base64.b64encode(json.dumps(session, separators=(",", ":")).encode("utf-8"))
-    cookie = TimestampSigner(settings.oidc_session_secret.get_secret_value()).sign(encoded_session).decode("utf-8")
-    test_client.cookies.set(session_cookie_name(settings.public_base_url), cookie, domain="plaid-mcp.test", path="/")
+        encoded_session = base64.b64encode(json.dumps(session, separators=(",", ":")).encode("utf-8"))
+        cookie = TimestampSigner(settings.oidc_session_secret.get_secret_value()).sign(encoded_session).decode("utf-8")
+        # The name browsers already hold sessions under: renaming it signs everyone out.
+        test_client.cookies.set("__Host-plaid-link-session", cookie, domain="plaid-mcp.test", path="/")
     return test_client
+
+
+def test_only_health_and_the_signed_webhook_are_open_without_a_session() -> None:
+    with _client(signed_in=False) as client:
+        health = client.get("/healthz")
+        signed_out = client.get("/auth/signed-out")
+        webhook = client.post("/webhooks/plaid", content=b"{}")
+        api = client.get("/api/links")
+        page = client.get("/link", follow_redirects=False)
+
+    assert (health.status_code, signed_out.status_code) == (200, 200)
+    assert "signed out of Plaid Link" in signed_out.text
+    # The webhook answers for itself, wanting Plaid's signature, rather than the login gate answering for it.
+    assert (webhook.status_code, webhook.json()["detail"]) == (401, "missing Plaid-Verification header")
+    assert (api.status_code, api.json()) == (401, {"detail": "Not authenticated"})
+    assert (page.status_code, page.headers["location"]) == (303, "/auth/login")
 
 
 def test_link_ui_exposes_management_actions() -> None:

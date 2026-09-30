@@ -20,8 +20,8 @@ echoed back in an error.
 
 ## Who may use it
 
-Login is the app's own Authentik OIDC flow (authorization code with PKCE), the same as Plaid Link's, admitting the
-one Authentik `sub` in `SESSION_SYNC_OIDC_ALLOWED_SUBJECT`. Authentik's application policy should bind the provider
+Login is the app's own Authentik OIDC flow (authorization code with PKCE), the code Plaid Link shares
+(`util/oidc_login.py`), admitting the one Authentik `sub` in `SESSION_SYNC_OIDC_ALLOWED_SUBJECT`. Authentik's application policy should bind the provider
 to that user as well; the check here holds if the binding is loosened. The browser keeps only a signed, `__Host-`
 cookie with identity and expiry, and a write to the API from another origin is refused.
 
