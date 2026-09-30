@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use super::{analyze_facts, parse, parse_with_source_map, test_id};
+use super::{analyze_facts, build_owner_graph, parse, parse_with_source_map, test_id};
 use crate::*;
 use analysis::*;
 
@@ -694,13 +694,11 @@ fn split_comma_list_attributes_reads_per_declarator() {
     let mod_1 = ModuleId(LogicalModuleIndex(1));
     assert!(
         !factorization.dep_graph.contains_edge(mod_0, mod_1),
-        "no edge mod_0 → mod_1 expected, got: {:?}",
-        factorization.dep_graph.edge_weight(mod_0, mod_1),
+        "no edge mod_0 → mod_1 expected",
     );
     assert!(
         !factorization.dep_graph.contains_edge(mod_1, mod_0),
-        "no edge mod_1 → mod_0 expected, got: {:?}",
-        factorization.dep_graph.edge_weight(mod_1, mod_0),
+        "no edge mod_1 → mod_0 expected",
     );
 }
 

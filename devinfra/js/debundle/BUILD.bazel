@@ -405,7 +405,6 @@ rust_library(
         "facts/mod.rs",
         "facts/purity_classification.rs",
         "facts/statement_facts.rs",
-        "facts/wire.rs",
         "graph/build.rs",
         "graph/edge.rs",
         "graph/linker_order.rs",
