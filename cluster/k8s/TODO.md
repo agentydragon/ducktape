@@ -335,7 +335,7 @@ The agent-box VM and its `codex` user are live (see
 
 ## Alloy `allow_arbitrary_file_access`: decide the residual components
 
-Native scrapes in `monitoring/alloy/config.alloy` cover apiserver and kubelet,
+Native scrapes in `cluster/cdk8s/monitoring/config.alloy` cover apiserver and kubelet,
 and clearing the spurious token fixes coredns. Three consumers of
 `bearerTokenFile` are still rejected by Alloy and therefore still unscraped:
 `monitoring-kube-controller-manager`, `monitoring-kube-scheduler`, and

@@ -2352,7 +2352,7 @@ spec:
       name: alloy
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/alloy
+  path: ./cluster/generated/monitoring/alloy
   prune: true
   retryInterval: 1m
   sourceRef:

@@ -630,8 +630,8 @@ spec:
       name: agents-mitmproxy
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/monitoring/alloy/**"
-          to: "@artifact/cluster/k8s/monitoring/alloy/"
+        - from: "@repo/cluster/generated/monitoring/alloy/**"
+          to: "@artifact/cluster/generated/monitoring/alloy/"
       name: monitoring-alloy
       originRevision: "@repo"
     - copy:

@@ -65,6 +65,23 @@ function SandboxRoute(): JSX.Element {
   );
 }
 
+function ActionsPage(): JSX.Element {
+  return (
+    <Stack>
+      <div>
+        <Text fw={700} size="lg">
+          Actions
+        </Text>
+        <Text c="dimmed" size="sm">
+          Review requests awaiting a decision, then browse completed actions.
+        </Text>
+      </div>
+      <ActionRequests embedded />
+      <ActionHistory embedded />
+    </Stack>
+  );
+}
+
 function ThreadRoute(): JSX.Element {
   const threadId = required(useParams().threadId, "threadId");
   return <ProjectedSession key={threadId} threadId={threadId} />;
@@ -123,8 +140,7 @@ function AppRoutes(): JSX.Element {
             <Routes>
               <Route path="/" element={<ThreadsLanding />} />
               <Route path="/sandboxes" element={<SandboxListRoute />} />
-              <Route path="/actions" element={<ActionRequests />} />
-              <Route path="/actions/history" element={<ActionHistory />} />
+              <Route path="/actions" element={<ActionsPage />} />
               <Route path="/actions/:requestId" element={<ActionRequests />} />
               <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
               <Route path="/sandboxes/:name" element={<SandboxRoute />} />

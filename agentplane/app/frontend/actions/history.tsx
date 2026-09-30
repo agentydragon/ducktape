@@ -5,7 +5,6 @@ import { displayableError } from "../client";
 import { JsonView } from "../json_view";
 import { StaleNotice, useStreamStatus } from "../stream_status";
 import { followStream, type StreamConnection } from "../live_stream";
-import { TopbarTitle } from "../topbar";
 import { ActionCall } from "./call";
 import { parseCallToolResult } from "./call_tool_result";
 import {
@@ -114,9 +113,11 @@ function useExecutorKinds(groupService: ActionGroupService): {
 export function ActionHistory({
   service = actionService,
   groupService = actionGroupService,
+  embedded = false,
 }: {
   service?: ActionService;
   groupService?: ActionGroupService;
+  embedded?: boolean;
 }): JSX.Element {
   const [requests, setRequests] = useState<ActionRequestView[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -185,12 +186,16 @@ export function ActionHistory({
 
   return (
     <Stack>
-      <TopbarTitle>
-        <Text fw={700}>Action history</Text>
-      </TopbarTitle>
-      <Text c="dimmed" size="sm">
-        Denied and terminal ActionRequests, kept as durable receipts.
-      </Text>
+      {embedded && (
+        <Text fw={700} size="lg">
+          History
+        </Text>
+      )}
+      {!embedded && (
+        <Text c="dimmed" size="sm">
+          Denied and terminal ActionRequests, kept as durable receipts.
+        </Text>
+      )}
       <StaleNotice streams={[stream]} />
       {error && <Text c="red">{error}</Text>}
       {executors.error && (
