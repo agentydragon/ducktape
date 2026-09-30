@@ -203,7 +203,7 @@ async def test_sync_run_claim_recovers_a_stale_run(storage: PlaidLinkStorage, db
         await engine.dispose()
 
 
-async def test_transaction_sync_queue_coalesces_events_during_a_claim(storage: PlaidLinkStorage) -> None:
+async def test_item_sync_queue_coalesces_events_during_a_claim(storage: PlaidLinkStorage) -> None:
     await storage.upsert_link(
         item_id="item-transactions",
         access_token_secret="item-transactions-token",
@@ -212,17 +212,17 @@ async def test_transaction_sync_queue_coalesces_events_during_a_claim(storage: P
         institution_name="Transactions Test",
         label=None,
     )
-    await storage.enqueue_transaction_sync("item-transactions")
-    first_claim = await storage.claim_transaction_sync()
+    await storage.enqueue_item_sync("item-transactions")
+    first_claim = await storage.claim_item_sync()
     assert first_claim is not None
-    await storage.enqueue_transaction_sync("item-transactions")
-    await storage.finish_transaction_sync(first_claim)
+    await storage.enqueue_item_sync("item-transactions")
+    await storage.finish_item_sync(first_claim)
 
-    second_claim = await storage.claim_transaction_sync()
+    second_claim = await storage.claim_item_sync()
     assert second_claim is not None
     assert second_claim.generation == first_claim.generation + 1
-    await storage.finish_transaction_sync(second_claim)
-    assert await storage.claim_transaction_sync() is None
+    await storage.finish_item_sync(second_claim)
+    assert await storage.claim_item_sync() is None
 
 
 async def test_plaid_webhook_delivery_keeps_full_body_and_dispatch_metadata(
@@ -271,7 +271,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
     captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=UTC)
     await _add_link(storage, item_id="item-purge")
     await _add_link(storage, item_id="item-keep")
-    await storage.enqueue_transaction_sync("item-purge")
+    await storage.enqueue_item_sync("item-purge")
 
     await storage.apply_accounts(
         item_id="item-purge",
@@ -397,7 +397,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
                 await conn.execute(text("SELECT count(*) FROM sync_runs WHERE item_id = 'item-purge'"))
             ).scalar_one() == 1
             assert (
-                await conn.execute(text("SELECT count(*) FROM transaction_sync_queue WHERE item_id = 'item-purge'"))
+                await conn.execute(text("SELECT count(*) FROM item_sync_queue WHERE item_id = 'item-purge'"))
             ).scalar_one() == 0
             assert (
                 await conn.execute(text("SELECT count(*) FROM plaid_api_events WHERE item_id = 'item-purge'"))
