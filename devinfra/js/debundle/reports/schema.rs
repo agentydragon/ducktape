@@ -295,23 +295,6 @@ impl AtomicUnitConflictReport {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeelCandidateStatus {
-    PeelableNow,
-    BlockedCycle,
-    BlockedResidualDependency,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum FactorizeDiagnosticReason {
-    ExceedsSizeCap,
-    NoExactRepair,
-    ActiveModuleConflict,
-    RepeatedFrontier,
-}
-
 /// Interned reference to a logical module.
 ///
 /// This is the **one** encoding of module identity on the owner-graph

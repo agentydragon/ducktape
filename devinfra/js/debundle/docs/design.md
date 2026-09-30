@@ -1839,9 +1839,6 @@ rendering proposal rows.
   cells (`edges_to_other_residual_cells > 0`); promoting it alone would
   route those reads through `residual_entry`, so the referenced cells
   must land first or together.
-- **`blocked_cycle`** is reserved vocabulary that is currently
-  unreachable: the quotient's contraction gate refuses cycle-creating
-  merges, so no emitted class is cyclic by construction.
 
 `landable_today` derives from the same predicate as the status (plus
 anonymous-statement addressability): it is `true` only for

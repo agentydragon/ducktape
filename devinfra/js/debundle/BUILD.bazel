@@ -904,7 +904,6 @@ rust_library(
         ":spec",
         "@crates//:anyhow",
         "@crates//:rayon",
-        "@crates//:serde",
         "@crates//:swc_common",
     ],
 )

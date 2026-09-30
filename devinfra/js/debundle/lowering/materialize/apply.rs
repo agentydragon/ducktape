@@ -105,7 +105,6 @@ pub(super) fn materialized_chunk_artifact(
         ..base_analysis.unwrap_or_else(|| ChunkAnalysisReport {
             chunk_id: chunk_name,
             source_path,
-            parser: Default::default(),
             entry_file: String::new(),
             counts: Default::default(),
             files: Vec::new(),

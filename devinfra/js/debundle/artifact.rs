@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
@@ -235,35 +234,6 @@ pub enum FileRole {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct LoadedJsChunksManifest {
-    pub counts: LoadedCounts,
-    pub chunks: Vec<LoadedChunkRecord>,
-    pub js_files: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct LoadedCounts {
-    pub chunks: usize,
-    pub files: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct LoadedChunkRecord {
-    pub chunk_id: String,
-    pub entry_file: String,
-    pub source_path: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ParsedJsFileRecord {
-    pub chunk_id: String,
-    pub file: String,
-    pub source_bytes: usize,
-    pub parse_duration: Duration,
-    pub analysis_duration: Duration,
-}
-
-#[derive(Debug, Clone, Serialize)]
 pub struct ArtifactManifest {
     pub counts: ArtifactCounts,
     pub chunks: Vec<ArtifactChunkRecord>,
@@ -340,7 +310,6 @@ pub struct ArtifactChunkRecord {
 pub struct ChunkAnalysisReport {
     pub chunk_id: String,
     pub source_path: String,
-    pub parser: ParserOptionsRecord,
     pub entry_file: String,
     pub counts: ChunkCounts,
     pub files: Vec<ChunkFileRecord>,
@@ -360,7 +329,6 @@ pub struct ChunkDecompositionOutput {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkValidationSummary {
-    pub status: &'static str,
     /// Linker evaluation order, by canonical [`spec::ModulePath`].
     pub linker_order: Vec<spec::ModulePath>,
 }
@@ -400,7 +368,6 @@ impl ChunkManifest {
             analysis: analysis.clone(),
             validation: decomposition.map_or_else(
                 || ChunkValidationSummary {
-                    status: "not_materialized",
                     linker_order: Vec::new(),
                 },
                 |d| d.validation.clone(),
@@ -690,23 +657,6 @@ impl OutputSize {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ParserOptionsRecord {
-    pub allow_undeclared_exports: bool,
-    pub plugins: Vec<&'static str>,
-    pub source_type: &'static str,
-}
-
-impl Default for ParserOptionsRecord {
-    fn default() -> Self {
-        Self {
-            allow_undeclared_exports: true,
-            plugins: vec!["jsx", "typescript", "importAssertions", "topLevelAwait"],
-            source_type: "module",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ChunkCounts {
     pub dynamic_imports: usize,
@@ -787,7 +737,6 @@ pub struct KeptTopLevelDeclarationRecord {
     pub line: Option<usize>,
     pub names: Vec<String>,
     pub kind: TopLevelDeclarationKind,
-    pub unsafe_reason: &'static str,
 }
 
 /// The three top-level declaration variants we anchor extraction on.
@@ -1164,10 +1113,7 @@ impl IndexedArtifact {
     }
 }
 
-pub fn load_js_chunks(
-    input_root: &Path,
-    js_list_path: &Path,
-) -> Result<(LoadedJsChunks, LoadedJsChunksManifest)> {
+pub fn load_js_chunks(input_root: &Path, js_list_path: &Path) -> Result<LoadedJsChunks> {
     let js_files = parse_js_list(
         &fs::read_to_string(js_list_path)
             .with_context(|| format!("reading {}", js_list_path.display()))?,
@@ -1206,32 +1152,10 @@ pub fn load_js_chunks(
             },
         });
     }
-    let chunks = LoadedJsChunks {
+    Ok(LoadedJsChunks {
         chunks,
         chunk_table,
-    };
-    let manifest = LoadedJsChunksManifest {
-        counts: LoadedCounts {
-            chunks: js_files.len(),
-            files: js_files.len(),
-        },
-        chunks: js_files
-            .iter()
-            .map(|source_path| {
-                Ok(LoadedChunkRecord {
-                    chunk_id: chunk_id_for_js_path(source_path)?,
-                    entry_file: Path::new(source_path)
-                        .file_name()
-                        .and_then(|value| value.to_str())
-                        .context("source path missing file name")?
-                        .to_string(),
-                    source_path: source_path.clone(),
-                })
-            })
-            .collect::<Result<Vec<_>>>()?,
-        js_files,
-    };
-    Ok((chunks, manifest))
+    })
 }
 
 pub struct MaterializedScripts {

@@ -22,8 +22,8 @@ use spec::TransformSpec;
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
-    ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, ChunkStripStats,
-    VendorPlanOptions, VendorResolution, apply_emission_rewrites, build_partial_swap_resolutions,
+    ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, VendorPlanOptions,
+    VendorResolution, apply_emission_rewrites, build_partial_swap_resolutions,
     build_vendor_resolution_plan, validate_partial_swap_consumers, write_planned_vendor_outputs,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
@@ -188,8 +188,7 @@ pub fn run_transform_cli_with_options(
     if !options.dry_run {
         preflight_output_roots(&spec)?;
     }
-    let (artifact, _load_manifest) =
-        load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
+    let artifact = load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
     let materialise_chunk_ids: Vec<String> = spec
         .logical_modules
         .keys()
@@ -315,20 +314,15 @@ pub fn run_transform_cli_with_options(
     // Runs after materialize so the per-symbol consumer rewrite cannot
     // erase binding names spec selectors matched on.
     let mut vendor_rewrite_counts = vendor_lowering_rewrites;
-    let emission_outcome;
-    (indexed, emission_outcome) = indexed.update(|artifact, indexes| {
+    let emission_references;
+    (indexed, emission_references) = indexed.update(|artifact, indexes| {
         let emission_result = apply_emission_rewrites(artifact, &vendor_plan, indexes)?;
         Ok((
             emission_result.artifact,
-            (
-                emission_result.references_by_symbol,
-                emission_result.strip_stats,
-            ),
+            emission_result.references_by_symbol,
         ))
     })?;
-    let (emission_references, strip_stats) = emission_outcome;
     merge_rewrite_counts(&mut vendor_rewrite_counts, emission_references);
-    vendor_report.strip_stats = strip_stats;
 
     if vendor_plan.has_partial_swaps() || vendor_plan.has_bundled_partial_swaps() {
         // Post-strip consumer gate: no retained file may still consume
@@ -515,8 +509,6 @@ struct VendorSwapsReport {
     partial: BTreeMap<String, ChunkPartialSwapResolution>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     bundled_partial: BTreeMap<String, ChunkBundledPartialSwapResolution>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    strip_stats: BTreeMap<String, ChunkStripStats>,
 }
 
 fn write_vendor_swaps_report(
@@ -527,11 +519,7 @@ fn write_vendor_swaps_report(
     if !write {
         return Ok(());
     }
-    if report.full.is_empty()
-        && report.partial.is_empty()
-        && report.bundled_partial.is_empty()
-        && report.strip_stats.is_empty()
-    {
+    if report.full.is_empty() && report.partial.is_empty() && report.bundled_partial.is_empty() {
         return Ok(());
     }
     let Some(path) = path else {

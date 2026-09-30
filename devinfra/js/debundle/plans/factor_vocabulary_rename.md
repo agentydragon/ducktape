@@ -101,7 +101,7 @@ struct renames above cascade to JSON automatically:
 
 - `FactorizeProposal` fields → `Proposal` fields (no JSON key changes — field names like `owner_ids`, `binding_ids`, `landable_today` are already clean)
 - `FactorizeDiagnosticReport` fields → `ProposalDiagnostic` fields (same)
-- `FactorizeDiagnosticReason` variants use `#[serde(rename_all = "snake_case")]` → already produce `exceeds_size_cap`, `no_exact_repair`, etc. No change needed.
+- `FactorizeDiagnosticReason` variants use `#[serde(rename_all = "snake_case")]` → already produce `exceeds_size_cap`. No change needed.
 
 The only JSON key that needs an explicit serde rename change:
 
