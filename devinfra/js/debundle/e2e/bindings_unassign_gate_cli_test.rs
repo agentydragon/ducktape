@@ -8,16 +8,9 @@
 //! `--modules` carry the same module-vs-binding assignments and the
 //! gate's reconstruction is unambiguous.
 
-use debundle_e2e_support::{debundler_path, write_atomic_unit_fixture, write_text_file};
+use debundle_e2e_support::{run_debundle, write_atomic_unit_fixture, write_text_file};
 use std::fs;
-use std::process::Command;
 
-/// Synthetic owner graph where alpha (owner:0) and beta (owner:1)
-/// form an atomic unit via mutual `eager_rebind` edges (matching the
-/// `bindings_assign_gate_cli_test.rs` fixture). The atom MUST
-/// co-locate: any partition that places one in a different module
-/// (including "this one's home is residual, the other one isn't")
-/// splits the unit.
 #[test]
 fn bindings_unassign_rejects_atom_split_when_other_members_stay() {
     // Atomic unit {alpha, beta} co-located in `home/atom.yaml`.
@@ -29,18 +22,15 @@ fn bindings_unassign_rejects_atom_split_when_other_members_stay() {
     let (modules, graph) = write_atomic_unit_fixture(root);
     let pre_atom = fs::read_to_string(modules.join("home/atom.yaml")).unwrap();
 
-    let out = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "unassign",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "alpha",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "bindings",
+        "unassign",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "alpha",
+    ]);
     assert!(
         !out.status.success(),
         "expected non-zero exit; stdout: {}; stderr: {}",
@@ -67,19 +57,16 @@ fn bindings_unassign_rejects_split_under_dry_run_too() {
     let (modules, graph) = write_atomic_unit_fixture(root);
     let pre_atom = fs::read_to_string(modules.join("home/atom.yaml")).unwrap();
 
-    let out = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "unassign",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "--dry-run",
-            "alpha",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "bindings",
+        "unassign",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "--dry-run",
+        "alpha",
+    ]);
     assert!(
         !out.status.success(),
         "dry-run on an atom-splitting plan must still exit non-zero; stdout: {}; stderr: {}",
@@ -106,34 +93,28 @@ fn bindings_unassign_dry_run_and_apply_share_exit_code() {
     // same code so callers can dry-run before applying.
     let dir_dry = tempfile::tempdir().unwrap();
     let (modules_dry, graph_dry) = write_atomic_unit_fixture(dir_dry.path());
-    let dry = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "unassign",
-            "--modules",
-            modules_dry.to_str().unwrap(),
-            "--graph",
-            graph_dry.to_str().unwrap(),
-            "--dry-run",
-            "alpha",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let dry = run_debundle(&[
+        "bindings",
+        "unassign",
+        "--modules",
+        modules_dry.to_str().unwrap(),
+        "--graph",
+        graph_dry.to_str().unwrap(),
+        "--dry-run",
+        "alpha",
+    ]);
 
     let dir_apply = tempfile::tempdir().unwrap();
     let (modules_apply, graph_apply) = write_atomic_unit_fixture(dir_apply.path());
-    let apply = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "unassign",
-            "--modules",
-            modules_apply.to_str().unwrap(),
-            "--graph",
-            graph_apply.to_str().unwrap(),
-            "alpha",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let apply = run_debundle(&[
+        "bindings",
+        "unassign",
+        "--modules",
+        modules_apply.to_str().unwrap(),
+        "--graph",
+        graph_apply.to_str().unwrap(),
+        "alpha",
+    ]);
 
     assert_eq!(
         dry.status.code(),
@@ -167,19 +148,16 @@ fn bindings_unassign_accepts_when_whole_atom_unassigned_together() {
     let root = dir.path();
     let (modules, graph) = write_atomic_unit_fixture(root);
 
-    let out = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "unassign",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "alpha",
-            "beta",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "bindings",
+        "unassign",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--graph",
+        graph.to_str().unwrap(),
+        "alpha",
+        "beta",
+    ]);
     assert!(
         out.status.success(),
         "expected zero exit; stderr: {}",
@@ -207,16 +185,13 @@ fn bindings_unassign_requires_graph_or_no_verify() {
     );
     let pre_a = fs::read_to_string(modules.join("a.yaml")).unwrap();
 
-    let out = Command::new(debundler_path())
-        .args([
-            "bindings",
-            "unassign",
-            "--modules",
-            modules.to_str().unwrap(),
-            "alpha",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "bindings",
+        "unassign",
+        "--modules",
+        modules.to_str().unwrap(),
+        "alpha",
+    ]);
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(

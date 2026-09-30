@@ -170,27 +170,6 @@ pub fn parse_js_module_ast(source_name: &str, source: &str) -> Result<Module> {
     Ok(module)
 }
 
-/// Wrap a pre-existing `Module` in a `ParsedJsModule`. Callers must
-/// pass the `Mark`s that were used when `resolver` was applied to
-/// `module`; if the module hasn't been through `resolver` yet, mint
-/// fresh marks with `Mark::new()` and call `resolver` first.
-pub fn parsed_js_module_with_source_map(
-    source_name: &str,
-    source: &str,
-    module: Module,
-    unresolved_mark: Mark,
-    top_level_mark: Mark,
-) -> ParsedJsModule {
-    let cm: Lrc<SourceMap> = Default::default();
-    let _fm = source_file(&cm, source_name, source);
-    ParsedJsModule {
-        cm,
-        module,
-        unresolved_mark,
-        top_level_mark,
-    }
-}
-
 fn source_file(
     cm: &Lrc<SourceMap>,
     source_name: &str,
@@ -405,7 +384,7 @@ fn strip_nth_paren_expr(module: &mut Module, target: usize) {
 /// produces. Mirrors the owner-graph fact splitter: `var x = ..., y
 /// = ...;` is one body item but two statement ordinals; other
 /// top-level items count as one.
-pub fn post_split_top_level_count(item: &ModuleItem) -> usize {
+fn post_split_top_level_count(item: &ModuleItem) -> usize {
     fn decl_count(decl: &Decl) -> usize {
         match decl {
             Decl::Var(var) if var.decls.len() > 1 => var.decls.len(),
@@ -658,17 +637,6 @@ pub fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
     }
 }
 
-pub fn line_for_span(parsed: &ParsedJsModule, span: swc_common::Span) -> Option<usize> {
-    parsed.line_index().line_for_span(span)
-}
-
-pub fn line_range_for_span(
-    parsed: &ParsedJsModule,
-    span: swc_common::Span,
-) -> Option<(usize, usize)> {
-    parsed.line_index().line_range_for_span(span)
-}
-
 pub fn str_value(value: &Str) -> String {
     value.value.to_string_lossy().to_string()
 }
@@ -725,8 +693,6 @@ mod tests {
             let parsed = parse_js_module("test.js", "const a = 1;\n").unwrap();
             let line_index = parsed.line_index();
 
-            assert_eq!(line_for_span(&parsed, DUMMY_SP), None);
-            assert_eq!(line_range_for_span(&parsed, DUMMY_SP), None);
             assert_eq!(line_index.line_for_span(DUMMY_SP), None);
             assert_eq!(line_index.line_range_for_span(DUMMY_SP), None);
         });

@@ -33,7 +33,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
 )
-from cluster.cdk8s.generation import CNPG_DATABASE_READY, write_charts, write_yaml
+from cluster.cdk8s.generation import CNPG_DATABASE_READY, manifest_file, write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/tofu-state"
@@ -90,13 +90,12 @@ def chart(app: App) -> Chart:
 def write_manifests(root: Path) -> None:
     """Write `db/` and the directory's `kustomization.yaml`; the Namespace beside it is
     `tofu_state.namespace`'s."""
-    write_charts(root, _DB_DIR, chart)
     write_yaml(
         root / _DB_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[_CREDENTIALS_FILE, f"{DATABASE.name}.k8s.yaml"]),
+        kustomize_kustomization(resources=[_CREDENTIALS_FILE, write_charts(root, _DB_DIR, chart)]),
     )
     write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=["namespace.k8s.yaml", "db"])
+        root / OUTPUT_DIR / "kustomization.yaml", kustomize_kustomization(resources=[manifest_file(OUTPUT_DIR), "db"])
     )
 
 

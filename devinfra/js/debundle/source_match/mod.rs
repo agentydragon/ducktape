@@ -11,13 +11,11 @@
 //! - `preview` — log-safe selector previews.
 //! - `parse_validate` — selector/module parsing and `ANYTHING`-hole validation.
 //! - `types` — shared result/selector types.
-//! - `binding_resolution` — canonical source-match claim expansion and
-//!   declared-binding extraction.
+//! - `binding_resolution` — canonical source-match claim expansion.
 //! - `declared_bindings` — declared-binding extraction from AST items.
 //! - `chunk_resolver` — the shape matcher's per-chunk candidate resolver.
 //! - `fact_near_miss` — fact-based `source_match` debt / near-miss diagnostics.
 //! - `free_identifiers` — a template's free (referenced, undeclared) names.
-//! - `resolver` — the candidate-resolution seam trait.
 //! - `anonymous_statement` — anonymous source-match statement validation.
 //! - `holes` — local hole-keyword dispatch over AST nodes.
 
@@ -27,8 +25,7 @@ pub(crate) use anyhow::{Context, Result, bail};
 pub(crate) use js_ast::item_var_decl;
 pub(crate) use serde::Serialize;
 pub(crate) use spec::{
-    AnonymousStatementSelector, BindingSourceKind, SourceMatch, SourceMatchClaim,
-    SourceMatchIdentifierMode,
+    AnonymousStatementSelector, SourceMatch, SourceMatchClaim, SourceMatchIdentifierMode,
 };
 pub(crate) use swc_ecma_ast::*;
 pub(crate) use swc_ecma_visit::{Visit, VisitWith};
@@ -70,7 +67,6 @@ mod free_identifiers;
 mod holes;
 mod parse_validate;
 mod preview;
-mod resolver;
 mod types;
 
 // Crate-internal re-exports: each submodule reaches its siblings' crate-internal
@@ -78,25 +74,14 @@ mod types;
 pub(crate) use anonymous_statement::*;
 pub(crate) use declared_bindings::*;
 pub(crate) use holes::*;
-/// The seam every `source_match` candidate resolver implements.
-///
-/// `ChunkResolver` is the production candidate generator for shape
-/// (`source_match`) selectors: it enumerates every top-level statement a
-/// JS-template-with-holes matches. Materialization projects those candidates
-/// into the selector IR, where the global solve assigns targets; see
-/// <docs/selector_resolution.md>.
-pub use resolver::SelectorResolver;
-
 // Public API for selector parsing, normalization, and diagnostics.
-pub use binding_resolution::{
-    source_match_claim_member_selectors, source_match_declared_binding_names,
-};
+pub use binding_resolution::source_match_claim_member_selectors;
 pub use fact_near_miss::{fact_near_misses, fact_source_match_body_debt};
 pub use free_identifiers::{free_identifiers, template_free_identifiers};
 pub use parse_validate::parse_selector_module;
 pub use preview::source_match_preview;
 pub use types::{
-    AnonymousGroupMatch, BindingGroupMemberSelector, MemberBindingGroupMatch, MemberBindingMatch,
-    ParsedSourceMatchSelector, ResolvedMemberBinding, ResolvedMemberBindingGroup,
-    SourceMatchBodyDebt, SourceMatchNearMiss,
+    AnonymousGroupMatch, BindingGroupMemberSelector, MatchedBinding, MemberBindingGroupMatch,
+    MemberBindingMatch, ParsedSourceMatchSelector, ResolvedMemberBinding, SourceMatchBodyDebt,
+    SourceMatchNearMiss,
 };

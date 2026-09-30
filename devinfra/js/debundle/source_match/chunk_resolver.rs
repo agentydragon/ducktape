@@ -1,9 +1,12 @@
-//! The fact-based `SelectorResolver` (`ChunkResolver`): resolve a selector to its
-//! claimed owner/binding using the fact matcher (`selector_match::matches` over
-//! `chunk_facts`) as the per-statement match oracle, then extract the claimed
-//! binding(s) with the shared `declared_bindings` / `selector_binding_location`
-//! helpers. The per-statement match semantics are pinned by
-//! `selector_match_test`.
+//! The shape matcher's per-chunk candidate generator (`ChunkResolver`): for a
+//! parsed chunk and a JS-template selector, every top-level statement the
+//! selector matches and the binding(s) it declares there. It uses the fact
+//! matcher (`selector_match::matches` over `chunk_facts`) as the per-statement
+//! match oracle, then extracts the claimed binding(s) with the shared
+//! `declared_bindings` / `selector_binding_location` helpers. Materialization
+//! projects the candidates into the selector IR, and the global solve picks one
+//! target per selector (<docs/selector_resolution.md>). The per-statement match
+//! semantics are pinned by `selector_match_test`.
 //!
 //! Fail-closed: a construct the matcher does not faithfully handle (an
 //! `Unsupported` needle) surfaces as an error rather than a wrong claim — it never
@@ -356,12 +359,9 @@ fn matching_body_indices(
 
 /// A synthetic single-declarator version of a var-decl `item` keeping only
 /// `declarator`, cloned from the real item so span/context stay valid. Matching
-/// the single-declarator needle against this *is* the per-declarator match the
-/// production resolver does. Counting matches across every declarator of every
-/// owner keeps categoricity faithful: a single-declarator needle that matches
-/// one declarator of a multi-declarator owner is a real match a whole-statement
-/// match would miss — which would mis-count and turn a production-ambiguous case
-/// into a spurious unique resolution.
+/// the single-declarator needle against this *is* the per-declarator match: a
+/// needle that matches one declarator of a multi-declarator owner is a real match
+/// a whole-statement match would miss.
 fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarator) -> ModuleItem {
     let mut cloned = item.clone();
     match &mut cloned {
@@ -378,14 +378,12 @@ fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarator) -> Modu
 
 /// Collect every single-declarator var-decl member match: the needle's
 /// declarator against every declarator of every var-decl owner (the per-declarator
-/// path), so the match count — hence categoricity — is faithful. Returns one
-/// `MemberBindingMatch` per matched declarator, body-index ascending (the cached
-/// `var_declarator_subjects` are built in body order).
+/// path). Returns one `MemberBindingMatch` per matched declarator, body-index
+/// ascending (the cached `var_declarator_subjects` are built in body order).
 fn member_matches_var_declarator(
     chunk: &ChunkResolver,
     needle: &ModuleItem,
     request_id: &str,
-    export_name: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
     let needle_facts = needle_item_facts(needle)?;
@@ -451,7 +449,7 @@ fn member_matches_var_declarator(
         let declared = declared_bindings_for_var_declarator(declarator);
         if selector.target_binding.is_none() && declared.len() != 1 {
             bail!(
-                "source_match resolver: export `{export_name}` matched a declarator binding {} \
+                "logical_module {request_id}: source_match matched a declarator binding {} \
                  names; needs a single-binding declarator or source_matches[].bindings \
                  projection",
                 declared.len(),
@@ -482,7 +480,6 @@ fn member_matches_declarator_hole(
     chunk: &ChunkResolver,
     needle: &ModuleItem,
     request_id: &str,
-    export_name: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
     let target_binding = selector.target_binding.as_deref().ok_or_else(|| {
@@ -542,9 +539,8 @@ fn member_matches_declarator_hole(
         };
         let Some(Some(candidate_decl_idx)) = alignment.site.get(target_decl_idx) else {
             bail!(
-                "logical_module {request_id}: source_matches[].bindings[`{target_binding}`] for \
-                 export `{export_name}` was matched by a DECLARATORS hole, not a pinned \
-                 declarator"
+                "logical_module {request_id}: source_matches[].bindings[`{target_binding}`] was \
+                 matched by a DECLARATORS hole, not a pinned declarator"
             );
         };
         let Some(candidate_declarator) = candidate_var.decls.get(*candidate_decl_idx) else {
@@ -567,33 +563,6 @@ fn member_matches_declarator_hole(
         });
     }
     Ok(matches)
-}
-
-/// Parse a selector's `match_source` to its top-level statements (any count),
-/// **fail-closed** on an unsupported selector construct: for example, a misplaced
-/// `ANYTHING` hole in an object property *key* errors here before any match is
-/// attempted, so the diagnostic names the bad construct rather than a generic
-/// "did not match" (mirrors the deleted matcher's selector capability gate).
-fn parse_source_match_selector(
-    request_id: &str,
-    selector: &AnonymousStatementSelector,
-) -> Result<ParsedSourceMatchSelector> {
-    ParsedSourceMatchSelector::parse(
-        request_id,
-        format!("<source_match needle in {request_id}>"),
-        selector,
-        "source_match",
-    )
-}
-
-#[cfg(test)]
-fn parse_needles(
-    request_id: &str,
-    selector: &AnonymousStatementSelector,
-) -> Result<Vec<ModuleItem>> {
-    Ok(parse_source_match_selector(request_id, selector)?
-        .body()
-        .to_vec())
 }
 
 /// Collect every multi-statement member match whose target item is a
@@ -681,8 +650,7 @@ fn member_matches_multi(
     // list-position carrier in a fixed contiguous window: a `STMT_LIST;` matches no
     // real statement positionally, so such a window has no match. Return an empty
     // candidate list (`match_fixed_window_sequence_indexed` would instead fail
-    // closed on the run-hole keyword); the categorical `resolve_member` still
-    // rejects (empty → bail).
+    // closed on the run-hole keyword).
     if needles
         .iter()
         .any(|item| module_item_list_hole_name(item).is_some())
@@ -800,14 +768,7 @@ fn group_matches_declarator_holes(
             else {
                 bail!("source_match resolver: target `{target}` binding index out of range");
             };
-            resolved.insert(
-                target.clone(),
-                MemberBindingMatch {
-                    body_idx,
-                    binding,
-                    free_bindings: alignment.free_bindings.clone(),
-                },
-            );
+            resolved.insert(target.clone(), MatchedBinding { body_idx, binding });
         }
         matches.push(MemberBindingGroupMatch {
             bindings: resolved,
@@ -885,10 +846,9 @@ fn group_matches_single_declarator(
             };
             resolved.insert(
                 target.clone(),
-                MemberBindingMatch {
+                MatchedBinding {
                     body_idx: subject.body_idx,
                     binding: binding.clone(),
-                    free_bindings: free_bindings.clone(),
                 },
             );
         }
@@ -1014,10 +974,9 @@ fn group_matches_general(
             )?;
             resolved.insert(
                 target.clone(),
-                MemberBindingMatch {
+                MatchedBinding {
                     body_idx: *body_idx,
                     binding,
-                    free_bindings: alignment.free_bindings.clone(),
                 },
             );
         }
@@ -1029,41 +988,13 @@ fn group_matches_general(
     Ok(matches)
 }
 
-/// Owner-level categoricity for the per-owner group branches: exactly one owner
-/// must match (production rejects zero or several).
-fn one_group_match(
-    mut matches: Vec<MemberBindingGroupMatch>,
-    request_id: &str,
-) -> Result<ResolvedMemberBindingGroup> {
-    match matches.len() {
-        1 => {
-            let match_ = matches.remove(0);
-            let body_idx = match_
-                .bindings
-                .values()
-                .map(|binding| binding.body_idx)
-                .min()
-                .unwrap_or(0);
-            let bindings = match_
-                .bindings
-                .into_iter()
-                .map(|(target, matched)| (target, matched.binding))
-                .collect();
-            Ok(ResolvedMemberBindingGroup { body_idx, bindings })
-        }
-        0 => bail!("logical_module {request_id}: source_matches[] did not match any owner"),
-        n => bail!("logical_module {request_id}: source_matches[] is ambiguous — {n} owners"),
-    }
-}
-
 /// Collect every single-statement member match: scan the chunk body for
 /// statements the needle matches, then read the claimed binding per matched item:
 /// - **with `target_binding`** (a non-var-declarator needle): read
 ///   `declared_bindings[target_binding_idx]` per match, erroring only when that
 ///   index is out of range. Does **not** require a single declared binding.
 /// - **without `target_binding`**: push the lone declared binding, skip a
-///   statement that declares nothing, and bail when one declares more than one
-///   (the categorical-position bail every candidate accessor preserves).
+///   statement that declares nothing, and bail when one declares more than one.
 ///
 /// One `MemberBindingMatch` per matched statement, body-index ascending
 /// (`matching_body_indices` returns the postings intersection in ascending order).
@@ -1133,10 +1064,12 @@ fn member_matches_single_statement(
 }
 
 impl ChunkResolver<'_> {
-    fn collect_member_candidates_parsed(
+    /// Every place a `source_match` member selector matches, each carrying its
+    /// `body_idx` and claimed binding; the caller (the global selector solve, the
+    /// minimizer's uniqueness measure) decides what the matches mean.
+    pub fn member_candidates(
         &self,
         request_id: &str,
-        export_name: &str,
         parsed: &ParsedSourceMatchSelector,
     ) -> Result<Vec<MemberBindingMatch>> {
         let selector = parsed.selector();
@@ -1145,61 +1078,18 @@ impl ChunkResolver<'_> {
             return member_matches_multi(self, needles, request_id, selector);
         };
         if selector_var_decl_has_declarator_holes(needle) {
-            return member_matches_declarator_hole(self, needle, request_id, export_name, selector);
+            return member_matches_declarator_hole(self, needle, request_id, selector);
         }
         if selector_single_var_declarator(needle).is_some() {
-            return member_matches_var_declarator(self, needle, request_id, export_name, selector);
+            return member_matches_var_declarator(self, needle, request_id, selector);
         }
         member_matches_single_statement(self, needle, request_id, selector)
     }
 
-    /// The non-categorical member match list. Shares the per-path match collection
-    /// with [`SelectorResolver::resolve_member`]; the only difference is this
-    /// returns the whole list (each carrying `body_idx` + binding) instead of
-    /// collapsing to the unique winner. Used by cross-source consumers that
-    /// aggregate matches before deciding uniqueness (the CLI edit gate).
-    pub fn member_candidates(
-        &self,
-        request_id: &str,
-        selector: &AnonymousStatementSelector,
-    ) -> Result<Vec<MemberBindingMatch>> {
-        let parsed = parse_source_match_selector(request_id, selector)?;
-        self.member_candidates_parsed(request_id, &parsed)
-    }
-
-    pub fn member_candidates_parsed(
-        &self,
-        request_id: &str,
-        parsed: &ParsedSourceMatchSelector,
-    ) -> Result<Vec<MemberBindingMatch>> {
-        // Diagnostics-only: the matcher free fn takes no export name either.
-        self.collect_member_candidates_parsed(request_id, "candidate", parsed)
-    }
-
-    /// Candidate top-level body-index groups for an anonymous statement selector.
-    ///
-    /// The current public anonymous selector form validates to one parsed statement,
-    /// so each group contains one body index. The grouped shape mirrors the older
-    /// graph-backed resolver API and keeps this reusable if anonymous ranges grow a
-    /// multi-statement form later.
-    pub fn anonymous_group_candidates(
-        &self,
-        request_id: &str,
-        selector: &AnonymousStatementSelector,
-    ) -> Result<Vec<AnonymousGroupMatch>> {
-        let parsed = parse_source_match_selector(request_id, selector)?;
-        self.anonymous_group_candidates_parsed(request_id, &parsed)
-    }
-
-    pub fn anonymous_group_candidates_parsed(
-        &self,
-        request_id: &str,
-        parsed: &ParsedSourceMatchSelector,
-    ) -> Result<Vec<AnonymousGroupMatch>> {
-        self.resolve_anonymous_groups_parsed(request_id, parsed)
-    }
-
-    fn member_group_candidates_impl_parsed(
+    /// Every candidate alignment of a binding-group `source_match` selector,
+    /// each carrying per-target body indices so the global selector solve can
+    /// claim the actual owner of every exported binding.
+    pub fn member_group_candidates(
         &self,
         request_id: &str,
         parsed: &ParsedSourceMatchSelector,
@@ -1216,8 +1106,6 @@ impl ChunkResolver<'_> {
         let [first, ..] = needles else {
             bail!("logical_module {request_id}: source_matches[] parsed to zero statements");
         };
-        // Branch order mirrors `resolve_member_group`: single-declarator before
-        // declarator-holes, then the general sequence path.
         if needles.len() == 1 && selector_single_var_declarator(first).is_some() {
             return group_matches_single_declarator(
                 self,
@@ -1239,116 +1127,12 @@ impl ChunkResolver<'_> {
         group_matches_general(self, needles, request_id, selector, exports_by_target)
     }
 
-    pub fn member_group_candidates_parsed(
-        &self,
-        request_id: &str,
-        parsed: &ParsedSourceMatchSelector,
-        exports_by_target: &BTreeMap<String, String>,
-    ) -> Result<Vec<MemberBindingGroupMatch>> {
-        self.member_group_candidates_impl_parsed(request_id, parsed, exports_by_target)
-    }
-
-    fn collapse_member_match(
-        &self,
-        matches: Vec<MemberBindingMatch>,
-        request_id: &str,
-        export_name: &str,
-        selector: &AnonymousStatementSelector,
-        selector_label: &'static str,
-    ) -> Result<ResolvedMemberBinding> {
-        let projection_hint = selector
-            .target_binding
-            .as_deref()
-            .map(|target| format!(".bindings[`{target}`]"))
-            .unwrap_or_default();
-        let match_source = &selector.match_source;
-        match matches.as_slice() {
-            [single] => Ok(single.binding.clone()),
-            [] => bail!(
-                "logical_module {request_id}: {selector_label}{projection_hint} for export \
-                 `{export_name}` did not match any top-level declaration in the chunk. \
-                 Selector:\n{match_source}"
-            ),
-            multiple => bail!(
-                "logical_module {request_id}: {selector_label}{projection_hint} for export \
-                 `{export_name}` is ambiguous — matched {} top-level statements at body indices \
-                 {:?} (bindings: {}). Refine the selector. Source:\n{match_source}",
-                multiple.len(),
-                multiple.iter().map(|m| m.body_idx).collect::<Vec<_>>(),
-                multiple
-                    .iter()
-                    .map(|m| m.binding.binding_name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            ),
-        }
-    }
-}
-
-impl SelectorResolver for ChunkResolver<'_> {
-    fn resolve_member_with_label(
-        &self,
-        request_id: &str,
-        export_name: &str,
-        selector: &AnonymousStatementSelector,
-        selector_label: &'static str,
-    ) -> Result<ResolvedMemberBinding> {
-        let parsed = parse_source_match_selector(request_id, selector)?;
-        let matches = self.collect_member_candidates_parsed(request_id, export_name, &parsed)?;
-        self.collapse_member_match(matches, request_id, export_name, selector, selector_label)
-    }
-
-    fn member_candidates(
-        &self,
-        request_id: &str,
-        _export_name: &str,
-        selector: &AnonymousStatementSelector,
-    ) -> Result<Vec<MemberBindingMatch>> {
-        let parsed = parse_source_match_selector(request_id, selector)?;
-        self.member_candidates_parsed(request_id, &parsed)
-    }
-
-    fn member_group_candidates(
-        &self,
-        request_id: &str,
-        selector: &AnonymousStatementSelector,
-        exports_by_target: &BTreeMap<String, String>,
-    ) -> Result<Vec<MemberBindingGroupMatch>> {
-        let parsed = parse_source_match_selector(request_id, selector)?;
-        self.member_group_candidates_parsed(request_id, &parsed, exports_by_target)
-    }
-
-    fn resolve_member_group(
-        &self,
-        request_id: &str,
-        selector: &AnonymousStatementSelector,
-        exports_by_target: &BTreeMap<String, String>,
-    ) -> Result<ResolvedMemberBindingGroup> {
-        if selector.target_binding.is_some() {
-            bail!(
-                "source_match resolver: binding-group selector for {request_id} unexpectedly has \
-                 target_binding set"
-            );
-        }
-        let parsed = parse_source_match_selector(request_id, selector)?;
-        one_group_match(
-            self.member_group_candidates_impl_parsed(request_id, &parsed, exports_by_target)?,
-            request_id,
-        )
-    }
-
-    fn resolve_anonymous_groups(
-        &self,
-        request_id: &str,
-        selector: &AnonymousStatementSelector,
-    ) -> Result<Vec<AnonymousGroupMatch>> {
-        let parsed = parse_source_match_selector(request_id, selector)?;
-        self.resolve_anonymous_groups_parsed(request_id, &parsed)
-    }
-}
-
-impl ChunkResolver<'_> {
-    fn resolve_anonymous_groups_parsed(
+    /// Candidate top-level body-index groups for an anonymous statement selector.
+    ///
+    /// The current public anonymous selector form validates to one parsed statement,
+    /// so each group contains one body index. The grouped shape keeps this reusable
+    /// if anonymous ranges grow a multi-statement form later.
+    pub fn anonymous_group_candidates(
         &self,
         request_id: &str,
         parsed: &ParsedSourceMatchSelector,
@@ -1403,8 +1187,42 @@ mod tests {
             .collect()
     }
 
+    fn parse(selector: &AnonymousStatementSelector) -> ParsedSourceMatchSelector {
+        ParsedSourceMatchSelector::parse("test", "<test>".to_string(), selector, "source_match")
+            .expect("selector parses")
+    }
+
+    /// The claimed binding of every member candidate, body-index ascending.
+    fn member_names(chunk: &Module, selector: &AnonymousStatementSelector) -> Vec<String> {
+        ChunkResolver::new(chunk)
+            .member_candidates("test", &parse(selector))
+            .expect("member candidates")
+            .into_iter()
+            .map(|matched| matched.binding.binding_name)
+            .collect()
+    }
+
+    fn group_candidates(
+        chunk: &Module,
+        selector: &AnonymousStatementSelector,
+        exports: &BTreeMap<String, String>,
+    ) -> Vec<MemberBindingGroupMatch> {
+        ChunkResolver::new(chunk)
+            .member_group_candidates("test", &parse(selector), exports)
+            .expect("group candidates")
+    }
+
+    fn anonymous_groups(
+        chunk: &Module,
+        selector: &AnonymousStatementSelector,
+    ) -> Vec<AnonymousGroupMatch> {
+        ChunkResolver::new(chunk)
+            .anonymous_group_candidates("test", &parse(selector))
+            .expect("anonymous candidates")
+    }
+
     #[test]
-    fn chunk_resolver_resolves_declarator_hole_group_like_production() {
+    fn chunk_resolver_declarator_hole_group_candidate() {
         js_ast::with_swc_globals(|| {
             // The `*-module_*` binding-group shape: holes around several pinned,
             // string-predicate declarators; one alignment supplies every target.
@@ -1414,110 +1232,96 @@ mod tests {
                  DECLARATORS_GAP = null, b = STR_LITERAL_MATCHING_RE(\"^xyz$\"), \
                  DECLARATORS_AFTER = null;",
             );
-            let exports = exports(&[("a", "ExportA"), ("b", "ExportB")]);
-            let resolved = ChunkResolver::new(&chunk)
-                .resolve_member_group("test", &selector, &exports)
-                .expect("resolver resolves the group");
-            assert_eq!(resolved.bindings["a"].binding_name, "aClass");
-            assert_eq!(resolved.bindings["b"].binding_name, "bClass");
+            let candidates = group_candidates(
+                &chunk,
+                &selector,
+                &exports(&[("a", "ExportA"), ("b", "ExportB")]),
+            );
+            assert_eq!(candidates.len(), 1);
+            assert_eq!(candidates[0].bindings["a"].binding.binding_name, "aClass");
+            assert_eq!(candidates[0].bindings["b"].binding.binding_name, "bClass");
         });
     }
 
     #[test]
-    fn chunk_resolver_resolves_group_that_references_a_renamed_target_by_chunk_name() {
+    fn chunk_resolver_group_referencing_a_renamed_target_by_chunk_name() {
         js_ast::with_swc_globals(|| {
             // `wrap` references the chunk's `q` by its chunk spelling while the
             // group renames that same declarator to `readable`.
             let chunk = module("const z = 0, w = () => use(q), q = () => 1;\n");
             let selector =
                 group("const DECLARATORS_BEFORE = null, wrap = () => use(q), readable = () => 1;");
-            let exports = exports(&[("wrap", "Wrap"), ("readable", "Readable")]);
-            let resolver = ChunkResolver::new(&chunk);
-            let resolved = resolver
-                .resolve_member_group("test", &selector, &exports)
-                .expect("resolver resolves the group");
-            assert_eq!(resolved.bindings["wrap"].binding_name, "w");
-            assert_eq!(resolved.bindings["readable"].binding_name, "q");
-            let candidates = resolver
-                .member_group_candidates("test", &selector, &exports)
-                .expect("group candidates");
-            let free_bindings: Vec<_> = candidates
-                .iter()
-                .map(|candidate| &candidate.free_bindings)
-                .collect();
+            let candidates = group_candidates(
+                &chunk,
+                &selector,
+                &exports(&[("wrap", "Wrap"), ("readable", "Readable")]),
+            );
+            assert_eq!(candidates.len(), 1);
+            assert_eq!(candidates[0].bindings["wrap"].binding.binding_name, "w");
+            assert_eq!(candidates[0].bindings["readable"].binding.binding_name, "q");
             assert_eq!(
-                free_bindings,
-                vec![&BTreeMap::from([
+                candidates[0].free_bindings,
+                BTreeMap::from([
                     ("q".to_string(), "q".to_string()),
                     ("use".to_string(), "use".to_string()),
-                ])]
+                ])
             );
         });
     }
 
     #[test]
-    fn chunk_resolver_resolves_general_group() {
+    fn chunk_resolver_general_group_candidate() {
         js_ast::with_swc_globals(|| {
             // A multi-statement (general-path) group: a leading anonymous statement
             // then two single-declarator targets, matched as a contiguous window.
             let chunk = module("init();\nconst alpha = makeA();\nconst beta = makeB();\n");
             let selector = group("init();\nconst a = makeA();\nconst b = makeB();");
-            let exports = exports(&[("a", "ExportA"), ("b", "ExportB")]);
-            let resolved = ChunkResolver::new(&chunk)
-                .resolve_member_group("test", &selector, &exports)
-                .expect("resolver resolves the general group");
-            assert_eq!(resolved.bindings["a"].binding_name, "alpha");
-            assert_eq!(resolved.bindings["b"].binding_name, "beta");
+            let candidates = group_candidates(
+                &chunk,
+                &selector,
+                &exports(&[("a", "ExportA"), ("b", "ExportB")]),
+            );
+            assert_eq!(candidates.len(), 1);
+            assert_eq!(candidates[0].bindings["a"].binding.binding_name, "alpha");
+            assert_eq!(candidates[0].bindings["b"].binding.binding_name, "beta");
         });
     }
 
     #[test]
-    fn chunk_resolver_resolves_member() {
+    fn chunk_resolver_member_candidate() {
         js_ast::with_swc_globals(|| {
             let chunk = module("function alpha(n) { return n + 1; }\nconst beta = alpha(2);\n");
             // A function with a body the alpha selector matches structurally.
             let selector = member("function f(x) { return x + 1; }", Some("f"));
-            let resolved = ChunkResolver::new(&chunk)
-                .resolve_member("test", "Alpha", &selector)
-                .expect("resolver resolves the function");
-            assert_eq!(resolved.binding_name, "alpha");
+            assert_eq!(member_names(&chunk, &selector), ["alpha"]);
         });
     }
 
     #[test]
-    fn chunk_resolver_resolves_declarator_inside_multi_declarator_owner() {
+    fn chunk_resolver_declarator_inside_multi_declarator_owner() {
         js_ast::with_swc_globals(|| {
             // The target init lives in the second declarator of a multi-declarator
             // statement — only declarator-level matching finds it.
             let chunk = module("const a = 1, target = compute();\nconst other = 2;\n");
             let selector = member("const x = compute();", Some("x"));
-            let resolved = ChunkResolver::new(&chunk)
-                .resolve_member("test", "X", &selector)
-                .expect("resolver resolves the inner declarator");
-            assert_eq!(resolved.binding_name, "target");
+            assert_eq!(member_names(&chunk, &selector), ["target"]);
         });
     }
 
     #[test]
-    fn chunk_resolver_var_declarator_categoricity_rejects_ambiguous() {
+    fn chunk_resolver_var_declarator_candidates_include_multi_declarator_owners() {
         js_ast::with_swc_globals(|| {
             // The same init appears in two declarators (one inside a
-            // multi-declarator owner) — ambiguous. The resolver must count both
-            // (declarator-level) and reject; a whole-statement match would miss the
-            // multi-declarator one and spuriously resolve unique.
+            // multi-declarator owner): both are candidates. A whole-statement match
+            // would miss the multi-declarator one and report a single candidate.
             let chunk = module("const a = 1, b = compute();\nconst c = compute();\n");
             let selector = member("const x = compute();", Some("x"));
-            assert!(
-                ChunkResolver::new(&chunk)
-                    .resolve_member("test", "X", &selector)
-                    .is_err(),
-                "two declarators with the same init are ambiguous",
-            );
+            assert_eq!(member_names(&chunk, &selector), ["b", "c"]);
         });
     }
 
     #[test]
-    fn chunk_resolver_resolves_declarator_hole_member() {
+    fn chunk_resolver_declarator_hole_member_candidate() {
         js_ast::with_swc_globals(|| {
             // A `DECLARATORS`-hole needle pins one declarator by a string-literal
             // predicate; the holes absorb the surrounding declarators. Only the
@@ -1528,10 +1332,7 @@ mod tests {
                  DECLARATORS_AFTER = null;",
                 Some("c"),
             );
-            let resolved = ChunkResolver::new(&chunk)
-                .resolve_member("test", "C", &selector)
-                .expect("resolver resolves the declarator-hole target");
-            assert_eq!(resolved.binding_name, "theClass");
+            assert_eq!(member_names(&chunk, &selector), ["theClass"]);
         });
     }
 
@@ -1549,8 +1350,8 @@ mod tests {
                 Some("x"),
             );
             let resolver = ChunkResolver::new(&chunk);
-            let needles = parse_needles("test", &selector).expect("selector parses");
-            let needle_index = needle_index(&needles[0]).expect("needle projects to facts");
+            let needle_index =
+                needle_index(&parse(&selector).body()[0]).expect("needle projects to facts");
 
             let candidates =
                 resolver.candidate_declarators(&needle_index, selector_mode(&selector), true);
@@ -1560,10 +1361,7 @@ mod tests {
                 .collect();
             assert_eq!(candidate_body_indices, vec![2]);
 
-            let resolved = resolver
-                .resolve_member("test", "Target", &selector)
-                .expect("resolver resolves the regex-prefixed declarator");
-            assert_eq!(resolved.binding_name, "target");
+            assert_eq!(member_names(&chunk, &selector), ["target"]);
         });
     }
 
@@ -1577,8 +1375,8 @@ mod tests {
             );
             let selector = member("const x = STR_LITERAL_MATCHING_RE(\"abc$\");", Some("x"));
             let resolver = ChunkResolver::new(&chunk);
-            let needles = parse_needles("test", &selector).expect("selector parses");
-            let needle_index = needle_index(&needles[0]).expect("needle projects to facts");
+            let needle_index =
+                needle_index(&parse(&selector).body()[0]).expect("needle projects to facts");
 
             let candidates =
                 resolver.candidate_declarators(&needle_index, selector_mode(&selector), true);
@@ -1588,10 +1386,7 @@ mod tests {
                 "unanchored regex has no safe prefix and must not prune candidates"
             );
 
-            let resolved = resolver
-                .resolve_member("test", "Target", &selector)
-                .expect("resolver resolves through fallback candidate scan");
-            assert_eq!(resolved.binding_name, "target");
+            assert_eq!(member_names(&chunk, &selector), ["target"]);
         });
     }
 
@@ -1607,8 +1402,8 @@ mod tests {
                 Some("x"),
             );
             let resolver = ChunkResolver::new(&chunk);
-            let needles = parse_needles("test", &selector).expect("selector parses");
-            let needle_index = needle_index(&needles[0]).expect("needle projects to facts");
+            let needle_index =
+                needle_index(&parse(&selector).body()[0]).expect("needle projects to facts");
 
             let candidates =
                 resolver.candidate_declarators(&needle_index, selector_mode(&selector), true);
@@ -1618,36 +1413,27 @@ mod tests {
                 "alternation has no globally safe literal prefix and must not prune candidates"
             );
 
-            let resolved = resolver
-                .resolve_member("test", "Target", &selector)
-                .expect("resolver resolves alternation through fallback candidate scan");
-            assert_eq!(resolved.binding_name, "target");
+            assert_eq!(member_names(&chunk, &selector), ["target"]);
         });
     }
 
     #[test]
-    fn chunk_resolver_declarator_hole_categoricity_rejects_ambiguous() {
+    fn chunk_resolver_declarator_hole_member_candidate_per_owner() {
         js_ast::with_swc_globals(|| {
-            // Two separate var-decl owners each match the hole needle → ambiguous
-            // at the owner level. The resolver must reject (no spurious unique
-            // resolution).
+            // Two separate var-decl owners each match the hole needle: each is a
+            // candidate.
             let chunk = module("const a = \"abc\";\nconst b = \"abc\";\n");
             let selector = member(
                 "const DECLARATORS_BEFORE = null, c = STR_LITERAL_MATCHING_RE(\"^abc$\"), \
                  DECLARATORS_AFTER = null;",
                 Some("c"),
             );
-            assert!(
-                ChunkResolver::new(&chunk)
-                    .resolve_member("test", "C", &selector)
-                    .is_err(),
-                "two matching owners are ambiguous",
-            );
+            assert_eq!(member_names(&chunk, &selector), ["a", "b"]);
         });
     }
 
     #[test]
-    fn chunk_resolver_resolves_single_declarator_target_window() {
+    fn chunk_resolver_single_declarator_target_window() {
         js_ast::with_swc_globals(|| {
             // A contiguous two-statement window: a helper function then a
             // single-declarator var-decl target living inside a multi-declarator
@@ -1661,17 +1447,14 @@ mod tests {
                 "function f(x) { return x + 1; }\nconst t = makeThing();",
                 Some("t"),
             );
-            let resolved = ChunkResolver::new(&chunk)
-                .resolve_member("test", "T", &selector)
-                .expect("resolver resolves the windowed single-declarator target");
-            assert_eq!(resolved.binding_name, "theTarget");
+            assert_eq!(member_names(&chunk, &selector), ["theTarget"]);
         });
     }
 
     #[test]
-    fn chunk_resolver_single_declarator_target_window_categoricity_rejects_ambiguous() {
+    fn chunk_resolver_single_declarator_target_window_candidate_per_window() {
         js_ast::with_swc_globals(|| {
-            // The window shape appears twice → ambiguous; the resolver rejects.
+            // The window shape appears twice: each window is a candidate.
             let chunk = module(
                 "function h1(n) { return n + 1; }\nconst a = makeThing();\n\
                  function h2(m) { return m + 1; }\nconst b = makeThing();\n",
@@ -1680,17 +1463,12 @@ mod tests {
                 "function f(x) { return x + 1; }\nconst t = makeThing();",
                 Some("t"),
             );
-            assert!(
-                ChunkResolver::new(&chunk)
-                    .resolve_member("test", "T", &selector)
-                    .is_err(),
-                "two matching windows are ambiguous",
-            );
+            assert_eq!(member_names(&chunk, &selector), ["a", "b"]);
         });
     }
 
     #[test]
-    fn chunk_resolver_resolves_multi_statement_declarator_hole_target() {
+    fn chunk_resolver_multi_statement_declarator_hole_target() {
         js_ast::with_swc_globals(|| {
             // A two-statement window whose target item is a declarator-hole var-decl
             // with the pinned target declarator first (the corpus `const mR =
@@ -1705,24 +1483,18 @@ mod tests {
                 "function f(x) { return x; }\nconst m = ANYTHING, DECLARATORS = null;",
                 Some("m"),
             );
-            let resolved = ChunkResolver::new(&chunk)
-                .resolve_member("test", "M", &selector)
-                .expect("resolver resolves the windowed declarator-hole target");
-            assert_eq!(resolved.binding_name, "theTarget");
+            assert_eq!(member_names(&chunk, &selector), ["theTarget"]);
         });
     }
 
     #[test]
-    fn chunk_resolver_resolves_anonymous_statement() {
+    fn chunk_resolver_anonymous_statement_candidate() {
         js_ast::with_swc_globals(|| {
             let chunk = module("init();\nregister(widget);\nteardown();\n");
             let selector = member("register(ANYTHING);", None);
-            let groups = ChunkResolver::new(&chunk)
-                .resolve_anonymous_groups("test", &selector)
-                .expect("resolver resolves the anonymous statement");
             // matches exactly the `register(widget);` statement at body index 1.
             assert_eq!(
-                groups,
+                anonymous_groups(&chunk, &selector),
                 vec![AnonymousGroupMatch {
                     body_indices: vec![1],
                     free_bindings: BTreeMap::from([(
@@ -1746,12 +1518,12 @@ mod tests {
 
     // The exact-mode identifier candidate discriminator must stay a *sound*
     // prefilter: it may prune only declarators/statements that provably cannot
-    // match. These tests exercise resolutions that go through the discriminator
+    // match. These tests exercise candidate lists that go through the discriminator
     // (exact mode, identifier-bearing needles) and assert the correct owner is
     // still found — i.e. the discriminator never prunes a real match.
 
     #[test]
-    fn chunk_resolver_exact_ident_discriminator_resolves_identifier_only_decl() {
+    fn chunk_resolver_exact_ident_discriminator_finds_identifier_only_decl() {
         js_ast::with_swc_globals(|| {
             // The perf-corpus shape: identifier-only inits with no literal/prop token
             // to pin, in exact mode, so *only* the exact-mode identifier discriminator
@@ -1764,10 +1536,7 @@ mod tests {
                  const target = wrap(dep_b);\nconst other = wrap(dep_a);\n",
             );
             let selector = exact_member("const target = wrap(dep_b);", Some("target"));
-            let resolved = ChunkResolver::new(&chunk)
-                .resolve_member("test", "T", &selector)
-                .expect("exact-mode identifier-only needle resolves");
-            assert_eq!(resolved.binding_name, "target");
+            assert_eq!(member_names(&chunk, &selector), ["target"]);
         });
     }
 
@@ -1777,36 +1546,32 @@ mod tests {
             // Two declarators share the binding name shape but differ only in the
             // referenced identifier; in exact mode the reference is compared
             // byte-for-byte. The discriminator must keep the declarator whose
-            // reference matches (`dep_b`) and the resolution must be the unique one —
-            // a wrongful prune would surface as a no-match, not a wrong owner.
+            // reference matches (`dep_b`) — a wrongful prune would surface as no
+            // candidate, not a wrong owner.
             let chunk = module("const m = wrap(dep_a);\nconst m2 = wrap(dep_b);\n");
             let selector = exact_member("const m2 = wrap(dep_b);", Some("m2"));
-            let resolved = ChunkResolver::new(&chunk)
-                .resolve_member("test", "M2", &selector)
-                .expect("exact-mode needle resolves uniquely by referenced name");
-            assert_eq!(resolved.binding_name, "m2");
+            assert_eq!(member_names(&chunk, &selector), ["m2"]);
         });
     }
 
     #[test]
-    fn chunk_resolver_exact_ident_anonymous_statement_resolves() {
+    fn chunk_resolver_exact_ident_anonymous_statement_candidate() {
         js_ast::with_swc_globals(|| {
             // The no-prebind single-statement scan (anonymous) also uses the
             // exact-mode identifier discriminator: `register(widget)` must reach
             // the statement carrying both `register` and `widget`.
             let chunk = module("init();\nregister(other);\nregister(widget);\n");
             let selector = exact_member("register(widget);", None);
-            let groups = ChunkResolver::new(&chunk)
-                .resolve_anonymous_groups("test", &selector)
-                .expect("exact-mode anonymous needle resolves");
-            let body_indices: Vec<Vec<usize>> =
-                groups.into_iter().map(|group| group.body_indices).collect();
+            let body_indices: Vec<Vec<usize>> = anonymous_groups(&chunk, &selector)
+                .into_iter()
+                .map(|group| group.body_indices)
+                .collect();
             assert_eq!(body_indices, vec![vec![2]]);
         });
     }
 
     #[test]
-    fn chunk_resolver_exact_declarator_hole_resolves_despite_target_rename() {
+    fn chunk_resolver_exact_declarator_hole_candidate_despite_target_rename() {
         js_ast::with_swc_globals(|| {
             // The declarator-hole path *prebinds* the target name, alpha-coupling it
             // to the candidate's binding — so the exact-mode discriminator must NOT
@@ -1819,10 +1584,7 @@ mod tests {
                  DECLARATORS_AFTER = null;",
                 Some("c"),
             );
-            let resolved = ChunkResolver::new(&chunk)
-                .resolve_member("test", "C", &selector)
-                .expect("exact-mode declarator-hole needle resolves despite target rename");
-            assert_eq!(resolved.binding_name, "theClass");
+            assert_eq!(member_names(&chunk, &selector), ["theClass"]);
         });
     }
 }

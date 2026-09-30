@@ -17,6 +17,7 @@ from pydantic import BaseModel, SecretStr
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 from tenacity.wait import wait_base
 
+from devinfra.claude.session_export.failures import raise_for_status_with_body
 from devinfra.claude.session_export.models import (
     DeliveryUpdate,
     Event,
@@ -98,15 +99,6 @@ class SessionCookie(BaseModel, frozen=True):
         if not (session_key and org_uuid):
             raise ValueError(f"{path} must contain sessionKey= and lastActiveOrg= cookies")
         return cls(session_key=SecretStr(session_key.group(1)), org_uuid=org_uuid.group(1))
-
-
-def _raise_for_status(response: httpx.Response) -> None:
-    """`raise_for_status`, with the start of the body attached: it says why (missing header, expired key)."""
-    try:
-        response.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        e.add_note(response.text[:300])
-        raise
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -191,7 +183,7 @@ class SessionsApi:
 
     async def _get_once(self, path: str, params: dict[str, str | int]) -> httpx.Response:
         response = await self._client.get(path, params=params)
-        _raise_for_status(response)
+        raise_for_status_with_body(response)
         return response
 
     async def _get(self, path: str, **params: str | int | None) -> httpx.Response:
@@ -274,7 +266,7 @@ class SessionsApi:
                 raise ResumePointLostError(f"{path}: {response.status_code}")
             if response.is_error:
                 await response.aread()
-                _raise_for_status(response)
+                raise_for_status_with_body(response)
             yield source
 
     def _note_unknown_frame(self, frame: ServerSentEvent) -> None:

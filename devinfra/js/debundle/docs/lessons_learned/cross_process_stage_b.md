@@ -7,12 +7,10 @@ assemble partition → realizability → lower) reads it as input. Goal:
 spec edits hit only Stage B; Stage A's expensive parse + analysis
 gets cached.
 
-The plan landed partially — the structural composer
-(`stage_one/mod.rs::compute_chunk_analysis`) and the on-disk
-sidecars (`reports/tree/<chunk_id>/chunk_analysis/{facts,
-atomic_units,manifest}.json`) shipped. **The cross-process consumer
-never did, and the design is abandoned.** This note records why, so
-we don't sleepwalk back into it.
+Only the structural composer (`stage_one/mod.rs::compute_chunk_analysis`)
+ever landed: no on-disk sidecar was written and no cross-process
+consumer exists. **The design is abandoned.** This note records why,
+so we don't sleepwalk back into it.
 
 ## What broke it: SWC hygiene is `Globals`-local
 
@@ -23,9 +21,9 @@ the SWC `Globals` instance that minted it.**
 
 If Stage B runs in a separate process (or even the same process with
 a fresh `Globals`), the resolver issues fresh `Mark`s. The `u32`s
-that Stage A wrote into `facts.json` map to different `Mark` chains
-in Stage B's `Globals` — the deserialized `Id`s don't compare equal
-to anything Stage B's resolver produces.
+that Stage A would write into a facts sidecar map to different
+`Mark` chains in Stage B's `Globals` — the deserialized `Id`s don't
+compare equal to anything Stage B's resolver produces.
 
 Concretely: Stage A writes `("counter", SyntaxContext(7))` for a
 top-level binding. Stage B's resolver assigns a fresh top-level
@@ -33,11 +31,11 @@ top-level binding. Stage B's resolver assigns a fresh top-level
 binding. The `BTreeSet<Id>` lookup `binding_owner.get(deserialized_id)`
 misses.
 
-`facts/wire.rs::IdReport`'s same-process round-trip test passes
-because both ends share `Globals`. The cross-`Globals` test — parse
-→ serialize → drop `Globals` → re-parse fresh → deserialize → assert
-`top_level_id` matches — does not exist and (per the analysis below)
-would fail.
+A same-process `Id` round trip would pass because both ends share
+`Globals`. The cross-`Globals` round trip — parse → serialize → drop
+`Globals` → re-parse fresh → deserialize → assert `top_level_id`
+matches — would (per the analysis below) fail; no test of either
+exists.
 
 ## Rejected alternatives
 
@@ -61,7 +59,7 @@ function increment() {
 
 `StatementFactsCollector` records `lazy_reads = {("counter",
 inner_ctxt)}` for the `increment` statement. The downstream owner-
-graph build at `graph.rs::owner_graph` looks each one up in
+graph build (`graph/build.rs::build_owner_graph_with`) looks each one up in
 `binding_owner`. `("counter", inner_ctxt)` misses (only
 `("counter", top_level_ctxt)` is keyed), and no edge is emitted —
 the closure's shadow doesn't pollute the realizability graph. This

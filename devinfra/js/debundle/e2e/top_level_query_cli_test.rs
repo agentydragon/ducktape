@@ -13,7 +13,7 @@ use analysis::{
 use debundle_e2e_support::write_text_file;
 use peel::plan::PatchPlanStatus;
 use peel::{
-    CommonArgs, ExplainArgs, GraphSummaryArgs, PatchPlanArgs, PlanWorkArgs, SelectionArgs,
+    CommonArgs, ExplainArgs, GraphSummaryArgs, PatchPlanArgs, PlanWorkArgs, SelectionKind,
     SourceSliceArgs, UnitsArgs, run_explain_report, run_graph_summary_report,
     run_patch_plan_report, run_plan_work_report, run_source_slice_report, run_units_report,
 };
@@ -319,20 +319,11 @@ fn assert_structural_member_claim_visible_to_queries(module_yaml: &str) {
 
     let describe = run_explain_report(&ExplainArgs {
         common,
-        selection: SelectionArgs {
-            owner_id: None,
-            module_path: Some("features/structural_member".to_string()),
-            module_id: None,
-            binding_id: None,
-            proposal_id: None,
-            unit_id: None,
-            diagnostic_id: None,
-        },
+        selection: SelectionKind::ModulePath("features/structural_member".to_string()),
         size_cap_lines: 10_000,
         source_root: None,
         limit: 0,
         include_proposals: false,
-        format: None,
     })
     .unwrap();
 
@@ -556,20 +547,11 @@ fn describe_binding_resolves_via_selection() {
     let (_dir, common) = fixture();
     let report = run_explain_report(&ExplainArgs {
         common,
-        selection: SelectionArgs {
-            owner_id: None,
-            module_path: None,
-            module_id: None,
-            binding_id: Some("ZZ".to_string()),
-            proposal_id: None,
-            unit_id: None,
-            diagnostic_id: None,
-        },
+        selection: SelectionKind::Binding("ZZ".to_string()),
         size_cap_lines: 10_000,
         source_root: None,
         limit: 0,
         include_proposals: false,
-        format: None,
     })
     .unwrap();
     assert_eq!(report.owner_ids, vec!["owner:0"]);
@@ -581,20 +563,11 @@ fn describe_module_id_resolves_all_module_owners() {
     let (_dir, common) = fixture();
     let report = run_explain_report(&ExplainArgs {
         common,
-        selection: SelectionArgs {
-            owner_id: None,
-            module_path: None,
-            module_id: Some("residual".to_string()),
-            binding_id: None,
-            proposal_id: None,
-            unit_id: None,
-            diagnostic_id: None,
-        },
+        selection: SelectionKind::Module("residual".to_string()),
         size_cap_lines: 10_000,
         source_root: None,
         limit: 0,
         include_proposals: false,
-        format: None,
     })
     .unwrap();
     assert_eq!(report.query.kind, peel::plan::QueryKind::Module);
@@ -606,20 +579,11 @@ fn describe_module_path_resolves_anonymous_only_module_claim() {
     let (dir, common) = fixture_with_anonymous_only_module_claim();
     let report = run_explain_report(&ExplainArgs {
         common,
-        selection: SelectionArgs {
-            owner_id: None,
-            module_path: Some("auto_partition/auto_partition_0187".to_string()),
-            module_id: None,
-            binding_id: None,
-            proposal_id: None,
-            unit_id: None,
-            diagnostic_id: None,
-        },
+        selection: SelectionKind::ModulePath("auto_partition/auto_partition_0187".to_string()),
         size_cap_lines: 10_000,
         source_root: Some(dir.path().to_path_buf()),
         limit: 0,
         include_proposals: false,
-        format: None,
     })
     .unwrap();
 
@@ -637,19 +601,10 @@ fn show_source_binding_resolves_via_selection() {
     let (dir, common) = fixture();
     let report = run_source_slice_report(&SourceSliceArgs {
         common,
-        selection: SelectionArgs {
-            owner_id: None,
-            module_path: None,
-            module_id: None,
-            binding_id: Some("ZZ".to_string()),
-            proposal_id: None,
-            unit_id: None,
-            diagnostic_id: None,
-        },
+        selection: SelectionKind::Binding("ZZ".to_string()),
         size_cap_lines: 10_000,
         context_lines: 1,
         source_root: Some(dir.path().to_path_buf()),
-        format: None,
     })
     .unwrap();
     assert_eq!(report.slices.len(), 1);
@@ -661,19 +616,10 @@ fn show_source_module_path_resolves_anonymous_only_module_claim() {
     let (dir, common) = fixture_with_anonymous_only_module_claim();
     let report = run_source_slice_report(&SourceSliceArgs {
         common,
-        selection: SelectionArgs {
-            owner_id: None,
-            module_path: Some("auto_partition/auto_partition_0187".to_string()),
-            module_id: None,
-            binding_id: None,
-            proposal_id: None,
-            unit_id: None,
-            diagnostic_id: None,
-        },
+        selection: SelectionKind::ModulePath("auto_partition/auto_partition_0187".to_string()),
         size_cap_lines: 10_000,
         context_lines: 0,
         source_root: Some(dir.path().to_path_buf()),
-        format: None,
     })
     .unwrap();
 
@@ -686,19 +632,10 @@ fn show_source_missing_proposal_reports_stale_id() {
     let (dir, common) = fixture();
     let err = run_source_slice_report(&SourceSliceArgs {
         common,
-        selection: SelectionArgs {
-            owner_id: None,
-            module_path: None,
-            module_id: None,
-            binding_id: None,
-            proposal_id: Some("auto_partition_0499".to_string()),
-            unit_id: None,
-            diagnostic_id: None,
-        },
+        selection: SelectionKind::Proposal("auto_partition_0499".to_string()),
         size_cap_lines: 10_000,
         context_lines: 0,
         source_root: Some(dir.path().to_path_buf()),
-        format: None,
     })
     .unwrap_err();
 

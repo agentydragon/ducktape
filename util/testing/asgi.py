@@ -6,6 +6,10 @@ MCP client that follows cross-origin redirects, anything that needs a real socke
 thread on a socket that is already bound and listening, and hand back once uvicorn is serving on
 it; ``serve_fastmcp`` mounts a ``FastMCP`` at ``/mcp`` and serves it the same way.
 
+Use the thread-based helpers when the app is self-contained. Use ``serve_app_in_loop`` when the
+app shares loop-bound resources with the test (an asyncpg engine, an ``asyncio.Event``): it runs
+uvicorn as a task in the test's own event loop, which a thread's separate loop cannot.
+
 Readiness is ``server.started``, not a connect probe: a pre-bound listening socket accepts
 connections from the kernel backlog before uvicorn has started, so a successful connect proves
 nothing about the app.
@@ -17,7 +21,7 @@ import asyncio
 import socket
 import threading
 import time
-from collections.abc import Generator
+from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager, contextmanager
 
 import uvicorn
@@ -28,13 +32,16 @@ from starlette.types import ASGIApp
 
 from util.net import bind_free_port
 
+_START_TIMEOUT_SECS = 10.0
+_START_POLL_SECS = 0.02
+
 
 def _start(app: ASGIApp, sock: socket.socket) -> tuple[uvicorn.Server, threading.Thread]:
     """Run ``app`` under uvicorn on ``sock`` in a daemon thread; return once it is serving."""
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
-    deadline = time.monotonic() + 10.0
+    deadline = time.monotonic() + _START_TIMEOUT_SECS
     while not server.started:
         if not thread.is_alive():
             raise RuntimeError("uvicorn thread exited before starting")
@@ -42,7 +49,7 @@ def _start(app: ASGIApp, sock: socket.socket) -> tuple[uvicorn.Server, threading
             server.should_exit = True
             thread.join(timeout=3.0)
             raise TimeoutError(f"server did not start on {sock.getsockname()}")
-        time.sleep(0.02)
+        time.sleep(_START_POLL_SECS)
     return server, thread
 
 
@@ -67,6 +74,41 @@ async def serve_app(app: ASGIApp, *, sock: socket.socket):
         yield
     finally:
         _stop(server, thread)
+
+
+async def _serve_in_loop(server: uvicorn.Server, sock: socket.socket) -> None:
+    try:
+        await server.serve(sockets=[sock])
+    except SystemExit as exc:  # uvicorn exits on a failed startup; asyncio lets that end the whole loop
+        raise RuntimeError(f"uvicorn exited with status {exc.code}") from exc
+
+
+@asynccontextmanager
+async def serve_app_in_loop(app: ASGIApp, *, sock: socket.socket) -> AsyncIterator[None]:
+    """Sibling of ``serve_app`` that runs uvicorn as a task in the *current* event loop rather than a
+    thread, for an app that uses resources bound to this loop. Yields once uvicorn is serving on
+    ``sock`` (bound and listening, from ``bind_free_port``); raises if the server ends or does not
+    start within ten seconds. On exit, stops the server, waits out its graceful shutdown and
+    re-raises its failure, if any. Requests to it must be awaited: a blocking call in the test
+    stalls the server."""
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    serving = asyncio.create_task(_serve_in_loop(server, sock))
+    try:
+        async with asyncio.timeout(_START_TIMEOUT_SECS):
+            while not server.started:
+                if serving.done():
+                    serving.result()
+                    raise RuntimeError("uvicorn exited before starting")
+                await asyncio.sleep(_START_POLL_SECS)
+    except BaseException:
+        serving.cancel()  # uvicorn reads should_exit only once its startup returns
+        await asyncio.wait([serving])
+        raise
+    try:
+        yield
+    finally:
+        server.should_exit = True
+        await serving
 
 
 @contextmanager

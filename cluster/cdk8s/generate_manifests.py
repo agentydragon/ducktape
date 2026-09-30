@@ -66,7 +66,6 @@ from cluster.cdk8s import (
     public_coder_sshpiper,
     reflector,
     reloader,
-    stateful_infra,
     talos_cloud_controller_manager,
     tana_mcp,
     user_agentydragon,
@@ -254,7 +253,7 @@ def generate_manifests(root: Path) -> None:
         root, staging.ENV, staging.chart
     )
     agentplane_testing_resource_chart = agentplane_generation.write_environment_manifests(
-        root, testing.ENV, testing.chart
+        root, testing.ENV, testing.chart, litellm_credentials.agentplane_testing_chart
     )
     agentplane_staging_health_checks = agentplane_generation.environment_health_checks(
         agentplane_staging_resource_chart, staging.ENV.namespace
@@ -269,14 +268,14 @@ def generate_manifests(root: Path) -> None:
         app_labels=public_coder_agent_config.LABELS,
         aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key,
     )
-    public_coder_sshpiper.write_manifests(
-        root, app_namespace=public_coder_agent_config.NAMESPACE, app_labels=public_coder_agent_config.LABELS
-    )
     ssh_config = ssh_mcp_config.load(devbox_service)
-    ssh_mcp_generation.write_sshpiper_pipe(root, ssh_config)
-    stateful_infra.write_seaweedfs_manifests(root)
+    public_coder_sshpiper.write_manifests(
+        root,
+        functools.partial(ssh_mcp_generation.sshpiper_pipe_chart, ssh_config=ssh_config),
+        app_namespace=public_coder_agent_config.NAMESPACE,
+        app_labels=public_coder_agent_config.LABELS,
+    )
     seaweedfs_cluster.write_manifests(root)
-    egress_fences.write_manifests(root)
     litellm_namespace.write_manifests(root)
     litellm_proxy.write_manifests(root)
     litellm_database.write_manifests(root)
@@ -313,7 +312,6 @@ def generate_manifests(root: Path) -> None:
     parked_augur_evidence.write_manifests(root)
     activitywatch_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
-    litellm_credentials.write_agentplane_testing_manifests(root, testing.ENV.output_dir)
     ducktape_flux.write_manifests(root)
     flux_sources.write_manifests(root)
 
@@ -420,7 +418,7 @@ def generate_manifests(root: Path) -> None:
             root,
             talos_cloud_controller_manager_artifact,
             talos_cloud_controller_manager.helmrepository_chart,
-            talos_cloud_controller_manager.helmrelease_chart,
+            siblings=[talos_cloud_controller_manager.write_helmrelease(root)],
         ),
     )
     user_agentydragon_artifact = artifact("user-agentydragon", user_agentydragon.OUTPUT_DIR)

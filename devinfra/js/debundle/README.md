@@ -78,8 +78,8 @@ see `docs/cli.md`.)
 
 ## Bazel integration and profiling
 
-`pipeline.bzl`'s `debundle_pipeline` runs `debundle run` as a build action and
-generates local profiling siblings: <docs/bazel_integration.md>.
+`pipeline.bzl`'s `debundle_pipeline` runs `debundle run` as a build action;
+profile with `perf_wrapper.sh`: <docs/bazel_integration.md>.
 
 ## Comments
 

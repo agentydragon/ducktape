@@ -6,7 +6,7 @@
 
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, assert_entry_output, assert_module_source, find_outcome,
-    logical_module_with_source_matches, read_selector_outcomes, run_dry_run_rejection_fixture,
+    logical_module_with_binding_groups, read_selector_outcomes, run_dry_run_rejection_fixture,
     run_fixture, run_spec_validate, write_validate_fixture_spec,
 };
 
@@ -48,7 +48,7 @@ fn identical_helper_copies_are_pinned_through_their_call_sites() {
     let fixture = run_fixture(FixtureOpts::new(
         TWO_HELPER_COPIES,
         vec![
-            logical_module_with_source_matches(
+            logical_module_with_binding_groups(
                 "alpha",
                 &[Member::source_alpha(
                     "Alpha",
@@ -59,7 +59,7 @@ fn identical_helper_copies_are_pinned_through_their_call_sites() {
                     &[("decorate", "alphaDecorator")],
                 )],
             ),
-            logical_module_with_source_matches(
+            logical_module_with_binding_groups(
                 "beta",
                 &[Member::source_alpha(
                     "Beta",
@@ -100,7 +100,7 @@ function k(n) {
 const x = h(1);
 console.log(x, k(2));
 "#,
-        vec![logical_module_with_source_matches(
+        vec![logical_module_with_binding_groups(
             "counter",
             &[],
             &[BindingGroup::source_alpha(
@@ -121,7 +121,7 @@ console.log(x, k(2));
 fn no_match_for(chunk: &'static str, template: &'static str, local: &'static str) {
     let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
         chunk,
-        vec![logical_module_with_source_matches(
+        vec![logical_module_with_binding_groups(
             "use/site",
             &[],
             &[BindingGroup::source_alpha(template, &[(local, "Pinned")])],
@@ -158,7 +158,7 @@ fn free_local_bound_to_two_identifiers_is_no_match() {
 fn local_absent_from_the_template_is_rejected() {
     let fixture = write_validate_fixture_spec(FixtureOpts::new(
         "const x = 1;\nconsole.log(x);\n",
-        vec![logical_module_with_source_matches(
+        vec![logical_module_with_binding_groups(
             "use/site",
             &[],
             &[BindingGroup::source_alpha(

@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
@@ -17,14 +16,20 @@ use output_layout::{CHUNK_REPORT, report_path_for_directory, report_path_for_fil
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
-/// Emit compact JSON for pipeline side outputs.
+/// Emit compact JSON for pipeline side outputs, creating parent directories.
 ///
 /// These reports are usually consumed by tooling or `jq`; pretty printing is a
 /// measurable cost on large bundles.
 pub fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
-    let file = fs::File::create(path.as_ref())?;
-    let mut writer = BufWriter::new(file);
-    serde_json::to_writer(&mut writer, data)?;
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+    let mut writer = BufWriter::new(
+        fs::File::create(path).with_context(|| format!("creating {}", path.display()))?,
+    );
+    serde_json::to_writer(&mut writer, data)
+        .with_context(|| format!("writing {}", path.display()))?;
     Ok(())
 }
 
@@ -70,10 +75,6 @@ impl JsChunk {
         self.files.iter().find(|f| f.path == path)
     }
 
-    pub fn get_file_mut(&mut self, path: &str) -> Option<&mut JsFile> {
-        self.files.iter_mut().find(|f| f.path == path)
-    }
-
     pub fn remove_file(&mut self, path: &str) -> Option<JsFile> {
         let pos = self.files.iter().position(|f| f.path == path)?;
         Some(self.files.swap_remove(pos))
@@ -87,7 +88,7 @@ impl JsChunk {
         }
     }
 
-    pub fn file_paths(&self) -> impl Iterator<Item = &str> {
+    fn file_paths(&self) -> impl Iterator<Item = &str> {
         self.files.iter().map(|f| f.path.as_str())
     }
 }
@@ -196,11 +197,7 @@ impl JsFile {
         })
     }
 
-    pub fn is_ast(&self) -> bool {
-        matches!(self.body, JsFileBody::Ast(_))
-    }
-
-    pub fn render_source(&self) -> Result<String> {
+    fn render_source(&self) -> Result<String> {
         match &self.body {
             JsFileBody::Source(source) => Ok(source.clone()),
             JsFileBody::Ast(ast) => emit_js_module_with_comments(
@@ -232,35 +229,6 @@ pub enum FileRole {
     Entry,
     Module,
     Runtime,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct LoadedJsChunksManifest {
-    pub counts: LoadedCounts,
-    pub chunks: Vec<LoadedChunkRecord>,
-    pub js_files: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct LoadedCounts {
-    pub chunks: usize,
-    pub files: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct LoadedChunkRecord {
-    pub chunk_id: String,
-    pub entry_file: String,
-    pub source_path: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ParsedJsFileRecord {
-    pub chunk_id: String,
-    pub file: String,
-    pub source_bytes: usize,
-    pub parse_duration: Duration,
-    pub analysis_duration: Duration,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -340,7 +308,6 @@ pub struct ArtifactChunkRecord {
 pub struct ChunkAnalysisReport {
     pub chunk_id: String,
     pub source_path: String,
-    pub parser: ParserOptionsRecord,
     pub entry_file: String,
     pub counts: ChunkCounts,
     pub files: Vec<ChunkFileRecord>,
@@ -360,7 +327,6 @@ pub struct ChunkDecompositionOutput {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkValidationSummary {
-    pub status: &'static str,
     /// Linker evaluation order, by canonical [`spec::ModulePath`].
     pub linker_order: Vec<spec::ModulePath>,
 }
@@ -400,7 +366,6 @@ impl ChunkManifest {
             analysis: analysis.clone(),
             validation: decomposition.map_or_else(
                 || ChunkValidationSummary {
-                    status: "not_materialized",
                     linker_order: Vec::new(),
                 },
                 |d| d.validation.clone(),
@@ -690,23 +655,6 @@ impl OutputSize {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ParserOptionsRecord {
-    pub allow_undeclared_exports: bool,
-    pub plugins: Vec<&'static str>,
-    pub source_type: &'static str,
-}
-
-impl Default for ParserOptionsRecord {
-    fn default() -> Self {
-        Self {
-            allow_undeclared_exports: true,
-            plugins: vec!["jsx", "typescript", "importAssertions", "topLevelAwait"],
-            source_type: "module",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ChunkCounts {
     pub dynamic_imports: usize,
@@ -787,7 +735,6 @@ pub struct KeptTopLevelDeclarationRecord {
     pub line: Option<usize>,
     pub names: Vec<String>,
     pub kind: TopLevelDeclarationKind,
-    pub unsafe_reason: &'static str,
 }
 
 /// The three top-level declaration variants we anchor extraction on.
@@ -806,13 +753,6 @@ impl ChunkBundle {
         self.chunks.iter().map(|chunk| chunk.chunk_id).collect()
     }
 
-    pub fn list_chunk_ids_as_strings(&self) -> Vec<String> {
-        self.chunks
-            .iter()
-            .map(|chunk| self.chunk_table.name(chunk.chunk_id).to_string())
-            .collect()
-    }
-
     pub fn has_chunk(&self, chunk_id: ChunkId) -> bool {
         self.find_chunk(chunk_id).is_some()
     }
@@ -826,28 +766,24 @@ impl ChunkBundle {
             .with_context(|| format!("missing artifact chunk {}", self.chunk_table.name(chunk_id)))
     }
 
-    pub fn find_chunk_mut(&mut self, chunk_id: ChunkId) -> Option<&mut ChunkArtifact> {
+    fn find_chunk_mut(&mut self, chunk_id: ChunkId) -> Option<&mut ChunkArtifact> {
         self.chunks
             .iter_mut()
             .find(|chunk| chunk.chunk_id == chunk_id)
     }
 
-    pub fn chunk_mut(&mut self, chunk_id: ChunkId) -> Result<&mut ChunkArtifact> {
+    fn chunk_mut(&mut self, chunk_id: ChunkId) -> Result<&mut ChunkArtifact> {
         let chunk_name = self.chunk_table.name(chunk_id).to_string();
         self.find_chunk_mut(chunk_id)
             .with_context(|| format!("missing artifact chunk {chunk_name}"))
     }
 
-    pub fn find_js_chunk(&self, chunk_id: ChunkId) -> Option<&JsChunk> {
+    fn find_js_chunk(&self, chunk_id: ChunkId) -> Option<&JsChunk> {
         self.find_chunk(chunk_id).map(|chunk| &chunk.js)
     }
 
     pub fn js_chunk(&self, chunk_id: ChunkId) -> Result<&JsChunk> {
         Ok(&self.chunk(chunk_id)?.js)
-    }
-
-    pub fn find_js_chunk_mut(&mut self, chunk_id: ChunkId) -> Option<&mut JsChunk> {
-        self.find_chunk_mut(chunk_id).map(|chunk| &mut chunk.js)
     }
 
     pub fn js_chunk_mut(&mut self, chunk_id: ChunkId) -> Result<&mut JsChunk> {
@@ -858,14 +794,11 @@ impl ChunkBundle {
         self.chunks.retain(|chunk| keep(chunk.chunk_id));
     }
 
-    pub fn chunk_source_path(&self, chunk_id: ChunkId) -> Option<String> {
-        self.find_chunk(chunk_id)
-            .map(|chunk| chunk.analysis.source_path.clone())
-            .or_else(|| {
-                self.find_js_chunk(chunk_id)
-                    .map(|chunk| chunk.metadata.source_path.clone())
-            })
-            .or_else(|| Some(format!("{}.js", self.chunk_table.name(chunk_id))))
+    fn chunk_source_path(&self, chunk_id: ChunkId) -> String {
+        self.find_chunk(chunk_id).map_or_else(
+            || format!("{}.js", self.chunk_table.name(chunk_id)),
+            |chunk| chunk.analysis.source_path.clone(),
+        )
     }
 
     pub fn source_import_resolver<'a>(
@@ -890,33 +823,19 @@ impl ArtifactSourceImportResolver<'_> {
         source: &str,
         caller_chunk_id: ChunkId,
         caller_file: &str,
-    ) -> Result<Option<(String, String, String)>> {
+    ) -> Option<(String, String, String)> {
         if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
-            return Ok(None);
+            return None;
         }
-        let Some(caller_source_path) =
-            source_path_for_artifact_file(self.artifact, caller_chunk_id, caller_file)?
-        else {
-            return Ok(None);
-        };
-        let Some(imported_source_path) =
-            resolve_chunk_source_path_reference(source, &caller_source_path)
-        else {
-            return Ok(None);
-        };
-        let Some(target_chunk_id) = self.indexes.chunk_id_for_source(&imported_source_path) else {
-            return Ok(None);
-        };
+        let caller_source_path =
+            source_path_for_artifact_file(self.artifact, caller_chunk_id, caller_file)?;
+        let imported_source_path =
+            resolve_chunk_source_path_reference(source, &caller_source_path)?;
+        let target_chunk_id = self.indexes.chunk_id_for_source(&imported_source_path)?;
         let target_chunk_name = self.artifact.chunk_table.name(target_chunk_id);
-        let Some(target_entry_file) = get_chunk_entry_path(self.artifact, target_chunk_id) else {
-            return Ok(None);
-        };
+        let target_entry_file = get_chunk_entry_path(self.artifact, target_chunk_id)?;
         let path = join_module_path(&[target_chunk_name, target_entry_file.as_str()]);
-        Ok(Some((
-            target_chunk_name.to_string(),
-            target_entry_file,
-            path,
-        )))
+        Some((target_chunk_name.to_string(), target_entry_file, path))
     }
 }
 
@@ -949,16 +868,15 @@ impl ArtifactIndexes {
             }
             let chunk = &chunk_artifact.js;
             entry_files.insert(chunk_id, chunk.entry_file.clone());
-            if let Some(source_path) = artifact.chunk_source_path(chunk_id) {
-                if let Some(existing) = source_chunk_index.insert(source_path.clone(), chunk_id) {
-                    bail!(
-                        "Duplicate chunk sourcePath {source_path}: {} and {}",
-                        artifact.chunk_table.name(existing),
-                        chunk_name
-                    );
-                }
-                chunk_source_paths.insert(chunk_id, source_path);
+            let source_path = artifact.chunk_source_path(chunk_id);
+            if let Some(existing) = source_chunk_index.insert(source_path.clone(), chunk_id) {
+                bail!(
+                    "Duplicate chunk sourcePath {source_path}: {} and {}",
+                    artifact.chunk_table.name(existing),
+                    chunk_name
+                );
             }
+            chunk_source_paths.insert(chunk_id, source_path);
             for file_path in list_chunk_file_paths(chunk) {
                 let Some(file) = chunk.get_file(&file_path) else {
                     continue;
@@ -992,7 +910,7 @@ impl ArtifactIndexes {
         Ok(indexes)
     }
 
-    pub fn chunk_id_for_source(&self, source_path: &str) -> Option<ChunkId> {
+    fn chunk_id_for_source(&self, source_path: &str) -> Option<ChunkId> {
         self.source_chunk_index.get(source_path).copied()
     }
 
@@ -1164,10 +1082,7 @@ impl IndexedArtifact {
     }
 }
 
-pub fn load_js_chunks(
-    input_root: &Path,
-    js_list_path: &Path,
-) -> Result<(LoadedJsChunks, LoadedJsChunksManifest)> {
+pub fn load_js_chunks(input_root: &Path, js_list_path: &Path) -> Result<LoadedJsChunks> {
     let js_files = parse_js_list(
         &fs::read_to_string(js_list_path)
             .with_context(|| format!("reading {}", js_list_path.display()))?,
@@ -1206,32 +1121,10 @@ pub fn load_js_chunks(
             },
         });
     }
-    let chunks = LoadedJsChunks {
+    Ok(LoadedJsChunks {
         chunks,
         chunk_table,
-    };
-    let manifest = LoadedJsChunksManifest {
-        counts: LoadedCounts {
-            chunks: js_files.len(),
-            files: js_files.len(),
-        },
-        chunks: js_files
-            .iter()
-            .map(|source_path| {
-                Ok(LoadedChunkRecord {
-                    chunk_id: chunk_id_for_js_path(source_path)?,
-                    entry_file: Path::new(source_path)
-                        .file_name()
-                        .and_then(|value| value.to_str())
-                        .context("source path missing file name")?
-                        .to_string(),
-                    source_path: source_path.clone(),
-                })
-            })
-            .collect::<Result<Vec<_>>>()?,
-        js_files,
-    };
-    Ok((chunks, manifest))
+    })
 }
 
 pub struct MaterializedScripts {
@@ -1303,20 +1196,18 @@ fn write_tree_reports(
 
     let file_manifests = build_file_dependency_manifests(decomposition_by_chunk, file_metrics);
     file_manifests.into_par_iter().try_for_each(|manifest| {
-        let path = report_path_for_file(report_tree_root, &manifest.path);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        write_json(path, &manifest)
+        write_json(
+            report_path_for_file(report_tree_root, &manifest.path),
+            &manifest,
+        )
     })?;
 
     let manifests = build_directory_dependency_manifests(decomposition_by_chunk, file_metrics);
     manifests.into_par_iter().try_for_each(|manifest| {
-        let manifest_path = report_path_for_directory(report_tree_root, &manifest.path);
-        if let Some(parent) = manifest_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        write_json(&manifest_path, &manifest)
+        write_json(
+            report_path_for_directory(report_tree_root, &manifest.path),
+            &manifest,
+        )
     })?;
     Ok(())
 }
@@ -1747,13 +1638,12 @@ fn materialize_chunk_scripts(
     let decomposition = decomposition_by_chunk.get(&chunk_id);
     let written =
         ChunkManifest::from_analysis(&chunk_artifact.analysis, decomposition, metrics_output);
-    let chunk_report_path = report_tree_root
-        .join(path_from_module_path(&chunk_name))
-        .join(CHUNK_REPORT);
-    if let Some(parent) = chunk_report_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    write_json(chunk_report_path, &written)?;
+    write_json(
+        report_tree_root
+            .join(path_from_module_path(&chunk_name))
+            .join(CHUNK_REPORT),
+        &written,
+    )?;
     Ok(metrics)
 }
 
@@ -1780,7 +1670,7 @@ fn materialize_chunk_file(
         &rendered,
         selected_module_by_chunk_file,
         file_artifact.metadata.role,
-    )?;
+    );
     fs::write(&target_path, rendered)?;
     Ok(metric)
 }
@@ -1819,7 +1709,7 @@ fn output_file_metric(
     rendered: &str,
     selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
     role: FileRole,
-) -> Result<OutputFileMetric> {
+) -> OutputFileMetric {
     let lowering = selected_module_by_chunk_file
         .get(&(chunk_id.to_string(), artifact_file_path.to_string()))
         .copied();
@@ -1836,13 +1726,13 @@ fn output_file_metric(
             FileRole::Runtime => OutputRole::Other,
         }
     };
-    Ok(OutputFileMetric {
+    OutputFileMetric {
         file: output_path.to_string(),
         role,
         bytes: rendered.len(),
         lines: rendered.lines().count(),
         module: lowering.map(SelectedModuleLowering::module_ref),
-    })
+    }
 }
 
 fn output_fraction(part: &OutputSize, total: &OutputSize) -> OutputFraction {
@@ -1881,13 +1771,11 @@ pub fn get_chunk_entry_path(artifact: &ChunkBundle, chunk_id: ChunkId) -> Option
     if !chunk.entry_file.is_empty() && chunk.get_file(&chunk.entry_file).is_some() {
         return Some(chunk.entry_file.clone());
     }
-    Some(&chunk_artifact.analysis)
-        .and_then(|manifest| {
-            chunk
-                .get_file(&manifest.entry_file)
-                .is_some()
-                .then(|| manifest.entry_file.clone())
-        })
+    let manifest = &chunk_artifact.analysis;
+    chunk
+        .get_file(&manifest.entry_file)
+        .is_some()
+        .then(|| manifest.entry_file.clone())
         .or_else(|| {
             chunk.files.iter().find_map(|file| {
                 matches!(file.metadata.role, FileRole::Entry | FileRole::Runtime)
@@ -1941,7 +1829,7 @@ pub fn chunk_id_for_js_path(js_path: &str) -> Result<String> {
         .to_string())
 }
 
-pub fn normalize_asset_path(path: &str) -> Result<String> {
+fn normalize_asset_path(path: &str) -> Result<String> {
     let normalized = normalize_module_path(&path.replace('\\', "/"))?;
     if !normalized.ends_with(".js") {
         bail!("Expected a .js path in JS list: {path}");
@@ -2045,20 +1933,15 @@ fn source_path_for_artifact_file(
     artifact: &ChunkBundle,
     chunk_id: ChunkId,
     file: &str,
-) -> Result<Option<String>> {
-    let Some(chunk) = artifact.find_js_chunk(chunk_id) else {
-        return Ok(None);
-    };
-    if let Some(artifact_file) = chunk.get_file(file) {
-        return Ok(Some(artifact_file.metadata.source_path.clone()));
-    }
-    Ok(artifact.chunk_source_path(chunk_id))
+) -> Option<String> {
+    let chunk = artifact.find_js_chunk(chunk_id)?;
+    Some(chunk.get_file(file).map_or_else(
+        || artifact.chunk_source_path(chunk_id),
+        |artifact_file| artifact_file.metadata.source_path.clone(),
+    ))
 }
 
-pub fn resolve_chunk_source_path_reference(
-    source: &str,
-    caller_source_path: &str,
-) -> Option<String> {
+fn resolve_chunk_source_path_reference(source: &str, caller_source_path: &str) -> Option<String> {
     let imported_path = if source.starts_with('/') {
         normalize_module_path(source.trim_start_matches('/')).ok()?
     } else {
@@ -2088,5 +1971,17 @@ mod tests {
     #[test]
     fn module_path_dirname_handles_file_at_root() {
         assert_eq!(module_path_dirname("entry.js"), "");
+    }
+
+    #[test]
+    fn parse_js_list_rejects_duplicates() {
+        let err = parse_js_list("a.js\na.js\n").expect_err("expected duplicate rejection");
+        assert!(err.to_string().contains("duplicate"));
+    }
+
+    #[test]
+    fn parse_js_list_ignores_comments_and_blank_lines() {
+        let parsed = parse_js_list("\n# comment\nfoo.js\nbar.js\n").expect("parse list");
+        assert_eq!(parsed, vec!["foo.js", "bar.js"]);
     }
 }

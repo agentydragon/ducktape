@@ -11,7 +11,7 @@
 //! Convention: a test destination key's string **is** the module's
 //! canonical path (e.g. `"residual"`, `"ui/plugins"`), so [`module_table`]
 //! recovers the path by parsing the key and derives `residual` from
-//! [`spec::ModulePath::is_residual`].
+//! [`spec::is_residual_module_path`].
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,8 +21,7 @@ use analysis::{
     OwnerGraphReport, Purity, SourceLocation, StatementKind, StatementOrdinal,
 };
 use peel::quotient::{OwnerIdx, PartitionGroup};
-use spec::ModulePath;
-use swc_atoms::Atom;
+use spec::{ModulePath, is_residual_module_path};
 
 /// A destination key whose string is the module's canonical path.
 pub fn module_ref(path: &str) -> ModuleKey {
@@ -33,7 +32,7 @@ pub fn module_ref(path: &str) -> ModuleKey {
 /// `ModulePath` (parsed from the key) and its residual flag.
 pub fn module_entry(key: &ModuleKey) -> ModuleEntry {
     let path = ModulePath::parse(key.as_str(), "").expect("test module key is a valid path");
-    let residual = path.is_residual();
+    let residual = is_residual_module_path(path.as_str());
     ModuleEntry {
         key: key.clone(),
         path,
@@ -165,24 +164,12 @@ pub fn owner_edge(
     kind: DepKind,
     constrains: bool,
 ) -> OwnerGraphEdgeReport {
-    owner_edge_for_binding(id, source, target, kind, constrains, None)
-}
-
-/// Owner-level edge labeled with the binding the source reads.
-pub fn owner_edge_for_binding(
-    id: &str,
-    source: &str,
-    target: &str,
-    kind: DepKind,
-    constrains: bool,
-    binding: Option<&str>,
-) -> OwnerGraphEdgeReport {
     OwnerGraphEdgeReport {
         id: id.to_string(),
         source: source.to_string(),
         target: target.to_string(),
         edge_kind: kind,
-        binding: binding.map(Atom::from),
+        binding: None,
         statement_ordinal: StatementOrdinal(0),
         constrains_init_order: constrains,
         role: None,

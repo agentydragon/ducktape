@@ -19,7 +19,7 @@ on:
       - "flake.nix"
       - "flake.lock"
       - "nix/flake/packages.nix"
-      - "cluster/generated/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml"
+      - "cluster/generated/agents/haku-openclaw-spike/app/app.k8s.yaml"
       - ".github/workflows/haku-openclaw-spike-image.yml"
       - ".github/workflows/nix-image.yml"
       - ".github/actions/setup-nix-attic/action.yml"
@@ -38,7 +38,7 @@ on:
       - "flake.nix"
       - "flake.lock"
       - "nix/flake/packages.nix"
-      - "cluster/generated/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml"
+      - "cluster/generated/agents/haku-openclaw-spike/app/app.k8s.yaml"
       - ".github/workflows/haku-openclaw-spike-image.yml"
       - ".github/workflows/nix-image.yml"
       - ".github/actions/setup-nix-attic/action.yml"
@@ -62,8 +62,12 @@ jobs:
         pip install --quiet pyyaml
         python3 -c '
         import yaml
-        with open("cluster/generated/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml") as f:
-            config_map = yaml.safe_load(f)
+        with open("cluster/generated/agents/haku-openclaw-spike/app/app.k8s.yaml") as f:
+            config_map = next(
+                doc
+                for doc in yaml.safe_load_all(f)
+                if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "haku-openclaw-spike-config"
+            )
         with open("/tmp/haku-openclaw-spike-openclaw.json", "w") as out:
             out.write(config_map["data"]["openclaw.json"])
         '

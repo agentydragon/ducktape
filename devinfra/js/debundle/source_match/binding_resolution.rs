@@ -1,20 +1,5 @@
 use super::*;
 
-pub fn source_match_declared_binding_names(
-    request_id: &str,
-    source_match: &SourceMatch,
-) -> Result<Vec<String>> {
-    declared_binding_names_for_source_match(request_id, "source_match", source_match)
-}
-
-fn declared_binding_names_for_source_match(
-    request_id: &str,
-    selector_label: &'static str,
-    source_match: &SourceMatch,
-) -> Result<Vec<String>> {
-    Ok(parsed_source_match(request_id, selector_label, source_match)?.declared_binding_names())
-}
-
 fn parsed_source_match(
     request_id: &str,
     selector_label: &'static str,
@@ -81,14 +66,9 @@ pub fn source_match_claim_member_selectors(
                  neither declared nor used by source_matches[].match"
             );
         }
-        let parsed_selector = parsed.with_target_binding(Some(local.to_string()));
-        let selector = parsed_selector.selector().clone();
         out.push(BindingGroupMemberSelector {
             export_name: name.to_string(),
-            selector,
-            parsed_selector,
-            comment: None,
-            note: None,
+            parsed_selector: parsed.with_target_binding(Some(local.to_string())),
         });
     }
     Ok(out)

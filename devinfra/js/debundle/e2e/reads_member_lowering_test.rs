@@ -22,7 +22,7 @@ use debundle_e2e_support::*;
 /// Resolves through the full pipeline to `ls`, with no minified name written in
 /// the spec for the target.
 #[test]
-fn reads_member_resolves_helper_through_full_pipeline() {
+fn reads_member_resolves_helper() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const gen = { counter: 0, nextUniqueId() { return ++this.counter; } };
 function ls() { return gen.nextUniqueId(); }
@@ -70,7 +70,7 @@ export { gen, ls };
 /// constraint (or resolved the object by its readable name treated as a minified
 /// binding) fails this test.
 #[test]
-fn reads_member_object_constraint_disambiguates_through_full_pipeline() {
+fn reads_member_object_constraint_disambiguates() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const ctx = { id: "ctx-1" };
 const node = { id: "node-1" };

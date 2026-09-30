@@ -4,6 +4,20 @@ Authorization Code + PKCE against a confidential client. The browser keeps only 
 expiry, never Authentik tokens. `install_login` adds the session, the `/auth` routes and the middleware that sends
 a browser without a session to the login and refuses an API call without one. Authentik's application policy
 decides who may sign in; `LoginConfig.allowed_subject` narrows that to one `sub` for an app with a single owner.
+
+Other Authentik logins stay out, each held there by something this flow would have to change to admit it:
+
+- `airlock/auth.py` takes only `valid_claims`, `build_oauth` and `CLIENT_NAME`. Its SPA shell (`/` and
+  `/static/frontend/*`) loads without a session so it can show `/?auth=failed`; the `require_operator_session`
+  dependency guards per route, hands `/oauth/*` the operator's `sub`, and answers 401 where this middleware would
+  redirect the upstream provider callback to the login. A failed sign-in and a logout are 303s into the shell, not
+  this module's 401 page and `/auth/signed-out`, and its log lines differ. Sharing the router and guard would take a
+  failure response, a logout target, log messages and a guard mode that every consumer must supply.
+- `haku/console/identity/operator_{auth,login_flow}.py` keeps each pending login in a Postgres row with its own
+  binding cookie and `return_to` continuation, requests no PKCE, and trusts the session only after
+  `PostgresOperatorIdentityStore` re-resolves the identity on every request.
+- `agentplane/app/{oidc,auth_routes}.py` requests `offline_access` and keeps the login tokens in Postgres-backed
+  sessions, and pins a single audience where `valid_claims` also admits several audiences whose `azp` is this client.
 """
 
 import json

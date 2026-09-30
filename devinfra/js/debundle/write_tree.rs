@@ -1,5 +1,4 @@
 use std::collections::{BTreeSet, HashMap};
-use std::fs;
 use std::path::Path;
 
 use anyhow::{Result, bail};
@@ -9,7 +8,7 @@ use artifact::{
     ChunkId, ChunksReport, DecompositionMetrics, PackageManifest, RootLogicalModulesSummary,
     SelectedModuleLowering, materialize_artifact_scripts, write_json,
 };
-use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
+use identifier_rename_queue::compute_identifier_rename_queue;
 use output_layout::DebundleOutputLayout;
 
 pub struct WriteTreeInput<'a> {
@@ -33,7 +32,7 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         bail!("write_js_tree requires out_dir");
     }
     let layout = DebundleOutputLayout::new(input.out_dir);
-    prepare_output_layout(&layout)?;
+    layout.prepare()?;
 
     let materialized = materialize_artifact_scripts(
         input.artifact,
@@ -57,7 +56,7 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         input.decomposition_by_chunk,
         input.excluded_chunk_ids,
     )?;
-    write_queue(&layout.rename_queue_report(), &queue)?;
+    write_json(layout.rename_queue_report(), &queue)?;
     let manifest = ArtifactManifest {
         counts: input.counts.clone(),
         chunks: input.chunk_records.to_vec(),
@@ -82,21 +81,5 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         },
     )?;
 
-    Ok(())
-}
-
-fn prepare_output_layout(layout: &DebundleOutputLayout) -> Result<()> {
-    if layout.root().exists() {
-        let metadata = fs::metadata(layout.root())?;
-        if !metadata.is_dir() {
-            bail!(
-                "Output path exists and is not a directory: {}",
-                layout.root().display()
-            );
-        }
-    }
-    let app_root = layout.app_root();
-    fs::create_dir_all(app_root)?;
-    fs::create_dir_all(layout.reports_root())?;
     Ok(())
 }

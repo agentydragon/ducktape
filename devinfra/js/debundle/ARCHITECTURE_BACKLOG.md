@@ -75,10 +75,11 @@ makes invalid operations impossible.
 
 ### Defensive comments should stay tied to a real invariant
 
-`graph/linker_order.rs::chunk_source_import_order`'s `None`-after-`Some`
-clause is "kept for robustness against future filter changes that might admit
-non-constraining members". If the filter shape changes, either turn this
-into a tested invariant or delete the defensive branch.
+`graph/linker_order.rs::chunk_source_import_order_from_adjacency`'s
+`None`-after-`Some` clause is "kept for robustness against future filter
+changes that might admit non-constraining members". If the filter shape
+changes, either turn this into a tested invariant or delete the defensive
+branch.
 
 ## Code refactor / dedup opportunities
 
@@ -160,12 +161,6 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
 files by responsibility — <selector_codemod.rs>, <peel/quotient.rs>,
 <lowering/rename_ledger.rs>.
 
-**Defer (high risk):** unifying the union-find / Tarjan-SCC / incremental
-cycle-detection between <peel/quotient.rs> and
-<realizability/condensation_order.rs>. They look parallel but encode different
-correctness invariants for the realizability gate; a shared impl risks hiding
-drift. Audit before attempting.
-
 ## Quick wins (≤30 min each)
 
 1. **Carry chunk-top-level `Mark` on `ChunkContext`** so `top_level_id`
@@ -189,22 +184,6 @@ checking. This is a pre-existing inline-mode-only under-restriction; catchall
 chunks keep no TDZ-prone bindings in the entry file. Extending candidate
 enumeration with the universal entry edges would close it at the cost of much
 larger SCCs in the incremental planner path.
-
-### CLI common args via clap `#[command(flatten)]` (DECIDED: declined)
-
-The
-recurring flags (`--modules` / `--source-root` / `--format`) occur in
-incompatible combinations across the `Args` structs with inconsistent attrs
-(`source-root` carries `env` on some structs, not others; `MatchSelector` /
-`Describe` / `ShowSource` have no `--modules`), so there is no cohesive group to
-extract. Flattening `{modules, format}` would add `args.common.*` indirection
-for a semantically-incohesive bundle (input locator + output format) without a
-real clarity or LOC win. `peel`'s `CommonArgs` (`{graph, modules}`) stays as the
-one cohesive case.
-
-### `BindingId`/`BindingTable` interning (DECIDED 2026-06: defer, perf-triggered)
-
-Implement only if corpus profiling (`perf/proposer.md`) shows the binding-keyed graph paths as a material cost; docs/design.md marks the sketch as hypothetical with the same trigger. Until then it stays unimplemented — do not treat the design.md sketch as a description of the code.
 
 ### A11 intrinsic integrity: from observed assumption to checked precondition
 
