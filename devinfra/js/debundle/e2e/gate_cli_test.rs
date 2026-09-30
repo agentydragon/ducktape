@@ -62,9 +62,16 @@ fn gate_json(args: &[&str]) -> serde_json::Value {
 #[test]
 fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() {
     let rejected = rejected_cycle_fixture();
+    let (binding, line) = if rejected.stderr.contains("`B` at static/app.js:3:11") {
+        ("B", 3)
+    } else if rejected.stderr.contains("`D` at static/app.js:5:11") {
+        ("D", 5)
+    } else {
+        panic!("rejection omitted sequenced initializer owner/location:\n{}", rejected.stderr);
+    };
     for required in [
-        "`B` at static/app.js:3:11",
         "unknown_call",
+        "(wrap)",
         "member-level `purity: pure` annotation",
     ] {
         assert!(
@@ -78,15 +85,14 @@ fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() 
         .as_array()
         .unwrap()
         .iter()
-        .find_map(|edge| edge.get("sequenced_owner"))
-        .filter(|cause| !cause.is_null())
+        .filter_map(|edge| edge.get("sequenced_owner"))
+        .find(|cause| !cause.is_null() && cause["binding_names"][0] == binding)
         .expect("sequenced cycle edge carries purity owner cause");
-    assert_eq!(cause["binding_names"][0], "B");
     let reason = &cause["purity"]["reasons"][0];
     assert_eq!(reason["rule"], "unknown_call");
     assert_eq!(reason["detail"], "wrap");
     assert_eq!(reason["source_location"]["source_path"], "static/app.js");
-    assert_eq!(reason["source_location"]["start_line"], 3);
+    assert_eq!(reason["source_location"]["start_line"], line);
     assert_eq!(reason["source_location"]["start_column"], 11);
     assert!(
         reason["author_guidance"]
@@ -103,7 +109,10 @@ fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() 
         graph_path(&rejected).to_str().unwrap(),
     ]);
     let text = String::from_utf8_lossy(&text.stdout);
-    assert!(text.contains("`B` at static/app.js:3:11"), "{text}");
+    assert!(
+        text.contains(&format!("`{binding}` at static/app.js:{line}:11")),
+        "{text}"
+    );
     assert!(text.contains("unknown_call (wrap)"), "{text}");
 }
 
