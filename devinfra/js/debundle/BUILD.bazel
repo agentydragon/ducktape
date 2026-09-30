@@ -37,15 +37,15 @@ rust_test(
 
 rust_library(
     name = "source_match_holes",
-    srcs = ["source_match_holes.rs"],
-    crate_root = "source_match_holes.rs",
+    srcs = ["selectors/matching/source_match_holes.rs"],
+    crate_root = "selectors/matching/source_match_holes.rs",
     edition = "2024",
 )
 
 rust_library(
     name = "source_match",
-    srcs = glob(["source_match/*.rs"]),
-    crate_root = "source_match/mod.rs",
+    srcs = glob(["selectors/matching/source_match/*.rs"]),
+    crate_root = "selectors/matching/source_match/mod.rs",
     edition = "2024",
     deps = [
         ":binding_targets",
@@ -69,8 +69,8 @@ rust_test(
 
 rust_library(
     name = "selector_candidate_index",
-    srcs = ["selector_candidate_index.rs"],
-    crate_root = "selector_candidate_index.rs",
+    srcs = ["selectors/authoring/selector_candidate_index.rs"],
+    crate_root = "selectors/authoring/selector_candidate_index.rs",
     edition = "2024",
     deps = [
         ":source_match_holes",
@@ -92,8 +92,8 @@ rust_test(
 # AST-shape index + read-off API for selector synthesis.
 rust_library(
     name = "shape_index",
-    srcs = ["shape_index.rs"],
-    crate_root = "shape_index.rs",
+    srcs = ["selectors/authoring/shape_index.rs"],
+    crate_root = "selectors/authoring/shape_index.rs",
     edition = "2024",
     deps = [
         ":js_ast",
@@ -114,8 +114,8 @@ rust_test(
 # serializer — rendering reuses the per-form render_with closure.
 rust_library(
     name = "readoff_render",
-    srcs = ["readoff_render.rs"],
-    crate_root = "readoff_render.rs",
+    srcs = ["selectors/authoring/readoff_render.rs"],
+    crate_root = "selectors/authoring/readoff_render.rs",
     edition = "2024",
     deps = [
         ":selector_candidate_index",
@@ -137,8 +137,8 @@ rust_test(
 
 rust_library(
     name = "anonymous_resolution",
-    srcs = ["anonymous_resolution.rs"],
-    crate_root = "anonymous_resolution.rs",
+    srcs = ["selectors/resolution/anonymous_resolution.rs"],
+    crate_root = "selectors/resolution/anonymous_resolution.rs",
     edition = "2024",
     deps = [
         ":analysis",
@@ -163,8 +163,8 @@ rust_library(
 
 rust_library(
     name = "selector_outcome",
-    srcs = ["selector_outcome.rs"],
-    crate_root = "selector_outcome.rs",
+    srcs = ["selectors/resolution/selector_outcome.rs"],
+    crate_root = "selectors/resolution/selector_outcome.rs",
     edition = "2024",
     deps = [
         "@crates//:serde",
@@ -571,8 +571,8 @@ rust_test(
 
 rust_library(
     name = "selector_debt",
-    srcs = ["selector_debt.rs"],
-    crate_root = "selector_debt.rs",
+    srcs = ["selectors/diagnostics/selector_debt.rs"],
+    crate_root = "selectors/diagnostics/selector_debt.rs",
     edition = "2024",
     deps = [
         ":js_ast",
@@ -618,19 +618,19 @@ rust_test(
 rust_library(
     name = "selector_codemod",
     srcs = [
-        "match_selector.rs",
-        "minimize/class.rs",
-        "minimize/function.rs",
-        "minimize/group.rs",
-        "minimize/mod.rs",
-        "minimize/object.rs",
-        "minimize/var.rs",
-        "regex_anchor.rs",
-        "render.rs",
-        "selector_codemod.rs",
-        "selector_minimizer_proptest.rs",
+        "selectors/authoring/match_selector.rs",
+        "selectors/authoring/minimize/class.rs",
+        "selectors/authoring/minimize/function.rs",
+        "selectors/authoring/minimize/group.rs",
+        "selectors/authoring/minimize/mod.rs",
+        "selectors/authoring/minimize/object.rs",
+        "selectors/authoring/minimize/var.rs",
+        "selectors/authoring/regex_anchor.rs",
+        "selectors/authoring/render.rs",
+        "selectors/authoring/selector_codemod.rs",
+        "selectors/authoring/selector_minimizer_proptest.rs",
     ],
-    crate_root = "selector_codemod.rs",
+    crate_root = "selectors/authoring/selector_codemod.rs",
     edition = "2024",
     deps = [
         ":binding_targets",
@@ -935,7 +935,8 @@ rust_test(
 # the constraint-solver backends.
 rust_library(
     name = "selector_ir",
-    srcs = ["selector_ir.rs"],
+    srcs = ["selectors/resolution/selector_ir.rs"],
+    crate_root = "selectors/resolution/selector_ir.rs",
     edition = "2024",
     deps = [":analysis"],
 )
@@ -948,7 +949,8 @@ rust_test(
 
 rust_library(
     name = "selector_constraint_backend",
-    srcs = ["selector_constraint_backend.rs"],
+    srcs = ["selectors/resolution/selector_constraint_backend.rs"],
+    crate_root = "selectors/resolution/selector_constraint_backend.rs",
     edition = "2024",
     deps = [
         ":analysis",
@@ -959,7 +961,8 @@ rust_library(
 
 rust_library(
     name = "selector_constraint_model_builder",
-    srcs = ["selector_constraint_model_builder.rs"],
+    srcs = ["selectors/resolution/selector_constraint_model_builder.rs"],
+    crate_root = "selectors/resolution/selector_constraint_model_builder.rs",
     edition = "2024",
     deps = [
         ":analysis",
@@ -982,7 +985,8 @@ rust_test(
 
 rust_library(
     name = "selector_backend_solver",
-    srcs = ["selector_backend_solver.rs"],
+    srcs = ["selectors/resolution/selector_backend_solver.rs"],
+    crate_root = "selectors/resolution/selector_backend_solver.rs",
     edition = "2024",
     deps = [
         ":analysis",
@@ -1052,7 +1056,8 @@ rust_test(
 
 rust_library(
     name = "selector_ortools_cpsat_model",
-    srcs = ["selector_ortools_cpsat_model.rs"],
+    srcs = ["selectors/resolution/selector_ortools_cpsat_model.rs"],
+    crate_root = "selectors/resolution/selector_ortools_cpsat_model.rs",
     edition = "2024",
     deps = [
         ":cp_model_rust_proto",
@@ -1062,7 +1067,8 @@ rust_library(
 
 rust_library(
     name = "selector_ortools_cpsat_backend",
-    srcs = ["selector_ortools_cpsat_backend.rs"],
+    srcs = ["selectors/resolution/selector_ortools_cpsat_backend.rs"],
+    crate_root = "selectors/resolution/selector_ortools_cpsat_backend.rs",
     edition = "2024",
     deps = [
         ":cp_model_rust_proto",
@@ -1087,7 +1093,8 @@ rust_test(
 
 rust_library(
     name = "selector_runtime",
-    srcs = ["selector_runtime.rs"],
+    srcs = ["selectors/resolution/selector_runtime.rs"],
+    crate_root = "selectors/resolution/selector_runtime.rs",
     edition = "2024",
     deps = [
         ":selector_backend_solver",
@@ -1101,7 +1108,8 @@ rust_library(
 # chunk in, one outcome per entity out.
 rust_library(
     name = "selector_resolve",
-    srcs = ["selector_resolve.rs"],
+    srcs = ["selectors/resolution/selector_resolve.rs"],
+    crate_root = "selectors/resolution/selector_resolve.rs",
     edition = "2024",
     deps = [
         ":analysis",
@@ -1122,7 +1130,8 @@ rust_library(
 
 rust_library(
     name = "selector_ir_lowering",
-    srcs = ["selector_ir_lowering.rs"],
+    srcs = ["selectors/resolution/selector_ir_lowering.rs"],
+    crate_root = "selectors/resolution/selector_ir_lowering.rs",
     edition = "2024",
     deps = [
         ":analysis",
@@ -1168,7 +1177,8 @@ rust_binary(
 # construct-by-construct.
 rust_library(
     name = "chunk_facts",
-    srcs = ["chunk_facts.rs"],
+    srcs = ["selectors/matching/chunk_facts.rs"],
+    crate_root = "selectors/matching/chunk_facts.rs",
     edition = "2024",
     deps = [
         ":js_ast",
@@ -1188,7 +1198,8 @@ rust_test(
 # Operates over the AST-facts EDB, not by re-walking ASTs.
 rust_library(
     name = "selector_match",
-    srcs = ["selector_match.rs"],
+    srcs = ["selectors/matching/selector_match.rs"],
+    crate_root = "selectors/matching/selector_match.rs",
     edition = "2024",
     deps = [
         ":chunk_facts",
@@ -1202,8 +1213,8 @@ rust_library(
 # fail-closed `Unsupported` outside the faithful subset.
 rust_test(
     name = "selector_match_test",
-    srcs = ["selector_match_test.rs"],
-    crate_root = "selector_match_test.rs",
+    srcs = ["selectors/matching/selector_match_test.rs"],
+    crate_root = "selectors/matching/selector_match_test.rs",
     edition = "2024",
     deps = [
         ":chunk_facts",
@@ -1218,7 +1229,8 @@ rust_test(
 # first-blocker histogram, to grow extraction by real-corpus frequency.
 rust_binary(
     name = "chunk_facts_coverage",
-    srcs = ["chunk_facts_coverage.rs"],
+    srcs = ["selectors/matching/chunk_facts_coverage.rs"],
+    crate_root = "selectors/matching/chunk_facts_coverage.rs",
     edition = "2024",
     deps = [
         ":chunk_facts",
