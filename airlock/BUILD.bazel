@@ -31,7 +31,6 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":settings",
         "//airlock/oauth:config",
         "//airlock/oauth:provider",
     ],
@@ -141,7 +140,6 @@ py_test(
     deps = [
         ":app",
         ":auth",
-        ":config",
         ":settings",
         "//:conftest",
         "//airlock/oauth:config",
