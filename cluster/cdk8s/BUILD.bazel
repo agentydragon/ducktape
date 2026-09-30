@@ -959,6 +959,7 @@ py_library(
         "//aiquota:api",
         "//aiquota:config",
         "//cluster/cdk8s/agentplane:egress_credentials",
+        "//cluster/cdk8s/claude_session_sync:app",
         "//cluster/cdk8s/cli_proxy_api",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/providers/external_secrets:external_secret",

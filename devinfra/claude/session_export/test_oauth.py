@@ -13,6 +13,7 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from devinfra.claude.claude_api.oauth_client import AUTHORIZE_URL, CLIENT_ID
+from devinfra.claude.session_export import oauth
 from devinfra.claude.session_export.conftest import make_credential
 from devinfra.claude.session_export.oauth import (
     CredentialStore,
@@ -167,6 +168,17 @@ async def test_pair_times_out_without_a_callback_and_saves_nothing(tmp_path: Pat
             )
     assert not path.exists()
     assert not token_endpoint.bodies
+
+
+async def test_store_waits_for_pair_to_write_the_credential(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(oauth, "STORE_POLL_SECONDS", 0.01)
+    store = CredentialStore(tmp_path / "credential.json")
+    waiting = asyncio.create_task(store.wait_until_stored())
+    await asyncio.sleep(0)  # let it start; the file is absent, so it cannot finish yet
+    assert not waiting.done()
+    store.save(make_credential())
+    async with asyncio.timeout(10):
+        await waiting
 
 
 async def test_token_source_refreshes_an_expiring_token_once_and_persists_the_rotation(tmp_path: Path) -> None:

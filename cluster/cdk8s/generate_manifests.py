@@ -106,6 +106,7 @@ from cluster.cdk8s.cert_manager import (
     environment as cert_manager_environment,
     trust as cert_manager_trust,
 )
+from cluster.cdk8s.claude_session_sync import app as claude_session_sync_app
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api
 from cluster.cdk8s.clickhouse import (
     installation as clickhouse_installation,
@@ -1145,6 +1146,20 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kubevirt_kustomization,
     )
+    claude_session_sync_artifact = artifact(
+        "claude-session-sync", claude_session_sync_app.OUTPUT_DIR, claude_session_sync_app.PINS_DIR
+    )
+    claude_session_sync_app.claude_session_sync(
+        flux_chart,
+        write_directory(
+            root,
+            claude_session_sync_artifact,
+            claude_session_sync_app.chart,
+            components=[posixpath.relpath(claude_session_sync_app.PINS_DIR, claude_session_sync_app.OUTPUT_DIR)],
+        ),
+        cnpg_kustomization,
+        external_secrets_operator_kustomization,
+    )
     flux_image_automation_forgejo_artifact = artifact(
         "flux-image-automation-forgejo", forgejo_image_automation.OUTPUT_DIR
     )
@@ -1526,6 +1541,7 @@ def generate_manifests(root: Path) -> None:
             atuin_artifact,
             atuin_user_provisioner_artifact,
             authentik_db_backups_artifact,
+            claude_session_sync_artifact,
             cli_proxy_api_artifact,
             clickhouse_operator_artifact,
             clickhouse_schema_artifact,

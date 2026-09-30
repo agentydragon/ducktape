@@ -99,6 +99,8 @@ async def open_api(args: argparse.Namespace) -> AsyncIterator[SessionsApi]:
 async def run_sync(args: argparse.Namespace) -> None:
     database_url = SyncSettings().database_url
     await asyncio.to_thread(RUNNER.apply, database_url)
+    # A deployment starts before anyone has paired, and pairs inside the running container.
+    await CredentialStore(get_build_working_directory() / args.credentials_file).wait_until_stored()
     engine = make_engine(database_url)
     store = SessionStore(engine)
     try:

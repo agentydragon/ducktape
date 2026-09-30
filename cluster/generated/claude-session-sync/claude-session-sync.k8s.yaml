@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+    name: claude-session-sync
+  name: claude-session-sync
+spec: {}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: claude-session-sync
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    description: Events of every Claude Code cloud session, mirrored by claude-session-sync. Once the sessions age out of Anthropic's API this may be the only copy.
+  name: claude-session-sync-db
+  namespace: claude-session-sync
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: claude_sessions
+      owner: claude_sessions
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 40Gi
+    storageClass: local-path-ovh-hdd
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: claude-session-sync-data
+  namespace: claude-session-sync
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: seaweedfs-ovh
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Reads every Claude Code cloud session's events into the CNPG database with a dedicated OAuth grant kept on the data volume. Waits for `pair` to be run in the container.
+  labels:
+    app.kubernetes.io/name: claude-session-sync
+  name: claude-session-sync
+  namespace: claude-session-sync
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: claude-session-sync
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: claude-session-sync
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - sync
+            - --credentials-file
+            - /data/credentials.json
+          env:
+            - name: SESSION_SYNC_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: claude-session-sync-db-app
+          image: git.allegedly.works/ducktape-ci/claude-session-sync:unset
+          name: claude-session-sync
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
+          volumeMounts:
+            - mountPath: /data
+              name: data
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: claude-session-sync-data
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: The sync may resolve DNS, reach Anthropic's OAuth and API hosts, and use its database.
+  name: claude-session-sync
+  namespace: claude-session-sync
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: api.anthropic.com
+        - matchName: platform.claude.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.anthropic.com
+            - platform.claude.com
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: claude-session-sync-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: claude-session-sync

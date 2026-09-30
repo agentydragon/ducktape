@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer
+from tenacity import AsyncRetrying, retry_if_exception_type, wait_fixed
 
 from devinfra.claude.claude_api.oauth_client import AUTHORIZE_URL, CLIENT_ID, TOKEN_URL
 
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 CALLBACK_PORT = 54545  # the port of the redirect URI registered for the public client
 REFRESH_SKEW = timedelta(minutes=5)
+STORE_POLL_SECONDS = 5
 
 
 class Organization(BaseModel):
@@ -68,6 +70,16 @@ class CredentialStore:
 
     def load(self) -> OAuthCredential:
         return OAuthCredential.model_validate_json(self._path.read_text())
+
+    async def wait_until_stored(self) -> None:
+        """Returns once `pair` has written the file. Polls, since the writer is another process."""
+        if not self._path.exists():
+            logger.info("no credential at %s: run `pair --credentials-file %s` here; waiting", self._path, self._path)
+        async for attempt in AsyncRetrying(
+            retry=retry_if_exception_type(FileNotFoundError), wait=wait_fixed(STORE_POLL_SECONDS)
+        ):
+            with attempt:
+                self._path.stat()
 
     def save(self, credential: OAuthCredential) -> None:
         partial = self._path.with_name(f"{self._path.name}.part")

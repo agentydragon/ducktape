@@ -410,6 +410,13 @@ spec:
       name: authentik-db-backups
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/claude-session-sync/**"
+          to: "@artifact/cluster/generated/claude-session-sync/"
+        - from: "@repo/cluster/k8s/claude-session-sync-image-pins/**"
+          to: "@artifact/cluster/k8s/claude-session-sync-image-pins/"
+      name: claude-session-sync
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/cli-proxy-api/**"
           to: "@artifact/cluster/k8s/cli-proxy-api/"
       name: cli-proxy-api
