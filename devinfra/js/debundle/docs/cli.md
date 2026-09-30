@@ -127,8 +127,8 @@ factorization (anything that moves a binding between modules), that means
 the full realizability + atom-split gate — which requires
 `--graph <owner_graph.json>` unless `--no-verify` is set; for renames, it
 means name-collision detection; for comment edits, shape preservation only
-(`--no-verify` is a no-op there). If validation fails the command refuses
-with a structured diagnostic and **does not modify any file**.
+(they take `--dry-run` but no `--no-verify`). If validation fails the command
+refuses with a structured diagnostic and **does not modify any file**.
 
 On spec-edit commands:
 

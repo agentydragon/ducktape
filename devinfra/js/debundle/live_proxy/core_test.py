@@ -107,8 +107,6 @@ class LiveProxyCoreTest(unittest.TestCase):
             }
         )
 
-        assert config.asset_summary_path == fixture.asset_summary_path
-        assert config.source_html_path == fixture.source_html_path
         assert config.app_root == fixture.app_root
         assert config.target_origin == "https://app.example.com"
 

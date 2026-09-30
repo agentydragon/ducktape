@@ -639,8 +639,8 @@ rust_test(
 
 rust_library(
     name = "yaml_edit",
-    srcs = ["cli/yaml_edit.rs"],
-    crate_root = "cli/yaml_edit.rs",
+    srcs = ["yaml_edit.rs"],
+    crate_root = "yaml_edit.rs",
     edition = "2024",
     deps = [
         "@crates//:anyhow",
@@ -980,7 +980,6 @@ rust_library(
         "cli/outcome.rs",
         "cli/scc_cluster.rs",
         "cli/validate.rs",
-        "cli/yaml_edit.rs",
     ],
     crate_name = "debundle_cli",
     crate_root = "cli/mod.rs",
@@ -1003,6 +1002,7 @@ rust_library(
         ":spec",
         ":spec_modules",
         ":spec_stats",
+        ":yaml_edit",
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:serde",
