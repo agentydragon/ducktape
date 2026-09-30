@@ -24,7 +24,6 @@ OLLAMA_MODELS = [
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 _THREAD_PRESET_HAKU_CLAUDE = "haku-claude"
-_THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
 # The EgressPolicy objects egress creates in every environment, named here
 # because the presets bind them.
 BASIC_POLICY = "basic"
@@ -48,9 +47,6 @@ PLAID_PGWEB_POLICY = "plaid-pgweb"
 _PUBLIC_CODER_INSTRUCTIONS = (
     Path(__file__).with_name("public_coder_instructions.md").read_text(encoding="utf-8").strip()
 )
-_FINANCE_AGENT_INSTRUCTIONS = (
-    Path(__file__).with_name("finance_agent_instructions.md").read_text(encoding="utf-8").strip()
-)
 
 
 def reasoning_efforts(model: str) -> list[str]:
@@ -72,7 +68,6 @@ def settings(
     action_federation: ActionFederationSettings | None = None,
     action_policy_sets: list[str] | None = None,
     haku_preset_model: str | None = None,
-    finance_agent_preset_model: str | None = None,
 ) -> AppSettingsConfig:
     # A model both harnesses accept (e.g. a local Ollama route) names its display name once,
     # regardless of how many harness lists reference it. dict.fromkeys dedupes while keeping
@@ -101,20 +96,6 @@ def settings(
                 cwd="/state/workspaces/{session_id}",
                 reasoning_effort="medium",
                 instructions=_PUBLIC_CODER_INSTRUCTIONS,
-            ),
-            **(
-                {
-                    _THREAD_PRESET_FINANCE_AGENT_CODEX: ThreadPreset(
-                        title="Finance agent / Codex",
-                        harness=Harness.CODEX,
-                        model=finance_agent_preset_model,
-                        cwd="/state/workspaces/{session_id}",
-                        reasoning_effort="medium",
-                        instructions=_FINANCE_AGENT_INSTRUCTIONS,
-                    )
-                }
-                if finance_agent_preset_model is not None
-                else {}
             ),
             **(
                 {
@@ -164,47 +145,6 @@ def settings(
                     "  printf '%s\\n' 'public-coder workspace initialized' > \"$marker\"\n"
                     "fi\n"
                 ),
-            ),
-            **(
-                {
-                    "finance-agent": SandboxPreset(
-                        title="Finance agent",
-                        template="agentplane-runner",
-                        # `forgejo-finance-agent` and `plaid-pgweb` are staging-only credentials
-                        # (egress_staging_credentials.py) -- this preset exists only where
-                        # finance_agent_preset_model is set, same reason the `haku` preset below
-                        # is gated on haku_preset_model rather than defined unconditionally like
-                        # `public-coder`.
-                        policies=[
-                            BASIC_POLICY,
-                            PACKAGES_POLICY,
-                            FORGEJO_FINANCE_AGENT_POLICY,
-                            PLAID_PGWEB_POLICY,
-                            GITHUB_AGENTYDRAGON_AGENT_POLICY,
-                            GITHUB_CLONE_POLICY,
-                            GITHUB_ACTIONS_LOGS_POLICY,
-                            BUILDBUDDY_POLICY,
-                        ],
-                        thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
-                        # Placeholder password: the `forgejo-finance-agent` EgressPolicy's
-                        # credentialRef substitutes it for the `finance-agent` Forgejo account's
-                        # real password on the way out (egress_staging_credentials.py), same shape
-                        # as the `haku` preset below.
-                        bootstrap=(
-                            "marker=/state/workspaces/.agentplane-finance-agent-ready\n"
-                            "mkdir -p /state/workspaces\n"
-                            'if [ ! -f "$marker" ]; then\n'
-                            "  git clone --branch main --single-branch "
-                            "http://finance-agent:agentplane-credential-forgejo-finance-agent@"
-                            "forgejo-http.forgejo.svc.cluster.local:3000/finance-agent/finance-agent.git "
-                            "/state/workspaces/finance-agent\n"
-                            "  printf '%s\\n' 'finance-agent workspace initialized' > \"$marker\"\n"
-                            "fi\n"
-                        ),
-                    )
-                }
-                if finance_agent_preset_model is not None
-                else {}
             ),
             **(
                 {
