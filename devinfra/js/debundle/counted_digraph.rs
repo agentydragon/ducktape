@@ -15,13 +15,13 @@ use petgraph::visit::{
 /// of debundle owner/module semantics; callers layer evidence and
 /// domain-specific labels on top.
 #[derive(Debug, Clone)]
-pub struct RollbackDiGraph<N> {
+pub struct CountedDiGraph<N> {
     edge_counts: BTreeMap<(N, N), usize>,
     out_edges: BTreeMap<N, BTreeSet<N>>,
     in_edges: BTreeMap<N, BTreeSet<N>>,
 }
 
-impl<N> Default for RollbackDiGraph<N>
+impl<N> Default for CountedDiGraph<N>
 where
     N: Copy + Ord,
 {
@@ -30,7 +30,7 @@ where
     }
 }
 
-impl<N> RollbackDiGraph<N>
+impl<N> CountedDiGraph<N>
 where
     N: Copy + Ord,
 {
@@ -59,7 +59,7 @@ where
         let old_count = self.edge_count(from, to);
         assert!(
             old_count > 0,
-            "RollbackDiGraph::decrement_edge called for absent edge",
+            "CountedDiGraph::decrement_edge called for absent edge",
         );
         self.set_edge_count(from, to, old_count - 1);
     }
@@ -168,11 +168,11 @@ where
 }
 
 /// Petgraph adapter that materializes a dense node index for
-/// [`RollbackDiGraph`]. `RollbackDiGraph` only tracks nodes that
+/// [`CountedDiGraph`]. `CountedDiGraph` only tracks nodes that
 /// participate in at least one edge, matching petgraph `GraphMap`
 /// semantics — the view's node bound is the count of such nodes.
 struct PetgraphView<'a, N> {
-    graph: &'a RollbackDiGraph<N>,
+    graph: &'a CountedDiGraph<N>,
     nodes: Vec<N>,
     index_of: BTreeMap<N, usize>,
 }
@@ -181,7 +181,7 @@ impl<'a, N> PetgraphView<'a, N>
 where
     N: Copy + Ord,
 {
-    fn new(graph: &'a RollbackDiGraph<N>) -> Self {
+    fn new(graph: &'a CountedDiGraph<N>) -> Self {
         let mut node_set: BTreeSet<N> = BTreeSet::new();
         for &(from, to) in graph.edge_counts.keys() {
             node_set.insert(from);
@@ -231,7 +231,7 @@ where
         *self
             .index_of
             .get(&node)
-            .expect("node not present in RollbackDiGraph view")
+            .expect("node not present in CountedDiGraph view")
     }
 
     fn from_index(&self, index: usize) -> N {
@@ -310,11 +310,11 @@ mod tests {
     use petgraph::algo::tarjan_scc;
     use petgraph::graphmap::DiGraphMap;
 
-    use super::RollbackDiGraph;
+    use super::CountedDiGraph;
 
     #[test]
     fn counted_parallel_edges_keep_adjacency_until_last_edge_is_removed() {
-        let mut graph = RollbackDiGraph::new();
+        let mut graph = CountedDiGraph::new();
         graph.increment_edge(1, 2);
         graph.increment_edge(1, 2);
         assert_eq!(graph.edge_count(1, 2), 2);
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn scc_containing_is_forward_reverse_reachability_intersection() {
-        let mut graph = RollbackDiGraph::new();
+        let mut graph = CountedDiGraph::new();
         graph.increment_edge(1, 2);
         graph.increment_edge(2, 3);
         graph.increment_edge(3, 1);
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn tarjan_output_matches_petgraph_for_small_graph() {
         let edges = [(1, 2), (2, 1), (2, 3), (3, 4), (4, 3), (5, 6)];
-        let mut graph = RollbackDiGraph::new();
+        let mut graph = CountedDiGraph::new();
         let mut petgraph: DiGraphMap<i32, (), std::collections::hash_map::RandomState> =
             DiGraphMap::new();
         for (from, to) in edges {
@@ -363,7 +363,7 @@ mod tests {
         }
 
         let mut ours: BTreeSet<BTreeSet<i32>> = graph.all_sccs().into_iter().collect();
-        // `RollbackDiGraph` only knows nodes that are edge endpoints,
+        // `CountedDiGraph` only knows nodes that are edge endpoints,
         // matching this petgraph construction.
         let pet: BTreeSet<BTreeSet<i32>> = tarjan_scc(&petgraph)
             .into_iter()

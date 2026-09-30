@@ -32,7 +32,7 @@
 //!
 //! ## Mutation protocol
 //!
-//! The caller owns the base graph (a [`RollbackDiGraph`]) and reports
+//! The caller owns the base graph (a [`CountedDiGraph`]) and reports
 //! every committed mutation *after* applying it to the base:
 //!
 //! - [`Self::insert_edge`] / [`Self::remove_edge`] after
@@ -73,7 +73,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 
-use crate::rollback_graph::RollbackDiGraph;
+use crate::counted_digraph::CountedDiGraph;
 
 /// Sentinel rank for interned nodes that are not live condensation
 /// representatives (absorbed into another SCC, or awaiting a rebuild).
@@ -176,7 +176,7 @@ where
 
     /// Whether `n`'s SCC contains at least two modules (alias
     /// classes). The `O(α)` tier-1 probe. Rebuilds first if stale.
-    pub fn is_in_multi_scc(&mut self, base: &RollbackDiGraph<N>, n: N) -> bool {
+    pub fn is_in_multi_scc(&mut self, base: &CountedDiGraph<N>, n: N) -> bool {
         self.ensure_fresh(base);
         let Some(&idx) = self.idx_of.get(&n) else {
             return false;
@@ -190,7 +190,7 @@ where
     /// a merge of two
     /// modules inside one multi-module SCC dissolves part of an
     /// unrealizable cycle. Rebuilds first if stale.
-    pub fn same_multi_scc(&mut self, base: &RollbackDiGraph<N>, u: N, v: N) -> bool {
+    pub fn same_multi_scc(&mut self, base: &CountedDiGraph<N>, u: N, v: N) -> bool {
         self.ensure_fresh(base);
         let (Some(&iu), Some(&iv)) = (self.idx_of.get(&u), self.idx_of.get(&v)) else {
             return false;
@@ -205,7 +205,7 @@ where
     /// adjacency pair already existed) and self-edges; otherwise the
     /// standard PK insertion path runs, unioning any cycle the new
     /// edge closes and re-ranking the affected window.
-    pub fn insert_edge(&mut self, base: &RollbackDiGraph<N>, u: N, v: N) {
+    pub fn insert_edge(&mut self, base: &CountedDiGraph<N>, u: N, v: N) {
         let iu = self.intern(u);
         let iv = self.intern(v);
         if self.stale || u == v {
@@ -239,7 +239,7 @@ where
     /// internal to a multi-module SCC may split it — per plan §4 the
     /// structure marks itself stale instead of attempting the split,
     /// and the next query rebuilds.
-    pub fn remove_edge(&mut self, base: &RollbackDiGraph<N>, u: N, v: N) {
+    pub fn remove_edge(&mut self, base: &CountedDiGraph<N>, u: N, v: N) {
         if self.stale || u == v {
             return;
         }
@@ -268,7 +268,7 @@ where
     /// (never a degraded order). When both already share an SCC the
     /// module count decrements instead — contraction inside a
     /// multi-module SCC moves it *toward* realizability.
-    pub fn apply_contract(&mut self, base: &RollbackDiGraph<N>, winner: N, loser: N) {
+    pub fn apply_contract(&mut self, base: &CountedDiGraph<N>, winner: N, loser: N) {
         let iw = self.intern(winner);
         let il = self.intern(loser);
         let aw = find(&mut self.alias_parent, iw);
@@ -322,7 +322,7 @@ where
     /// if stale.
     pub fn would_join_multi_scc(
         &mut self,
-        base: &RollbackDiGraph<N>,
+        base: &CountedDiGraph<N>,
         overlay: &BTreeMap<(N, N), isize>,
         u: N,
         v: N,
@@ -403,7 +403,7 @@ where
         idx
     }
 
-    fn ensure_fresh(&mut self, base: &RollbackDiGraph<N>) {
+    fn ensure_fresh(&mut self, base: &CountedDiGraph<N>) {
         if self.stale {
             self.rebuild(base);
         }
@@ -413,7 +413,7 @@ where
     /// graph via Tarjan, then Kahn over the condensation for ranks.
     /// Contraction aliases are preserved; SCC membership and module
     /// counts are derived fresh.
-    fn rebuild(&mut self, base: &RollbackDiGraph<N>) {
+    fn rebuild(&mut self, base: &CountedDiGraph<N>) {
         for (a, b) in base.edge_pairs() {
             self.intern(a);
             self.intern(b);
@@ -511,7 +511,7 @@ where
     /// among them (Tarjan over the window-induced condensation
     /// subgraph), then Kahn-assign consecutive ranks from `lo`.
     /// `O(|window| + |E_window|)` — the PK affected-region bound.
-    fn rerank_window(&mut self, base: &RollbackDiGraph<N>, lo: u32, hi: u32) {
+    fn rerank_window(&mut self, base: &CountedDiGraph<N>, lo: u32, hi: u32) {
         debug_assert!(!self.stale);
         let window: Vec<u32> = self.pos_to_rep[lo as usize..=hi as usize]
             .iter()
@@ -632,7 +632,7 @@ where
     /// membership too coarse).
     fn classify_overlay(
         &mut self,
-        base: &RollbackDiGraph<N>,
+        base: &CountedDiGraph<N>,
         overlay: &BTreeMap<(N, N), isize>,
     ) -> OverlayShape {
         let mut shape = OverlayShape {
@@ -683,7 +683,7 @@ where
     /// a subgraph of a DAG respects the DAG's rank order).
     fn windowed_path_through_intermediate(
         &mut self,
-        base: &RollbackDiGraph<N>,
+        base: &CountedDiGraph<N>,
         overlay: &BTreeMap<(N, N), isize>,
         su: u32,
         sv: u32,
@@ -749,7 +749,7 @@ where
     /// node set `{su, sv}` back into it through ≥ 1 intermediate?
     fn cone_cycle_through_merged(
         &mut self,
-        base: &RollbackDiGraph<N>,
+        base: &CountedDiGraph<N>,
         overlay: &BTreeMap<(N, N), isize>,
         additions: &[(u32, u32)],
         su: u32,
@@ -803,7 +803,7 @@ where
     /// Materialized (the union-find needs `&mut` for path halving).
     fn effective_successor_reps(
         &mut self,
-        base: &RollbackDiGraph<N>,
+        base: &CountedDiGraph<N>,
         overlay: &BTreeMap<(N, N), isize>,
         added_out: &BTreeMap<u32, Vec<u32>>,
         r: u32,
@@ -840,7 +840,7 @@ where
     /// graph.
     fn exact_merged_multi(
         &mut self,
-        base: &RollbackDiGraph<N>,
+        base: &CountedDiGraph<N>,
         overlay: &BTreeMap<(N, N), isize>,
         shape: &OverlayShape,
         iu: u32,
@@ -869,7 +869,7 @@ where
     /// result (paths must leave it).
     fn alias_reach(
         &mut self,
-        base: &RollbackDiGraph<N>,
+        base: &CountedDiGraph<N>,
         overlay: &BTreeMap<(N, N), isize>,
         added: &BTreeMap<u32, Vec<u32>>,
         merged: &BTreeSet<u32>,
@@ -927,7 +927,7 @@ where
     /// maintained). SCC-partition correctness against `tarjan_scc` is
     /// asserted separately by the differential tests.
     #[cfg(test)]
-    pub(super) fn validate(&mut self, base: &RollbackDiGraph<N>) -> Result<(), String>
+    pub(super) fn validate(&mut self, base: &CountedDiGraph<N>) -> Result<(), String>
     where
         N: std::fmt::Debug,
     {
@@ -1016,7 +1016,7 @@ enum Direction {
 /// Effective multiplicity of the `(from, to)` adjacency under the
 /// overlay: base count plus the overlay's signed delta.
 fn effective_count<N: Copy + Ord>(
-    base: &RollbackDiGraph<N>,
+    base: &CountedDiGraph<N>,
     overlay: &BTreeMap<(N, N), isize>,
     from: N,
     to: N,
@@ -1035,7 +1035,7 @@ pub(super) mod test_support {
     use petgraph::graphmap::DiGraphMap;
 
     use super::CondensationOrder;
-    use crate::rollback_graph::RollbackDiGraph;
+    use crate::counted_digraph::CountedDiGraph;
 
     /// Sentinel for the identified `{u, v}` node in the brute-force
     /// reference graphs.
@@ -1045,8 +1045,8 @@ pub(super) mod test_support {
         BTreeMap::new()
     }
 
-    pub fn graph(edges: &[(usize, usize)]) -> RollbackDiGraph<usize> {
-        let mut graph = RollbackDiGraph::new();
+    pub fn graph(edges: &[(usize, usize)]) -> CountedDiGraph<usize> {
+        let mut graph = CountedDiGraph::new();
         for &(a, b) in edges {
             graph.increment_edge(a, b);
         }
@@ -1080,7 +1080,7 @@ pub(super) mod test_support {
     /// Effective edge pairs (count > 0) of `base ± overlay`, mapped
     /// through the alias mirror, self-loops dropped.
     fn effective_alias_edges(
-        base: &RollbackDiGraph<usize>,
+        base: &CountedDiGraph<usize>,
         alias: &TestAlias,
         overlay: &BTreeMap<(usize, usize), isize>,
     ) -> BTreeSet<(usize, usize)> {
@@ -1101,7 +1101,7 @@ pub(super) mod test_support {
     /// identified into a sentinel node; true iff the sentinel's SCC
     /// has size ≥ 2.
     pub fn brute_would_join(
-        base: &RollbackDiGraph<usize>,
+        base: &CountedDiGraph<usize>,
         alias: &TestAlias,
         overlay: &BTreeMap<(usize, usize), isize>,
         u: usize,
@@ -1125,7 +1125,7 @@ pub(super) mod test_support {
     /// Brute-force SCC partition of `base` at alias level (no
     /// overlay): map node → sorted SCC members, multi SCCs only.
     fn brute_multi_sccs(
-        base: &RollbackDiGraph<usize>,
+        base: &CountedDiGraph<usize>,
         alias: &TestAlias,
         node_universe: &BTreeSet<usize>,
     ) -> BTreeSet<BTreeSet<usize>> {
@@ -1147,7 +1147,7 @@ pub(super) mod test_support {
     /// every node in the universe.
     pub fn assert_multi_matches_brute(
         order: &mut CondensationOrder<usize>,
-        base: &RollbackDiGraph<usize>,
+        base: &CountedDiGraph<usize>,
         alias: &TestAlias,
         node_universe: &BTreeSet<usize>,
         context: &str,
@@ -1174,13 +1174,13 @@ mod tests {
     /// Build a fresh `CondensationOrder` that has seen every edge of
     /// `base` via `insert_edge` (after a forced initial rebuild on an
     /// empty graph, so the incremental insertion path is exercised).
-    fn order_via_inserts(base: &RollbackDiGraph<usize>) -> CondensationOrder<usize> {
+    fn order_via_inserts(base: &CountedDiGraph<usize>) -> CondensationOrder<usize> {
         let mut order = CondensationOrder::new();
-        let empty = RollbackDiGraph::<usize>::new();
+        let empty = CountedDiGraph::<usize>::new();
         // Force the initial rebuild on the empty graph so subsequent
         // insert_edge calls run the incremental PK path, not rebuild.
         assert!(!order.is_in_multi_scc(&empty, 0));
-        let mut shadow = RollbackDiGraph::new();
+        let mut shadow = CountedDiGraph::new();
         for (a, b) in base.edge_pairs() {
             for _ in 0..base.edge_count(a, b) {
                 shadow.increment_edge(a, b);
@@ -1430,7 +1430,7 @@ mod tests {
             let mut rng = SimpleRng::new(seed);
             let n = 12usize;
             let universe: BTreeSet<usize> = (0..n).collect();
-            let mut base = RollbackDiGraph::new();
+            let mut base = CountedDiGraph::new();
             for a in 0..n {
                 for b in (a + 1)..n {
                     if rng.next_u32().is_multiple_of(3) {
