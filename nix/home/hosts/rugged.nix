@@ -22,6 +22,11 @@
 
   ducktape.codex.chatgptPackage = ducktapePackages.chatgpt;
 
+  ducktape.sessionBackup = {
+    enable = true;
+    host = "rugged";
+  };
+
   ducktape.githubApiProxy = {
     enable = true;
     remote = {
