@@ -72,7 +72,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    description: Reads every Claude Code cloud session's events into the CNPG database with a dedicated OAuth grant kept on the data volume. Waits for `pair` to be run in the container.
+    description: Reads every Claude Code cloud session's events into the CNPG database with a dedicated OAuth grant kept on the data volume, and serves the login-protected page that pairs it.
   labels:
     app.kubernetes.io/name: claude-session-sync
   name: claude-session-sync
@@ -92,17 +92,62 @@ spec:
       automountServiceAccountToken: false
       containers:
         - args:
-            - sync
-            - --credentials-file
-            - /data/credentials.json
+            - serve
           env:
             - name: SESSION_SYNC_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   key: uri
                   name: claude-session-sync-db-app
+            - name: SESSION_SYNC_CREDENTIALS_FILE
+              value: /data/credentials.json
+            - name: SESSION_SYNC_PUBLIC_BASE_URL
+              value: https://claude-session-sync.allegedly.works
+            - name: SESSION_SYNC_PORT
+              value: "8080"
+            - name: SESSION_SYNC_OIDC_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  key: SESSION_SYNC_OIDC_ISSUER
+                  name: claude-session-sync-oidc
+            - name: SESSION_SYNC_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: SESSION_SYNC_OIDC_CLIENT_ID
+                  name: claude-session-sync-oidc
+            - name: SESSION_SYNC_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: SESSION_SYNC_OIDC_CLIENT_SECRET
+                  name: claude-session-sync-oidc
+            - name: SESSION_SYNC_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: SESSION_SYNC_OIDC_SESSION_SECRET
+                  name: claude-session-sync-oidc
+            - name: SESSION_SYNC_OIDC_ALLOWED_SUBJECT
+              valueFrom:
+                secretKeyRef:
+                  key: SESSION_SYNC_OIDC_ALLOWED_SUBJECT
+                  name: claude-session-sync-oidc
           image: git.allegedly.works/ducktape-ci/claude-session-sync:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 20
           name: claude-session-sync
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
           resources:
             limits:
               memory: 1Gi
@@ -138,11 +183,42 @@ spec:
           persistentVolumeClaim:
             claimName: claude-session-sync-data
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: claude-session-sync
+  namespace: claude-session-sync
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: claude-session-sync
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: claude-session-sync
+  namespace: claude-session-sync
+spec:
+  hostnames:
+    - claude-session-sync.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: claude-session-sync
+          port: 8080
+---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   annotations:
-    description: The sync may resolve DNS, reach Anthropic's OAuth and API hosts, and use its database.
+    description: The Gateway may reach the page. The pod may resolve DNS, reach Anthropic's OAuth and API hosts, Authentik for the login, and its database.
   name: claude-session-sync
   namespace: claude-session-sync
 spec:
@@ -170,6 +246,15 @@ spec:
           serverNames:
             - api.anthropic.com
             - platform.claude.com
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - auth.allegedly.works
     - toEndpoints:
         - matchLabels:
             k8s:cnpg.io/cluster: claude-session-sync-db
@@ -180,3 +265,10 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: claude-session-sync
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP

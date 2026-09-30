@@ -1,37 +1,24 @@
 # Running the sync in the cluster
 
-[`cluster/cdk8s/claude_session_sync`](../../../../cluster/cdk8s/claude_session_sync/app.py) deploys `sync` as one
-replica in the `claude-session-sync` namespace, writing to a two-instance CNPG database (`claude-session-sync-db`)
-in the same zone. The OAuth credential lives on the `claude-session-sync-data` volume at `/data/credentials.json`
-and is minted inside the running container: the pod starts unpaired, logs that it is waiting, and picks the file up
-within seconds of `pair` writing it.
+[`cluster/cdk8s/claude_session_sync`](../../../../cluster/cdk8s/claude_session_sync/app.py) deploys `serve`
+([serve.md](serve.md)) as one replica in the `claude-session-sync` namespace, writing to a two-instance CNPG database
+(`claude-session-sync-db`) in the same zone. The page is at <https://claude-session-sync.allegedly.works>, behind an
+Authentik login that admits only the owner. The OAuth credential lives on the `claude-session-sync-data` volume at
+`/data/credentials.json`.
 
-## Pair
+## First deployment
 
-The browser must reach the loopback callback of `pair` inside the pod, so forward its port and run `pair` there:
+1. `tf/gitops/sso-providers/provider_claude_session_sync.tf` creates the Authentik provider and application and the
+   `claude-session-sync-oidc` Secret, which Reflector copies into the namespace. The pod cannot start until that
+   Secret exists (`CreateContainerConfigError`), so let the Terraform reconcile finish first.
+2. The image is published by the first push to `devel` after the change merges; until Flux's image automation
+   commits the tag, the pod is in `ImagePullBackOff`.
+3. Open the page, sign in, and pair: **Start pairing**, approve in Claude, paste back the address the browser lands
+   on. The first cycle then backfills; a large session logs its progress
+   (`kubectl -n claude-session-sync logs deploy/claude-session-sync`).
 
-```bash
-kubectl -n claude-session-sync port-forward deploy/claude-session-sync 54545:54545 &
-kubectl -n claude-session-sync exec -it deploy/claude-session-sync -- \
-  /devinfra/claude/session_export/export_sessions_image_bin pair --credentials-file /data/credentials.json
-```
-
-Open the printed URL in a browser signed in to the account and approve. `kubectl -n claude-session-sync logs
-deploy/claude-session-sync` then shows the first cycle backfilling; sessions are read three at a time, and a large
-session logs its progress.
-
-## Pair again
-
-A running sync holds the credential in memory and rewrites the file on each refresh, so pairing over it would be
-overwritten. Delete the file and restart the pod first:
-
-```bash
-kubectl -n claude-session-sync exec deploy/claude-session-sync -- rm /data/credentials.json
-kubectl -n claude-session-sync rollout restart deploy/claude-session-sync
-```
-
-Then pair as above. The sync also stops with an error, and the pod restarts, when a refresh is refused (the grant
-was revoked or lost); pair again then.
+Pairing again from the page replaces the grant; the running sync switches to it. A grant that was revoked shows up as
+a failed cycle on the page, and pairing again fixes it.
 
 ## Look
 

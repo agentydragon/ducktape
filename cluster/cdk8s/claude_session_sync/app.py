@@ -19,10 +19,13 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from cluster.cdk8s import cilium, cnpg, forgejo_images, namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
-from devinfra.claude.session_export.settings import SyncSettings
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from devinfra.claude.session_export.settings import ServeSettings
 from util.settings_contract import env_name
 
 NAME = "claude-session-sync"
@@ -33,6 +36,14 @@ DATABASE = cnpg.PostgresRef.generated(name="claude-session-sync-db", namespace=N
 # The tag comes from the Component in PINS_DIR.
 _IMAGE = "git.allegedly.works/ducktape-ci/claude-session-sync:unset"
 _LABELS = {"app.kubernetes.io/name": NAME}
+# tf/gitops/sso-providers/provider_claude_session_sync.tf spells the same origin as its redirect URI.
+HOSTNAME = "claude-session-sync.allegedly.works"
+SERVICE = ServiceRef(
+    name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+)
+# Reflected from the authentik namespace; its keys are the OIDC environment variables of `ServeSettings`.
+_OIDC = SecretRef(namespace=NAMESPACE, name="claude-session-sync-oidc")
+_OIDC_FIELDS = ("oidc_issuer", "oidc_client_id", "oidc_client_secret", "oidc_session_secret", "oidc_allowed_subject")
 _DATA_CLAIM = "claude-session-sync-data"
 _DATA_DIR = "/data"
 _CREDENTIALS_FILE = f"{_DATA_DIR}/credentials.json"
@@ -75,6 +86,14 @@ def _data_claim(chart: Chart) -> None:
     )
 
 
+def _healthz(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
+    return k8s.Probe(
+        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(SERVICE.pod_port)),
+        initial_delay_seconds=initial_delay_seconds,
+        period_seconds=period_seconds,
+    )
+
+
 def _deployment(chart: Chart) -> None:
     deployment = k8s.KubeDeployment(
         chart,
@@ -86,7 +105,7 @@ def _deployment(chart: Chart) -> None:
             annotations={
                 "description": (
                     "Reads every Claude Code cloud session's events into the CNPG database with a dedicated OAuth "
-                    "grant kept on the data volume. Waits for `pair` to be run in the container."
+                    "grant kept on the data volume, and serves the login-protected page that pairs it."
                 )
             },
         ),
@@ -106,8 +125,22 @@ def _deployment(chart: Chart) -> None:
                         k8s.Container(
                             name=NAME,
                             image=_IMAGE,
-                            args=["sync", "--credentials-file", _CREDENTIALS_FILE],
-                            env=[DATABASE.app_secret.key("uri").env_var(env_name(SyncSettings, "database_url"))],
+                            args=["serve"],
+                            ports=[SERVICE.port.k8s_container_port()],
+                            env=[
+                                DATABASE.app_secret.key("uri").env_var(env_name(ServeSettings, "database_url")),
+                                k8s.EnvVar(name=env_name(ServeSettings, "credentials_file"), value=_CREDENTIALS_FILE),
+                                k8s.EnvVar(
+                                    name=env_name(ServeSettings, "public_base_url"), value=f"https://{HOSTNAME}"
+                                ),
+                                k8s.EnvVar(name=env_name(ServeSettings, "port"), value=str(SERVICE.pod_port)),
+                                *(
+                                    _OIDC.key(env_name(ServeSettings, field)).env_var(env_name(ServeSettings, field))
+                                    for field in _OIDC_FIELDS
+                                ),
+                            ],
+                            readiness_probe=_healthz(initial_delay_seconds=5, period_seconds=10),
+                            liveness_probe=_healthz(initial_delay_seconds=30, period_seconds=20),
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("50m"),
@@ -139,21 +172,45 @@ def _deployment(chart: Chart) -> None:
     pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
 
 
+def _service_and_route(chart: Chart) -> None:
+    k8s.KubeService(
+        chart,
+        "service",
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(selector=_LABELS, ports=[SERVICE.port.k8s_service_port()], type="ClusterIP"),
+    )
+    https_route(
+        chart,
+        "route",
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        hostnames=[HOSTNAME],
+        backend=SERVICE,
+        hsts=False,
+        listener=None,
+    )
+
+
 def _network_policy(chart: Chart) -> None:
     NetworkPolicy(
         chart,
-        "egress",
+        "network-policy",
         metadata=ApiObjectMetadata(
             name=NAME,
             namespace=NAMESPACE,
             annotations={
-                "description": "The sync may resolve DNS, reach Anthropic's OAuth and API hosts, and use its database."
+                "description": (
+                    "The Gateway may reach the page. The pod may resolve DNS, reach Anthropic's OAuth and API hosts, "
+                    "Authentik for the login, and its database."
+                )
             },
         ),
         endpoint_selector=_LABELS,
+        ingress=[IngressRule.from_gateway(SERVICE.pod_port)],
         egress=[
             cilium.dns_egress(resolves=["*"]),
             EgressRule.to_fqdns(*_ANTHROPIC_HOSTS),
+            # auth.allegedly.works resolves to the Gateway's node addresses, which an FQDN rule cannot select.
+            cilium.egress_via_gateway("auth.allegedly.works"),
             EgressRule.to_endpoints({"k8s:cnpg.io/cluster": DATABASE.name}, cnpg.PORT.number),
         ],
     )
@@ -174,6 +231,7 @@ def chart(app: App) -> Chart:
     _database(chart)
     _data_claim(chart)
     _deployment(chart)
+    _service_and_route(chart)
     _network_policy(chart)
     add_fleet_rules(chart)
     return chart
@@ -189,7 +247,7 @@ def claude_session_sync(
         flux_chart,
         NAME,
         directory,
-        description="Mirror of every Claude Code cloud session's events into a CNPG database.",
+        description="Mirror of every Claude Code cloud session's events into a CNPG database, and its pairing page.",
         timeout="10m",
         # Owns the database and the credential volume.
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
