@@ -70,11 +70,6 @@ Plus one mapping and one heuristic:
 | `analyze_peel_factorize_on_graph()` | `analyze_peel_proposals_on_graph()` |
 | `sort_factorize_diagnostics()`      | `sort_proposal_diagnostics()`       |
 | `synthesize_mini_factors()`         | `synthesize_unit_modules()`         |
-| `mergeable_commit2()`               | `mergeable()`                       |
-
-`mergeable_commit2` (and its private `mergeable_commit2_preconditions`) are
-named after a past rollout step rather than what they check; the rename drops
-the suffix.
 
 ## External Contract: `unassigned_mode: mini_factors`
 

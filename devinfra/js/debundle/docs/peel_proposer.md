@@ -52,11 +52,10 @@ classes, re-evaluate mergeability, and re-rank candidates whose coupling
 score has drifted. After a successful contraction, the winner's current
 neighborhood is pushed back into the queue.
 
-The hidden `greedy_merge_to_convergence_full_scan` driver remains as the
-test reference for
-`lazy_pq_greedy_matches_full_scan_greedy_on_corpus`. That test asserts
-the lazy-PQ contraction sequence is byte-identical to the full-scan
-sequence across representative fixtures.
+The test-only `greedy_merge_to_convergence_full_scan` driver is the
+reference for `lazy_pq_greedy_matches_full_scan_greedy_on_corpus`. That
+test asserts the lazy-PQ contraction sequence is byte-identical to the
+full-scan sequence across representative fixtures.
 
 ## Output Shapes
 

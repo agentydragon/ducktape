@@ -1537,58 +1537,124 @@ data:
       models:
         - model: anthropic-max20/ant-messages/claude-opus-5
           display_name: Opus 5
+          reasoning_efforts:
+            - low
+            - medium
+            - high
+            - max
         - model: anthropic-max20/ant-messages/claude-sonnet-5
           display_name: Sonnet 5
+          reasoning_efforts:
+            - low
+            - medium
+            - high
+            - max
         - model: anthropic-max20/ant-messages/claude-fable-5
           display_name: Fable 5
+          reasoning_efforts:
+            - low
+            - medium
+            - high
+            - max
         - model: anthropic-max20/ant-messages/claude-haiku-4-5-20251001
           display_name: Haiku 4.5
+          reasoning_efforts:
+            - low
+            - medium
+            - high
+            - max
         - model: antigravity/ant-messages/claude-opus-4-6-thinking
           display_name: Claude Opus 4.6 (Thinking)
+          reasoning_efforts:
+            - low
+            - medium
+            - high
+            - max
         - model: antigravity/ant-messages/claude-sonnet-4-6
           display_name: Claude Sonnet 4.6 (Thinking)
+          reasoning_efforts:
+            - low
+            - medium
+            - high
+            - max
         - model: antigravity/ant-messages/gemini-3.6-flash-high
           display_name: Gemini 3.6 Flash
+          reasoning_efforts: []
         - model: antigravity/ant-messages/gemini-3.7-flash-high
           display_name: Gemini 3.7 Flash
+          reasoning_efforts: []
         - model: antigravity/ant-messages/gemini-3.8-flash-high
           display_name: Gemini 3.8 Flash
+          reasoning_efforts: []
         - model: antigravity/ant-messages/gemini-3-flash
           display_name: Gemini 3 Flash
+          reasoning_efforts: []
         - model: antigravity/ant-messages/gemini-3.1-flash-image
           display_name: Gemini 3.1 Flash Image
+          reasoning_efforts: []
         - model: antigravity/ant-messages/gemini-pro-agent
           display_name: Gemini 3.1 Pro (High)
+          reasoning_efforts: []
         - model: antigravity/ant-messages/gemini-3.1-pro-low
           display_name: Gemini 3.1 Pro (Low)
+          reasoning_efforts: []
         - model: antigravity/ant-messages/gpt-oss-120b-medium
           display_name: GPT-OSS 120B (Medium)
+          reasoning_efforts: []
         - model: antigravity/ant-messages/gemini-3.1-flash-lite
           display_name: Gemini 3.1 Flash Lite
+          reasoning_efforts: []
         - model: antigravity/ant-messages/gemini-3.5-flash-lite
           display_name: Gemini 3.5 Flash Lite
+          reasoning_efforts: []
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
           display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+          reasoning_efforts: []
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
           display_name: Qwen3.8 Flash Next IQ4_XS (256K)
+          reasoning_efforts: []
         - model: ollama/oai-chat/gpt-oss-20b-128k
           display_name: GPT-OSS 20B (128K)
+          reasoning_efforts: []
         - model: ollama/oai-chat/gpt-oss-20b-256k
           display_name: GPT-OSS 20B (256K)
+          reasoning_efforts: []
         - model: ollama/oai-chat/gpt-oss-20b-512k
           display_name: GPT-OSS 20B (512K)
+          reasoning_efforts: []
         - model: ollama/oai-chat/gpt-oss-20b-1m
           display_name: GPT-OSS 20B (1M)
+          reasoning_efforts: []
         - model: ollama/oai-chat/gpt-oss-120b-128k
           display_name: GPT-OSS 120B (128K)
+          reasoning_efforts: []
         - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
           display_name: Gemma 4 31B (128K)
+          reasoning_efforts: []
         - model: chatgpt/oai-responses/gpt-6-astra
           display_name: GPT-6 Astra
+          reasoning_efforts:
+            - minimal
+            - low
+            - medium
+            - high
+            - xhigh
         - model: chatgpt/oai-responses/gpt-6-luna
           display_name: GPT-6 Luna
+          reasoning_efforts:
+            - minimal
+            - low
+            - medium
+            - high
+            - xhigh
         - model: chatgpt/oai-responses/gpt-6-sol
           display_name: GPT-6 Sol
+          reasoning_efforts:
+            - minimal
+            - low
+            - medium
+            - high
+            - xhigh
       harnesses:
         HARNESS_CLAUDE:
           - anthropic-max20/ant-messages/claude-opus-5

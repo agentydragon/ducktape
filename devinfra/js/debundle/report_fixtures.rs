@@ -21,7 +21,6 @@ use analysis::{
     OwnerGraphQuotientReport, OwnerGraphReport, Purity, SourceLocation, StatementKind,
     StatementOrdinal,
 };
-use peel::quotient::{OwnerIdx, PartitionGroup};
 use spec::{ModulePath, is_residual_module_path};
 
 /// A destination key whose string is the module's canonical path.
@@ -77,16 +76,6 @@ pub fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
 
 pub fn no_claims() -> BTreeMap<String, ModulePath> {
     BTreeMap::new()
-}
-
-/// Pre-existing spec module group for quotient/peel fixtures. The
-/// owner indexes are owner-report positions.
-pub fn module_group(module_id: &str, owner_idxs: Vec<usize>) -> PartitionGroup {
-    PartitionGroup {
-        owner_idxs: owner_idxs.into_iter().map(OwnerIdx).collect(),
-        is_pre_existing_module: true,
-        label: Some(module_id.to_string()),
-    }
 }
 
 /// Owner node with an explicit destination. The source location is

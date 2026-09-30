@@ -24,6 +24,13 @@ js_openapi_schema(
 )
 
 ts_library(
+    name = "test_model_catalog",
+    testonly = True,
+    srcs = ["test_model_catalog.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "client",
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
@@ -720,6 +727,7 @@ ts_library(
         ":client",
         ":live",
         ":sandbox_page",
+        ":test_model_catalog",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -945,6 +953,7 @@ ts_library(
         ":actions_client",
         ":client",
         ":sandboxes",
+        ":test_model_catalog",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -1023,6 +1032,7 @@ ts_library(
         ":connections_fixture",
         ":live",
         ":stream_status",
+        ":test_model_catalog",
         ":theme",
         ":visual_scenarios",
         "//:node_modules/@bufbuild/protobuf",

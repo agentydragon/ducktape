@@ -135,6 +135,7 @@ ts_library(
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:stream_status",
+        "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend:topbar",
         "//agentplane/protocol:command_pb",
         "//agentplane/protocol:event_log_pb",

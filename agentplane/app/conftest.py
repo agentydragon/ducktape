@@ -254,6 +254,8 @@ def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> S
 AUDIENCE = "agentplane-test"
 AGENT = f"system:serviceaccount:{NAMESPACE}:test-agent"
 AGENT_TOKEN = "test-agent-token"  # a test literal, not a real credential
+TEST_REASONING_EFFORTS = ("low", "medium", "high")
+
 AGENT_AUTH = {"Authorization": f"Bearer {AGENT_TOKEN}"}
 # A second ServiceAccount, whose tokens are every bit as valid as the agent's and which the app
 # accepts nothing from: what naming the subjects it does accept is for.
