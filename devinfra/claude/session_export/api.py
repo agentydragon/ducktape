@@ -5,6 +5,7 @@ import logging
 import re
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from types import TracebackType
@@ -16,7 +17,15 @@ from pydantic import BaseModel, SecretStr
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 from tenacity.wait import wait_base
 
-from devinfra.claude.session_export.models import Event, EventsPage, SessionsPage, SessionSummary, cse_id
+from devinfra.claude.session_export.models import (
+    Event,
+    EventsPage,
+    ResumeTokenPage,
+    SessionRemoved,
+    SessionsPage,
+    SessionSummary,
+    cse_id,
+)
 from devinfra.claude.session_export.oauth import OAuthTokenSource
 
 logger = logging.getLogger(__name__)
@@ -33,6 +42,9 @@ _MAX_ATTEMPTS = 6
 # The web client restarts an event stream that has been silent this long, so the server sends something at
 # least that often.
 STREAM_IDLE_TIMEOUT = 35.0
+# The client sets no limit on the session watch. A connection that died without a close would leave the follower
+# deaf until discovery next lists, so a silence this long reconnects.
+WATCH_IDLE_TIMEOUT = 300.0
 _STREAM_CONNECT_TIMEOUT = 30.0
 
 
@@ -52,12 +64,26 @@ class EventStreamFrame(StrEnum):
     DELIVERY_UPDATE = "delivery_update"
 
 
+class WatchFrame(StrEnum):
+    ADDED = "added"
+    CHANGED = "changed"
+    REMOVED = "removed"
+    SYNC = "sync"
+
+
 class ResumePointLostError(Exception):
     """The server cannot resume a stream from where it was asked to: page to catch up, then open it again."""
 
 
 class StreamClosedEarlyError(Exception):
     """The server ended a stream without sending a frame."""
+
+
+@dataclass
+class WatchCursor:
+    """Where the session watch stands: the id of the last frame it delivered."""
+
+    token: str
 
 
 class SessionCookie(BaseModel, frozen=True):
@@ -206,11 +232,16 @@ class SessionsApi:
         page = EventsPage.model_validate_json(response.content)
         return page.data[0].seq if page.data else 0
 
+    async def resume_token(self) -> str:
+        """Where the change feed stands now, as the web client probes it: a one-item list page."""
+        response = await self._get("/v1/code/sessions", limit=1)
+        return ResumeTokenPage.model_validate_json(response.content).resume_token
+
     @asynccontextmanager
     async def _open_stream(
-        self, path: str, *, params: dict[str, str | int], headers: dict[str, str]
+        self, path: str, *, params: dict[str, str | int], headers: dict[str, str], idle_timeout: float
     ) -> AsyncIterator[EventSource]:
-        timeout = httpx.Timeout(_STREAM_CONNECT_TIMEOUT, read=STREAM_IDLE_TIMEOUT)
+        timeout = httpx.Timeout(_STREAM_CONNECT_TIMEOUT, read=idle_timeout)
         async with aconnect_sse(self._client, "GET", path, params=params, headers=headers, timeout=timeout) as source:
             response = source.response
             if response.status_code == httpx.codes.GONE:
@@ -259,6 +290,7 @@ class SessionsApi:
                 f"/v1/code/sessions/{cse_id(session_id)}/events/stream",
                 params=resume_from,
                 headers={"last-event-id": str(after)} if after else {},
+                idle_timeout=STREAM_IDLE_TIMEOUT,
             ) as source:
                 if on_connected:
                     on_connected()
@@ -285,3 +317,42 @@ class SessionsApi:
             return
         if not delivered:
             raise StreamClosedEarlyError(f"{session_id=}: the server closed the stream without a frame")
+
+    async def watch_sessions(
+        self, cursor: WatchCursor, *, on_connected: Callable[[], None] | None = None
+    ) -> AsyncGenerator[SessionSummary | SessionRemoved]:
+        """Changes to the account's sessions since `cursor`, as the server pushes them; advances `cursor`.
+
+        `on_connected` is called once the server has accepted the stream. Ends when the server closes the stream or it falls silent for `WATCH_IDLE_TIMEOUT`. Raises
+        `ResumePointLostError` when the server no longer holds `cursor`, and `StreamClosedEarlyError` when it
+        closes without a frame.
+        """
+        delivered = False
+        try:
+            async with self._open_stream(
+                "/v1/code/sessions/watch",
+                params={"exclude_tags": "-", "resume_token": cursor.token},
+                headers={},
+                idle_timeout=WATCH_IDLE_TIMEOUT,
+            ) as source:
+                if on_connected:
+                    on_connected()
+                async for frame in source.aiter_sse():
+                    delivered = True
+                    if frame.id:
+                        cursor.token = frame.id
+                    match frame.event:
+                        case WatchFrame.ADDED | WatchFrame.CHANGED:
+                            if frame.data:
+                                yield SessionSummary.model_validate_json(frame.data)
+                        case WatchFrame.REMOVED:
+                            if frame.data:
+                                yield SessionRemoved.model_validate_json(frame.data)
+                        case WatchFrame.SYNC:
+                            pass  # the feed has delivered everything up to the token the watch opened with
+                        case _:
+                            self._note_unknown_frame(frame)
+        except httpx.ReadTimeout:
+            return
+        if not delivered:
+            raise StreamClosedEarlyError("the session watch closed without a frame")

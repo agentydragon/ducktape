@@ -59,6 +59,7 @@ class FailureStatus(BaseModel):
 
 class LiveStatus(BaseModel):
     following: bool = Field(description="Live following is on and has a credential to run with.")
+    watching: bool = Field(description="A session watch is open, or being reopened.")
     streams: int = Field(description="Sessions with an event stream open, or being reopened.")
     last_event_at: datetime | None = Field(description="When an event last arrived over a stream.")
     problems: list[LiveProblem] = Field(description="What is failing now and retrying; empty when all is well.")
@@ -168,6 +169,7 @@ class SyncSupervisor:
             last_failure=self._last_failure,
             live=LiveStatus(
                 following=self._follower is not None,
+                watching=self._follower is not None and self._follower.watching,
                 streams=self._follower.streams if self._follower else 0,
                 last_event_at=self._follower.last_event_at if self._follower else None,
                 problems=self._follower.problems if self._follower else [],

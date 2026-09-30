@@ -42,5 +42,5 @@ Environment variables, all prefixed `SESSION_SYNC_` (`settings.py`):
 | `LIVE_STREAMS`, `LIVE_WINDOW_SECONDS`                 | Sessions streamed live at once (20; 0 is off); how recent a last event follows (1800) |
 
 A cycle that fails is shown on the page and retried at the next interval; the process keeps running so the page
-can still pair again. The page also shows whether live following is on, how many streams are open, when an event last
-arrived over one, and any source that is failing with its reason ([sync.md](sync.md) § Live following).
+can still pair again. The page also shows whether live following is on, whether the session watch is connected, how many streams
+are open, when an event last arrived over one, and any source that is failing with its reason ([sync.md](sync.md) § Live following).

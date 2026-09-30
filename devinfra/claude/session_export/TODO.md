@@ -19,7 +19,6 @@ Observed so far: the bearer token opens the event stream, which sends a frame wi
   each time, which says how often the keepalive comes;
 - the worker stamps (`received_at`, `processing_at`, `processed_at`) reach a stream event unset or complete, and a
   frame is re-sent when they change;
-- whether the first-party API host offers any feed of session changes (the web client's `sessions/watch` answers
-  404), which would replace the 30 s discovery poll.
+- why the session watch answers 404, and what makes it work: [debug/session_watch.md](debug/session_watch.md).
 
 Delete this entry once each is confirmed, correcting the docs where it is not.

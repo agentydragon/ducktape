@@ -125,14 +125,18 @@ with jitter, and after two connections that delivered no frame polls `GET .../ev
 Observed on 2026-09-30, with the OAuth bearer against `api.anthropic.com`: the stream opens and sends a frame with
 no `event:` name. No `client_event` frame has been seen yet.
 
-## Session watch: not reachable here
+## Session watch
 
 The web client watches the account's sessions with `GET /v1/code/sessions/watch?exclude_tags=-&resume_token=<token>`
-(the token is the list route's `resume_token`; frames `added`, `changed`, `removed`, `sync`). With the OAuth bearer
-against `api.anthropic.com` it answers **404** every time, for a token the list route had just issued. The web
-client's version is same-origin on `claude.ai` with the cookie session, and also sends
-`anthropic-client-platform: web_claude_ai`; whether the route exists on the first-party API host at all is unknown.
-The sync finds new sessions by listing the newest page instead ([sync.md](sync.md) § Live following).
+(the token is the list route's `resume_token`; frames `added`, `changed`, `removed`, `sync`; 410 means the token
+expired, 400 that none was sent). It also sends `anthropic-client-platform: web_claude_ai` on it.
+
+Observed on 2026-09-30, with the OAuth bearer against `api.anthropic.com`: **404** on every attempt, for a token the
+list route had just issued. Why is open, and [debug/session_watch.md](../debug/session_watch.md) says how to find out.
+The web client's own code narrows the candidates: it uses the watch only while the server-side gate
+`amber_harbor_beacon` is on for the account. With the gate off it polls the list instead, every 30 s, doubling to 10 min
+while nothing changes. So the 404 may be that gate, or the first-party host not serving the route, or a header the sync
+does not send.
 
 ## Event
 

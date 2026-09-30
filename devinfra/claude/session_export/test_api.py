@@ -6,8 +6,15 @@ import pytest_bazel
 from pydantic import SecretStr
 from tenacity import wait_none
 
-from devinfra.claude.session_export.api import ResumePointLostError, SessionCookie, SessionsApi, StreamClosedEarlyError
+from devinfra.claude.session_export.api import (
+    ResumePointLostError,
+    SessionCookie,
+    SessionsApi,
+    StreamClosedEarlyError,
+    WatchCursor,
+)
 from devinfra.claude.session_export.conftest import (
+    RESUME_TOKEN,
     TEST_COOKIE,
     FakeSessionsService,
     SseConnection,
@@ -15,6 +22,7 @@ from devinfra.claude.session_export.conftest import (
     make_event,
     make_events,
 )
+from devinfra.claude.session_export.models import SessionRemoved, SessionSummary
 from devinfra.claude.session_export.oauth import CredentialStore, OAuthTokenSource
 
 SESSION_ID = "session_test0001"
@@ -194,6 +202,54 @@ async def test_event_stream_refusals_and_empty_closes_are_errors(
     service.on_open = [SseConnection.close]
     with pytest.raises(StreamClosedEarlyError):
         [e async for e in api.stream_events(SESSION_ID, after=3)]
+
+
+async def test_resume_token_comes_from_a_one_item_list(service: FakeSessionsService, api: SessionsApi) -> None:
+    service.events = {SESSION_ID: []}
+    assert await api.resume_token() == RESUME_TOKEN
+    assert service.requests[0].url.params["limit"] == "1"
+
+
+async def test_watch_yields_session_changes_and_advances_its_cursor(
+    service: FakeSessionsService, api: SessionsApi
+) -> None:
+    service.events = {SESSION_ID: make_events(1)}
+    item = service.list_item(SESSION_ID)
+
+    def script(stream: SseConnection) -> None:
+        stream.send("sync", frame_id="cursor-1")
+        stream.send("added", item, frame_id="cursor-2")
+        stream.send("changed", {**item, "title": "Renamed"}, frame_id="cursor-3")
+        stream.send("removed", {"id": item["id"]}, frame_id="cursor-4")
+        stream.close()
+
+    service.on_open = [script]
+    cursor = WatchCursor(RESUME_TOKEN)
+    connected: list[str] = []
+    changes = [change async for change in api.watch_sessions(cursor, on_connected=lambda: connected.append("yes"))]
+    assert changes == [
+        SessionSummary(**item),
+        SessionSummary(**{**item, "title": "Renamed"}),
+        SessionRemoved(id=item["id"]),
+    ]
+    assert cursor.token == "cursor-4"
+    assert connected == ["yes"]
+    [opened] = service.watches()
+    assert dict(opened.request.url.params) == {"exclude_tags": "-", "resume_token": RESUME_TOKEN}
+
+
+async def test_watch_says_when_the_server_no_longer_holds_the_cursor(
+    service: FakeSessionsService, api: SessionsApi
+) -> None:
+    service.stream_refusals = [410]
+    with pytest.raises(ResumePointLostError):
+        [change async for change in api.watch_sessions(WatchCursor("expired"))]
+
+
+async def test_a_watch_closed_without_a_frame_is_an_error(service: FakeSessionsService, api: SessionsApi) -> None:
+    service.on_open = [SseConnection.close]
+    with pytest.raises(StreamClosedEarlyError):
+        [change async for change in api.watch_sessions(WatchCursor(RESUME_TOKEN))]
 
 
 if __name__ == "__main__":

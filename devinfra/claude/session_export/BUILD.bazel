@@ -41,6 +41,7 @@ py_library(
         ":database_migrate",
         ":models",
         ":oauth",
+        ":probe",
         ":settings",
         ":store",
         ":supervisor",
@@ -123,6 +124,7 @@ py_test(
     deps = [
         ":api",
         ":conftest",
+        ":models",
         ":oauth",
         "//:conftest",
         "//devinfra/claude:conftest",
@@ -363,6 +365,7 @@ py_library(
     deps = [
         ":api",
         ":failures",
+        ":models",
         ":store",
         ":sync",
         "@pypi//pydantic",
@@ -403,6 +406,33 @@ py_test(
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "probe",
+    srcs = ["probe.py"],
+    deps = [
+        ":api",
+        ":models",
+        ":oauth",
+        "@pypi//httpx",
+        "@pypi//httpx_sse",
+    ],
+)
+
+py_test(
+    name = "test_probe",
+    srcs = ["test_probe.py"],
+    deps = [
+        ":conftest",
+        ":oauth",
+        ":probe",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

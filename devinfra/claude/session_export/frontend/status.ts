@@ -21,13 +21,14 @@ export function ago(instant: string, now: number): string {
 
 /** What live following is doing, from the status's `live` block. */
 export function liveSummary(
-  live: { following: boolean; streams: number; last_event_at: string | null },
+  live: { following: boolean; watching: boolean; streams: number; last_event_at: string | null },
   now: number
 ): string {
   if (!live.following) return "Off; the sync polls only";
+  const watch = live.watching ? "watch connected" : "watch not connected";
   const streams = `${live.streams} ${live.streams === 1 ? "session" : "sessions"} streaming`;
   const event = live.last_event_at === null ? "no event yet" : `last event ${ago(live.last_event_at, now)}`;
-  return `${streams}, ${event}`;
+  return `${watch}, ${streams}, ${event}`;
 }
 
 /** Server messages are written for logs, lower-case; the page shows them as sentences. */

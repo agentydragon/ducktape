@@ -13,6 +13,7 @@ from tenacity import wait_fixed, wait_none
 from devinfra.claude.session_export.api import SessionsApi
 from devinfra.claude.session_export.conftest import (
     LIVE_WINDOW,
+    RESUME_TOKEN,
     TEST_EPOCH,
     FakeSessionsService,
     eventually,
@@ -20,7 +21,7 @@ from devinfra.claude.session_export.conftest import (
     make_events,
     make_session,
 )
-from devinfra.claude.session_export.live import DISCOVERY, LiveFollower
+from devinfra.claude.session_export.live import DISCOVERY, WATCH, LiveFollower
 from devinfra.claude.session_export.store import EventRow, SessionStore
 from devinfra.claude.session_export.sync import sync_once
 
@@ -52,6 +53,10 @@ async def follow(api: SessionsApi, store: SessionStore) -> AsyncIterator[Callabl
 
 async def stream_opened(service: FakeSessionsService, session_id: str) -> bool:
     return bool(service.event_streams(session_id))
+
+
+async def watch_opened(service: FakeSessionsService) -> bool:
+    return bool(service.watches())
 
 
 def page_reads(service: FakeSessionsService) -> list[str]:
@@ -194,20 +199,91 @@ async def test_discovery_follows_a_new_session_and_stops_when_it_is_archived(
     await eventually(dropped)
 
 
+async def test_the_watch_starts_following_a_session_between_discovery_passes(
+    service: FakeSessionsService, engine: AsyncEngine, follow: Callable[[], Following]
+) -> None:
+    following = follow()
+    await eventually(lambda: watch_opened(service))
+    [watch] = service.watches()
+    assert watch.request.url.params["resume_token"] == RESUME_TOKEN
+    assert following.follower.watching
+
+    service.events = {ONE: make_events(2)}  # not listed until discovery next runs
+    service.statuses = {ONE: "active"}
+    watch.send("added", service.list_item(ONE), frame_id="cursor-1")
+
+    async def following_one() -> bool:
+        return following.follower.streams == 1 and bool(service.event_streams(ONE))
+
+    await eventually(following_one)
+    assert await stored(engine, ONE) == [1, 2]
+
+    service.statuses[ONE] = "archived"
+    watch.send("changed", service.list_item(ONE), frame_id="cursor-2")
+
+    async def dropped() -> bool:
+        return following.follower.streams == 0
+
+    await eventually(dropped)
+
+
+async def test_a_lost_watch_position_takes_a_fresh_resume_token(
+    service: FakeSessionsService, follow: Callable[[], Following]
+) -> None:
+    service.stream_refusals = [410]
+    follow()
+    await eventually(lambda: watch_opened(service))
+    token_probes = [r for r in service.requests if r.url.path == "/v1/code/sessions" and r.url.params["limit"] == "1"]
+    assert len(token_probes) == 2  # the first token, then the fresh one after the 410
+
+
+async def test_a_refused_watch_is_reported_with_its_reason_while_discovery_carries_on(
+    service: FakeSessionsService, api: SessionsApi, store: SessionStore, engine: AsyncEngine
+) -> None:
+    service.events = {ONE: make_events(2)}
+    service.statuses = {ONE: "active"}
+    service.stream_refusals = [404] * 1000  # every stream open, so the session's own stream is refused too
+    follower = LiveFollower(api, store, max_streams=2, window=LIVE_WINDOW, retry_wait=wait_fixed(0.01))
+    running = asyncio.create_task(follower.run())
+    try:
+
+        async def watch_reported() -> bool:
+            return any(problem.source == WATCH for problem in follower.problems)
+
+        await eventually(watch_reported)
+        [problem] = [p for p in follower.problems if p.source == WATCH]
+        assert "404 Not Found from GET /v1/code/sessions/watch" in problem.message
+
+        async def discovery_stored_the_session() -> bool:  # the refused watch did not stop discovery
+            return (await store.synced_last_event_at()).keys() == {ONE}
+
+        await eventually(discovery_stored_the_session)
+
+        service.stream_refusals.clear()
+
+        async def watching_again() -> bool:
+            return follower.watching and not any(p.source == WATCH for p in follower.problems)
+
+        await eventually(watching_again)
+    finally:
+        running.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await running
+
+
 async def test_a_failing_discovery_is_reported_with_its_reason_and_clears_once_it_works(
     service: FakeSessionsService, api: SessionsApi, store: SessionStore
 ) -> None:
-    service.list_status = 404
+    service.list_status = 404  # the watch fetches its token from this route too, so it fails alongside
     follower = LiveFollower(api, store, max_streams=2, window=LIVE_WINDOW, retry_wait=wait_fixed(0.01))
     running = asyncio.create_task(follower.run())
     try:
 
         async def reported() -> bool:
-            return len(follower.problems) == 1
+            return any(problem.source == DISCOVERY for problem in follower.problems)
 
         await eventually(reported)
-        [problem] = follower.problems
-        assert problem.source == DISCOVERY
+        [problem] = [p for p in follower.problems if p.source == DISCOVERY]
         assert "404 Not Found from GET /v1/code/sessions" in problem.message
         assert "refused" in problem.message  # the API's own error body
 

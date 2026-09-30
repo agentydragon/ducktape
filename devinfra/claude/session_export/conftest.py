@@ -26,6 +26,7 @@ TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid=
 TEST_ACCESS_TOKEN = "test-access-token"
 TEST_EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
 LIVE_WINDOW = timedelta(days=36500)  # every test session's last event counts as recent
+RESUME_TOKEN = "test-resume-token"
 
 
 PAIRED_RESPONSE = {
@@ -153,6 +154,9 @@ class FakeSessionsService:
     def event_streams(self, session_id: str) -> list[SseConnection]:
         return self.streams_at(f"/v1/code/sessions/cse_{session_id.removeprefix('session_')}/events/stream")
 
+    def watches(self) -> list[SseConnection]:
+        return self.streams_at("/v1/code/sessions/watch")
+
     def _open_stream(self, request: httpx.Request) -> httpx.Response:
         if self.stream_refusals:
             return httpx.Response(self.stream_refusals.pop(0), json={"error": {"type": "refused"}})
@@ -170,7 +174,7 @@ class FakeSessionsService:
         bearer_ok = request.headers.get("authorization") == f"Bearer {TEST_ACCESS_TOKEN}"
         if not (cookie_ok or bearer_ok) or request.headers["x-organization-uuid"] != TEST_COOKIE.org_uuid:
             return httpx.Response(401, json={"error": {"type": "authentication_error"}})
-        if request.url.path.endswith("/events/stream"):
+        if request.url.path.endswith(("/events/stream", "/sessions/watch")):
             return self._open_stream(request)
         if self.list_status and request.url.path == "/v1/code/sessions":
             return httpx.Response(self.list_status, json={"error": {"type": "refused"}})
@@ -182,7 +186,7 @@ class FakeSessionsService:
         if request.url.path == "/v1/code/sessions":
             ids = list(self.events)
             listed = ids[cursor : cursor + limit]
-            sessions_body: dict[str, Any] = {"data": [self.list_item(i) for i in listed]}
+            sessions_body: dict[str, Any] = {"data": [self.list_item(i) for i in listed], "resume_token": RESUME_TOKEN}
             if cursor + limit < len(ids):
                 sessions_body["next_cursor"] = str(cursor + limit)
             return httpx.Response(200, json=sessions_body)

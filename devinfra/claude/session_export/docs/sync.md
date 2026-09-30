@@ -60,8 +60,12 @@ of truth and the streams only shorten the delay.
   silent stream is reopened from the stored position.
 - **Discovery.** Every 30 s the newest `LIVE_STREAMS` sessions are listed (one request) and upserted, and the followed
   set is re-derived from the store: a new session is followed within about 30 s, and one that was archived or has
-  aged out of the window is dropped. A finished cycle triggers the same pass at once. The web client's own
-  `sessions/watch` feed is not used: it answers 404 to the OAuth bearer ([api.md](api.md) § Session watch).
+  aged out of the window is dropped. A finished cycle triggers the same pass at once. This is the floor: it needs
+  nothing but the list route, and it is what the web client does itself when its watch is off.
+- **Session watch.** One `sessions/watch` stream, when the server serves it, pushes each session change: the change is
+  upserted and the followed set re-derived at once, so a new session is followed from its first event. It answers 404
+  to the OAuth bearer so far ([api.md](api.md) § Session watch), which the page shows as "watch not connected" with
+  the reason; discovery covers meanwhile. A watch the server no longer holds takes a fresh resume token.
 
 Rules that keep the mirror exact:
 
@@ -71,12 +75,12 @@ Rules that keep the mirror exact:
 - A frame at or below the position is stored again, which refreshes the worker stamps as a page read does.
 - Streams do not move `synced_last_event_at`. A session they touched is behind until the next cycle reads it, which
   finds nothing new and marks it level.
-- A failing source (discovery, or one session's stream) retries with jittered backoff from 1 s to 5 min and never
+- A failing source (discovery, the watch, or one session's stream) retries with jittered backoff from 1 s to 5 min and never
   ends the cycle. The page lists each failing source with the reason (HTTP status, route and the API's error body)
   until it works again, and the log carries the same line. A follower that stops altogether is reported too.
   `LIVE_STREAMS=0` turns following off.
 
-The wire contract of the stream is in [api.md](api.md) § Event stream.
+The wire contract of the streams is in [api.md](api.md) § Event stream and § Session watch.
 
 ## `payload` is `jsonb`; `json` is the open alternative
 

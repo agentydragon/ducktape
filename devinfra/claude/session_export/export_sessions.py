@@ -11,6 +11,7 @@ Usage:
     SESSION_SYNC_DATABASE_URL=postgresql://... \\
         bb run //devinfra/claude/session_export:export_sessions_bin -- sync --credentials-file F
     bb run //devinfra/claude/session_export:export_sessions_bin -- serve   # settings from SESSION_SYNC_*
+    bb run //devinfra/claude/session_export:export_sessions_bin -- probe --credentials-file F [--session ID]
 """
 
 import argparse
@@ -29,6 +30,7 @@ from devinfra.claude.session_export.archive import export_all, verify_archive
 from devinfra.claude.session_export.database_migrate import RUNNER
 from devinfra.claude.session_export.models import SessionSummary, canonical_id
 from devinfra.claude.session_export.oauth import CALLBACK_PORT, DEFAULT_SCOPES, CredentialStore, OAuthTokenSource, pair
+from devinfra.claude.session_export.probe import probe
 from devinfra.claude.session_export.settings import ServeSettings, SyncSettings
 from devinfra.claude.session_export.store import SessionStore, make_engine
 from devinfra.claude.session_export.supervisor import SyncSupervisor
@@ -46,6 +48,7 @@ class Command(StrEnum):
     VERIFY = "verify"
     SYNC = "sync"
     SERVE = "serve"
+    PROBE = "probe"
 
 
 def announce(url: str) -> None:
@@ -150,6 +153,10 @@ async def async_main(command: Command, args: argparse.Namespace) -> None:
     if command is Command.SERVE:
         await run_serve()
         return
+    if command is Command.PROBE:
+        store = CredentialStore(get_build_working_directory() / args.credentials_file)
+        await probe(store, session_id=args.session, listen_seconds=args.listen_seconds)
+        return
     async with open_api(args) as api:
         if command is Command.EXPORT:
             await export_all(
@@ -185,6 +192,14 @@ def main() -> None:
     verify = commands.add_parser(Command.VERIFY, help="re-read --out and check it; no network")
     verify.add_argument("--out", required=True)
     commands.add_parser(Command.SERVE, help="run the sync with a login-protected page that pairs it and shows status")
+    probe_parser = commands.add_parser(
+        Command.PROBE, help="try the live routes under different headers and hosts, read-only; never refreshes"
+    )
+    probe_parser.add_argument(
+        "--credentials-file", required=True, help="OAuth credential; only its access token is used"
+    )
+    probe_parser.add_argument("--session", help="also listen to this session's event stream (`session_…` or `cse_…`)")
+    probe_parser.add_argument("--listen-seconds", type=float, default=10, help="how long to hold each stream open")
     sync = commands.add_parser(
         Command.SYNC, help="keep a Postgres database level with every session's events, until stopped"
     )

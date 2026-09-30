@@ -29,19 +29,21 @@ describe("ago", () => {
 });
 
 describe("liveSummary", () => {
-  const following = { following: true, streams: 2, last_event_at: "2026-01-01T11:45:00Z" };
+  const following = { following: true, watching: true, streams: 2, last_event_at: "2026-01-01T11:45:00Z" };
 
   it("says polling is all there is when following is off", () => {
-    expect(liveSummary({ ...following, following: false, streams: 0 }, NOW)).toBe("Off; the sync polls only");
+    expect(liveSummary({ ...following, following: false, watching: false, streams: 0 }, NOW)).toBe(
+      "Off; the sync polls only"
+    );
   });
 
-  it("reports the open streams and the last event", () => {
-    expect(liveSummary(following, NOW)).toBe("2 sessions streaming, last event 15m ago");
+  it("reports the watch, the open streams and the last event", () => {
+    expect(liveSummary(following, NOW)).toBe("watch connected, 2 sessions streaming, last event 15m ago");
   });
 
-  it("says so when no event has arrived yet", () => {
-    expect(liveSummary({ ...following, streams: 1, last_event_at: null }, NOW)).toBe(
-      "1 session streaming, no event yet"
+  it("says so when the watch is down and no event has arrived", () => {
+    expect(liveSummary({ ...following, watching: false, streams: 1, last_event_at: null }, NOW)).toBe(
+      "watch not connected, 1 session streaming, no event yet"
     );
   });
 });

@@ -76,3 +76,15 @@ class SessionSummary(BaseModel):
 class SessionsPage(BaseModel):
     data: list[SessionSummary]
     next_cursor: str | None = Field(default=None, description="Absent when this page is the last one.")
+
+
+class SessionRemoved(BaseModel):
+    """The `removed` frame of the session watch."""
+
+    id: str
+
+
+class ResumeTokenPage(BaseModel):
+    """What a list page carries beyond its sessions that the session watch needs."""
+
+    resume_token: str = Field(description="Where in the change feed the listed state stands; opens the watch.")

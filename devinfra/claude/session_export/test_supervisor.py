@@ -164,7 +164,7 @@ async def test_without_live_streams_the_sync_only_polls(service: FakeSessionsSer
     await running.approve()
     await eventually(lambda: running.cycle_read(3))
     assert (await running.supervisor.status()).live == LiveStatus(
-        following=False, streams=0, last_event_at=None, problems=[], failure=None
+        following=False, watching=False, streams=0, last_event_at=None, problems=[], failure=None
     )
     assert service.streams == []
 
@@ -213,12 +213,11 @@ async def test_a_refused_stream_shows_on_the_page_with_its_reason(
         service.statuses = {ONE: "active"}
         await live.approve()
 
-        async def reported() -> bool:
-            return bool((await live.supervisor.status()).live.problems)
+        async def stream_reported() -> bool:  # the watch is refused too, and reported first
+            return any(p.source == ONE for p in (await live.supervisor.status()).live.problems)
 
-        await eventually(reported)
-        [problem] = (await live.supervisor.status()).live.problems
-        assert problem.source == ONE
+        await eventually(stream_reported)
+        problem = {p.source: p for p in (await live.supervisor.status()).live.problems}[ONE]
         assert "403 Forbidden from GET /v1/code/sessions/cse_test0001/events/stream" in problem.message
         assert "refused" in problem.message
     finally:
