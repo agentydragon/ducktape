@@ -141,7 +141,8 @@ is the list route's `resume_token`. Observed 2026-09-30 with the OAuth bearer ag
 - **Frames**, `event:` names and JSON data: `added` for each live session on connect, then `sync` (data `{}`, and
   the `id` is the next resume token), then `changed` as sessions change. `added` and `changed` carry a session as the
   list route sends it (`id`, `title`, `status`, `created_at`, `updated_at`, `last_event_at`, `config`,
-  `worker_status`, …); `removed` carries `{id}` (from the web client's code, not seen).
+  `worker_status`, …); `removed` carries `{id}` (from the web client's code, not seen). A frame with no `event:` name
+  and no data also arrives, seconds after connecting: a keepalive.
 - 410 means the token expired and 400 that none was sent (both from the web client's code, not seen).
 
 `GET /v1/sessions/watch`, the older route family, needs no such header and streams `session_updated` frames of a
