@@ -127,7 +127,6 @@ py_test(
         "//agentplane/runner:session",
         "//agentplane/runner:store",
         "@pypi//protobuf",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
