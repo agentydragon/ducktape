@@ -15,6 +15,8 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     ConfigMapArgs,
+    Json6902Patch,
+    PatchFile,
     RenderedDirectory,
     artifact_directories,
     kustomize_kustomization,
@@ -82,15 +84,20 @@ def write_directory(
     artifact: ArtifactGeneratorSpecArtifacts,
     *chart_builders: Callable[[App], Chart],
     siblings: Sequence[str] = (),
+    remote_resources: Sequence[str] = (),
     namespace: str | None = None,
     components: Sequence[str] = (),
     config_map_generator: Sequence[ConfigMapArgs] = (),
     configurations: Sequence[str] = (),
+    patch_charts: Sequence[Callable[[App], Chart]] = (),
+    json6902_patches: Sequence[Json6902Patch] = (),
 ) -> RenderedDirectory:
     """Synthesize a component's charts into the directory `artifact` packages, and write its
-    `kustomization.yaml` listing them, then `siblings`: the hand-written files beside them.
-    `namespace`, `components`, `config_map_generator` and `configurations` are
-    `kustomize_kustomization`'s.
+    `kustomization.yaml` listing them, then `siblings`: the hand-written files beside them,
+    then `remote_resources`: URLs kustomize fetches at build time, such as an upstream release
+    manifest. `patch_charts` are synthesized beside them and listed as strategic-merge patches,
+    before `json6902_patches`. `namespace`, `components`, `config_map_generator` and
+    `configurations` are `kustomize_kustomization`'s.
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
@@ -105,15 +112,17 @@ def write_directory(
     included = {posixpath.normpath(posixpath.join(directory, component)) for component in components}
     if shared := [base for base in copied if base not in included]:
         raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies {shared=}")
-    resources = [*write_charts(root, directory, *chart_builders), *siblings]
+    # One app, so a patch chart reusing a resource chart's name fails instead of overwriting its file.
+    files = write_charts(root, directory, *chart_builders, *patch_charts)
     write_yaml(
         root / directory / "kustomization.yaml",
         kustomize_kustomization(
-            resources=resources,
+            resources=[*files[: len(chart_builders)], *siblings, *remote_resources],
             namespace=namespace,
             components=components,
             config_map_generator=config_map_generator,
             configurations=configurations,
+            patches=[*(PatchFile(path=name) for name in files[len(chart_builders) :]), *json6902_patches],
         ),
     )
     return RenderedDirectory(artifact=artifact, decryption=sops_decryption(siblings))

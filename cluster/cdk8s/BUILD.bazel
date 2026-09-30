@@ -1188,10 +1188,14 @@ py_library(
     srcs = ["agent_sandbox.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":flux",
+        ":manifest_roots",
+        ":namespaces",
         "//cluster/cdk8s/providers/agent_sandbox:sandbox_template",
         "//cluster/cdk8s/providers/agent_sandbox:sandbox_warm_pool",
         "//cluster/cdk8s/providers/agent_sandbox:sandboxwarmpool",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )
@@ -1561,6 +1565,7 @@ py_library(
     deps = [
         ":agent_machine_access",
         ":agent_rbac_base",
+        ":agent_sandbox",
         ":agent_shared_rbac",
         ":agent_workspaces",
         ":aiquota",
@@ -1700,7 +1705,7 @@ py_library(
         "//cluster/cdk8s/infra_drift:drift_watch",
         "//cluster/cdk8s/kubevirt:app",
         "//cluster/cdk8s/kubevirt:cdi",
-        "//cluster/cdk8s/kubevirt:flux_kustomizations",
+        "//cluster/cdk8s/kubevirt:operators",
         "//cluster/cdk8s/kyverno:app",
         "//cluster/cdk8s/kyverno:policies",
         "//cluster/cdk8s/langfuse:app",

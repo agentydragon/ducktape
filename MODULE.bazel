@@ -1124,9 +1124,8 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cert-manager/trust-manager/v0.25.0/deploy/crds/trust.cert-manager.io_bundles.yaml"],
 )
 
-# Same combined release asset installed by
-# cluster/k8s/agents/agent-sandbox/controller/kustomization.yaml; the bindings BUILD
-# extracts SandboxTemplate.
+# The combined release asset cluster/cdk8s/agent_sandbox.py's RELEASE installs; keep the URLs
+# equal. The bindings BUILD extracts SandboxTemplate.
 http_file(
     name = "agent_sandbox_release_bundle",
     downloaded_file_path = "sandbox-with-extensions.yaml",
@@ -1269,8 +1268,8 @@ http_file(
     urls = ["https://raw.githubusercontent.com/OT-CONTAINER-KIT/redis-operator/v0.26.0/charts/redis-operator/crds/crds.yaml"],
 )
 
-# The release assets cluster/k8s/kubevirt/{operator,cdi-operator}/kustomization.yaml install; the bindings
-# BUILD extracts the operator CRs' CRDs.
+# The release assets cluster/cdk8s/kubevirt/operators.py installs; keep the URLs equal. The
+# bindings BUILD extracts the operator CRs' CRDs.
 http_file(
     name = "kubevirt_operator_bundle",
     downloaded_file_path = "kubevirt-operator.yaml",

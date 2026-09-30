@@ -1,6 +1,6 @@
 # KubeVirt NixOS VM Runbook
 
-KubeVirt and CDI are installed from <../k8s/kubevirt/>. The paved end-to-end flow
+KubeVirt and CDI are installed by <../cdk8s/kubevirt/>. The paved end-to-end flow
 for a new NixOS VM is:
 
 1. Publish the bootstrap qcow2 to SeaweedFS — `cluster/k8s/vm-images-publisher/`.

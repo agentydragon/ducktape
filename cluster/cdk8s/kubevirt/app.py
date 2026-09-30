@@ -1,5 +1,5 @@
-"""The KubeVirt CR that virt-operator (cluster/k8s/kubevirt/operator) reconciles into
-the KubeVirt control plane, and the Flux Kustomization that waits for that plane."""
+"""The KubeVirt CR that virt-operator (`operators.py`) reconciles into the KubeVirt control
+plane, and the Flux Kustomization that waits for that plane."""
 
 from __future__ import annotations
 
@@ -30,10 +30,10 @@ from kubevirt_kubevirt_crds.io.kubevirt import (
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.kubevirt import operators
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "kubevirt"
-NAMESPACE = "kubevirt"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kubevirt/app"
 _IF_NOT_PRESENT = "IfNotPresent"
 
@@ -45,7 +45,7 @@ def chart(app: App) -> Chart:
         "kubevirt",
         metadata=ApiObjectMetadata(
             name=NAME,
-            namespace=NAMESPACE,
+            namespace=operators.KUBEVIRT_NAMESPACE,
             annotations={
                 "description": "KubeVirt control plane for running virtual machines on KVM-capable Kubernetes workers."
             },

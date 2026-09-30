@@ -9,6 +9,7 @@ from cdk8s import App
 from cluster.cdk8s import (
     agent_machine_access,
     agent_rbac_base,
+    agent_sandbox,
     agent_shared_rbac,
     agent_workspaces,
     aiquota,
@@ -173,11 +174,7 @@ from cluster.cdk8s.home_assistant import (
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.infra_drift import drift_watch
-from cluster.cdk8s.kubevirt import (
-    app as kubevirt_app,
-    cdi as kubevirt_cdi,
-    flux_kustomizations as kubevirt_flux_kustomizations,
-)
+from cluster.cdk8s.kubevirt import app as kubevirt_app, cdi as kubevirt_cdi, operators as kubevirt_operators
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
 from cluster.cdk8s.langfuse import app as langfuse_app
 from cluster.cdk8s.litellm import (
@@ -334,11 +331,15 @@ def generate_manifests(root: Path) -> None:
     agentplane_crds_kustomization = agentplane_crds_flux_kustomizations.agentplane_crds(
         flux_chart, agentplane_crds_artifact
     )
-    agent_sandbox_controller_artifact = artifact(
-        "agent-sandbox-controller", f"{HAND_WRITTEN_ROOT}/agents/agent-sandbox/controller"
-    )
-    agent_sandbox_controller_kustomization = agents_flux_kustomizations.agent_sandbox_controller(
-        flux_chart, agent_sandbox_controller_artifact
+    agent_sandbox_controller_artifact = artifact("agent-sandbox-controller", agent_sandbox.CONTROLLER_DIR)
+    agent_sandbox_controller_kustomization = agent_sandbox.agent_sandbox_controller(
+        flux_chart,
+        write_directory(
+            root,
+            agent_sandbox_controller_artifact,
+            remote_resources=[agent_sandbox.RELEASE],
+            patch_charts=[agent_sandbox.controller_patches],
+        ),
     )
     artifact_generators_factory(flux_chart)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
@@ -353,11 +354,27 @@ def generate_manifests(root: Path) -> None:
     )
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
     kube_api_proxy.kube_api_proxy(flux_chart, write_directory(root, kube_api_proxy_artifact, kube_api_proxy.chart))
-    kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", f"{HAND_WRITTEN_ROOT}/kubevirt/cdi-operator")
-    cdi_operator_kustomization = kubevirt_flux_kustomizations.cdi_operator(flux_chart, kubevirt_cdi_operator_artifact)
-    kubevirt_operator_artifact = artifact("kubevirt-operator", f"{HAND_WRITTEN_ROOT}/kubevirt/operator")
-    kubevirt_operator_kustomization = kubevirt_flux_kustomizations.kubevirt_operator(
-        flux_chart, kubevirt_operator_artifact
+    kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", kubevirt_operators.CDI_OPERATOR_DIR)
+    cdi_operator_kustomization = kubevirt_operators.cdi_operator(
+        flux_chart,
+        write_directory(
+            root,
+            kubevirt_cdi_operator_artifact,
+            remote_resources=[kubevirt_operators.CDI_OPERATOR_RELEASE],
+            patch_charts=[kubevirt_operators.cdi_operator_namespace_patch],
+            json6902_patches=[kubevirt_operators.CDI_OPERATOR_ON_HIL],
+        ),
+    )
+    kubevirt_operator_artifact = artifact("kubevirt-operator", kubevirt_operators.VIRT_OPERATOR_DIR)
+    kubevirt_operator_kustomization = kubevirt_operators.kubevirt_operator(
+        flux_chart,
+        write_directory(
+            root,
+            kubevirt_operator_artifact,
+            remote_resources=[kubevirt_operators.VIRT_OPERATOR_RELEASE],
+            patch_charts=[kubevirt_operators.virt_operator_namespace_patch],
+            json6902_patches=[kubevirt_operators.VIRT_OPERATOR_ON_HIL],
+        ),
     )
     kyverno_artifact = artifact("kyverno", kyverno_app.OUTPUT_DIR)
     kyverno_kustomization = kyverno_app.kyverno(
