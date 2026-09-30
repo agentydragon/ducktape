@@ -1982,6 +1982,7 @@ metadata:
   name: seaweedfs-drivefs-artifacts-bucket
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: seaweedfs-operator
       namespace: ducktape-flux
@@ -2028,6 +2029,7 @@ metadata:
   name: seaweedfs-loom-gym-bucket
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: seaweedfs-operator
       namespace: ducktape-flux
@@ -2048,6 +2050,7 @@ metadata:
   name: seaweedfs-pr-visuals-bucket
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: seaweedfs-operator
       namespace: ducktape-flux
@@ -2068,6 +2071,7 @@ metadata:
   name: seaweedfs-registry-cache-bucket
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: seaweedfs-operator
       namespace: ducktape-flux
