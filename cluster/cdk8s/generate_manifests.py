@@ -11,6 +11,7 @@ from cluster.cdk8s import (
     agent_rbac_base,
     agent_shared_rbac,
     agent_workspaces,
+    agentplane_crds,
     aiquota,
     airlock,
     alloy_otlp_bearer,
@@ -78,7 +79,6 @@ from cluster.cdk8s.activitywatch import (
     flux_kustomizations as activitywatch_flux_kustomizations,
 )
 from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
-from cluster.cdk8s.agentplane_crds import flux_kustomizations as agentplane_crds_flux_kustomizations
 from cluster.cdk8s.agentplane_index import (
     flux_kustomizations as agentplane_index_flux_kustomizations,
     workers as agentplane_index_workers,
@@ -330,9 +330,9 @@ def generate_manifests(root: Path) -> None:
     flux_output.mkdir(parents=True, exist_ok=True)
     flux_app = App(outdir=str(flux_output))
     flux_chart = flux.kustomizations_chart(flux_app)
-    agentplane_crds_artifact = artifact("agentplane-crds", f"{HAND_WRITTEN_ROOT}/agentplane-crds")
-    agentplane_crds_kustomization = agentplane_crds_flux_kustomizations.agentplane_crds(
-        flux_chart, agentplane_crds_artifact
+    agentplane_crds_artifact = artifact("agentplane-crds", agentplane_crds.OUTPUT_DIR)
+    agentplane_crds_kustomization = agentplane_crds.agentplane_crds(
+        flux_chart, write_directory(root, agentplane_crds_artifact, siblings=agentplane_crds.copy_crds(root))
     )
     agent_sandbox_controller_artifact = artifact(
         "agent-sandbox-controller", f"{HAND_WRITTEN_ROOT}/agents/agent-sandbox/controller"

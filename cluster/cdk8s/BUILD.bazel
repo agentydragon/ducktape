@@ -1215,6 +1215,19 @@ py_library(
 )
 
 py_library(
+    name = "agentplane_crds",
+    srcs = ["agentplane_crds.py"],
+    data = ["//agentplane/crds"],
+    deps = [
+        ":flux",
+        ":generation",
+        ":manifest_roots",
+        "//agentplane/crds:generate",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "mitmproxy",
     srcs = ["mitmproxy.py"],
     deps = [
@@ -1563,6 +1576,7 @@ py_library(
         ":agent_rbac_base",
         ":agent_shared_rbac",
         ":agent_workspaces",
+        ":agentplane_crds",
         ":aiquota",
         ":airlock",
         ":alloy_otlp_bearer",
@@ -1630,7 +1644,6 @@ py_library(
         "//cluster/cdk8s/agentplane:generation",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:testing",
-        "//cluster/cdk8s/agentplane_crds:flux_kustomizations",
         "//cluster/cdk8s/agentplane_index:flux_kustomizations",
         "//cluster/cdk8s/agentplane_index:workers",
         "//cluster/cdk8s/agents:flux_kustomizations",

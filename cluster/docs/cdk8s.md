@@ -58,9 +58,9 @@ Kustomization that owns it through `generation.write_namespace`.
 ### What stays hand-written
 
 - `.sops.yaml` Secrets (cdk8s has no key material; below).
-- Vendored and externally generated manifests: `flux/flux-system`, the agentplane CRDs
-  (`bb run //agentplane/crds:generate_bin`), and the kustomizations that patch a remote
-  release (`kubevirt/{operator,cdi-operator}`, `agents/agent-sandbox/controller`).
+- Vendored and externally generated manifests: `flux/flux-system` and the kustomizations
+  that patch a remote release (`kubevirt/{operator,cdi-operator}`,
+  `agents/agent-sandbox/controller`).
 - `configMapGenerator` inputs (Iron and app configs, SQL, blueprints), and the
   `kustomization.yaml` that carries the generator where it is hand-written.
 - `image-pins/` Components and the ConfigMaps whose data carries a `$imagepolicy` marker
@@ -165,7 +165,8 @@ CRD's generic wrapper modules; keep upstream CRD source pins in `MODULE.bazel`. 
 providers are
 `//cluster/cdk8s/providers/{agent_sandbox,cert_manager,cilium,clickhouse,cnpg,external_secrets,external_snapshotter,flux,gateway_api,grafana_operator,keda,kubevirt,kyverno,prometheus_operator,redis_operator,seaweedfs,source_watcher,tofu_controller,volsync}`.
 `//agentplane/crds` declares the imports of Agentplane's first-party CRDs beside their
-YAML; `providers/agentplane` holds only their wrappers.
+YAML; `providers/agentplane` holds only their wrappers, and `agentplane_crds.py` copies the
+YAML into `cluster/generated/agentplane-crds` for Flux.
 
 The `source_watcher` import extracts `ArtifactGenerator` from the CRD bundle in
 `cluster/k8s/flux/flux-system/gotk-components.yaml`, keeping the binding aligned with the

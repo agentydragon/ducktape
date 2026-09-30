@@ -112,9 +112,8 @@ Extend the small Kustomize model for an actually used field (`patches`,
   upstream release bundles with local patches. Keep upstream release ownership.
   Generate local typed patches/wrappers where worthwhile; check against the actual
   pinned release render. Do not transcribe upstream controllers/CRDs into local Python.
-- **Other generators:** `flux/flux-system` belongs to Flux bootstrap;
-  `agentplane-crds/crd-*.yaml` belongs to `//agentplane/crds:generate_bin`. Their
-  YAML is not missing hand-written-to-cdk8s work.
+- **Other generators:** `flux/flux-system` belongs to Flux bootstrap. Its YAML is not
+  missing hand-written-to-cdk8s work.
 - **SOPS and image automation:** ciphertext stays with SOPS/key holders or its rotator;
   `image-pins` and Haku's `{image,static}-metadata.yaml` stay bot-owned. cdk8s owns
   references/composition. Zero hand-written YAML is not an appropriate target for them.

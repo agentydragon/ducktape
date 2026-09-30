@@ -393,7 +393,7 @@ transactionally if unexpected preexisting rows exist.
 ## Action policy sets and bindings
 
 `policies/resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
-`cluster/k8s/agentplane-crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
+`agentplane/crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
 a subject that is not a namespaced ServiceAccount makes the object an `InvalidResource`. `policy_informer` list-and-watches both kinds and the labeled caller
 ServiceAccounts in every `allowed_service_account_namespaces` entry into one `PolicyIndex`, and
 writes each set's and binding's `Ready` condition with `observedGeneration`, so `kubectl get`
