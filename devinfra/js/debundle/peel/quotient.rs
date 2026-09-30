@@ -65,10 +65,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use analysis::{DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, Partition};
-use gate::{
-    LadderDecision, PartitionDelta, RealizabilityIndex, RealizabilityVerdict,
-    record_gate_diagnostic_translation,
-};
+use gate::{LadderDecision, PartitionDelta, RealizabilityIndex, RealizabilityVerdict};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 
@@ -988,13 +985,7 @@ impl QuotientGraph {
     /// space) back into the kernel's `CycleEvidence` shape (in
     /// ClassId space, with owner-id strings for diagnostics).
     fn translate_verdict_to_evidence(&self, verdict: &RealizabilityVerdict) -> CycleEvidence {
-        let active = !verdict.is_realizable();
-        record_gate_diagnostic_translation(
-            active,
-            self.owner_ids.len().min(self.owner_graph.num_nodes()),
-            verdict.unrealizable_sccs.len(),
-        );
-        if !active {
+        if verdict.is_realizable() {
             return CycleEvidence::default();
         }
         let partition = self.realizability_index.partition();
@@ -1132,9 +1123,7 @@ impl QuotientGraph {
         overlay: Option<(ClassId, ClassId)>,
     ) -> CycleEvidence {
         let max_idx = self.owner_ids.len().min(owner_modules.len());
-        let active = !verdict.is_realizable();
-        record_gate_diagnostic_translation(active, max_idx, verdict.unrealizable_sccs.len());
-        if !active {
+        if verdict.is_realizable() {
             return CycleEvidence::default();
         }
         let project = |c: ClassId| -> ClassId {

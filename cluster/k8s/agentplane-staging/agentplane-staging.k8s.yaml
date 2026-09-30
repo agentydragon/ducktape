@@ -1156,6 +1156,21 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  description: The shared BuildBuddy API key, copied into this environment's isolated egress-credentials namespace by ESO. BuildBuddy uses this key for its JSON-over-HTTP API and gRPC services, presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry. Its authority is the account's BuildBuddy permissions; the egress policy limits where it is sent.
+  source:
+    secretRef:
+      name: buildbuddy-api-key
+      key: api-key
+  targets:
+    - header: x-buildbuddy-api-key
+      method: wholeValue
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
   name: kubernetes-workload
   namespace: agentplane-staging
 spec:
@@ -1274,6 +1289,19 @@ spec:
         - "*.blob.core.windows.net"
       methods:
         - GET
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: buildbuddy
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - app.buildbuddy.io
+        - remote.buildbuddy.io
+      credentialRef:
+        name: buildbuddy
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
@@ -1608,7 +1636,18 @@ data:
         model: chatgpt/oai-responses/gpt-6-luna
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
-        instructions: Work as a public-repository coding agent. You will usually work on the public GitHub repository agentydragon/ducktape. Your egress proxy gives you a full-access GitHub PAT for the user 'agentydragon-agent'. When contributing to ducktape, push branches to the fork owned by your dedicated user (agentydragon-agent/ducktape), then use the substituted agentydragon-agent GitHub PAT to open a PR in agentydragon/ducktape (requesting to merge your branch from agentydragon-agent/ducktape into agentydragon/ducktape's default branch 'devel').
+        instructions: |-
+          Work as a public-repository coding agent. You will usually work on the public GitHub repository
+          agentydragon/ducktape. Your egress proxy gives you a full-access GitHub PAT for the user
+          `agentydragon-agent`. When contributing to ducktape, push branches to the fork owned by your
+          dedicated user (`agentydragon-agent/ducktape`), then use the substituted agentydragon-agent GitHub
+          PAT to open a PR in `agentydragon/ducktape`, targeting its default branch `devel`.
+
+          For BuildBuddy diagnostics, first check the configured Agentplane egress rules. If they grant
+          BuildBuddy, use the exact returned credential placeholder as the `x-buildbuddy-api-key` header
+          through the proxy when reading invocation details or logs from the allowed BuildBuddy API host. The
+          proxy substitutes the cluster-held API key; never read, print, or persist the real key or bypass the
+          proxy. If no applicable rule is present, report the missing access instead of guessing a credential.
       haku-claude:
         title: Haku
         harness: HARNESS_CLAUDE
@@ -1626,6 +1665,7 @@ data:
           - github-agentydragon-agent
           - github-clone
           - github-actions-logs
+          - buildbuddy
         action_policy_sets:
           - public-github-reads
           - public-ducktape-reads
@@ -5102,34 +5142,6 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Retain
     name: buildbuddy-api-key
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
-  name: buildbuddy
-  namespace: agentplane-staging
-spec:
-  description: "The shared BuildBuddy API key (cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml), the same one CI's BUILDBUDDY_API_KEY carries, copied into this namespace by ESO. BuildBuddy uses this one key for its JSON-over-HTTP API and its gRPC services alike, presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry -- this is a local-Bazel-client credential only: `bb remote`'s hosted runner copies the same value into the Bazel command it executes, which this proxy cannot see or protect (agentplane/docs/buildbuddy_remote_auth.md)."
-  source:
-    secretRef:
-      name: buildbuddy-api-key
-      key: api-key
-  targets:
-    - header: x-buildbuddy-api-key
-      method: wholeValue
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: buildbuddy
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - app.buildbuddy.io
-        - remote.buildbuddy.io
-      credentialRef:
-        name: buildbuddy
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

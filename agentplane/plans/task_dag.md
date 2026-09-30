@@ -596,9 +596,19 @@ needs evidence that work does not already provide.
 - **`HARNESS_SKILLS` — high win, low–medium work:** Enable project-scoped skills and custom
   commands for Claude and Codex. Prove the project catalog is available in a Thread while
   host-global settings and unrelated user configuration stay out.
-- **`HARNESS_VISUAL_INPUT` — high win, high work:** Carry image attachments through composer,
-  request protocol, storage, and replay/rendering; enable Codex image viewing and prove Claude's
-  image input path. Text-only transcripts are insufficient acceptance.
+- **`HARNESS_VISUAL_INPUT` — high win, high work:** Carry supported image input/viewing through the
+  harness protocol and retained Thread history; prove Claude's image input path and Codex viewing
+  an image already in its workspace. Text-only transcripts are insufficient acceptance. For Codex,
+  keep workspace `view_image` distinct from user composer attachments: the completed app-server
+  item is `{type: "imageView", id, path}`, with no `status` or image bytes. A completed
+  `commandExecution` instead carries `status` plus fields such as `aggregatedOutput`, `exitCode`,
+  and `durationMs`; the current generic adapter would misclassify `imageView` as unsuccessful unless
+  it models this item explicitly. Test with a fixture image in the Codex workspace and a scripted
+  `view_image` call; assert the following model request contains that image as `input_image`, and
+  that Agentplane retains/projects the `imageView` lifecycle and path. This proves image transport,
+  not visual understanding; use a live model check for semantic recognition. The JSON item alone
+  cannot render a preview in the UI: that needs the runner to retain or transfer the viewed bytes
+  through an authorized media reference for replay and rendering.
 - **`HARNESS_WEB_SEARCH` — high win, medium work:** Route native search through an approved,
   observable egress path; retain source evidence and links in the Thread. Confirm provider/tool
   availability before wiring either harness.
