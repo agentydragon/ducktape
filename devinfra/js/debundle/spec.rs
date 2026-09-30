@@ -41,9 +41,9 @@ pub struct TransformSpec {
     /// into the explicit residual). The materializer collects these
     /// into a `binding_name -> export_name` map; the lowerer rewrites
     /// identifiers in entry's source AST during chunk lowering. No
-    /// `Logical(R)` module is created for these bindings, no separate
-    /// residual file is emitted, and the orphan-statement node
-    /// (`ModuleId::ResidualEntry`) keeps owning the bindings — which
+    /// module is created for these bindings, no separate residual
+    /// file is emitted, and the residual module (the entry file) keeps
+    /// owning the bindings — which
     /// avoids the 2-module SCC the residual-member-rename path would
     /// otherwise create when orphan stmts and residual decls
     /// interleave with side-effecting initializers.
@@ -482,11 +482,11 @@ pub enum VendorLevel {
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum UnassignedMode {
-    /// Unclaimed bindings stay inline in the chunk's entry file
-    /// (owned by `ModuleId::ResidualEntry`); no separate residual
-    /// module is emitted. Renames against unclaimed bindings come
-    /// from [`TransformSpec::chunk_renames`] and are applied in-place
-    /// by the lowerer.
+    /// Unclaimed bindings stay inline in the chunk's entry file (the
+    /// residual module); no separate residual file is emitted. Renames
+    /// against unclaimed bindings come from
+    /// [`TransformSpec::chunk_renames`] and are applied in-place by the
+    /// lowerer.
     InlineInEntry,
     /// Unclaimed bindings emit to a separate logical module at
     /// `target` (defaults to [`DEFAULT_RESIDUAL_MODULE_PATH`]). The
