@@ -38,6 +38,9 @@ def chart(app: App) -> Chart:
         schema="forgejo_codex",
     )
     terraform.gitops_terraform(chart, "agentydragon", name="forgejo-agentydragon", variables=None)
+    # No collaborator grants (deliberately isolated from claude/haku, see the module's own
+    # comment), so no depends_on needed.
+    terraform.gitops_terraform(chart, "finance-agent", name="finance-agent", variables=None)
     return chart
 
 
