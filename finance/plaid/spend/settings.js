@@ -49,7 +49,7 @@ function renderAccount(account, saved) {
     enabledLabel,
     field("Card label", label),
     field("Credit limit (minor units)", limit),
-    field("Alert threshold (%)", threshold),
+    field("Alert threshold (%)", threshold)
   );
   card.append(grid);
   cardsContainer.append(card);

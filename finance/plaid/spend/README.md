@@ -20,24 +20,26 @@ The view shape is:
 ```json
 {
   "generated_at": "2026-09-30T12:00:00Z",
-  "cards": [{
-    "account_id": "plaid-account-id",
-    "label": "Everyday card",
-    "account_name": "Plaid account name",
-    "institution_name": "Bank name",
-    "mask": "1234",
-    "currency": "USD",
-    "cycle_start": "2026-09-01",
-    "spend_minor_units": 34218,
-    "posted_minor_units": 30000,
-    "pending_minor_units": 4218,
-    "limit_minor_units": 100000,
-    "alert_threshold_percent": 80,
-    "spend_percent": 34.218,
-    "alert_state": "normal",
-    "last_synced_at": "2026-09-30T11:58:00Z",
-    "statement_available": true
-  }]
+  "cards": [
+    {
+      "account_id": "plaid-account-id",
+      "label": "Everyday card",
+      "account_name": "Plaid account name",
+      "institution_name": "Bank name",
+      "mask": "1234",
+      "currency": "USD",
+      "cycle_start": "2026-09-01",
+      "spend_minor_units": 34218,
+      "posted_minor_units": 30000,
+      "pending_minor_units": 4218,
+      "limit_minor_units": 100000,
+      "alert_threshold_percent": 80,
+      "spend_percent": 34.218,
+      "alert_state": "normal",
+      "last_synced_at": "2026-09-30T11:58:00Z",
+      "statement_available": true
+    }
+  ]
 }
 ```
 

@@ -197,8 +197,5 @@ def chart(app: App) -> Chart:
 def write_manifests(root: Path) -> None:
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[write_charts(root, OUTPUT_DIR, chart)],
-            components=["./image-pins"],
-        ),
+        kustomize_kustomization(resources=[write_charts(root, OUTPUT_DIR, chart)], components=["./image-pins"]),
     )

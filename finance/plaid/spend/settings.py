@@ -34,7 +34,5 @@ class SpendSettings(BaseSettings):
     @property
     def api_signing_algorithms(self) -> tuple[str, ...]:
         return tuple(
-            algorithm.strip()
-            for algorithm in self.api_oidc_signing_algorithms.split(",")
-            if algorithm.strip()
+            algorithm.strip() for algorithm in self.api_oidc_signing_algorithms.split(",") if algorithm.strip()
         )

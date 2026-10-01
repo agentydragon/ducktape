@@ -200,9 +200,9 @@ def _readonly_provisioner(chart: Chart) -> None:
                             args=[
                                 "set -euo pipefail\n"
                                 "for attempt in $(seq 1 60); do\n"
-                                "  role_count=$(psql --tuples-only --no-align --quiet -c \"SELECT count(*) FROM pg_roles"
+                                '  role_count=$(psql --tuples-only --no-align --quiet -c "SELECT count(*) FROM pg_roles'
                                 " WHERE rolname IN ('plaid_ro', 'plaid_spend')\" 2>/dev/null || true)\n"
-                                "  if [[ \"$role_count\" == 2 ]]; then break; fi\n"
+                                '  if [[ "$role_count" == 2 ]]; then break; fi\n'
                                 "  if [[ \"$attempt\" == 60 ]]; then echo 'CNPG did not create plaid_spend role' >&2;"
                                 " exit 1; fi\n"
                                 "  sleep 2\n"

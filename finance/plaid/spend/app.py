@@ -51,8 +51,7 @@ async def _require_api_principal(request: Request) -> VerifiedOidcPrincipal:
         ) from error
     except OidcPrincipalVerificationUnavailableError as error:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="OIDC verification unavailable",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="OIDC verification unavailable"
         ) from error
 
 
@@ -130,19 +129,13 @@ def create_app(settings: SpendSettings, *, service: SpendService | None = None) 
         return Response(_SETTINGS_JS, media_type="text/javascript")
 
     @app.get("/settings-data/state", response_model=SettingsState)
-    async def settings_state(
-        subject: BrowserSubject,
-        database: SpendDatabase,
-    ) -> SettingsState:
+    async def settings_state(subject: BrowserSubject, database: SpendDatabase) -> SettingsState:
         accounts, configuration = await database.settings_state(subject)
         return SettingsState(accounts=list(accounts), config=configuration)
 
     @app.put("/settings-data/config", response_model=CardConfiguration)
     async def update_settings_config(
-        request: Request,
-        configuration: CardConfiguration,
-        subject: BrowserSubject,
-        database: SpendDatabase,
+        request: Request, configuration: CardConfiguration, subject: BrowserSubject, database: SpendDatabase
     ) -> CardConfiguration:
         _require_same_origin(request, request.app.state.public_base_url)
         try:
@@ -155,24 +148,16 @@ def create_app(settings: SpendSettings, *, service: SpendService | None = None) 
         return configuration
 
     @app.get("/api/v1/view", response_model=SpendView)
-    async def get_view(
-        principal: ApiPrincipal,
-        database: SpendDatabase,
-    ) -> SpendView:
+    async def get_view(principal: ApiPrincipal, database: SpendDatabase) -> SpendView:
         return await database.read_view(principal.subject)
 
     @app.get("/api/v1/config", response_model=CardConfiguration)
-    async def get_config(
-        principal: ApiPrincipal,
-        database: SpendDatabase,
-    ) -> CardConfiguration:
+    async def get_config(principal: ApiPrincipal, database: SpendDatabase) -> CardConfiguration:
         return await database.get_configuration(principal.subject)
 
     @app.put("/api/v1/config", response_model=CardConfiguration)
     async def put_config(
-        configuration: CardConfiguration,
-        principal: ApiPrincipal,
-        database: SpendDatabase,
+        configuration: CardConfiguration, principal: ApiPrincipal, database: SpendDatabase
     ) -> CardConfiguration:
         try:
             await database.replace_configuration(principal.subject, configuration)
@@ -184,19 +169,11 @@ def create_app(settings: SpendSettings, *, service: SpendService | None = None) 
         return configuration
 
     @app.get("/api/v1/events")
-    async def events(
-        request: Request,
-        principal: ApiPrincipal,
-        database: SpendDatabase,
-    ) -> StreamingResponse:
+    async def events(request: Request, principal: ApiPrincipal, database: SpendDatabase) -> StreamingResponse:
         return StreamingResponse(
             _event_stream(request, database, principal.subject),
             media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache, no-transform",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            },
+            headers={"Cache-Control": "no-cache, no-transform", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
     return app

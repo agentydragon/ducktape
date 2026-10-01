@@ -6,21 +6,14 @@ import asyncio
 import contextlib
 import logging
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import uuid4
 
 import asyncpg
 from asyncpg.exceptions import InvalidSchemaNameError
 from babel.numbers import get_currency_precision
 
-from finance.plaid.spend.models import (
-    AccountOption,
-    AlertState,
-    CardConfig,
-    CardConfiguration,
-    CardView,
-    SpendView,
-)
+from finance.plaid.spend.models import AccountOption, AlertState, CardConfig, CardConfiguration, CardView, SpendView
 
 logger = logging.getLogger(__name__)
 
@@ -115,10 +108,8 @@ class SpendService:
                 return
             except InvalidSchemaNameError:
                 logger.info("plaid_spend schema is not provisioned yet; retrying table initialization")
-                try:
+                with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(self._stopping.wait(), timeout=3)
-                except TimeoutError:
-                    pass
 
     async def list_credit_accounts(self) -> tuple[AccountOption, ...]:
         pool = self._require_pool()
@@ -223,9 +214,7 @@ class SpendService:
         self._wake_subscribers()
 
     async def settings_state(self, subject: str) -> tuple[tuple[AccountOption, ...], CardConfiguration]:
-        accounts, configuration = await asyncio.gather(
-            self.list_credit_accounts(), self.get_configuration(subject)
-        )
+        accounts, configuration = await asyncio.gather(self.list_credit_accounts(), self.get_configuration(subject))
         return accounts, configuration
 
     async def read_view(self, subject: str) -> SpendView:
@@ -345,10 +334,7 @@ class SpendService:
             for transaction in transactions_by_account.get(account_id, []):
                 if transaction["date"] < cycle_start or transaction["date"] > today:
                     continue
-                if transaction["pending"] and (
-                    account_id,
-                    transaction["transaction_id"],
-                ) in superseded_pending_ids:
+                if transaction["pending"] and (account_id, transaction["transaction_id"]) in superseded_pending_ids:
                     continue
                 if transaction["pfc_detailed"] == _CARD_PAYMENT_CATEGORY:
                     continue
@@ -410,7 +396,7 @@ class SpendService:
             try:
                 connection = await asyncpg.connect(self._database_url)
                 terminated = asyncio.Event()
-                connection.add_termination_listener(lambda _: terminated.set())
+                connection.add_termination_listener(lambda _, event=terminated: event.set())
                 await connection.add_listener(_CHANNEL, self._on_notification)
                 await connection.add_listener(_CONFIG_CHANNEL, self._on_notification)
                 self._listening.set()
@@ -435,10 +421,8 @@ class SpendService:
                 if connection is not None:
                     await connection.close()
             if not self._stopping.is_set():
-                try:
+                with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(self._stopping.wait(), timeout=3)
-                except TimeoutError:
-                    pass
 
     def _on_notification(self, connection: asyncpg.Connection, pid: int, channel: str, payload: str) -> None:
         del connection, pid

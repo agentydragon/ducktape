@@ -5,16 +5,53 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Plaid Spend settings</title>
     <style>
-      :root { color-scheme: light dark; font: 16px system-ui, sans-serif; }
-      body { margin: 2rem auto; max-width: 52rem; padding: 0 1rem; }
-      fieldset { border: 1px solid #8887; border-radius: .6rem; margin: 1rem 0; padding: 1rem; }
-      legend { font-weight: 650; padding: 0 .4rem; }
-      .fields { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
-      label { display: grid; gap: .35rem; }
-      label.enabled { display: flex; align-items: center; }
-      input { box-sizing: border-box; font: inherit; max-width: 100%; padding: .45rem; }
-      button { font: inherit; padding: .55rem 1rem; }
-      #status { min-height: 1.5em; }
+      :root {
+        color-scheme: light dark;
+        font:
+          16px system-ui,
+          sans-serif;
+      }
+      body {
+        margin: 2rem auto;
+        max-width: 52rem;
+        padding: 0 1rem;
+      }
+      fieldset {
+        border: 1px solid #8887;
+        border-radius: 0.6rem;
+        margin: 1rem 0;
+        padding: 1rem;
+      }
+      legend {
+        font-weight: 650;
+        padding: 0 0.4rem;
+      }
+      .fields {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+      }
+      label {
+        display: grid;
+        gap: 0.35rem;
+      }
+      label.enabled {
+        display: flex;
+        align-items: center;
+      }
+      input {
+        box-sizing: border-box;
+        font: inherit;
+        max-width: 100%;
+        padding: 0.45rem;
+      }
+      button {
+        font: inherit;
+        padding: 0.55rem 1rem;
+      }
+      #status {
+        min-height: 1.5em;
+      }
     </style>
     <script src="/settings.js" defer></script>
   </head>
@@ -22,8 +59,7 @@
     <main>
       <h1>Plaid Spend settings</h1>
       <p>
-        Choose the credit cards shown on your devices. Limits and thresholds use each account's minor
-        currency units.
+        Choose the credit cards shown on your devices. Limits and thresholds use each account's minor currency units.
       </p>
       <form id="cards-form">
         <div id="cards" aria-live="polite"></div>
