@@ -1767,6 +1767,7 @@ data:
           - public-ducktape-fork-reads
           - public-gaffer-private-reads
           - github-identity-reads
+          - ssh-reads
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -1794,6 +1795,7 @@ data:
           - github-actions-logs
         action_policy_sets:
           - github-identity-reads
+          - ssh-reads
         thread_preset: haku-claude
         bootstrap: |
           #!/bin/sh
@@ -1810,6 +1812,8 @@ data:
         policies:
           - basic
           - packages
+          - aiquota-read
+          - coinbase
           - forgejo-finance-agent
           - plaid-pgweb
           - github-agentydragon-agent
@@ -1822,6 +1826,7 @@ data:
           - public-ducktape-fork-reads
           - public-gaffer-private-reads
           - github-identity-reads
+          - ssh-reads
         thread_preset: finance-agent-codex
         bootstrap: |
           #!/bin/sh
@@ -4537,7 +4542,7 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicyBinding
 metadata:
   annotations:
-    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for the haku-agent ServiceAccount.
+    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for the haku-agent ServiceAccount.
   name: haku-agent-reads
   namespace: agentplane-staging
 spec:
@@ -4553,6 +4558,7 @@ spec:
     - google-calendar-reads
     - tana-reads
     - grocy-sf-reads
+    - ssh-reads
 ---
 apiVersion: v1
 kind: Namespace
