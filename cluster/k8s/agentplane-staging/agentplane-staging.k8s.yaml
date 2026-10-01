@@ -1443,6 +1443,12 @@ rules:
       - clusterroles
     verbs:
       - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterroles
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -1586,6 +1592,12 @@ rules:
       - get
       - list
       - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+    verbs:
+      - get
   - apiGroups:
       - rbac.authorization.k8s.io
     resourceNames:

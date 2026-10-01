@@ -221,6 +221,10 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
     assert {
         tuple(rule.get("resourceNames", [])) for rule in app_cluster_role["rules"] if rule["verbs"] == ["bind"]
     } == {("agent-readable-namespace-logs",), ("agent-readable-namespace-metadata",), ("cluster-diagnostics-reader",)}
+    assert any(
+        rule["resources"] == ["clusterroles"] and rule["verbs"] == ["get"] and not rule.get("resourceNames")
+        for rule in app_cluster_role["rules"]
+    )
     assert config["kubernetes_binding_cleanup_namespaces"] == [
         "clickhouse",
         "ducktape-flux",

@@ -150,6 +150,15 @@ class KubernetesBindings:
 
     async def _ensure_one(self, sandbox: SandboxView, grant: ResolvedGrant) -> None:
         expected = _binding(sandbox, grant)
+        # Kubernetes accepts a binding whose roleRef does not exist. Check the
+        # referenced Role on every pass so a missing grant cannot become Ready.
+        if expected.role_ref.kind == "Role":
+            assert isinstance(expected, k8s_client.V1RoleBinding)
+            assert expected.metadata is not None
+            assert expected.metadata.namespace is not None
+            await self._rbac.read_namespaced_role(expected.role_ref.name, expected.metadata.namespace)
+        else:
+            await self._rbac.read_cluster_role(expected.role_ref.name)
         try:
             actual = await self._read(expected)
         except k8s_client.ApiException as error:
