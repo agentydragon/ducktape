@@ -1,6 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-namespace: plaid-mcp
-resources:
-  # cdk8s-generated (cluster/cdk8s/plaid_mcp/pgweb.py) -- see cluster/docs/cdk8s.md.
-  - pgweb.k8s.yaml

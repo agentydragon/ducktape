@@ -1,7 +1,7 @@
-"""plaid-mcp's `db/`: the CNPG Postgres mirror of the Plaid data, its ESO-minted read-only
+"""plaid-mcp's CNPG Postgres mirror of the Plaid data, its ESO-minted read-only
 `plaid_ro` credentials, and the one-shot Job granting that role read access.
 
-Hand-written beside the generated output: `readonly-role.sql`, which the generated
+Hand-written beside the generated output: `readonly-role.sql`, which the root
 `kustomization.yaml`'s configMapGenerator hash-suffixes, so an edit re-creates the Job
 (its `force` annotation).
 """
@@ -26,14 +26,13 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import cilium, cnpg, node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.secret_ref import SecretRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/db"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp"
 NAMESPACE = "plaid-mcp"
 POSTGRES = cnpg.PostgresRef.generated(name="plaid-mcp-db", namespace=NAMESPACE)
 _DATABASE = "plaidmcp"
@@ -238,10 +237,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[write_charts(root, OUTPUT_DIR, chart)],
-            config_map_generator=[ConfigMapArgs(name=_SQL_CONFIG_MAP, namespace=NAMESPACE, files=[_SQL_FILE])],
-        ),
-    )
+    write_charts(root, OUTPUT_DIR, chart, manifest_name="db.k8s.yaml")

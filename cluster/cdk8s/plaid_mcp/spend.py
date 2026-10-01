@@ -23,7 +23,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from finance.plaid.spend.settings import SpendSettings
 from util.settings_contract import env_name
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/spend"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp"
 NAMESPACE = db.NAMESPACE
 _NAME = "plaid-spend"
 _HOST = "plaid-spend.allegedly.works"
@@ -211,4 +211,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart, manifest_name="spend.k8s.yaml")

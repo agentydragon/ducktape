@@ -1,4 +1,4 @@
-"""plaid-mcp's `pgweb/`: pgweb, a stock PostgreSQL browser whose JSON API runs a query and returns
+"""plaid-mcp's pgweb, a stock PostgreSQL browser whose JSON API runs a query and returns
 its rows, over the Plaid sync database, for the sandboxes that need to run SQL.
 
 It connects as `plaid_ro` using the shared read-only database credential (`db.READONLY`), so it
@@ -27,7 +27,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPol
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/pgweb"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp"
 _NAME = "plaid-pgweb"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 # Clients use the default HTTP port; pgweb's unprivileged container still listens on 8081.
@@ -175,4 +175,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+    write_charts(root, OUTPUT_DIR, chart, manifest_name="pgweb.k8s.yaml")

@@ -87,18 +87,22 @@ def _app(chart_builders: Sequence[Callable[[App], Chart]]) -> App:
     return app
 
 
-def write_app(root: Path, directory: str, app: App) -> str:
-    """Write every chart of `app`, in chart order, into `directory`'s one generated file,
-    `manifest_file(directory)`; return that name. Every generated resource of a directory is
-    in that file, so each directory's writer builds all its charts into one app."""
-    name = manifest_file(directory)
+def write_app(root: Path, directory: str, app: App, *, manifest_name: str | None = None) -> str:
+    """Write every chart of `app`, in chart order, into one generated file in `directory`.
+
+    The file defaults to `manifest_file(directory)`. A flat Kustomize root with several
+    independently synthesized chart apps may pass a distinct `manifest_name` for each.
+    """
+    name = manifest_name or manifest_file(directory)
     _write_app(root / directory / name, app)
     return name
 
 
-def write_charts(root: Path, directory: str, *chart_builders: Callable[[App], Chart]) -> str:
-    """Synthesize charts, in order, into `directory`'s one generated file (`write_app`); return its name."""
-    return write_app(root, directory, _app(chart_builders))
+def write_charts(
+    root: Path, directory: str, *chart_builders: Callable[[App], Chart], manifest_name: str | None = None
+) -> str:
+    """Synthesize charts, in order, into one generated file in `directory`; return its name."""
+    return write_app(root, directory, _app(chart_builders), manifest_name=manifest_name)
 
 
 def write_directory(

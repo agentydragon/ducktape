@@ -1,5 +1,5 @@
 """kube-prometheus-stack (Prometheus Operator, Alertmanager, node-exporter,
-kube-state-metrics), the control-plane scrape token, and Prometheus's ingress policy.
+kube-state-metrics) and Prometheus's ingress policy.
 
 Hand-written beside the generated output: `grafana-admin-password.sops.yaml`.
 """
@@ -16,7 +16,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeCrds,
     HelmReleaseSpecUpgradeRemediation,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -27,15 +27,7 @@ NAME = "monitoring-stack"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring"
 _NAMESPACE = "monitoring"
 _HELM_REPOSITORY = "prometheus-community"
-_CONTROL_PLANE_TOKEN = "alloy-control-plane-token"
 _PROMETHEUS_PORT = 9090
-
-# A kube-controller-manager / kube-scheduler ServiceMonitor: bearer auth with the
-# Alloy-owned token, the cluster CA for TLS.
-_CONTROL_PLANE_SERVICE_MONITOR = {
-    "authorization": {"type": "Bearer", "credentials": {"name": _CONTROL_PLANE_TOKEN, "key": "token"}},
-    "tlsConfig": {"insecureSkipVerify": True, "ca": {"configMap": {"name": "kube-root-ca.crt", "key": "ca.crt"}}},
-}
 
 
 def _flux_state_metrics(
@@ -266,6 +258,15 @@ def _values() -> dict[str, object]:
             # alertname in the route below would also have silenced them for the
             # control-plane nodes, which is the opposite of what we want.
             "disabled": {
+                # Temporary suppression for the two disabled ServiceMonitors until
+                # issue #8567 restores a valid scrape path. These four rules cover
+                # only their scrape health; node/pod/kubelet exclusions below are
+                # separate existing policy.
+                "KubeControllerManagerDown": True,
+                "KubeControllerManagerInstanceUnreachable": True,
+                "KubeSchedulerDown": True,
+                "KubeSchedulerInstanceUnreachable": True,
+                # Existing node, pod, kubelet, and target exclusions.
                 "KubeNodeNotReady": True,
                 "KubeNodeUnreachable": True,
                 "KubePodNotReady": True,
@@ -352,11 +353,7 @@ def _values() -> dict[str, object]:
         # Prometheus disabled — Alloy scrapes metrics and pushes to Mimir.
         # Mimir Ruler evaluates alerting/recording rules.
         # Operator kept for CRD management (ServiceMonitor, PrometheusRule, etc.).
-        "prometheus": {
-            "enabled": False,
-            # Control-plane ServiceMonitors use the Alloy-owned token below instead.
-            "serviceAccount": {"createTokenSecret": False},
-        },
+        "prometheus": {"enabled": False, "serviceAccount": {"createTokenSecret": False}},
         "prometheus-node-exporter": {
             "fullnameOverride": "prometheus-node-exporter",
             # Must match ducktape.raplMetrics.gid on Rugged. The host grants this
@@ -422,12 +419,13 @@ def _values() -> dict[str, object]:
         },
         # Same as kubeApiServer: scraped natively in cluster/cdk8s/monitoring/config.alloy.
         "kubelet": {"enabled": False},
-        "kubeControllerManager": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
-        # `serviceMonitor.authorization: null` is patched in below.
+        # Talos binds these endpoints to loopback, which central Alloy cannot reach.
+        # Issue #8567 tracks choosing and implementing a scrape topology.
+        "kubeControllerManager": {"enabled": True, "serviceMonitor": {"enabled": False}},
         "coreDns": {"enabled": True, "serviceMonitor": {}},
         # Static Talos etcd endpoints are managed in cluster/cdk8s/etcd.py.
         "kubeEtcd": {"enabled": False},
-        "kubeScheduler": {"enabled": True, "serviceMonitor": _CONTROL_PLANE_SERVICE_MONITOR},
+        "kubeScheduler": {"enabled": True, "serviceMonitor": {"enabled": False}},
         # kube-proxy is intentionally absent: Cilium runs kube-proxy replacement,
         # so do not create the stock kube-proxy Service/ServiceMonitor.
         "kubeProxy": {"enabled": False},
@@ -448,19 +446,6 @@ def _prometheus_ingress_rule(namespace: str, pod_labels: dict[str, str]) -> k8s.
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeSecret(
-        chart,
-        "control-plane-token",
-        metadata=k8s.ObjectMeta(
-            name=_CONTROL_PLANE_TOKEN,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "Long-lived service-account token for monitoring control-plane ServiceMonitors.",
-                "kubernetes.io/service-account.name": "alloy",
-            },
-        ),
-        type="kubernetes.io/service-account-token",
-    )
     release = helm_release(
         chart,
         "kube-prometheus-stack",
@@ -540,20 +525,10 @@ def monitoring_stack(
         wait=None,
         health_checks=[
             KustomizationSpecHealthChecks(
-                api_version="v1", kind="Secret", name="alloy-control-plane-token", namespace="monitoring"
-            ),
-            KustomizationSpecHealthChecks(
                 api_version="helm.toolkit.fluxcd.io/v2",
                 kind="HelmRelease",
                 name="kube-prometheus-stack",
                 namespace="monitoring",
-            ),
-        ],
-        # The built-in Secret health check only checks existence. This CEL check waits
-        # for the service-account token controller to populate data.token.
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="v1", kind="Secret", current="has(data.token) && data.token != ''"
             )
         ],
         timeout="10m",

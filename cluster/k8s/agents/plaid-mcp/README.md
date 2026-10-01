@@ -52,7 +52,7 @@ and read-only in-cluster PostgreSQL access; it is not exposed over MCP.
   and copied through a get-only SecretStore into the `plaid-mcp` namespace. The web
   process uses the confidential `plaid-spend-web` OIDC client and a signed session
   cookie; desktop API authentication remains on the separate public client.
-- `spend/cards.sops.yaml` stores the shared card selection, limits, and alert
+- `cards.sops.yaml` stores the shared card selection, limits, and alert
   thresholds. The service mounts it as `/etc/plaid-spend/cards.json`; each device
   receives the same server-computed view. The desktop uses the public
   `plaid-spend-desktop` provider with PKCE and a strict loopback callback.

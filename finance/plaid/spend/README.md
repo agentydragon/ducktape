@@ -2,8 +2,8 @@
 
 `//finance/plaid/spend:server_image` serves the same backend-computed statement-cycle view to the
 Authentik-protected browser UI and desktop clients. The card selection, labels, limits, and alert
-thresholds live in the SOPS-managed `plaid-spend-cards` Secret under
-`cluster/k8s/agents/plaid-mcp/spend/`.
+thresholds live in the SOPS-managed `plaid-spend-cards` Secret at
+`cluster/k8s/agents/plaid-mcp/cards.sops.yaml`.
 
 The browser at `/` signs in through the confidential Authentik `plaid-spend-web` client. The server
 keeps OIDC tokens out of the browser and authenticates page, stylesheet, script, view, and event
@@ -65,7 +65,7 @@ the Plaid account name and its institution when available.
 
 ## Shared card configuration
 
-Edit the encrypted Secret with `sops cluster/k8s/agents/plaid-mcp/spend/cards.sops.yaml`. Its
+Edit the encrypted Secret with `sops cluster/k8s/agents/plaid-mcp/cards.sops.yaml`. Its
 `stringData.cards.json` value has this shape:
 
 ```json

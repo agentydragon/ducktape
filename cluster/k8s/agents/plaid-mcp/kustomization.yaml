@@ -2,10 +2,16 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - plaid-mcp.k8s.yaml
-  - db
-  - app
-  - spend/spend.k8s.yaml
-  - spend/cards.sops.yaml
-  - pgweb
+  - db.k8s.yaml
+  - app.k8s.yaml
+  - plaid-client-credentials.sops.yaml
+  - spend.k8s.yaml
+  - cards.sops.yaml
+  - pgweb.k8s.yaml
+configMapGenerator:
+  - name: plaid-mcp-db-readonly-sql
+    namespace: plaid-mcp
+    files:
+      - readonly-role.sql
 components:
-  - ./spend/image-pins
+  - ./image-pins
