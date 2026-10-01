@@ -258,16 +258,19 @@ def _values() -> dict[str, object]:
             # alertname in the route below would also have silenced them for the
             # control-plane nodes, which is the opposite of what we want.
             "disabled": {
-                # Talos binds these metrics endpoints to loopback. Keep their scrape
-                # alerts disabled until issue #8567 restores a valid scrape path; with
-                # no ServiceMonitor, the `*Down` rules would otherwise fire on absence.
+                # Temporary suppression for the two disabled ServiceMonitors until
+                # issue #8567 restores a valid scrape path. These four rules cover
+                # only their scrape health; node/pod/kubelet exclusions below are
+                # separate existing policy.
                 "KubeControllerManagerDown": True,
                 "KubeControllerManagerInstanceUnreachable": True,
+                "KubeSchedulerDown": True,
+                "KubeSchedulerInstanceUnreachable": True,
+
+                # Existing node, pod, kubelet, and target exclusions.
                 "KubeNodeNotReady": True,
                 "KubeNodeUnreachable": True,
                 "KubePodNotReady": True,
-                "KubeSchedulerDown": True,
-                "KubeSchedulerInstanceUnreachable": True,
                 "KubeletInstanceUnreachable": True,
                 "TargetDown": True,
             },
