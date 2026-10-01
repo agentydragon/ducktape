@@ -202,11 +202,19 @@ def test_agentplane_external_delegation_has_independent_flux_ownership(k8s_dir: 
 
 def test_haku_service_read_delegation_is_scoped_to_owning_namespaces(k8s_dir: Path, generated_dir: Path) -> None:
     flux_objects = list(yaml.safe_load_all((k8s_dir / "flux/kustomizations.k8s.yaml").read_text()))
-    for namespace, role_name, owner in (
-        ("haku-console", "agent-haku-console-metadata-reader", "haku-console"),
-        ("clickhouse", "agent-clickhouse-diagnostics-reader", "clickhouse"),
-        ("ducktape-flux", "ducktape-flux-reader", None),
-        ("public-coder-agent", "agent-public-coder-extended-diagnostics-reader", "public-coder-agent-app"),
+    for namespace, role_names, owner in (
+        ("haku-console", ("agent-haku-console-metadata-reader",), "haku-console"),
+        ("clickhouse", ("agent-clickhouse-diagnostics-reader",), "clickhouse"),
+        ("ducktape-flux", ("ducktape-flux-reader",), None),
+        (
+            "public-coder-agent",
+            (
+                "agent-public-coder-extended-diagnostics-reader",
+                "public-coder-agent-devbox-vmi-restart",
+                "public-coder-agent-reader",
+            ),
+            "public-coder-agent-app",
+        ),
     ):
         path = generated_dir / f"agentplane/binding-delegation/agentplane-staging/{namespace}"
         objects = list(yaml.safe_load_all((path / f"{namespace}.k8s.yaml").read_text()))
@@ -220,6 +228,7 @@ def test_haku_service_read_delegation_is_scoped_to_owning_namespaces(k8s_dir: Pa
                 "resources": ["roles"],
                 "verbs": ["bind"],
             }
+            for role_name in role_names
         ]
         assert binding["subjects"] == [
             {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
