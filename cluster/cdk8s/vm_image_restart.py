@@ -155,7 +155,8 @@ class VmImageRestartController(Construct):
             ),
             security_context=ContainerSecurityContextProps(
                 allow_privilege_escalation=False,
-                read_only_root_filesystem=True,
+                # aspect_py_binary's launcher creates its venv under runfiles at startup.
+                read_only_root_filesystem=False,
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
             ),
         )
