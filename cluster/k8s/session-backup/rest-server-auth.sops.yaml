@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: session-backup-rest-server-auth
+    namespace: session-backup
+    annotations:
+        description: Per-workstation bcrypt credentials for the authenticated Restic REST endpoint.
+type: Opaque
+stringData:
+    .htpasswd: ENC[AES256_GCM,data:Y0X9yLgxSc1T8wPzv3IMeLliliRxUmzWinNKugNXQ3cUAE8JQ7t1ZtxRuEPjnwM0SMoKpcZ+JSih3CdMbMboo2uExdKvQvHdrg+Jk1O4BJq0x+MHkBRVv7kSCQ8Y9oj0ro5D0DsAERalHGbDfhwbJLZwwC911T64BFaS6tDKA7Og71FQO69Lze6vTEvYjohwIytVEh4LFQUAXp/2Wr0m4HwkXe9wrIbFtmFO8QV1JYnAqNHjmZtTNlvVn1PTTbj/xLMCRs55Y5J3yDc=,iv:fdp7iuVoZKv85wS6q2qXbalRKlKxfsVEs0PoBP79NuQ=,tag:i8aDRiiEMIDufiUKW/sjCw==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBzMmRKZGNwR3BQb0xpWDVs
+            K2gyYlhuNkY5dDlYODBCRlVITEV3TEhMV1RBClo3SGJ2dlozUTEzMFdyUDlrcmRW
+            c0psN1NmUEtPQ0lQaXE4UTRsR2VWbFUKLS0tIHdLWDNqS2h4N3RXSW9lYXJBTkoy
+            WmpaNEQ2cEFUQWZnaDdyeW9tNjJHSmsKObehqQFJiNsenuiBltrIR9ZSBoRsV1pF
+            xj31fY8vF9FrHM+Xl4/19GAD7bNTRpE9TNAYF98vFGEI70AyykaIrQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBKdEpFdVhoZGlkU0tlQXVO
+            YmlUd2xqSTBuTFBCUU51cGZXKzl4dWsrZ0ZjCmdTMnFManZPR21Zb3prclJyeU1T
+            WTJDRHRQTjVBZkFVVnEzZjk2bDhlM0kKLS0tIDZRVU0zUmxMTnBwTWhFQVlJeHJu
+            cnFYSlJpS0xFSTNpNHBIbXMvUVdzdUEK4wtMQAF+VXxVlq3NLDEE9AZCscvx85Fe
+            M+VwctAZ0I8JZCwuQzUwVr24khCqqVmmLQPT5mlMybs/pTItXN5FAg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-30T23:48:54Z"
+    mac: ENC[AES256_GCM,data:xZblOrbxkskybuRwC64OuqGVHYbugaTyGFKh6sCU5bGQCBGgsRfHUnZMnAjIHY7PEyN5+UHB5AMnjIvnN0n58kLNElkr5DgXBwtaExhGjbP0F53/j7Epc/Eb5C4MJpqEd60UBNTlJVH0w7cgwhUQAkBJ+Z8ilihixMZ06/9nzaI=,iv:JAXCsOjmTa+4Kg0bjhg/HaXW+gMog8yMamKVqwaSbOY=,tag:XeQkVwB0YzrLDyVzxXvQXQ==,type:str]
+    version: 3.13.3

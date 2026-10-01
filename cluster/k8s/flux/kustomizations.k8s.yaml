@@ -2378,6 +2378,37 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Authenticated append-only Restic REST endpoint for workstation session backups, with a SeaweedFS-backed primary PVC and a separate retained SeaweedFS VolSync copy.
+  name: session-backup
+  namespace: ducktape-flux
+spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: volsync
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/session-backup
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: session-backup
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Zot OCI pull-through cache and its namespace-local monitoring.
   name: oci-cache
   namespace: ducktape-flux
