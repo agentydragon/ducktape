@@ -1,0 +1,9 @@
+{
+  "status": "error",
+  "error": "The Plaid Spend service is unavailable.",
+  "view": {
+    "generated_at": null,
+    "cards": []
+  },
+  "has_view": false
+}

@@ -1,4 +1,5 @@
 import Gio from "gi://Gio";
+import GLib from "gi://GLib";
 import GObject from "gi://GObject";
 import St from "gi://St";
 import Clutter from "gi://Clutter";
@@ -20,6 +21,10 @@ const INTERFACE_INFO = Gio.DBusNodeInfo.new_for_xml(
     <property name="LastError" type="s" access="read"/>
   </interface></node>`
 ).lookup_interface(INTERFACE_NAME);
+
+function decodeBytes(bytes) {
+  return new TextDecoder().decode(typeof bytes.get_data === "function" ? bytes.get_data() : bytes);
+}
 
 function unpackString(value, fallback = "") {
   try {
@@ -97,6 +102,9 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._status = "starting";
       this._error = "";
       this._hasView = false;
+      this._testMode = GLib.getenv("PLAID_SPEND_TEST") === "1";
+      this._testIface = null;
+      this._testBusOwnerId = 0;
 
       const box = new St.BoxLayout({ y_align: Clutter.ActorAlign.CENTER });
       this._icon = new St.Icon({ icon_name: "credit-card-symbolic", style_class: "system-status-icon" });
@@ -108,6 +116,8 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._menuOpenId = this.menu.connect("open-state-changed", (_menu, open) => {
         if (open) this._renderPopup();
       });
+
+      if (this._testMode) this._exportTestInterface();
 
       Gio.DBusProxy.new_for_bus(
         Gio.BusType.SESSION,
@@ -199,6 +209,67 @@ const PlaidSpendIndicator = GObject.registerClass(
       this._renderPopup();
     }
 
+    _loadFixtureFile(path) {
+      if (!this._testMode) throw new Error("fixture mode is disabled");
+      const [ok, contents] = GLib.file_get_contents(path);
+      if (!ok) throw new Error(`fixture not readable: ${path}`);
+      const fixture = JSON.parse(decodeBytes(contents));
+      if (!fixture.view || !Array.isArray(fixture.view.cards)) {
+        throw new Error("fixture must contain a view with a cards array");
+      }
+      this._status = fixture.status || "ready";
+      this._error = fixture.error || "";
+      this._view = fixture.view;
+      this._hasView = fixture.has_view !== false;
+      this._render();
+    }
+
+    _exportTestInterface() {
+      // Only exported in fixture mode. It lets the Bazel screenshot test
+      // switch synthetic views and inspect the real panel/menu actors.
+      this._testIface = Gio.DBusExportedObject.wrapJSObject(
+        '<node><interface name="works.allegedly.PlaidSpendTest">' +
+          '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
+          '<method name="OpenMenu"/>' +
+          '<method name="CloseMenu"/>' +
+          '<method name="GetPanelLabel"><arg type="s" direction="out" name="label"/></method>' +
+          '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
+          "</interface></node>",
+        {
+          Reload: (path) => this._loadFixtureFile(path),
+          OpenMenu: () => this.menu.open(false),
+          CloseMenu: () => this.menu.close(false),
+          GetPanelLabel: () => this._label.get_text(),
+          GetMenuGeometry: () => {
+            const actor = this.menu.actor;
+            const [x, y] = actor.get_transformed_position();
+            const [width, height] = actor.get_transformed_size();
+            return [Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
+          },
+        }
+      );
+      this._testIface.export(Gio.DBus.session, "/works/allegedly/PlaidSpendTest");
+      this._testBusOwnerId = Gio.bus_own_name(
+        Gio.BusType.SESSION,
+        "works.allegedly.PlaidSpendTest",
+        Gio.BusNameOwnerFlags.NONE,
+        null,
+        null,
+        null
+      );
+    }
+
+    _unexportTestInterface() {
+      if (this._testBusOwnerId) {
+        Gio.bus_unown_name(this._testBusOwnerId);
+        this._testBusOwnerId = 0;
+      }
+      if (this._testIface) {
+        this._testIface.unexport();
+        this._testIface = null;
+      }
+    }
+
     _addReadOnly(text, styleClass = null) {
       const item = new PopupMenu.PopupMenuItem(text, { reactive: false, can_focus: false });
       if (styleClass) item.label.add_style_class_name(styleClass);
@@ -264,6 +335,7 @@ const PlaidSpendIndicator = GObject.registerClass(
     destroy() {
       this._destroyed = true;
       if (this._menuOpenId) this.menu.disconnect(this._menuOpenId);
+      this._unexportTestInterface();
       this._proxy = null;
       super.destroy();
     }
