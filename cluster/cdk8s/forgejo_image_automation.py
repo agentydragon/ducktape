@@ -59,7 +59,6 @@ IMAGES = (
     "cli-proxy-api",
     "cpap-gateway",
     "cpap-sync",
-    "vm-image-restart",
     "forgejo-token-rotation",
     "github-api-proxy",
     "github-graphql-rate-exporter",
@@ -94,6 +93,7 @@ IMAGES = (
     "tana-firebase-resigner",
     "tana-litellm-proxy",
     "tana-mcp",
+    "vm-image-restart",
     # keep-sorted end
 )
 
