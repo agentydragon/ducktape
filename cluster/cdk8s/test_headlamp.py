@@ -12,7 +12,7 @@ def test_plugin_manager_config_matches_headlamp_contract() -> None:
     assert plugin_fields == {"name", "source", "version", "dependencies"}
     assert not _HeadlampPlugin.model_fields["dependencies"].is_required()
 
-    option_fields = set(_PluginInstallOptions.model_json_schema(by_alias=True)["properties"])
+    option_fields = set(_PluginInstallOptions.model_json_schema(by_alias=True, mode="serialization")["properties"])
     assert option_fields == {"parallel", "maxConcurrent"}
     assert not _PluginInstallOptions.model_fields["parallel"].is_required()
     assert not _PluginInstallOptions.model_fields["max_concurrent"].is_required()
