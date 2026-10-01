@@ -149,16 +149,18 @@ function AppRoutes(): JSX.Element {
         </div>
         <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
           <TopbarContext.Provider value={topbarSlots}>
-            <Routes>
-              <Route path="/" element={<ThreadsLanding />} />
-              <Route path="/sandboxes" element={<SandboxListRoute />} />
-              <Route path="/actions" element={<ActionsPage />} />
-              <Route path="/actions/:requestId" element={<ActionRequests />} />
-              <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
-              <Route path="/sandboxes/:name" element={<SandboxRoute />} />
-              <Route path="/threads/:threadId" element={<ThreadRoute settingsOpen={settingsTab !== null} />} />
-              <Route path="*" element={<ThreadsLanding />} />
-            </Routes>
+            <ActionAffordance>
+              <Routes>
+                <Route path="/" element={<ThreadsLanding />} />
+                <Route path="/sandboxes" element={<SandboxListRoute />} />
+                <Route path="/actions" element={<ActionsPage />} />
+                <Route path="/actions/:requestId" element={<ActionRequests />} />
+                <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
+                <Route path="/sandboxes/:name" element={<SandboxRoute />} />
+                <Route path="/threads/:threadId" element={<ThreadRoute settingsOpen={settingsTab !== null} />} />
+                <Route path="*" element={<ThreadsLanding />} />
+              </Routes>
+            </ActionAffordance>
           </TopbarContext.Provider>
         </div>
       </div>
@@ -176,11 +178,9 @@ export default function App(): JSX.Element {
   return (
     <ThreadSyncContext.Provider value={electricThreadSync}>
       <HashRouter>
-        <ActionAffordance>
-          <ThreadsLiveProvider>
-            <AppRoutes />
-          </ThreadsLiveProvider>
-        </ActionAffordance>
+        <ThreadsLiveProvider>
+          <AppRoutes />
+        </ThreadsLiveProvider>
       </HashRouter>
     </ThreadSyncContext.Provider>
   );

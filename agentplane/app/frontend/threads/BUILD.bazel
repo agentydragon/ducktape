@@ -96,6 +96,7 @@ ts_library(
         "//:node_modules/@tanstack/react-virtual",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend:actions_affordance",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:stream_status",

@@ -1925,7 +1925,7 @@ class HarnessEventSource extends EventTarget {
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
     if (url.pathname === "/actions/stream") {
       const pending =
-        scenario.actionsPopup || scenario.route.startsWith("/actions")
+        scenario.pendingActions || scenario.route.startsWith("/actions")
           ? ACTIONS.filter((request) => request.state === "decision_pending")
           : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
@@ -2113,6 +2113,15 @@ if (scenario.openActionPolicySets) {
     control.click();
   });
   openSets.observe(document, { childList: true, subtree: true });
+}
+if (scenario.openActionReview) {
+  const openActionReview = new MutationObserver(() => {
+    const button = document.querySelector<HTMLButtonElement>('button[aria-label="Review pending actions"]');
+    if (!button) return;
+    openActionReview.disconnect();
+    button.click();
+  });
+  openActionReview.observe(document, { childList: true, subtree: true });
 }
 if (scenario.openSettings) {
   // There's no dedicated route for the Settings modal; open it the way an operator would, by
