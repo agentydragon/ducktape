@@ -13,7 +13,6 @@ Component, which the kustomization includes across the roots, overrides it at
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from cdk8s import App, Chart
@@ -43,31 +42,6 @@ _CONFIG_DIR = "/config"
 _CONFIG_FILE = "tokens.yaml"
 
 
-@dataclass(frozen=True)
-class _MintCredentials:
-    """An agent account's Forgejo username/password Secret in agents-infra, and the directory the
-    job mounts it at: the `credentials_dir` of that account's rotation."""
-
-    name: str
-    secret: str
-
-    @property
-    def volume(self) -> str:
-        return f"{self.name}-forgejo"
-
-    @property
-    def directory(self) -> Path:
-        return Path("/var/run/secrets/forgejo") / self.name
-
-
-# haku's and claude's are copies of what tf/gitops/haku-state and tf/gitops/forgejo-claude write
-# into the forgejo namespace (`chart`); tf/gitops/forgejo-agentydragon-repos writes
-# agent-box-codex's into agents-infra itself.
-_HAKU = _MintCredentials(name="haku", secret="forgejo-token-mint-haku")
-_CLAUDE = _MintCredentials(name="claude", secret="forgejo-token-mint-claude")
-_AGENT_BOX_CODEX = _MintCredentials(name="agent-box-codex", secret="forgejo-token-mint-agent-box-codex")
-_MINT_CREDENTIALS = (_HAKU, _CLAUDE, _AGENT_BOX_CODEX)
-
 # Forgejo API tokens for agent service accounts. Omitted `repositories` means full-account
 # repository access in Forgejo 15's token API; account-level grants still constrain what each
 # agent can do.
@@ -75,7 +49,7 @@ ROTATIONS = Config(
     rotations=[
         Rotation(
             name="haku",
-            credentials_dir=_HAKU.directory,
+            credentials_dir=Path("/var/run/secrets/forgejo/haku"),
             sops_file=Path("secrets/haku-forgejo-tea-token.yaml"),
             token_prefix="forgejo-tea-haku",
             tea_secret=TeaSecretOutput(
@@ -89,7 +63,7 @@ ROTATIONS = Config(
         ),
         Rotation(
             name="claude",
-            credentials_dir=_CLAUDE.directory,
+            credentials_dir=Path("/var/run/secrets/forgejo/claude"),
             sops_file=Path("secrets/claude-forgejo-tea-token.yaml"),
             token_prefix="forgejo-tea-claude",
             tea_secret=TeaSecretOutput(
@@ -100,12 +74,37 @@ ROTATIONS = Config(
         ),
         Rotation(
             name="agent-box-codex",
-            credentials_dir=_AGENT_BOX_CODEX.directory,
+            credentials_dir=Path("/var/run/secrets/forgejo/agent-box-codex"),
             sops_file=Path("secrets/agent-box-codex-forgejo-tea-token.yaml"),
             token_prefix="forgejo-tea-agent-box-codex",
         ),
     ]
 )
+
+# These two source Secrets live in the forgejo namespace and need ESO copies into
+# agents-infra. The agent-box-codex source is already created in agents-infra by
+# tf/gitops/forgejo-agentydragon-repos. Rotation has no Secret namespace field because
+# this is deployment wiring, not input read by the rotator; keep only that namespace
+# exception here, keyed by credentials_dir.name, and derive copied Secret names from the
+# model entries below.
+_FORGEJO_NAMESPACE_CREDENTIALS = frozenset({"haku", "claude"})
+
+
+def _unique_credentials(rotations: list[Rotation]) -> tuple[Rotation, ...]:
+    """One rotation per mounted credential directory, retaining first-use order."""
+    credentials: dict[Path, Rotation] = {}
+    for rotation in rotations:
+        credentials.setdefault(rotation.credentials_dir, rotation)
+    return tuple(credentials.values())
+
+
+def _credentials_secret(rotation: Rotation) -> str:
+    return f"forgejo-token-mint-{rotation.credentials_dir.name}"
+
+
+def _credentials_volume(rotation: Rotation) -> str:
+    return f"{rotation.credentials_dir.name}-forgejo"
+
 
 # The content hash in the ConfigMap's name rolls the CronJob's template on a roster change.
 CONFIG_MAP = ConfigMapArgs(
@@ -126,8 +125,10 @@ def _mount(name: str, path: str) -> k8s.VolumeMount:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     reader = secret_copy.reader(chart, _NAMESPACE)
-    secret_copy.secret_copy(chart, _HAKU.secret, reader=reader)
-    secret_copy.secret_copy(chart, _CLAUDE.secret, reader=reader)
+    credentials = _unique_credentials(ROTATIONS.rotations)
+    for rotation in credentials:
+        if rotation.credentials_dir.name in _FORGEJO_NAMESPACE_CREDENTIALS:
+            secret_copy.secret_copy(chart, _credentials_secret(rotation), reader=reader)
     k8s.KubeCronJob(
         chart,
         "cronjob",
@@ -167,7 +168,10 @@ def chart(app: App) -> Chart:
                                     name="rotations-config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name)
                                 ),
                                 _secret_volume("github-pat", _GITHUB_PAT),
-                                *(_secret_volume(c.volume, c.secret) for c in _MINT_CREDENTIALS),
+                                *(
+                                    _secret_volume(_credentials_volume(rotation), _credentials_secret(rotation))
+                                    for rotation in credentials
+                                ),
                             ],
                             security_context=k8s.PodSecurityContext(
                                 run_as_non_root=True,
@@ -185,7 +189,10 @@ def chart(app: App) -> Chart:
                                     volume_mounts=[
                                         _mount("rotations-config", _CONFIG_DIR),
                                         _mount("github-pat", "/var/run/secrets/github-pat"),
-                                        *(_mount(c.volume, str(c.directory)) for c in _MINT_CREDENTIALS),
+                                        *(
+                                            _mount(_credentials_volume(rotation), str(rotation.credentials_dir))
+                                            for rotation in credentials
+                                        ),
                                     ],
                                     resources=k8s.ResourceRequirements(
                                         requests={

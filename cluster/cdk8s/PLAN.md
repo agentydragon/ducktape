@@ -27,9 +27,10 @@ output path without creating two writers.
 
 Airlock's typed configuration is complete. Attic's rotator roster is now typed data built
 from the rotator's schema, with cdk8s generating its ConfigMap and directory Kustomization.
-Authentik now derives its CronJob credential mounts from the rotations' `credentials_dir`
-values; the remaining Forgejo wiring seam is described in the remainder backlog. Keep it
-separate rather than introducing a generic rotator framework.
+Authentik and Forgejo now derive their rotator wiring from each component's `ROTATIONS`
+model: Authentik mounts the referenced credential directories and derives probe Secret names,
+while Forgejo derives its mounted credentials and copied Secret names. The changes landed
+separately; do not add a generic rotator framework.
 Authentik blueprints need a separate ownership decision consistent with
 `cluster/docs/sso.md`; embedding their text in Python is not completion.
 
