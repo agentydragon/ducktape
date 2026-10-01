@@ -134,8 +134,8 @@ ducktapePkgs
       ;
   };
   # Haku's Claude-backed OpenClaw spike. Same Nix build mechanism as
-  # openclaw-image; the gateway is nix-openclaw's npm-package build pinned
-  # to the 2026.8.1 beta (nix-openclaw only tracks stable) -- see the file.
+  # openclaw-image; both images use the gateway and source metadata pinned by
+  # the shared nix-openclaw input in flake.lock.
   # Build: nix build .#haku-openclaw-spike-image
   # Load:  docker load < result
   haku-openclaw-spike-image = import ../../haku/openclaw_spike {
