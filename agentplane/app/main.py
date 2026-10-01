@@ -17,7 +17,13 @@ from fastapi import Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import StrictUndefined, Template
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
-from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
+from kubernetes_asyncio.client import (
+    ApiClient,
+    AuthenticationV1Api,
+    CoreV1Api,
+    CustomObjectsApi,
+    RbacAuthorizationV1Api,
+)
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -43,6 +49,8 @@ from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
+from agentplane.app.kubernetes_bindings import KubernetesBindings
+from agentplane.app.kubernetes_grants import KubernetesGrant
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -135,6 +143,9 @@ class AppSettingsConfig(BaseSettings):
     )
     sandbox_presets: dict[str, SandboxPreset] = Field(
         default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
+    )
+    kubernetes_grants: dict[str, KubernetesGrant] = Field(
+        default_factory=dict, description="Enabled Kubernetes binding templates; launch requests select names only."
     )
     agent_instructions: str | None = Field(
         default=None,
@@ -284,6 +295,7 @@ async def async_main(settings: Settings) -> None:
         inventory = SandboxInventory(
             namespace=settings.sandbox_namespace, custom_objects=custom_objects, core_v1=CoreV1Api(api)
         )
+        kubernetes_bindings = KubernetesBindings(inventory, RbacAuthorizationV1Api(api))
         egress = EgressInventory(
             namespace=settings.namespace, custom_objects=custom_objects, default_policies=settings.default_policies
         )
@@ -352,6 +364,8 @@ async def async_main(settings: Settings) -> None:
                     actions_service_url=settings.agent_actions_service_url,
                 ),
             ),
+            kubernetes_grants=settings.kubernetes_grants,
+            kubernetes_bindings=kubernetes_bindings,
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,
@@ -366,6 +380,7 @@ async def async_main(settings: Settings) -> None:
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         watch_task = asyncio.create_task(watch.run(), name="live-watch")
+        grants_task = asyncio.create_task(kubernetes_bindings.run(), name="kubernetes-grants-reconcile")
         try:
             await serve_then_close(
                 AppServer(
@@ -385,7 +400,8 @@ async def async_main(settings: Settings) -> None:
             )
         finally:
             watch_task.cancel()
-            await asyncio.gather(watch_task, return_exceptions=True)
+            grants_task.cancel()
+            await asyncio.gather(watch_task, grants_task, return_exceptions=True)
 
 
 async def serve_then_close(

@@ -14,7 +14,7 @@ use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use analysis::reports::owner_key;
-use analysis::{BindingKind, LogicalModule, LogicalModuleIndex, ModuleId, OwnerGraph};
+use analysis::{BindingKind, LogicalModuleIndex, ModuleId, OwnerGraph, PlannedModule};
 
 /// Per-chunk inputs + IR + input-derived caches.
 ///
@@ -29,7 +29,7 @@ use analysis::{BindingKind, LogicalModule, LogicalModuleIndex, ModuleId, OwnerGr
 pub struct ChunkAnalysis {
     chunk_id: String,
     bindings: HashMap<Id, BindingKind>,
-    logical_modules: Vec<LogicalModule>,
+    logical_modules: Vec<PlannedModule>,
     owner_graph: OwnerGraph,
     owner_report_ids_by_binding: HashMap<Id, Vec<String>>,
     binding_lookup_by_id: HashMap<Id, BindingLookupInfo>,
@@ -56,7 +56,7 @@ impl ChunkAnalysis {
         chunk_id: String,
         owner_graph: OwnerGraph,
         bindings: HashMap<Id, BindingKind>,
-        logical_modules: Vec<LogicalModule>,
+        logical_modules: Vec<PlannedModule>,
         chunk_renames: &HashMap<Id, Atom>,
     ) -> Self {
         let owner_report_ids_by_binding = build_owner_report_ids_by_binding(&owner_graph);
@@ -84,7 +84,7 @@ impl ChunkAnalysis {
         &self.bindings
     }
 
-    pub fn logical_modules(&self) -> &[LogicalModule] {
+    pub fn logical_modules(&self) -> &[PlannedModule] {
         &self.logical_modules
     }
 
@@ -106,7 +106,7 @@ impl ChunkAnalysis {
     /// every wire artifact (`owner_graph.json` module table,
     /// `cycles.json`, `atomic_unit_conflicts.json`) and diagnostic
     /// uses to denote this module. Parses the in-process
-    /// `LogicalModule.id` (`"<chunk_id>::<path>"`) down to the clean
+    /// `PlannedModule.id` (`"<chunk_id>::<path>"`) down to the clean
     /// path; panics on an out-of-range id or unparseable identity —
     /// both are pipeline bugs, not user errors.
     pub fn module_path(&self, id: ModuleId) -> spec::ModulePath {
@@ -135,7 +135,7 @@ impl ChunkAnalysis {
     }
 
     /// Lookup a logical module by index.
-    pub fn logical_module(&self, idx: LogicalModuleIndex) -> Option<&LogicalModule> {
+    pub fn logical_module(&self, idx: LogicalModuleIndex) -> Option<&PlannedModule> {
         self.logical_modules.get(idx.0)
     }
 
@@ -187,7 +187,7 @@ fn build_owner_report_ids_by_binding(owner_graph: &OwnerGraph) -> HashMap<Id, Ve
 fn build_binding_lookup_by_id(
     bindings: &HashMap<Id, BindingKind>,
     chunk_renames: &HashMap<Id, Atom>,
-    logical_modules: &[LogicalModule],
+    logical_modules: &[PlannedModule],
 ) -> HashMap<Id, BindingLookupInfo> {
     let mut out = HashMap::with_capacity(bindings.len() + chunk_renames.len());
     for (id, kind) in bindings {

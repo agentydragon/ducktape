@@ -120,12 +120,12 @@ pub enum BindingKind {
     },
 }
 
-/// A logical module produced by the spec for the current chunk.
+/// A planned module produced from the spec for the current chunk.
 /// Projection of `ModulePlan` carrying the fields downstream emit
 /// helpers consume (`cross_module_imports_for_body`,
 /// `source_chunk_imports_for_moved_body`, etc.).
 #[derive(Debug, Clone)]
-pub struct LogicalModule {
+pub struct PlannedModule {
     pub id: String,
     /// Chunk-relative path the module emits to (e.g. `"runtime/foo.js"`).
     pub target_file: String,

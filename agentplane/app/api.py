@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
@@ -72,14 +73,25 @@ from agentplane.app.egress import (
     UnknownPolicyError,
 )
 from agentplane.app.electric import ElectricProxy, router as electric_router
-from agentplane.app.identity import CallerIdentity, TokenReviewer, require_caller
+from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
 from agentplane.app.inventory import (
+    KUBERNETES_GRANTS_ANNOTATION,
     SANDBOX_BINDING_ANNOTATION,
     NewSandbox,
     SandboxInventory,
     SandboxNotFoundError,
     SandboxRunningError,
     SandboxView,
+)
+from agentplane.app.kubernetes_bindings import KubernetesBindings
+from agentplane.app.kubernetes_grants import (
+    DuplicateKubernetesGrantError,
+    KubernetesGrant,
+    KubernetesGrantView,
+    RoleBindingGrant,
+    UnknownKubernetesGrantError,
+    grant_views,
+    resolve_grants,
 )
 from agentplane.app.live import LiveIndex, Updates, router as live_router
 from agentplane.app.oidc import OIDCSettings, build_oauth
@@ -173,6 +185,14 @@ async def list_presets(presets: Presets) -> list[SandboxPresetView]:
     return presets.views()
 
 
+kubernetes_grants_router = APIRouter(prefix="/kubernetes-grants", tags=["kubernetes-grants"])
+
+
+@kubernetes_grants_router.get("")
+async def list_kubernetes_grants(request: Request) -> list[KubernetesGrantView]:
+    return grant_views(request.app.state.kubernetes_grants)
+
+
 def _inventory(request: Request) -> SandboxInventory:
     inventory = request.app.state.inventory
     if not isinstance(inventory, SandboxInventory):
@@ -226,9 +246,20 @@ async def list_templates(inventory: Inventory) -> list[str]:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(
-    inventory: Inventory, egress: Egress, action_policy: ActionPolicy, spec: NewSandbox
+    request: Request,
+    inventory: Inventory,
+    egress: Egress,
+    action_policy: ActionPolicy,
+    spec: NewSandbox,
+    caller: Annotated[CallerIdentity, Depends(require_caller)],
 ) -> SandboxView:
     """Create exactly the fields the caller selected; browser presets have already filled them."""
+    grants = resolve_grants(spec.kubernetes_grants, request.app.state.kubernetes_grants)
+    if grants and caller.kind is not CallerKind.OPERATOR:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Kubernetes grant selection requires an operator session")
+    bindings: KubernetesBindings | None = request.app.state.kubernetes_bindings
+    if grants and bindings is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Kubernetes grant provisioning is unavailable")
     policies = egress.launch_policies(spec.policies)
     await egress.require_policies(policies)
     await action_policy.require_policy_sets(spec.action_policy_sets)
@@ -237,14 +268,20 @@ async def create_sandbox(
         if spec.thread_defaults is not None or spec.bootstrap
         else None
     )
-    annotations = (
-        {SANDBOX_BINDING_ANNOTATION: binding.model_dump_json(exclude_none=True)} if binding is not None else None
-    )
-    view = await inventory.create(spec, annotations=annotations)
+    annotations = {}
+    if binding is not None:
+        annotations[SANDBOX_BINDING_ANNOTATION] = binding.model_dump_json(exclude_none=True)
+    if grants:
+        annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([grant.model_dump(mode="json") for grant in grants])
+    view = await inventory.create(spec, annotations=annotations or None)
     if policies:
         await egress.grant(view, policies)
     if spec.action_policy_sets:
         await action_policy.bind(view, spec.action_policy_sets)
+    if grants:
+        assert bindings is not None
+        await bindings.ensure(view)
+        view = await inventory.get(view.name)
     return view
 
 
@@ -941,6 +978,8 @@ def create_app(
     presets: PresetCatalog | None = None,
     operator_actions: FederatedOperatorActions | None = None,
     electric: ElectricProxy | None = None,
+    kubernetes_grants: dict[str, KubernetesGrant] | None = None,
+    kubernetes_bindings: KubernetesBindings | None = None,
     *,
     event_logs: EventLogStore,
     content: ContentStore,
@@ -952,14 +991,33 @@ def create_app(
     if set(catalog.harnesses) != set(Harness) or not all(catalog.harnesses.values()):
         raise ValueError(f"the model catalog needs a non-empty list for every harness: {catalog=}")
     configured_presets = presets or PresetCatalog()
-    for name, preset in configured_presets.threads.items():
-        if preset.model not in catalog.harnesses[preset.harness]:
-            raise ValueError(f"ThreadPreset {name!r} names model {preset.model!r} outside the configured catalog")
-        option = next(option for option in catalog.models if option.model == preset.model)
-        if preset.reasoning_effort is not None and preset.reasoning_effort not in option.reasoning_efforts:
+    configured_grants = kubernetes_grants or {}
+    grant_views(configured_grants)  # validate catalog keys before serving requests
+    for name, grant in configured_grants.items():
+        if (
+            not isinstance(grant, RoleBindingGrant)
+            or grant.namespace != inventory.namespace
+            or grant.role_ref.kind != "Role"
+        ):
+            raise ValueError(f"Kubernetes grant {name!r} needs a binding scope not supported by this release")
+    for name, preset in configured_presets.sandboxes.items():
+        try:
+            resolve_grants(preset.kubernetes_grants, configured_grants)
+        except (UnknownKubernetesGrantError, DuplicateKubernetesGrantError) as error:
+            raise ValueError(f"SandboxPreset {name!r}: {error}") from error
+    for thread_preset_name, thread_preset in configured_presets.threads.items():
+        if thread_preset.model not in catalog.harnesses[thread_preset.harness]:
             raise ValueError(
-                f"ThreadPreset {name!r} reasoning effort {preset.reasoning_effort!r} "
-                f"is not supported by {preset.model!r}"
+                f"ThreadPreset {thread_preset_name!r} names model {thread_preset.model!r} outside the configured catalog"
+            )
+        option = next(option for option in catalog.models if option.model == thread_preset.model)
+        if (
+            thread_preset.reasoning_effort is not None
+            and thread_preset.reasoning_effort not in option.reasoning_efforts
+        ):
+            raise ValueError(
+                f"ThreadPreset {thread_preset_name!r} reasoning effort {thread_preset.reasoning_effort!r} "
+                f"is not supported by {thread_preset.model!r}"
             )
     app = FastAPI(title="Agentplane", version="0")
     app.state.inventory = inventory
@@ -971,6 +1029,8 @@ def create_app(
     app.state.operator_sessions = operator_sessions
     app.state.models = catalog
     app.state.presets = configured_presets
+    app.state.kubernetes_grants = configured_grants
+    app.state.kubernetes_bindings = kubernetes_bindings
     app.state.egress = egress
     app.state.action_policy = action_policy
     app.state.decisions = decisions
@@ -986,6 +1046,7 @@ def create_app(
         router,
         models,
         preset_router,
+        kubernetes_grants_router,
         runner_bridge.router,
         threads,
         actions_router,
@@ -1071,6 +1132,14 @@ def create_app(
 
     @app.exception_handler(UnknownPolicySetError)
     async def _unknown_policy_set(_request: Request, error: UnknownPolicySetError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
+
+    @app.exception_handler(UnknownKubernetesGrantError)
+    async def _unknown_kubernetes_grant(_request: Request, error: UnknownKubernetesGrantError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
+
+    @app.exception_handler(DuplicateKubernetesGrantError)
+    async def _duplicate_kubernetes_grant(_request: Request, error: DuplicateKubernetesGrantError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
     @app.exception_handler(SandboxNotReachableError)

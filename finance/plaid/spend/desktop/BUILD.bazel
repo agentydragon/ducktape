@@ -1,13 +1,60 @@
 # gazelle:ignore
 load("@rules_python//python:packaging.bzl", "py_wheel")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "credentials",
+    srcs = ["credentials.py"],
+)
+
+py_library(
+    name = "oauth",
+    srcs = ["oauth.py"],
+    deps = [
+        ":credentials",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "daemon",
+    srcs = ["daemon.py"],
+    deps = [
+        ":credentials",
+        ":oauth",
+        "@pypi//dbus_next",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    deps = [
+        "@pypi//babel",
+        "@pypi//dbus_next",
+    ],
+)
+
+py_binary(
+    name = "plaid_spend_cli",
+    main_module = "finance.plaid.spend.desktop.cli",
+    visibility = ["//visibility:public"],
+    deps = [":cli"],
+)
+
+py_library(
+    name = "package_init",
+    srcs = ["__init__.py"],
+)
 
 py_wheel(
     name = "plaid_spend_desktop_wheel",
     distribution = "plaid-spend-desktop",
     entry_points = {
         "console_scripts": [
-            "plaid-spend = plaid_spend_desktop.cli:main",
-            "plaid-spend-daemon = plaid_spend_desktop.daemon:main",
+            "plaid-spend = spend.desktop.cli:main",
+            "plaid-spend-daemon = spend.desktop.daemon:main",
         ],
     },
     python_requires = ">=3.14",
@@ -16,14 +63,14 @@ py_wheel(
         "dbus-next>=0.2.3",
         "httpx>=0.27.0",
     ],
-    strip_path_prefixes = ["finance/plaid/spend/desktop/"],
+    strip_path_prefixes = ["finance/plaid/"],
     version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [
-        "//finance/plaid/spend/desktop/plaid_spend_desktop:cli",
-        "//finance/plaid/spend/desktop/plaid_spend_desktop:credentials",
-        "//finance/plaid/spend/desktop/plaid_spend_desktop:daemon",
-        "//finance/plaid/spend/desktop/plaid_spend_desktop:oauth",
-        "//finance/plaid/spend/desktop/plaid_spend_desktop:package_init",
+        ":cli",
+        ":credentials",
+        ":daemon",
+        ":oauth",
+        ":package_init",
     ],
 )

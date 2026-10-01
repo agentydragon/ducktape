@@ -18,7 +18,7 @@ plaid-spend login       # start Authentik sign-in in the browser
 From the repository, run the same CLI with:
 
 ```sh
-bazelisk run //finance/plaid/spend/desktop/plaid_spend_desktop:plaid_spend_cli
+bazelisk run //finance/plaid/spend/desktop:plaid_spend_cli
 ```
 
 The CLI reads the same view and status over the session D-Bus interface as the panel extension. OAuth tokens remain owned by the daemon and stored in Secret Service.

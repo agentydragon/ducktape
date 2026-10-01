@@ -54,6 +54,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
+from agentplane.app.kubernetes_grants import RoleBindingGrant
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
@@ -61,7 +62,7 @@ from cluster.cdk8s.agentplane import actions, database, egress, electric, llm_in
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
-from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
@@ -173,6 +174,29 @@ class App(Construct):
 
     def _add_rbac(self, app_service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
+        role_binding_grant_names = sorted(
+            {
+                grant.role_ref.name
+                for grant in self.env.app_config.kubernetes_grants.values()
+                if (
+                    isinstance(grant, RoleBindingGrant)
+                    and grant.namespace == namespace
+                    and grant.role_ref.kind == "Role"
+                )
+            }
+        )
+        role_binding_rules: list[RolePolicyRule] = []
+        if role_binding_grant_names:
+            role_binding_rules.append(
+                RolePolicyRule(
+                    resources=[custom_resource("rbac.authorization.k8s.io", "rolebindings")],
+                    verbs=["create", "get", "list", "delete"],
+                )
+            )
+            role_binding_rules.extend(
+                RolePolicyRule(resources=[named_resource("rbac.authorization.k8s.io", "roles", name)], verbs=["bind"])
+                for name in role_binding_grant_names
+            )
         # TokenReview proves a Bearer token the app itself was handed. Creating a
         # review grants none of the reviewed identity's authority.
         token_reviewer_cluster_rbac(
@@ -222,6 +246,7 @@ class App(Construct):
                     resources=[custom_resource("agentplane.allegedly.works", "actionpolicybindings")],
                     verbs=["create", "delete"],
                 ),
+                *role_binding_rules,
             ],
         )
         RoleBinding(

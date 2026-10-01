@@ -45,8 +45,8 @@
       "sha256": "QEkhch/PGM7nW1BsP5K8MYMdT0FlzOXLRSiBYeZdZaw="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-e8e9014f1b03/debundle",
-      "sha256": "6OkBTxsDmLbbSRId/E5JE5WOgIUjiKgpeUpw9j2CA9E="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-5ebbf5b67d59/debundle",
+      "sha256": "Xrv1tn1ZpCpm+KkKHUwnND8dnvrMs5uIL0avSG37Vik="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-dd6165877050/cluster_health.skill",
@@ -237,11 +237,11 @@
       "sha256": "ehEEqt+2TQPSBsA/KugNUtehlLVNeWkdFlugUmDWZOk="
     },
     "plaid-spend-desktop": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-d6517d874eee/plaid_spend_desktop-0.1.0-py3-none-any.whl",
-      "sha256": "woee35FvHU7oMvAIAmBL6PMUmwWQNMzOpYpVfS7fXeM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-c72295014f06/plaid_spend_desktop-0.1.0-py3-none-any.whl",
+      "sha256": "TJMLh5ySMS3wSOZA/T8xt80hm6fIyCyoqVfLiNKRKjA="
     },
     "plaid-spend-desktop-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-d6517d874eee/plaid-spend-desktop.zip",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-c72295014f06/plaid-spend-desktop.zip",
       "sha256": "f6iVxrYVAWdIsIWSF4DpaXidu/ag0VcZ1KrTMUTE2kI="
     }
   }

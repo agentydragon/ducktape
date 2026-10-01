@@ -997,7 +997,7 @@ pub fn is_residual_module_path(module_path: &str) -> bool {
 ///
 /// [`parse`] is the only constructor, so the several historical
 /// spellings of one module (clean spec path, chunk-prefixed
-/// `LogicalModule.id`, report label) collapse to one value and `==` is
+/// `PlannedModule.id`, report label) collapse to one value and `==` is
 /// an honest identity test.
 ///
 /// [`parse`]: ModulePath::parse
@@ -1021,7 +1021,7 @@ impl<'de> serde::Deserialize<'de> for ModulePath {
 impl ModulePath {
     /// Normalize an untrusted module identifier into canonical form.
     ///
-    /// A leading `"<chunk_id>::"` (the production `LogicalModule.id`
+    /// A leading `"<chunk_id>::"` (the production `PlannedModule.id`
     /// spelling) is stripped so it collapses onto the clean path; pass
     /// `""` for `chunk_id` when the value is already a clean path.
     /// Rejects what can't be a relative module path: backslashes,

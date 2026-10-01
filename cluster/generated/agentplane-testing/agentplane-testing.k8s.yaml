@@ -1333,6 +1333,21 @@ data:
     current-context: in-cluster
 immutable: false
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-sandbox-tool-config-reader
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-sandbox-tool-config
+    resources:
+      - configmaps
+    verbs:
+      - get
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -1621,6 +1636,7 @@ data:
           if [ ! -f "$marker" ]; then
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
+    kubernetes_grants: {}
     default_policies:
       - basic
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081

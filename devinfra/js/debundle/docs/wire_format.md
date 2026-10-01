@@ -97,7 +97,7 @@ table's `path`, and the active-claim lookup all denote a module by
 this same value.
 
 `ModulePath::parse` is the only constructor: it strips a leading
-`"<chunk_id>::"` (the in-process `LogicalModule.id` spelling minted in
+`"<chunk_id>::"` (the in-process `PlannedModule.id` spelling minted in
 `lowering/plans.rs`), lowercases, and normalizes separators. Two
 spellings of one module therefore collapse to a single value, so `==`
 is an honest identity test — this is what makes the peel factorizer's
@@ -134,7 +134,7 @@ key string.
 
 Every artifact outside `owner_graph.json` denotes modules by
 canonical `ModulePath` — never by interned key, and never by the
-in-process `"<chunk_id>::<path>"` spelling (`LogicalModule.id`,
+in-process `"<chunk_id>::<path>"` spelling (`PlannedModule.id`,
 which exists only in memory). Per-chunk files use the bare path (the
 chunk is implicit); tree-wide files qualify it with the chunk id as
 a `ModuleRef { chunk_id, path }` object.

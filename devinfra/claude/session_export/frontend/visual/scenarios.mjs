@@ -1,5 +1,13 @@
 const SYNC_READY = ["#overview-heading", "#pairing-heading"];
-const VIEWER_READY = ["#session-viewer-title", '[data-fold-kind="tool"]', '[data-fold-kind="activity"]'];
+const VIEWER_READY = [
+  "#session-viewer-title",
+  '[data-fold-kind="tool-run"][data-tool-count="5"]',
+  '[data-tool-name="Bash"]',
+  '[data-tool-name="Grep"]',
+  '[data-tool-name="Glob"]',
+  '[data-tool-name="Read"]',
+  '[data-tool-name="Task"]',
+];
 
 export const SCENARIOS = {
   SessionViewer: { element: "#app", readySelectors: VIEWER_READY },

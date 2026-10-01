@@ -27,7 +27,13 @@ import {
   type SessionEvent,
   type SessionSummary,
 } from "./api";
-import { foldSessionEvents, transcriptEventTime, type TranscriptItem } from "./transcript";
+import {
+  foldSessionEvents,
+  transcriptEventTime,
+  type TranscriptItem,
+  type TranscriptToolCall,
+  type TranscriptToolRun,
+} from "./transcript";
 
 type StatusFilter = "all" | "active" | "paused" | "archived";
 type WatchStatus = "connecting" | "connected" | "reconnecting";
@@ -96,14 +102,169 @@ function SessionRow({
   );
 }
 
-function toolInputSummary(input: unknown): string | null {
-  if (typeof input === "string") return input;
-  if (typeof input !== "object" || input === null || Array.isArray(input)) return null;
-  const record = input as Record<string, unknown>;
-  for (const key of ["file_path", "path", "command", "query", "pattern", "url"]) {
-    if (typeof record[key] === "string") return record[key] as string;
+function inputRecord(input: unknown): Record<string, unknown> | null {
+  return typeof input === "object" && input !== null && !Array.isArray(input)
+    ? (input as Record<string, unknown>)
+    : null;
+}
+
+function toolAction(tool: TranscriptToolCall): { label: string; value: string; code: boolean } | null {
+  const input = inputRecord(tool.input);
+  if (typeof tool.input === "string") return { label: "Input", value: tool.input, code: true };
+  if (input === null) return null;
+
+  const field = (key: string): string | null => (typeof input[key] === "string" ? (input[key] as string) : null);
+  if (tool.name === "Bash" || tool.name === "bash") {
+    const command = field("command");
+    if (command !== null) return { label: "Command", value: command, code: true };
   }
-  return Object.keys(record).length === 0 ? null : JSON.stringify(record, null, 2);
+  if (["Read", "Write", "Edit", "MultiEdit", "NotebookEdit"].includes(tool.name)) {
+    const path = field("file_path") ?? field("path");
+    if (path !== null) return { label: "File", value: path, code: true };
+  }
+  if (tool.name === "Grep" || tool.name === "Glob") {
+    const pattern = field("pattern");
+    const path = field("path") ?? field("glob");
+    if (pattern !== null || path !== null) {
+      return {
+        label: tool.name === "Grep" ? "Search" : "Match",
+        value: [pattern, path].filter(Boolean).join(" · "),
+        code: true,
+      };
+    }
+  }
+  if (tool.name === "WebSearch") {
+    const query = field("query");
+    if (query !== null) return { label: "Search", value: query, code: false };
+  }
+  if (tool.name === "WebFetch") {
+    const url = field("url");
+    if (url !== null) return { label: "URL", value: url, code: true };
+  }
+  if (tool.name === "Task" || tool.name === "Agent") {
+    const description = field("description") ?? field("name") ?? field("prompt");
+    if (description !== null) return { label: "Task", value: description, code: false };
+  }
+  for (const [key, label] of [
+    ["command", "Command"],
+    ["file_path", "File"],
+    ["path", "Path"],
+    ["query", "Query"],
+    ["pattern", "Pattern"],
+    ["url", "URL"],
+    ["description", "Description"],
+  ]) {
+    const value = field(key);
+    if (value !== null)
+      return { label, value, code: label === "Command" || label === "File" || label === "Path" || label === "URL" };
+  }
+  return null;
+}
+
+function toolArguments(tool: TranscriptToolCall): string | null {
+  if (tool.input === null || tool.input === undefined) return null;
+  return typeof tool.input === "string" ? tool.input : JSON.stringify(tool.input, null, 2);
+}
+
+function toolStatusColor(status: string): "green" | "yellow" | "red" | "gray" {
+  if (status === "complete" || status === "completed") return "green";
+  if (status === "running") return "yellow";
+  if (status === "error" || status === "denied" || status === "failed") return "red";
+  return "gray";
+}
+
+function ToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
+  return (
+    <Stack gap="sm">
+      {item.tools.map((tool, index) => {
+        const action = toolAction(tool);
+        const args = toolArguments(tool);
+        return (
+          <Paper key={tool.toolUseId} withBorder radius="sm" p="sm" data-tool-name={tool.name}>
+            <Stack gap="xs">
+              <Group justify="space-between" align="center" gap="xs">
+                <Group gap="xs">
+                  <Text size="sm" fw={600}>
+                    {tool.name}
+                  </Text>
+                  <Badge variant="dot" color={toolStatusColor(tool.status)}>
+                    {tool.status}
+                  </Badge>
+                  {tool.policyDenied && (
+                    <Badge color="red" variant="light">
+                      Permission denied
+                    </Badge>
+                  )}
+                </Group>
+                <Text size="xs" c="dimmed">
+                  {index + 1} of {item.tools.length}
+                </Text>
+              </Group>
+              {action !== null && (
+                <Stack gap={4}>
+                  <Text size="xs" c="dimmed">
+                    {action.label}
+                  </Text>
+                  {action.code ? (
+                    <Code block>{action.value}</Code>
+                  ) : (
+                    <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                      {action.value}
+                    </Text>
+                  )}
+                </Stack>
+              )}
+              {tool.progress !== undefined && (
+                <Text size="sm" c="dimmed">
+                  {tool.progress}
+                </Text>
+              )}
+              {tool.summary !== undefined && <Text size="sm">{tool.summary}</Text>}
+              {tool.result !== undefined && (
+                <Stack gap={4}>
+                  <Text size="xs" c="dimmed">
+                    {tool.failed ? "Error output" : "Output"}
+                  </Text>
+                  <Code block style={{ maxHeight: 240, overflow: "auto", whiteSpace: "pre-wrap" }}>
+                    {tool.result}
+                  </Code>
+                </Stack>
+              )}
+              {tool.tasks.map((task) => (
+                <Paper key={task.taskId} withBorder radius="xs" p="xs" bg="var(--mantine-color-default-hover)">
+                  <Group justify="space-between" align="center" gap="xs">
+                    <Text size="sm" fw={500}>
+                      {task.title}
+                    </Text>
+                    <Badge size="xs" variant="light" color={toolStatusColor(task.status)}>
+                      {task.status}
+                    </Badge>
+                  </Group>
+                  {task.detail !== undefined && (
+                    <Text size="xs" c="dimmed" mt={4}>
+                      {task.detail}
+                    </Text>
+                  )}
+                </Paper>
+              ))}
+              {args !== null && (
+                <Accordion variant="default" radius="sm">
+                  <Accordion.Item value="arguments">
+                    <Accordion.Control>Tool input</Accordion.Control>
+                    <Accordion.Panel>
+                      <ScrollArea type="auto" mah={240}>
+                        <Code block>{args}</Code>
+                      </ScrollArea>
+                    </Accordion.Panel>
+                  </Accordion.Item>
+                </Accordion>
+              )}
+            </Stack>
+          </Paper>
+        );
+      })}
+    </Stack>
+  );
 }
 
 function rawEvents(item: TranscriptItem): string {
@@ -126,36 +287,45 @@ function TranscriptCard({ item }: { item: TranscriptItem }): JSX.Element {
       ? item.role === "user"
         ? "You"
         : "Claude"
-      : item.kind === "tool"
-        ? item.name
+      : item.kind === "tool-run"
+        ? item.tools.length === 1
+          ? (item.tools[0]?.name ?? "Tool")
+          : "Tool run"
         : item.kind === "activity"
           ? item.title
           : item.kind === "thinking"
             ? "Thinking"
             : item.title;
   const color =
-    item.kind === "message" ? (item.role === "user" ? "blue" : "violet") : item.kind === "tool" ? "cyan" : "gray";
+    item.kind === "message" ? (item.role === "user" ? "blue" : "violet") : item.kind === "tool-run" ? "cyan" : "gray";
   return (
-    <Paper component="article" aria-label={title} data-fold-kind={item.kind} withBorder radius="sm" p="md">
+    <Paper
+      component="article"
+      aria-label={title}
+      data-fold-kind={item.kind}
+      data-tool-count={item.kind === "tool-run" ? item.tools.length : undefined}
+      withBorder
+      radius="sm"
+      p="md"
+    >
       <Stack gap="sm">
         <Group justify="space-between" align="center" gap="xs">
           <Group gap="xs">
             <Badge variant="light" color={color}>
               {title}
             </Badge>
-            {item.kind === "tool" && (
-              <Badge
-                variant="dot"
-                color={item.status === "error" ? "red" : item.status === "complete" ? "green" : "yellow"}
-              >
-                {item.status}
-              </Badge>
+            {item.kind === "tool-run" && (
+              <>
+                <Badge variant="light" color="cyan">
+                  {item.tools.length} {item.tools.length === 1 ? "tool" : "tools"}
+                </Badge>
+                <Badge variant="dot" color={toolStatusColor(item.status)}>
+                  {item.status}
+                </Badge>
+              </>
             )}
             {item.kind === "activity" && (
-              <Badge
-                variant="dot"
-                color={item.status === "completed" ? "green" : item.status === "failed" ? "red" : "yellow"}
-              >
+              <Badge variant="dot" color={toolStatusColor(item.status)}>
                 {item.status}
               </Badge>
             )}
@@ -171,16 +341,7 @@ function TranscriptCard({ item }: { item: TranscriptItem }): JSX.Element {
             {item.text}
           </Text>
         )}
-        {item.kind === "tool" && (
-          <Stack gap="xs">
-            {toolInputSummary(item.input) !== null && <Code block>{toolInputSummary(item.input)}</Code>}
-            {item.result !== undefined && (
-              <Text size="sm" lineClamp={8} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                {item.result}
-              </Text>
-            )}
-          </Stack>
-        )}
+        {item.kind === "tool-run" && <ToolRun item={item} />}
         {item.kind === "activity" && item.detail !== undefined && (
           <Text size="sm" c="dimmed">
             {item.detail}

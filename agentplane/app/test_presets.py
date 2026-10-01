@@ -41,6 +41,7 @@ def test_sandbox_preset_expands_to_fields_the_operator_can_set_individually(pres
         "template": "runner",
         "policies": ["github-agentydragon-agent"],
         "action_policy_sets": [],
+        "kubernetes_grants": [],
         "thread_defaults": {
             "harness": "HARNESS_CODEX",
             "model": "preset-model",

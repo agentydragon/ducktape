@@ -10,8 +10,8 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
     AnalysisHints, AtomicUnitConflict, BindingKind, DepKind, KnownEffect, LocalEffectPolicy,
-    LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
-    OwnerGraphOptions, RedundantPurityHint, top_level_id,
+    LogicalModuleIndex, ModuleId, OwnerGraphAndUnits, OwnerGraphOptions, PlannedModule,
+    RedundantPurityHint, top_level_id,
 };
 use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
 use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};

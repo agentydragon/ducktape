@@ -40,6 +40,9 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
     operating_mode: "Running",
     service_account: { namespace: "agentplane-test", name },
     conditions: [],
+    kubernetes_grants: [],
+    kubernetes_grants_ready: true,
+    kubernetes_grant_error: null,
     ...overrides,
   };
 }

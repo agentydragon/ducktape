@@ -26,6 +26,7 @@ import {
   models,
   modelsForHarness,
   type Condition,
+  type KubernetesGrantView,
   type ModelCatalog,
   type NewSandbox,
   type SandboxPresetView,
@@ -37,7 +38,14 @@ import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 import { StaleNotice } from "./stream_status";
 
-const EMPTY_FORM: NewSandbox = { slug: "", template: "", policies: [], action_policy_sets: [], bootstrap: "" };
+const EMPTY_FORM: NewSandbox = {
+  slug: "",
+  template: "",
+  policies: [],
+  action_policy_sets: [],
+  kubernetes_grants: [],
+  bootstrap: "",
+};
 const EMPTY_THREAD: ThreadDefaults = {};
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
@@ -49,6 +57,7 @@ function hasThreadDefaults(defaults: ThreadDefaults): boolean {
 export const STATE_COLORS: Record<string, string> = {
   running: "green",
   suspended: "gray",
+  waiting_for_grants: "yellow",
   waiting_for_pod: "yellow",
   waiting_for_pod_ready: "yellow",
 };
@@ -60,6 +69,8 @@ function conditionLine({ type, status, reason, message }: Condition): string {
 /** The State badge's hover detail: the Sandbox's own conditions, then the Pod's phase and containers. */
 export function stateDetail(row: SandboxView): string {
   const lines = row.conditions.map(conditionLine);
+  if (!row.kubernetes_grants_ready) lines.push("Kubernetes grants are still being applied");
+  if (row.kubernetes_grant_error) lines.push(`Kubernetes grant error: ${row.kubernetes_grant_error}`);
   if (row.pod) {
     lines.push(
       [`Pod ${row.pod.phase ?? "unknown"}`, row.pod.reason, row.pod.message].filter((part) => part).join(" · ")
@@ -99,6 +110,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
   const [presets, setPresets] = useState<SandboxPresetView[]>([]);
+  const [kubernetesGrantOptions, setKubernetesGrantOptions] = useState<KubernetesGrantView[]>([]);
+  const [kubernetesGrantCatalogState, setKubernetesGrantCatalogState] = useState<"loading" | "ready" | "error">(
+    "loading"
+  );
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [thread, setThread] = useState<ThreadDefaults>(EMPTY_THREAD);
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
@@ -120,7 +135,14 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   function pickPreset(preset: SandboxPresetView | null): void {
     setSelectedPreset(preset?.name ?? null);
     if (!preset) {
-      setForm((current) => ({ ...current, template: "", policies: [], action_policy_sets: [], bootstrap: "" }));
+      setForm((current) => ({
+        ...current,
+        template: "",
+        policies: [],
+        action_policy_sets: [],
+        kubernetes_grants: [],
+        bootstrap: "",
+      }));
       setThread(EMPTY_THREAD);
       return;
     }
@@ -129,6 +151,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       template: preset.template,
       policies: preset.policies,
       action_policy_sets: preset.action_policy_sets,
+      kubernetes_grants: preset.kubernetes_grants,
       bootstrap: preset.bootstrap,
     }));
     setThread(preset.thread_defaults);
@@ -149,6 +172,14 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       const { data: setViews, error: setFailure } = await api.GET("/action-policy/sets");
       if (setFailure) setError(displayableError(setFailure));
       else setPolicySets(setViews);
+      const { data: grantViews, error: grantFailure } = await api.GET("/kubernetes-grants");
+      if (grantFailure) {
+        setError(displayableError(grantFailure));
+        setKubernetesGrantCatalogState("error");
+      } else {
+        setKubernetesGrantOptions(grantViews);
+        setKubernetesGrantCatalogState("ready");
+      }
       const { data: presetViews } = await api.GET("/presets");
       setPresets(presetViews ?? []);
       const { data: templateNames, error: templateFailure } = await api.GET("/sandboxes/templates");
@@ -195,6 +226,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       setForm(EMPTY_FORM);
       setSelectedPreset(null);
       setThread(EMPTY_THREAD);
+      const params = new URLSearchParams(searchParams);
+      params.delete(PRESET_PARAM);
+      setSearchParams(params, { replace: true });
       setError(null);
       onOpen(data.name);
     }
@@ -265,11 +299,33 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           onChange={(picked) => setForm({ ...form, action_policy_sets: picked })}
           style={{ flex: "1 1 12rem" }}
         />
+        <MultiSelect
+          label="Kubernetes grants"
+          description="Roles bound to this sandbox's ServiceAccount"
+          data={kubernetesGrantOptions.map((grant) => ({
+            value: grant.name,
+            label: `${grant.name} · ${grant.kind} · ${grant.namespace ? `namespace ${grant.namespace}` : "cluster"} → ${grant.role_ref.kind}/${grant.role_ref.name}`,
+          }))}
+          value={form.kubernetes_grants ?? []}
+          onChange={(picked) => setForm({ ...form, kubernetes_grants: picked })}
+          disabled={kubernetesGrantCatalogState !== "ready"}
+          placeholder={
+            kubernetesGrantCatalogState === "ready"
+              ? kubernetesGrantOptions.length > 0
+                ? "Select Kubernetes grants"
+                : "No Kubernetes grants available"
+              : kubernetesGrantCatalogState === "loading"
+                ? "Loading Kubernetes grants…"
+                : "Could not load Kubernetes grants"
+          }
+          style={{ flex: "1 1 18rem" }}
+        />
         <Button
           onClick={() => void create()}
           disabled={
             !form.slug ||
             !form.template ||
+            kubernetesGrantCatalogState !== "ready" ||
             Boolean(selectedPreset && (!thread.model || !modelOptions.some((option) => option.model === thread.model)))
           }
         >

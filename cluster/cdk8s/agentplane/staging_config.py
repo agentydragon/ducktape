@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agentplane.app.action_federation import ActionFederationSettings
+from agentplane.app.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import Harness, SandboxPreset, ThreadPreset
 from cluster.cdk8s.agentplane.app_settings import (
@@ -26,6 +27,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     SSH_READS_SET,
     settings,
 )
+from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME
 from cluster.cdk8s.litellm.keys import ANTIGRAVITY_CLIENT_MODELS, CLAUDE_CLIENT_MODELS, GPT6_OAI_LANE_MODELS
 from cluster.cdk8s.model_rosters import ApiShape, Provider, codex_responses_name, exposed_name
 
@@ -64,6 +66,13 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         # agentplane-testing. `claude-sonnet-5` matches the model in the parked self-hosted
         # configuration at haku/runtime/x/managed_agent/self_hosted/haku.agent.yaml.
         haku_preset_model=exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, "claude-sonnet-5"),
+        kubernetes_grants={
+            "sandbox-tool-config": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace=_NAMESPACE,
+                role_ref=RoleRef(kind="Role", name=TOOL_CONFIG_READER_ROLE_NAME),
+            )
+        },
     )
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
     # they name staging-only credentials (forgejo-finance-agent, plaid-pgweb) that

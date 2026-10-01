@@ -62,6 +62,18 @@ const SANDBOXES: SandboxView[] = [
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "demo-a1b2" },
     conditions: [{ type: "Ready", status: "True", reason: "PodReady", message: null }],
+    kubernetes_grants: [
+      {
+        name: "workspace-read",
+        grant: {
+          kind: "RoleBinding",
+          namespace: "agentplane-visual",
+          role_ref: { kind: "Role", name: "workspace-reader" },
+        },
+      },
+    ],
+    kubernetes_grants_ready: true,
+    kubernetes_grant_error: null,
     node_name: "harness-node",
     pod: {
       phase: "Running",
@@ -84,6 +96,9 @@ const SANDBOXES: SandboxView[] = [
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "codex-c3d4" },
     conditions: [{ type: "Ready", status: "False", reason: "PodPending", message: null }],
+    kubernetes_grants: [],
+    kubernetes_grants_ready: true,
+    kubernetes_grant_error: null,
     node_name: "harness-node",
     pod: {
       phase: "Pending",
@@ -112,10 +127,20 @@ const SANDBOXES: SandboxView[] = [
     operating_mode: "Suspended",
     service_account: { namespace: "agentplane-visual", name: "old-e5f6" },
     conditions: [{ type: "Ready", status: "False", reason: "Suspended", message: null }],
+    kubernetes_grants: [],
+    kubernetes_grants_ready: true,
+    kubernetes_grant_error: null,
     node_name: null,
     pod: null,
   },
 ];
+
+if (scenario.grantError) {
+  const sandbox = SANDBOXES[0]!;
+  sandbox.state = "waiting_for_grants";
+  sandbox.kubernetes_grants_ready = false;
+  sandbox.kubernetes_grant_error = "ApiException (403)";
+}
 
 if (scenario.threadlessSandbox) {
   SANDBOXES.push({
@@ -126,6 +151,9 @@ if (scenario.threadlessSandbox) {
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "test-provisioning" },
     conditions: [],
+    kubernetes_grants: [],
+    kubernetes_grants_ready: true,
+    kubernetes_grant_error: null,
     pod: null,
   });
 }
@@ -1521,6 +1549,7 @@ routes.push(
         template: "agentplane-runner",
         policies: ["github-public"],
         action_policy_sets: ["public-coder"],
+        kubernetes_grants: ["workspace-read"],
         thread_defaults: {
           harness: "HARNESS_CODEX",
           model: "harness-codex-model",
@@ -1533,6 +1562,18 @@ routes.push(
     ],
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["agentplane-runner"]],
+  [
+    "GET",
+    /^\/kubernetes-grants$/,
+    () => [
+      {
+        name: "workspace-read",
+        kind: "RoleBinding",
+        namespace: "agentplane-visual",
+        role_ref: { kind: "Role", name: "workspace-reader" },
+      },
+    ],
+  ],
   ["GET", /^\/egress\/policies$/, () => POLICIES],
   ["GET", /^\/action-policy\/sets$/, () => ACTION_POLICY.bindings.flatMap((binding) => binding.policy_sets)],
   ["GET", /^\/actions$/, () => ACTIONS],

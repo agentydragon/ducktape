@@ -34,6 +34,9 @@ const CREATED: SandboxView = {
   operating_mode: "Running",
   service_account: { namespace: "agentplane-test", name: "test-created-sandbox" },
   conditions: [],
+  kubernetes_grants: [],
+  kubernetes_grants_ready: true,
+  kubernetes_grant_error: null,
 };
 
 async function render(
@@ -49,6 +52,7 @@ async function render(
     template: "test-template",
     policies: [],
     action_policy_sets: ["test-reads"],
+    kubernetes_grants: ["workspace-read"],
     thread_defaults: { harness: "HARNESS_CODEX", model: "test-codex-b" },
     bootstrap: "mkdir -p /state/workspaces",
   };
@@ -80,7 +84,16 @@ async function render(
             ? ["test-template", "other-template"]
             : path === "/action-policy/sets"
               ? policySets
-              : [];
+              : path === "/kubernetes-grants"
+                ? [
+                    {
+                      name: "workspace-read",
+                      kind: "RoleBinding",
+                      namespace: "agentplane-test",
+                      role_ref: { kind: "Role", name: "workspace-reader" },
+                    },
+                  ]
+                : [];
     return { data, response: new Response() } as Awaited<ReturnType<typeof api.GET>>;
   });
   const container = document.createElement("div");
@@ -143,10 +156,13 @@ it("inherits the preset model and replaces incompatible choices when the harness
   expect(options(container, "Model").map((node) => node.textContent)).toEqual(["Test Claude"]);
 });
 
-it("pre-fills the preset's action policy sets, offers every set with its verdict, and sends the pick", async () => {
+it("pre-fills the preset's policy sets and Kubernetes grants, shows role scope, and sends the picks", async () => {
   const { container, onOpen } = await render();
   expect(input(container, "Action policy sets").value).toBe("");
   expect(container.textContent).toContain("test-reads");
+  expect(container.textContent).toContain("workspace-read");
+  expect(container.textContent).toContain("Role/workspace-reader");
+  expect(container.textContent).toContain("namespace agentplane-test");
   await act(async () => input(container, "Action policy sets").click());
   expect(options(container, "Action policy sets").map((node) => node.textContent)).toEqual([
     "test-reads",
@@ -164,12 +180,34 @@ it("pre-fills the preset's action policy sets, offers every set with its verdict
       body: expect.objectContaining({
         template: "test-template",
         action_policy_sets: ["test-reads"],
+        kubernetes_grants: ["workspace-read"],
         bootstrap: "mkdir -p /state/workspaces",
         thread_defaults: expect.objectContaining({ harness: "HARNESS_CODEX", model: "test-codex-b" }),
       }),
     })
   );
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
+});
+
+it("allows an operator to remove the preset grant and sends an explicit empty grant list", async () => {
+  const { container } = await render();
+  await act(async () => {
+    const pill = [...container.querySelectorAll<HTMLElement>(".mantine-Pill-root")].find((node) =>
+      node.textContent?.includes("workspace-read")
+    );
+    const remove = pill?.querySelector<HTMLButtonElement>(".mantine-Pill-remove");
+    if (!remove) throw new Error("Missing selected workspace-read grant control");
+    remove.click();
+  });
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  await type(input(container, "Name"), "without-grant");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+  expect(post).toHaveBeenCalledWith(
+    "/sandboxes",
+    expect.objectContaining({ body: expect.objectContaining({ kubernetes_grants: [] }) })
+  );
 });
 
 it("lets an operator replace the preset template before creating the sandbox", async () => {

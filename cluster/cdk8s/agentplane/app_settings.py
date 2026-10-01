@@ -9,6 +9,7 @@ from pathlib import Path
 
 from agentplane.app.action_federation import ActionFederationSettings
 from agentplane.app.api import ModelCatalog, ModelOption
+from agentplane.app.kubernetes_grants import KubernetesGrant
 from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import Harness, SandboxPreset, ThreadPreset
 from cluster.cdk8s.agentplane.model_display_names import display_name
@@ -74,6 +75,7 @@ def settings(
     action_federation: ActionFederationSettings | None = None,
     action_policy_sets: list[str] | None = None,
     haku_preset_model: str | None = None,
+    kubernetes_grants: dict[str, KubernetesGrant] | None = None,
 ) -> AppSettingsConfig:
     # A model both harnesses accept (e.g. a local Ollama route) names its display name once,
     # regardless of how many harness lists reference it. dict.fromkeys dedupes while keeping
@@ -91,6 +93,7 @@ def settings(
         # different service names.
         agent_egress_api_url=f"http://agentplane-egress.{namespace}.svc.cluster.local",
         agent_actions_service_url=f"http://agentplane-actions.{namespace}.svc.cluster.local:8080",
+        kubernetes_grants=kubernetes_grants if kubernetes_grants is not None else {},
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a
         # runner receives a preset name.

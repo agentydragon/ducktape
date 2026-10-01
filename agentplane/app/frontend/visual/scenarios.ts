@@ -24,6 +24,8 @@ export interface Scenario extends ScenarioOptions {
   openSettings?: boolean;
   /** Flip every Raw switch as it mounts: no URL param toggles one. */
   openRaw?: boolean;
+  /** Show failed Kubernetes grant provisioning in the Sandbox status summary. */
+  grantError?: boolean;
   /** Show live pending Actions in the shell and thread composer. */
   pendingActions?: boolean;
   /** Click the inline approval prompt's Review button once it mounts. */
@@ -477,6 +479,25 @@ export const SCENARIOS: Record<string, Scenario> = {
 
   sandbox: { element: "#app", route: SANDBOX_ROUTE, viewport: { width: 1200, height: 900 } },
   sandbox_phone: { element: "#app", route: SANDBOX_ROUTE, viewport: PHONE, outputName: "sandbox-phone" },
+  sandbox_status: {
+    element: "#app",
+    route: `${SANDBOX_ROUTE}?tab=status`,
+    viewport: { width: 1200, height: 900 },
+    outputName: "sandbox-status",
+  },
+  sandbox_status_phone: {
+    element: "#app",
+    route: `${SANDBOX_ROUTE}?tab=status`,
+    viewport: PHONE,
+    outputName: "sandbox-status-phone",
+  },
+  sandbox_status_grant_error: {
+    element: "#app",
+    route: `${SANDBOX_ROUTE}?tab=status`,
+    viewport: { width: 1200, height: 900 },
+    outputName: "sandbox-status-grant-error",
+    grantError: true,
+  },
   // With the github-public binding's rules open, so the shot carries the credential detail -- its
   // description, where the proxy puts it, and which secret it comes from -- and the other binding,
   // still folded, shows the row the button starts as.

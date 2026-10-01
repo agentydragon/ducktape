@@ -10,6 +10,7 @@ place the runner Pod is defined, and no claim or warm pool sits in between.
 from __future__ import annotations
 
 import asyncio
+import json
 import secrets
 import string
 from collections.abc import Iterable
@@ -23,6 +24,7 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
+from agentplane.app.kubernetes_grants import ResolvedGrant
 from agentplane.app.presets import SandboxBinding, ThreadDefaults
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL
@@ -30,6 +32,9 @@ from util.kubernetes import CustomObjectsClient
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
+KUBERNETES_GRANTS_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants"
+KUBERNETES_GRANTS_READY_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-ready"
+KUBERNETES_GRANTS_ERROR_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-error"
 
 _MERGE_PATCH = "application/merge-patch+json"
 
@@ -49,6 +54,7 @@ class OperatingMode(StrEnum):
 
 
 class ProvisioningState(StrEnum):
+    WAITING_FOR_GRANTS = "waiting_for_grants"
     WAITING_FOR_POD = "waiting_for_pod"
     WAITING_FOR_POD_READY = "waiting_for_pod_ready"
     RUNNING = "running"
@@ -83,6 +89,9 @@ class NewSandbox(BaseModel):
     action_policy_sets: list[str] = Field(
         default_factory=list,
         description="ActionPolicySet names to bind; an explicit list, empty included, is bound as given.",
+    )
+    kubernetes_grants: list[str] = Field(
+        default_factory=list, description="Enabled Kubernetes grant names to bind to this Sandbox ServiceAccount."
     )
     thread_defaults: ThreadDefaults | None = Field(
         default=None, description="Reusable Thread defaults for future sessions in this Sandbox."
@@ -147,6 +156,9 @@ class SandboxView(BaseModel):
     binding: SandboxBinding | None = Field(
         default=None, description="The app-owned concrete Thread defaults and bootstrap selected for this Sandbox."
     )
+    kubernetes_grants: list[ResolvedGrant]
+    kubernetes_grants_ready: bool
+    kubernetes_grant_error: str | None
     pod: PodStatus | None = None
 
 
@@ -238,6 +250,10 @@ class SandboxInventory:
         self._namespace = namespace
         self._custom_objects = custom_objects
         self._core_v1 = core_v1
+
+    @property
+    def namespace(self) -> str:
+        return self._namespace
 
     async def list_templates(self) -> list[str]:
         """The concrete templates an operator may choose for one Sandbox."""
@@ -334,6 +350,20 @@ class SandboxInventory:
             return None
         return SandboxBinding.model_validate_json(raw)
 
+    async def set_kubernetes_grants_status(self, name: str, *, ready: bool, error: str | None = None) -> None:
+        """Record provisioning so a runner cannot start before requested bindings exist."""
+        await self._patch(
+            name,
+            {
+                "metadata": {
+                    "annotations": {
+                        KUBERNETES_GRANTS_READY_ANNOTATION: "true" if ready else "false",
+                        KUBERNETES_GRANTS_ERROR_ANNOTATION: error,
+                    }
+                }
+            },
+        )
+
     async def suspend(self, name: str) -> None:
         await self._set_operating_mode(name, OperatingMode.SUSPENDED)
 
@@ -415,6 +445,7 @@ def _running_as(pod_template: dict[str, object], service_account: str) -> dict[s
 
 
 def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
+    grants = _resolved_grants(sandbox)
     return SandboxView(
         name=sandbox.metadata.name,
         uid=sandbox.metadata.uid,
@@ -427,6 +458,10 @@ def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
         conditions=sandbox.status.conditions,
         node_name=sandbox.status.node_name,
         binding=_binding(sandbox),
+        kubernetes_grants=grants,
+        kubernetes_grants_ready=not grants
+        or sandbox.metadata.annotations.get(KUBERNETES_GRANTS_READY_ANNOTATION) == "true",
+        kubernetes_grant_error=sandbox.metadata.annotations.get(KUBERNETES_GRANTS_ERROR_ANNOTATION),
         pod=_pod_status(pod) if pod is not None else None,
     )
 
@@ -436,6 +471,13 @@ def _binding(sandbox: _Sandbox) -> SandboxBinding | None:
     if raw is None:
         return None
     return SandboxBinding.model_validate_json(raw)
+
+
+def _resolved_grants(sandbox: _Sandbox) -> list[ResolvedGrant]:
+    raw = sandbox.metadata.annotations.get(KUBERNETES_GRANTS_ANNOTATION)
+    if raw is None:
+        return []
+    return [ResolvedGrant.model_validate(item) for item in json.loads(raw)]
 
 
 def _pod_status(pod: k8s_client.V1Pod) -> PodStatus:
@@ -480,6 +522,8 @@ def _state(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> ProvisioningState
         return ProvisioningState.SUSPENDED
     if pod is None:
         return ProvisioningState.WAITING_FOR_POD
+    if _resolved_grants(sandbox) and sandbox.metadata.annotations.get(KUBERNETES_GRANTS_READY_ANNOTATION) != "true":
+        return ProvisioningState.WAITING_FOR_GRANTS
     return ProvisioningState.RUNNING if _pod_ready(pod) else ProvisioningState.WAITING_FOR_POD_READY
 
 

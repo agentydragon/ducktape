@@ -145,6 +145,22 @@ and nothing else, for the acceptance suite's harness scenarios
 al.) even though a claude-ai sandbox may separately carry Haku's own Forgejo credential via
 `EgressBinding` — that authority is unrelated to this Kubernetes RBAC grant.
 
+### Agentplane-managed Sandbox grants
+
+Agentplane creates a distinct ServiceAccount for each managed Sandbox. In staging,
+`cluster/cdk8s/agentplane/staging_config.py` defines the enabled Kubernetes grant
+catalog. Sandbox presets supply launch defaults; the operator can replace them with any
+catalog selection, including an empty list. The API resolves each name before creation
+and stores the concrete binding target on the Sandbox. Later preset or catalog edits do
+not retarget existing bindings. Role rule changes affect every already-bound Sandbox.
+
+Agentplane supplies the binding subject from the created Sandbox ServiceAccount. It
+reconciles its own bindings and reports incomplete provisioning before a runner starts.
+The first enabled grant binds the `agentplane-sandbox-tool-config-reader` Role in
+`agentplane-staging`, allowing `get` only on the `agentplane-sandbox-tool-config`
+ConfigMap. The app's `bind` permission is limited to that Role. This checks the
+mechanism; Haku's diagnostics, write, and credential grants remain in #8596.
+
 ### Grant inventory
 
 This doc intentionally avoids a hand-maintained namespace matrix. Service-specific and
