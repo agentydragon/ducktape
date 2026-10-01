@@ -8,7 +8,7 @@ use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::partition::Partition;
 use analysis::{LogicalModule, LogicalModuleIndex, ModuleId, ModuleQuotient, OwnerGraphReport};
 
-use crate::chunk_analysis::ChunkAnalysis;
+use crate::ChunkAnalysis;
 use crate::esm_import_order::EsmImportOrder;
 use crate::validation::{FactorizationReport, validate_factorization};
 
