@@ -286,7 +286,6 @@ def generate_manifests(root: Path) -> None:
     forgejo_db.write_manifests(root)
     forgejo_cache.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
-    nix_cache_attic.write_manifests(root)
     vm_images_publisher_publisher.write_manifests(root)
     forgejo_app.write_manifests(root)
     home_assistant_app.write_manifests(root)
@@ -1274,9 +1273,17 @@ def generate_manifests(root: Path) -> None:
         matrix_kustomization,
     )
     nix_cache_artifact = artifact("nix-cache", nix_cache_attic.OUTPUT_DIR)
+    nix_cache_directory = write_directory(
+        root,
+        nix_cache_artifact,
+        nix_cache_attic.chart,
+        siblings=["jwt-token.sops.yaml", "cache-keys.sops.yaml"],
+        components=["./image-pins"],
+        config_map_generator=[nix_cache_attic.SERVER_CONFIG_MAP, nix_cache_attic.ROTATORS_CONFIG_MAP],
+    )
     nix_cache_flux_kustomizations.nix_cache(
         flux_chart,
-        nix_cache_artifact,
+        nix_cache_directory,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,

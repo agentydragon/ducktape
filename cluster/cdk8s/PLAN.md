@@ -12,27 +12,23 @@ live in [the design](../docs/cdk8s.md) and [AGENTS.md](AGENTS.md).
 These are recommendations for subsequent implementation PRs. Updating this plan does
 not approve a new abstraction, resource owner, authorization grant, or deployment.
 
-### B. Restore dependency-update ownership
+### Deferred: decide image-pin and dependency-update ownership
 
-`renovate.json5` scans both `cluster/k8s` and `cluster/generated` for Flux and
-Kubernetes YAML. Its custom manager covers Terraform provider pins, not cdk8s Python.
-There is no cdk8s regeneration workflow. Updating generated YAML conflicts with its
-source and the snapshot gate.
+The pin and update ownership policy is unresolved. Renovate changes are parked until the
+image-pin design is decided. The previously proposed `# renovate:` source annotations and
+branch regeneration workflow are one possible approach, not an approved direction. Decide how
+image pins, source pins, generated output, and update automation fit together before
+changing Renovate or adding cdk8s regeneration.
 
-The previously approved direction remains: annotate source pins with `# renovate:`,
-teach Renovate to update them, and regenerate on its branches. Exclude generated
-outputs from mutation only as source coverage replaces it. Keep repository-built image
-tags owned by Flux image automation. Operator/chart versions and CRD schema pins need
-coordinated updates where they describe the same deployed API.
-
-Done: an actual dependency update changes the Python source and its generated output,
-passes the generation gate, and leaves no independently editable duplicate pin.
+Done: the chosen policy identifies each pin's source of truth, update owner, and generated
+output path without creating two writers.
 
 ### C. Convert useful YAML seams
 
-Continue with the rotator rosters; Airlock's typed configuration is converted in this
-change. The remainder backlog names the existing models, semantic hazards, and
-acceptance conditions.
+Airlock's typed configuration is complete. Attic's rotator roster is now typed data built
+from the rotator's schema, with cdk8s generating its ConfigMap and directory Kustomization.
+The remaining Authentik and Forgejo wiring seams are described in the remainder backlog;
+keep them as separate changes rather than introducing a generic rotator framework.
 Authentik blueprints need a separate ownership decision consistent with
 `cluster/docs/sso.md`; embedding their text in Python is not completion.
 
