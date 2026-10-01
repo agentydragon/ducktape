@@ -9,7 +9,7 @@ import logging
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import RbacAuthorizationV1Api
 
-from agentplane.app.inventory import SandboxInventory, SandboxView
+from agentplane.app.inventory import SandboxInventory, SandboxNotFoundError, SandboxView
 from agentplane.app.kubernetes_grants import ResolvedGrant, RoleBindingGrant
 from util.agent_sandbox import SANDBOX_API
 
@@ -217,7 +217,7 @@ class KubernetesBindings:
         for namespace in sorted(self._cleanup_namespaces):
             bindings = await self._rbac.list_namespaced_role_binding(namespace, label_selector=selector)
             for binding in bindings.items:
-                if self._is_orphan(binding, live_uids):
+                if await self._is_confirmed_orphan(binding, live_uids):
                     assert binding.metadata is not None
                     assert binding.metadata.name is not None
                     try:
@@ -228,7 +228,7 @@ class KubernetesBindings:
         if self._cleanup_cluster_bindings:
             cluster_bindings = await self._rbac.list_cluster_role_binding(label_selector=selector)
             for cluster_binding in cluster_bindings.items:
-                if self._is_orphan(cluster_binding, live_uids):
+                if await self._is_confirmed_orphan(cluster_binding, live_uids):
                     assert cluster_binding.metadata is not None
                     assert cluster_binding.metadata.name is not None
                     try:
@@ -259,6 +259,23 @@ class KubernetesBindings:
             and binding.subjects[0].namespace == self._inventory.namespace
             and binding.subjects[0].name == name
         )
+
+    async def _is_confirmed_orphan(
+        self, binding: k8s_client.V1RoleBinding | k8s_client.V1ClusterRoleBinding, live_uids: set[str]
+    ) -> bool:
+        if not self._is_orphan(binding, live_uids):
+            return False
+        assert binding.metadata is not None
+        assert binding.metadata.annotations is not None
+        name = binding.metadata.annotations[SANDBOX_NAME_ANNOTATION]
+        uid = binding.metadata.annotations[SANDBOX_UID_ANNOTATION]
+        # A new Sandbox and binding can appear after the list snapshot. A direct
+        # GET after seeing the binding avoids deleting its live grant as an orphan.
+        try:
+            current = await self._inventory.get(name)
+        except SandboxNotFoundError:
+            return True
+        return str(current.uid) != uid
 
     async def run(self, *, interval_seconds: float = 30) -> None:
         while True:

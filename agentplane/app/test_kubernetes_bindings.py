@@ -11,8 +11,14 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from pydantic import ValidationError
 
-from agentplane.app.inventory import KUBERNETES_GRANTS_ANNOTATION, NewSandbox, ProvisioningState, SandboxInventory
-from agentplane.app.kubernetes_bindings import KUBERNETES_BINDINGS_FINALIZER, KubernetesBindings, binding_name
+from agentplane.app.inventory import (
+    KUBERNETES_GRANTS_ANNOTATION,
+    NewSandbox,
+    ProvisioningState,
+    SandboxInventory,
+    sandbox_view,
+)
+from agentplane.app.kubernetes_bindings import KUBERNETES_BINDINGS_FINALIZER, KubernetesBindings, _binding, binding_name
 from agentplane.app.kubernetes_grants import (
     ClusterRoleBindingGrant,
     ClusterRoleRef,
@@ -316,6 +322,37 @@ async def test_partial_launch_deletion_and_name_reuse_leave_no_old_binding() -> 
     assert new_view.uid != old_view.uid
     assert ("another-namespace", binding_name(old_view, selected[0])) not in rbac.bindings
     assert ("another-namespace", binding_name(new_view, selected[0])) in rbac.bindings
+
+
+async def test_orphan_sweep_checks_sandbox_created_after_list_snapshot() -> None:
+    custom, core = FakeCustomObjectsApi(), FakeCoreV1Api()
+    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
+    selected = ResolvedGrant(
+        name="cluster",
+        grant=ClusterRoleBindingGrant(
+            kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="diagnostics")
+        ),
+    )
+
+    class LateRbac(FakeRbac):
+        async def list_cluster_role_binding(self, *, label_selector: str) -> k8s_client.V1ClusterRoleBindingList:
+            if not self.cluster_bindings:
+                raw = sandbox("late")
+                raw["metadata"]["annotations"] = {
+                    KUBERNETES_GRANTS_ANNOTATION: json.dumps([selected.model_dump(mode="json")])
+                }
+                custom.objects[("sandboxes", "late")] = raw
+                binding = _binding(sandbox_view(raw, None), selected)
+                assert isinstance(binding, k8s_client.V1ClusterRoleBinding)
+                assert binding.metadata is not None
+                assert binding.metadata.name is not None
+                self.cluster_bindings[binding.metadata.name] = binding
+            return await super().list_cluster_role_binding(label_selector=label_selector)
+
+    rbac = LateRbac()
+    await KubernetesBindings(inventory, cast(Any, rbac), cleanup_cluster_bindings=True).reconcile_once()
+    assert len(rbac.cluster_bindings) == 1
+    assert rbac.deletes == 0
 
 
 if __name__ == "__main__":
