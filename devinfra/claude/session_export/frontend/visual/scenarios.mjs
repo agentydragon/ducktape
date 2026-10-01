@@ -9,6 +9,7 @@ const VIEWER_READY = [
   '[data-tool-name="Task"]',
   "[data-tool-output-image]",
 ];
+const TOOL_RESULT_READY = ["#session-viewer-title", '[data-tool-name="Read"]', "[data-tool-output-image]"];
 
 export const SCENARIOS = {
   SessionViewer: { element: "#app", readySelectors: VIEWER_READY },
@@ -16,6 +17,12 @@ export const SCENARIOS = {
   SessionViewer_mobile: {
     element: "#app",
     readySelectors: VIEWER_READY,
+    viewport: { width: 420, height: 900 },
+  },
+  SessionToolResult: { element: "#app", readySelectors: TOOL_RESULT_READY },
+  SessionToolResult_mobile: {
+    element: "#app",
+    readySelectors: TOOL_RESULT_READY,
     viewport: { width: 420, height: 900 },
   },
   SessionSync: { element: "#app", readySelectors: SYNC_READY },
