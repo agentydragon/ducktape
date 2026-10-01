@@ -838,8 +838,9 @@ front of Haku's sandbox and CI.
   `agentplane-staging`. Console's box runs as Haku's own `haku` ServiceAccount in `haku-sandbox`
   and bootstraps a git-synced haku-state checkout (<../../haku/docs/security.md> § `sandbox`
   in-process server); it is where haku-state validation and anything needing the `haku` identity
-  runs (<../../haku/runtime/claude_web_env/run.md>). Retiring Console's server needs a box that runs
-  as that identity, with that bootstrap.
+  runs (<../../haku/runtime/claude_web_env/run.md>). Do not carry over Haku's warm-pool feature;
+  dropping it is an explicit product decision, not a parity gap. Retiring Console's server needs a
+  box that runs as that identity, with that bootstrap.
 - **`grants` has no Action Service counterpart**, so this half is not configuration: the surface
   has to exist first. It also waits on `ELEVATE`: its tools are about access that expires, and
   temporary grants are what the Action Service is missing, not the tool definitions.
