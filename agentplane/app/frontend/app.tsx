@@ -15,6 +15,7 @@ import { Sidebar } from "./sidebar";
 import { electricThreadSync } from "./threads/thread_store";
 import { ThreadSyncContext } from "./threads/thread_sync";
 import { TopbarContext, TopbarTitle, type TopbarSlots } from "./topbar";
+import { appDocumentTitle } from "./tab_metadata";
 import "./shell.css";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
@@ -98,6 +99,10 @@ function AppRoutes(): JSX.Element {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
     location.pathname === "/mcp-servers" ? "mcp-servers" : null
   );
+  const routeTitle = threadRoute === null ? appDocumentTitle(location.pathname, settingsTab !== null) : null;
+  useEffect(() => {
+    if (routeTitle !== null) document.title = routeTitle;
+  }, [routeTitle]);
   // Open by default at desktop width, closed at phone width; the CSS media query then decides
   // whether "closed" means a collapsed-to-nothing column or a fully hidden overlay. Crossing the
   // breakpoint resets to that side's default -- an "open" docked column left over from a resize
