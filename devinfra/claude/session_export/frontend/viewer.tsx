@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
 
-import { ApiError, listSessionEvents, listSessions, type SessionEvent, type SessionSummary } from "./api";
+import {
+  ApiError,
+  listSessionEvents,
+  listSessions,
+  watchSessions,
+  type SessionEvent,
+  type SessionSummary,
+} from "./api";
 
 type StatusFilter = "all" | "active" | "paused" | "archived";
+type WatchStatus = "connecting" | "connected" | "reconnecting";
 
 const ALL_STATUSES = ["active", "paused", "archived"];
 
@@ -99,6 +107,8 @@ export function SessionViewer(): JSX.Element {
   const [search, setSearch] = useState("");
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [nextSessionCursor, setNextSessionCursor] = useState<string | null>(null);
+  const [resumeToken, setResumeToken] = useState<string | null>(null);
+  const [watchStatus, setWatchStatus] = useState<WatchStatus>("connecting");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const [nextEventCursor, setNextEventCursor] = useState<string | null>(null);
@@ -121,6 +131,7 @@ export function SessionViewer(): JSX.Element {
         if (!current) return;
         setSessions(page.data);
         setNextSessionCursor(page.next_cursor);
+        setResumeToken(page.resume_token ?? null);
         setSelectedId((previous) =>
           page.data.some((session) => session.id === previous) ? previous : (page.data[0]?.id ?? null)
         );
@@ -135,6 +146,18 @@ export function SessionViewer(): JSX.Element {
       current = false;
     };
   }, [filter, refreshCount]);
+
+  useEffect(() => {
+    if (resumeToken === null) return;
+    const watch = watchSessions(resumeToken);
+    const refresh = (): void => setRefreshCount((count) => count + 1);
+    setWatchStatus("connecting");
+    watch.onopen = () => setWatchStatus("connected");
+    watch.onerror = () => setWatchStatus("reconnecting");
+    watch.addEventListener("changed", refresh);
+    watch.addEventListener("reset", refresh);
+    return () => watch.close();
+  }, [resumeToken]);
 
   useEffect(() => {
     let current = true;
@@ -219,6 +242,15 @@ export function SessionViewer(): JSX.Element {
           <h2 id="session-viewer-title">Sessions</h2>
           <p className="hint">Read-only view of the synced Claude Code session history.</p>
         </div>
+        {resumeToken !== null && (
+          <span role="status" className={`watch-state watch-${watchStatus}`}>
+            {watchStatus === "connected"
+              ? "Live updates on"
+              : watchStatus === "connecting"
+                ? "Connecting…"
+                : "Reconnecting…"}
+          </span>
+        )}
         <button type="button" className="secondary" onClick={() => setRefreshCount((count) => count + 1)}>
           Refresh
         </button>

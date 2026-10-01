@@ -59,6 +59,12 @@ The authenticated web tier exposes a read-only Claude Code-shaped subset:
 including archived sessions. Cursors are opaque to clients. The routes read the mirror and do not expose Claude's
 session mutation endpoints.
 
+`GET /v1/code/sessions/watch?resume_token=` streams `changed` events with the changed session IDs. EventSource
+reconnects can send their latest event ID in `Last-Event-ID`; it takes precedence over the original query token. If a
+resume token is older than the retained journal, the stream sends a `reset` event and a fresh revision so the client
+can reload its page. Each web replica listens for PostgreSQL `NOTIFY` wakeups and replays the committed journal from
+the shared database, so a reconnect can land on any replica. The journal retains the latest 10,000 revisions.
+
 | Variable                                              | Meaning                                                                               |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                                        | The PostgreSQL the sync writes                                                        |
