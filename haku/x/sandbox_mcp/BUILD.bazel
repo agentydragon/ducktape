@@ -77,11 +77,10 @@ py_test(
     name = "test_tools",
     srcs = ["test_tools.py"],
     deps = [
-        ":tools",
-        "//:conftest",
-        "//haku/console:conftest",
         ":config",
         ":models",
+        ":tools",
+        "//:conftest",
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
