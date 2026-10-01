@@ -1,15 +1,5 @@
 # Specimens TODO
 
-## Completed
-
-### YAML Migration (December 2024)
-
-- [x] Migrated from Jsonnet (`.libsonnet`) to YAML (`.yaml`) issue format
-- [x] Updated documentation (CLAUDE.md, format-spec.md, authoring-guide.md, quality-checklist.md)
-- [x] All issue files now in `{snapshot}/issues/*.yaml` directory structure
-
-## Pending
-
 ### Cleanup
 
 - [ ] Remove `lib.libsonnet` (no longer needed with YAML format)

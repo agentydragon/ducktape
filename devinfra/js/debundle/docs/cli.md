@@ -17,7 +17,7 @@ as the rest of ducktape.
 - Spec edits (mutate the modules tree):
   `bindings {assign,unassign,rename,comment}`,
   `modules {merge,delete,comment}`,
-  `spec {selector-codemod,synthesize-selectors}` with `--apply`
+  `spec synthesize-selectors` with `--apply`
 - Read-only queries: `bindings list`, `modules {list,propose}`,
   `spec {stats,selector-debt,match-selector,validate}`, `atoms`, `coverage`,
   `graph-summary`, `describe <id>`, `show-source <id>`, `scc`,
@@ -127,8 +127,8 @@ factorization (anything that moves a binding between modules), that means
 the full realizability + atom-split gate — which requires
 `--graph <owner_graph.json>` unless `--no-verify` is set; for renames, it
 means name-collision detection; for comment edits, shape preservation only
-(`--no-verify` is a no-op there). If validation fails the command refuses
-with a structured diagnostic and **does not modify any file**.
+(they take `--dry-run` but no `--no-verify`). If validation fails the command
+refuses with a structured diagnostic and **does not modify any file**.
 
 On spec-edit commands:
 
@@ -179,25 +179,25 @@ entities never claim the same place.
 
 `debundle spec validate` is `debundle run` in dry-run keep-going mode
 reporting every selector problem: it takes the **same inputs** (`--spec` /
-`--tree-config` + package roots) and needs the full pipeline, so run it via
-the Bazel `:debundle` target, not the standalone binary. Its source-only
+`--tree-config` + package roots) and runs the full pipeline, not only the
+modules tree. Its source-only
 preflight mode (`--modules` plus `--source-file` or `--source-root
 --chunk`) needs no pipeline build and resolves the module files jointly with
 the same resolve as `run`. How its outcomes differ from the pipeline's:
 <../SPEC.md> § Outcomes; also, a name pin on a binding the chunk does not
 declare is `no_match` in this mode but an unmatched claim in `run`.
 
-Each group of interacting selectors is one request to the CP-SAT sidecar, found in the
-`debundle` runfiles or through `DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER` — in
-source-only `validate`, and in the edit gate, `describe` and `peel` when they
-resolve source claims. `match-selector` and `synthesize-selectors` resolve one
-selector at a time and never need it.
+Each group of interacting selectors is one CP-SAT solve inside the `debundle`
+process (<selector_resolution.md> § The solver) — in `run`, `validate`, and in
+the edit gate, `describe` and `peel` when they resolve source claims. The
+binary needs nothing beside it. `match-selector` and `synthesize-selectors`
+resolve one selector at a time and never solve.
 
 ### Selector outcomes
 
 `run --dry-run` (per chunk, `reports/tree/<chunk-id>/selector_diagnostics.json`),
 `spec validate` and `spec match-selector` all report selectors as
-`SelectorOutcome` records (`selector_outcome.rs`; kinds and severities in
+`SelectorOutcome` records (`selectors/resolution/selector_outcome.rs`; kinds and severities in
 <../SPEC.md> § Outcomes). JSON is `{counts, outcomes}`; `run` and
 `validate` list only selectors that did not resolve plus warnings,
 `match-selector` its one probe (with `slack`). Text is one line per record:
@@ -244,6 +244,10 @@ usually the code the selector should now match:
 ```text
 [no_match] app.js::widgets/widget as `Widget` (source_matches[].bindings[`Widget`]): did not match any top-level declaration; nearest unclaimed: body[0] declaring `a` (score 70): selector class pinned member `shut` was not found in the candidate class body in order; body[1] declaring `b` (score 70): selector class pinned member `open` was not found in the candidate class body in order -- selector: class Widget { open() { STMT_LIST; } shut() { STMT_LIST; } }
 ```
+
+A `no_match` with a `reason` instead matched places, but it and the selectors
+interacting with it admit no joint assignment, and the record does not name
+which of them contradict.
 
 `validate` also lists, under `templates`, what each free identifier of every
 matched template (member, `source_matches[]` entry or anonymous statement)
@@ -328,6 +332,11 @@ what's wrong:
 **Atom split** (refused by the realizability gate). Lists each split atom:
 which owners it covers, which modules its members would land in, and the
 `DepKind` causes from the unit (same data shape as `AtomicUnitConflict`).
+When a sequenced side-effect edge is involved, the existing conflict/cycle
+records also include each impure initializer owner, its binding name, source
+path and 1-based line/column, plus the `PurityRule`, optional detail, and any
+author guidance. Unknown calls point to the member-level `purity` annotation;
+imported fluent chains point to `chunk_export_purity.<chunk>.fluent_exports`.
 The diagnostic does **not** auto-compute the minimal extra-moves completion
 — it names the owners and destinations so the author can read the
 completion off the printed atom membership.
@@ -424,8 +433,7 @@ authoring `comment:` fields". The CLI surface is `bindings comment` /
 - **No cross-process materializer reader.** `debundle run` reads the spec
   and emits JS in one process — see `wire_format.md` § "Why pre-filter
   facts (`StatementFacts`) aren't on the wire" and
-  `lessons_learned/cross_process_stage_b.md`. `facts.json` is an
-  in-process debug artifact, not a CLI input (`facts/wire.rs`).
+  `lessons_learned/cross_process_stage_b.md`.
 - **Shell tab completion.**
 
 ## See also

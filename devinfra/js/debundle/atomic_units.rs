@@ -51,7 +51,7 @@ pub struct AtomicUnit {
 
 /// Owner graph plus its precomputed atomic units. Bundled so a single
 /// chunk-level computation pays the Tarjan/SCC cost once and threads
-/// the result through `synthesize_mini_factor_plans` →
+/// the result through `ChunkPlanBuilder::synthesize_mini_factors` →
 /// `ChunkFactorization::build_with` (gate crate) and atomic-DAG report emission.
 #[derive(Debug, Clone)]
 pub struct OwnerGraphAndUnits {
@@ -59,19 +59,8 @@ pub struct OwnerGraphAndUnits {
     pub atomic_units: Vec<AtomicUnit>,
 }
 
-/// Build an owner graph from chunk facts and immediately compute its
-/// atomic units. Convenience for call sites that need both. Uses the
-/// default (strictly-conservative) [`OwnerGraphOptions`] — call
-/// [`compute_owner_graph_and_units_with`] when the chunk spec opts
-/// into conditionally-correct refinements.
-pub fn compute_owner_graph_and_units(
-    facts: &[StatementFacts],
-) -> Result<OwnerGraphAndUnits, DuplicateTopLevelDeclaration> {
-    compute_owner_graph_and_units_with(facts, OwnerGraphOptions::default())
-}
-
-/// Like [`compute_owner_graph_and_units`] but takes per-chunk
-/// [`OwnerGraphOptions`].
+/// Build an owner graph from chunk facts under the per-chunk
+/// [`OwnerGraphOptions`] and immediately compute its atomic units.
 pub fn compute_owner_graph_and_units_with(
     facts: &[StatementFacts],
     options: OwnerGraphOptions,

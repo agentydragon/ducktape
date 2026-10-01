@@ -29,14 +29,10 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.providers.cnpg.database import Database
 
 NAMESPACE = "haku-console"
-CLUSTER_NAME = "haku-console-db"
+POSTGRES = cnpg.PostgresRef.generated(name="haku-console-db", namespace=NAMESPACE)
 DATABASE = "approval_store"
-# CNPG mints the initdb owner's credentials into this Secret.
-APP_SECRET = f"{CLUSTER_NAME}-app"
 INDEXER_ROLE = "haku_indexer"
-INDEXER_SECRET = f"{CLUSTER_NAME}-indexer"
-RW_HOST = f"{CLUSTER_NAME}-rw.{NAMESPACE}.svc"
-_POSTGRES_PORT = 5432
+INDEXER_SECRET = f"{POSTGRES.name}-indexer"
 
 
 class Db(Construct):
@@ -48,18 +44,18 @@ class Db(Construct):
         cnpg.cluster(
             self,
             "cluster",
-            name=CLUSTER_NAME,
-            namespace=NAMESPACE,
+            ref=POSTGRES,
             # CNPG owns the data PVCs through this object, and nothing backs this database
             # up, so a prune is unrecoverable. The annotation exempts it whichever
             # Kustomization's inventory lists it (cluster/cdk8s/AGENTS.md) -- including
             # while ownership moves between them. Removing this Cluster is a deliberate
             # `kubectl delete`, never a manifest edit.
             annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
-            node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+            placement=node_scheduling.HIL_OVH,
             storage_class="local-path-ovh",
             size="2Gi",
             initdb=cnpg.same_owner_initdb(DATABASE),
+            wal_archive=False,
             managed=ClusterSpecManaged(
                 roles=[
                     # The haku-indexer worker's narrow credential: recall-index read/write.
@@ -88,8 +84,8 @@ class Db(Construct):
         Database(
             self,
             "database",
-            metadata=ApiObjectMetadata(name=f"{CLUSTER_NAME}-approval-store", namespace=NAMESPACE),
-            cluster=DatabaseSpecCluster(name=CLUSTER_NAME),
+            metadata=ApiObjectMetadata(name=f"{POSTGRES.name}-approval-store", namespace=NAMESPACE),
+            cluster=DatabaseSpecCluster(name=POSTGRES.name),
             name=DATABASE,
             owner=DATABASE,
             database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
@@ -108,8 +104,8 @@ class Db(Construct):
             name=INDEXER_SECRET,
             namespace=NAMESPACE,
             role=INDEXER_ROLE,
-            host=RW_HOST,
-            port=_POSTGRES_PORT,
+            host=POSTGRES.rw.host,
+            port=POSTGRES.rw.port.number,
             database=DATABASE,
             url_scheme="postgresql+asyncpg",
             include_host_fields=False,

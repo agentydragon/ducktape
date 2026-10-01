@@ -9,7 +9,6 @@ import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mj
 import IconBox from "@tabler/icons-react/dist/esm/icons/IconBox.mjs";
 import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
-import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
 import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
 import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
@@ -25,6 +24,7 @@ import { stateDetail } from "./sandboxes";
 import "./sidebar.css";
 import { ConnectionIndicator } from "./stream_status";
 import { archivedCount, groupThreads, type ThreadGroup } from "./thread_groups";
+import { ThreadStatusDot } from "./thread_status_dot";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "agentplane-sidebar-width";
 const SIDEBAR_DEFAULT_WIDTH = 240;
@@ -195,7 +195,7 @@ function ThreadRow({
   const label = thread.name ?? thread.session_id;
   const readonly = sandbox === null;
   const harnessRunning = fresh && sandbox?.state === "running" && thread.harness_state === "HARNESS_STATE_RUNNING";
-  const dot = harnessRunning ? "ok" : "gray";
+  const activeTurn = harnessRunning && Boolean(thread.active_turn_id);
   const className = [
     "agentplane-sidebar-row",
     current ? "current" : "",
@@ -218,9 +218,17 @@ function ThreadRow({
         }
       }}
     >
-      <span
-        className={`agentplane-sidebar-dot ${dot}`}
-        title={dot === "ok" ? "Last observed harness running" : "No live harness confirmed"}
+      <ThreadStatusDot
+        color={harnessRunning ? "green" : "gray"}
+        label={
+          activeTurn
+            ? "Turn running · Runner feed active · harness running"
+            : harnessRunning
+              ? "Last observed harness running"
+              : "No live harness confirmed"
+        }
+        pulse={activeTurn}
+        size="small"
       />
       <span className="agentplane-sidebar-row-name">{label}</span>
       <Tooltip
@@ -466,22 +474,13 @@ export function Sidebar({
             <IconBox size={15} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label="Pending approvals" withArrow>
+        <Tooltip label="Actions" withArrow>
           <ActionIcon
             variant={location.pathname === "/actions" ? "light" : "subtle"}
-            aria-label="Pending approvals"
+            aria-label="Actions"
             onClick={() => goTo("/actions")}
           >
             <IconListCheck size={15} />
-          </ActionIcon>
-        </Tooltip>
-        <Tooltip label="Action history" withArrow>
-          <ActionIcon
-            variant={location.pathname === "/actions/history" ? "light" : "subtle"}
-            aria-label="Action history"
-            onClick={() => goTo("/actions/history")}
-          >
-            <IconHistory size={15} />
           </ActionIcon>
         </Tooltip>
         <Tooltip label="Settings" withArrow>

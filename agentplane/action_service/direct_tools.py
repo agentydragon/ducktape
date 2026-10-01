@@ -25,8 +25,6 @@ from agentplane.action_service.catalog import DIRECT_TOOL_SEPARATOR, ActionCatal
 from agentplane.action_service.models import CallerPrincipal
 from agentplane.action_service.service import ActionService
 
-# A direct call waits this long, the most a receipt wait allows; then it answers with the request id.
-DIRECT_WAIT_SECONDS = 30
 # What an operator reading the history sees for a request no caller wrote a title for.
 DIRECT_CALL_TITLE = "Direct tool call"
 

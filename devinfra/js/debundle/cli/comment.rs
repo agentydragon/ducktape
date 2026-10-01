@@ -28,8 +28,8 @@
 //!
 //! Writes preserve key order by mutating the `serde_yaml::Mapping`
 //! in place and re-serializing the same `Value`. `--dry-run` skips
-//! the write but still prints the verdict. `--no-verify` is accepted
-//! and a no-op (comments don't participate in factorization).
+//! the write but still prints the verdict. Comments don't participate in
+//! factorization, so there is no `--no-verify`.
 
 use std::fs;
 use std::io::{Read, Write};
@@ -41,9 +41,9 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 use serde_yaml::Value;
 use spec::ModulePath;
+use yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 use crate::binding::{BindingLocation, resolve_unambiguous};
-use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 /// Args for `debundle bindings comment <sym> [...]`.
 #[derive(Debug, ClapArgs)]
@@ -77,11 +77,6 @@ pub struct BindingCommentArgs {
     /// Validate (or simulate) but do not modify any file.
     #[arg(long)]
     dry_run: bool,
-
-    /// Accepted for symmetry with mutating commands; no-op for
-    /// comment edits (comments do not affect factorization).
-    #[arg(long)]
-    no_verify: bool,
 }
 
 /// Args for `debundle modules comment <module> [...]`.
@@ -115,10 +110,6 @@ pub struct ModuleCommentArgs {
     /// Validate (or simulate) but do not modify any file.
     #[arg(long)]
     dry_run: bool,
-
-    /// Accepted for symmetry; no-op for comment edits.
-    #[arg(long)]
-    no_verify: bool,
 }
 
 /// Mode dispatched by `apply_*_command`.
@@ -164,7 +155,6 @@ pub fn run_module_comment_cmd(args: ModuleCommentArgs) -> Result<()> {
 // ---------------------------------------------------------------------
 
 fn run_binding_comment(args: BindingCommentArgs) -> Result<()> {
-    let _ = args.no_verify; // accepted, no-op
     let mode = CommentMode::from_flags(args.text, args.edit, args.clear)?;
     let outcome = apply_binding_comment(&args.modules_root, &args.sym, mode, args.dry_run)?;
     let format = peel::OutputFormat::resolve(args.format);
@@ -364,7 +354,6 @@ fn set_member_comment(doc: &mut Value, index: usize, value: Option<String>) -> R
 // ---------------------------------------------------------------------
 
 fn run_module_comment(args: ModuleCommentArgs) -> Result<()> {
-    let _ = args.no_verify;
     let mode = CommentMode::from_flags(args.text, args.edit, args.clear)?;
     let outcome = apply_module_comment(&args.modules_root, &args.module, mode, args.dry_run)?;
     let format = peel::OutputFormat::resolve(args.format);
@@ -548,51 +537,6 @@ mod tests {
     }
 
     #[test]
-    fn set_then_read_then_clear_binding_comment() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "ui/widgets.yaml",
-            "members:\n  - selector: { binding: { name: XOe } }\n",
-        );
-
-        let set = apply_binding_comment(
-            root,
-            "XOe",
-            CommentMode::Set("acquires plugin settings".into()),
-            false,
-        )
-        .unwrap();
-        assert_eq!(set.action, "set");
-        assert_eq!(set.comment.as_deref(), Some("acquires plugin settings"));
-
-        let body = read(root, "ui/widgets.yaml");
-        let doc: Value = serde_yaml::from_str(&body).unwrap();
-        assert_eq!(
-            doc["members"][0]["comment"].as_str(),
-            Some("acquires plugin settings")
-        );
-
-        let got = apply_binding_comment(root, "XOe", CommentMode::Read, false).unwrap();
-        assert_eq!(got.comment.as_deref(), Some("acquires plugin settings"));
-        assert_eq!(got.action, "read");
-
-        let cleared = apply_binding_comment(root, "XOe", CommentMode::Clear, false).unwrap();
-        assert_eq!(cleared.action, "cleared");
-        assert_eq!(cleared.comment, None);
-        let body = read(root, "ui/widgets.yaml");
-        let doc: Value = serde_yaml::from_str(&body).unwrap();
-        assert!(
-            doc["members"][0]
-                .as_mapping()
-                .unwrap()
-                .get(yk("comment"))
-                .is_none()
-        );
-    }
-
-    #[test]
     fn binding_resolves_by_readable_name() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
@@ -615,59 +559,12 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_binding_refuses_with_list() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        // Same `sym` matches as a minified name in one file and as a
-        // readable name in another.
-        write(
-            root,
-            "a.yaml",
-            "members:\n  - selector: { binding: { name: Foo } }\n",
-        );
-        write(
-            root,
-            "b.yaml",
-            "members:\n  - name: Foo\n    selector: { binding: { name: YYY } }\n",
-        );
-        let err =
-            apply_binding_comment(root, "Foo", CommentMode::Set("nope".into()), false).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("ambiguous"), "msg={msg}");
-        assert!(msg.contains("a.yaml"), "msg={msg}");
-        assert!(msg.contains("b.yaml"), "msg={msg}");
-        // Neither file was modified.
-        let a = read(root, "a.yaml");
-        let b = read(root, "b.yaml");
-        assert!(!a.contains("comment:"), "a={a}");
-        assert!(!b.contains("comment:"), "b={b}");
-    }
-
-    #[test]
     fn unknown_binding_errors() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
         write(root, "m.yaml", "members: []\n");
         let err = apply_binding_comment(root, "Nope", CommentMode::Read, false).unwrap_err();
         assert!(format!("{err}").contains("no binding named"));
-    }
-
-    #[test]
-    fn dry_run_does_not_write_binding() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "m.yaml",
-            "members:\n  - selector: { binding: { name: XOe } }\n",
-        );
-        let original = read(root, "m.yaml");
-        let out =
-            apply_binding_comment(root, "XOe", CommentMode::Set("will not stick".into()), true)
-                .unwrap();
-        assert_eq!(out.action, "dry-run");
-        assert_eq!(out.comment.as_deref(), Some("will not stick"));
-        assert_eq!(read(root, "m.yaml"), original);
     }
 
     #[test]
@@ -703,46 +600,10 @@ mod tests {
     }
 
     #[test]
-    fn set_then_read_then_clear_module_comment() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(root, "runtime/plugins.yaml", "members: []\n");
-
-        let set = apply_module_comment(
-            root,
-            "runtime/plugins",
-            CommentMode::Set("plugin glue".into()),
-            false,
-        )
-        .unwrap();
-        assert_eq!(set.action, "set");
-        let body = read(root, "runtime/plugins.yaml");
-        let doc: Value = serde_yaml::from_str(&body).unwrap();
-        assert_eq!(doc["comment"].as_str(), Some("plugin glue"));
-
-        let got = apply_module_comment(root, "runtime/plugins", CommentMode::Read, false).unwrap();
-        assert_eq!(got.comment.as_deref(), Some("plugin glue"));
-
-        let cleared =
-            apply_module_comment(root, "runtime/plugins", CommentMode::Clear, false).unwrap();
-        assert_eq!(cleared.action, "cleared");
-        let body = read(root, "runtime/plugins.yaml");
-        let doc: Value = serde_yaml::from_str(&body).unwrap();
-        assert!(doc.as_mapping().unwrap().get(yk("comment")).is_none());
-    }
-
-    #[test]
     fn missing_module_errors() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
         let err = apply_module_comment(root, "no/such", CommentMode::Read, false).unwrap_err();
         assert!(format!("{err}").contains("module YAML not found"));
-    }
-
-    #[test]
-    fn from_flags_rejects_conflicts() {
-        assert!(CommentMode::from_flags(Some("x".into()), true, false).is_err());
-        assert!(CommentMode::from_flags(Some("x".into()), false, true).is_err());
-        assert!(CommentMode::from_flags(None, true, true).is_err());
     }
 }

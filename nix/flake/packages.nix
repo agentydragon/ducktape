@@ -85,12 +85,12 @@ ducktapePkgs
   # Load:  docker load < result
   nix-rbe-container-image = import ../../devinfra/rbe_container_image/x/nix { inherit pkgs; };
   # Haku sandbox image (plain Docker, no NixOS/systemd) — the Nix
-  # replacement for cluster/k8s/haku/workspaces/image/Dockerfile. Builds
+  # replacement for haku/sandbox/image/Dockerfile. Builds
   # in CI but is NOT yet what the SandboxTemplate pulls; cutover is gated
   # on the runtime checklist in that directory's README.
   # Build: nix build .#haku-sandbox-image
   # Load:  docker load < result
-  haku-sandbox-image = import ../../cluster/k8s/haku/workspaces/image { inherit pkgs; };
+  haku-sandbox-image = import ../../haku/sandbox/image { inherit pkgs; };
   # agentplane's sandbox image: a box's command-line tools, as one list
   # (agentplane/images/sandbox.nix).
   # Build: nix build .#agentplane-sandbox-image
@@ -134,8 +134,8 @@ ducktapePkgs
       ;
   };
   # Haku's Claude-backed OpenClaw spike. Same Nix build mechanism as
-  # openclaw-image; the gateway is nix-openclaw's npm-package build pinned
-  # to the 2026.8.1 beta (nix-openclaw only tracks stable) -- see the file.
+  # openclaw-image; both images use the gateway and source metadata pinned by
+  # the shared nix-openclaw input in flake.lock.
   # Build: nix build .#haku-openclaw-spike-image
   # Load:  docker load < result
   haku-openclaw-spike-image = import ../../haku/openclaw_spike {
@@ -146,7 +146,7 @@ ducktapePkgs
   # the component; automatic build/publish and Attic caching are disabled.
   # Build: nix build .#haku-managed-agent-image
   # Load:  docker import result/tarball/*.tar haku-managed-agent
-  haku-managed-agent-image = import ../../haku/runtime/managed_agent/self_hosted/image.nix {
+  haku-managed-agent-image = import ../../haku/runtime/x/managed_agent/self_hosted/image.nix {
     inherit self;
   };
   # Pre-built UEFI qcow2 VM images for Proxmox deployment.

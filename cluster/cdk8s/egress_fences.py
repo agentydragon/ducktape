@@ -1,7 +1,6 @@
 """The FQDN fences on the agent egress proxies: one CiliumNetworkPolicy per proxy Pod naming
-what it may resolve and connect to on the public internet, each in its own chart so the
-committed file keeps the name its hand-written predecessor had. `agents/mitmproxy` is written
-by `mitmproxy.py`.
+what it may resolve and connect to on the public internet, each in its own chart, which the
+writer of the proxy's directory includes (`haku_egress_proxy.py`, `mitmproxy.py`).
 
 A fence bounds the proxy Pod, not the sandboxes behind it, whose force-proxy
 CiliumClusterwideNetworkPolicies admit kube-dns as a plain L4 rule. In-cluster traffic is not
@@ -16,14 +15,11 @@ bound the name. Known gaps: cluster/k8s/TODO.md § Egress fences.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy, dns_allowlist
 
 HAKU_EGRESS_PROXY_NAMESPACE = "haku-egress-proxy"
@@ -109,8 +105,8 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     # Forgejo Actions: `uses:` actions from data.forgejo.org, act_runner + job-container images
     # from code.forgejo.org.
     ("code.forgejo.org", "data.forgejo.org"),
-    # Managed Agents self-hosted worker (haku/runtime/managed_agent/self_hosted) long-polls
-    # Anthropic's work queue via `ant beta:worker poll`.
+    # Managed Agents self-hosted worker (haku/runtime/x/managed_agent/self_hosted) long-polls
+    # Anthropic's work queue via the Python SDK worker.
     ("api.anthropic.com",),
     # AnkiWeb sync (haku-anki service, haku/plans in haku-state): sync.ankiweb.net plus the
     # shard hosts it 308-redirects to -- Anki's own firewall guidance is to allow *.ankiweb.net
@@ -197,11 +193,11 @@ _MITMPROXY_GROUPS: tuple[tuple[str, ...], ...] = (
 
 
 def _fence(
-    app: App, file_stem: str, *, name: str, namespace: str, proxy: str, egress: Sequence[CiliumNetworkPolicySpecEgress]
+    app: App, chart_id: str, *, name: str, namespace: str, proxy: str, egress: Sequence[CiliumNetworkPolicySpecEgress]
 ) -> Chart:
-    """One policy on the Pods labelled `proxy`, in a chart named after the file it becomes.
+    """One policy on the Pods labelled `proxy`, in a chart of its own.
     Additive with the namespace's default-deny NetworkPolicy."""
-    chart = Chart(app, file_stem, disable_resource_name_hashes=True)
+    chart = Chart(app, chart_id, disable_resource_name_hashes=True)
     NetworkPolicy(
         chart,
         "fence",
@@ -275,7 +271,3 @@ def mitmproxy_cloud_api(app: App) -> Chart:
             EgressRule.to_entities(Entity.CLUSTER, ports=[11434, 80, 443, 8000, 8080]),
         ],
     )
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy", haku_cloud_api, haku_openclaw_spike)

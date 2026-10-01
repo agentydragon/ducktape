@@ -3,28 +3,23 @@ Kustomization applies, which gathers it with `secrets`, the database manifest an
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
 from cluster.cdk8s.flux import kustomize_kustomization
-from cluster.cdk8s.generation import write_namespace, write_yaml
+from cluster.cdk8s.generation import manifest_file, namespace_chart, write_charts, write_yaml
 from cluster.cdk8s.litellm import database
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm"
 
 
 def write_manifests(root: Path) -> None:
-    write_namespace(
-        root,
-        OUTPUT_DIR,
-        name="litellm",
-        labels={
-            "goldilocks.fairwinds.com/enabled": "true",
-            "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-            "rbac.ducktape.io/agent-readable-logs": "true",
-        },
+    namespace = write_charts(
+        root, OUTPUT_DIR, partial(namespace_chart, name="litellm", vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
     )
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=["namespace.k8s.yaml", "secrets", f"db/{database.MANIFEST}", "app"]),
+        kustomize_kustomization(resources=[namespace, "secrets", f"db/{manifest_file(database.OUTPUT_DIR)}", "app"]),
     )

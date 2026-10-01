@@ -123,8 +123,8 @@ returned client; there is no cross-request token cache or ambient bearer lookup.
     pointing at the OAuth2 provider above.
   - Kubernetes secrets in the `grocy-sf` / `grocy-vallejo` namespaces,
     carrying `client_id`, `client_secret`, and `grocy_proxy_client_id`.
-- **K8s manifests** live at <../../cluster/k8s/grocy/{sf,vallejo}/mcp/>
-  and follow the POC's three-layer pattern (namespace / TF / app) minus
+- **K8s manifests** are generated per household by <../cluster/cdk8s/grocy/mcp.py>,
+  settings file included, and follow the POC's three-layer pattern (namespace / TF / app) minus
   the `tf/` layer since TF is shared with `agent-machine-access`.
 
 ## Refreshing the OpenAPI spec

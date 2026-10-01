@@ -1,83 +1,62 @@
 //! E2e for `debundle scc` and `debundle cluster` against a synthetic
 //! owner-graph fixture.
 
-use debundle_e2e_support::{debundler_path, write_text_file};
+use debundle_e2e_support::{owner_graph, owner_node, run_debundle, write_text_file};
+use serde_json::json;
 use std::fs;
-use std::process::Command;
 
 /// Build a small owner_graph.json with a 2-module SCC + a singleton.
 fn synthetic_graph_json() -> String {
-    serde_json::json!({
-        "chunk_id": "static/index",
+    let mut graph = owner_graph(
+        "static/index",
+        vec![
+            owner_node("owner:0", 1, "XOe", "ui/plugins"),
+            owner_node("owner:1", 2, "YOe", "residual"),
+        ],
+        vec![],
+    );
+    graph["module_graph"] = json!({
         "nodes": [
+            { "key": "ui/plugins", "path": "ui/plugins", "residual": false },
+            { "key": "residual", "path": "residual", "residual": true },
+            { "key": "isolated", "path": "isolated", "residual": false }
+        ],
+        "edges": [
             {
-                "id": "owner:0",
-                "statement_ordinal": 1,
-                "source_location": null,
-                "declared_bindings": [
-                    { "binding": "XOe", "export_name": "PluginAccessor" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "ui/plugins"
+                "id": "q_edge:0",
+                "source": "ui/plugins",
+                "target": "residual",
+                "edge_kinds": ["eager_use"],
+                "constrains_init_order": true
             },
             {
-                "id": "owner:1",
-                "statement_ordinal": 2,
-                "source_location": null,
-                "declared_bindings": [
-                    { "binding": "YOe", "export_name": "YOe" }
-                ],
-                "statement_kind": "var_decl",
-                "purity": { "kind": "pure" },
-                "destination": "residual"
+                "id": "q_edge:1",
+                "source": "residual",
+                "target": "ui/plugins",
+                "edge_kinds": ["eager_use"],
+                "constrains_init_order": true
             }
         ],
-        "edges": [],
-        "module_graph": {
-            "nodes": [
-                { "key": "ui/plugins", "path": "ui/plugins", "residual": false },
-                { "key": "residual", "path": "residual", "residual": true },
-                { "key": "isolated", "path": "isolated", "residual": false }
-            ],
-            "edges": [
-                {
-                    "id": "q_edge:0",
-                    "source": "ui/plugins",
-                    "target": "residual",
-                    "edge_kinds": ["eager_use"],
-                    "constrains_init_order": true
-                },
-                {
-                    "id": "q_edge:1",
-                    "source": "residual",
-                    "target": "ui/plugins",
-                    "edge_kinds": ["eager_use"],
-                    "constrains_init_order": true
-                }
-            ],
-            "sccs": [
-                {
-                    "id": "scc:0",
-                    "modules": ["ui/plugins", "residual"],
-                    "is_cycle": true,
-                    "realizable": false,
-                    "module_edge_ids": ["q_edge:0", "q_edge:1"],
-                    "constraining_module_edge_ids": ["q_edge:0", "q_edge:1"]
-                },
-                {
-                    "id": "scc:1",
-                    "modules": ["isolated"],
-                    "is_cycle": false,
-                    "realizable": true,
-                    "module_edge_ids": [],
-                    "constraining_module_edge_ids": []
-                }
-            ]
-        },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
-    .to_string()
+        "sccs": [
+            {
+                "id": "scc:0",
+                "modules": ["ui/plugins", "residual"],
+                "is_cycle": true,
+                "realizable": false,
+                "module_edge_ids": ["q_edge:0", "q_edge:1"],
+                "constraining_module_edge_ids": ["q_edge:0", "q_edge:1"]
+            },
+            {
+                "id": "scc:1",
+                "modules": ["isolated"],
+                "is_cycle": false,
+                "realizable": true,
+                "module_edge_ids": [],
+                "constraining_module_edge_ids": []
+            }
+        ]
+    });
+    graph.to_string()
 }
 
 #[test]
@@ -88,18 +67,15 @@ fn scc_lists_every_scc_in_quotient() {
     fs::create_dir_all(&modules).unwrap();
     write_text_file(&graph_path, &synthetic_graph_json());
 
-    let out = Command::new(debundler_path())
-        .args([
-            "scc",
-            "--graph",
-            graph_path.to_str().unwrap(),
-            "--modules",
-            modules.to_str().unwrap(),
-            "--format",
-            "json",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "scc",
+        "--graph",
+        graph_path.to_str().unwrap(),
+        "--modules",
+        modules.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
     assert!(
         out.status.success(),
         "scc exit: stderr={}",
@@ -117,19 +93,16 @@ fn scc_cycles_only_filter() {
     fs::create_dir_all(&modules).unwrap();
     write_text_file(&graph_path, &synthetic_graph_json());
 
-    let out = Command::new(debundler_path())
-        .args([
-            "scc",
-            "--graph",
-            graph_path.to_str().unwrap(),
-            "--modules",
-            modules.to_str().unwrap(),
-            "--cycles-only",
-            "--format",
-            "json",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "scc",
+        "--graph",
+        graph_path.to_str().unwrap(),
+        "--modules",
+        modules.to_str().unwrap(),
+        "--cycles-only",
+        "--format",
+        "json",
+    ]);
     assert!(out.status.success());
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let sccs = parsed["sccs"].as_array().unwrap();
@@ -145,20 +118,17 @@ fn scc_binding_filter() {
     fs::create_dir_all(&modules).unwrap();
     write_text_file(&graph_path, &synthetic_graph_json());
 
-    let out = Command::new(debundler_path())
-        .args([
-            "scc",
-            "--graph",
-            graph_path.to_str().unwrap(),
-            "--modules",
-            modules.to_str().unwrap(),
-            "--binding",
-            "XOe",
-            "--format",
-            "json",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "scc",
+        "--graph",
+        graph_path.to_str().unwrap(),
+        "--modules",
+        modules.to_str().unwrap(),
+        "--binding",
+        "XOe",
+        "--format",
+        "json",
+    ]);
     assert!(out.status.success());
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let sccs = parsed["sccs"].as_array().unwrap();
@@ -173,23 +143,20 @@ fn cluster_emits_quotient_neighbors() {
     fs::create_dir_all(&modules).unwrap();
     write_text_file(&graph_path, &synthetic_graph_json());
 
-    let out = Command::new(debundler_path())
-        .args([
-            "cluster",
-            "XOe",
-            "--graph",
-            graph_path.to_str().unwrap(),
-            "--modules",
-            modules.to_str().unwrap(),
-            "--format",
-            "json",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "cluster",
+        "XOe",
+        "--graph",
+        graph_path.to_str().unwrap(),
+        "--modules",
+        modules.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
     assert!(out.status.success());
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     // Each module-quotient node carries both its interned id and a
-    // human path label (CLI_DOGFOOD #2). In this synthetic graph the
+    // human path label. In this synthetic graph the
     // interned key already equals the path, so id == label here.
     assert_eq!(parsed["home_module"]["label"].as_str(), Some("ui/plugins"));
     assert_eq!(parsed["home_module"]["id"].as_str(), Some("ui/plugins"));
@@ -205,7 +172,7 @@ fn cluster_emits_quotient_neighbors() {
 
 #[test]
 fn cluster_accepts_binding_flag_alias() {
-    // CLI_DOGFOOD #1: `--binding <sym>` is accepted as an alias for the
+    // `--binding <sym>` is accepted as an alias for the
     // positional `<sym>` (the spelling some operator skills document).
     let dir = tempfile::tempdir().unwrap();
     let graph_path = dir.path().join("owner_graph.json");
@@ -213,20 +180,17 @@ fn cluster_accepts_binding_flag_alias() {
     fs::create_dir_all(&modules).unwrap();
     write_text_file(&graph_path, &synthetic_graph_json());
 
-    let out = Command::new(debundler_path())
-        .args([
-            "cluster",
-            "--binding",
-            "XOe",
-            "--graph",
-            graph_path.to_str().unwrap(),
-            "--modules",
-            modules.to_str().unwrap(),
-            "--format",
-            "json",
-        ])
-        .output()
-        .expect("spawn debundle");
+    let out = run_debundle(&[
+        "cluster",
+        "--binding",
+        "XOe",
+        "--graph",
+        graph_path.to_str().unwrap(),
+        "--modules",
+        modules.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
     assert!(
         out.status.success(),
         "stderr: {}",

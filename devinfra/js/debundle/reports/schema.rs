@@ -11,12 +11,22 @@ pub struct SourceLocation {
     pub source_path: String,
     pub start_line: usize,
     pub end_line: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_column: Option<usize>,
 }
 
 impl SourceLocation {
     /// Expand this location's line range to include `other`.
     pub fn expand_to(&mut self, other: &SourceLocation) {
-        self.start_line = self.start_line.min(other.start_line);
+        if other.start_line < self.start_line {
+            self.start_line = other.start_line;
+            self.start_column = other.start_column;
+        } else if other.start_line == self.start_line {
+            self.start_column = match (self.start_column, other.start_column) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (None, value) | (value, None) => value,
+            };
+        }
         self.end_line = self.end_line.max(other.end_line);
     }
 }
@@ -115,6 +125,18 @@ pub struct OwnerGraphNodeReport {
     pub destination: ModuleKey,
 }
 
+impl OwnerGraphNodeReport {
+    /// Inclusive line span of the owner's statement; 0 without a
+    /// source location.
+    pub fn line_count(&self) -> usize {
+        self.source_location.as_ref().map_or(0, |loc| {
+            loc.end_line
+                .saturating_sub(loc.start_line)
+                .saturating_add(1)
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OwnerGraphEdgeReport {
     pub id: String,
@@ -208,6 +230,16 @@ pub struct QuotientSccReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SequencedOwnerCause {
+    pub owner_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binding_names: Vec<Atom>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+    pub purity: Purity,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AtomicGraphReport {
     pub nodes: Vec<AtomicUnitReport>,
     pub edges: Vec<AtomicUnitEdgeReport>,
@@ -254,6 +286,8 @@ pub struct AtomicUnitConflictReport {
     pub members: Vec<String>,
     pub claims: Vec<ConflictingClaimReport>,
     pub causes: Vec<DepKind>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sequenced_owners: Vec<SequencedOwnerCause>,
 }
 
 /// One claim row in [`AtomicUnitConflictReport`].
@@ -266,10 +300,39 @@ pub struct ConflictingClaimReport {
     pub module: spec::ModulePath,
 }
 
+pub fn sequenced_owner_causes(
+    owner_graph: &crate::OwnerGraph,
+    members: &[crate::OwnerId],
+) -> Vec<SequencedOwnerCause> {
+    let member_set: std::collections::BTreeSet<_> = members.iter().copied().collect();
+    let mut source_owners = std::collections::BTreeSet::new();
+    for edge in owner_graph.iter_edges() {
+        if edge.reason.kind == DepKind::Sequenced && member_set.contains(&edge.from) {
+            source_owners.insert(edge.from);
+        }
+    }
+    source_owners
+        .into_iter()
+        .filter_map(|owner| {
+            let node = owner_graph.node(owner)?;
+            let Purity::NotPure { .. } = &node.purity else {
+                return None;
+            };
+            Some(SequencedOwnerCause {
+                owner_id: crate::reports::owner_key(owner),
+                binding_names: node.declared.iter().map(|id| id.0.clone()).collect(),
+                source_location: node.source_location.clone(),
+                purity: node.purity.clone(),
+            })
+        })
+        .collect()
+}
+
 impl AtomicUnitConflictReport {
     pub fn from_conflicts(
         conflicts: &[AtomicUnitConflict],
         module_path: &dyn Fn(ModuleId) -> spec::ModulePath,
+        owner_graph: &crate::OwnerGraph,
     ) -> Vec<Self> {
         conflicts
             .iter()
@@ -290,26 +353,10 @@ impl AtomicUnitConflictReport {
                     })
                     .collect(),
                 causes: conflict.causes.iter().copied().collect(),
+                sequenced_owners: sequenced_owner_causes(owner_graph, &conflict.members),
             })
             .collect()
     }
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeelCandidateStatus {
-    PeelableNow,
-    BlockedCycle,
-    BlockedResidualDependency,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum FactorizeDiagnosticReason {
-    ExceedsSizeCap,
-    NoExactRepair,
-    ActiveModuleConflict,
-    RepeatedFrontier,
 }
 
 /// Interned reference to a logical module.

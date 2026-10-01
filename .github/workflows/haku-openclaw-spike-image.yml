@@ -1,7 +1,7 @@
 # Build and push Haku's Claude-backed OpenClaw spike with Nix. Same build
-# mechanism as the public-coder openclaw image: the gateway comes from
-# nix-openclaw's npm-package build pinned to stable 2026.8.1, and the
-# repository's CLI surface is layered declaratively.
+# mechanism as the public-coder OpenClaw image: the shared gateway and source
+# metadata come from the nix-openclaw input pinned by flake.lock. The Haku
+# CLI surface is layered declaratively.
 name: Haku OpenClaw Spike Image
 
 on:
@@ -13,13 +13,12 @@ on:
       # file rather than openclaw/** on purpose: the rest of that directory is
       # public-coder's image and does not belong in this trigger.
       - "openclaw/gateway.nix"
-      - "openclaw/npm_wrapper/**"
-      - "openclaw/patch-openclaw-npm-dist.mjs"
+      - "openclaw/patches/**"
       - "openclaw/proxy-setup.mjs"
       - "flake.nix"
       - "flake.lock"
       - "nix/flake/packages.nix"
-      - "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml"
+      - "cluster/generated/agents/haku-openclaw-spike/app/app.k8s.yaml"
       - ".github/workflows/haku-openclaw-spike-image.yml"
       - ".github/workflows/nix-image.yml"
       - ".github/actions/setup-nix-attic/action.yml"
@@ -32,13 +31,12 @@ on:
       # file rather than openclaw/** on purpose: the rest of that directory is
       # public-coder's image and does not belong in this trigger.
       - "openclaw/gateway.nix"
-      - "openclaw/npm_wrapper/**"
-      - "openclaw/patch-openclaw-npm-dist.mjs"
+      - "openclaw/patches/**"
       - "openclaw/proxy-setup.mjs"
       - "flake.nix"
       - "flake.lock"
       - "nix/flake/packages.nix"
-      - "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml"
+      - "cluster/generated/agents/haku-openclaw-spike/app/app.k8s.yaml"
       - ".github/workflows/haku-openclaw-spike-image.yml"
       - ".github/workflows/nix-image.yml"
       - ".github/actions/setup-nix-attic/action.yml"
@@ -62,8 +60,12 @@ jobs:
         pip install --quiet pyyaml
         python3 -c '
         import yaml
-        with open("cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml") as f:
-            config_map = yaml.safe_load(f)
+        with open("cluster/generated/agents/haku-openclaw-spike/app/app.k8s.yaml") as f:
+            config_map = next(
+                doc
+                for doc in yaml.safe_load_all(f)
+                if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "haku-openclaw-spike-config"
+            )
         with open("/tmp/haku-openclaw-spike-openclaw.json", "w") as out:
             out.write(config_map["data"]["openclaw.json"])
         '
@@ -100,11 +102,9 @@ jobs:
           }
           # openclaw --version does not import the gateway runtime modules, so
           # it passes even when the gateway is missing runtime deps. Actually
-          # load the gateway: the npm-path install copies openclaw deps from
-          # node_modules/openclaw/node_modules, and a hoisted (non-nested) lock
-          # left the gateway with zero deps, crashing at its first import
-          # (tslog). Run the real gateway briefly and reject a module-resolution
-          # failure; a config/network failure after modules load is expected.
+          # load the gateway to exercise module resolution against the pinned
+          # npm dependency tree. Run it briefly and reject module-resolution
+          # failures; a config/network failure after modules load is expected.
           gw_out="$(timeout 15 openclaw gateway 2>&1 || true)"
           if printf %s "$gw_out" | grep -qE "openclaw requires (Node|Bun)|ERR_MODULE_NOT_FOUND|Cannot find package"; then
             echo "FATAL: gateway runtime validation failed:" >&2

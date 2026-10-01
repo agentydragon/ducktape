@@ -1,0 +1,61 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: haku-cloud-agent
+  namespace: flux-system
+spec:
+  # SUSPENDED 2026-07-04: the operator deleted the cloud managed-agent objects
+  # (agent/env/vault/deployment and four credentials) directly at Anthropic on
+  # 2026-09-30. The provider's Read doesn't detect the 404s, so tofu-controller
+  # can report "no changes" against phantom state. The haku-cloud-agent-ids Secret
+  # may still exist but contains a deleted vault ID; do not consume it. Before
+  # resuming, repair/replace the provider path and recreate every required object.
+  #
+  # CI note: the matching Bazel tf_module is tagged manual and the provider is
+  # omitted from the global rules_tf mirror because
+  # modus-agendi/anthropic-claude-managed-agents v1.1.0 no longer resolves through
+  # the GitHub release asset path advertised by the OpenTofu registry. Re-enable
+  # only after replacing/restoring the provider path or retiring this root.
+  suspend: true
+  interval: 15m
+  refreshBeforeApply: true
+  path: ./haku/runtime/x/managed_agent/anthropic_hosted/terraform
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  # A future successful apply publishes fresh IDs (agent_id, deployment_id,
+  # environment_id, vault_id; see the historical HCL outputs) here. The current
+  # Secret may still contain the deleted vault ID and must not be consumed.
+  writeOutputsToSecret:
+    name: haku-cloud-agent-ids
+
+  # The historical root reads a static_bearer JWT from haku-cloud-kube-token.
+  # That Secret publication was removed when the Anthropic vault was deleted;
+  # restore and seed this input deliberately before any future apply.
+
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "haku_cloud_agent"
+      }
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password
+        # The claude-managed-agents provider reads ANTHROPIC_API_KEY directly.
+        # Dedicated, spend-capped Anthropic workspace; regular key, not admin.
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: haku-cloud-anthropic-api-key
+              key: api-key

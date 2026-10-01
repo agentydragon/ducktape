@@ -1,32 +1,91 @@
 """The Grocy user→permission reconciler shared by every household (`user-perms-base`): the
-one-shot provisioner Job, the daily drift-correcting CronJob, and the NetworkPolicy
-admitting both to Grocy.
+one-shot provisioner Job, the daily drift-correcting CronJob, the NetworkPolicy admitting both
+to Grocy, and the policy they apply. Each household's `<household>/user-perms` places the base
+in its namespace.
 
-Hand-written beside the generated output: `kustomization.yaml` (its configMapGenerator
-hash-suffixes `policy.yaml`, so a policy edit changes the Job spec and the `force`
-annotation makes Flux recreate it) and `image-pins/kustomization.yaml`, which overrides
-the reconciler's "unset" placeholder tag (cluster/cdk8s/AGENTS.md § the `:tag` Setters
-marker).
+The base's `kustomization.yaml` hash-suffixes the policy's ConfigMap, so a policy edit changes
+the Job spec and the `force` annotation makes Flux recreate it. It includes the hand-written
+`PINS_DIR` Component across the roots, which overrides the reconciler's "unset" placeholder
+tag (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
 """
 
 from __future__ import annotations
 
+import posixpath
 from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.provisioners.grocy_user_perms.provision import Policy
 
-BASE_DIR = f"{HAND_WRITTEN_ROOT}/grocy/user-perms-base"
+BASE_DIR = f"{grocy.ROOT}/user-perms-base"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/grocy/user-perms-image-pins"
 _NAME = "grocy-user-perms-provisioner"
 # Shared by the Job's and the CronJob's pods: the NetworkPolicy admits them to grocy:80.
 _LABELS = {"app.kubernetes.io/name": _NAME}
 # Script baked in via Bazel (//cluster/provisioners/grocy_user_perms:image).
 _IMAGE = "git.allegedly.works/ducktape-ci/grocy-user-perms-provisioner:unset"
 _POLICY_CONFIG_MAP = "grocy-user-perms-policy"
+_POLICY_DIR = "/config"
+_POLICY_FILE = "policy.yaml"
+# Every row of Grocy's `permission_hierarchy`. `User::HasPermission` looks a permission up by
+# exact name and does not walk the hierarchy: a user holding only ADMIN still fails a check for
+# MASTER_DATA_EDIT or STOCK_PURCHASE (seen live 2026-07-12: a user converged to exactly {ADMIN}
+# got 403 on both), so full access is every row. The reconciler fails on a name Grocy lacks; a
+# permission Grocy adds stays ungranted until it is added here.
+_FULL_ACCESS = frozenset(
+    {
+        "ADMIN",
+        "USERS",
+        "USERS_CREATE",
+        "USERS_EDIT",
+        "USERS_READ",
+        "USERS_EDIT_SELF",
+        "STOCK",
+        "SHOPPINGLIST",
+        "RECIPES",
+        "CHORES",
+        "BATTERIES",
+        "TASKS",
+        "EQUIPMENT",
+        "CALENDAR",
+        "STOCK_PURCHASE",
+        "STOCK_CONSUME",
+        "STOCK_INVENTORY",
+        "STOCK_TRANSFER",
+        "STOCK_OPEN",
+        "STOCK_EDIT",
+        "SHOPPINGLIST_ITEMS_ADD",
+        "SHOPPINGLIST_ITEMS_DELETE",
+        "RECIPES_MEALPLAN",
+        "CHORE_TRACK_EXECUTION",
+        "CHORE_UNDO_EXECUTION",
+        "BATTERIES_TRACK_CHARGE_CYCLE",
+        "BATTERIES_UNDO_CHARGE_CYCLE",
+        "TASKS_UNDO_EXECUTION",
+        "TASKS_MARK_COMPLETED",
+        "MASTER_DATA_EDIT",
+    }
+)
+_POLICY = Policy(
+    users={
+        "agentydragon": _FULL_ACCESS,
+        "auragon": _FULL_ACCESS,
+        # Explicitly empty: haku stays read-only, converged back even if elevated in the UI.
+        "haku": set(),
+    }
+)
+
+
+def output_dir(household: str) -> str:
+    return f"{grocy.ROOT}/{household}/user-perms"
 
 
 def _pod_spec(container_name: str) -> k8s.PodSpec:
@@ -48,8 +107,8 @@ def _pod_spec(container_name: str) -> k8s.PodSpec:
                 image_pull_policy="Always",
                 # `http://grocy` is the namespace-local Service name — it resolves to the
                 # household's own grocy instance in whichever grocy-* namespace this runs in.
-                args=["--policy", "/config/policy.yaml", "--grocy-url", "http://grocy"],
-                volume_mounts=[k8s.VolumeMount(name="policy", mount_path="/config", read_only=True)],
+                args=["--policy", f"{_POLICY_DIR}/{_POLICY_FILE}", "--grocy-url", "http://grocy"],
+                volume_mounts=[k8s.VolumeMount(name="policy", mount_path=_POLICY_DIR, read_only=True)],
                 security_context=k8s.SecurityContext(
                     allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                 ),
@@ -69,7 +128,7 @@ def base_chart(app: App) -> Chart:
     # Gatus, because any pod that reaches :80 can impersonate any user via the trusted
     # X-authentik-username header. NetworkPolicies are additive, so this grants the
     # reconciler pods (bootstrap Job + daily CronJob) that same in-cluster access (they act
-    # as the admin user to apply policy.yaml). Scoped to the shared provisioner pod label only.
+    # as the admin user to apply the policy). Scoped to the shared provisioner pod label only.
     k8s.KubeNetworkPolicy(
         chart,
         "networkpolicy",
@@ -137,4 +196,27 @@ def base_chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, BASE_DIR, base_chart)
+    """The base, and each household's directory placing it in the household's namespace."""
+    write_yaml(
+        root / BASE_DIR / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=[write_charts(root, BASE_DIR, base_chart)],
+            components=[posixpath.relpath(PINS_DIR, BASE_DIR)],
+            config_map_generator=[
+                ConfigMapArgs(
+                    name=_POLICY_CONFIG_MAP,
+                    namespace=None,
+                    literals=[f"{_POLICY_FILE}={yaml_config(_POLICY.model_dump())}"],
+                )
+            ],
+        ),
+    )
+    for household in grocy.HOUSEHOLDS:
+        directory = output_dir(household)
+        (root / directory).mkdir(parents=True, exist_ok=True)
+        write_yaml(
+            root / directory / "kustomization.yaml",
+            kustomize_kustomization(
+                namespace=grocy.service(household).pods.namespace, resources=[posixpath.relpath(BASE_DIR, directory)]
+            ),
+        )

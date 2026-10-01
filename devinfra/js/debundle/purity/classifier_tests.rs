@@ -1409,3 +1409,16 @@ fn imported_pure_callee_still_classifies_arguments() {
         !classify_with_imported_purities("", "memo(A + 1)", &[("memo", Purity::Pure)]).is_pure()
     );
 }
+
+#[test]
+fn string_raw_tagged_templates_require_global_tag_and_primitive_substitutions() {
+    assert!(classify("String.raw`plain`").is_pure());
+    assert!(classify("String.raw`value: ${1}`").is_pure());
+    assert!(classify_built("const value = 1;", "String.raw`${value}`").is_pure());
+    assert!(!(classify("String.raw`${{ toString() { return 'x'; } }}`")).is_pure());
+    assert!(!(classify("String.raw`${unknown}`")).is_pure());
+    assert!(!(classify("String.raw`${io()}`")).is_pure());
+    assert!(!(classify("other`plain`")).is_pure());
+    assert!(!(classify("String['raw']`plain`")).is_pure());
+    assert!(!(classify_with_module("const String = local;", "String.raw`plain`")).is_pure());
+}

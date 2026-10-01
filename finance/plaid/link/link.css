@@ -24,6 +24,9 @@ header {
   align-items: center;
   flex-wrap: wrap;
 }
+.logout {
+  display: block;
+}
 h1 {
   font-size: 28px;
   margin: 0;

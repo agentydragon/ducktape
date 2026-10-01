@@ -1,0 +1,35 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+# Read by //haku/runtime/x/managed_agent:test_agent_config_ssot (SSOT drift guard).
+exports_files(["main.tf"])
+
+# The Terraform CR is suspended and this root is parked. Keep the Bazel targets
+# manual even though the community provider is published: rules_tf mirrors every
+# provider in MODULE.bazel for unrelated Terraform targets, so this parked
+# module's provider remains intentionally outside the global mirror. Explicit
+# validate/apply work needs deliberate provider and security review.
+# TODO: if the cloud agent is revived, validate the published provider and either
+# restore provider mirroring or retire this HCL root in favor of imperative
+# provisioning.
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "claude-managed-agents": "modus-agendi/anthropic-claude-managed-agents:~>1.1",
+        "kubernetes": "hashicorp/kubernetes:~>2.38",
+    },
+    tags = [
+        "manual",
+        "no-sandbox",
+    ],
+    tf_version = "1.12.6",
+)
+
+tf_module(
+    name = "haku-cloud-agent",
+    providers = [
+        "claude-managed-agents",
+        "kubernetes",
+    ],
+    providers_versions = ":providers",
+    tags = ["manual"],
+)

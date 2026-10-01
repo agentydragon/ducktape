@@ -267,8 +267,13 @@ decision's note or reason, or the executor's error. `request_action` answers the
 wait ends unless asked for its receipt, so an Action a policy approves comes back as its tool's own
 answer from the one call. A receipt's `execution` has its state, error and timing but no result.
 
-Submission, receipt and result reads take one shared `wait` object (`wait_seconds`, 0–30 default 0;
+Submission, receipt and result reads take one shared `wait` object (`wait_seconds`, 0 through this
+instance's `max_wait_seconds` setting, default 0; the setting defaults to 30 seconds;
 `wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
+Set `max_wait_seconds` in the Action Service settings file or with
+`AGENTPLANE_ACTIONS_MAX_WAIT_SECONDS`. Direct tool calls initially wait for
+`direct_wait_seconds` (30 seconds by default), capped by `max_wait_seconds`; configure it in the
+settings file or with `AGENTPLANE_ACTIONS_DIRECT_WAIT_SECONDS`.
 Waits use commit notifications rather than periodic queries. A deadline returns a receipt, not a
 cancellation. On an ambiguous response, reuse the original request/key; transport or notification
 failure must not prompt a new Action. Workload authorization is revalidated after a bounded wait,
@@ -293,8 +298,9 @@ must be in its roster at startup.
 A call submits through `ActionService.submit_decided` with a server-minted idempotency key and the
 title `Direct tool call`. If no provider decides it, nothing is persisted and the call answers an
 error naming each policy's reason (`UndecidedRequestError`) and pointing at `request_action`. A
-decided call waits up to 30 seconds and answers through `tool_results.py`, as `get_action_result`
-does, so an unfinished one names its request to keep waiting on. A configured name the caller's
+decided call waits up to this instance's `direct_wait_seconds` setting, capped by
+`max_wait_seconds`, and answers through `tool_results.py`, as `get_action_result` does, so an
+unfinished one names its request to keep waiting on. A configured name the caller's
 policy does not cover still resolves, so it is refused with a reason rather than unknown. Listing
 is per request with no `tools/list_changed`: a client holding an older list only meets refusals,
 and `request_action` reaches any Action whatever the list says.
@@ -370,6 +376,14 @@ partially started adapter. Drain fences claims and reconnects but retains publis
 through execution completion persistence. Shutdown joins supervisors and bounded connection cleanup
 after draining service tasks, then closes Kubernetes and database resources.
 
+Each linked MCP server is configured with either a fixed `client_id` or `use_shared_cimd`. The
+Action Service has one `mcp_client_metadata` setting for its public CIMD identity, served without
+authentication at `/oauth/client-metadata.json` on its origin; that exact path is added to its
+public HTTPRoute. The document uses its own URL as `client_id`, lists the callbacks of every
+configured MCP linkage using it, and declares public token authentication. Link start uses the
+shared CIMD only when authorization-server discovery advertises
+`client_id_metadata_document_supported`; it fails closed otherwise.
+
 Requests, execution payloads and durable rows use `action: {"group": "everything", "name": "echo"}`.
 The fields remain separate throughout discovery, validation and dispatch; no concatenated identity
 or legacy name is accepted. Migration `0005_structured_action` removes the unused string column
@@ -379,7 +393,7 @@ transactionally if unexpected preexisting rows exist.
 ## Action policy sets and bindings
 
 `policies/resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
-`cluster/k8s/agentplane-crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
+`agentplane/crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
 a subject that is not a namespaced ServiceAccount makes the object an `InvalidResource`. `policy_informer` list-and-watches both kinds and the labeled caller
 ServiceAccounts in every `allowed_service_account_namespaces` entry into one `PolicyIndex`, and
 writes each set's and binding's `Ready` condition with `observedGeneration`, so `kubectl get`
@@ -446,7 +460,7 @@ Kubernetes ServiceAccount lists are the final operator design.
 Migrations run separately through `:migrate`; the server verifies the migrated schema and never
 creates tables at startup. `:image` and `:migration_image` are separate OCI targets. Each deployed
 environment gives the service its own `actions` database and login role on the namespace's shared
-CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane.k8s.yaml`),
+CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
 
 ## MCP executor transports

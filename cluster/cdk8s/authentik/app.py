@@ -22,6 +22,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
+from cluster.cdk8s import cilium
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
@@ -31,11 +32,14 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "authentik"
 NAMESPACE = "authentik"
+HOSTNAME = "auth.allegedly.works"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/app"
+HOSTNAME = "auth.allegedly.works"
 _HOST_CONFIG_MAP = "authentik-host"
 _BLUEPRINTS_CONFIG_MAP = "authentik-sso-blueprints"
 _SOPS_SECRETS = (
@@ -49,6 +53,18 @@ _SOPS_SECRETS = (
 _SERVER_LABELS = {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": NAME}
 # Pod ports: 9000 (HTTP), 9443 (HTTPS), 9300 (metrics).
 _HTTP, _HTTPS, _METRICS = 9000, 9443, 9300
+# The chart's server Service, which also serves the embedded proxy outpost.
+SERVER = ServiceRef(
+    name="authentik-server",
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=NAMESPACE, labels=tuple(_SERVER_LABELS.items())),
+    target_port=_HTTP,
+)
+
+
+def oidc_issuer(application: str) -> str:
+    """The issuer of the OAuth2 provider behind the Authentik application with slug `application`."""
+    return f"https://{HOSTNAME}/application/o/{application}/"
 
 
 def _pod_env() -> dict[str, object]:
@@ -63,10 +79,7 @@ def _pod_env() -> dict[str, object]:
             {"secretRef": {"name": "authentik-user-password"}},
         ],
         "env": [
-            {
-                "name": "AUTHENTIK_POSTGRESQL__PASSWORD",
-                "valueFrom": {"secretKeyRef": {"name": db.CREDENTIALS_SECRET, "key": "password"}},
-            }
+            {"name": "AUTHENTIK_POSTGRESQL__PASSWORD", "valueFrom": db.POSTGRES.app_secret.key("password").value_from()}
         ],
     }
 
@@ -109,7 +122,7 @@ def _values() -> dict[str, object]:
     return {
         "global": {
             "deploymentAnnotations": {
-                "secret.reloader.stakater.com/reload": f"{db.CREDENTIALS_SECRET},authentik-user-password",
+                "secret.reloader.stakater.com/reload": f"{db.POSTGRES.app_secret.name},authentik-user-password",
                 "configmap.reloader.stakater.com/reload": _BLUEPRINTS_CONFIG_MAP,
             }
         },
@@ -119,7 +132,7 @@ def _values() -> dict[str, object]:
             # The empty secrets below arrive via envFrom (`_pod_env`) instead.
             "secret_key": "",
             "error_reporting": {"enabled": False},
-            "postgresql": {"host": f"{db.NAME}-rw", "name": db.DATABASE, "user": db.DATABASE, "password": ""},
+            "postgresql": {"host": db.POSTGRES.rw.name, "name": db.DATABASE, "user": db.DATABASE, "password": ""},
             "redis": {"host": ""},
             "bootstrap": {"password": "", "token": ""},
         },
@@ -130,7 +143,7 @@ def _values() -> dict[str, object]:
             # Beside the database: Django issues many serialized queries per request, and an
             # unpinned server once landed at home, 114ms from the OVH primary, where the static
             # OIDC discovery document took ~1.6s. It also made `Home down` take SSO with it.
-            "nodeSelector": dict(db.NODE_SELECTOR),
+            "nodeSelector": dict(db.PLACEMENT.node_selector),
             **_spread("server"),
             # 20 minutes for first-boot migrations: a startup kill mid-migration leaves the
             # connection idle-in-transaction and blocks the next attempt.
@@ -194,7 +207,7 @@ def _host_config_map(chart: Chart) -> None:
         "host",
         metadata=k8s.ObjectMeta(name=_HOST_CONFIG_MAP, namespace=NAMESPACE),
         data={
-            "AUTHENTIK_HOST": "https://auth.allegedly.works",
+            "AUTHENTIK_HOST": f"https://{HOSTNAME}",
             # Cilium Gateway API uses host-network TPROXY, so Gateway hairpins can reach Authentik
             # with the caller's cluster-pod source address instead of the Envoy node address.
             # Authentik 2026.8 otherwise ignores X-Forwarded-Proto and emits HTTP OIDC metadata for
@@ -210,9 +223,8 @@ def _http_route(chart: Chart) -> None:
         chart,
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        hostnames=["auth.allegedly.works"],
-        backend="authentik-server",
-        port=80,
+        hostnames=[HOSTNAME],
+        backend=SERVER,
         hsts=False,
         listener=None,
         # Let the operator-owned Haku console (haku.allegedly.works) frame Authentik's pages, so
@@ -258,7 +270,7 @@ def _network_policy(chart: Chart) -> None:
             # Grafana OIDC token exchange and Prometheus scraping.
             IngressRule.from_endpoints(_namespace_source("monitoring"), ports=[_HTTP, _METRICS]),
             # Gatus liveness probes.
-            IngressRule.from_endpoints(_namespace_source("gatus"), ports=[_HTTP]),
+            IngressRule.from_endpoints(_namespace_source(cilium.PROBER.namespace), ports=[_HTTP]),
             # The agentplane app and Action Service use the public issuer so discovery returns the
             # canonical external endpoints. When the public hostname resolves to the caller's own
             # node, hostNetwork Gateway hairpin traffic can arrive with the caller's namespace
@@ -296,14 +308,13 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
     # The data dep packages exactly Bazel's glob of the directory, so a new blueprint is listed
     # by regenerating.
     blueprints = get_required_path(own_repo_rlocation(f"{OUTPUT_DIR}/blueprints"))
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
         kustomize_kustomization(
-            resources=[f"{NAME}.k8s.yaml", *(f"{secret}.sops.yaml" for secret in _SOPS_SECRETS)],
+            resources=[write_charts(root, OUTPUT_DIR, chart), *(f"{secret}.sops.yaml" for secret in _SOPS_SECRETS)],
             config_map_generator=[
                 ConfigMapArgs(
                     name=_BLUEPRINTS_CONFIG_MAP,

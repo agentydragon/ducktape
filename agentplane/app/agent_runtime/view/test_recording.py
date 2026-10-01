@@ -3,6 +3,11 @@ linking an observation to the rows it touched."""
 
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
+from pathlib import Path
+from typing import cast
+
 import pytest
 import pytest_bazel
 from sqlalchemy import select
@@ -24,9 +29,26 @@ from agentplane.app.agent_runtime.view.views import EntityKind, ThreadOperationa
 from agentplane.app.conftest import SPEC, Replica, event_entry
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
+from agentplane.runner.codex import CodexAdapter
+from agentplane.runner.config import CodexLaunch
+from agentplane.runner.observation import Observation
+from agentplane.runner.session import Session
+from agentplane.runner.store import SessionRecord
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
+
+
+class _HarnessOutputRecorder:
+    """The Codex adapter's session seam, recording observations before database ingestion."""
+
+    def __init__(self) -> None:
+        self.record = SessionRecord(harness="HARNESS_CODEX", cwd="/workspace", model="gpt-5.4", reasoning_effort="low")
+        self.active_turn_id = ""
+        self.observations: list[tuple[Observation, list[int]]] = []
+
+    async def emit(self, observation: Observation, *, sources: Sequence[int]) -> None:
+        self.observations.append((observation, list(sources)))
 
 
 async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_projection(
@@ -86,6 +108,54 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         "last_verified_cursor": "1",
         "feed_error": {"cursor": None, "message": "projection invariant failed"},
     }
+
+
+async def test_codex_harness_nul_reaches_the_persisted_thread_payload(
+    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    """An escaped NUL in Codex's stdout frame must survive adapter translation and thread folding."""
+    thread = await event_logs.open("sb-1", "s-codex-nul", SPEC)
+    output = "before\x00after"
+    recorder = _HarnessOutputRecorder()
+    adapter = CodexAdapter(
+        cast(Session, recorder), CodexLaunch(binary=Path("/bin/false"), base_url="http://unused", api_key="unused")
+    )
+    harness_line = (
+        r'{"method":"item/commandExecution/outputDelta",'
+        r'"params":{"threadId":"codex-thread","turnId":"turn","itemId":"tool",'
+        r'"delta":"before\u0000after"}}'
+    )
+    harness_frame = json.loads(harness_line)
+
+    await adapter.on_frame(harness_frame, 1)
+
+    assert recorder.observations == [(event_pb2.ToolOutputDelta(item_id="tool", text=output), [1])]
+    observed_output = recorder.observations[0][0]
+    assert isinstance(observed_output, event_pb2.ToolOutputDelta)
+    native = event_entry(1, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=harness_line))
+    output_delta = event_entry(2, tool_output_delta=observed_output)
+    output_delta.event.source_sequences.append(1)
+    await ingestion.record(
+        thread, [native, output_delta, event_entry(3, turn_started=event_pb2.TurnStarted(turn_id="next"))], lease=lease
+    )
+
+    entries = await event_logs.events(thread, limit=10)
+    assert [entry.cursor for entry in entries] == [1, 2, 3]
+    assert entries[0].event.native.line == harness_line
+    assert entries[1].event.tool_output_delta.text == output
+    assert entries[1].event.source_sequences == [1]
+    assert await event_logs.last_cursor(thread) == 3
+    async with store._sessions() as session:
+        chunks = (
+            await session.scalars(
+                select(ThreadPayloadChunk).where(
+                    ThreadPayloadChunk.thread_id == thread,
+                    ThreadPayloadChunk.owner_id == "tool",
+                    ThreadPayloadChunk.field == "output",
+                )
+            )
+        ).all()
+    assert [chunk.text for chunk in chunks] == [output]
 
 
 async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknown_observations(

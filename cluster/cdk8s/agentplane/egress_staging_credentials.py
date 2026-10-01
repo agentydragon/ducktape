@@ -17,17 +17,19 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
+from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
-    BUILDBUDDY_POLICY,
+    FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
+    PLAID_PGWEB_POLICY,
 )
-from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, HOME_ASSISTANT_HOST
+from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, FORGEJO_HOST_ALIASES, FORGEJO_PUBLIC_HOST, HOME_ASSISTANT_HOST
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_READER,
     EXTERNAL_CREDS_STORE,
@@ -37,8 +39,10 @@ from cluster.cdk8s.agentplane.egress_credentials import (
 from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
+from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
 # Written by tf/gitops/agent-machine-access/grocy-sf.tf into agents-infra, named after the Authentik
 # service account whose app password it holds.
@@ -63,6 +67,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
         store=EXTERNAL_CREDS_STORE,
     )
     _forgejo_haku(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    _forgejo_finance_agent(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _google_readonly(construct, namespace=namespace)
     _grocy_sf_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _home_assistant_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
@@ -70,6 +75,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _aiquota_read(construct, namespace=namespace)
     _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
+    _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
 
 
 def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
@@ -117,12 +123,76 @@ def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             # list here would narrow the request without narrowing the authority behind it --
             # the same reason the Kubernetes rule carries none. What it does admit is the whole
             # Forgejo surface: git smart-HTTP (clone, fetch and push), the REST API, and the
-            # web UI.
+            # web UI. That holds under every name below: the host list decides which spellings
+            # reach the Service, not what haku's password may do there.
             EgressPolicySpecRules(
-                hosts=[FORGEJO_HOST],
+                hosts=[FORGEJO_HOST, *FORGEJO_HOST_ALIASES],
                 cluster_internal=True,
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku"),
-            )
+            ),
+            # The public name is a rule of its own so it stays off `cluster_internal`: it
+            # resolves to public addresses, and were it ever to resolve into the cluster the
+            # proxy's refusal of private addresses should still stop haku's password going there.
+            EgressPolicySpecRules(
+                hosts=[FORGEJO_PUBLIC_HOST], credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku")
+            ),
+        ],
+    )
+
+
+def _forgejo_finance_agent(
+    scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
+) -> None:
+    # Sources directly from the `forgejo` namespace, where tf/gitops/finance-agent creates the
+    # Secret -- unlike `_forgejo_haku` above, nothing else needs a copy of it, so there is no
+    # existing namespace to piggyback on.
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target="finance-agent-git-creds",
+        source="finance-agent-git-creds",
+        key="password",
+        store=single_secret_store(
+            scope,
+            "agentplane-staging-forgejo-finance-agent",
+            reader=reader,
+            source_namespace="forgejo",
+            source_secret="finance-agent-git-creds",
+            consumer_namespace=credentials_namespace,
+        ),
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-forgejo-finance-agent",
+        metadata=ApiObjectMetadata(name="forgejo-finance-agent", namespace=namespace),
+        description=(
+            "The password of the `finance-agent` account on the internal Forgejo, the service "
+            "user that owns the finance-agent repo (tf/gitops/finance-agent) -- Rai's personal "
+            "financial-leash agent workspace. Requests carrying it act as that account with its "
+            "full authority, but the account owns exactly one repo, so the blast radius is that "
+            "repo alone."
+        ),
+        source=Source.secret_ref(name="finance-agent-git-creds", key="password"),
+        # Same Basic-auth shape as forgejo-haku: the password half is substituted, the client
+        # supplies the username itself.
+        targets=[
+            EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
+        ],
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-forgejo-finance-agent",
+        metadata=ApiObjectMetadata(name=FORGEJO_FINANCE_AGENT_POLICY, namespace=namespace),
+        rules=[
+            EgressPolicySpecRules(
+                hosts=[FORGEJO_HOST, *FORGEJO_HOST_ALIASES],
+                cluster_internal=True,
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-finance-agent"),
+            ),
+            EgressPolicySpecRules(
+                hosts=[FORGEJO_PUBLIC_HOST],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-finance-agent"),
+            ),
         ],
     )
 
@@ -387,7 +457,7 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
             "`aiquota-read`'s rule presents it only on GETs under /v1/."
         ),
         source=Source.secret_ref(
-            name=AGENTPLANE_STAGING_BEARER.secret_name, key=AGENTPLANE_STAGING_BEARER.secret_key_selector.key
+            name=AGENTPLANE_STAGING_BEARER.secret_key.secret.name, key=AGENTPLANE_STAGING_BEARER.secret_key.key
         ),
         targets=[
             EgressCredentialSpecTargets(
@@ -469,11 +539,8 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
 
 
 def _buildbuddy(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
-    # `buildbuddy-api-key` is an `external_creds.py` credential already: this namespace's
-    # `agentplane-staging-egress-credentials` copy is an approved consumer there, the same shared
-    # `EXTERNAL_CREDS_STORE`/`external-creds-reader` referent-auth path `github-pat` above uses,
-    # not a dedicated `single_secret_store` (the source Secret already lives in `ducktape-flux`,
-    # not some other service's own namespace).
+    # The shared BuildBuddy API key lives in external-creds; this environment's ExternalSecret
+    # copies it into the isolated namespace the shared egress credential reads.
     credential_external_secret(
         scope,
         namespace=credentials_namespace,
@@ -482,39 +549,78 @@ def _buildbuddy(scope: Construct, *, namespace: str, credentials_namespace: str)
         key="api-key",
         store=EXTERNAL_CREDS_STORE,
     )
+
+
+def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target=plaid_pgweb.AUTH.name,
+        source=plaid_pgweb.AUTH.name,
+        key=plaid_pgweb.AUTH_KEY,
+        store=single_secret_store(
+            scope,
+            "agentplane-staging-plaid-pgweb",
+            reader=reader,
+            source_namespace=plaid_pgweb.AUTH.namespace,
+            source_secret=plaid_pgweb.AUTH.name,
+            consumer_namespace=credentials_namespace,
+        ),
+    )
     EgressCredential(
         scope,
-        "egresscredential-buildbuddy",
-        metadata=ApiObjectMetadata(name="buildbuddy", namespace=namespace),
+        "egresscredential-plaid-pgweb",
+        metadata=ApiObjectMetadata(name="plaid-pgweb", namespace=namespace),
         description=(
-            "The shared BuildBuddy API key (cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml), "
-            "the same one CI's BUILDBUDDY_API_KEY carries, copied into this namespace by ESO. "
-            "BuildBuddy uses this one key for its JSON-over-HTTP API and its gRPC services alike, "
-            "presented as the literal value of the `x-buildbuddy-api-key` header/metadata entry -- "
-            "this is a local-Bazel-client credential only: `bb remote`'s hosted runner copies the "
-            "same value into the Bazel command it executes, which this proxy cannot see or "
-            "protect (agentplane/docs/buildbuddy_remote_auth.md)."
+            f"The HTTP Basic password of pgweb's `{plaid_pgweb.AUTH_USER}` user "
+            "(cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by "
+            "ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres "
+            "role that can only SELECT from the Plaid mirror -- every linked account's balances, "
+            "transactions and holdings -- and `plaid-pgweb`'s rules present the password only on pgweb's "
+            "query API."
         ),
-        source=Source.secret_ref(name="buildbuddy-api-key", key="api-key"),
+        source=Source.secret_ref(name=plaid_pgweb.AUTH.name, key=plaid_pgweb.AUTH_KEY),
         targets=[
-            EgressCredentialSpecTargets(
-                header="x-buildbuddy-api-key", method=EgressCredentialSpecTargetsMethod.WHOLE_VALUE
-            )
+            EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
         ],
     )
+    # pgweb's other API routes and its web UI stay unreachable. Its session routes (`connect`,
+    # `disconnect`, `switchdb`) are POSTs, so POST is admitted on the query route alone.
+    reads = [
+        # keep-sorted start
+        "/api/connection",
+        "/api/info",
+        "/api/objects",
+        "/api/query",
+        "/api/schemas",
+        "/api/tables/**",
+        # keep-sorted end
+    ]
     EgressPolicy(
         scope,
-        "egresspolicy-buildbuddy",
-        metadata=ApiObjectMetadata(name=BUILDBUDDY_POLICY, namespace=namespace),
+        "egresspolicy-plaid-pgweb",
+        metadata=ApiObjectMetadata(name=PLAID_PGWEB_POLICY, namespace=namespace),
         rules=[
-            # app.buildbuddy.io serves the HTTP API (invocation pages, GetInvocation, and
-            # similar); remote.buildbuddy.io serves Build Event Service, Remote Execution and
-            # the remote cache over gRPCS. No path/method narrowing: a Bazel invocation's RBE
-            # traffic spans many gRPC methods over one POST-only HTTP/2 connection, so the key
-            # itself -- scoped read/cache/execute only, not org-admin -- is what bounds this.
             EgressPolicySpecRules(
-                hosts=["app.buildbuddy.io", "remote.buildbuddy.io"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="buildbuddy"),
-            )
+                hosts=[plaid_pgweb.SERVICE.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.GET],
+                paths=reads,
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="plaid-pgweb"),
+            ),
+            EgressPolicySpecRules(
+                hosts=[plaid_pgweb.SERVICE.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.POST],
+                paths=["/api/query"],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="plaid-pgweb"),
+            ),
         ],
+    )
+    NetworkPolicy(
+        scope,
+        "networkpolicy-egress-to-plaid-pgweb",
+        metadata=ApiObjectMetadata(name="agentplane-egress-to-plaid-pgweb", namespace=namespace),
+        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
+        egress=[plaid_pgweb.SERVICE.egress()],
     )

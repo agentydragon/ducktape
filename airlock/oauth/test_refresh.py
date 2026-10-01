@@ -7,13 +7,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_bazel
 
-from airlock.oauth.provider import (
-    ACCESS_TOKEN_FIELDS,
-    GenericOAuth2Provider,
-    OAuth2ProviderConfig,
-    TokenData,
-    TokenSecretConfig,
-)
+from airlock.oauth.config import OAuth2ProviderConfig, TokenSecretConfig
+from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, GenericOAuth2Provider, TokenData
 from airlock.oauth.refresh import check_scope_drift, token_refresh_loop
 
 

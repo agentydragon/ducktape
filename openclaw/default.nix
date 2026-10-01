@@ -6,8 +6,8 @@
 }:
 
 let
-  # The gateway package, its source pin, and the npm-wrapper splice are shared
-  # with haku/openclaw_spike; see ./gateway.nix.
+  # The gateway package and its release-specific dist patch are shared with
+  # haku/openclaw_spike; see ./gateway.nix.
   openclawGateway = import ./gateway.nix { inherit pkgs nix-openclaw; };
   inherit (openclawGateway) openclawPackages gateway;
   matrixPlugin = openclawPackages.openclawRuntimePlugins.matrix;
@@ -99,13 +99,13 @@ let
       ducktapePkgs.prettier
     ];
 
-  # The preload imports undici. Put it beside the Nix gateway's node_modules so
-  # Node's ESM resolver finds the dependency exactly as it did in /app in the
-  # Docker-built image. The symlink keeps the dependency closure shared.
+  # The preload imports undici from the pinned npm tree. nix-openclaw hoists
+  # that tree to lib/node_modules, so expose it beside the preload for Node's
+  # ESM resolver. The symlink keeps the dependency closure shared.
   proxySetup = pkgs.runCommand "openclaw-proxy-setup" { } ''
     mkdir -p "$out/lib/openclaw"
     cp ${./proxy-setup.mjs} "$out/lib/openclaw/proxy-setup.mjs"
-    ln -s ${gatewayWithRuntimePlugins}/lib/openclaw/node_modules "$out/lib/openclaw/node_modules"
+    ln -s ${gatewayWithRuntimePlugins}/lib/node_modules "$out/lib/openclaw/node_modules"
   '';
 
   path = pkgs.lib.makeBinPath ([ gatewayWithRuntimePlugins ] ++ tools);

@@ -1,0 +1,171 @@
+use super::*;
+
+pub(crate) fn validate_anything_holes(items: &[ModuleItem]) -> Result<()> {
+    let mut collector = UnsupportedAnythingCollector::default();
+    for item in items {
+        item.visit_with(&mut collector);
+    }
+    if collector.positions.is_empty() {
+        return Ok(());
+    }
+    collector.positions.sort();
+    collector.positions.dedup();
+    bail!(
+        "source_match `ANYTHING` is unsupported in {}. `ANYTHING` is anonymous \
+         sugar only for expression (`EXPR`), statement (`STMT`), pattern, \
+         variable-declarator-list (`DECLARATORS`), object-property-list, and \
+         class-member-list holes. \
+         Use typed holes when the position needs stronger diagnostics. \
+         Object property keys still need exact keys; use `key: ANYTHING` to wildcard a \
+         property value or `{{ ANYTHING }}` to skip arbitrary properties.",
+        collector.positions.join(", ")
+    )
+}
+
+#[derive(Default)]
+pub(crate) struct UnsupportedAnythingCollector {
+    positions: Vec<&'static str>,
+}
+
+impl UnsupportedAnythingCollector {
+    fn push(&mut self, position: &'static str) {
+        self.positions.push(position);
+    }
+}
+
+impl Visit for UnsupportedAnythingCollector {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if is_anything_expr_hole(expr) {
+            return;
+        }
+        expr.visit_children_with(self);
+    }
+
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if is_anything_stmt_hole(stmt) {
+            return;
+        }
+        stmt.visit_children_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if is_anything_declarator_list_hole(declarator) {
+            declarator.init.visit_with(self);
+            return;
+        }
+        declarator.visit_children_with(self);
+    }
+
+    fn visit_pat(&mut self, pat: &Pat) {
+        if is_anything_pat_hole(pat) {
+            return;
+        }
+        pat.visit_children_with(self);
+    }
+
+    fn visit_object_pat_prop(&mut self, prop: &ObjectPatProp) {
+        // `{ ANYTHING }` is the destructure-pattern property-list hole (the
+        // pattern analog of the object-literal shorthand `ANYTHING`), so the
+        // shorthand here is a supported run hole, not a stray `ANYTHING`
+        // binding identifier.
+        if is_anything_object_pat_prop_hole(prop) {
+            return;
+        }
+        prop.visit_children_with(self);
+    }
+
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        if is_anything_class_rest_hole(member) {
+            return;
+        }
+        if let ClassMember::ClassProp(prop) = member
+            && prop_name_is_anything(&prop.key)
+        {
+            self.push("a class member with an initializer");
+            prop.value.visit_with(self);
+            return;
+        }
+        member.visit_children_with(self);
+    }
+
+    fn visit_prop(&mut self, prop: &Prop) {
+        match prop {
+            Prop::Shorthand(_) => {}
+            Prop::KeyValue(prop) => {
+                if prop_name_is_anything(&prop.key) {
+                    self.push("an object property key");
+                }
+                prop.value.visit_with(self);
+            }
+            Prop::Assign(prop) => {
+                if ident_is_anything(&prop.key) {
+                    self.push("an object assignment property key");
+                }
+                prop.value.visit_with(self);
+            }
+            Prop::Getter(prop) => {
+                if prop_name_is_anything(&prop.key) {
+                    self.push("an object getter key");
+                }
+                prop.function.body.visit_with(self);
+            }
+            Prop::Setter(prop) => {
+                if prop_name_is_anything(&prop.key) {
+                    self.push("an object setter key");
+                }
+                for param in &prop.function.params {
+                    param.pat.visit_with(self);
+                }
+                prop.function.body.visit_with(self);
+            }
+            Prop::Method(prop) => {
+                if prop_name_is_anything(&prop.key) {
+                    self.push("an object method key");
+                }
+                prop.function.visit_with(self);
+            }
+        }
+    }
+
+    fn visit_binding_ident(&mut self, ident: &BindingIdent) {
+        if binding_ident_is_anything(ident) {
+            self.push("a binding identifier");
+            ident.type_ann.visit_with(self);
+            return;
+        }
+        ident.visit_children_with(self);
+    }
+
+    fn visit_ident(&mut self, ident: &Ident) {
+        if ident_is_anything(ident) {
+            self.push("an identifier");
+        }
+    }
+}
+
+pub fn parse_selector_module(
+    request_id: &str,
+    file_label: String,
+    match_source: &str,
+    // Field path used only in the "did not parse as JS" message.
+    parse_label: &str,
+) -> Result<Module> {
+    let parsed = js_ast::parse_js_module_ast(&file_label, match_source).with_context(|| {
+        format!("logical_module {request_id}: {parse_label} did not parse as JS:\n{match_source}")
+    })?;
+    validate_anything_holes(&parsed.body)?;
+    Ok(parsed)
+}
+
+impl ParsedSourceMatchSelector {
+    pub fn parse(
+        request_id: &str,
+        file_label: String,
+        selector: &AnonymousStatementSelector,
+        parse_label: &str,
+    ) -> Result<Self> {
+        let parsed =
+            parse_selector_module(request_id, file_label, &selector.match_source, parse_label)?;
+        Ok(Self::new(selector.clone(), parsed))
+    }
+}

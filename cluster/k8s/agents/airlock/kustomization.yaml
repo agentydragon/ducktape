@@ -1,16 +1,101 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # cdk8s-generated (cluster/cdk8s/airlock.py) -- see cluster/docs/cdk8s.md.
   - airlock.k8s.yaml
   - oura-client-credentials.sops.yaml
   - google-client-credentials.sops.yaml
   - bsc-client-credentials.sops.yaml
 components:
-  - ./image-pins
-
+  - image-pins
 configMapGenerator:
   - name: airlock-config
     namespace: airlock
-    files:
-      - config.yaml
+    literals:
+      - |
+        config.yaml=public_base_url: https://airlock.allegedly.works
+        oidc_issuer: https://auth.allegedly.works/application/o/airlock-server/
+        port: 8765
+        oauth:
+          target_namespace: airlock
+          managed_by: airlock
+          providers:
+            - name: oura
+              display_name: Oura Ring
+              redirect_uri: https://airlock.allegedly.works/oauth/callback/oura
+              refresh_secret:
+                name: oura-tokens
+              access_secret:
+                name: oura-access-token
+              provider_type: oauth2
+              authorize_url: https://cloud.ouraring.com/oauth/authorize
+              token_url: https://api.ouraring.com/oauth/token
+              scopes:
+                - daily
+                - email
+                - heartrate
+                - personal
+                - session
+                - spo2
+                - tag
+                - workout
+              refresh_margin_seconds: 3600
+            - name: google
+              display_name: Google
+              refresh_secret:
+                name: google-tokens
+              access_secret:
+                name: google-access-token
+              provider_type: oauth2
+              authorize_url: https://accounts.google.com/o/oauth2/v2/auth
+              token_url: https://oauth2.googleapis.com/token
+              scopes:
+                - https://www.googleapis.com/auth/calendar.readonly
+                - https://www.googleapis.com/auth/contacts.readonly
+                - https://www.googleapis.com/auth/documents.readonly
+                - https://www.googleapis.com/auth/drive.activity.readonly
+                - https://www.googleapis.com/auth/drive.readonly
+                - https://www.googleapis.com/auth/gmail.readonly
+                - https://www.googleapis.com/auth/presentations.readonly
+                - https://www.googleapis.com/auth/spreadsheets.readonly
+                - https://www.googleapis.com/auth/tasks.readonly
+                - https://www.googleapis.com/auth/youtube.readonly
+              refresh_margin_seconds: 300
+              extra_auth_params:
+                access_type: offline
+                prompt: consent
+            - name: google-write
+              display_name: Google (write access)
+              refresh_secret:
+                name: google-write-tokens
+              access_secret:
+                name: google-write-access-token
+              provider_type: oauth2
+              authorize_url: https://accounts.google.com/o/oauth2/v2/auth
+              token_url: https://oauth2.googleapis.com/token
+              scopes:
+                - https://www.googleapis.com/auth/gmail.modify
+                - https://www.googleapis.com/auth/gmail.compose
+                - https://www.googleapis.com/auth/gmail.settings.basic
+                - https://www.googleapis.com/auth/calendar.events
+              refresh_margin_seconds: 300
+              extra_auth_params:
+                access_type: offline
+                prompt: consent
+            - name: bsc
+              display_name: Blue Shield of California (FHIR sandbox)
+              redirect_uri: https://airlock.allegedly.works/oauth/callback/bsc
+              refresh_secret:
+                name: bsc-tokens
+              access_secret:
+                name: bsc-access-token
+              provider_type: oauth2
+              authorize_url: https://dev-ext.blueshieldca.com/as/authorization.oauth2
+              token_url: https://dev-ext.blueshieldca.com/as/token.oauth2/
+              scopes:
+                - openid
+                - interop
+                - PatientEOB
+                - PatientRead
+              refresh_margin_seconds: 300
+              use_pkce: true
+              aud: https://api-dev.blueshieldca.com/bsc/fhir-sandbox/fhir-server/api/v4/cloud/

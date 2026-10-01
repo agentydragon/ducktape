@@ -16,6 +16,7 @@ exports_files(
         "0012_unique_entity_index.py",
         "0013_operator_session_idle.py",
         "0014_operator_session_login.py",
+        "0015_event_payload_json.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -131,6 +132,15 @@ py_library(
 py_library(
     name = "0014_operator_session_login",
     srcs = ["0014_operator_session_login.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0015_event_payload_json",
+    srcs = ["0015_event_payload_json.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

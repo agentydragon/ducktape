@@ -124,7 +124,21 @@ Sandbox discovery and runner addresses use the existing Kubernetes list/watch ca
 relist recovery; watch changes wake reconciliation. The timer renews leases and discovers sessions
 via runner `ListSessions`, which currently has no watch RPC. Merely observing a stopped session
 does not restart its harness. Explicit Open starts/resumes it and waits for ingestion to catch up
-before returning, so a resumed browser does not read the previous harness's terminal state.
+before returning, so a resumed browser does not read the previous harness's terminal state. On a
+Thread page, **Resume harness** opens that Thread's existing runner session using its retained
+runner-owned spec; it cannot create a new Thread or substitute another harness.
+
+After interruption/resume, runner `ConversationReconciled` events give each affected item a
+`recovery` disposition and `recovery_reason`. The fold retains absent/unknown observations;
+revised continuation content gets a new payload revision without changing the observed tool
+execution result. Original observations remain in the archive. The app does not infer recovery
+behavior from the harness type.
+
+The thread UI labels retained, revised, and unknown continuation state. Absent content is
+collapsed under "not retained in model context" and remains expandable. Revised tool content
+is labeled "Continuation output"; execution success/failure stays separate. Tool runs summarize
+recovery state even while collapsed, and interrupted items do not become streaming again when
+a later turn starts.
 
 The retained-event SSE API reads committed PostgreSQL events on whichever replica receives
 its request. Transactional `NOTIFY` wakes event/archive and inventory readers; notifications
@@ -246,9 +260,11 @@ is no sidebar polling loop or new notification service.
 The retained snapshot stays navigable during an outage, with separate warnings for the browser
 connection, stale Kubernetes watch, and disconnected database listener. A Thread's running dot
 requires fresh sources, a running Sandbox, and its last observed harness state; a stale persisted
-RUNNING state alone does not make a suspended or deleted Sandbox look live. These are operational
-snapshots, not replacements for a Thread's runner Event prefix. Archiving checks the runner's live
-session state and refuses while that Thread's harness is running; stop the harness first.
+RUNNING state alone does not make a suspended or deleted Sandbox look live. The snapshot includes
+the feed's active turn so the sidebar and open-thread composer can use the same status-dot
+component. These are operational snapshots, not replacements for a Thread's runner Event prefix.
+Archiving checks the runner's live session state and refuses while that Thread's harness is running;
+stop the harness first.
 
 ## Shutdown
 
@@ -464,6 +480,10 @@ one. Which lists the service enforces is its contract
   diagnostic at the completion position, retaining any partial output. A confirmed input remains
   confirmed; a failed turn neither creates a delivery retry nor resends that input. Later input
   can start another turn while the harness remains available.
+- **Interrupted or lost turns:** the fold keeps streamed text, tool arguments, and any tool output
+  the harness reported. An item without a terminal native result stays incomplete; an unfinished
+  tool result is unknown and is never retried automatically. Resume continues the same native
+  session, whose history recovery can differ from the app's folded evidence.
 
 ## Action live updates and browser notifications
 

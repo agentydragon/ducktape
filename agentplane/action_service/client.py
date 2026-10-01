@@ -22,6 +22,7 @@ from agentplane.action_service.enrollments import (
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from agentplane.action_service.models import (
     ActionEventView,
+    ActionHistoryPage,
     ActionRequestInput,
     ActionRequestView,
     ActionState,
@@ -172,12 +173,23 @@ class OperatorActionServiceClient(_BearerClient):
         response = await self._request("GET", "/v1/operator/action-requests", params=params)
         return [ActionRequestView.model_validate(row) for row in response.json()]
 
+    async def history(self, *, limit: int = 50, cursor: str | None = None) -> ActionHistoryPage:
+        response = await self._request(
+            "GET",
+            "/v1/operator/action-requests/history",
+            params={"limit": limit, **({"cursor": cursor} if cursor is not None else {})},
+        )
+        return ActionHistoryPage.model_validate(response.json())
+
     @asynccontextmanager
-    async def stream_requests(self) -> AsyncIterator[AsyncIterator[bytes]]:
+    async def stream_requests(self, *, state: ActionState | None = None) -> AsyncIterator[AsyncIterator[bytes]]:
         """Open and check the upstream before handing its body to a streaming response."""
         token = await self._tokens.token()
         request = self._http.build_request(
-            "GET", "/v1/operator/action-requests/stream", headers={"Authorization": f"Bearer {token}"}
+            "GET",
+            "/v1/operator/action-requests/stream",
+            params={"state": state} if state else None,
+            headers={"Authorization": f"Bearer {token}"},
         )
         response = await self._http.send(request, stream=True)
         try:

@@ -1,0 +1,19 @@
+# gazelle:ignore
+load("//devinfra/python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_agent_config_ssot",
+    srcs = ["test_agent_config_ssot.py"],
+    data = [
+        "agent_shared.yaml",
+        "//haku/runtime/x/managed_agent/anthropic_hosted/terraform:main.tf",
+        "//haku/runtime/x/managed_agent/self_hosted:haku.agent.yaml",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pygohcl",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

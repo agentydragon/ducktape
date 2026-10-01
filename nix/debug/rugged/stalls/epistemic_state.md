@@ -6,6 +6,15 @@ Explain and eliminate the active swap/stall episodes on `rugged` without
 mistaking historical zram occupancy for the cause. The operative question is
 why the kernel pages aggressively while the Normal zone has many GiB free.
 
+## Update 2026-09-28
+
+`rugged` now runs Linux 7.2.7, and Cilium 1.19.8's agent is healthy after the
+FnSetRetval fix. This resolves the separate Cilium startup failure, not the Xe/TTM
+stall investigation here. The kernel upgrade is active, but the Xe investigation's
+post-upgrade acceptance capture has not been run; do not treat that issue as resolved.
+The Linux 7.1.2 observations below describe the original investigation, not the
+current kernel. See the [Cilium incident record](../../../cluster/docs/lessons_learned/2026_07_16_cilium_set_retval_probe_kernel_7_2.md).
+
 ## Available action space
 
 1. Capture another naturally occurring episode with page-type and Xe debugfs
@@ -47,19 +56,20 @@ why the kernel pages aggressively while the Normal zone has many GiB free.
   fragmentation_ describes the same signature: substantial free RAM plus
   `kswapd -> shrinker -> eviction -> rebind (exec ioctl) -> repeat`; it names
   Chrome WebGL as a reproducer.
-- The repair's Xe portion landed upstream as commit
+- At the time of the original capture, the repair's Xe portion had landed upstream
+  as commit
   [`ba7fd1634228`](https://github.com/torvalds/linux/commit/ba7fd1634228)
   on 2026-06-11, after the v7.1 release. The v7.1.2 stable source lacks it.
-  `rugged` boots NixOS `linux-7.1.2`, and the declared host configuration has
-  no kernel patch/backport, so the booted kernel is treated as unpatched.
+  `rugged` then booted NixOS `linux-7.1.2`, and the declared host configuration
+  had no kernel patch/backport, so that booted kernel was treated as unpatched.
 - The triggered capture `/tmp/rugged-memory-fragmentation-20260713-193606`
   hit 20,863 pages/s of swap-out and 76 compaction stalls/s before recording.
   In its 30 seconds, Chrome and GNOME Shell repeatedly ran
   `xe_exec_ioctl -> xe_vm_validate_rebind -> xe_ttm_tt_populate -> TTM` into
   high-order compaction while the Normal zone had no free order-9/10 blocks.
-- Pinned `nixpkgs` and `nixpkgs-unstable` provide Linux 7.1.2. The repo's
-  pinned Nixpkgs master exposes `linux_testing` 7.2-rc2, which contains the exact
-  Xe beneficial-order change.
+- At that investigation point, pinned `nixpkgs` and `nixpkgs-unstable` provided Linux
+  7.1.2. The repo's pinned Nixpkgs master exposed `linux_testing` 7.2-rc2, which
+  contains the exact Xe beneficial-order change.
 
 ## Current posterior
 

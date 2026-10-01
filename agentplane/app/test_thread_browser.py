@@ -820,6 +820,119 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
 
 
+async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_browser: ThreadBrowser) -> None:
+    """A streamed update during a slow, sub-slack mouse scroll must not reattach following."""
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    for number in range(18):
+        item_id = f"slow-scroll-item-{number}"
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        latest = source.append(
+            event_pb2.Event(
+                item_completed=event_pb2.ItemCompleted(
+                    item_id=item_id, text=f"Earlier message {number}. " + "A retained paragraph. " * 8
+                )
+            )
+        )
+    await expect_projected_cursor(page, latest.cursor)
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(item_id="slow-scroll-tail", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+        )
+    )
+    tail = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="slow-scroll-tail", text="Tail seed")))
+    await expect_projected_cursor(page, tail.cursor)
+
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect_history_bottom(page)
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    initial_scroll_top = await history.evaluate("area => area.scrollTop")
+    gesture = await history.evaluate_handle(
+        """area => {
+            const state = { events: [], ended: new Promise(resolve => {
+                area.addEventListener("scrollend", () => {
+                    state.events.push("scrollend");
+                    resolve();
+                }, { once: true });
+            }) };
+            const observer = new MutationObserver(() => {
+                if (area.textContent.includes("Small-scroll stream update")) {
+                    observer.disconnect();
+                    requestAnimationFrame(() => state.events.push("stream-rendered"));
+                }
+            });
+            observer.observe(area, { subtree: true, childList: true, characterData: true });
+            return state;
+        }"""
+    )
+    bounds = await history.bounding_box()
+    assert bounds is not None
+    # Keep one native mouse gesture open while streaming updates, within the 24px follow slack.
+    cdp = await page.context.new_cdp_session(page)
+    scroll_gesture = asyncio.create_task(
+        cdp.send(
+            "Input.synthesizeScrollGesture",
+            {
+                "x": bounds["x"] + bounds["width"] / 2,
+                "y": bounds["y"] + bounds["height"] / 2,
+                "gestureSourceType": "mouse",
+                "preventFling": True,
+                "speed": 10,
+                "yDistance": 20,
+            },
+        )
+    )
+    try:
+        await page.wait_for_function(
+            """initial => {
+                const area = document.querySelector('[aria-label="Thread history"]');
+                const gap = area.scrollHeight - area.scrollTop - area.clientHeight;
+                return area.scrollTop < initial && gap > 0 && gap < 24;
+            }""",
+            arg=initial_scroll_top,
+        )
+
+        tail_markdown = history.locator(".agentplane-markdown").last
+        previous_height = await tail_markdown.evaluate("message => message.getBoundingClientRect().height")
+        updated = source.append(
+            event_pb2.Event(
+                text_delta=event_pb2.TextDelta(
+                    item_id="slow-scroll-tail",
+                    text="\n\nSmall-scroll stream update\n\n" + "Streaming continuation. " * 240,
+                )
+            )
+        )
+        await expect_projected_cursor(page, updated.cursor)
+        await expect(page.get_by_text("Small-scroll stream update", exact=True)).to_have_count(1)
+        await page.wait_for_function(
+            """previous => {
+                const messages = document.querySelectorAll('[aria-label="Thread history"] .agentplane-markdown');
+                return messages.length > 0 && messages[messages.length - 1].getBoundingClientRect().height > previous + 24;
+            }""",
+            arg=previous_height,
+        )
+        await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    finally:
+        await scroll_gesture
+        await cdp.detach()
+
+    async with asyncio.timeout(5):
+        await gesture.evaluate("state => state.ended")
+    events_after_scrollend = await gesture.evaluate("state => state.events")
+    assert events_after_scrollend.index("stream-rendered") < events_after_scrollend.index("scrollend"), (
+        f"expected the streamed update to render before scrollend: {events_after_scrollend}"
+    )
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    bottom_gap = await history.evaluate("area => area.scrollHeight - area.scrollTop - area.clientHeight")
+    assert bottom_gap > 24, f"streaming growth pulled the reader back to the bottom (gap={bottom_gap:.1f}px)"
+    await gesture.dispose()
+
+
 async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
     """The first row whose bottom is below the viewport top, and its position -- the reader's
     place, sampled once two consecutive frames agree so a pending re-measure right after a
@@ -1138,17 +1251,23 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
     assert json_format.Parse(redelivery.post_data, command_pb2.Command()) == command
     async with asyncio.timeout(15):
         assert await source.commands.get() == command
-    await expect(page.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
-    await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+    await expect_pending_message_bubble(page, command.submit_input.text)
     await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
-    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     admissions = [
         entry.event.command_admitted.command
         for entry in await thread_browser.event_logs.events(thread.id, limit=100)
         if entry.event.HasField("command_admitted")
     ]
     assert admissions == [command]
+
+
+async def expect_pending_message_bubble(page: Page, text: str) -> None:
+    """A submitInput command the server has admitted and is still working on renders inline as the
+    same bubble a confirmed message gets, marked pending (italic) until the harness effects it."""
+    bubble = page.locator(".agentplane-user-bubble")
+    await expect(bubble.locator(".agentplane-verbatim")).to_have_text(text)
+    await expect(bubble).to_have_css("font-style", "italic")
 
 
 async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_browser: ThreadBrowser) -> None:
@@ -1184,18 +1303,15 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         assert admission.event.command_admitted.command == command
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         assert admission in await thread_browser.event_logs.events(thread.id, limit=100)
-        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
-        await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+        await expect_pending_message_bubble(page, command.submit_input.text)
 
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
-        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+        await expect_pending_message_bubble(page, command.submit_input.text)
         await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
         await page.reload()
-        await expect(page.get_by_text(command.submit_input.text, exact=True)).to_have_count(1)
-        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+        await expect_pending_message_bubble(page, command.submit_input.text)
         await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
-        await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
     finally:
         drop_reply.set()
         if reply_started.is_set():
@@ -1326,7 +1442,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     await expect(
         page.get_by_text("Test retained prefix and preceding delta A and preceding delta B", exact=True)
     ).to_have_count(1)
-    await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+    await expect_pending_message_bubble(page, command.submit_input.text)
     source.append(
         event_pb2.Event(
             harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
@@ -1403,7 +1519,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         await expect(
             page.get_by_text("Test retained prefix and disconnected delta A and disconnected delta B", exact=True)
         ).to_have_count(1)
-        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+        await expect_pending_message_bubble(page, command.submit_input.text)
         source.append(
             event_pb2.Event(
                 harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
@@ -1441,8 +1557,7 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
     async with asyncio.timeout(15):
         command = await source.commands.get()
     pending = page.get_by_role("region", name="Pending commands")
-    await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
-    await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+    await expect_pending_message_bubble(page, command.submit_input.text)
 
     async def terminal_shape_error(route: Route) -> None:
         await route.fulfill(status=400, content_type="text/plain", body="shape rejected")
@@ -1456,12 +1571,12 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
         stopped = page.get_by_role("alert").filter(has_text="Thread synchronization stopped:")
         await expect(stopped).to_be_visible()
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-        await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+        await expect_pending_message_bubble(page, command.submit_input.text)
 
         async with page.expect_response(lambda response: "/sync/scope" in response.url and response.status == 200):
             await stopped.get_by_role("button", name="Refresh thread", exact=True).click()
         await expect(page.get_by_text("Thread synchronization stopped:", exact=False)).to_have_count(0)
-        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+        await expect_pending_message_bubble(page, command.submit_input.text)
         source.append(
             event_pb2.Event(
                 harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(

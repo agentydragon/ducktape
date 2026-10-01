@@ -8,13 +8,22 @@ py_library(
 )
 
 py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//finance/plaid:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "client",
     srcs = ["client.py"],
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
+        ":models",
         ":products",
         "@pypi//certifi",
         "@pypi//plaid_python",
+        "@pypi//pydantic",
     ],
 )
 
@@ -81,6 +90,7 @@ py_test(
         "//:conftest",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -136,8 +146,10 @@ py_library(
     data = glob(["migrations/**"]),
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
+        ":models",
         ":schema",
         "@pypi//alembic",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -155,6 +167,7 @@ py_library(
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
         ":link_store",
+        ":models",
         ":products",
         ":secret_store",
         "@pypi//plaid_python",

@@ -1,4 +1,4 @@
-import { ActionIcon, Anchor, Stack, Text } from "@mantine/core";
+import { ActionIcon, Anchor, Stack, Text, Title } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
 import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
@@ -9,12 +9,13 @@ import { ActionHistory } from "./actions/history";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
-import { ProjectedSession } from "./projected_session";
+import { ProjectedSession } from "./threads/projected_session";
 import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
-import { electricThreadSync } from "./thread_store";
-import { ThreadSyncContext } from "./thread_sync";
-import { TopbarContext, type TopbarSlots } from "./topbar";
+import { electricThreadSync } from "./threads/thread_store";
+import { ThreadSyncContext } from "./threads/thread_sync";
+import { TopbarContext, TopbarTitle, type TopbarSlots } from "./topbar";
+import { appDocumentTitle } from "./tab_metadata";
 import "./shell.css";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
@@ -65,9 +66,26 @@ function SandboxRoute(): JSX.Element {
   );
 }
 
-function ThreadRoute(): JSX.Element {
+function ActionsPage(): JSX.Element {
+  return (
+    <Stack>
+      <TopbarTitle>
+        <Title order={1} size="h4">
+          Actions
+        </Title>
+      </TopbarTitle>
+      <Text c="dimmed" size="sm">
+        Review requests awaiting a decision, then browse their decision and execution history.
+      </Text>
+      <ActionRequests embedded />
+      <ActionHistory embedded />
+    </Stack>
+  );
+}
+
+function ThreadRoute({ settingsOpen }: { settingsOpen: boolean }): JSX.Element {
   const threadId = required(useParams().threadId, "threadId");
-  return <ProjectedSession key={threadId} threadId={threadId} />;
+  return <ProjectedSession key={threadId} threadId={threadId} settingsOpen={settingsOpen} />;
 }
 
 // Matches sidebar.css's phone breakpoint (max-width: 560px) from the other side.
@@ -81,6 +99,15 @@ function AppRoutes(): JSX.Element {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
     location.pathname === "/mcp-servers" ? "mcp-servers" : null
   );
+  const routeTitle =
+    settingsTab !== null
+      ? appDocumentTitle(location.pathname, true)
+      : threadRoute === null
+        ? appDocumentTitle(location.pathname, false)
+        : null;
+  useEffect(() => {
+    if (routeTitle !== null) document.title = routeTitle;
+  }, [routeTitle]);
   // Open by default at desktop width, closed at phone width; the CSS media query then decides
   // whether "closed" means a collapsed-to-nothing column or a fully hidden overlay. Crossing the
   // breakpoint resets to that side's default -- an "open" docked column left over from a resize
@@ -123,12 +150,11 @@ function AppRoutes(): JSX.Element {
             <Routes>
               <Route path="/" element={<ThreadsLanding />} />
               <Route path="/sandboxes" element={<SandboxListRoute />} />
-              <Route path="/actions" element={<ActionRequests />} />
-              <Route path="/actions/history" element={<ActionHistory />} />
+              <Route path="/actions" element={<ActionsPage />} />
               <Route path="/actions/:requestId" element={<ActionRequests />} />
               <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
               <Route path="/sandboxes/:name" element={<SandboxRoute />} />
-              <Route path="/threads/:threadId" element={<ThreadRoute />} />
+              <Route path="/threads/:threadId" element={<ThreadRoute settingsOpen={settingsTab !== null} />} />
               <Route path="*" element={<ThreadsLanding />} />
             </Routes>
           </TopbarContext.Provider>

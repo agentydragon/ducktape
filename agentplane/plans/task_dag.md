@@ -23,15 +23,22 @@ Proposed execution order for the Thread correctness/UI track:
   deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`), including the current
   model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one runner-owned
   command queue; no app outbox or combined-start expansion in this batch.
-- **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`) and bounded
-  browser state for the deployed thread sync (`THREAD_LAZY_HISTORY`). Compact activity mocks
-  (`THREAD_ACTIVITY_MOCKS`), Sandbox continuation (`THREAD_SUSPEND_RESUME`), and native
+- **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Compact activity
+  mocks (`THREAD_ACTIVITY_MOCKS`), Sandbox continuation (`THREAD_SUSPEND_RESUME`), and native
   resume/recovery remain on the board but are excluded from this dispatch batch.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
-- **Low priority:** adopting harness-native subagents as Threads (`NATIVE_SUBAGENT_THREADS`)
+- **Low priority / deferred:** bounded browser cache state (`THREAD_LAZY_HISTORY`, desire D6),
   and optional app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`).
-  The first view-sync implementation keeps the archive lossless.
+  The current view sync lazily loads long content and retains loaded rows/bodies until the Thread
+  closes; it keeps the archive lossless.
+- **Unranked future harness capabilities:** project skills and commands, web search, visual input,
+  native subagents, interactive controls, project hooks/plugins, and prompt suggestions. The
+  existing P2 item `DT` is included below as a cross-reference and keeps its current priority; it
+  covers Action-backed tools and background-work control. The new candidates are an inventory, not
+  an execution order or a priority claim against the rest of this DAG. Their win/work estimates are
+  provisional; compare them with the full roadmap when scheduling. `HARNESS_CONFIG_ISOLATION` is
+  the shared technical prerequisite.
 
 The independent Action Service track still has console policy parity (`CONSOLE_POLICIES`) and Haku
 MCP/tool-approval retirement (`MCP_CONSOLE_INTERNAL`, `MCPAGG`, `RETIRE_TOOLS`). Transcript
@@ -67,7 +74,15 @@ flowchart TB
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
     ING["Deferred support<br/>Event & Notification Hub<br/>Action decisions and subscribed external events -> Thread ingress"]:::future
-    DT["P2 deferred<br/>driver-provided declarations/background control"]:::future
+    DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
+    HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
+    HARNESS_SKILLS["Unranked candidate<br/>project-scoped skills and commands<br/>both native harnesses"]:::future
+    HARNESS_WEB_SEARCH["Unranked candidate<br/>routed web search<br/>source evidence in Thread"]:::future
+    HARNESS_VISUAL_INPUT["Unranked candidate<br/>image attachments and visual input<br/>composer, protocol, storage, replay"]:::future
+    HARNESS_INTERACTIVE_CONTROLS["Unranked candidate<br/>questions and permission decisions<br/>durable park, answer, recovery"]:::future
+    HARNESS_PROJECT_HOOKS["Unranked candidate<br/>trusted project hooks<br/>bounded execution and control replies"]:::future
+    HARNESS_PLUGINS["Unranked candidate<br/>project plugins and skill packages<br/>source trust and capability grants"]:::future
+    HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
     CROSS_IDENTITY_READ_POLICY["Deferred decision<br/>explicit policy for reading across Identities<br/>what cross-Identity delivery waits on"]:::decision
@@ -75,7 +90,7 @@ flowchart TB
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
     ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
-    SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
+    SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>identity choice open; see #8596"]:::future
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
@@ -92,7 +107,7 @@ flowchart TB
     SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    THREAD_LAZY_HISTORY["P1 bounded browser state<br/>evict Thread history outside the reading window<br/>the reader keeps its place"]:::future
+    THREAD_LAZY_HISTORY["Deferred desire D6<br/>bound browser cache after loading<br/>long content remains on demand"]:::future
     THREAD_EVIDENCE_RETENTION["Low-priority design<br/>optional app-wide / per-Thread raw retention<br/>lossless storage remains the default contract"]:::future
     THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
@@ -101,7 +116,7 @@ flowchart TB
     THREAD_ACTIVITY_MOCKS["P1 UI design<br/>mock compact tool/reasoning activity<br/>one-line calls with individual expansion"]:::future
     THREAD_ACTIVITY_DENSITY["Planned UI after mock review<br/>compact activity with per-item disclosure<br/>preserve status, ordering, and Raw evidence"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
-    NATIVE_SUBAGENT_THREADS["Low-priority exploration<br/>adopt native Claude/Codex subagents<br/>as linked Agentplane Threads"]:::future
+    NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
@@ -122,6 +137,15 @@ flowchart TB
     RETIRE_APPROVAL_QUEUE --> RETIRE_TOOLS
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_SKILLS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_WEB_SEARCH
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_VISUAL_INPUT
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> NATIVE_SUBAGENT_THREADS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_INTERACTIVE_CONTROLS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_PROJECT_HOOKS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_PLUGINS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_PROMPT_SUGGESTIONS
+    HARNESS_CONFIG_ISOLATION -. prerequisite .-> DT
     THREAD_ACTIVITY_MOCKS --> THREAD_ACTIVITY_DENSITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
@@ -250,18 +274,18 @@ to Sandbox creation and optional preset defaults. Presets only prefill values; n
 the apiserver nor credential handling interprets preset names as authority. This does
 not require the broad `PROFILES` design.
 
-Resolve the credential path for those principals with `ACCESS`. The principal itself
-already exists: each Sandbox runs as a ServiceAccount of its own, created and owned by the
-app at launch. Separate ServiceAccounts can
-share role definitions without sharing identity;
-Threads inside one Sandbox share its workload authority. Preserve live Sandbox UID/Pod
-attribution in workload authentication. Distinct ServiceAccounts in accepted namespaces
-are already supported by that authenticator; a wholesale identity-model replacement is
-not a prerequisite. There is nothing left to unify on the policy subject: an external
-caller and a Sandbox already resolve to the same one kind, a ServiceAccount.
+Resolve the credential path for those principals with `ACCESS`. Current implementation
+creates and owns a ServiceAccount per Sandbox at launch. That is current behavior, not a
+settled identity choice: decide whether managed Agents should keep per-Sandbox accounts, use a
+stable per-Agent account, or use another scoped mechanism for Kubernetes RBAC and credential
+delivery. OAuth-connected Connections already have static caller ServiceAccounts and remain a
+separate path. Coinbase key delivery to Agentplane-managed runners is tracked in
+[#8596](https://github.com/agentydragon/ducktape/issues/8596).
 
-The credential path and whether/how Kubernetes RBAC objects represent grants remain
-open under `ACCESS`; their canonical design questions are in
+Preserve live Sandbox UID/Pod attribution in workload authentication. Distinct ServiceAccounts
+in accepted namespaces are already supported by that authenticator. The credential path and
+whether/how Kubernetes RBAC objects represent grants remain open under `ACCESS`; their
+canonical design questions are in
 [external-system permissions](external_access.md#kubernetes-sandbox-access-decisions).
 This task integrates the chosen model into Sandbox creation, access inspection/change,
 and lifecycle cleanup, including cross-namespace resources where applicable. Respect
@@ -291,10 +315,11 @@ identity of a shell somebody can run arbitrary commands in.
 
 What exists today (<../../cluster/cdk8s/agentplane/actions_staging_policies.py>, which lists each
 policy and set with why it is there): the labelled ServiceAccount with
-`automountServiceAccountToken: false`, an `EgressBinding` to the basic and Kubernetes policies plus
-read-only and credentialed ones, and an `ActionPolicyBinding` auto-approving reviewed reads plus the
-whole `sandbox-self` set. Its Kubernetes authority is the cluster-wide
-`cluster-diagnostics-reader` ClusterRoleBinding (`cluster/generated/agents/shared-rbac/`), reads of
+`automountServiceAccountToken: false`, an `EgressBinding` to the basic policy -- which carries the
+API server rule every sandbox is granted (egress.py) -- plus read-only and credentialed ones, and
+an `ActionPolicyBinding` auto-approving reviewed reads plus the whole `sandbox-self` set. Its
+Kubernetes authority is the cluster-wide `cluster-diagnostics-reader`
+ClusterRoleBinding (`cluster/generated/agents/shared-rbac/`), reads of
 non-sensitive cluster state, plus the metadata and pod-log readers Kyverno generates in namespaces
 labelled `agent-readable-*`, plus `get` on one Secret: the view-only Coinbase key its sandboxes
 sign with, since the proxy cannot. The verified Kubernetes evidence from a sandbox is still a
@@ -401,11 +426,10 @@ another route replaces it.
   `argument_schema` set over a `grants` ActionGroup; but the grant model itself is console-owned,
   so this waits on the Action Service having its own grant surface, not on a kind.
 
-  **Do not confuse this with policy introspection, which is already done.** An agent can read the
-  policy that applies to it today -- `get_action_policy(target=SELF)` on the MCP frontend, built
-  from the same `resolve_bindings` admission uses, so what it reports and what a Decision
-  auto-decides cannot drift. What the console's `grants` tools introspect is something else: grants,
-  meaning access that expires. `grants_whoami`, `grant_self_list`, `kubernetes_can_i`, `get_grant`
+  **Keep policy introspection separate from grant introspection.**
+  `get_action_policy(target=SELF)` reports the policy applied to the caller using the same
+  `resolve_bindings` source admission uses, so reported and enforced decisions cannot drift.
+  The console's `grants` tools inspect something else: expiring access. `grants_whoami`, `grant_self_list`, `kubernetes_can_i`, `get_grant`
   and `revoke_grants` are all that surface, and what they wait on is **temporary grants**, which is
   `ELEVATE` -- a caller asking for a set plus an `expiresAt`, approval writing the
   `ActionPolicyBinding` with that expiry. `BindingSpec.expires_at` already exists, so what is
@@ -541,20 +565,81 @@ credentials, login form contents, OAuth state, or unrelated user Threads. Clean 
 resources the run owns. Cover tail-first history, and combined start once it lands, without
 making this P2 suite a prerequisite of either.
 
-### `NATIVE_SUBAGENT_THREADS` — adopt harness-native subagents as Threads
+### Unranked future harness capabilities
 
-**Low-priority exploration:** when Claude or Codex starts a native subagent, discover
-its native identity and available transcript/events and expose it as a linked child
-Thread in Agentplane. Start with separate harness evidence for creation, output,
-completion, and restart/resume; verify what is observable rather than inferring child
-messages from the parent's tool summary. Preserve native frames and parent/child
-provenance, and deduplicate rediscovery across reconnects and restarts.
+These candidates describe native features currently disabled, narrowed, or not surfaced by
+Agentplane's hosted adapters. The `DT` row is the existing P2 item; other rows are unranked. Their
+value and effort estimates are rough planning inputs, not a ranking. The harness protocol roster
+records the current switches and uncovered wire surfaces
+([protocol roster](../native/docs/protocol_roster.md)). Keep the test capture profile deterministic;
+feature enablement belongs in an isolated hosted profile, not by widening every capture. Rows are
+ordered by identifier only. For Claude-specific behavior, start from the partial Claude Code
+reverse engineering in the sibling `gaffer-private` repository and extend it where a candidate
+needs evidence that work does not already provide.
 
-Decide the mapping to Sandbox, Thread, and harness incarnation before implementation.
-Adoption is not spawning another Agentplane-managed harness or claiming the parent's
-command receipts for a child. Read-only inspection may be the first useful slice;
-independent input, interrupt, model control, and resume are separate evidence-gated
-capabilities. Nothing in the current delivery/UI batch depends on this.
+- **`DT` (existing P2) — high win, medium–high work:** Surface Action-backed tools through
+  Claude driver MCP and Codex dynamic tools, plus the existing list/status and per-task stop floor
+  for background work. Reuse Action Service decisions, execution, idempotency, and provenance; it
+  remains deferred pending a named consumer. See [driver tools and background work](driver_tools_and_background.md).
+- **`HARNESS_INTERACTIVE_CONTROLS` — high win, high work:** Support questions and permission
+  requests that park a turn, survive reconnect/restart, accept or reject a durable decision, and
+  resume safely. Keep user decisions distinct from Action Service authorization.
+- **`HARNESS_PLUGINS` — medium win, high work:** Enable project plugin/skill packages with
+  explicit source trust and capability grants. Define install/update behavior and test that plugin
+  tools cannot exceed the Thread's authority.
+- **`HARNESS_PROJECT_HOOKS` — medium win, high work:** Run project hooks only behind an explicit
+  trust boundary; support bounded execution, hook replies, timeout/cancellation, and evidence in
+  the Thread. Do not inherit arbitrary host hooks.
+- **`HARNESS_PROMPT_SUGGESTIONS` — low win, low work:** Consider Claude's prompt suggestions only
+  if user research shows meaningful composer value; keep optional and avoid extra model work
+  without evidence.
+- **`HARNESS_SKILLS` — high win, low–medium work:** Enable project-scoped skills and custom
+  commands for Claude and Codex. Prove the project catalog is available in a Thread while
+  host-global settings and unrelated user configuration stay out.
+- **`HARNESS_VISUAL_INPUT` — high win, high work:** Carry supported image input/viewing through the
+  harness protocol and retained Thread history; prove Claude's image input path and Codex viewing
+  an image already in its workspace. Text-only transcripts are insufficient acceptance. For Codex,
+  keep workspace `view_image` distinct from user composer attachments: the completed app-server
+  item is `{type: "imageView", id, path}`, with no `status` or image bytes. A completed
+  `commandExecution` instead carries `status` plus fields such as `aggregatedOutput`, `exitCode`,
+  and `durationMs`; the current generic adapter would misclassify `imageView` as unsuccessful unless
+  it models this item explicitly. Test with a fixture image in the Codex workspace and a scripted
+  `view_image` call; assert the following model request contains that image as `input_image`, and
+  that Agentplane retains/projects the `imageView` lifecycle and path. This proves image transport,
+  not visual understanding; use a live model check for semantic recognition. The JSON item alone
+  cannot render a preview in the UI: that needs the runner to retain or transfer the viewed bytes
+  through an authorized media reference for replay and rendering.
+- **`HARNESS_WEB_SEARCH` — high win, medium work:** Route native search through an approved,
+  observable egress path; retain source evidence and links in the Thread. Confirm provider/tool
+  availability before wiring either harness.
+- **`NATIVE_SUBAGENT_THREADS` — high win, high work:** Enable Claude Task and Codex multi-agent
+  features; discover child identity, output, completion, and restart/resume, then expose linked
+  child Threads with parent/child provenance and reconnect deduplication. Start with read-only
+  inspection; child control is a separate evidence-gated extension.
+
+#### `HARNESS_CONFIG_ISOLATION` — separate hosted features from capture configuration
+
+**Unranked prerequisite:** production adapters currently reuse narrow scenario launch/config
+helpers. Separate deterministic capture settings from an explicit hosted feature profile before
+turning on native capabilities. Prove that each Thread receives only its selected Agentplane
+configuration, project-scoped settings stay inside the workspace boundary, and machine/user-global
+configuration cannot silently expand tools or permissions. Keep feature choices independently
+switchable so each candidate can be enabled and accepted on its own. This is a harness-configuration
+boundary, separate from the deferred product capability profile in [Profiles](profiles.md).
+
+#### `NATIVE_SUBAGENT_THREADS` — adopt harness-native subagents as Threads
+
+**Unranked candidate:** when Claude or Codex starts a native subagent, discover its native identity
+and available transcript/events and expose it as a linked child Thread in Agentplane. Verify
+creation, output, completion, and restart/resume from separate harness evidence; do not infer child
+messages from the parent's tool summary. Preserve native frames and parent/child provenance, and
+deduplicate rediscovery across reconnects and restarts.
+
+Decide the mapping to Sandbox, Thread, and harness incarnation before implementation. Adoption is
+not spawning another Agentplane-managed harness or claiming the parent's command receipts for a
+child. Read-only inspection may be the first useful slice; independent input, interrupt, model
+control, and resume are separate evidence-gated capabilities. This has no dependency on the current
+delivery/UI batch.
 
 ### `ELEVATE` — agent-requested temporary permission
 
@@ -730,7 +815,7 @@ consumers are listed here rather than discovered later:
   tool's source concludes it has no proxy dependency, and is wrong.
 - **`haku-ci`**, which wires it explicitly instead: `HTTP(S)_PROXY` env in
   `cluster/cdk8s/haku_ci/runner.py`, including for dockerd's image pulls.
-- **The sandbox image**, `cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh`.
+- **The sandbox image**, `haku/sandbox/image/haku-sandbox-setup.sh`.
 - **One more iron-proxy listener it hosts**: `haku-openclaw-spike-proxy` for
   `haku-openclaw-spike` -- the second OpenClaw deployment, after public-coder.
 
@@ -753,8 +838,9 @@ front of Haku's sandbox and CI.
   `agentplane-staging`. Console's box runs as Haku's own `haku` ServiceAccount in `haku-sandbox`
   and bootstraps a git-synced haku-state checkout (<../../haku/docs/security.md> § `sandbox`
   in-process server); it is where haku-state validation and anything needing the `haku` identity
-  runs (<../../haku/runtime/claude_web_env/run.md>). Retiring Console's server needs a box that runs
-  as that identity, with that bootstrap.
+  runs (<../../haku/runtime/claude_web_env/run.md>). Do not carry over Haku's warm-pool feature;
+  dropping it is an explicit product decision, not a parity gap. Retiring Console's server needs a
+  box that runs as that identity, with that bootstrap.
 - **`grants` has no Action Service counterpart**, so this half is not configuration: the surface
   has to exist first. It also waits on `ELEVATE`: its tools are about access that expires, and
   temporary grants are what the Action Service is missing, not the tool definitions.
@@ -924,6 +1010,9 @@ Do not merely enable the composer against a dead session, create a replacement T
 or treat a fresh harness without the original context as a successful resume. Missing
 recovery state must be explicit. This does not introduce offline command admission or
 automatic replay of unsettled predecessor commands (`THREAD_SUCCESSOR_DELIVERY`).
+For this first implementation, the acceptance scope starts from an idle harness after a
+completed turn. Recovery of an in-flight turn, including tool calls aborted by harness
+shutdown, is deferred for a later design and implementation pass.
 
 Add integration and deployed acceptance for both Claude and Codex: create at least two
 Threads in one fixture Sandbox, complete a turn in each, suspend until the old Pod is
@@ -932,8 +1021,7 @@ and retained context with exact mocked-LLM request assertions; deployed acceptan
 observe new input confirmation and a completed reply, not just a Ready Pod. Verify
 monotonic replay without duplicate history and no cross-Thread routing/context mix-up.
 Add focused frontend coverage that the original page and a reloaded page both recover
-from the ended attachment and can send successfully. Cover in-flight suspension
-separately with explicit pending-command outcomes. Use owned test fixtures, not the
+from the ended attachment and can send successfully. Use owned test fixtures, not the
 operator's affected Thread. Archive-before-deletion work does not gate this regression.
 
 ### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
@@ -962,6 +1050,14 @@ truthful failure reporting, and recovery without invented or duplicated command 
 This investigation does not block current container correctness work.
 
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
+
+**Deferred identity decision:** decide whether the app's `thread_id` and the runner's persistent
+`session_id` should share one stable identity. Carrying two IDs for one conversation across UI,
+HTTP, and resume paths can suggest that resuming creates a new session. A shared identity could make
+the conversation identity consistent end to end; separate IDs may still be right for the app's
+product identity versus the runner's storage/recovery ownership. Record the choice and its rationale
+in the identity cutover. This decision does not change the immediate rule: shutdown/resume reopens
+the same runner session under the same Thread.
 
 **Identity/storage cutover:** implement
 [one high-water mark per Event log](../docs/thread_layering.md#one-event-high-water-mark-per-log-across-harness-sessions):
@@ -1119,15 +1215,14 @@ Verify the relay-retention change from [#7035](https://github.com/agentydragon/d
 on its deployed image before removing this task; its gated service-consumer test
 demonstrates the cancellation mechanism, not the original staging attempt's packet order.
 
-### `THREAD_LAZY_HISTORY` — bounded history in a long-open tab
+### `THREAD_LAZY_HISTORY` — deferred browser-cache bound (D6)
 
-The thread store evicts nothing: a tab keeps every row and body it has loaded until the thread
-closes, which fails **P10** of the [thread sync requirements](../docs/thread_sync_requirements.md).
-Evict rows and bodies outside the reading window while the reader keeps its place, and hold the
-tail and the reading window independently so that moving between them loads none of the history in
-between ([§ Retained browser state](../docs/thread_view_sync.md#retained-browser-state)). The
-eviction rule and its done-when are in the [thread sync plan](thread_sync/README.md), with the rest
-of the open Electric work.
+The thread store retains every row and body it has loaded until the Thread closes. Long content is
+loaded on demand, and the owner accepts this cache growth for the current product slice; bounded
+browser state is not an acceptance gate. If resource pressure justifies revisiting D6, evict rows
+and bodies outside the reading window while preserving the reader's place. The proposed design and
+future evidence are in [Thread view synchronization](../docs/thread_view_sync.md#accepted-browser-cache-state-d6)
+and the [Thread sync plan](thread_sync/README.md).
 
 ### `THREAD_EVIDENCE_RETENTION` — optional raw capture
 

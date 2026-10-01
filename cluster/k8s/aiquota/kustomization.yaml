@@ -15,7 +15,7 @@ configMapGenerator:
         # remains owned by Haku's existing egress proxy, not by this Deployment.
 
         [cli_proxy_api]
-        url = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v0/management"
+        url = "http://cli-proxy-api.cli-proxy-api.svc:8317/v0/management"
 
         [claude]
         enabled = true

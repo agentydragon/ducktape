@@ -158,23 +158,20 @@ The existing `google` provider is **read-only** (`drive.readonly`). Add a **new,
 separate** provider for backup writes — separate, not extended, so it gets its own
 least-privilege token and doesn't broaden the agent-facing read-only Google token:
 
-```yaml
-# add to oauth.providers in cluster/k8s/agents/airlock/config.yaml
-- name: google_drive_backup
-  provider_type: oauth2
-  display_name: Google Drive (cluster backup write)
-  authorize_url: https://accounts.google.com/o/oauth2/v2/auth
-  token_url: https://oauth2.googleapis.com/token
-  scopes:
-    - https://www.googleapis.com/auth/drive.file # write, but only files this app creates
-  refresh_secret:
-    name: google-drive-backup-tokens
-  access_secret:
-    name: google-drive-backup-access-token
-  refresh_margin_seconds: 600 # keep the access token comfortably fresh at job start
-  extra_auth_params:
-    access_type: offline # required to get a refresh_token
-    prompt: consent
+```python
+# Add to OAUTH_CONFIG.providers in cluster/cdk8s/airlock.py.
+OAuth2ProviderConfig(
+    name="google_drive_backup",
+    provider_type="oauth2",
+    display_name="Google Drive (cluster backup write)",
+    authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
+    token_url="https://oauth2.googleapis.com/token",
+    scopes=["https://www.googleapis.com/auth/drive.file"],
+    refresh_secret=TokenSecretConfig(name="google-drive-backup-tokens"),
+    access_secret=TokenSecretConfig(name="google-drive-backup-access-token"),
+    refresh_margin_seconds=600,  # keep the access token comfortably fresh at job start
+    extra_auth_params={"access_type": "offline", "prompt": "consent"},
+)
 ```
 
 It reuses the same `google-client-credentials` OAuth client airlock already loads
@@ -182,6 +179,10 @@ It reuses the same `google-client-credentials` OAuth client airlock already load
 published, so there is **no GCP console work and
 no off-cluster `rclone authorize`** — acquisition is one browser visit to the
 callback URL (see runbook).
+
+Because this provider has a different name from `google-write`, add its client-credential
+reference to the shared-Google case in `cluster/cdk8s/airlock.py` when implementing it; its
+runtime env prefix still comes from the provider name (`GOOGLE_DRIVE_BACKUP_`).
 
 **The backup job consumes the `access_secret`, never the refresh token.** Airlock
 stays the _sole_ refresher — no two-systems-rotating-the-same-`refresh_token`

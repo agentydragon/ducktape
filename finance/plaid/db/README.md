@@ -1,7 +1,7 @@
 # plaid_utils
 
 Plaid client and sync utilities for personal accounts, cards, liabilities, and
-investments. Backs the [Plaid Link management service](mcp_server/README.md).
+investments. Backs the [Plaid Link management service](../link/README.md).
 
 Named `plaid_utils` (not `plaid`) so the top-level package doesn't collide with the
 official `plaid` SDK — same convention as `openai_utils`.
@@ -19,8 +19,8 @@ user-level age anchors (admin + wyrm2/rugged/atlas/iguana-agentydragon).
 
 `plaid_utils.dev_creds.load()` reads it via `sops -d` and selects the secret by `$PLAID_ENV`.
 Fallback: if the file is missing, it reads `PLAID_CLIENT_ID`/`PLAID_SECRET` from env. This
-sops/env loader lives in `dev_creds.py`, separate from `client.py`, so the MCP server never
-bundles it.
+sops/env loader lives in `dev_creds.py`, separate from `client.py`, so the deployed Link and
+sync entrypoints do not bundle developer-only SOPS/subprocess loading.
 
 Plaid removed the `development` environment in 2024 — only `sandbox` (fake
 banks, free, unlimited) and `production` (real banks, paid; first 10 Items
@@ -31,19 +31,27 @@ free on the Trial plan for teams created on/after 2026-04-15) remain.
 - **Amount sign:** positive = money **out** of the account (purchases, debits,
   card charges); negative = money **in** (payments, refunds, deposits). Same
   convention on credit and depository accounts.
-- **`/transactions/get` vs `/transactions/sync`:** the MCP server uses
-  `/transactions/get` for ad-hoc **date-range** reads — it natively takes
-  `start_date`/`end_date` + `offset`/`count` and returns `total_transactions`.
-  `/transactions/sync` is for stateful incremental mirroring (a cursor you must
-  persist) and is the wrong primitive for range queries.
+- **`/transactions/get` vs `/transactions/sync`:** the mirror uses
+  `/transactions/sync` with one durable cursor per Item, applying added,
+  modified, and removed transactions before committing the next cursor.
+  `/transactions/get` remains the date-range API (`start_date`/`end_date` plus
+  `offset`/`count`) for callers that explicitly need a bounded query.
 - **Cached vs live balances:** `/accounts/get` returns cached balances (Plaid
   refreshes 1–4×/day); `/accounts/balance/get` hits the bank live but is heavily
   rate-limited (5/min, 30/hour per Item).
 - **Pending → posted:** a `pending` transaction is later replaced by a posted one
   whose `pending_transaction_id` points back to the pending id.
 - **`ITEM_LOGIN_REQUIRED`:** when a bank login expires Plaid returns this error and
-  the Item must be repaired through the Plaid MCP `/link` UI. The UI launches
+  the Item must be repaired through the Plaid Link management UI. The UI launches
   Plaid update mode for the existing Item.
+
+## Spend snapshot invalidation
+
+PostgreSQL listeners can wait for `plaid_spend_changed`; its payload is empty.
+Storage emits it with successful sync completion, visible link status changes, and
+removal of a linked Item and its mirrored data. It is a transient wake-up, not a
+durable change stream. Consumers reload the full current snapshot after a
+notification and on startup or reconnect.
 
 ## Sandbox smoke test
 

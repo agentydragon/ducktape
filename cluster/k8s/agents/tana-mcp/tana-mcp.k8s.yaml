@@ -2,10 +2,32 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: auto
     rbac.ducktape.io/agent-readable-logs: "true"
   name: tana-mcp
+spec: {}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: PostgreSQL DSN for the tana-mcp MCP OAuth state store.
+  name: mcp-oauth-db-credentials
+  namespace: tana-mcp
+spec:
+  data:
+    - remoteRef:
+        key: mcp-oauth-tana-credentials
+        property: uri
+      secretKey: uri
+  refreshInterval: 10m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: mcp-oauth-tana-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Delete
+    name: mcp-oauth-db-credentials
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -238,6 +260,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  labels:
+    app.kubernetes.io/name: tana-mcp
   name: tana-mcp
   namespace: tana-mcp
 spec:
@@ -245,11 +269,11 @@ spec:
     - name: mcp-proxy
       port: 8263
       protocol: TCP
-      targetPort: mcp-proxy
+      targetPort: 8263
     - name: novnc
       port: 6080
       protocol: TCP
-      targetPort: novnc
+      targetPort: 6080
   selector:
     app.kubernetes.io/name: tana-mcp
   type: ClusterIP
@@ -269,11 +293,9 @@ data:
   MCP_FACADE_LOGGING__MCP_MESSAGES: "true"
   MCP_FACADE_LOGGING__MCP_PAYLOADS: "false"
   MCP_FACADE_LOGGING__MCP_PAYLOAD_LENGTH: "true"
-  MCP_FACADE_PERSISTENCE__DB: "0"
-  MCP_FACADE_PERSISTENCE__HOST: mcp-valkey-ovh-master.tana-mcp.svc.cluster.local
-  MCP_FACADE_PERSISTENCE__KIND: valkey
+  MCP_FACADE_PERSISTENCE__KIND: postgres
   MCP_FACADE_UPSTREAM__KIND: http
-  MCP_FACADE_UPSTREAM__URL: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
+  MCP_FACADE_UPSTREAM__URL: http://tana-mcp.tana-mcp.svc:8263/mcp
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -314,6 +336,11 @@ spec:
                 secretKeyRef:
                   key: token
                   name: tana-agentydragon-gmail-com-account-pat
+            - name: MCP_FACADE_PERSISTENCE__URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: mcp-oauth-db-credentials
           envFrom:
             - configMapRef:
                 name: tana-mcp-facade-config
@@ -389,7 +416,7 @@ spec:
     - name: metrics
       port: 9090
       protocol: TCP
-      targetPort: metrics
+      targetPort: 9090
   selector:
     app.kubernetes.io/name: tana-mcp-facade
   type: ClusterIP
@@ -444,53 +471,3 @@ spec:
           for: 5m
           labels:
             severity: warning
----
-apiVersion: redis.redis.opstreelabs.in/v1beta2
-kind: RedisReplication
-metadata:
-  annotations:
-    description: Replacement OVH Valkey for Tana MCP facade OAuth state
-  name: mcp-valkey-ovh
-  namespace: tana-mcp
-spec:
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-          - matchExpressions:
-              - key: topology.kubernetes.io/zone
-                operator: In
-                values:
-                  - hil-ovh
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              app: mcp-valkey-ovh
-          topologyKey: kubernetes.io/hostname
-  clusterSize: 2
-  kubernetesConfig:
-    image: valkey/valkey:9-alpine
-    imagePullPolicy: IfNotPresent
-    resources:
-      limits:
-        cpu: 200m
-        memory: 128Mi
-      requests:
-        cpu: 50m
-        memory: 64Mi
-  storage:
-    volumeClaimTemplate:
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 1Gi
-        storageClassName: local-path-ovh

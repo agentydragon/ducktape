@@ -3,13 +3,11 @@
 //! `selector_diagnostics_report_test`; this test pins the CLI verb: that one
 //! pass surfaces the selector outcomes on stdout in each `--format`.
 
-use std::fs;
-use std::path::Path;
 use std::process::Command;
 
 use debundle_e2e_support::{
-    CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module,
-    run_source_only_validate, run_spec_validate, write_validate_fixture_spec,
+    CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module, outcomes,
+    run_source_only_validate, run_spec_validate, write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -290,13 +288,13 @@ fn validate_source_only_ndjson_is_one_line_per_queue_item_plus_summary() {
 fn validate_source_only_clean_modules_report_no_problems() {
     let dir = tempfile::tempdir().unwrap();
     let source_file = dir.path().join("chunk.js");
-    write(
+    write_text_file(
         &source_file,
         r#"const widget = makeWidget("ok");
 "#,
     );
     let modules_root = dir.path().join("modules");
-    write(
+    write_text_file(
         &modules_root.join("ui/widget.yaml"),
         r#"source_matches:
   - match: 'const w = makeWidget("ok");'
@@ -313,16 +311,102 @@ fn validate_source_only_clean_modules_report_no_problems() {
 }
 
 #[test]
+fn validate_source_only_accepts_a_seq_exprs_selector() {
+    let dir = tempfile::tempdir().unwrap();
+    let source_file = dir.path().join("chunk.js");
+    // One memoized hook, claimed by a selector whose cache-write tail is a
+    // `SEQ_EXPRS` run hole: validate reports nothing, i.e. it resolved.
+    write_text_file(
+        &source_file,
+        r#"const slots = [];
+function loadLabel(cache, label) {
+  let memo;
+  return (cache[0] !== label
+    ? (memo = async (id) => {
+        const base = `load:${label}`;
+        return `${base}:${id}`;
+      }, cache[0] = label, cache[1] = memo)
+    : (memo = cache[1])),
+    memo;
+}
+loadLabel(slots, "first")("a").then((value) => console.log(value));
+"#,
+    );
+    let modules_root = dir.path().join("modules");
+    write_text_file(
+        &modules_root.join("resource/label.yaml"),
+        r#"source_matches:
+  - match: |
+      function readable(cache, label) {
+        let memo;
+        return (EXPR ? (memo = async (id) => {
+          const base = `load:${label}`;
+          return `${base}:${id}`;
+        }, SEQ_EXPRS) : memo = EXPR), memo;
+      }
+    bindings:
+      - local: readable
+        name: LabelResource
+"#,
+    );
+
+    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert!(outcomes(&report).is_empty(), "{report:#}");
+}
+
+#[test]
+fn validate_source_only_reports_a_misplaced_seq_exprs_hole() {
+    let dir = tempfile::tempdir().unwrap();
+    let source_file = dir.path().join("chunk.js");
+    write_text_file(
+        &source_file,
+        r#"function actual(value) {
+  return value.trim();
+}
+console.log(actual(" ok "));
+"#,
+    );
+    let modules_root = dir.path().join("modules");
+    write_text_file(
+        &modules_root.join("hooks/lone_hole.yaml"),
+        r#"source_matches:
+  - match: |
+      function readable(value) {
+        return (SEQ_EXPRS);
+      }
+    bindings:
+      - local: readable
+        name: LoneHole
+"#,
+    );
+
+    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let record = find_module_outcome(outcomes(&report), "hooks/lone_hole");
+    assert_eq!(record["outcome"]["kind"], "invalid", "{record:#}");
+    assert!(
+        record["outcome"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("run-hole keyword outside a list position"),
+        "{record:#}"
+    );
+}
+
+#[test]
 fn validate_source_only_reports_stale_annotations() {
     let dir = tempfile::tempdir().unwrap();
     let source_file = dir.path().join("chunk.js");
-    write(
+    write_text_file(
         &source_file,
         r#"const claimed = makeWidget("ok");
 "#,
     );
     let modules_root = dir.path().join("modules");
-    write(
+    write_text_file(
         &modules_root.join("ui/widget.yaml"),
         r#"source_matches:
   - match: 'const selected = makeWidget("ok");'
@@ -359,21 +443,21 @@ annotations:
 fn validate_source_only_reports_anonymous_statement_failures() {
     let dir = tempfile::tempdir().unwrap();
     let source_file = dir.path().join("chunk.js");
-    write(
+    write_text_file(
         &source_file,
         r#"sideEffect("shared");
 sideEffect("shared");
 "#,
     );
     let modules_root = dir.path().join("modules");
-    write(
+    write_text_file(
         &modules_root.join("effects/ambiguous.yaml"),
         r#"anonymous_statements:
   - source_match:
       match: 'sideEffect("shared");'
 "#,
     );
-    write(
+    write_text_file(
         &modules_root.join("effects/missing.yaml"),
         r#"anonymous_statements:
   - source_match:
@@ -426,14 +510,14 @@ sideEffect("shared");
 fn validate_source_only_reports_multi_statement_anonymous_selector_as_invalid() {
     let dir = tempfile::tempdir().unwrap();
     let source_file = dir.path().join("chunk.js");
-    write(
+    write_text_file(
         &source_file,
         r#"setup();
 start();
 "#,
     );
     let modules_root = dir.path().join("modules");
-    write(
+    write_text_file(
         &modules_root.join("effects/startup.yaml"),
         r#"anonymous_statements:
   - source_match:
@@ -469,14 +553,14 @@ start();
 fn validate_source_only_reports_source_match_failures_per_export() {
     let dir = tempfile::tempdir().unwrap();
     let source_file = dir.path().join("chunk.js");
-    write(
+    write_text_file(
         &source_file,
         r#"const leftOne = renderPanel("shared"), rightOne = renderPanel("shared");
 const leftTwo = renderPanel("shared"), rightTwo = renderPanel("shared");
 "#,
     );
     let modules_root = dir.path().join("modules");
-    write(
+    write_text_file(
         &modules_root.join("ui/panels.yaml"),
         r#"source_matches:
   - match: 'const left = renderPanel("shared"), right = renderPanel("shared");'
@@ -525,7 +609,7 @@ struct SourceOnlyValidateFixture {
 fn write_source_only_validate_fixture() -> SourceOnlyValidateFixture {
     let root = tempfile::tempdir().unwrap();
     let source_file = root.path().join("chunk.js");
-    write(
+    write_text_file(
         &source_file,
         r#"const leftPanel = renderPanel("shared");
 const rightPanel = renderPanel("shared");
@@ -533,7 +617,7 @@ const widget = makeWidget("ok");
 "#,
     );
     let modules_root = root.path().join("modules");
-    write(
+    write_text_file(
         &modules_root.join("ui/ok.yaml"),
         r#"source_matches:
   - match: 'const w = makeWidget("ok");'
@@ -542,7 +626,7 @@ const widget = makeWidget("ok");
         name: Widget
 "#,
     );
-    write(
+    write_text_file(
         &modules_root.join("ui/missing.yaml"),
         r#"source_matches:
   - match: 'const w = makeWidget("missing");'
@@ -551,7 +635,7 @@ const widget = makeWidget("ok");
         name: MissingWidget
 "#,
     );
-    write(
+    write_text_file(
         &modules_root.join("ui/ambiguous.yaml"),
         r#"source_matches:
   - match: 'const panel = renderPanel("shared");'
@@ -565,19 +649,6 @@ const widget = makeWidget("ok");
         modules_root,
         source_file,
     }
-}
-
-fn write(path: &Path, body: &str) {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
-
-fn outcomes(report: &Value) -> &[Value] {
-    report["outcomes"]
-        .as_array()
-        .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
 }
 
 fn candidate_owners(record: &Value) -> Vec<u64> {

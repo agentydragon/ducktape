@@ -124,7 +124,8 @@ code_verifier=...)` sends the verifier in the token POST.
 - `airlock/oauth/routes.py`: replaced the module-level `_pending_states` global
   with a per-router `pending_states` dict closed over by `create_oauth_router`,
   carrying a frozen `_PendingState(provider_name, code_verifier | None)`.
-- `cluster/k8s/agents/airlock/config.yaml`: added `bsc` provider entry —
+- `cluster/cdk8s/airlock.py` (`OAUTH_CONFIG`; migrated from
+  `cluster/k8s/agents/airlock/config.yaml`): added `bsc` provider entry —
   `use_pkce: true`, `aud` = sandbox FHIR base, scopes `interop offline_access`,
   redirect `https://airlock.allegedly.works/oauth/callback/bsc`. Tokens stored
   in `airlock` namespace only (no reflector annotations — keep BSC tokens

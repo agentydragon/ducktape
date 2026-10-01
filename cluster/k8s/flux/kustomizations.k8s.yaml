@@ -7,7 +7,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/agentplane-crds
+  path: ./cluster/generated/agentplane-crds
   prune: false
   retryInterval: 1m
   sourceRef:
@@ -26,7 +26,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/agents/agent-sandbox/controller
+  path: ./cluster/generated/agents/agent-sandbox/controller
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -79,7 +79,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/flux-image-automation-ghcr
+  path: ./cluster/generated/flux-image-automation-ghcr
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -100,21 +100,6 @@ spec:
     name: haku-namespace
     namespace: ducktape-flux
   timeout: 2m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: hubble-ui
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/generated/hubble-ui
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: hubble-ui
-    namespace: ducktape-flux
-  timeout: 5m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -147,7 +132,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/kubevirt/cdi-operator
+  path: ./cluster/generated/kubevirt/cdi-operator
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -164,7 +149,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/kubevirt/operator
+  path: ./cluster/generated/kubevirt/operator
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -307,13 +292,13 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   interval: 10m
-  path: ./cluster/k8s/parked/buildbuddy-executor
+  path: ./cluster/parked/buildbuddy-executor
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   suspend: true
   timeout: 5m
   wait: true
@@ -327,7 +312,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
-  path: ./cluster/k8s/parked/gecko/namespace
+  path: ./cluster/parked/gecko/namespace
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -337,21 +322,6 @@ spec:
   suspend: true
   timeout: 2m
   wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: seaweedfs-namespace
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/generated/seaweedfs/namespace
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-namespace
-    namespace: ducktape-flux
-  suspend: false
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -493,12 +463,13 @@ spec:
     - name: flux-image-automation-ghcr
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/gaffer-private-source
+  path: ./cluster/generated/gaffer-private-source
   prune: true
   retryInterval: 1m
   sourceRef:
-    kind: GitRepository
-    name: flux-system
+    kind: ExternalArtifact
+    name: gaffer-private-source
+    namespace: ducktape-flux
   timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -799,9 +770,6 @@ metadata:
   name: seaweedfs-operator
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: seaweedfs-namespace
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/seaweedfs/operator
   prune: true
@@ -840,26 +808,6 @@ spec:
   sourceRef:
     kind: GitRepository
     name: external-snapshotter-source
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: forgejo-cache
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: valkey
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/cache
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-cache
     namespace: ducktape-flux
   timeout: 5m
   wait: true
@@ -979,7 +927,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/dcgm-exporter
+  path: ./cluster/generated/dcgm-exporter
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1246,7 +1194,7 @@ spec:
     - name: clickhouse
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/clickhouse/schema
+  path: ./cluster/generated/clickhouse/schema
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1283,32 +1231,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: seaweedfs-filer-db
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  dependsOn:
-    - name: seaweedfs-namespace
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/seaweedfs/db
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-filer-db
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: tofu-state-db
   namespace: ducktape-flux
 spec:
@@ -1338,26 +1260,35 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: seaweedfs-secrets
+  annotations:
+    description: Shared OVH-HA CNPG cluster and per-MCP databases for OAuth client state.
+  name: mcp-oauth-state-db
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
-    - name: seaweedfs-namespace
+    - name: cnpg
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: kyverno
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
+      kind: Database
   interval: 10m
-  path: ./cluster/k8s/seaweedfs/secrets
+  path: ./cluster/generated/mcp-oauth-state
   prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: seaweedfs-secrets
+    name: mcp-oauth-state
     namespace: ducktape-flux
-  suspend: false
+  timeout: 10m
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -1453,7 +1384,7 @@ spec:
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/parked/docker-ci
+  path: ./cluster/parked/docker-ci
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1558,26 +1489,6 @@ spec:
     kind: ExternalArtifact
     name: dns-automation
     namespace: ducktape-flux
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: forgejo-agentydragon
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/agentydragon
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-agentydragon
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -1707,7 +1618,7 @@ spec:
       name: ollama-direct-token
       namespace: ollama
   interval: 10m
-  path: ./cluster/k8s/ollama
+  path: ./cluster/generated/ollama
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -1722,8 +1633,16 @@ metadata:
   name: seaweedfs-cluster
   namespace: ducktape-flux
 spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: seaweedfs-operator
+      namespace: ducktape-flux
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/seaweedfs/cluster
@@ -1814,6 +1733,26 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: forgejo-gitops
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: tofu-controller
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: monitoring-stack
   namespace: ducktape-flux
 spec:
@@ -1842,7 +1781,7 @@ spec:
       name: kube-prometheus-stack
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/stack
+  path: ./cluster/k8s/monitoring
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2043,6 +1982,7 @@ metadata:
   name: seaweedfs-drivefs-artifacts-bucket
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: seaweedfs-operator
       namespace: ducktape-flux
@@ -2089,6 +2029,7 @@ metadata:
   name: seaweedfs-loom-gym-bucket
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: seaweedfs-operator
       namespace: ducktape-flux
@@ -2109,6 +2050,7 @@ metadata:
   name: seaweedfs-pr-visuals-bucket
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: seaweedfs-operator
       namespace: ducktape-flux
@@ -2119,26 +2061,6 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: seaweedfs-pr-visuals-bucket
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: seaweedfs-registry-cache-bucket
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: seaweedfs-operator
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/seaweedfs/registry-cache-bucket
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: seaweedfs-registry-cache-bucket
     namespace: ducktape-flux
   timeout: 5m
   wait: true
@@ -2222,6 +2144,8 @@ spec:
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
+    - name: valkey
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/forgejo
   prune: true
@@ -2297,7 +2221,7 @@ spec:
       name: grafana-deployment
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/grafana-instance
+  path: ./cluster/generated/monitoring/grafana-instance
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2319,7 +2243,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/gatus
+  path: ./cluster/generated/gatus
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2411,7 +2335,7 @@ spec:
       name: alloy
       namespace: monitoring
   interval: 10m
-  path: ./cluster/k8s/monitoring/alloy
+  path: ./cluster/generated/monitoring/alloy
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2468,6 +2392,8 @@ spec:
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/oci-cache
   prune: true
@@ -2519,7 +2445,7 @@ spec:
     - name: tofu-controller
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/parked/cloud-agent-tf
+  path: ./cluster/parked/cloud-agent-tf
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2527,66 +2453,6 @@ spec:
     name: haku-cloud-agent
     namespace: ducktape-flux
   suspend: true
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: forgejo-agentydragon-repos
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/agentydragon-repos
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-agentydragon-repos
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: budget-ledger
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/budget-ledger
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: budget-ledger
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: forgejo-claude
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/claude
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-claude
-    namespace: ducktape-flux
   timeout: 10m
   wait: true
 ---
@@ -2674,7 +2540,7 @@ spec:
     - name: grafana-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grafana
+  path: ./cluster/generated/grafana
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2704,7 +2570,7 @@ spec:
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/parked/agent-box
+  path: ./cluster/parked/agent-box
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2735,7 +2601,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/parked/gecko/app
+  path: ./cluster/parked/gecko/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2802,7 +2668,7 @@ spec:
       name: ducktape
       namespace: agentplane-index
   interval: 10m
-  path: ./cluster/k8s/agentplane-index
+  path: ./cluster/generated/agentplane-index
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2852,7 +2718,7 @@ spec:
       name: github-secrets-sync-pat
       namespace: agents-infra
   interval: 10m
-  path: ./cluster/k8s/agents/authentik-jwt-rotation
+  path: ./cluster/generated/agents/authentik-jwt-rotation
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2873,7 +2739,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/loki-read-proxy
+  path: ./cluster/generated/agents/loki-read-proxy
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2898,9 +2764,9 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: valkey
+    - name: authentik
       namespace: ducktape-flux
-    - name: monitoring-crds
+    - name: authentik-tf
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/plaid-mcp
@@ -2926,7 +2792,7 @@ spec:
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: valkey
+    - name: mcp-oauth-state-db
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
@@ -2996,6 +2862,31 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Mirror of every Claude Code cloud session's events into a CNPG database, and its pairing page.
+  name: claude-session-sync
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/claude-session-sync
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: claude-session-sync
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Image automation for images hosted in our Forgejo registry (authenticated scans via the reflected ducktape-ci credential).
   name: flux-image-automation-forgejo
   namespace: ducktape-flux
@@ -3058,7 +2949,7 @@ spec:
     - name: grafana-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/github-exporter
+  path: ./cluster/generated/github-exporter
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3077,10 +2968,16 @@ spec:
   dependsOn:
     - name: volsync
       namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: mcp-oauth-state-db
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/sf/app
+  path: ./cluster/generated/grocy/sf/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3099,10 +2996,16 @@ spec:
   dependsOn:
     - name: volsync
       namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: mcp-oauth-state-db
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/vallejo/app
+  path: ./cluster/generated/grocy/vallejo/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3190,7 +3093,7 @@ spec:
       name: matrix-synapse
       namespace: matrix
   interval: 10m
-  path: ./cluster/k8s/matrix/user-provisioner
+  path: ./cluster/generated/matrix/user-provisioner
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3239,7 +3142,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/parked/sdr
+  path: ./cluster/parked/sdr
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3289,7 +3192,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/google-mcp
+  path: ./cluster/generated/google-mcp
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3305,10 +3208,6 @@ metadata:
   name: study-casino
   namespace: ducktape-flux
 spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   deletionPolicy: Orphan
   dependsOn:
     - name: cnpg
@@ -3316,7 +3215,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/study-casino
+  path: ./cluster/generated/study-casino
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3324,26 +3223,6 @@ spec:
     name: study-casino
     namespace: ducktape-flux
   suspend: false
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: haku-state
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/haku-state
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-state
-    namespace: ducktape-flux
   timeout: 10m
   wait: true
 ---
@@ -3407,52 +3286,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: cpap-data
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/cpap-data
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: cpap-data
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: grocy-mcp-sf
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: valkey
-      namespace: ducktape-flux
-    - name: monitoring-crds
-      namespace: ducktape-flux
-    - name: kyverno
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/grocy/sf/mcp
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: grocy-mcp-sf
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: grocy-sf-user-perms
   namespace: ducktape-flux
 spec:
@@ -3460,38 +3293,12 @@ spec:
     - name: grocy-sf
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/sf/user-perms
+  path: ./cluster/generated/grocy/sf/user-perms
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: grocy-sf-user-perms
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: grocy-mcp-vallejo
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: valkey
-      namespace: ducktape-flux
-    - name: monitoring-crds
-      namespace: ducktape-flux
-    - name: kyverno
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/grocy/vallejo/mcp
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: grocy-mcp-vallejo
     namespace: ducktape-flux
   timeout: 5m
   wait: true
@@ -3506,7 +3313,7 @@ spec:
     - name: grocy-vallejo
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/vallejo/user-perms
+  path: ./cluster/generated/grocy/vallejo/user-perms
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3528,7 +3335,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/ha-mcp/app
+  path: ./cluster/generated/agents/ha-mcp/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3548,7 +3355,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/forgejo-token-rotation
+  path: ./cluster/generated/agents/forgejo-token-rotation
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -3656,7 +3463,7 @@ spec:
     - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/haku-openclaw-spike/app
+  path: ./cluster/generated/agents/haku-openclaw-spike/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3686,7 +3493,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/haku/workspaces/app
+  path: ./cluster/generated/haku/workspaces/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3718,7 +3525,7 @@ spec:
     - name: haku-egress-proxy
       namespace: ducktape-flux
   interval: 10m
-  path: ./haku/runtime/managed_agent/self_hosted/deploy
+  path: ./haku/runtime/x/managed_agent/self_hosted/deploy
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3823,7 +3630,7 @@ spec:
       name: agentplane-testing-egress-upstream-ca
       namespace: agentplane-testing
   interval: 10m
-  path: ./cluster/k8s/agentplane-testing
+  path: ./cluster/generated/agentplane-testing
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3848,7 +3655,7 @@ spec:
     - name: kyverno-policies
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/agent-sandbox/workspaces
+  path: ./cluster/generated/agents/agent-sandbox/workspaces
   prune: true
   retryInterval: 1m
   sourceRef:

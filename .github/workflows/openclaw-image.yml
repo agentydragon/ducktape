@@ -14,7 +14,7 @@ on:
       - ".github/scripts/smoke-openclaw-image.sh"
       - ".github/workflows/nix-image.yml"
       - ".github/workflows/openclaw-image.yml"
-      - "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml"
+      - "cluster/k8s/agents/public-coder-agent/app/app.k8s.yaml"
       - "flake.lock"
       - "flake.nix"
       - "nix/artifact-pins.json"
@@ -23,7 +23,6 @@ on:
       - "openclaw/bundle-runtime-plugin.sh"
       - "openclaw/default.nix"
       - "openclaw/gateway.nix"
-      - "openclaw/npm_wrapper/**"
       - "openclaw/patches/**"
       - "openclaw/proxy-setup.mjs"
       # keep-sorted end
@@ -36,7 +35,7 @@ on:
       - ".github/scripts/smoke-openclaw-image.sh"
       - ".github/workflows/nix-image.yml"
       - ".github/workflows/openclaw-image.yml"
-      - "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml"
+      - "cluster/k8s/agents/public-coder-agent/app/app.k8s.yaml"
       - "flake.lock"
       - "flake.nix"
       - "nix/artifact-pins.json"
@@ -45,7 +44,6 @@ on:
       - "openclaw/bundle-runtime-plugin.sh"
       - "openclaw/default.nix"
       - "openclaw/gateway.nix"
-      - "openclaw/npm_wrapper/**"
       - "openclaw/patches/**"
       - "openclaw/proxy-setup.mjs"
       # keep-sorted end
@@ -69,8 +67,12 @@ jobs:
         pip install --quiet pyyaml
         python3 -c '
         import yaml
-        with open("cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml") as f:
-            config_map = yaml.safe_load(f)
+        with open("cluster/k8s/agents/public-coder-agent/app/app.k8s.yaml") as f:
+            config_map = next(
+                doc
+                for doc in yaml.safe_load_all(f)
+                if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "public-coder-agent-config"
+            )
         with open("/tmp/public-coder-agent-openclaw.json5", "w") as out:
             out.write(config_map["data"]["openclaw.json5"])
         '

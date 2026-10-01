@@ -10,38 +10,35 @@ tools.
 
 `haku/openclaw_spike/default.nix` builds the image entirely with Nix, using the
 same `dockerTools.buildLayeredImage` approach as public-coder. The gateway is
-packaged through nix-openclaw's tested npm-package path, with the stable
-OpenClaw wrapper and lockfile spliced over nix-openclaw's older default. Claude
-Code and the spike's tools are layered from the locked Nix package set, so the
-image has one controlled runtime closure and one Node executable.
+packaged through nix-openclaw's tested npm-package path using its pinned
+OpenClaw wrapper and lockfile. Claude Code and the spike's tools are layered
+from the locked Nix package set.
 
-The current branch targets stable OpenClaw `2026.8.1`. Deployment image tags
-remain Flux-managed: they advance only after the corresponding image-publish
-workflow runs on `devel`. Both images use the shared wrapper at
-`openclaw/npm_wrapper/`; regenerate it once per gateway bump, then update
-`stableSourceInfo.releaseVersion` and `gatewayNpmDepsHash`.
+The gateway release follows the nix-openclaw input pinned in `flake.lock`.
+Deployment image tags remain Flux-managed: they advance only after the
+corresponding image-publish workflow runs on `devel`. Both images use the
+package and source metadata pinned by nix-openclaw. Release-specific local
+dist repairs live in `openclaw/patches/` and are shared through
+`openclaw/gateway.nix`.
 
-Use this npm-package path, **not** a from-source `sourceInfo` override.
-The from-source nix-openclaw path is not the path validated for this image and
-lacks the offline store materialization needed by the gateway build.
+Keep using nix-openclaw's npm-package path. Its separate from-source pnpm build
+is not the path validated for this image and lacks the offline store
+materialization needed by the gateway build.
 
 This replaced an earlier hybrid that used the upstream
 `ghcr.io/openclaw/openclaw` image as a Docker base and layered Nix tools on top.
 The current image owns its Node runtime and does not depend on a second base-image
 Node.
 
-## Version constraints
+## Version and runtime constraints
 
-Why the gateway and Node are pinned this way:
+Both images follow the OpenClaw release pinned by nix-openclaw's locked
+revision. The shared gateway derives the matching release-specific dist patch
+from that metadata; a missing patch fails the build and requires review.
 
-- **Stable 2026.8.1 is the branch target for both images.** It includes the
-  fixes that motivated the upgrade, while known upstream memory-flush races
-  still need targeted regression coverage. This describes the image builds, not
-  an already-reconciled live deployment.
-- **Both images use the shared Node 22 package selection.** OpenClaw 2026.8.1
-  accepts the pinned Node 22 release line. The Haku-only Node 24 override and
-  its hard-coded SQLite check were removed after reviewing the stable runtime
-  guard, which applies the WAL-reset SQLite requirement to Bun rather than Node.
+- Keep the image and gateway on one Node runtime. Haku takes its Node package
+  from the same Nix package set as the gateway. The WAL-reset SQLite runtime
+  guard applies to Bun, not Node.
 
 ## Trust boundary
 

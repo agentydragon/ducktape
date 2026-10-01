@@ -14,32 +14,30 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
 
+from cluster.cdk8s.authentik.app import SERVER
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 
 NAME = "proxy-routes"
 NAMESPACE = "authentik"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/proxy-routes"
-_OUTPOST = "authentik-server"
-_OUTPOST_PORT = 80
 
 # Route name -> public hostname.
 _ROUTES = {
     "hubble-ui": "hubble.allegedly.works",
     # Alloy OTLP: external clients authenticate with a Bearer token at the outpost.
     "alloy-otlp": "alloy-otlp.allegedly.works",
-    "grocy-sf": "grocy-sf.allegedly.works",
-    "grocy-vallejo": "grocy-vallejo.allegedly.works",
+    "grocy-sf": grocy.hostname("sf"),
+    "grocy-vallejo": grocy.hostname("vallejo"),
     # ActivityWatch's read-only proxy.
     "activitywatch": "activitywatch.allegedly.works",
     # The OpenClaw mitmproxy traffic viewer (admin-only).
     "agents-mitmproxy": "agents-mitmproxy.allegedly.works",
     # proxmox-proxy nginx -> atlas:8006.
     "proxmox": "atlas.allegedly.works",
-    # The plaid-mcp web UI for Plaid Link.
-    "plaid-mcp": "plaid-mcp.allegedly.works",
     "goldilocks-dashboard": "goldilocks.allegedly.works",
     # OpenWebRX+.
     "sdr": "sdr.allegedly.works",
@@ -103,8 +101,7 @@ def _proxy_route(chart: Chart, name: str, hostname: str, *, timeout: str | None 
         name,
         metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         hostnames=[hostname],
-        backend=_OUTPOST,
-        port=_OUTPOST_PORT,
+        backend=SERVER,
         timeout=timeout,
         hsts=False,
         listener=None,
@@ -121,8 +118,7 @@ def _haku_ui_route(chart: Chart) -> None:
         "haku-ui",
         metadata=ApiObjectMetadata(name="haku-ui", namespace=NAMESPACE),
         hostnames=["haku-ui.allegedly.works"],
-        backend=_OUTPOST,
-        port=_OUTPOST_PORT,
+        backend=SERVER,
         hsts=False,
         listener=None,
         extra_filters=[

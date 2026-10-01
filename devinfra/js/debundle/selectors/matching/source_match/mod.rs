@@ -1,0 +1,87 @@
+//! Resolve readable source-pattern selectors against parsed JavaScript ASTs.
+//!
+//! `spec` owns the YAML-facing selector data. `js_ast` owns parsing and other
+//! low-level AST helpers. This module is the bridge that interprets selector
+//! semantics such as alpha-equivalent identifier matching.
+//!
+//! The crate is split by responsibility; submodules share the imports and
+//! crate-internal items re-exported below via `pub(crate) use`, so each
+//! submodule only needs `use super::*;`:
+//!
+//! - `preview` — log-safe selector previews.
+//! - `parse_validate` — selector/module parsing and `ANYTHING`-hole validation.
+//! - `types` — shared result/selector types.
+//! - `binding_resolution` — canonical source-match claim expansion.
+//! - `declared_bindings` — declared-binding extraction from AST items.
+//! - `chunk_resolver` — the shape matcher's per-chunk candidate resolver.
+//! - `fact_near_miss` — fact-based `source_match` debt / near-miss diagnostics.
+//! - `free_identifiers` — a template's free (referenced, undeclared) names.
+//! - `anonymous_statement` — anonymous source-match statement validation.
+//! - `holes` — local hole-keyword dispatch over AST nodes.
+
+pub(crate) use std::collections::{BTreeMap, BTreeSet};
+
+pub(crate) use anyhow::{Context, Result, bail};
+pub(crate) use js_ast::item_var_decl;
+pub(crate) use serde::Serialize;
+pub(crate) use spec::{
+    AnonymousStatementSelector, SourceMatch, SourceMatchClaim, SourceMatchIdentifierMode,
+};
+pub(crate) use swc_ecma_ast::*;
+pub(crate) use swc_ecma_visit::{Visit, VisitWith};
+
+// Syntactic-hole keyword vocabulary lives in `source_match_holes` so the
+// fact matcher, the `selector_codemod` minimizer, and `selector_candidate_index`
+// share one spelling. See that module's docs for the hole language.
+pub(crate) use source_match_holes::{
+    ANYTHING_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
+};
+
+/// The fact matcher's identifier mode for a selector — the single
+/// `SourceMatchIdentifierMode` → `selector_match::Mode` mapping shared by the
+/// resolver (`chunk_resolver`) and the near-miss diagnostics (`fact_near_miss`).
+/// The two enums mirror each other 1:1 but stay distinct so `selector_match`
+/// (the matcher) needs no dependency on the `spec` authoring schema.
+pub(crate) fn selector_mode(selector: &AnonymousStatementSelector) -> selector_match::Mode {
+    match selector.identifiers {
+        SourceMatchIdentifierMode::Exact => selector_match::Mode::Exact,
+        SourceMatchIdentifierMode::AlphaAll => selector_match::Mode::AlphaAll,
+    }
+}
+
+/// `map_err` adapter turning a matcher [`selector_match::Unsupported`] into an
+/// error prefixed with the `stage` that hit it.
+pub(crate) fn unsupported_error(
+    stage: &'static str,
+) -> impl Fn(selector_match::Unsupported) -> anyhow::Error {
+    move |unsupported| anyhow::anyhow!("{stage}: {}", unsupported.reason)
+}
+
+mod anonymous_statement;
+mod binding_resolution;
+pub mod chunk_resolver;
+mod declared_bindings;
+mod fact_near_miss;
+mod free_identifiers;
+mod holes;
+mod parse_validate;
+mod preview;
+mod types;
+
+// Crate-internal re-exports: each submodule reaches its siblings' crate-internal
+// items through `use super::*;`, which sees these globs.
+pub(crate) use anonymous_statement::*;
+pub(crate) use declared_bindings::*;
+pub(crate) use holes::*;
+// Public API for selector parsing, normalization, and diagnostics.
+pub use binding_resolution::source_match_claim_member_selectors;
+pub use fact_near_miss::{fact_near_misses, fact_source_match_body_debt};
+pub use free_identifiers::{free_identifiers, template_free_identifiers};
+pub use parse_validate::parse_selector_module;
+pub use preview::source_match_preview;
+pub use types::{
+    AnonymousGroupMatch, BindingGroupMemberSelector, MatchedBinding, MemberBindingGroupMatch,
+    MemberBindingMatch, ParsedSourceMatchSelector, ResolvedMemberBinding, SourceMatchBodyDebt,
+    SourceMatchNearMiss,
+};

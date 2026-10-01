@@ -5,7 +5,7 @@
 
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome, find_outcome,
-    logical_module, logical_module_with_anon, logical_module_with_anon_alpha_many,
+    logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
     logical_module_with_binding_groups, read_selector_outcomes, run_dry_run_rejection_fixture,
 };
 use serde_json::{Value, json};
@@ -179,7 +179,7 @@ export { keepMe };
 /// Two pairs of selectors each compete for the one declaration both members
 /// of the pair match, under the injectivity `all_different`, beside an
 /// independent selector whose binding a name pin also claims.
-fn conflicts_fixture() -> FixtureOpts<'static> {
+fn infeasible_pairs_fixture() -> FixtureOpts<'static> {
     FixtureOpts::new(
         r#"function alphaOne() {
   return "alpha";
@@ -236,23 +236,22 @@ export { alphaOne, betaOne, gammaOne };
     )
 }
 
-/// Each pair is its own contradiction: its selectors name each other, and
-/// neither pair takes down the other or the independent selector.
+/// Each pair is its own contradiction: both of its selectors are `no_match`
+/// with the joint-assignment reason, and neither pair takes down the other or
+/// the independent selector.
 #[test]
-fn keep_going_localizes_each_selector_conflict() {
-    let outcomes = keep_going_outcomes(conflicts_fixture());
-    for (export_name, partner, partner_module) in [
-        ("AlphaLeft", "AlphaRight", "conflicts/alpha_right"),
-        ("AlphaRight", "AlphaLeft", "conflicts/alpha_left"),
-        ("BetaLeft", "BetaRight", "conflicts/beta_right"),
-        ("BetaRight", "BetaLeft", "conflicts/beta_left"),
-    ] {
-        let record = find_outcome(&outcomes, "conflict", export_name);
-        assert_eq!(
-            record["outcome"]["with"],
-            json!([{"logical_module": partner_module, "entity": {"export": partner}}]),
+fn keep_going_reports_every_selector_of_an_infeasible_pair_as_no_match() {
+    let rejected = run_dry_run_rejection_fixture(infeasible_pairs_fixture());
+    let outcomes = read_selector_outcomes(&rejected.report_root);
+    for export_name in ["AlphaLeft", "AlphaRight", "BetaLeft", "BetaRight"] {
+        let record = find_outcome(&outcomes, "no_match", export_name);
+        let reason = record["outcome"]["reason"].as_str().unwrap_or_default();
+        assert!(reason.contains("admit no joint assignment"), "{record:#}");
+        assert!(
+            record["outcome"].get("nearest_unclaimed").is_none(),
             "{record:#}"
         );
+        assert!(rejected.stderr.contains(reason), "{}", rejected.stderr);
     }
     let duplicate = outcomes
         .iter()
@@ -263,8 +262,8 @@ fn keep_going_localizes_each_selector_conflict() {
 }
 
 #[test]
-fn fail_fast_stops_at_the_first_conflict() {
-    assert_fail_fast_stops_at_first_outcome(conflicts_fixture, "conflict");
+fn fail_fast_stops_at_the_first_infeasible_selector() {
+    assert_fail_fast_stops_at_first_outcome(infeasible_pairs_fixture, "no_match");
 }
 
 /// Two selectors, each matching two identical functions of its own.
@@ -315,7 +314,7 @@ fn keep_going_unmatched_anonymous_statement_does_not_cascade() {
     let opts = FixtureOpts::new(
         r#"console.log("present");
 "#,
-        vec![logical_module_with_anon_alpha_many(
+        vec![logical_module_with_anon_alpha(
             "diagnostics/anon",
             &[],
             &[r#"console.warn("missing");"#, r#"console.log("present");"#],

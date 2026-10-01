@@ -2,8 +2,10 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
     name: ducktape-flux
   name: ducktape-flux
+spec: {}
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
@@ -17,9 +19,11 @@ spec:
   sparseCheckout:
     - cluster/k8s/
     - cluster/generated/
+    - cluster/parked/
     - cluster/charts/browsertrix/
     - haku/x/dispatch/deploy/
-    - haku/runtime/managed_agent/self_hosted/deploy/
+    - haku/runtime/x/managed_agent/self_hosted/deploy/
+    - haku/runtime/x/managed_agent/anthropic_hosted/terraform/
     - loom/wayback/deploy/
     - props/deploy/
     - tf/gitops/

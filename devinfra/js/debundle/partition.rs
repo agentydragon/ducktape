@@ -1,7 +1,3 @@
-use std::collections::HashMap;
-
-use swc_ecma_ast::Id;
-
 use crate::{ModuleId, OwnerGraph, OwnerId};
 
 /// Per-owner module assignment for one chunk's owner graph.
@@ -49,33 +45,6 @@ impl Partition {
         self.residual
     }
 
-    /// Build a partition that assigns each owner the module of any
-    /// `Owned` binding it declares, looked up by name in
-    /// `binding_assignment`. Owners with no declared bindings — or
-    /// whose declared bindings are absent from the assignment — stay
-    /// at `default_destination`.
-    ///
-    /// Bindings get the first declaring owner's destination if more
-    /// than one owner declares the same name (which the chunk
-    /// shouldn't ever do under JS scoping rules, but mirrors the
-    /// previous in-graph assignment behaviour).
-    pub fn from_binding_assignment(
-        owner_graph: &OwnerGraph,
-        binding_assignment: &HashMap<Id, ModuleId>,
-        default_destination: ModuleId,
-    ) -> Self {
-        let mut p = Self::new(owner_graph, default_destination);
-        for node in owner_graph.iter_nodes() {
-            for binding_id in &node.declared {
-                if let Some(module) = binding_assignment.get(binding_id) {
-                    p.of[node.id.0] = *module;
-                    break;
-                }
-            }
-        }
-        p
-    }
-
     /// Module assignment for `owner`. Panics if `owner` is out of
     /// bounds — every `OwnerId` constructed from the same
     /// `OwnerGraph` must have a slot.
@@ -94,14 +63,6 @@ impl Partition {
             .iter()
             .enumerate()
             .map(|(idx, &m)| (OwnerId(idx), m))
-    }
-
-    pub fn len(&self) -> usize {
-        self.of.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.of.is_empty()
     }
 
     /// Construct a partition from a dense `Vec<ModuleId>` indexed by

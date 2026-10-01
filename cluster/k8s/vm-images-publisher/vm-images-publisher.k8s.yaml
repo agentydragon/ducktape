@@ -2,12 +2,14 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
     name: vm-images-publisher
     pod-security.kubernetes.io/audit: privileged
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/warn: privileged
     rbac.ducktape.io/agent-readable-metadata: "true"
   name: vm-images-publisher
+spec: {}
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
@@ -32,27 +34,6 @@ spec:
     namespace: seaweedfs
   name: vm-images
   reclaimPolicy: Retain
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: vm-images
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: vm-images-publisher
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: vm-images-publisher
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: vm-images-publisher
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
@@ -128,6 +109,7 @@ spec:
                   - matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
                         operator: DoesNotExist
+          automountServiceAccountToken: false
           containers:
             - command:
                 - bash

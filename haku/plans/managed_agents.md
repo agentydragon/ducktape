@@ -7,7 +7,7 @@ open for evaluation alongside C. Expands the _Alternative runtime: Anthropic
 Managed Agents_ section of <../PLAN.md> from a paragraph into a concrete migration
 design, and is an alternative to the deferred in-cluster `haku-scanner` runtime
 (<../TODO.md> → _Later_). An experimental self-hosted worker landed at
-`haku/runtime/managed_agent/self_hosted/` (see
+`haku/runtime/x/managed_agent/self_hosted/` (see
 [managed_agents_artifacts.md](managed_agents_artifacts.md)), but adopting B as
 Haku's runtime is not yet committed to.
 

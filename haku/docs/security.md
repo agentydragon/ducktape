@@ -118,7 +118,7 @@ RBE — source never leaves the cluster). The server itself is credential-free: 
 own ServiceAccount holds the claim/exec RBAC (client in `haku/sandbox`, tools in
 <../console/tools/sandbox.py>).
 Source of truth: <../console/auto_approval/>, <../console/mcp_config.py>,
-<../../cluster/cdk8s/haku/console_config.py>, <../../cluster/k8s/haku/workspaces/>.
+<../../cluster/cdk8s/haku/console_config.py>, <../../cluster/cdk8s/haku/workspaces.py>.
 
 ### Agent-facing `withdraw_tool_call` (`/mcp`)
 
@@ -323,4 +323,4 @@ bulk channels.
   `cluster/k8s/TODO.md`.
 - **Tool inputs/outputs flow to the model provider's control plane** regardless of sandbox
   location — inherent to using hosted models; acknowledged in
-  <../runtime/managed_agent/anthropic_hosted/README.md>.
+  <../runtime/x/managed_agent/anthropic_hosted/README.md>.

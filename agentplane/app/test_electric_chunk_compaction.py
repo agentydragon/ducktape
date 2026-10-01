@@ -26,6 +26,7 @@ the lengths of the chunks it replaced, a column the chunk table does not have.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -206,7 +207,7 @@ async def _followed_body() -> AsyncIterator[_FollowedBody]:
                     holder = await _open(proxy)
                     [opened] = forwarded
                     held = await holder.load(reference)
-                    assert [row["text"] for row in held] == list(_STREAMED)
+                    assert [row["text"] for row in held] == [json.dumps(text) for text in _STREAMED]
                     bystander = await _open(proxy)
                     keyed_shape = _Shape(
                         electric,
@@ -257,19 +258,19 @@ async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batc
         # Under `replica=full` the update carries the whole row and chunk 0's old text, and each
         # delete the whole row it removes.
         [rewritten, *deleted] = batch
-        assert rewritten["value"] == body.held[0] | {"text": _TEXT}
-        assert rewritten["old_value"] == {"text": _STREAMED[0]}
+        assert rewritten["value"] == body.held[0] | {"text": json.dumps(_TEXT)}
+        assert rewritten["old_value"] == {"text": json.dumps(_STREAMED[0])}
         assert [change["value"] for change in deleted] == body.held[1:]
 
         assert bystander == holder
 
         assert _operations(keyed) == _operations(holder)
         [[keyed_rewritten, *keyed_deleted]] = keyed
-        assert keyed_rewritten["value"] == _key(body.held[0]) | {"text": _TEXT}
+        assert keyed_rewritten["value"] == _key(body.held[0]) | {"text": json.dumps(_TEXT)}
         assert "old_value" not in keyed_rewritten
         assert [change["value"] for change in keyed_deleted] == [_key(row) for row in body.held[1:]]
 
-        assert await body.load_afresh() == [body.held[0] | {"text": _TEXT}]
+        assert await body.load_afresh() == [body.held[0] | {"text": json.dumps(_TEXT)}]
 
 
 async def test_compacting_by_reinsertion_reaches_every_reader_of_the_field_as_one_batch() -> None:
@@ -296,11 +297,11 @@ async def test_compacting_by_reinsertion_reaches_every_reader_of_the_field_as_on
         assert _operations(holder) == [[("delete", 0), ("delete", 1), ("delete", 2), ("insert", 0)]]
         [[*deleted, inserted]] = holder
         assert [change["value"] for change in deleted] == body.held
-        assert inserted["value"] == body.held[0] | {"text": _TEXT}
+        assert inserted["value"] == body.held[0] | {"text": json.dumps(_TEXT)}
 
         assert bystander == holder
 
-        assert await body.load_afresh() == [body.held[0] | {"text": _TEXT}]
+        assert await body.load_afresh() == [body.held[0] | {"text": json.dumps(_TEXT)}]
 
 
 if __name__ == "__main__":

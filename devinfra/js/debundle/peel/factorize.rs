@@ -19,9 +19,9 @@
 //! ## Renderer over `QuotientGraph`
 //!
 //! The quotient-contraction proposer (documented in
-//! `devinfra/js/debundle/docs/peel_proposer.md`) unifies cell
-//! discovery and seed-quotient construction into a single, gated
-//! contraction protocol. The factorize pipeline is:
+//! `devinfra/js/debundle/docs/peel_proposer.md`) builds every proposal
+//! through a single, gated contraction protocol. The factorize
+//! pipeline is:
 //!
 //!   1. `build_seed_quotient` — atomic-unit + spec-module +
 //!      atomic-DAG-reachability contractions, each gated by
@@ -34,9 +34,8 @@
 //!   3. `emit_proposals` — walks the surviving classes and
 //!      materializes each as a `FactorizeProposal`.
 //!
-//! The historical renderer used a parallel cell IR. That IR is gone;
-//! the quotient is now the single source of truth for "which owners
-//! are in which proposed class."
+//! The quotient is the single source of truth for "which owners are
+//! in which proposed class."
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -45,10 +44,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use analysis::{
-    FactorizeDiagnosticReason, LineRange, OwnerGraphNodeReport, OwnerGraphReport,
-    PeelCandidateStatus, StatementKind,
-};
+use analysis::{LineRange, OwnerGraphNodeReport, OwnerGraphReport, StatementKind};
 use anonymous_resolution::addressable_anonymous_statement_owner_ids;
 use spec::ModulePath;
 use spec_modules::load_active_claims;
@@ -179,9 +175,6 @@ pub struct FactorizeProposal {
     /// (promoting it alone would route reads through
     /// `residual_entry`, which the cycle gate rejects — the
     /// referenced cells must land first or together).
-    /// `BlockedCycle` is currently unreachable here: the quotient's
-    /// contraction gate refuses cycle-creating merges, so no emitted
-    /// class is cyclic by construction.
     pub status: PeelCandidateStatus,
     /// `true` when the proposal can be applied as a spec edit today:
     /// `status` is `PeelableNow` (no outgoing constraining edges into
@@ -211,11 +204,22 @@ pub struct FactorizeProposal {
     pub merge_into: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeelCandidateStatus {
+    PeelableNow,
+    BlockedResidualDependency,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FactorizeDiagnosticReason {
+    ExceedsSizeCap,
+}
+
 /// A class the factorizer cannot turn into a proposal. `reason` is
-/// the discriminator; there is deliberately no `status` field — the
-/// old one was a write-only constant that paired
-/// `BlockedResidualDependency` with every reason, including
-/// `ExceedsSizeCap`, and nothing read it.
+/// the discriminator; there is deliberately no `status` field, which
+/// would be a write-only constant no reader consults.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FactorizeDiagnosticReport {
     pub diagnostic_id: String,
@@ -332,10 +336,9 @@ fn factorize_with_context(
     // - internal (same class, residual-only)
     // - inter-residual (different non-pre-existing-module classes)
     // - residual → pre-existing-module class
-    // Edges originating from non-residual owners are skipped (the
-    // edge-accounting surface mirrors today's cell-edge-accounting
-    // semantics; non-residual edges are part of the spec module's
-    // internal initialization, not relevant to peel proposals).
+    // Edges originating from non-residual owners are skipped: they are
+    // part of the spec module's internal initialization, not relevant
+    // to peel proposals.
     let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
     let mut edges_to_active: Vec<(usize, ModulePath)> = Vec::new();
     for edge in &graph.edges {
@@ -459,17 +462,6 @@ fn spec_module_groups(graph: &OwnerGraphReport) -> Vec<SpecModuleGroup> {
         .collect()
 }
 
-fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
-    node.source_location
-        .as_ref()
-        .map(|loc| {
-            loc.end_line
-                .saturating_sub(loc.start_line)
-                .saturating_add(1)
-        })
-        .unwrap_or(0)
-}
-
 /// The line count the size cap (and `size_lines_estimate`) measures
 /// for a class, matching the spec edit the proposal would perform:
 ///
@@ -491,7 +483,7 @@ fn class_proposal_lines(
     quotient
         .class_members(c)
         .filter(|o| graph.is_residual(&graph.nodes[o.0].destination))
-        .map(|o| owner_line_count(&graph.nodes[o.0]))
+        .map(|o| graph.nodes[o.0].line_count())
         .sum()
 }
 
@@ -502,8 +494,7 @@ fn class_has_labels(class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>, c
     class_to_labels.get(&c).is_some_and(|s| !s.is_empty())
 }
 
-/// Render the quotient's surviving (non-empty, non-residual-only)
-/// classes into proposals.
+/// Render the quotient's surviving (non-empty) classes into proposals.
 ///
 /// Each surviving class becomes at most one proposal. The shape is
 /// driven by `class_to_labels`:
@@ -518,10 +509,9 @@ fn class_has_labels(class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>, c
 /// - ≥2 labels: module↔module merge proposal (`merge:M1+M2+…`).
 ///   Residual-origin owners ride as `extension_owner_ids`.
 ///
-/// The catch-all residual class (`destination.id == "residual"`) is
-/// excluded — it's never a proposal target. Classes that fail the
-/// post-greedy size cap appear as `FactorizeDiagnosticReport`s
-/// (computed separately in `collect_size_cap_diagnostics`).
+/// Classes that fail the post-greedy size cap appear as
+/// `FactorizeDiagnosticReport`s (computed separately in
+/// `collect_size_cap_diagnostics`).
 fn emit_proposals(
     quotient: &QuotientGraph,
     class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>,
@@ -531,16 +521,13 @@ fn emit_proposals(
     size_cap_lines: usize,
     context: &FactorizeContext,
 ) -> Vec<FactorizeProposal> {
-    // Candidate classes: every live class that isn't the residual
-    // catch-all and either has owners or carries module labels. We
-    // skip classes whose only members are spec-module owners with
-    // no residual extensions (= pre-existing modules unchanged by
-    // the peel) — those don't represent a spec edit.
+    // Candidate classes: every live class that either has owners or
+    // carries module labels. We skip classes whose only members are
+    // spec-module owners with no residual extensions (= pre-existing
+    // modules unchanged by the peel) — those don't represent a spec
+    // edit.
     let mut candidate_classes: Vec<ClassId> = Vec::new();
     for c in quotient.iter_classes() {
-        if quotient.class_is_residual(c) {
-            continue;
-        }
         let labels = class_to_labels.get(&c);
         let n_labels = labels.map(|s| s.len()).unwrap_or(0);
         let has_residual_origin = quotient
@@ -582,9 +569,7 @@ fn emit_proposals(
     }
 
     // Bucket every residual / active edge by source candidate in ONE
-    // pass. The previous shape re-scanned the full edge lists once per
-    // candidate (`O(candidates × edges)`), which dominated on large
-    // graphs.
+    // pass (`O(edges)`, not `O(candidates × edges)`).
     let mut edge_stats: Vec<CandidateEdgeStats> = candidate_classes
         .iter()
         .map(|_| CandidateEdgeStats::default())
@@ -728,9 +713,6 @@ fn collect_size_cap_diagnostics(
 ) -> Vec<FactorizeDiagnosticReport> {
     let mut diagnostics = Vec::new();
     for c in quotient.iter_classes() {
-        if quotient.class_is_residual(c) {
-            continue;
-        }
         if class_proposal_lines(quotient, graph, c, class_has_labels(class_to_labels, c))
             <= size_cap_lines
         {
@@ -905,7 +887,7 @@ fn build_proposal(
     let size_lines = if is_extension {
         owner_idxs
             .iter()
-            .map(|&idx| owner_line_count(&graph.nodes[idx]))
+            .map(|&idx| graph.nodes[idx].line_count())
             .sum()
     } else {
         class_lines
@@ -1085,7 +1067,6 @@ fn size_bucket(value: usize) -> &'static str {
 fn status_key(status: PeelCandidateStatus) -> &'static str {
     match status {
         PeelCandidateStatus::PeelableNow => "peelable_now",
-        PeelCandidateStatus::BlockedCycle => "blocked_cycle",
         PeelCandidateStatus::BlockedResidualDependency => "blocked_residual_dependency",
     }
 }
@@ -1093,9 +1074,6 @@ fn status_key(status: PeelCandidateStatus) -> &'static str {
 fn diagnostic_reason_key(reason: FactorizeDiagnosticReason) -> &'static str {
     match reason {
         FactorizeDiagnosticReason::ExceedsSizeCap => "exceeds_size_cap",
-        FactorizeDiagnosticReason::NoExactRepair => "no_exact_repair",
-        FactorizeDiagnosticReason::ActiveModuleConflict => "active_module_conflict",
-        FactorizeDiagnosticReason::RepeatedFrontier => "repeated_frontier",
     }
 }
 
@@ -1425,11 +1403,9 @@ mod tests {
         // `a` resolves its identity via an active claim
         // (`domains/system/ids`); owner `b` has no claim and resolves
         // via the module table. Both routes yield the one canonical
-        // `ModulePath`, so the class collapses to a single label and
-        // emits NO `merge_into` self-merge. (The former two-spelling
-        // bug — a chunk-prefixed `<chunk>::path` vs the clean path —
-        // is now unrepresentable: the wire carries one interned key
-        // and the table holds one canonical path.)
+        // `ModulePath` (the wire carries one interned key and the table
+        // holds one canonical path), so the class collapses to a single
+        // label and emits NO `merge_into` self-merge.
         let dest = module_ref("domains/system/ids");
         let a = owner("a", 1, &["a"], 10, dest.clone());
         let b = owner("b", 2, &["b"], 10, dest.clone());
@@ -1459,10 +1435,9 @@ mod tests {
         // version-skewed `owner_graph.json` deserialized from disk by
         // `analyze_peel_factorize`. `is_residual` returns false for an
         // unknown key, so the owner survives the residual filter and
-        // reaches `active_module_label` — which used to `panic!`. The
-        // proposer must instead surface a clean `Err` so the CLI
-        // (`debundle modules propose`) reports it through `anyhow`
-        // rather than aborting.
+        // reaches `active_module_label`. The proposer must surface a
+        // clean `Err` (not panic) so the CLI (`debundle modules
+        // propose`) reports it through `anyhow` rather than aborting.
         let a = owner("a", 1, &["a"], 10, module_ref("features/foo"));
         let mut graph = graph_of(
             vec![a.clone()],

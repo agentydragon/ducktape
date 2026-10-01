@@ -110,6 +110,7 @@ in
     ./modules/gnome-shell-keybindings.nix
     ./modules/flameshot-screenshots.nix
     ./modules/aiquota.nix
+    ./modules/plaid-spend.nix
   ];
   # Workstations use the local (gpt-oss) Codex model profiles.
   ducktape.codex.localModels.enable = true;
@@ -308,7 +309,7 @@ in
     settings = {
       # agent-box VM: `ssh agent-box.allegedly.works` lands as the codex user.
       # Distinct port because gecko owns :22 on the hil nodes (see
-      # cluster/k8s/parked/agent-box/ciliumenvoyconfig.yaml).
+      # cluster/parked/agent-box/ciliumenvoyconfig.yaml).
       "agent-box.allegedly.works" = {
         HostName = "agent-box.allegedly.works";
         User = "codex";

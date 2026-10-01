@@ -1,40 +1,8 @@
 use super::*;
 
-/// Walk the chunk's module body and produce one `StatementFacts`
-/// entry per top-level statement, in source order.
-///
-/// Multi-declarator `var/let/const` statements are split into
-/// per-declarator entries before analysis, so each row declares
-/// a single name and owner-graph destination attribution
-/// returns an unambiguous owner. Without the split, a chunk like
-/// `const A = 1, B = readsX;` with `{A → mod_a, B → mod_b}`
-/// would attribute `B`'s read of `X` to `mod_a` (the first
-/// declared name's owner), inventing or hiding cycles. The
-/// emitter splits the same comma-lists separately at lower-time
-/// (`split_var_decl` in `lowering/util.rs`); this pre-split
-/// just teaches the analyzer the same view.
-/// Locate the first top-level `await` expression in `module`'s
-/// body, if any. Returns the source-order ordinal of the offending
-/// statement (in the post-comma-list-split view that
-/// `analyze_chunk` uses, so reports align with statement indices
-/// in `reports/tree/<chunk_id>/owner_graph.json`).
-///
-/// "Top-level" excludes function/method/arrow/getter/setter
-/// bodies and class instance-field initializers — those are lazy
-/// scopes that may legitimately contain `await` without making
-/// the module a top-level-await module.
-pub fn find_top_level_await(module: &Module) -> Option<StatementOrdinal> {
-    let body = top_level_item_views(&module.body);
-    for (ordinal, item) in body.iter().enumerate() {
-        let mut finder = TopLevelAwaitFinder::default();
-        item.as_module_item().visit_with(&mut finder);
-        if finder.found {
-            return Some(StatementOrdinal(ordinal));
-        }
-    }
-    None
-}
-
+/// Finds an `await` outside lazy scopes: function, arrow, method and
+/// accessor bodies and class instance-field initializers may contain
+/// `await` without making the module a top-level-await module.
 #[derive(Default)]
 struct TopLevelAwaitFinder {
     found: bool,
@@ -68,23 +36,20 @@ impl Visit for TopLevelAwaitFinder {
 /// the redundant-hint diagnostics — runs in
 /// [`analyze_chunk_with_policy`].
 ///
-/// **Cross-callsite sharing**: this layer is NOT shareable across the two
-/// `analyze_chunk` call sites (chunk-analysis composer vs `vendor::strip`)
-/// because they analyze different `Module` values. Vendor strip
-/// reparses the emitted chunk file from disk and then mutates it
+/// **Sharing**: materialization computes this layer once and feeds it
+/// to selector resolution and then to [`analyze_chunk_with_policy`]
+/// (via `chunk_analysis::compute_chunk_analysis`), so the source-text walk
+/// happens once per chunk. `vendor::strip` calls [`analyze_chunk`] on
+/// its own: it reparses the emitted chunk file from disk and mutates it
 /// (`split_top_level_var_decls`, `strip_export_specifiers`) before
-/// analyzing; chunk analysis analyzes the in-memory lowered runtime AST.
-/// Even ignoring the reparse, `strip_export_specifiers` rewrites
-/// `ExportNamed` items and folds `ExportDecl` into `Stmt::Decl`, which
-/// changes the body view that `top_level_item_views` produces. So this
-/// split exists for code-shape clarity, not as a perf optimization.
+/// analyzing, so the materializer's layer does not describe its module.
 pub fn analyze_chunk_structural<'a, F>(
     module: &'a Module,
     source_path: Option<&str>,
     mut line_range_for_span: F,
 ) -> StructuralChunkAnalysis<'a>
 where
-    F: FnMut(Span) -> Option<(usize, usize)>,
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
@@ -112,10 +77,13 @@ where
             );
             item.visit_with(&mut collector);
             let source_location = source_path.and_then(|source_path| {
-                line_range_for_span(item.span()).map(|(start_line, end_line)| SourceLocation {
-                    source_path: source_path.to_string(),
-                    start_line,
-                    end_line,
+                line_range_for_span(item.span()).map(|(start_line, end_line, start_column)| {
+                    SourceLocation {
+                        source_path: source_path.to_string(),
+                        start_line,
+                        end_line,
+                        start_column: Some(start_column),
+                    }
                 })
             });
             StructuralStatementFacts {
@@ -161,7 +129,7 @@ pub fn analyze_chunk_with_policy<F>(
     mut line_range_for_span: F,
 ) -> ChunkFactAnalysis
 where
-    F: FnMut(Span) -> Option<(usize, usize)>,
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
     let StructuralChunkAnalysis {
         body,
@@ -205,14 +173,14 @@ where
                 && let Purity::NotPure { reasons } = &mut fact.purity
             {
                 for reason in reasons.iter_mut() {
-                    reason.source_location =
-                        line_range_for_span(reason.span).map(|(start_line, end_line)| {
-                            SourceLocation {
-                                source_path: source_path.to_string(),
-                                start_line,
-                                end_line,
-                            }
-                        });
+                    reason.source_location = line_range_for_span(reason.span).map(
+                        |(start_line, end_line, start_column)| SourceLocation {
+                            source_path: source_path.to_string(),
+                            start_line,
+                            end_line,
+                            start_column: Some(start_column),
+                        },
+                    );
                 }
             }
             fact
@@ -226,6 +194,19 @@ where
     }
 }
 
+/// Walk the chunk's module body and produce one `StatementFacts`
+/// entry per top-level statement, in source order.
+///
+/// Multi-declarator `var/let/const` statements are split into
+/// per-declarator entries before analysis, so each row declares
+/// a single name and owner-graph destination attribution
+/// returns an unambiguous owner. Without the split, a chunk like
+/// `const A = 1, B = readsX;` with `{A → mod_a, B → mod_b}`
+/// would attribute `B`'s read of `X` to `mod_a` (the first
+/// declared name's owner), inventing or hiding cycles. The
+/// emitter splits the same comma-lists separately at lower-time
+/// (`split_var_decl` in `lowering/util.rs`); this pre-split
+/// just teaches the analyzer the same view.
 pub fn analyze_chunk<F>(
     module: &Module,
     hints: &AnalysisHints,
@@ -233,7 +214,7 @@ pub fn analyze_chunk<F>(
     mut line_range_for_span: F,
 ) -> ChunkFactAnalysis
 where
-    F: FnMut(Span) -> Option<(usize, usize)>,
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
     let structural = analyze_chunk_structural(module, source_path, &mut line_range_for_span);
     analyze_chunk_with_policy(structural, hints, source_path, line_range_for_span)

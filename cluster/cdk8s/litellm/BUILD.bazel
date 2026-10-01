@@ -26,6 +26,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:terraform",
         "@pypi//cdk8s",
         "@pypi//pydantic",
@@ -38,7 +39,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -51,8 +51,13 @@ py_library(
 py_library(
     name = "proxy",
     srcs = ["proxy.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
+    ],
     deps = [
         ":config",
+        ":database",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
@@ -63,6 +68,8 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
@@ -81,6 +88,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
     ],
 )
 

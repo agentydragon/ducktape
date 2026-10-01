@@ -124,8 +124,11 @@ submission idempotency key; an intentional new attempt requires a new key.
 
 ## Bounded receipt waits
 
-A receipt wait can return immediately or wait up to 30 seconds for either a resolved Decision or
-an Execution outcome. Allowed but undispatched/running work satisfies the Decision predicate only.
+A receipt wait can return immediately or wait up to the Action Service instance's configured
+`max_wait_seconds` (30 seconds by default) for either a resolved Decision or an Execution outcome.
+Direct tools initially wait for `direct_wait_seconds` (30 seconds by default), bounded by that same
+maximum, before returning a request ID for a still-running Action.
+Allowed but undispatched/running work satisfies the Decision predicate only.
 Denied, cancelled, succeeded, failed, and execution-unknown receipts satisfy both predicates.
 Execution-unknown is a returnable outcome, not proof of success or permission to replay.
 
@@ -204,6 +207,12 @@ invalid discovered catalogs affect only their group and recover without a servic
 Discovery exposes replica-local, credential-safe lifecycle diagnostics, never stale runnable tools.
 The same diagnostics are also available to operators, for every mcp-kind group regardless of
 whether it uses OAuth linkage or a mounted credential.
+
+Configured remote OAuth linkages identify their client with either a fixed client ID or the Action
+Service's one shared public Client ID Metadata Document. CIMD uses that URL as the client ID and
+lists the redirect URIs for every linkage that uses it. Linking with the shared CIMD is offered only
+when the remote authorization server advertises CIMD support. Both modes retain the configured
+redirect URI and PKCE flow.
 
 Approved work remains durably unclaimed during temporary backend outages. Revoked authority
 still becomes terminal; removed Actions and incompatible schemas are not treated as outages.

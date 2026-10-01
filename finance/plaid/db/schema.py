@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -51,7 +51,6 @@ class LinkRow(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     access_token_secret: Mapped[str] = mapped_column(String, nullable=False)
     transactions_cursor: Mapped[str | None] = mapped_column(String, nullable=True)
-    transactions_update_status: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -197,6 +196,32 @@ class SyncRunRow(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ItemSyncQueueRow(Base):
+    __tablename__ = "item_sync_queue"
+    __table_args__ = (Index("idx_item_sync_queue_requested", "requested_at"),)
+
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), primary_key=True)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    retry_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    full_sync: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class PlaidWebhookDeliveryRow(Base):
+    __tablename__ = "plaid_webhook_deliveries"
+    __table_args__ = (Index("idx_plaid_webhook_deliveries_received_at", "received_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    raw_body: Mapped[str] = mapped_column(Text, nullable=False)
+    webhook_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    webhook_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    item_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    disposition: Mapped[str] = mapped_column(String, nullable=False, default="received")
 
 
 class PlaidApiEventRow(Base):

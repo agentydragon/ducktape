@@ -1,39 +1,27 @@
-"""Namespaces of the agents area, each written into the directory of the Kustomization
-that owns it."""
+"""Namespaces of the agents area, each in the directory of the Kustomization that owns it:
+plaid-mcp's written here, haku-egress-proxy's included by `haku_egress_proxy.write_manifests`."""
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
-from cluster.cdk8s.generation import write_namespace
+from cdk8s import App, Chart
+
+from cluster.cdk8s.generation import namespace_chart, write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
+
+
+def haku_egress_proxy(app: App) -> Chart:
+    return namespace_chart(
+        app, name="haku-egress-proxy", vpa=Vpa.AUTO, agent_readable=None, labels={"name": "haku-egress-proxy"}
+    )
 
 
 def write_manifests(root: Path) -> None:
-    write_namespace(
+    write_charts(
         root,
         f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp",
-        name="plaid-mcp",
-        labels={"goldilocks.fairwinds.com/enabled": "false", "rbac.ducktape.io/agent-readable-logs": "true"},
-    )
-    write_namespace(
-        root,
-        f"{HAND_WRITTEN_ROOT}/agents/haku-egress-proxy",
-        name="haku-egress-proxy",
-        labels={
-            "goldilocks.fairwinds.com/enabled": "true",
-            "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-            "name": "haku-egress-proxy",
-        },
-    )
-    write_namespace(
-        root,
-        f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app",
-        name="haku-openclaw-spike",
-        labels={
-            "goldilocks.fairwinds.com/enabled": "true",
-            "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-            "name": "haku-openclaw-spike",
-        },
-        annotations={"description": "Isolated OpenClaw plus Claude Code subscription compatibility spike for Haku."},
+        partial(namespace_chart, name="plaid-mcp", vpa=Vpa.DISABLED, agent_readable=AgentReadable.LOGS),
     )

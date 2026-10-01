@@ -226,18 +226,14 @@ pub(super) fn prepare_logical_chunk(
     let structural_analysis = analysis::facts::analyze_chunk_structural(
         &runtime_ast.module,
         Some(&source_path),
-        |span| line_index.line_range_for_span(span),
+        |span| line_index.line_range_and_start_column_for_span(span),
     );
     emit_debundle_progress(chunk_id, "analyze_chunk_structural", "end");
     // `add_explicit_request` left deferred selector members unclaimed; the
     // resolve every chunk shares assigns them and the anonymous statements
     // over the hint-free structural facts.
-    let selectors = selector_resolve::Chunk::new(
-        chunk_id,
-        chunk_id_interned,
-        &runtime_ast.module,
-        structural_analysis,
-    );
+    let selectors =
+        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis);
     let selector_modules = builder.selector_modules(
         &explicit_requests,
         chunk_top_level_mark,
@@ -401,20 +397,20 @@ pub(super) fn finish_logical_chunk(
         hints
     };
     // Chunk analysis: hint-sensitive facts, owner graph, and structural
-    // atomic units. See `stage_one/mod.rs` for the current implementation.
+    // atomic units. See `chunk_analysis/mod.rs` for the current implementation.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
-    let chunk_analysis = compute_chunk_analysis_from_structural(
+    let chunk_analysis = compute_chunk_analysis(
         chunk_id,
         &runtime_ast.module,
         structural_analysis,
         &analysis_hints,
         Some(&source_path),
-        |span| line_index.line_range_for_span(span),
+        |span| line_index.line_range_and_start_column_for_span(span),
         owner_graph_options,
         &resolve_dynamic_import,
     )?;
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
-    let ChunkAnalysis {
+    let ChunkAnalysisOutput {
         fact_analysis: analysis,
         owner_graph_and_units: precomputed,
     } = chunk_analysis;
@@ -541,7 +537,6 @@ pub(super) fn finish_logical_chunk(
         build_final_module_report(&module_plans, &factorization, chunk_top_level_mark);
     let directory_dependency_facts = build_directory_dependency_facts(chunk_id, &factorization);
     let validation = ChunkValidationSummary {
-        status: "ok",
         linker_order: factorization_report.linker_order.clone(),
     };
     let report = ChunkModulesReport {
@@ -578,7 +573,7 @@ pub(super) fn finish_logical_chunk(
 
 /// Rebind-fold composer: fold rebind-only atomic units into their
 /// explicit destination. Bridges the pure
-/// `stage_one::compute_rebind_folds` decision over the chunk's
+/// `compute_rebind_folds` decision in `lowering/rebind_fold.rs` over the chunk's
 /// post-seed partition (managed by `ChunkPlanBuilder`) into the
 /// builder's plan-list/catalogue state.
 ///
@@ -822,6 +817,7 @@ fn validate_and_emit_reports(
             let wire = ::analysis::AtomicUnitConflictReport::from_conflicts(
                 &factorization_report.atomic_unit_conflicts,
                 &|id| factorization.analysis.module_path(id),
+                factorization.analysis.owner_graph(),
             );
             write_chunk_report_json(
                 report_out_dir,
@@ -833,6 +829,7 @@ fn validate_and_emit_reports(
         let summary = render_atomic_unit_conflict_summary(
             &factorization_report.atomic_unit_conflicts,
             &|id| factorization.analysis.module_path(id),
+            factorization.analysis.owner_graph(),
         );
         let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
         bail!(

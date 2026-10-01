@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import AsyncGenerator
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime, timedelta
 
+import asyncpg
 import pytest
 import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage
+from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, SyncAlreadyRunningError
 from util.testing.postgres import force_drop_database
 from util.testing.postgres_fixtures import postgres_container  # noqa: F401
 
@@ -80,7 +82,69 @@ async def test_failed_sync_run_does_not_mark_link_synced(storage: PlaidLinkStora
     assert link.last_synced_at is None
 
 
-async def test_transaction_reconciliation_does_not_mark_partial_sync_success(storage: PlaidLinkStorage) -> None:
+async def test_spend_changed_notifies_after_commit_and_on_link_removal(
+    storage: PlaidLinkStorage, db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _add_link(storage)
+    listener_url = make_url(db_url).set(drivername="postgresql").render_as_string(hide_password=False)
+    listener = await asyncpg.connect(listener_url)
+    notifications: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+    await listener.add_listener(
+        "plaid_spend_changed", lambda _connection, _pid, channel, payload: notifications.put_nowait((channel, payload))
+    )
+    allow_commit = asyncio.Event()
+    finish_task: asyncio.Task[None] | None = None
+
+    async def assert_no_notification() -> None:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(notifications.get(), timeout=0.05)
+
+    try:
+        run_id = await storage.begin_sync_run(trigger="test", item_id="item-investments", configured_windows={})
+        commit_entered = asyncio.Event()
+        original_commit = AsyncSession.commit
+
+        async def paused_commit(session: AsyncSession) -> None:
+            commit_entered.set()
+            await allow_commit.wait()
+            await original_commit(session)
+
+        with monkeypatch.context() as patcher:
+            patcher.setattr(AsyncSession, "commit", paused_commit)
+            finish_task = asyncio.create_task(storage.finish_sync_run(run_id, status="succeeded"))
+            await asyncio.wait_for(commit_entered.wait(), timeout=5)
+            await assert_no_notification()
+            allow_commit.set()
+            await finish_task
+
+        assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
+        assert await listener.fetchval("SELECT status FROM sync_runs WHERE run_id = $1", run_id) == "succeeded"
+
+        failed_run_id = await storage.begin_sync_run(trigger="test", item_id="item-investments", configured_windows={})
+        await storage.finish_sync_run(failed_run_id, status="failed", error_summary="expected failure")
+        await storage.purge_link_data("missing-item")
+        await assert_no_notification()
+
+        await storage.apply_accounts(
+            item_id="item-investments",
+            accounts=[{"account_id": "account-investments", "name": "Brokerage", "type": "investment"}],
+            captured_at=datetime.now(UTC),
+        )
+        await storage.purge_link_data("item-investments")
+        assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
+        assert await listener.fetchval("SELECT count(*) FROM links WHERE item_id = $1", "item-investments") == 0
+        assert (
+            await listener.fetchval("SELECT count(*) FROM accounts WHERE account_id = $1", "account-investments") == 0
+        )
+        await assert_no_notification()
+    finally:
+        allow_commit.set()
+        if finish_task is not None and not finish_task.done():
+            await asyncio.gather(finish_task, return_exceptions=True)
+        await listener.close()
+
+
+async def test_transaction_delta_commits_changes_and_cursor_together(storage: PlaidLinkStorage, db_url: str) -> None:
     await storage.upsert_link(
         item_id="item-transactions",
         access_token_secret="item-transactions-token",
@@ -90,17 +154,179 @@ async def test_transaction_reconciliation_does_not_mark_partial_sync_success(sto
         label=None,
     )
 
-    await storage.reconcile_transactions(
+    await storage.apply_accounts(
         item_id="item-transactions",
-        start_date=date(2026, 5, 1),
-        end_date=date(2026, 5, 31),
-        transactions=[],
+        accounts=[{"account_id": "account-transactions", "name": "Checking", "type": "depository", "balances": {}}],
         captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=UTC),
+    )
+    captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=UTC)
+    await storage.apply_transaction_delta(
+        item_id="item-transactions",
+        added=[
+            {
+                "transaction_id": "txn-kept",
+                "account_id": "account-transactions",
+                "date": "2026-05-30",
+                "amount": 12.34,
+                "name": "Coffee",
+                "pending": False,
+            },
+            {
+                "transaction_id": "txn-removed",
+                "account_id": "account-transactions",
+                "date": "2026-05-30",
+                "amount": 9.0,
+                "name": "Old charge",
+                "pending": False,
+            },
+        ],
+        modified=[],
+        removed=[],
+        next_cursor="cursor-first",
+        captured_at=captured_at,
+    )
+    await storage.apply_transaction_delta(
+        item_id="item-transactions",
+        added=[],
+        modified=[
+            {
+                "transaction_id": "txn-kept",
+                "account_id": "account-transactions",
+                "date": "2026-05-30",
+                "amount": 10.0,
+                "name": "Updated Coffee",
+                "pending": False,
+            }
+        ],
+        removed=[{"transaction_id": "txn-removed"}],
+        next_cursor="cursor-second",
+        captured_at=captured_at,
     )
 
     link = await storage.get_link("item-transactions")
     assert link is not None
     assert link.last_synced_at is None
+    assert link.transactions_cursor == "cursor-second"
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.connect() as conn:
+            kept = (
+                await conn.execute(
+                    text("SELECT name, amount, removed FROM transactions WHERE transaction_id = 'txn-kept'")
+                )
+            ).one()
+            removed = (
+                await conn.execute(text("SELECT removed FROM transactions WHERE transaction_id = 'txn-removed'"))
+            ).scalar_one()
+        assert kept == ("Updated Coffee", 10.0, False)
+        assert removed is True
+    finally:
+        await engine.dispose()
+
+
+async def test_sync_run_claim_is_unique_per_item(storage: PlaidLinkStorage) -> None:
+    await _add_link(storage)
+    await storage.begin_sync_run(trigger="cron", item_id="item-investments", configured_windows={})
+
+    with pytest.raises(SyncAlreadyRunningError):
+        await storage.begin_sync_run(trigger="webhook", item_id="item-investments", configured_windows={})
+
+
+async def test_sync_run_claim_recovers_a_stale_run(storage: PlaidLinkStorage, db_url: str) -> None:
+    await _add_link(storage)
+    stale_run_id = await storage.begin_sync_run(trigger="cron", item_id="item-investments", configured_windows={})
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("UPDATE sync_runs SET started_at = :started_at WHERE run_id = :run_id"),
+                {"started_at": datetime.now(UTC) - timedelta(hours=3), "run_id": stale_run_id},
+            )
+    finally:
+        await engine.dispose()
+
+    recovered_run_id = await storage.begin_sync_run(
+        trigger="webhook", item_id="item-investments", configured_windows={}
+    )
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.connect() as conn:
+            old_status = (
+                await conn.execute(
+                    text("SELECT status FROM sync_runs WHERE run_id = :run_id"), {"run_id": stale_run_id}
+                )
+            ).scalar_one()
+            new_status = (
+                await conn.execute(
+                    text("SELECT status FROM sync_runs WHERE run_id = :run_id"), {"run_id": recovered_run_id}
+                )
+            ).scalar_one()
+        assert old_status == "failed"
+        assert new_status == "running"
+    finally:
+        await engine.dispose()
+
+
+async def test_item_sync_queue_coalesces_events_during_a_claim(storage: PlaidLinkStorage) -> None:
+    await storage.upsert_link(
+        item_id="item-transactions",
+        access_token_secret="item-transactions-token",
+        products_requested=["transactions"],
+        institution_id="ins_transactions",
+        institution_name="Transactions Test",
+        label=None,
+    )
+    await storage.enqueue_item_sync("item-transactions")
+    first_claim = await storage.claim_item_sync()
+    assert first_claim is not None
+    await storage.enqueue_item_sync("item-transactions")
+    await storage.finish_item_sync(first_claim)
+
+    second_claim = await storage.claim_item_sync()
+    assert second_claim is not None
+    assert second_claim.generation == first_claim.generation + 1
+    await storage.finish_item_sync(second_claim)
+    assert await storage.claim_item_sync() is None
+
+
+async def test_plaid_webhook_delivery_keeps_full_body_and_dispatch_metadata(
+    storage: PlaidLinkStorage, db_url: str
+) -> None:
+    raw_body = '{"webhook_type":"ITEM","webhook_code":"WEBHOOK_UPDATE_ACKNOWLEDGED","extra":{"value":42}}'
+    delivery_id = await storage.record_plaid_webhook_delivery(raw_body)
+    await storage.update_plaid_webhook_delivery(
+        delivery_id,
+        webhook_type="ITEM",
+        webhook_code="WEBHOOK_UPDATE_ACKNOWLEDGED",
+        item_id=None,
+        disposition="ignored",
+    )
+
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.connect() as conn:
+            delivery = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT raw_body, webhook_type, webhook_code, item_id, disposition "
+                            "FROM plaid_webhook_deliveries WHERE id = :delivery_id"
+                        ),
+                        {"delivery_id": delivery_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+        assert delivery == {
+            "raw_body": raw_body,
+            "webhook_type": "ITEM",
+            "webhook_code": "WEBHOOK_UPDATE_ACKNOWLEDGED",
+            "item_id": None,
+            "disposition": "ignored",
+        }
+    finally:
+        await engine.dispose()
 
 
 async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
@@ -109,6 +335,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
     captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=UTC)
     await _add_link(storage, item_id="item-purge")
     await _add_link(storage, item_id="item-keep")
+    await storage.enqueue_item_sync("item-purge")
 
     await storage.apply_accounts(
         item_id="item-purge",
@@ -134,11 +361,9 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
         ],
         captured_at=captured_at,
     )
-    await storage.reconcile_transactions(
+    await storage.apply_transaction_delta(
         item_id="item-purge",
-        start_date=date(2026, 5, 1),
-        end_date=date(2026, 5, 31),
-        transactions=[
+        added=[
             {
                 "transaction_id": "txn-purge",
                 "account_id": "account-purge",
@@ -148,6 +373,9 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
                 "pending": False,
             }
         ],
+        modified=[],
+        removed=[],
+        next_cursor="cursor-purge",
         captured_at=captured_at,
     )
     await storage.apply_holdings(
@@ -232,6 +460,9 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
             assert (
                 await conn.execute(text("SELECT count(*) FROM sync_runs WHERE item_id = 'item-purge'"))
             ).scalar_one() == 1
+            assert (
+                await conn.execute(text("SELECT count(*) FROM item_sync_queue WHERE item_id = 'item-purge'"))
+            ).scalar_one() == 0
             assert (
                 await conn.execute(text("SELECT count(*) FROM plaid_api_events WHERE item_id = 'item-purge'"))
             ).scalar_one() == 1

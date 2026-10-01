@@ -18,8 +18,8 @@ from agentplane.egress.resources import (
     EgressPolicy,
     Secret,
 )
-from agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 from util.kubernetes import CustomObjectsClient
+from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
 
 def _name(obj: EgressPolicy | EgressBinding | EgressCredential) -> str:

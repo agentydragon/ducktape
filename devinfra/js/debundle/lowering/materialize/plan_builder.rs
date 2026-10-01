@@ -322,6 +322,12 @@ impl ChunkPlanBuilder {
             target_path: request.target_path.clone(),
             explicit: true,
             bindings,
+            spec_named_bindings: request
+                .members
+                .iter()
+                .filter(|member| member.explicit_export_name && !member.binding.is_empty())
+                .map(|member| member.binding.clone())
+                .collect(),
             anonymous_statement_ordinals: Vec::new(),
             anonymous_statement_comments: BTreeMap::new(),
             comment: request.comment.clone(),
@@ -668,6 +674,9 @@ impl ChunkPlanBuilder {
         let plan = &mut self.module_plans[index];
         plan.bindings
             .insert(binding.to_string(), member.export_name.clone());
+        if member.explicit_export_name {
+            plan.spec_named_bindings.insert(binding.to_string());
+        }
         plan.binding_claim_origins
             .insert(binding.to_string(), member.claim_origin.clone());
         if let Some(comment) = &member.comment {
@@ -870,6 +879,7 @@ impl ChunkPlanBuilder {
                     target_path: residual.target_path.clone(),
                     explicit: false,
                     bindings: residual_bindings,
+                    spec_named_bindings: BTreeSet::new(),
                     anonymous_statement_ordinals: Vec::new(),
                     anonymous_statement_comments: BTreeMap::new(),
                     comment: None,
@@ -1061,6 +1071,7 @@ impl ChunkPlanBuilder {
                 target_path,
                 explicit: false,
                 bindings,
+                spec_named_bindings: BTreeSet::new(),
                 anonymous_statement_ordinals,
                 anonymous_statement_comments: BTreeMap::new(),
                 comment: None,
@@ -1071,8 +1082,8 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    /// Apply a batch of rebind-fold decisions produced from chunk analysis
-    /// (`stage_one::compute_rebind_folds`).
+    /// Apply a batch of rebind-fold decisions produced by
+    /// `lowering/rebind_fold.rs`.
     ///
     /// Each fold reroutes a single binding from its previous plan
     /// (if any) to the cycle's explicit destination. The
@@ -1087,24 +1098,26 @@ impl ChunkPlanBuilder {
     /// preserves any existing entry under that name.
     pub(super) fn apply_rebind_folds(&mut self, folds: Vec<RebindFold>) {
         let residual_plan_index = self.residual_plan_index;
-        for fold in folds {
-            let RebindFold {
-                binding,
-                name,
-                dest,
-                owned_kind,
-                previous,
-            } = fold;
+        for RebindFold {
+            binding,
+            dest,
+            from_residual,
+        } in folds
+        {
+            let name = binding.0.as_ref().to_string();
             self.binding_assignment.insert(binding.clone(), dest);
-            self.bindings_catalogue.insert(binding, owned_kind);
+            self.bindings_catalogue.insert(
+                binding,
+                BindingKind::Owned {
+                    module: ModuleId::logical(dest),
+                },
+            );
             self.module_plans[dest]
                 .bindings
                 .entry(name.clone())
                 .or_insert_with(|| name.clone());
-            if let Some(prev_idx) = previous
-                && Some(prev_idx) == residual_plan_index
-            {
-                self.module_plans[prev_idx].bindings.remove(&name);
+            if from_residual && let Some(residual) = residual_plan_index {
+                self.module_plans[residual].bindings.remove(&name);
             }
         }
     }

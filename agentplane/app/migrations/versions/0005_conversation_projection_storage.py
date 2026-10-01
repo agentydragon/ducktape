@@ -94,7 +94,8 @@ def upgrade() -> None:
         sa.Column("field", sa.Text(), primary_key=True),
         sa.Column("generation", sa.BigInteger(), primary_key=True),
         sa.Column("chunk_index", sa.BigInteger(), primary_key=True),
-        sa.Column("text", sa.Text(), nullable=False),
+        # JSON string scalars preserve U+0000 in tool output; readers decode them as strings.
+        sa.Column("text", postgresql.JSON(), nullable=False),
     )
     op.create_table(
         "conversation_projection_evidence",

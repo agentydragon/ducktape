@@ -1,9 +1,10 @@
 # Nix-built OCI image for Haku's isolated OpenClaw + Claude Code spike.
 #
-# The gateway package itself is shared with the public-coder image; the source
-# pin, npm-wrapper splice, and dist repairs live in openclaw/gateway.nix, so a
-# version bump moves both images at once -- what that costs, and how to recover an
-# instance a bump has bricked, is in openclaw/AGENTS.md. This file adds the spike's
+# The gateway package itself is shared with the public-coder image; nix-openclaw
+# provides its pinned package/source metadata and local dist repairs live in
+# openclaw/gateway.nix, so a version bump moves both images at once -- what that
+# costs, and how to recover an instance a bump has bricked, is in
+# openclaw/AGENTS.md. This file adds the spike's
 # own proxy preload and command-line tooling -- everything a Nix package in one
 # reviewable closure, no second Node.
 #
@@ -63,14 +64,13 @@ let
     ]
     ++ [ nodejs ];
 
-  # The preload imports the same pinned `undici` dependency as the gateway.
-  # The shared nested npm lock places it under node_modules/openclaw, which the
-  # Nix install copies into the gateway root. Reuse that tree instead of fetching
-  # a second, potentially divergent undici package for the preload.
+  # The preload imports `undici` from the pinned npm tree. nix-openclaw hoists
+  # that tree to lib/node_modules, so expose it beside the preload for Node's
+  # ESM resolver instead of fetching a second, potentially divergent package.
   proxySetup = pkgs.runCommand "openclaw-spike-proxy-setup" { } ''
     mkdir -p "$out/lib/openclaw"
     cp ${../../openclaw/proxy-setup.mjs} "$out/lib/openclaw/proxy-setup.mjs"
-    ln -s ${gateway}/lib/openclaw/node_modules "$out/lib/openclaw/node_modules"
+    ln -s ${gateway}/lib/node_modules "$out/lib/openclaw/node_modules"
   '';
 
   path = pkgs.lib.makeBinPath ([ gateway ] ++ tools);

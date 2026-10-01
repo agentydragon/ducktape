@@ -83,20 +83,19 @@ resource "kubernetes_secret" "cheap_experiments" {
   }
 }
 
+# Deliberately has no key-level max_budget; testing retains its own budgeted key.
 resource "litellm_key" "agentplane_staging" {
   key_alias = "agentplane-staging"
   # Staging Codex and key access both use the GPT-6 subscription routes.
-  models          = concat(var.model_allowlists.gpt6_oai_lane_models, var.model_allowlists.claude_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.ollama_chat_client_models)
-  max_budget      = 50
-  budget_duration = "30d"
+  models = concat(
+    var.model_allowlists.gpt6_oai_lane_models,
+    var.model_allowlists.claude_client_models,
+    var.model_allowlists.antigravity_client_models,
+    var.model_allowlists.ollama_chat_client_models,
+  )
   metadata = {
     consumer = "agentplane-staging"
   }
-}
-
-moved {
-  from = kubernetes_secret.cheap_experiments_agentplane_staging
-  to   = kubernetes_secret.agentplane_staging
 }
 
 # Only the workload-authenticated LLM ingress holds the model key; runners use a placeholder.
@@ -399,7 +398,7 @@ resource "litellm_key" "antigravity_clients" {
 
 # Disposable agent workspaces (cluster/k8s/agents/agent-sandbox/): operator-
 # codex workspace lane: the codex CLI's baked LiteLLM provider
-# (cluster/k8s/agents/agent-sandbox/workspace-image/codex-config.toml) uses
+# (cluster/images/agent-workspace/codex-config.toml) uses
 # the GPT-6 `chatgpt/oai-responses/*` Codex-account models, same allowlist as codex-pod.
 resource "litellm_key" "agent_workspaces_codex" {
   key_alias = "agent-workspaces-codex"

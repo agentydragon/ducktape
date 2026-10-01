@@ -1,6 +1,5 @@
-"""The cluster-scoped CDI CR that cdi-operator (cluster/k8s/kubevirt/cdi-operator)
-reconciles into the Containerized Data Importer, and the StorageProfiles for our
-provisioners."""
+"""The cluster-scoped CDI CR that cdi-operator (`operators.py`) reconciles into the
+Containerized Data Importer, and the StorageProfiles for our provisioners."""
 
 from __future__ import annotations
 

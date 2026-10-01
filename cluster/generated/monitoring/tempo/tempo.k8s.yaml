@@ -21,29 +21,10 @@ spec:
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
-kind: ResourceReferenceGrant
-metadata:
-  name: tempo
-  namespace: seaweedfs
-spec:
-  from:
-    - group: seaweed.seaweedfs.com
-      kind: Bucket
-      namespace: monitoring
-    - group: seaweed.seaweedfs.com
-      kind: S3Identity
-      namespace: monitoring
-    - group: seaweed.seaweedfs.com
-      kind: S3Credentials
-      namespace: monitoring
-  to:
-    - group: seaweed.seaweedfs.com
-      kind: Seaweed
-      name: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
+  annotations:
+    description: Tempo's tenant-local SeaweedFS trace bucket.
   name: tempo
   namespace: monitoring
 spec:
@@ -55,8 +36,6 @@ spec:
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
-  annotations:
-    description: Tempo's tenant-local SeaweedFS credentials.
   name: tempo
   namespace: monitoring
 spec:

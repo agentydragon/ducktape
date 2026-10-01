@@ -22,7 +22,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use output_layout::SELECTOR_DIAGNOSTICS_REPORT;
 use peel::{OutputFormat, print_report};
-use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
+use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
 use selector_outcome::{
     Entity, Outcome, Placement, SelectorKind, SelectorOutcome, SelectorOutcomeReport, Severity,
     TemplateIdentifiers,
@@ -93,7 +93,7 @@ fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
     // tool failure: when the run produced reports, we emit them and exit zero;
     // only a run that errored *without* producing any report is a real failure
     // (bad spec path, parse error, …).
-    let pass = run_transform_cli_with_options(
+    let pass = run_transform_cli(
         &cli,
         TransformRunOptions {
             dry_run: true,
@@ -245,20 +245,10 @@ fn validate_modules_against_source(
                         (None, MemberSelectorSpec::Binding(binding)) => binding.name.clone(),
                         (None, _) => continue,
                     };
-                    match MemberSelector::from_spec(&module_path, selector) {
-                        Ok(selector) => members.push(Member {
-                            export_name,
-                            selector,
-                        }),
-                        Err(error) => outcomes.push(invalid_outcome(
-                            chunk,
-                            &module_path,
-                            Some(Entity::Export(export_name)),
-                            SelectorKind::UnparsedMember,
-                            None,
-                            &error,
-                        )),
-                    }
+                    members.push(Member {
+                        export_name,
+                        selector: MemberSelector::from_spec(selector),
+                    });
                 }
                 Err(error) => outcomes.push(invalid_outcome(
                     chunk,
@@ -298,7 +288,6 @@ fn validate_modules_against_source(
                 .and_then(|selector| {
                     ParsedSourceMatchSelector::parse(
                         &module_path,
-                        "source_match",
                         format!("<source_match needle in {module_path}>"),
                         &selector,
                         "source_match",

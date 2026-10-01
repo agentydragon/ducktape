@@ -80,7 +80,7 @@ export { registry, FooService, BarPlugin };
 /// is ambiguous; the `object: @Anchor` constraint picks out exactly the one passed
 /// to `@viewRegistry.register`.
 #[test]
-fn passed_to_call_constrains_by_object_through_full_pipeline() {
+fn passed_to_call_constrains_by_object() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const viewRegistry = { register(x) { (this.v ||= []).push(x); } };
 const commandRegistry = { register(x) { (this.c ||= []).push(x); } };
@@ -123,7 +123,7 @@ export { viewRegistry, commandRegistry, TableView, DeleteCommand };
 /// names no binding). The `arg_index: 1` constraint pins exactly the target at that
 /// position — proving the index rides through the full pipeline.
 #[test]
-fn passed_to_call_constrains_by_arg_index_through_full_pipeline() {
+fn passed_to_call_constrains_by_arg_index() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const host = { define(name, ctor) { (this.m ||= {})[name] = ctor; } };
 class Widget {}

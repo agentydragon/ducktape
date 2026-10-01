@@ -10,14 +10,8 @@ import pytest_bazel
 import respx
 from httpx import Response
 
-from airlock.oauth.provider import (
-    GenericOAuth2Provider,
-    OAuth2ProviderConfig,
-    TokenData,
-    TokenSecretConfig,
-    _parse_token_response,
-    generate_pkce_pair,
-)
+from airlock.oauth.config import OAuth2ProviderConfig, TokenSecretConfig
+from airlock.oauth.provider import GenericOAuth2Provider, TokenData, _parse_token_response, generate_pkce_pair
 
 
 @pytest.fixture

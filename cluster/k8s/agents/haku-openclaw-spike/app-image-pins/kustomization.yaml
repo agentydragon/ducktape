@@ -1,0 +1,5 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/haku-openclaw-spike
+    newTag: devel-20261001021543-3939c81 # {"$imagepolicy": "flux-system:haku-openclaw-spike:tag"}

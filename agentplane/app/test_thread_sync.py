@@ -78,9 +78,10 @@ async def test_materialized_revisions_replicate_with_restricted_role() -> None:
                     },
                 )
                 chunks.raise_for_status()
+                assert json.loads(chunks.headers["electric-schema"])["text"]["type"] == "json"
                 values = [message["value"] for message in chunks.json() if "value" in message]
                 ordered = sorted(values, key=lambda row: int(row["chunk_index"]))
-                assert "".join(row["text"] for row in ordered) == "Hello world"
+                assert "".join(json.loads(row["text"]) for row in ordered) == "Hello world"
             await _cross_replica_sync(service, ingestion, source, thread, lease)
         finally:
             await engine.dispose()
@@ -133,7 +134,7 @@ async def _follow(
 def _body(chunks: list[Row], reference: dict[str, Any]) -> str:
     """The body as far as the reference spans it."""
     texts = {
-        int(row["chunk_index"]): row["text"]
+        int(row["chunk_index"]): json.loads(row["text"])
         for row in chunks
         if row["owner_id"] == reference["owner_id"] and str(row["generation"]) == str(reference["generation"])
     }
@@ -203,7 +204,7 @@ async def _cross_replica_sync(
         appended, _ = await _follow(
             client_two, f"{path}/chunks/text", epoch, chunks, lambda seen: any(_extends(row, reference) for row in seen)
         )
-        assert [row["text"] for row in appended if _extends(row, reference)] == ["!"]
+        assert [json.loads(row["text"]) for row in appended if _extends(row, reference)] == ["!"]
         assert _body(before + appended, extended) == "Hello world!"
         # The rows a reader already holds still render the revision they name.
         assert _body(before + appended, reference) == "Hello world"

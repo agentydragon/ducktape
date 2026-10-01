@@ -46,6 +46,26 @@ Prototype pollution — replacing `Set.prototype.add` or
 citation describes the standard built-in, and the analyzer cannot detect it
 because the pollution may live outside the analyzed chunk.
 
+## `String.raw` tagged templates
+
+`String.raw` tagged templates are admitted only when the tag is exactly the
+non-shadowed global `String.raw` (not computed access) and every substitution
+is both pure and statically primitive-valued. With no substitutions the
+condition is vacuous. ECMA-262 §22.1.2.4 (`String.raw`) applies `ToString` to
+each substitution; object substitutions can invoke user `toString` or
+`[Symbol.toPrimitive]`, hence the same `is_result_primitive` gate used for
+coercing binary operators. ECMA-262 §13.2.8.4 (`GetTemplateObject`) creates
+and caches the template object from the literal's cooked/raw strings; under
+the design's A11 intrinsic-integrity assumption, this built-in machinery
+introduces no user-observable effect. The global-binding shadowing checks
+match other whitelist entries.
+
+Both directions are pinned in
+`string_raw_tagged_templates_require_global_tag_and_primitive_substitutions`:
+primitive/no-substitution templates are admitted; object/unknown/effectful
+substitutions, a shadowed `String`, another tag, and computed `String["raw"]`
+remain rejected. `RegExp` handling is unaffected.
+
 ## `PURE_STATIC_FUNCTION_REFS` — reads vs calls
 
 This table whitelists static-property _reads_ of function-valued built-ins

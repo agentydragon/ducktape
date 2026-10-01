@@ -4,12 +4,10 @@ from pathlib import Path
 import pytest_bazel
 
 from cluster.rotators.forgejo_token_rotation import rotate
+from cluster.rotators.forgejo_token_rotation.config import FULL_ACCOUNT_SCOPES, Rotation, TeaSecretOutput
 from cluster.rotators.forgejo_token_rotation.rotate import (
-    FULL_ACCOUNT_SCOPES,
     ForgejoCredentials,
     RotatedToken,
-    Rotation,
-    TeaSecretOutput,
     build_secret_manifest,
     encrypt_sops_file,
     mint_token,

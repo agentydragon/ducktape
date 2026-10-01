@@ -29,11 +29,19 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.flux.notification import Alert, Provider, Receiver, ReceiverResource
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "flux-webhook"
 NAMESPACE = "flux-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-webhook"
 _NTFY_WEBHOOK = "ntfy-webhook"
+# notification-controller's receiver Service, from the Flux install (gotk-components.yaml).
+_RECEIVER = ServiceRef(
+    name="webhook-receiver",
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=NAMESPACE, labels=(("app", "notification-controller"),)),
+    target_port=9292,
+)
 # ntfy fills the X-Title/X-Message placeholders from Flux's webhook payload (Template: yes).
 # They are Go raw strings here so ESO's own template engine emits them untouched instead of
 # failing on the missing `involvedObject` key.
@@ -126,8 +134,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=["flux-webhook.allegedly.works"],
-        backend="webhook-receiver",
-        port=80,
+        backend=_RECEIVER,
         hsts=False,
         listener=None,
     )
@@ -138,10 +145,10 @@ def chart(app: App) -> Chart:
         "gateway-ingress",
         metadata=k8s.ObjectMeta(name="allow-gateway-webhook-ingress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels={"app": "notification-controller"}),
+            pod_selector=k8s.LabelSelector(match_labels=_RECEIVER.pods.selector),
             ingress=[
                 k8s.NetworkPolicyIngressRule(
-                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(9292), protocol="TCP")]
+                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_RECEIVER.pod_port), protocol="TCP")]
                 )
             ],
             policy_types=["Ingress"],

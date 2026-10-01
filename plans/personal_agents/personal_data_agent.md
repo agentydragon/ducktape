@@ -125,7 +125,7 @@ How often that fires is the part that matters, and for Gmail it is weekly. Googl
 an app requesting restricted scopes in **Testing** publishing status unless it goes
 through the verification and security-assessment path, and a Testing-status app's
 refresh token expires every 7 days — the console hit this with project `rai-personal`; the
-gotcha sits beside Airlock's `google-write` provider (`cluster/k8s/agents/airlock/config.yaml`).
+gotcha sits beside Airlock's `google-write` provider (`cluster/cdk8s/airlock.py`'s `OAUTH_CONFIG`).
 So a Gmail grant needs
 reauthorization roughly weekly **regardless of which option above you choose**. That is
 a human-in-the-loop event, not an automation gap, and it is the single best argument for

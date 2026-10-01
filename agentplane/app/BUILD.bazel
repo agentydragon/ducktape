@@ -32,6 +32,10 @@ py_binary(
 py_library(
     name = "api",
     srcs = ["api.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":action_federation",
         ":action_policy",
@@ -79,6 +83,10 @@ py_library(
 py_library(
     name = "presets",
     srcs = ["presets.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = ["@pypi//pydantic"],
 )
 
@@ -238,7 +246,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -357,13 +364,15 @@ py_test(
         "//agentplane/runner:service",
         "//agentplane/runner:session",
         "//agentplane/runner/testing:scripted_model",
+        "//util:net",
+        "//util/testing:asgi",
         "//util/testing:undeclared_outputs",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
         "@pypi//tenacity",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -611,7 +620,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -642,12 +650,12 @@ py_library(
         ":identity",
         ":inventory",
         ":shutdown",
-        "//agentplane:kubernetes_watch",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
         "//agentplane/app/agent_runtime/thread:store",
         "//agentplane/app/agent_runtime/view:views",
         "//util:kubernetes",
+        "//util:kubernetes_watch",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//httpx2",
@@ -722,6 +730,10 @@ py_library(
 py_library(
     name = "action_federation",
     srcs = ["action_federation.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":identity",
         ":oidc",

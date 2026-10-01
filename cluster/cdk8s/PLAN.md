@@ -1,12 +1,5 @@
 # cdk8s adoption: remaining work
 
-Review baseline: `origin/devel` at `f84301e72c` (2026-09-28). This is a source
-audit, not a fresh synthesis, CI result, or live-cluster health report.
-
-The central chart contains 171 Flux Kustomizations. The broad resource conversion,
-ArtifactGenerator wiring, two output roots, and removal of redundant single-file
-Kustomize wrappers are implemented. They are no longer migration waves.
-
 Adoption is not complete: mixed directories still contain hand-written overlays and
 configuration, project-owned deployment packages remain outside that conversion, and
 some Python constructs still encode relationships as independent strings or patches.
@@ -19,27 +12,25 @@ live in [the design](../docs/cdk8s.md) and [AGENTS.md](AGENTS.md).
 These are recommendations for subsequent implementation PRs. Updating this plan does
 not approve a new abstraction, resource owner, authorization grant, or deployment.
 
-### B. Restore dependency-update ownership
+### Deferred: decide image-pin and dependency-update ownership
 
-`renovate.json5` scans both `cluster/k8s` and `cluster/generated` for Flux and
-Kubernetes YAML. Its custom manager covers Terraform provider pins, not cdk8s Python.
-There is no cdk8s regeneration workflow. Updating generated YAML conflicts with its
-source and the snapshot gate.
+The pin and update ownership policy is unresolved. Renovate changes are parked until the
+image-pin design is decided. The previously proposed `# renovate:` source annotations and
+branch regeneration workflow are one possible approach, not an approved direction. Decide how
+image pins, source pins, generated output, and update automation fit together before
+changing Renovate or adding cdk8s regeneration.
 
-The previously approved direction remains: annotate source pins with `# renovate:`,
-teach Renovate to update them, and regenerate on its branches. Exclude generated
-outputs from mutation only as source coverage replaces it. Keep repository-built image
-tags owned by Flux image automation. Operator/chart versions and CRD schema pins need
-coordinated updates where they describe the same deployed API.
-
-Done: an actual dependency update changes the Python source and its generated output,
-passes the generation gate, and leaves no independently editable duplicate pin.
+Done: the chosen policy identifies each pin's source of truth, update owner, and generated
+output path without creating two writers.
 
 ### C. Convert useful YAML seams
 
-Start with Grocy's household overlays, then Airlock's typed configuration and the
-rotator rosters. The remainder backlog names the existing models, semantic hazards, and acceptance
-conditions. Authentik blueprints need a separate ownership decision consistent with
+Airlock's typed configuration is complete. Attic's rotator roster is now typed data built
+from the rotator's schema, with cdk8s generating its ConfigMap and directory Kustomization.
+The Forgejo CronJob derives its credential mounts and copied Secret names from its typed
+rotation roster; the remaining Authentik wiring seam is described in the remainder
+backlog. Keep the rotators as separate changes rather than introducing a generic framework.
+Authentik blueprints need a separate ownership decision consistent with
 `cluster/docs/sso.md`; embedding their text in Python is not completion.
 
 Generate non-secret configuration through the application's existing model where one
@@ -88,8 +79,6 @@ Prefer fluent constructs when they remove independent selectors, names, ports or
 references. Preserve exact behavior with typed core/CRD bindings when the fluent layer
 would require several compensating patches. Treat these as targeted improvements:
 
-- `seaweedfs/s3.py`: use generated structs for grant/access patch values; keep the
-  useful Bucket/Identity API and assess its chart-local grant mutation separately.
 - Keep the shared typed pod-seccomp patch while the pinned API requires it. Review
   Helm's explicit-null patch against its actual schema; do not erase it merely to reduce
   a count.

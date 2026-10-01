@@ -12,10 +12,11 @@ from constructs import Construct
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmReleaseSpecUpgradeRemediation
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
 
 NAME = "seaweedfs-csi"
@@ -192,18 +193,18 @@ def _storage_class(scope: Construct, name: str, *, description: str, parameters:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAMESPACE,
-            # CSI driver needs hostPath, hostPID, SYS_ADMIN, and privileged containers.
-            labels={
-                "pod-security.kubernetes.io/enforce": "privileged",
-                "pod-security.kubernetes.io/audit": "privileged",
-                "pod-security.kubernetes.io/warn": "privileged",
-            },
-        ),
+        name=NAMESPACE,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=None,
+        # CSI driver needs hostPath, hostPID, SYS_ADMIN, and privileged containers.
+        labels={
+            "pod-security.kubernetes.io/enforce": "privileged",
+            "pod-security.kubernetes.io/audit": "privileged",
+            "pod-security.kubernetes.io/warn": "privileged",
+        },
     )
     source = GitRepository(
         chart,

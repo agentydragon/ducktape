@@ -11,7 +11,6 @@ from __future__ import annotations
 import textwrap
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgress,
     CiliumNetworkPolicySpecEgressToEndpoints,
@@ -29,24 +28,23 @@ from cilium_crds.io.cilium import (
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from cluster.cdk8s.seaweedfs import namespace, s3
+from cluster.cdk8s.seaweedfs import s3
 
 NAME = "loki"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/loki"
 _SEAWEEDFS = "seaweedfs"
-# Written by the old cross-namespace S3Credentials in seaweedfs.
-_LEGACY_CREDENTIALS_SECRET = "loki-s3-credentials"
 # Written by the tenant-local S3Credentials; what the Loki pods read.
 _CREDENTIALS_SECRET = "loki-seaweedfs-credentials"
 WRITE_URL = "http://loki-write.loki.svc.cluster.local:3100"
-_PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
+READ_URL = "http://loki-read.loki.svc.cluster.local:3100"
+PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
 _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
@@ -71,57 +69,17 @@ def _storage(chart: Chart) -> None:
             "pod-security.kubernetes.io/warn": "privileged",
         },
     )
-    # S3Credentials owns the credential values; Flux owns only this target shell.
-    k8s.KubeSecret(
-        chart,
-        "legacy-credentials",
-        metadata=k8s.ObjectMeta(
-            name=_LEGACY_CREDENTIALS_SECRET, namespace=NAME, annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"}
-        ),
-        type="Opaque",
-    )
-    # Permit only the SeaweedFS operator's S3Credentials resource to populate
-    # this exact workload Secret across namespaces.
-    s3.secret_grant(chart, secret=_LEGACY_CREDENTIALS_SECRET, namespace=NAME)
-    identity = s3.Identity(chart, "identity", name=NAME, namespace=NAME)
-    identity.credentials(
-        namespace=namespace.NAME,
-        secret=_LEGACY_CREDENTIALS_SECRET,
-        secret_namespace=NAME,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-    )
     # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
     # (Loki splits them internally by key prefix). See the HelmRelease's
     # `storage.bucketNames` — all three point at the same bucket.
-    legacy_bucket = s3.Bucket(
+    s3.PrivateBucket(
         chart,
-        "legacy-bucket",
+        "storage",
         name=NAME,
-        namespace=namespace.NAME,
-        adopt_existing=False,
-        # Unset: the CRD defaults to Retain.
-        reclaim_policy=None,
-    )
-    legacy_bucket.grant_read_write(identity)
-    # Tenant-local ownership for Loki's existing Seaweed bucket and credentials.
-    # The old seaweedfs-namespace resources remain until the consumer cutover and
-    # data-path verification are complete.
-    bucket = s3.Bucket(
-        chart,
-        "bucket",
-        name=NAME,
-        namespace=NAME,
+        tenant=NAME,
         adopt_existing=True,
         description="Loki chunks, ruler, and admin objects.",
-    )
-    bucket.grant_read_write(identity)
-    identity.credentials(
-        namespace=NAME,
-        # A new Secret during the staged handoff: the existing one is populated by the old
-        # cross-namespace S3Credentials object and cannot be adopted here.
-        secret=_CREDENTIALS_SECRET,
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        description="Loki's tenant-local SeaweedFS credentials.",
+        secret_name=_CREDENTIALS_SECRET,
     )
 
 
@@ -280,7 +238,7 @@ def _promtail_values() -> dict[str, object]:
                 # SimpleScalable: push to the write StatefulSet's service.
                 # The single-binary `loki` Service was removed when we switched
                 # off SingleBinary mode.
-                {"url": _PUSH_URL}
+                {"url": PUSH_URL}
             ],
             "snippets": {
                 # Drop `filename`. It is the chart default and carries the full
@@ -332,7 +290,7 @@ def _promtail_journal_values() -> dict[str, object]:
         # clamps it, and no roaming node should ever gate a journal rollout.
         "updateStrategy": _ROAMING_SAFE_UPDATE_STRATEGY,
         "config": {
-            "clients": [{"url": _PUSH_URL}],
+            "clients": [{"url": PUSH_URL}],
             "snippets": {
                 # Disable the chart's default Kubernetes pod-log scrape — the main promtail
                 # already collects pod logs on every node; this release must not double-collect.
@@ -537,8 +495,7 @@ def _network_policy(chart: Chart) -> None:
             ),
             # Gatus → Loki (health checks)
             CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods({"app.kubernetes.io/name": "gatus", namespace_label: "gatus"}),
-                to_ports=_ingress_tcp("3100"),
+                from_endpoints=_from_pods(cilium.PROBER.cilium), to_ports=_ingress_tcp("3100")
             ),
             # Authentik proxy outpost → Loki (SSO-protected external access)
             CiliumNetworkPolicySpecIngress(

@@ -4,7 +4,7 @@ scanning each image and one ImagePolicy selecting its newest tag.
 Every entry has the same shape -- same registry, scan interval, pull credential and tag
 policy -- so the roster below is just the names. The `ImageUpdateAutomation` that writes
 the selected tags back into each directory's `image-pins/` Component lives in
-`cluster/k8s/flux-image-automation-ghcr`, not here; nothing in this chart carries an
+`cluster/generated/flux-image-automation-ghcr`, not here; nothing in this chart carries an
 `$imagepolicy` marker, so Flux never rewrites this generated file.
 """
 
@@ -55,6 +55,7 @@ IMAGES = (
     "attic-jwt-rotation",
     "authentik-jwt-rotation",
     "aw-server",
+    "claude-session-sync",
     "cli-proxy-api",
     "cpap-gateway",
     "cpap-sync",
@@ -80,6 +81,7 @@ IMAGES = (
     "osm-mcp",
     "plaid-mcp-server",
     "plaid-mcp-sync",
+    "plaid-spend",
     "props-backend",
     "props-llm-proxy",
     "props-registry-proxy",
@@ -92,6 +94,7 @@ IMAGES = (
     "tana-firebase-resigner",
     "tana-litellm-proxy",
     "tana-mcp",
+    "vm-image-restart",
     # keep-sorted end
 )
 

@@ -1,0 +1,448 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+# gazelle:resolve py httpx_sse @pypi//httpx_sse
+
+py_library(
+    name = "api",
+    srcs = ["api.py"],
+    deps = [
+        ":failures",
+        ":models",
+        ":oauth",
+        "@pypi//httpx",
+        "@pypi//httpx_sse",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "archive",
+    srcs = ["archive.py"],
+    deps = [
+        ":api",
+        ":models",
+        ":progress",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "export_sessions",
+    srcs = ["export_sessions.py"],
+    # The page's bundle rides with the CLI that serves it; the OpenAPI exporter the bundle's types come from
+    # imports `:web`, which stays free of it.
+    data = ["//devinfra/claude/session_export/frontend:bundle"],
+    deps = [
+        ":api",
+        ":archive",
+        ":database_migrate",
+        ":models",
+        ":oauth",
+        ":probe",
+        ":settings",
+        ":store",
+        ":supervisor",
+        ":sync",
+        ":web",
+        "//util/bazel:workspace",
+        "@pypi//httpx",
+        "@pypi//uvicorn",
+    ],
+)
+
+# Prints the OpenAPI schema; the frontend's js_openapi_schema runs it to generate types.
+py_binary(
+    name = "export_schema_bin",
+    main_module = "devinfra.claude.session_export.export_schema",
+    visibility = ["//devinfra/claude/session_export/frontend:__pkg__"],
+    deps = [":export_schema"],
+)
+
+py_binary(
+    name = "export_sessions_bin",
+    main_module = "devinfra.claude.session_export.export_sessions",
+    deps = [":export_sessions"],
+)
+
+aspect_py_binary(
+    name = "export_sessions_image_bin",
+    main = "export_sessions.py",
+    deps = [":export_sessions"],
+)
+
+py_image_layer(
+    name = "image_layers",
+    binary = ":export_sessions_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("export_sessions_image_bin"),
+    env = py_image_env(binary_name = "export_sessions_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":image_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":api",
+        ":database_migrate",
+        ":models",
+        ":oauth",
+        ":store",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_api",
+    srcs = ["test_api.py"],
+    deps = [
+        ":api",
+        ":conftest",
+        ":models",
+        ":oauth",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_archive",
+    srcs = ["test_archive.py"],
+    deps = [
+        ":api",
+        ":archive",
+        ":conftest",
+        ":progress",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "oauth",
+    srcs = ["oauth.py"],
+    deps = [
+        ":failures",
+        "//devinfra/claude/claude_api:oauth_client",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_oauth",
+    srcs = ["test_oauth.py"],
+    deps = [
+        ":conftest",
+        ":oauth",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api:oauth_client",
+        "//util:net",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
+    data = ["//devinfra/claude/session_export/migrations:files"],
+    deps = [
+        ":store",
+        "//util:db_migrations",
+    ],
+)
+
+py_library(
+    name = "progress",
+    srcs = ["progress.py"],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    visibility = ["//devinfra/claude/session_export/migrations:__pkg__"],
+    deps = [
+        ":models",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "read_api",
+    srcs = ["read_api.py"],
+    deps = [
+        ":models",
+        ":store",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "sync",
+    srcs = ["sync.py"],
+    deps = [
+        ":api",
+        ":models",
+        ":progress",
+        ":store",
+    ],
+)
+
+py_test(
+    name = "test_store",
+    size = "medium",
+    srcs = ["test_store.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":models",
+        ":store",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//alembic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_sync",
+    size = "medium",
+    srcs = ["test_sync.py"],
+    requires_docker = True,
+    deps = [
+        ":api",
+        ":conftest",
+        ":models",
+        ":store",
+        ":sync",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = ["//cluster/cdk8s/claude_session_sync:__pkg__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "supervisor",
+    srcs = ["supervisor.py"],
+    deps = [
+        ":api",
+        ":failures",
+        ":live",
+        ":oauth",
+        ":settings",
+        ":store",
+        ":sync",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_supervisor",
+    size = "medium",
+    srcs = ["test_supervisor.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":oauth",
+        ":store",
+        ":supervisor",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "web",
+    srcs = ["web.py"],
+    deps = [
+        ":read_api",
+        ":settings",
+        ":store",
+        ":supervisor",
+        "//util:oidc_login",
+        "//util/bazel:runfiles",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_web",
+    size = "medium",
+    srcs = ["test_web.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":models",
+        ":oauth",
+        ":settings",
+        ":store",
+        ":supervisor",
+        ":web",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    deps = [
+        ":settings",
+        ":store",
+        ":supervisor",
+        ":web",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "live",
+    srcs = ["live.py"],
+    deps = [
+        ":api",
+        ":failures",
+        ":models",
+        ":store",
+        ":sync",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_live",
+    srcs = ["test_live.py"],
+    deps = [
+        ":api",
+        ":conftest",
+        ":live",
+        ":models",
+        ":store",
+        ":sync",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "failures",
+    srcs = ["failures.py"],
+    deps = ["@pypi//httpx"],
+)
+
+py_test(
+    name = "test_failures",
+    srcs = ["test_failures.py"],
+    deps = [
+        ":conftest",
+        ":failures",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "probe",
+    srcs = ["probe.py"],
+    deps = [
+        ":api",
+        ":models",
+        ":oauth",
+        "@pypi//httpx",
+        "@pypi//httpx_sse",
+    ],
+)
+
+py_test(
+    name = "test_probe",
+    srcs = ["test_probe.py"],
+    deps = [
+        ":conftest",
+        ":oauth",
+        ":probe",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

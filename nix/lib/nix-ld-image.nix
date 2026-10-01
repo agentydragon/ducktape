@@ -67,7 +67,7 @@ in
 
     # envfs is the NixOS module's third mechanism and is the one that CANNOT be ported: it is a
     # FUSE mount needing systemd activation, and an unprivileged pod cannot boot systemd
-    # (<../../haku/runtime/managed_agent/self_hosted/README.md> — "booting systemd PID 1 in an
+    # (<../../haku/runtime/x/managed_agent/self_hosted/README.md> — "booting systemd PID 1 in an
     # unprivileged container can't mount the API filesystems"). Static symlinks cover what
     # actually gets used: `/usr/bin/env` for shebangs, and `/bin/bash` and `/bin/sh` for Bazel's
     # shell and every `#!/bin/sh` or `#!/bin/bash` tool. Both are nixpkgs' FHS build of bash:

@@ -13,8 +13,8 @@ from cluster.validation.kyverno.paths import manifest, policy
 
 
 @pytest.fixture
-def agent_diagnostics_policy() -> Path:
-    return policy("generate-agent-diagnostics-readers.k8s.yaml")
+def agent_diagnostics_policy(tmp_path: Path) -> Path:
+    return policy("generate-agent-diagnostics-readers", tmp_path)
 
 
 ALL_AGENT_SUBJECTS = [

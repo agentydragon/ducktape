@@ -14,17 +14,16 @@ import textwrap
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import Namespace, k8s
+from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import external_creds, forgejo_images, public_coder_proxy, public_coder_sshpiper
+from cluster.cdk8s import external_creds, forgejo_images, namespaces, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
-from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, console_config, kube_api_proxy
@@ -44,6 +43,7 @@ from cluster.cdk8s.model_rosters import (
     codex_responses_name,
     exposed_name,
 )
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
     haku_console_mcp,
@@ -51,6 +51,8 @@ from cluster.cdk8s.openclaw_gateway import (
     trusted_proxy_gateway,
 )
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _CODEX_BY_ID = {model.id: model for model in GPT6_CODEX_MODELS}
 _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
@@ -59,12 +61,10 @@ _CONFIG_MAP_NAME = "public-coder-agent-config"
 _NAME = "public-coder-agent"
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": _NAME}
-_NAMESPACE_LABELS = {
-    "goldilocks.fairwinds.com/enabled": "true",
-    "goldilocks.fairwinds.com/vpa-update-mode": "auto",
-    "name": NAMESPACE,
-    "rbac.ducktape.io/agent-readable-metadata": "true",
-}
+# The gateway the Authentik outpost proxies to.
+_SERVICE = ServiceRef(
+    name=_NAME, port=Port(name="gateway", number=18789), pods=Pods(namespace=NAMESPACE, labels=tuple(LABELS.items()))
+)
 _NAMESPACE_ANNOTATIONS = {
     "description": (
         "Second OpenClaw agent, egress-confined to a CONNECT proxy and reachable only through the Authentik proxy "
@@ -72,18 +72,14 @@ _NAMESPACE_ANNOTATIONS = {
     )
 }
 _IMAGE = "git.allegedly.works/ducktape-ci/public-coder-agent:unset"
-_GATEWAY_PORT = 18789
 _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 _STATE_CLAIM_NAME = "public-coder-agent-state-v2"
 _DIAGNOSTICS_CLAIM_NAME = "public-coder-agent-diagnostics"
-_GATEWAY_PASSWORD_NAME = "public-coder-agent-gateway-password"
-_GITHUB_TOKEN_NAME = "public-coder-agent-github-token"
+_GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password")
 # Also the Matrix channel's `proxy` in config(): the same proxy performs Matrix login-password
 # substitution.
-_EGRESS_PROXY = (
-    f"http://{public_coder_proxy.NAME}.{public_coder_proxy.NAMESPACE}.svc.cluster.local:{public_coder_proxy.PROXY_PORT}"
-)
+_EGRESS_PROXY = public_coder_proxy.PROXY.url
 _KUBECONFIG_CONFIG_MAP_NAME = "public-coder-agent-kubeconfig"
 # Rendered by the kustomization.yaml's configMapGenerator.
 _SSH_CONFIG_MAP_NAME = "public-coder-agent-ssh"
@@ -384,8 +380,9 @@ def _openclaw_container() -> k8s.Container:
             # instead of letting the 60-second default expire.
             _env("OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS", "86400000"),
             # Turn off the gateway's background database integrity verifier. Not an upstream
-            # knob -- openclaw/patch-openclaw-npm-dist.mjs adds it, because upstream guards the
-            # verifier only behind a vitest-only test flag and hardcodes its schedule.
+            # knob -- the release-specific patch under openclaw/patches adds it, because
+            # upstream guards the verifier only behind a vitest-only test flag and hardcodes
+            # its schedule.
             #
             # It forks a worker that copies every registered agent database out of this volume
             # into the container filesystem and scans the copy: 2.25 GiB read and 1.59 GiB
@@ -439,11 +436,13 @@ def _openclaw_container() -> k8s.Container:
             # in the egress proxy and substituted solely in X-Subscription-Token requests to
             # api.search.brave.com.
             _env("BRAVE_API_KEY", public_coder_proxy.BRAVE_API_KEY_PLACEHOLDER),
-            secret_env_var("OPENCLAW_LITELLM_API_KEY", "litellm-key-public-coder-agent", "api-key"),
+            SecretRef(namespace=NAMESPACE, name="litellm-key-public-coder-agent")
+            .key("api-key")
+            .env_var("OPENCLAW_LITELLM_API_KEY"),
             # Authentik authenticates proxied browser traffic. OpenClaw's subagent completion
             # path calls the local gateway directly and therefore uses the documented
             # trusted-proxy local-password fallback instead of proxy identity headers.
-            secret_env_var("OPENCLAW_GATEWAY_PASSWORD", _GATEWAY_PASSWORD_NAME, "password"),
+            _GATEWAY_PASSWORD.key("password").env_var("OPENCLAW_GATEWAY_PASSWORD"),
             # OpenClaw's password login puts this value in the Matrix JSON body. It is a proxy
             # placeholder: iron-proxy replaces it with the real controller-owned password only
             # on the Matrix login endpoint.
@@ -480,7 +479,7 @@ def _openclaw_container() -> k8s.Container:
             _env("REQUESTS_CA_BUNDLE", _CA_BUNDLE),
             _env("PIP_CERT", _CA_BUNDLE),
         ],
-        ports=[k8s.ContainerPort(name="gateway", container_port=_GATEWAY_PORT)],
+        ports=[_SERVICE.port.k8s_container_port()],
         # Without this the Deployment reports 1/1 Running whenever a process exists, which hid
         # two different outages during the 2026.8.1 recovery: a gateway crash-looping every ~4
         # minutes, and one that started but never bound its port. /healthz answers 200
@@ -494,7 +493,7 @@ def _openclaw_container() -> k8s.Container:
         # that and never let it finish. A failing readiness probe restarts nothing; it just makes
         # "not serving yet" visible, which is the whole point.
         readiness_probe=k8s.Probe(
-            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string("gateway")),
+            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(_SERVICE.port.name)),
             initial_delay_seconds=10,
             period_seconds=10,
             timeout_seconds=5,
@@ -552,15 +551,15 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=LABELS),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             # Keep the replica count GitOps-owned; the worker-local state claim is selected by the
             # affinity and PVC declarations below.
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=LABELS),
+            selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=LABELS),
+                metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     security_context=k8s.PodSecurityContext(fs_group=1000),
@@ -702,15 +701,8 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name="gateway", port=_GATEWAY_PORT, target_port=k8s.IntOrString.from_number(_GATEWAY_PORT)
-                )
-            ],
-        ),
+        metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=NAMESPACE),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.port.k8s_service_port()]),
     )
 
 
@@ -734,7 +726,7 @@ def _network_policies(scope: Construct) -> None:
         "egress",
         metadata=k8s.ObjectMeta(name="public-coder-agent-egress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             policy_types=["Egress"],
             egress=[
                 # Scoped to kube-dns specifically: an unscoped port-53 rule lets the agent tunnel
@@ -745,8 +737,12 @@ def _network_policies(scope: Construct) -> None:
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="UDP"), _tcp(53)],
                 ),
                 k8s.NetworkPolicyEgressRule(
-                    to=[k8s.NetworkPolicyPeer(pod_selector=k8s.LabelSelector(match_labels=public_coder_proxy.LABELS))],
-                    ports=[_tcp(public_coder_proxy.PROXY_PORT)],
+                    to=[
+                        k8s.NetworkPolicyPeer(
+                            pod_selector=k8s.LabelSelector(match_labels=public_coder_proxy.PROXY.pods.selector)
+                        )
+                    ],
+                    ports=[_tcp(public_coder_proxy.PROXY.pod_port)],
                 ),
                 # `ssh devbox`. Deliberately the piper and not the devbox itself: without a route
                 # to port 22 on the VM, terminating at the piper is the only way through, which is
@@ -754,9 +750,11 @@ def _network_policies(scope: Construct) -> None:
                 # argument as the proxy above.
                 k8s.NetworkPolicyEgressRule(
                     to=[
-                        k8s.NetworkPolicyPeer(pod_selector=k8s.LabelSelector(match_labels=public_coder_sshpiper.LABELS))
+                        k8s.NetworkPolicyPeer(
+                            pod_selector=k8s.LabelSelector(match_labels=public_coder_sshpiper.SERVICE.pods.selector)
+                        )
                     ],
-                    ports=[_tcp(public_coder_sshpiper.PORT)],
+                    ports=[_tcp(public_coder_sshpiper.SERVICE.pod_port)],
                 ),
                 k8s.NetworkPolicyEgressRule(
                     to=[_peer("litellm", {"app.kubernetes.io/name": "litellm"})], ports=[_tcp(4000)]
@@ -772,7 +770,7 @@ def _network_policies(scope: Construct) -> None:
         "ingress",
         metadata=k8s.ObjectMeta(name="public-coder-agent-ingress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels=LABELS),
+            pod_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             policy_types=["Ingress"],
             ingress=[
                 k8s.NetworkPolicyIngressRule(
@@ -782,7 +780,7 @@ def _network_policies(scope: Construct) -> None:
                             {"app.kubernetes.io/component": "server", "app.kubernetes.io/instance": "authentik"},
                         )
                     ],
-                    ports=[_tcp(_GATEWAY_PORT)],
+                    ports=[_tcp(_SERVICE.pod_port)],
                 )
             ],
         ),
@@ -799,10 +797,10 @@ def _credentials(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "github-token",
-        metadata=ApiObjectMetadata(name=_GITHUB_TOKEN_NAME, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=public_coder_proxy.GITHUB_TOKEN.secret.name, namespace=NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
-        data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
+        data=[remote_data("github-agentydragon-agent", "token", secret_key=public_coder_proxy.GITHUB_TOKEN.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
@@ -817,9 +815,9 @@ def _credentials(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "gateway-password",
-        name=_GATEWAY_PASSWORD_NAME,
-        namespace=NAMESPACE,
-        generator_name=f"{_GATEWAY_PASSWORD_NAME}-generator",
+        name=_GATEWAY_PASSWORD.name,
+        namespace=_GATEWAY_PASSWORD.namespace,
+        generator_name=f"{_GATEWAY_PASSWORD.name}-generator",
         # A generated password is stable for the generator's lifetime. Avoid an automatic
         # rotation that would unnecessarily interrupt active sessions.
         refresh="8760h",
@@ -1045,10 +1043,14 @@ def namespace_chart(app: App) -> Chart:
     Workloads that don't set their own imagePullSecrets (the devbox VM's containerDisk pull) need it.
     """
     chart = Chart(app, "namespace", disable_resource_name_hashes=True)
-    namespace = Namespace(
+    namespace = namespaces.namespace(
         chart,
         "namespace",
-        metadata=ApiObjectMetadata(name=NAMESPACE, labels=_NAMESPACE_LABELS, annotations=_NAMESPACE_ANNOTATIONS),
+        name=NAMESPACE,
+        vpa=Vpa.AUTO,
+        agent_readable=AgentReadable.METADATA,
+        labels={"name": NAMESPACE},
+        annotations=_NAMESPACE_ANNOTATIONS,
     )
     k8s.KubeServiceAccount(
         chart,

@@ -1,7 +1,8 @@
-"""Plaid v0 web app: Link UI plus synchronous full-refresh sync."""
+"""Plaid Link UI, verified webhook receiver, and queued Item sync worker."""
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import re
@@ -9,30 +10,31 @@ import sys
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from importlib import resources
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal
 from uuid import UUID
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Path as ApiPath, Query
+from fastapi import FastAPI, Header, HTTPException, Path as ApiPath, Query, Request
 from fastapi.responses import HTMLResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
-from finance.plaid.db.client import (
-    InstitutionDetail,
-    InstitutionSummary,
-    LinkTokenResult,
-    PlaidClient,
-    PlaidClientError,
-    PlaidCreds,
-    PublicTokenExchange,
-)
+from finance.plaid.db.client import InstitutionDetail, PlaidClient, PlaidClientError, PlaidCreds
 from finance.plaid.db.config import MAX_TRANSACTION_DAYS, PlaidWebSettings
-from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
+from finance.plaid.db.link_store import ItemSyncClaim, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
 from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
-from finance.plaid.db.sync import PlaidApiLike, sync_link
+from finance.plaid.db.sync import PlaidApiLike, sync_link, sync_transactions_only
+from finance.plaid.link.webhooks import InvalidPlaidWebhookError, PlaidWebhookVerifier
+from util.oidc_login import LoginConfig, install_login
 
 logger = logging.getLogger(__name__)
+
+_SYNC_WEBHOOK_EVENTS = {
+    ("TRANSACTIONS", "SYNC_UPDATES_AVAILABLE"): (Product.TRANSACTIONS.value, False),
+    ("HOLDINGS", "DEFAULT_UPDATE"): (Product.INVESTMENTS.value, True),
+    ("INVESTMENTS_TRANSACTIONS", "DEFAULT_UPDATE"): (Product.INVESTMENTS.value, True),
+    ("LIABILITIES", "DEFAULT_UPDATE"): (Product.LIABILITIES.value, True),
+}
 
 # Institution product lists change on the order of months, and /api/links is re-fetched after every
 # action -- without this the list view would hit Plaid once per link per refresh.
@@ -107,6 +109,12 @@ class SyncResponse(BaseModel):
     run_id: str
 
 
+class PlaidWebhookEnvelope(BaseModel):
+    webhook_type: str
+    webhook_code: str
+    item_id: str | None = None
+
+
 class ExchangePublicTokenRequest(BaseModel):
     public_token: str
     products: list[str] = Field(min_length=1)
@@ -140,37 +148,28 @@ class LinkSummary(BaseModel):
     sync_running: bool
 
 
-class PlaidWebClient(PlaidApiLike, Protocol):
-    """Plaid operations used by the Link management UI and sync path."""
-
-    def close(self) -> None: ...
-    def create_link_token(
-        self,
-        *,
-        products: list[str],
-        redirect_uri: str,
-        client_user_id: str,
-        transaction_days_requested: int = 730,
-        client_name: str = "Plaid MCP",
-    ) -> LinkTokenResult: ...
-    def search_institutions(self, query: str, *, count: int = 10) -> list[InstitutionSummary]: ...
-    def get_institution(self, institution_id: str) -> InstitutionDetail: ...
-    def create_update_link_token(
-        self,
-        *,
-        access_token: str,
-        redirect_uri: str,
-        client_user_id: str,
-        additional_products: list[str] | None = None,
-        client_name: str = "Plaid MCP",
-    ) -> LinkTokenResult: ...
-    def exchange_public_token(self, public_token: str) -> PublicTokenExchange: ...
-    def remove_item(self, access_token: str) -> None: ...
+def _login_config(settings: PlaidWebSettings) -> LoginConfig:
+    return LoginConfig(
+        issuer=settings.oidc_issuer,
+        client_id=settings.oidc_client_id,
+        client_secret=settings.oidc_client_secret,
+        session_secret=settings.oidc_session_secret,
+        session_seconds=settings.oidc_session_seconds,
+        public_base_url=settings.public_base_url,
+        cookie_name="plaid-link-session",
+        # Plaid authenticates its webhook requests with Plaid-Verification; the route verifies the
+        # signature and raw-body hash before accepting an event.
+        public_paths={"/healthz", "/webhooks/plaid"},
+        signed_out_text="You are signed out of Plaid Link.",
+        session_created_log="Authentik session created for Plaid Link",
+        allowed_subject=None,
+    )
 
 
 class AppState:
     def __init__(self) -> None:
-        self.client: PlaidWebClient | None = None
+        self.client: PlaidClient | None = None
+        self.webhook_verifier: PlaidWebhookVerifier | None = None
         self.storage: PlaidLinkStorage | None = None
         self.secrets: SecretStore | None = None
 
@@ -180,31 +179,45 @@ def create_app(
     *,
     storage: PlaidLinkStorage | None = None,
     secrets: SecretStore | None = None,
-    client: PlaidWebClient | None = None,
+    client: PlaidClient | None = None,
 ) -> FastAPI:
     state = AppState()
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        owned_client = None
+        owned_client: PlaidClient | None = None
         owned_secrets = None
         if client is None:
             owned_client = PlaidClient(
                 PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env)
             )
-            state.client = owned_client
+            runtime_client = owned_client
         else:
-            state.client = client
-        state.storage = storage or await PlaidLinkStorage.initialize(settings.database_url)
+            runtime_client = client
+        state.client = runtime_client
+        state.webhook_verifier = PlaidWebhookVerifier(runtime_client)
+        runtime_storage = storage or await PlaidLinkStorage.initialize(settings.database_url)
+        state.storage = runtime_storage
+        runtime_secrets: SecretStore
         if secrets is None:
             owned_secrets = await K8sSecretStore.from_incluster(settings.namespace, settings.managed_by)
-            state.secrets = owned_secrets
+            runtime_secrets = owned_secrets
         else:
-            state.secrets = secrets
+            runtime_secrets = secrets
+        state.secrets = runtime_secrets
+        worker_task = asyncio.create_task(
+            _item_sync_worker(
+                api=runtime_client, storage=runtime_storage, secrets=runtime_secrets, webhook_url=settings.webhook_url
+            )
+        )
         try:
             yield
         finally:
+            worker_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker_task
             state.client = None
+            state.webhook_verifier = None
             if owned_secrets is not None:
                 await owned_secrets.close()
             if storage is None and state.storage is not None:
@@ -213,8 +226,9 @@ def create_app(
                 owned_client.close()
 
     app = FastAPI(title="Plaid Link Service", docs_url=None, redoc_url=None, lifespan=lifespan)
+    install_login(app, _login_config(settings))
 
-    def require_client() -> PlaidWebClient:
+    def require_client() -> PlaidClient:
         if state.client is None:
             raise RuntimeError("Plaid client not initialized")
         return state.client
@@ -229,9 +243,71 @@ def create_app(
             raise RuntimeError("secret store not initialized")
         return state.secrets
 
+    def require_webhook_verifier() -> PlaidWebhookVerifier:
+        if state.webhook_verifier is None:
+            raise RuntimeError("webhook verifier not initialized")
+        return state.webhook_verifier
+
     @app.get("/healthz")
     async def healthz() -> dict[str, bool]:
         return {"ok": True}
+
+    @app.post("/webhooks/plaid", include_in_schema=False)
+    async def plaid_webhook(
+        request: Request, plaid_verification: Annotated[str | None, Header(alias="Plaid-Verification")] = None
+    ) -> dict[str, str]:
+        if plaid_verification is None:
+            raise HTTPException(401, "missing Plaid-Verification header")
+        raw_body = await request.body()
+        try:
+            await require_webhook_verifier().verify(token=plaid_verification, body=raw_body)
+        except InvalidPlaidWebhookError as exc:
+            raise HTTPException(401, "invalid Plaid webhook signature") from exc
+        storage = require_storage()
+        delivery_id = await storage.record_plaid_webhook_delivery(raw_body.decode("utf-8"))
+        try:
+            event = PlaidWebhookEnvelope.model_validate_json(raw_body)
+        except ValidationError:
+            logger.warning("ignoring authenticated Plaid webhook with an unrecognized envelope")
+            await storage.update_plaid_webhook_delivery(
+                delivery_id, webhook_type=None, webhook_code=None, item_id=None, disposition="ignored"
+            )
+            return {"status": "ignored"}
+        webhook_event = (event.webhook_type, event.webhook_code)
+        sync_request = _SYNC_WEBHOOK_EVENTS.get(webhook_event)
+        if sync_request is None:
+            await storage.update_plaid_webhook_delivery(
+                delivery_id,
+                webhook_type=event.webhook_type,
+                webhook_code=event.webhook_code,
+                item_id=event.item_id,
+                disposition="ignored",
+            )
+            return {"status": "ignored"}
+        if event.item_id is None:
+            logger.warning("ignoring authenticated Plaid sync webhook without item_id")
+            await storage.update_plaid_webhook_delivery(
+                delivery_id,
+                webhook_type=event.webhook_type,
+                webhook_code=event.webhook_code,
+                item_id=None,
+                disposition="ignored",
+            )
+            return {"status": "ignored"}
+        link = await storage.get_link(event.item_id)
+        disposition = "ignored"
+        required_product, full_sync = sync_request
+        if link is not None and required_product in link.products_requested:
+            await storage.enqueue_item_sync(event.item_id, full_sync=full_sync)
+            disposition = "queued"
+        await storage.update_plaid_webhook_delivery(
+            delivery_id,
+            webhook_type=event.webhook_type,
+            webhook_code=event.webhook_code,
+            item_id=event.item_id,
+            disposition=disposition,
+        )
+        return {"status": disposition}
 
     @app.get("/link", response_class=HTMLResponse)
     async def link_ui() -> str:
@@ -315,6 +391,7 @@ def create_app(
                 redirect_uri=settings.redirect_uri,
                 client_user_id="owner",
                 transaction_days_requested=body.transaction_days_requested or settings.transaction_days,
+                webhook_url=settings.webhook_url,
             )
         except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
@@ -352,6 +429,7 @@ def create_app(
             link=link,
             trigger="link",
             windows=settings.sync_windows,
+            webhook_url=settings.webhook_url,
         )
         updated = await require_storage().get_link(exchange.item_id)
         if updated is None:
@@ -395,7 +473,13 @@ def create_app(
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         if body.sync:
-            await _sync_one_link(api=require_client(), storage=require_storage(), secrets=require_secrets(), link=link)
+            await _sync_one_link(
+                api=require_client(),
+                storage=require_storage(),
+                secrets=require_secrets(),
+                link=link,
+                webhook_url=settings.webhook_url,
+            )
             refreshed = await require_storage().get_link(item_id)
             if refreshed is not None:
                 link = refreshed
@@ -407,7 +491,11 @@ def create_app(
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         run_id = await _sync_one_link(
-            api=require_client(), storage=require_storage(), secrets=require_secrets(), link=link
+            api=require_client(),
+            storage=require_storage(),
+            secrets=require_secrets(),
+            link=link,
+            webhook_url=settings.webhook_url,
         )
         return SyncResponse(run_id=str(run_id))
 
@@ -429,10 +517,12 @@ def create_app(
 
 
 async def _sync_one_link(
-    *, api: PlaidApiLike, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink
+    *, api: PlaidApiLike, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink, webhook_url: str
 ) -> UUID:
     try:
-        return await sync_link(api=api, storage=storage, secrets=secrets, link=link, trigger="manual")
+        return await sync_link(
+            api=api, storage=storage, secrets=secrets, link=link, trigger="manual", webhook_url=webhook_url
+        )
     except SyncAlreadyRunningError as exc:
         # Structured so the UI renders a sentence rather than an opaque item id. A link's own
         # post-link sync can run for minutes, and clicking Sync during it landed here.
@@ -443,6 +533,49 @@ async def _sync_one_link(
                 "error_message": "A sync is already running for this link. Wait for it to finish, then try again.",
             },
         ) from exc
+
+
+async def _item_sync_worker(
+    *, api: PlaidApiLike, storage: PlaidLinkStorage, secrets: SecretStore, webhook_url: str | None
+) -> None:
+    while True:
+        try:
+            claim = await storage.claim_item_sync()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("could not poll the Item sync queue")
+            await asyncio.sleep(5)
+            continue
+        if claim is None:
+            await asyncio.sleep(3)
+            continue
+        try:
+            link = await storage.get_link(claim.item_id)
+            if link is not None and link.status != "revoked":
+                if claim.full_sync:
+                    await sync_link(
+                        api=api, storage=storage, secrets=secrets, link=link, trigger="webhook", webhook_url=webhook_url
+                    )
+                elif Product.TRANSACTIONS.value in link.products_requested:
+                    await sync_transactions_only(api=api, storage=storage, secrets=secrets, link=link)
+            await storage.finish_item_sync(claim)
+        except asyncio.CancelledError:
+            await _retry_item_sync(storage, claim)
+            raise
+        except SyncAlreadyRunningError:
+            await _retry_item_sync(storage, claim)
+            await asyncio.sleep(3)
+        except Exception:
+            logger.exception("queued Item sync failed for item %s", claim.item_id)
+            await _retry_item_sync(storage, claim)
+
+
+async def _retry_item_sync(storage: PlaidLinkStorage, claim: ItemSyncClaim) -> None:
+    try:
+        await storage.retry_item_sync(claim)
+    except Exception:
+        logger.exception("could not release Item sync claim")
 
 
 def main() -> None:
@@ -471,7 +604,7 @@ def _merge_products(*groups: list[str]) -> list[str]:
     return merged
 
 
-def _cached_institution(client: PlaidWebClient, institution_id: str) -> InstitutionDetail | None:
+def _cached_institution(client: PlaidClient, institution_id: str) -> InstitutionDetail | None:
     now = datetime.now(UTC)
     if (hit := _institution_cache.get(institution_id)) is not None and now - hit[0] < _INSTITUTION_TTL:
         return hit[1]
@@ -485,7 +618,7 @@ def _cached_institution(client: PlaidWebClient, institution_id: str) -> Institut
     return detail
 
 
-def _addable_products(client: PlaidWebClient, link: StoredLink) -> list[Product] | None:
+def _addable_products(client: PlaidClient, link: StoredLink) -> list[Product] | None:
     """Products the UI could still add to this link, or None if that can't be determined.
 
     Diffed against products_authorized, matching what /update-link-token actually sends as

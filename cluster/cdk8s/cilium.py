@@ -1,7 +1,8 @@
 """This cluster's own Cilium policy facts and recipes, layered on the generic wrappers in
-`cluster.cdk8s.providers.cilium`: which labels reach this cluster's kube-dns and Authentik, the
-node-IP/SNI workaround this cluster's hostNetwork Gateway needs for egress to its own public
-hostnames, and the clusterwide policy forcing a sandbox namespace's egress through its proxy.
+`cluster.cdk8s.providers.cilium`: which labels reach this cluster's kube-dns and Authentik, which
+Pods scrape metrics and probe uptime, the node-IP/SNI workaround this cluster's hostNetwork
+Gateway needs for egress to its own public hostnames, and the clusterwide policy forcing a
+sandbox namespace's egress through its proxy.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from cluster.cdk8s.providers.cilium.network_policy import (
     dns_egress as _dns_egress,
     fqdn_fence as _fqdn_fence,
 )
+from cluster.cdk8s.service_ref import Pods
 
 # kube-dns's own selector -- every environment's DNS egress rule selects it the same way.
 KUBE_DNS_LABELS = {"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
@@ -42,6 +44,17 @@ AUTHENTIK_SERVER_LABELS = {
     "app.kubernetes.io/instance": "authentik",
     "app.kubernetes.io/component": "server",
 }
+# Metrics scrapers: a server admits every Pod in `monitoring` on its metrics port.
+SCRAPERS = Pods(namespace="monitoring", labels=())
+# The uptime prober: Gatus requests every endpoint its config lists. Servers admit it through
+# this and not through gatus/, so the prober's config can import the servers it probes.
+PROBER = Pods(namespace="gatus", labels=(("app.kubernetes.io/name", "gatus"),))
+# The agentplane-staging egress proxy: the caller of a service a sandbox reaches through it
+# (agentplane/egress_staging_credentials.py). Servers admit it through this and not through
+# agentplane/, so the proxy's config can import the servers it reaches.
+AGENTPLANE_STAGING_PROXY = Pods(
+    namespace="agentplane-staging", labels=(("app.kubernetes.io/name", "agentplane-egress"),)
+)
 
 
 def endpoint_labels(namespace: str, name: str) -> dict[str, str]:
@@ -62,6 +75,21 @@ def dns_egress(
     answers a toFQDNs rule in the same policy needs, and bounds the query names to those
     matchers (`"*"` for any)."""
     return _dns_egress(KUBE_DNS_LABELS, protocols=protocols, resolves=resolves)
+
+
+def open_internet_egress(
+    *, ports: Sequence[int], entities: Sequence[Entity] = (Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST)
+) -> list[CiliumNetworkPolicySpecEgress]:
+    """Fully open egress: unrestricted DNS resolution, then TCP `ports` to `entities`.
+
+    `world` alone does not mean "everywhere": every `*.allegedly.works` name resolves to an OVH
+    node ExternalIP, which Cilium carries as `reserved:remote-node`/`reserved:host`, not
+    `reserved:world` -- a `world`-only rule black-holes traffic to this cluster's own public
+    hostnames, so `remote_node`/`host` join the default. Widening a CIDR/FQDN rule cannot
+    substitute: `policy-cidr-match-mode` is unset cluster-wide, so CIDR-derived selectors never
+    match node IPs (cluster/docs/cilium_network_policy.md).
+    """
+    return [dns_egress(protocols=["ANY"], resolves=["*"]), EgressRule.to_entities(*entities, ports=ports)]
 
 
 def fqdn_fence(

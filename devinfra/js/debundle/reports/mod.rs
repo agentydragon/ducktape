@@ -10,9 +10,9 @@ use crate::reports::schema::ModuleKey;
 /// one core carried, in different encodings, by every type describing
 /// an unrealizable / cyclic module-quotient SCC:
 ///
-/// - `gate::realizability::SccDiagnosis` — the in-memory primitive:
+/// - `gate::SccDiagnosis` — the in-memory primitive:
 ///   this core plus an `SccRejection` decoration. Carries it verbatim.
-/// - `gate::validation::CycleReport` — the validator's rendered
+/// - `gate::CycleReport` — the validator's rendered
 ///   projection: module names stringified to `ModulePath`, plus FAS
 ///   `cut` / `lazy_closure` decorations.
 /// - [`schema::QuotientSccReport`] — the wire projection: wire-stable

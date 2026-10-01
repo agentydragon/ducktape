@@ -11,9 +11,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from airlock.auth import OperatorSession, OperatorSessionDependency
-from airlock.config import Settings
 from airlock.oauth.k8s_client import K8sTokenStore
 from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, GenericOAuth2Provider, generate_pkce_pair
+from airlock.settings import Settings
 
 logger = logging.getLogger(__name__)
 

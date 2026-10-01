@@ -8,7 +8,6 @@ the same app: one port, one guard, two credentials.
 
 from __future__ import annotations
 
-import asyncio
 import re
 from collections.abc import AsyncIterator, Collection
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -18,7 +17,6 @@ from typing import Any, Protocol, cast
 import httpx
 import pytest
 import pytest_bazel
-import uvicorn
 from sqlalchemy import select, update
 from starlette.responses import Response
 from starlette.routing import Route
@@ -29,7 +27,7 @@ from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
-from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
+from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
@@ -41,7 +39,7 @@ from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStor
 from agentplane.app.presets import Harness
 from agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
 from util.net import bind_free_port
-from util.testing.asgi import serve_app
+from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 OPERATOR = "agentydragon"
@@ -50,8 +48,12 @@ SESSION_SECRET = "test-session-secret"  # a test literal, not a real credential
 ACTIVITY_STEP = timedelta(minutes=5)
 MODELS = ModelCatalog(
     models=[
-        ModelOption(model="test-claude-model", display_name="Test Claude Model"),
-        ModelOption(model="test-codex-model", display_name="Test Codex Model"),
+        ModelOption(
+            model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
+        ModelOption(
+            model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
     ],
     harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
 )
@@ -140,20 +142,8 @@ def serve(
             operator_sessions=operator_sessions,
         )
         # The database pool belongs to this event loop, not serve_app's dedicated thread.
-        server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
-        async with serve_app(idp, sock=idp_sock):
-            serving = asyncio.create_task(server.serve(sockets=[app_sock]))
-            try:
-                # The socket already accepts, so a probe connection proves nothing; wait for uvicorn itself.
-                while not server.started:
-                    if serving.done():
-                        serving.result()
-                        raise RuntimeError("uvicorn exited before starting")
-                    await asyncio.sleep(0.02)
-                yield app_url
-            finally:
-                server.should_exit = True
-                await serving
+        async with serve_app(idp, sock=idp_sock), serve_app_in_loop(app, sock=app_sock):
+            yield app_url
 
     return serving
 

@@ -3,10 +3,21 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = [
+        "//airlock:__subpackages__",
+        "//cluster/cdk8s:__pkg__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "provider",
     srcs = ["provider.py"],
     visibility = ["//airlock:__subpackages__"],
     deps = [
+        ":config",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],
@@ -40,7 +51,7 @@ py_library(
         ":k8s_client",
         ":provider",
         "//airlock:auth",
-        "//airlock:config",
+        "//airlock:settings",
         "@pypi//fastapi",
     ],
 )
@@ -57,6 +68,7 @@ py_test(
     name = "test_provider",
     srcs = ["test_provider.py"],
     deps = [
+        ":config",
         ":conftest",
         ":provider",
         "//:conftest",
@@ -71,6 +83,7 @@ py_test(
     name = "test_refresh",
     srcs = ["test_refresh.py"],
     deps = [
+        ":config",
         ":conftest",
         ":provider",
         ":refresh",

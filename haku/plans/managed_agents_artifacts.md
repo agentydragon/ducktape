@@ -3,7 +3,7 @@
 First-cut, copy-pasteable drafts of the artifacts in the
 [migration plan](managed_agents.md) (its "Artifacts to build" section).
 **Status: partially superseded.** The component landed in
-[`haku/runtime/managed_agent/self_hosted/`](../runtime/managed_agent/self_hosted/README.md) using an
+[`haku/runtime/x/managed_agent/self_hosted/`](../runtime/x/managed_agent/self_hosted/README.md) using an
 **ant-all-the-way** approach (no `anthropic` Python SDK — see that README for
 why). The control-plane YAML (§§1–3) and the vault wiring (§3) carry over; the
 SDK worker (§4) is replaced by `ant beta:worker poll`, and the Python supervisor

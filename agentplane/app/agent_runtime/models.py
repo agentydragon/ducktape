@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 
 from pydantic import JsonValue
 from sqlalchemy import BigInteger, Boolean, DateTime, Enum as SqlEnum, ForeignKey, Index, Text, UniqueConstraint, text
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from agentplane.app.database import Base
@@ -72,8 +72,9 @@ class Event(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # The observation's oneof case, for filtering without opening the payload; "native" for frames.
     kind: Mapped[str] = mapped_column(Text)
-    # Proto-JSON of the protocol's EventEntry, exactly what the bridge streams.
-    payload: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
+    # Proto-JSON of the protocol's EventEntry, exactly what the bridge streams. JSONB cannot
+    # represent U+0000 in strings, which can occur in tool output; JSON preserves it as an escape.
+    payload: Mapped[dict[str, JsonValue]] = mapped_column(JSON)
 
 
 class SandboxIngestion(Base):
@@ -194,7 +195,8 @@ class ThreadPayloadChunk(Base):
     field: Mapped[str] = mapped_column(Text, primary_key=True)
     generation: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     chunk_index: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    text: Mapped[str] = mapped_column(Text)
+    # JSON string scalars preserve U+0000 as an escape while decoding back to a string in readers.
+    text: Mapped[str] = mapped_column(JSON)
 
 
 class ThreadEvidence(Base):

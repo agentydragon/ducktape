@@ -2,7 +2,7 @@ import pytest
 import pytest_bazel
 
 from airlock.config import build_oauth_providers
-from airlock.oauth.provider import OAuth2ProviderConfig, OAuthConfig, TokenSecretConfig
+from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretConfig
 
 
 def test_hyphenated_provider_reads_underscored_credentials(monkeypatch: pytest.MonkeyPatch) -> None:

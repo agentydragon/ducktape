@@ -69,6 +69,39 @@ This is not a 128K measurement. Its first synthetic tool-result answer invented 
 returned grounded answers. This is a retained failure, not a passed agent-quality
 gate. [Exact inputs, responses, launch and limits](runs/2026-09-24_qwen38_ssd/README.md).
 
+## September cluster Ollama serving screen
+
+Qwen3.8-Flash-Next UD-IQ4_XS, Ollama 0.34.4 / llama-server 0.4.1-dev, Q8 K/V,
+one slot, two RTX 5090s. Short throughput requests used 51 prompt tokens and generated
+1,024 tokens; values are one cold and one warm sample, not a repeated benchmark suite.
+The measured configuration was served from the SSD-backed PV with fit targets shown
+below.
+
+| Fit targets | Configured context | Actual input/history  |  Decode tok/s | Result                                                | Trust  |
+| ----------- | -----------------: | --------------------- | ------------: | ----------------------------------------------------- | ------ |
+| 2/0 GiB     |               128K | 51 tokens             | 55.74 / 71.89 | Short requests pass                                   | local~ |
+| 2/0 GiB     |               256K | 51 tokens             | 49.66 / 60.82 | Short requests pass; 145K prefill later OOMed         | local~ |
+| 4/2 GiB     |               128K | 51 tokens             | 50.21 / 60.01 | Short requests pass                                   | local~ |
+| 4/2 GiB     |               256K | 51 tokens             | 44.39 / 49.48 | Short requests pass                                   | local~ |
+| 4/2 GiB     |               256K | 145,110-token history |         29.07 | 1,024-token continuation passes; 145K marker recalled | local~ |
+
+Paired rates are the first / warm-repeat samples; 29.07 is one continuation sample.
+
+The 145,048-token marker-recall request took 190.765 seconds of prefill (760.35
+tokens/s) and returned the exact marker. Its ten output tokens are too few for a stable
+decode estimate. The 1,024-token continuation reused that history, processed 53 fresh
+prompt tokens, and decoded in 35.22 seconds. At the 2/0 GiB target, the same long
+request instead failed during prefill with a CUDA allocation error; the 4/2 GiB target
+passed it.
+
+Across the 128K and 256K LiteLLM routes, the matrix passed 24/24 text and structured
+tool-call shape checks across Chat Completions, streamed Responses, and Anthropic
+Messages. These are adapter checks, not an agent-quality score. The run proves recall
+at 145K under a 256K setting; a full 256K input, parallel slots, and coding quality
+remain untested. The rates cannot establish a speedup over the September 24 host
+llama.cpp run because quant, runtime, context, cache state, prompt, and placement differ.
+[Full run record and raw counters](runs/2026-09-27_ollama_ssd/README.md).
+
 ## Historical coding-agent configurations
 
 | Config                       | Runtime          | Quant                        | Allocated ctx | Effective ctx       | Decode tok/s @128K           | Peak VRAM              | Coding quality          | Tool calls                         | Run                                                           |

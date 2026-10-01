@@ -60,7 +60,7 @@ const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | bo
     owner_cursor: { type: "int8", not_null: true, pk_index: 2 },
     owner_id: { type: "text", not_null: true, pk_index: 3 },
     projection_epoch: { type: "text", not_null: true, pk_index: 1 },
-    text: { type: "text", not_null: true },
+    text: { type: "json", not_null: true },
     thread_id: { type: "uuid", not_null: true, pk_index: 0 },
   },
 };

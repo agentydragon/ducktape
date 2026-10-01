@@ -17,17 +17,17 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
 use debundle_e2e_support::*;
 
 /// A two-module at-init cycle the gate must reject:
-/// `mod_x = {A, D}` where `D = wrap(C)` reads `C` from `mod_y`, and
-/// `mod_y = {B, C}` where `B = wrap(A)` reads `A` from `mod_x`.
+/// `mod_x = {A, D}` where unresolved `wrap(C)` reads `C` from `mod_y`,
+/// and `mod_y = {B, C}` where unresolved `wrap(A)` reads `A` from
+/// `mod_x`. Since B is before D, D's impure sequencing edge points to B
+/// in the cut's `mod_x -> mod_y` pair alongside D's at-init read.
 fn cycle_fixture_opts() -> FixtureOpts<'static> {
     FixtureOpts::new(
-        r#"function wrap(x) { return { ref: x }; }
-const A = "a";
+        r#"const A = "a";
 const B = wrap(A);
 const C = "c";
 const D = wrap(C);
@@ -49,15 +49,8 @@ fn graph_path(rejected: &RejectedFixture) -> PathBuf {
     rejected.report_root.join("static/app/owner_graph.json")
 }
 
-fn run_gate(args: &[&str]) -> std::process::Output {
-    Command::new(debundler_path())
-        .args(args)
-        .output()
-        .expect("spawn debundle")
-}
-
 fn gate_json(args: &[&str]) -> serde_json::Value {
-    let out = run_gate(args);
+    let out = run_debundle(args);
     assert!(
         out.status.success(),
         "gate {:?} exit: stderr={}",
@@ -65,6 +58,68 @@ fn gate_json(args: &[&str]) -> serde_json::Value {
         String::from_utf8_lossy(&out.stderr)
     );
     serde_json::from_slice(&out.stdout).expect("gate output is JSON")
+}
+
+#[test]
+fn sequenced_initializer_rejection_names_owner_location_rule_and_escape_hatch() {
+    let rejected = rejected_cycle_fixture();
+    let (binding, line) = if rejected.stderr.contains("`D` at static/app.js:4:11") {
+        ("D", 4)
+    } else if rejected.stderr.contains("`B` at static/app.js:2:11") {
+        ("B", 2)
+    } else {
+        panic!(
+            "rejection omitted sequenced initializer owner/location:\n{}",
+            rejected.stderr
+        );
+    };
+    for required in [
+        "unknown_call",
+        "(wrap)",
+        "member-level `purity: pure` annotation",
+    ] {
+        assert!(
+            rejected.stderr.contains(required),
+            "missing {required:?} in rejection:\n{}",
+            rejected.stderr
+        );
+    }
+    let cycles: serde_json::Value = read_json(&rejected.report_root.join("static/app/cycles.json"));
+    let cause = cycles[0]["cut"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|edge| edge.get("sequenced_owner"))
+        .find(|cause| !cause.is_null() && cause["binding_names"][0] == binding)
+        .expect("sequenced cycle edge carries purity owner cause");
+    let reason = &cause["purity"]["reasons"][0];
+    assert_eq!(reason["rule"], "unknown_call");
+    assert_eq!(reason["detail"], "wrap");
+    assert_eq!(reason["source_location"]["source_path"], "static/app.js");
+    assert_eq!(reason["source_location"]["start_line"], line);
+    assert_eq!(reason["source_location"]["start_column"], 11);
+    assert!(
+        reason["author_guidance"]
+            .as_str()
+            .unwrap()
+            .contains("purity: pure")
+    );
+
+    let text = run_debundle(&[
+        "gate",
+        "describe",
+        "0",
+        "--graph",
+        graph_path(&rejected).to_str().unwrap(),
+        "--format",
+        "text",
+    ]);
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(
+        text.contains(&format!("`{binding}` at static/app.js:{line}:11")),
+        "{text}"
+    );
+    assert!(text.contains("unknown_call (wrap)"), "{text}");
 }
 
 #[test]
@@ -200,7 +255,7 @@ fn gate_cut_returns_the_actionable_edges() {
 #[test]
 fn gate_unknown_id_fails_cleanly() {
     let rejected = rejected_cycle_fixture();
-    let out = run_gate(&[
+    let out = run_debundle(&[
         "gate",
         "describe",
         "99",

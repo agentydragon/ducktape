@@ -21,8 +21,8 @@ it as if authored in one tree.
 Only the shape matcher decides where a `source_match` template matches. A
 template matches a place when their syntax trees are equal up to:
 
-- **holes** — `ANYTHING`, `EXPR`, `STMT`, `STMT_LIST`, `DECLARATORS` and the other
-  hole keywords of <docs/selectors.md> match any subtree of their kind;
+- **holes** — `ANYTHING`, `EXPR`, `STMT`, `STMT_LIST`, `DECLARATORS`, `SEQ_EXPRS` and
+  the other hole keywords of <docs/selectors.md> match any subtree of their kind;
 - **alpha-renaming** — binding and value identifiers match any identifier,
   consistently within their lexical scope.
 
@@ -82,7 +82,7 @@ Every entity gets exactly one outcome, in one record format shared by `run`,
 | `resolved`, `resolved_by: referenced_by`  | its selector matches several places; the templates of the named `referrers`, which name it, pick one                                                                                       | warning  |
 | `no_match`                                | no place satisfies its selector and constraints; a one-statement template may list up to 3 `nearest_unclaimed` statements (no entity claims them), closest first, with where each diverges | error    |
 | `ambiguous`                               | several assignments exist; at most 5 of its places are listed, with `truncated` when more exist, else with `differentiators` (below)                                                       | error    |
-| `conflict`                                | no assignment exists; `with` names the entities of an unsatisfiable set (not necessarily minimal)                                                                                          | error    |
+| `conflict`                                | none of the places its selector matches agrees with where the entities its template references (`with`) resolve                                                                            | error    |
 | `too_broad`                               | its selector matches more than 100 places, and it takes no further part                                                                                                                    | error    |
 | `duplicate_claim`                         | resolved to a binding another entity already claims; `declaration` gives the statement declaring it (`owner`, its body index) and its keyword `kind` (`function`, `const`, `import`, ...)  | error    |
 | `invalid`                                 | its selector does not parse, uses an unsupported construct, or its matches do not map to places                                                                                            | error    |
@@ -94,7 +94,11 @@ member, member-path call, declaration kind or arity, in the place's own
 statement or else in the statement adjacent to it. A place with none is not
 listed there, and the report says when no place has one.
 
-A contradiction affects only the entities in it: the others still resolve.
+A contradiction affects only the entities that interact with it: those that
+may take the same place, or that a relational selector or a template reference
+relates. Every one of them is `no_match`, with a `reason` in place of
+`nearest_unclaimed`, since the outcome does not say which of them contradict;
+every other entity still resolves.
 
 `run` and `spec validate` in both modes give each entity the same outcome. The
 edit gate and `describe` resolve only `source_matches[]` entries and anonymous
@@ -117,3 +121,18 @@ elimination or by its references in a spec is `ambiguous` there.
   resolved outcomes, chunks in chunk-id order.
 
 Warnings never stop a run.
+
+## Readable names and the chunk public surface
+
+`name:` on a member and the name assigned to `source_matches[].bindings[]`
+name the spec-owned binding in its logical module. If the source chunk already
+exports that binding, emitted output keeps the original chunk export name and
+adds the spec name as a second export of the same binding. The two ESM export
+names are live aliases; existing consumers therefore remain compatible.
+
+Named imports in other processed chunks may import the readable alias and bind
+it locally under that readable name. This import-local change is conservative:
+a collision with an existing or nested binding, an ambiguous alias, or an
+unprocessed importer leaves the old import form unchanged. Dynamic imports and
+namespace imports continue to use the original minified export names. Bindings
+without a spec-assigned name are not changed by this cross-chunk pass.

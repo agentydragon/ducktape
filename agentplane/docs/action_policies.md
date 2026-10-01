@@ -11,7 +11,7 @@ for it.
 ## Model
 
 Two namespaced Kubernetes resources in `agentplane.allegedly.works/v1alpha1`
-(`cluster/k8s/agentplane-crds/`), watched by the Action Service, plus ordinary ServiceAccounts as
+(`agentplane/crds/`), watched by the Action Service, plus ordinary ServiceAccounts as
 the external-caller principal.
 
 | Kind                  | Spec                                                                           |
@@ -89,7 +89,7 @@ would need its own state, so that `decision_pending` keeps meaning a human is be
 Staging's Git-owned half is the `github-reads` `ActionPolicySet`, the `claude-ai`
 `ServiceAccount`, and the `claude-ai-github-reads` `ActionPolicyBinding`, defined in
 `cluster/cdk8s/agentplane/actions_staging_policies.py` and generated into
-`cluster/k8s/agentplane-staging/agentplane.k8s.yaml`. The runtime half,
+`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`. The runtime half,
 for a Sandbox `coder-7f3a` launched from a preset naming `github-reads`:
 
 ```yaml

@@ -28,7 +28,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s import external_creds
 from cluster.cdk8s.agentplane import app as app_component, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
@@ -40,12 +40,14 @@ from cluster.cdk8s.agentplane.app_settings import (
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
+    GITHUB_IDENTITY_READS_SET,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
-    KUBERNETES_POLICY,
     PACKAGES_POLICY,
+    PLAID_PGWEB_POLICY,
+    SSH_READS_SET,
 )
 from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_DUCKTAPE_FORK_READS_SET,
@@ -56,19 +58,17 @@ from cluster.cdk8s.agentplane.staging_config import (
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
 from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"
 _SANDBOX_SET = "sandbox-self"
-_GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 _HOME_ASSISTANT_READS_SET = "home-assistant-reads"
 _GMAIL_READS_SET = "gmail-reads"
 _GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
 _TANA_READS_SET = "tana-reads"
 _GROCY_SF_READS_SET = "grocy-sf-reads"
-_SSH_READS_SET = "ssh-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
@@ -341,8 +341,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     # Haku's own credentials (forgejo-haku, haku-mailbox) are bound to claude-ai today only
     # because claude-ai happens to be "the connection Haku runs through" (see the
     # EgressBinding comment below) -- a historical accident, not a reason to keep growing
-    # that account's authority. Granted at least claude-ai's own permissions (egress,
-    # Action Service reads, the Coinbase Role, and the acceptance-suite token) below.
+    # that account's authority. haku-agent is a static caller identity, not the per-Sandbox
+    # ServiceAccount on managed runner Pods; Coinbase key delivery to those runners is tracked
+    # in #8596.
     haku_agent = ServiceAccount(
         scope,
         "serviceaccount-haku-agent",
@@ -376,7 +377,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "actionpolicyset-github-identity-reads",
         metadata=ApiObjectMetadata(
-            name=_GITHUB_IDENTITY_READS_SET,
+            name=GITHUB_IDENTITY_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "The caller's own GitHub identity read, with no repository or mutation surface."
@@ -465,7 +466,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         "rolebinding-claude-ai-coinbase",
         metadata=ApiObjectMetadata(name="claude-ai-coinbase-reader", namespace=_NAMESPACE),
         role=coinbase_reader,
-    ).add_subjects(claude_ai, haku_agent)
+    ).add_subjects(claude_ai)
     EgressPolicy(
         scope,
         "egresspolicy-coinbase",
@@ -477,26 +478,21 @@ def add_staging_action_policies(scope: Construct) -> None:
     # hairpin out through the Gateway and back. Plain HTTP, so the proxy reads the request without
     # bumping TLS. Nothing is substituted: the suite presents the app token it mints in
     # agentplane-testing (rbac.AcceptanceToken), so any method may pass.
+    testing_app = app_component.service(testing.ENV.namespace)
     EgressPolicy(
         scope,
         "egresspolicy-agentplane-testing",
         metadata=ApiObjectMetadata(name=_AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
-        rules=[
-            EgressPolicySpecRules(
-                hosts=[f"{app_component.NAME}.{testing.ENV.namespace}.svc.cluster.local"], cluster_internal=True
-            )
-        ],
+        # The proxy matches a request's host on the exact string, and clients spell the full name.
+        rules=[EgressPolicySpecRules(hosts=[testing_app.fqdn], cluster_internal=True)],
     )
+    proxy = egress.proxy(_NAMESPACE)
     NetworkPolicy(
         scope,
         "networkpolicy-egress-to-testing-app",
-        metadata=ApiObjectMetadata(name=f"{egress.NAME}-to-testing-app", namespace=_NAMESPACE),
-        endpoint_selector={"app.kubernetes.io/name": egress.NAME},
-        egress=[
-            EgressRule.to_endpoints(
-                cilium.endpoint_labels(testing.ENV.namespace, app_component.NAME), app_component.CONTAINER_PORT
-            )
-        ],
+        metadata=ApiObjectMetadata(name=f"{proxy.name}-to-testing-app", namespace=_NAMESPACE),
+        endpoint_selector=proxy.pods.selector,
+        egress=[testing_app.egress()],
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
     # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.
@@ -541,7 +537,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     # API. `haku-mailbox` presents the JWT of Haku's own mailbox: JMAP reads and changes that one
     # mailbox and cannot send. It and `forgejo-haku` are Haku's credentials, bound here because
     # claude-ai is the connection Haku runs through (haku/TODO.md). `coinbase` presents nothing: the
-    # sandbox signs with the key above.
+    # sandbox signs with the key above. `plaid-pgweb` presents pgweb's HTTP Basic password on its
+    # query API, so a sandbox of this caller's can run SQL over the Plaid mirror as `plaid_ro`,
+    # which can only SELECT (egress_staging_credentials.py).
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol
@@ -572,7 +570,6 @@ def add_staging_action_policies(scope: Construct) -> None:
         claude_ai,
         policies=[
             BASIC_POLICY,
-            KUBERNETES_POLICY,
             FORGEJO_HAKU_POLICY,
             PACKAGES_POLICY,
             GOOGLE_READONLY_POLICY,
@@ -582,6 +579,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
             COINBASE_POLICY,
+            PLAID_PGWEB_POLICY,
             _AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,
@@ -591,16 +589,13 @@ def add_staging_action_policies(scope: Construct) -> None:
         ],
     )
 
-    # What a sandbox of haku-agent's may reach: at least everything claude-ai's sandboxes may
-    # reach (see the comment above), so the "haku" preset (app_settings.py) -- which clones
-    # haku-state over `forgejo-haku` and works from it -- has no less reach than claude-ai's
-    # Haku-flavored sandboxes already have.
+    # Haku-like managed sandboxes keep their Haku-specific access, but do not get Coinbase
+    # egress or the key until a supported managed-runner identity/credential path exists (#8596).
     _sandbox_egress_binding(
         scope,
         haku_agent,
         policies=[
             BASIC_POLICY,
-            KUBERNETES_POLICY,
             FORGEJO_HAKU_POLICY,
             PACKAGES_POLICY,
             GOOGLE_READONLY_POLICY,
@@ -609,7 +604,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
-            COINBASE_POLICY,
+            PLAID_PGWEB_POLICY,
             _AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,
@@ -714,7 +709,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "actionpolicyset-ssh-reads",
         metadata=ApiObjectMetadata(
-            name=_SSH_READS_SET,
+            name=SSH_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path."
@@ -741,14 +736,14 @@ def add_staging_action_policies(scope: Construct) -> None:
         subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
         policy_sets=[
             _GITHUB_READS_SET,
-            _GITHUB_IDENTITY_READS_SET,
+            GITHUB_IDENTITY_READS_SET,
             _SANDBOX_SET,
             _HOME_ASSISTANT_READS_SET,
             _GMAIL_READS_SET,
             _GOOGLE_CALENDAR_READS_SET,
             _TANA_READS_SET,
             _GROCY_SF_READS_SET,
-            _SSH_READS_SET,
+            SSH_READS_SET,
         ],
     )
 
@@ -761,18 +756,19 @@ def add_staging_action_policies(scope: Construct) -> None:
             name="haku-agent-reads",
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for the haku-agent ServiceAccount."
+                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for the haku-agent ServiceAccount."
             },
         ),
         subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="haku-agent"),
         policy_sets=[
             _GITHUB_READS_SET,
-            _GITHUB_IDENTITY_READS_SET,
+            GITHUB_IDENTITY_READS_SET,
             _SANDBOX_SET,
             _HOME_ASSISTANT_READS_SET,
             _GMAIL_READS_SET,
             _GOOGLE_CALENDAR_READS_SET,
             _TANA_READS_SET,
             _GROCY_SF_READS_SET,
+            SSH_READS_SET,
         ],
     )

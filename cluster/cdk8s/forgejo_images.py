@@ -7,16 +7,17 @@ canonical registry credential.
 """
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ISecret, Secret, k8s
+from cdk8s_plus_34 import ISecret, Secret
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
 
-from cluster.cdk8s import terraform
+from cluster.cdk8s import namespaces, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 
 NAME = "forgejo-images"
@@ -26,18 +27,18 @@ SECRET_NAME = "forgejo-images-creds"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(
+    namespaces.namespace(
         chart,
         "namespace",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            annotations={
-                "description": (
-                    "Holds the shared credential for the ducktape-ci Forgejo registry tenant"
-                    " (CI-pushed in-cluster images) and its provisioning Terraform."
-                )
-            },
-        ),
+        name=NAME,
+        vpa=Vpa.RECOMMEND,
+        agent_readable=None,
+        annotations={
+            "description": (
+                "Holds the shared credential for the ducktape-ci Forgejo registry tenant"
+                " (CI-pushed in-cluster images) and its provisioning Terraform."
+            )
+        },
     )
     terraform.gitops_terraform(chart, "terraform", name=NAME, variables=None)
     # Flux's own copy, for the image-automation ImageRepositories that scan the registry.

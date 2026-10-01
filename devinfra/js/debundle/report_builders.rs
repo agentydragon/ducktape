@@ -3,7 +3,7 @@
 //! `analysis::reports::schema`. The wire-stable key codecs
 //! (`owner_key`, `module_key`, …) live in `analysis::reports`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use rayon::prelude::*;
 use swc_ecma_ast::Id;
@@ -102,10 +102,7 @@ fn build_owner_nodes_and_edges(
     (nodes, edges)
 }
 
-pub(crate) fn binding_reports<'a, I>(
-    factorization: &ChunkFactorization,
-    bindings: I,
-) -> Vec<BindingReport>
+fn binding_reports<'a, I>(factorization: &ChunkFactorization, bindings: I) -> Vec<BindingReport>
 where
     I: IntoIterator<Item = &'a Id>,
 {
@@ -126,7 +123,7 @@ fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<Module
     for (_, module) in factorization.partition.iter() {
         modules.insert(module);
     }
-    for (from, to, _) in factorization.dep_graph.all_edges() {
+    for (from, to) in factorization.dep_graph.all_edges() {
         modules.insert(from);
         modules.insert(to);
     }
@@ -136,9 +133,7 @@ fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<Module
         .collect()
 }
 
-pub(crate) fn build_quotient_edge_reports(
-    factorization: &ChunkFactorization,
-) -> Vec<QuotientEdgeReport> {
+fn build_quotient_edge_reports(factorization: &ChunkFactorization) -> Vec<QuotientEdgeReport> {
     // Use a `HashMap` for the per-(from,to) accumulator — quotient
     // edges count in the tens of thousands and `BTreeMap::entry` is
     // `O(log n)` per insert. The output ordering still has to match
@@ -149,10 +144,9 @@ pub(crate) fn build_quotient_edge_reports(
     // without a per-pair sort.
     let partition = &factorization.partition;
     let owner_graph = factorization.analysis.owner_graph();
-    let mut accum: std::collections::HashMap<(ModuleId, ModuleId), QuotientEdgeAccumulator> =
-        std::collections::HashMap::with_capacity(owner_graph.num_edges());
-    let mut seen_side_effect_module_pairs: std::collections::HashSet<(ModuleId, ModuleId)> =
-        std::collections::HashSet::new();
+    let mut accum: HashMap<(ModuleId, ModuleId), QuotientEdgeAccumulator> =
+        HashMap::with_capacity(owner_graph.num_edges());
+    let mut seen_side_effect_module_pairs: HashSet<(ModuleId, ModuleId)> = HashSet::new();
     for edge in owner_graph.iter_edges() {
         // Same partition view every other quotient consumer uses; see
         // `partition_endpoints` invariant doc.
@@ -276,8 +270,7 @@ fn build_atomic_graph_report(factorization: &ChunkFactorization) -> AtomicGraphR
     // into a Vec — dedup is unnecessary because each `OwnerEdgeId`
     // is unique per owner edge. Order is restored by a single final
     // sort.
-    let mut accum: std::collections::HashMap<(usize, usize), AtomicEdgeAccumulator> =
-        std::collections::HashMap::new();
+    let mut accum: HashMap<(usize, usize), AtomicEdgeAccumulator> = HashMap::new();
     for edge in owner_graph.iter_edges() {
         if edge.reason.kind == DepKind::LazyUse {
             continue;
@@ -309,7 +302,7 @@ fn build_atomic_graph_report(factorization: &ChunkFactorization) -> AtomicGraphR
             source: atomic_unit_key(from),
             target: atomic_unit_key(to),
             edge_kinds: entry.kinds.into_iter().collect(),
-            owner_edge_ids: entry.owner_edge_ids.into_iter().collect(),
+            owner_edge_ids: entry.owner_edge_ids,
             constrains_init_order: entry.constrains_init_order,
         })
         .collect();
@@ -381,10 +374,10 @@ fn quotient_edge_indices_by_source(
 
 /// True iff `id` refers to a logical module whose `residual` flag is
 /// set — the chunk's catch-all destination synthesized before
-/// `ChunkFactorization::build`. Used by the destination
+/// `ChunkFactorization::build_with`. Used by the destination
 /// projection in reports to gate residual-only predicates without
 /// string-matching module ids or labels.
-pub(crate) fn is_residual_destination(factorization: &ChunkFactorization, id: ModuleId) -> bool {
+fn is_residual_destination(factorization: &ChunkFactorization, id: ModuleId) -> bool {
     factorization
         .analysis
         .logical_module(id.0)
@@ -406,7 +399,7 @@ fn edge_role_report(role: EdgeRole) -> Option<EdgeRoleReport> {
 
 /// Build the module-table entry for `id`: the single place its
 /// canonical [`spec::ModulePath`] and residual flag are recorded.
-pub(crate) fn module_entry(factorization: &ChunkFactorization, id: ModuleId) -> ModuleEntry {
+fn module_entry(factorization: &ChunkFactorization, id: ModuleId) -> ModuleEntry {
     ModuleEntry {
         key: module_key(id),
         path: factorization.analysis.module_path(id),

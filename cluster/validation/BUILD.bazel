@@ -124,6 +124,7 @@ py_library(
     deps = [
         ":cluster",
         ":k8s",
+        "//cluster/cdk8s:manifest_roots",
     ],
 )
 
@@ -301,14 +302,13 @@ py_test(
 
 py_test(
     name = "test_cluster_integration",
+    size = "medium",
     srcs = ["test_cluster_integration.py"],
     data = [
         "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_bootstrap_files",
         "//cluster/k8s:flux_system_files",
-        "//cluster/k8s/agents/ha-mcp/app:manifests",
-        "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
@@ -324,6 +324,7 @@ py_test(
         ":health_checks",
         ":image_automation",
         ":kustomize",
+        "//cluster/cdk8s:manifest_roots",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -375,12 +376,13 @@ py_test(
     srcs = ["test_rotations_config.py"],
     data = [
         "//:sops_config",
-        "//cluster/k8s:rotations_config",
+        # Importing the generator starts jsii's Node runtime.
+        "@nodejs_linux_amd64//:bin/node",
     ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        "//cluster/rotators/authentik_jwt_rotation:rotate",
+        "//cluster/cdk8s:authentik_jwt_rotation",
         "//util/bazel:runfiles",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -427,8 +429,6 @@ py_test(
         "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_system_files",
-        "//cluster/k8s/agents/ha-mcp/app:manifests",
-        "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",

@@ -31,7 +31,7 @@ state predates the release.
   `installPhase`. A fail-closed check placed in `postInstall` passes vacuously,
   which is worse than no check.
 - **The dist patches fail closed, so a bump breaks the image build loudly.**
-  <patches/openclaw-2026.9.4-dist.patch> rewrites hardcoded upstream constants
+  <patches/openclaw-2026.9.5-dist.patch> rewrites hardcoded upstream constants
   into environment reads and Nix-specific behaviour, matching exact paths and
   source context rather than silently accepting a changed release. When a
   release moves one of those lines the build stops with a patch failure, which

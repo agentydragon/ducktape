@@ -241,6 +241,10 @@ let
     claudeApi = ducktape-claude-api;
   };
 
+  plaidSpendDesktop = pkgs.callPackage ./plaid-spend-desktop.nix {
+    inherit lib python314;
+  };
+
   mkBinaryArtifact =
     {
       pname,
@@ -288,6 +292,7 @@ rec {
   inherit ducktape-git-hooks;
   inherit ducktape-claude-api;
   inherit aiquota;
+  inherit plaidSpendDesktop;
 
   bbr = mkWheel {
     pname = "bbr";
@@ -431,7 +436,7 @@ rec {
   prettier = pkgs.callPackage ./prettier/prettier.nix { };
   bazel-diff = pkgs.callPackage ./bazel-diff.nix { };
   # Anthropic CLI (`ant`): Claude API / Managed Agents control plane. Not in
-  # nixpkgs; vendored static release binary. Used by haku/runtime/managed_agent/self_hosted.
+  # nixpkgs; vendored static release binary. Used by haku/runtime/x/managed_agent/self_hosted.
   anthropic-cli = pkgs.callPackage ./anthropic-cli.nix { };
   # Claude Desktop (GUI app): Anthropic's Electron desktop client, from the
   # official apt repo .deb. Distinct from Claude Code (the CLI).

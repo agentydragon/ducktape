@@ -178,20 +178,20 @@ has shipped on the capability tier — see the README.)
 
 Runtime-specific TODOs live with each runtime (the agent loop runs at Anthropic;
 the runtimes differ in where the sandbox runs — see
-<runtime/managed_agent/README.md>):
+<runtime/x/managed_agent/README.md>):
 
 - **Self-hosted worker (Runtime B)** — operator activation to go live:
-  <runtime/managed_agent/self_hosted/README.md> and its bring-up RCA.
+  <runtime/x/managed_agent/self_hosted/README.md> and its bring-up RCA.
 - **Anthropic-hosted cloud** — **PARKED (2026-07-04)**: the cloud control-plane
-  objects were deleted at Anthropic and `cluster/k8s/parked/cloud-agent-tf` is
-  suspended; see <runtime/managed_agent/anthropic_hosted/README.md> for the reason
+  objects were deleted at Anthropic and `cluster/parked/cloud-agent-tf` is
+  suspended; see <runtime/x/managed_agent/anthropic_hosted/README.md> for the reason
   and the resume decision. Per-runtime TODO (mostly moot until resumed):
-  <runtime/managed_agent/anthropic_hosted/TODO.md>.
+  <runtime/x/managed_agent/anthropic_hosted/TODO.md>.
 
 ## Later (post-v0)
 
 - **In-cluster runtime** — realized as `runtime/agent` (Runtime C, MAF
-  self-hosted loop) and `runtime/managed_agent/self_hosted` (Runtime B, Managed
+  self-hosted loop) and `runtime/x/managed_agent/self_hosted` (Runtime B, Managed
   Agents self-hosted worker; remaining wiring in its per-runtime TODO above). The
   old `haku-scanner` image + CronJob idea is superseded.
 - **haku-traces** — push Claude Code transcripts to a store separate from
@@ -232,12 +232,12 @@ the runtimes differ in where the sandbox runs — see
   coupled to the runtime question. Under the Agent SDK this is simpler still —
   hooks there are in-process callbacks and Python has both `PreCompact` and `Stop`
   (see <docs/agent_sdk_runtime.md>).
-- **Cut the sandbox over to the Nix image** — `cluster/k8s/haku/workspaces/image/default.nix`
+- **Cut the sandbox over to the Nix image** — `haku/sandbox/image/default.nix`
   builds in CI and publishes to `haku-sandbox-image-nix`, but the SandboxTemplate still pulls
   the apt/Dockerfile build. The blocker is a **runtime** question a green build can't answer:
   whether the Bazel bazelisk downloads (and `rules_python`'s hermetic CPython) can find
   `libstdc++.so.6` under NixOS glibc. Run the checklist in
-  <../cluster/k8s/haku/workspaces/image/README.md> § _Cutting over_ against a throwaway Pod;
+  <sandbox/image/README.md> § _Cutting over_ against a throwaway Pod;
   if it passes, delete the Dockerfile and collapse the two workflows into one. If it fails,
   try `nix-ld` via pod env before abandoning it. **Depends on nothing** — the probe needs no
   change to the template, the warm pool, or the MCP config.

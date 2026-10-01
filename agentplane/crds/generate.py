@@ -1,11 +1,13 @@
 """Derived schemas of the Agentplane CRDs, written by `bb run //agentplane/crds:generate_bin` and
 pinned to the committed files by `:test_generate`.
 
-A binding CRD's subject -- `EgressBinding.spec.subjects[]`, `ActionPolicyBinding.spec.subject` -- is
+The CRDs themselves are the `crd-*.yaml` files in this package. A binding CRD's subject --
+`EgressBinding.spec.subjects[]`, `ActionPolicyBinding.spec.subject` -- is
 `agentplane.subjects.ServiceAccountRef`, the model both services decide against, so its schema block
 is spliced into the otherwise hand-written CRD from the model's own JSON schema. Each served version's
 `openAPIV3Schema` is then dumped verbatim to `cluster/schemas/<group>/<kind>_<version>.json`, where
-the pre-commit kubeconform hook reads it.
+the pre-commit kubeconform hook reads it. `//cluster/cdk8s:generate_manifests` copies the CRDs into
+`cluster/generated/agentplane-crds` for Flux (`cluster/cdk8s/agentplane_crds.py`).
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from pydantic import TypeAdapter
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.workspace import get_build_workspace_directory
 
-CRDS_DIR = Path("cluster/k8s/agentplane-crds")
+CRDS_DIR = Path("agentplane/crds")
 SCHEMAS_DIR = Path("cluster/schemas")
 CRD_FILES = (
     "crd-egresspolicies.yaml",

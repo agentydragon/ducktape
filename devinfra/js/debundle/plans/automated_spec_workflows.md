@@ -86,8 +86,8 @@ the edit model is clear.
 
 ### Source Inventory
 
-The shared per-chunk index is `shape_index.rs` (over
-`selector_candidate_index.rs`). Repair, port and bulk-planning tooling query it
+The shared per-chunk index is `selectors/authoring/shape_index.rs`
+(per-statement features from `selectors/authoring/selector_candidate_index.rs`). Repair, port and bulk-planning tooling query it
 rather than adding per-command AST walks that drift semantically.
 
 ### Selector Candidates
@@ -175,7 +175,7 @@ orthogonal:
 - `debundle spec apply-plan --plan <plan.json> --modules ...`
   applies a reviewed plan, preserving comments/order where the edit type
   supports it and refusing stale plans whose inputs no longer match.
-- Existing focused commands such as `selector-debt` and `selector-codemod` can
+- Existing focused commands such as `selector-debt` and `synthesize-selectors` can
   remain as aliases or transitional frontends, but new work should converge on
   the inventory/plan/apply/validate model.
 

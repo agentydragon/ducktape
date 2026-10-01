@@ -1124,7 +1124,6 @@ fn plain_data_chain_collapses_size_33_walkthrough_shape() {
     assert_eq!(fn_purity(src, "Oge"), Some(false));
     // With a single `purity: pure` hint on `Me`, the rest of the
     // chain (and the `gF` owner statement) infers pure.
-    let hinted: BTreeSet<String> = BTreeSet::from(["Me".to_string()]);
     let full = format!(
         r#"
     {src}
@@ -1134,7 +1133,10 @@ fn plain_data_chain_collapses_size_33_walkthrough_shape() {
     let module = parse(&full);
     let facts = analyze_chunk(
         &module,
-        &AnalysisHints::from_declared_pure(&hinted),
+        &AnalysisHints {
+            declared_pure: BTreeSet::from(["Me".to_string()]),
+            ..AnalysisHints::default()
+        },
         None,
         |_| None,
     )

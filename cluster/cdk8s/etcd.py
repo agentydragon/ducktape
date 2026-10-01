@@ -9,7 +9,7 @@ from the mesh roster instead.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import Protocol, Service, ServicePort, k8s
+from cdk8s_plus_34 import Service, k8s
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
@@ -20,14 +20,14 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
+from cluster.cdk8s.service_ref import Port
 from cluster.scripts.nebula_mesh import Mesh
 
 NAME = "etcd-monitoring"
 NAMESPACE = "monitoring"
 _NAME = "talos-etcd-metrics"
 _LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/part-of": NAMESPACE}
-_PORT_NAME = "metrics"
-_PORT = 2381
+_METRICS = Port(name="metrics", number=2381)
 
 
 class TalosEtcdMetrics(Construct):
@@ -38,7 +38,7 @@ class TalosEtcdMetrics(Construct):
             "service",
             metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
             cluster_ip="None",
-            ports=[ServicePort(name=_PORT_NAME, port=_PORT, target_port=_PORT, protocol=Protocol.TCP)],
+            ports=[_METRICS.service_port()],
         )
         k8s.KubeEndpointSlice(
             self,
@@ -54,7 +54,7 @@ class TalosEtcdMetrics(Construct):
                 },
             ),
             address_type="IPv4",
-            ports=[k8s.EndpointPort(name=_PORT_NAME, port=_PORT, protocol="TCP")],
+            ports=[k8s.EndpointPort(name=_METRICS.name, port=_METRICS.number, protocol="TCP")],
             endpoints=[
                 k8s.Endpoint(
                     addresses=[host.nebula_ip],
@@ -70,10 +70,10 @@ class TalosEtcdMetrics(Construct):
             "servicemonitor",
             metadata=ApiObjectMetadata(name="talos-etcd", namespace=NAMESPACE, labels=_LABELS),
             namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE]),
-            selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": _NAME}),
+            selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
             endpoints=[
                 ServiceMonitorSpecEndpoints(
-                    port=_PORT_NAME,
+                    port=_METRICS.name,
                     path="/metrics",
                     scrape_timeout="10s",
                     relabelings=[

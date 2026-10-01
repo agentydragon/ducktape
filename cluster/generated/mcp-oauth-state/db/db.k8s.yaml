@@ -1,0 +1,389 @@
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: mcp-oauth-grocy-sf-credentials-generator
+  namespace: mcp-oauth-state
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: mcp-oauth-grocy-sf-credentials
+  namespace: mcp-oauth-state
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: mcp-oauth-grocy-sf-credentials-generator
+  refreshInterval: 8760h
+  target:
+    name: mcp-oauth-grocy-sf-credentials
+    template:
+      data:
+        dbname: mcp_oauth_grocy_sf
+        host: mcp-oauth-state-db-rw.mcp-oauth-state.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://mcp_oauth_grocy_sf:{{ .password }}@mcp-oauth-state-db-rw.mcp-oauth-state.svc:5432/mcp_oauth_grocy_sf
+        username: mcp_oauth_grocy_sf
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: mcp-oauth-grocy-vallejo-credentials-generator
+  namespace: mcp-oauth-state
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: mcp-oauth-grocy-vallejo-credentials
+  namespace: mcp-oauth-state
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: mcp-oauth-grocy-vallejo-credentials-generator
+  refreshInterval: 8760h
+  target:
+    name: mcp-oauth-grocy-vallejo-credentials
+    template:
+      data:
+        dbname: mcp_oauth_grocy_vallejo
+        host: mcp-oauth-state-db-rw.mcp-oauth-state.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://mcp_oauth_grocy_vallejo:{{ .password }}@mcp-oauth-state-db-rw.mcp-oauth-state.svc:5432/mcp_oauth_grocy_vallejo
+        username: mcp_oauth_grocy_vallejo
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: mcp-oauth-tana-credentials-generator
+  namespace: mcp-oauth-state
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: mcp-oauth-tana-credentials
+  namespace: mcp-oauth-state
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: mcp-oauth-tana-credentials-generator
+  refreshInterval: 8760h
+  target:
+    name: mcp-oauth-tana-credentials
+    template:
+      data:
+        dbname: mcp_oauth_tana
+        host: mcp-oauth-state-db-rw.mcp-oauth-state.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://mcp_oauth_tana:{{ .password }}@mcp-oauth-state-db-rw.mcp-oauth-state.svc:5432/mcp_oauth_tana
+        username: mcp_oauth_tana
+      type: kubernetes.io/basic-auth
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    description: Shared OVH-HA CNPG cluster for MCP OAuth state.
+  name: mcp-oauth-state-db
+  namespace: mcp-oauth-state
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  managed:
+    roles:
+      - ensure: present
+        login: true
+        name: mcp_oauth_grocy_sf
+        passwordSecret:
+          name: mcp-oauth-grocy-sf-credentials
+      - ensure: present
+        login: true
+        name: mcp_oauth_grocy_vallejo
+        passwordSecret:
+          name: mcp-oauth-grocy-vallejo-credentials
+      - ensure: present
+        login: true
+        name: mcp_oauth_tana
+        passwordSecret:
+          name: mcp-oauth-tana-credentials
+      - ensure: absent
+        name: mcp_oauth_plaid_db
+  monitoring:
+    enablePodMonitor: true
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 5Gi
+    storageClass: local-path-ovh-hdd
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: mcp-oauth-grocy-sf-database
+  namespace: mcp-oauth-state
+spec:
+  cluster:
+    name: mcp-oauth-state-db
+  databaseReclaimPolicy: retain
+  name: mcp_oauth_grocy_sf
+  owner: mcp_oauth_grocy_sf
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-oauth-grocy-sf-reader
+  namespace: mcp-oauth-state
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mcp-oauth-grocy-sf-reader
+  namespace: mcp-oauth-state
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - mcp-oauth-grocy-sf-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mcp-oauth-grocy-sf-reader
+  namespace: mcp-oauth-state
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mcp-oauth-grocy-sf-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: mcp-oauth-grocy-sf-reader
+    namespace: mcp-oauth-state
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  annotations:
+    description: Allows only the grocy-sf MCP OAuth consumer to read its DSN from mcp-oauth-state.
+  name: mcp-oauth-grocy-sf-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - grocy-sf
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: mcp-oauth-grocy-sf-reader
+          namespace: mcp-oauth-state
+      remoteNamespace: mcp-oauth-state
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: mcp-oauth-grocy-vallejo-database
+  namespace: mcp-oauth-state
+spec:
+  cluster:
+    name: mcp-oauth-state-db
+  databaseReclaimPolicy: retain
+  name: mcp_oauth_grocy_vallejo
+  owner: mcp_oauth_grocy_vallejo
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-oauth-grocy-vallejo-reader
+  namespace: mcp-oauth-state
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mcp-oauth-grocy-vallejo-reader
+  namespace: mcp-oauth-state
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - mcp-oauth-grocy-vallejo-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mcp-oauth-grocy-vallejo-reader
+  namespace: mcp-oauth-state
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mcp-oauth-grocy-vallejo-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: mcp-oauth-grocy-vallejo-reader
+    namespace: mcp-oauth-state
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  annotations:
+    description: Allows only the grocy-vallejo MCP OAuth consumer to read its DSN from mcp-oauth-state.
+  name: mcp-oauth-grocy-vallejo-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - grocy-vallejo
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: mcp-oauth-grocy-vallejo-reader
+          namespace: mcp-oauth-state
+      remoteNamespace: mcp-oauth-state
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: mcp-oauth-tana-database
+  namespace: mcp-oauth-state
+spec:
+  cluster:
+    name: mcp-oauth-state-db
+  databaseReclaimPolicy: retain
+  name: mcp_oauth_tana
+  owner: mcp_oauth_tana
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-oauth-tana-reader
+  namespace: mcp-oauth-state
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mcp-oauth-tana-reader
+  namespace: mcp-oauth-state
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - mcp-oauth-tana-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mcp-oauth-tana-reader
+  namespace: mcp-oauth-state
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mcp-oauth-tana-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: mcp-oauth-tana-reader
+    namespace: mcp-oauth-state
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  annotations:
+    description: Allows only the tana-mcp MCP OAuth consumer to read its DSN from mcp-oauth-state.
+  name: mcp-oauth-tana-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - tana-mcp
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: mcp-oauth-tana-reader
+          namespace: mcp-oauth-state
+      remoteNamespace: mcp-oauth-state
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: mcp-oauth-plaid-db-database
+  namespace: mcp-oauth-state
+spec:
+  cluster:
+    name: mcp-oauth-state-db
+  ensure: absent
+  name: mcp_oauth_plaid_db
+  owner: mcp_oauth_plaid_db

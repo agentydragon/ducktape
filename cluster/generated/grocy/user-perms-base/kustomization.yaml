@@ -1,0 +1,74 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - user-perms-base.k8s.yaml
+components:
+  - ../../../k8s/grocy/user-perms-image-pins
+configMapGenerator:
+  - name: grocy-user-perms-policy
+    literals:
+      - |
+        policy.yaml=users:
+          agentydragon:
+            - ADMIN
+            - BATTERIES
+            - BATTERIES_TRACK_CHARGE_CYCLE
+            - BATTERIES_UNDO_CHARGE_CYCLE
+            - CALENDAR
+            - CHORES
+            - CHORE_TRACK_EXECUTION
+            - CHORE_UNDO_EXECUTION
+            - EQUIPMENT
+            - MASTER_DATA_EDIT
+            - RECIPES
+            - RECIPES_MEALPLAN
+            - SHOPPINGLIST
+            - SHOPPINGLIST_ITEMS_ADD
+            - SHOPPINGLIST_ITEMS_DELETE
+            - STOCK
+            - STOCK_CONSUME
+            - STOCK_EDIT
+            - STOCK_INVENTORY
+            - STOCK_OPEN
+            - STOCK_PURCHASE
+            - STOCK_TRANSFER
+            - TASKS
+            - TASKS_MARK_COMPLETED
+            - TASKS_UNDO_EXECUTION
+            - USERS
+            - USERS_CREATE
+            - USERS_EDIT
+            - USERS_EDIT_SELF
+            - USERS_READ
+          auragon:
+            - ADMIN
+            - BATTERIES
+            - BATTERIES_TRACK_CHARGE_CYCLE
+            - BATTERIES_UNDO_CHARGE_CYCLE
+            - CALENDAR
+            - CHORES
+            - CHORE_TRACK_EXECUTION
+            - CHORE_UNDO_EXECUTION
+            - EQUIPMENT
+            - MASTER_DATA_EDIT
+            - RECIPES
+            - RECIPES_MEALPLAN
+            - SHOPPINGLIST
+            - SHOPPINGLIST_ITEMS_ADD
+            - SHOPPINGLIST_ITEMS_DELETE
+            - STOCK
+            - STOCK_CONSUME
+            - STOCK_EDIT
+            - STOCK_INVENTORY
+            - STOCK_OPEN
+            - STOCK_PURCHASE
+            - STOCK_TRANSFER
+            - TASKS
+            - TASKS_MARK_COMPLETED
+            - TASKS_UNDO_EXECUTION
+            - USERS
+            - USERS_CREATE
+            - USERS_EDIT
+            - USERS_EDIT_SELF
+            - USERS_READ
+          haku: []

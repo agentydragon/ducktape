@@ -87,6 +87,9 @@ py_library(
 py_test(
     name = "test_fold",
     srcs = ["test_fold.py"],
+    # Pure synchronous tests with local fixtures; avoid loading the app's database/harness
+    # fixture chain, whose imports consumed most of this target's 60-second CI budget.
+    args = ["--noconftest"],
     deps = [
         ":fold",
         "//:conftest",
@@ -117,7 +120,12 @@ py_test(
         "//agentplane/app/agent_runtime/thread:store",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:codex",
+        "//agentplane/runner:config",
+        "//agentplane/runner:observation",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/runner:session",
+        "//agentplane/runner:store",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

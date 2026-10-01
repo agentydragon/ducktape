@@ -4,6 +4,7 @@ the shutdown the Deployment's grace period is sized for."""
 from __future__ import annotations
 
 import asyncio
+import json
 import signal
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
@@ -27,7 +28,7 @@ from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
-from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
@@ -47,10 +48,17 @@ APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
     "AGENTPLANE_RUNNER_PORT": "7000",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
-    "AGENTPLANE_MODELS": (
-        '{"models": [{"model": "test-claude-model", "display_name": "Test Claude Model"}, '
-        '{"model": "test-codex-model", "display_name": "Test Codex Model"}], '
-        '"harnesses": {"HARNESS_CLAUDE": ["test-claude-model"], "HARNESS_CODEX": ["test-codex-model"]}}'
+    "AGENTPLANE_MODELS": json.dumps(
+        {
+            "models": [
+                {"model": model, "display_name": display, "reasoning_efforts": list(TEST_REASONING_EFFORTS)}
+                for model, display in (
+                    ("test-claude-model", "Test Claude Model"),
+                    ("test-codex-model", "Test Codex Model"),
+                )
+            ],
+            "harnesses": {"HARNESS_CLAUDE": ["test-claude-model"], "HARNESS_CODEX": ["test-codex-model"]},
+        }
     ),
     "AGENTPLANE_EGRESS_ADMIN_URL": "http://egress.test.invalid:8081",
 }
@@ -129,8 +137,12 @@ def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) ->
 SANDBOX = "shutdown-test-sandbox"
 MODELS = ModelCatalog(
     models=[
-        ModelOption(model="test-claude-model", display_name="Test Claude Model"),
-        ModelOption(model="test-codex-model", display_name="Test Codex Model"),
+        ModelOption(
+            model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
+        ModelOption(
+            model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
     ],
     harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
 )

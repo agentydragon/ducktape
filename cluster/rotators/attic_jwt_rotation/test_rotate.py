@@ -14,9 +14,8 @@ import yaml
 from pydantic import ValidationError
 
 from cluster.rotators.attic_jwt_rotation import rotate
+from cluster.rotators.attic_jwt_rotation.config import Config, Token
 from cluster.rotators.attic_jwt_rotation.rotate import (
-    Config,
-    Token,
     _configure_ca_trust,
     _load_keypair,
     clone_repo,

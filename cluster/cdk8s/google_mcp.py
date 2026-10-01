@@ -1,7 +1,7 @@
 """google-mcp: a Gmail/Calendar MCP backend for agentplane-staging.
 
 Serves the Gmail/Calendar tool code in `haku/console/tools` (`x/google_mcp_server`) against a
-write-scoped Airlock provider (`cluster/k8s/agents/airlock/config.yaml`) whose access token is
+write-scoped Airlock provider (`cluster/cdk8s/airlock.py`'s `OAUTH_CONFIG`) whose access token is
 ESO-mirrored into *this namespace only* -- never into claude-sandbox, haku-sandbox, or
 agentplane-staging directly. The agent reaches Gmail/Calendar only through agentplane's
 approval-gated MCP tool calls; it never holds the raw Google token. See
@@ -16,9 +16,9 @@ recipients). The Google write-token Secret is not minted here: it arrives from A
 Kustomization via a `ClusterExternalSecret` scoped to this namespace only, so this chart only
 ever *references* it by name.
 
-The image tag is a deliberate placeholder ("unset") -- `image-pins/kustomization.yaml`
-(hand-written) overrides it at `kustomize build` time via Flux's image-automation marker
-(cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
+The image tag is a deliberate placeholder ("unset") -- the hand-written `PINS_DIR` Component,
+which the kustomization includes across the roots, overrides it at `kustomize build` time via
+Flux's image-automation marker (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     Capability,
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     ContainerSecutiryContextCapabilities,
@@ -38,42 +37,45 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     LabelSelector,
     MemoryResources,
-    Namespace,
     PodSecurityContextProps,
-    Protocol,
     Secret,
-    SecretValue,
     Service,
-    ServicePort,
     Volume,
 )
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s import cilium, pod_policy
+from cluster.cdk8s import cilium, namespaces, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAME = "google-mcp"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{_NAME}"
+OUTPUT_DIR = f"{GENERATED_ROOT}/{_NAME}"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/google-mcp-image-pins"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/google-mcp"
 _PLACEHOLDER_TAG = "unset"
-_HTTP_PORT = 8080
-GMAIL_MCP_URL = f"http://{_NAME}.{_NAME}.svc.cluster.local:{_HTTP_PORT}/gmail/mcp"
-CALENDAR_MCP_URL = f"http://{_NAME}.{_NAME}.svc.cluster.local:{_HTTP_PORT}/calendar/mcp"
-BEARER_SECRET_NAME = "google-mcp-bearer"
-BEARER_SECRET_KEY = "bearer-token"
+SERVICE = ServiceRef(
+    name=_NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=_NAME, labels=(("app.kubernetes.io/name", _NAME),)),
+)
+GMAIL_MCP_URL = f"{SERVICE.url}/gmail/mcp"
+CALENDAR_MCP_URL = f"{SERVICE.url}/calendar/mcp"
+# The caller-facing bearer this chart mints.
+BEARER = SecretRef(namespace=_NAME, name="google-mcp-bearer").key("bearer-token")
 # Populated by a ClusterExternalSecret in Airlock's own Kustomization
 # (cluster/k8s/agents/airlock/), scoped to this namespace only -- see the module docstring.
 GOOGLE_TOKEN_SECRET_NAME = "google-write-access-token"
 GOOGLE_TOKEN_SECRET_KEY = "access_token"
 _GOOGLE_TOKEN_DIR = "/run/secrets/google-write-token"
-_LABELS = {"app.kubernetes.io/name": _NAME}
 
 
 class GoogleMcpApp(Construct):
@@ -89,9 +91,9 @@ class GoogleMcpApp(Construct):
         mint_bearer_secret(
             self,
             "bearer-external-secret",
-            name=BEARER_SECRET_NAME,
-            namespace=_NAME,
-            key=BEARER_SECRET_KEY,
+            name=BEARER.secret.name,
+            namespace=BEARER.secret.namespace,
+            key=BEARER.key,
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         )
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=_NAME)
@@ -103,8 +105,8 @@ class GoogleMcpApp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME, labels=_LABELS),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME, labels=SERVICE.pods.selector),
+            pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
             select=False,
@@ -114,27 +116,24 @@ class GoogleMcpApp(Construct):
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
         )
         # The Deployment selector is immutable; retain its existing labels for Flux adoption.
-        deployment.select(LabelSelector.of(labels=_LABELS))
-        bearer = Secret.from_secret_name(self, "bearer-secret-ref", BEARER_SECRET_NAME)
+        deployment.select(LabelSelector.of(labels=SERVICE.pods.selector))
         deployment.add_container(
             name="server",
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             env_variables={
                 "GOOGLE_MCP_TOKEN_FILE": EnvValue.from_value(f"{_GOOGLE_TOKEN_DIR}/{GOOGLE_TOKEN_SECRET_KEY}"),
-                "GOOGLE_MCP_BEARER_TOKEN": EnvValue.from_secret_value(
-                    SecretValue(secret=bearer, key=BEARER_SECRET_KEY)
-                ),
+                "GOOGLE_MCP_BEARER_TOKEN": BEARER.env_value(self, "bearer-secret-ref"),
                 "GOOGLE_MCP_HOST": EnvValue.from_value("0.0.0.0"),
-                "GOOGLE_MCP_PORT": EnvValue.from_value(str(_HTTP_PORT)),
+                "GOOGLE_MCP_PORT": EnvValue.from_value(str(SERVICE.pod_port)),
             },
-            ports=[ContainerPort(name="http", number=_HTTP_PORT, protocol=Protocol.TCP)],
+            ports=[SERVICE.port.container_port()],
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            readiness=http_probe("/healthz", port=_HTTP_PORT, initial_delay_seconds=3),
-            liveness=http_probe("/healthz", port=_HTTP_PORT, initial_delay_seconds=15, period_seconds=20),
+            readiness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=3),
+            liveness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=15, period_seconds=20),
             security_context=ContainerSecurityContextProps(
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 ensure_non_root=True,
@@ -157,9 +156,9 @@ class GoogleMcpApp(Construct):
         Service(
             self,
             "service",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME),
+            metadata=ApiObjectMetadata(name=SERVICE.name, namespace=_NAME),
             selector=deployment,
-            ports=[ServicePort(name="http", port=_HTTP_PORT, target_port=_HTTP_PORT, protocol=Protocol.TCP)],
+            ports=[SERVICE.port.service_port()],
         )
 
     def _add_network_policy(self) -> None:
@@ -167,10 +166,10 @@ class GoogleMcpApp(Construct):
             self,
             "network-policy",
             metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME),
-            endpoint_selector=_LABELS,
+            endpoint_selector=SERVICE.pods.selector,
             ingress=[
                 IngressRule.from_endpoints(
-                    cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[_HTTP_PORT]
+                    cilium.endpoint_labels("agentplane-staging", "agentplane-actions"), ports=[SERVICE.pod_port]
                 )
             ],
             egress=[
@@ -185,14 +184,14 @@ class GoogleMcp(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        Namespace(
+        namespaces.namespace(
             self,
             "namespace",
-            metadata=ApiObjectMetadata(
-                name=_NAME,
-                labels={"name": _NAME, "goldilocks.fairwinds.com/enabled": "false"},
-                annotations={"description": "Holds the write-scoped Google OAuth token; never mirrored elsewhere."},
-            ),
+            name=_NAME,
+            vpa=Vpa.DISABLED,
+            agent_readable=None,
+            labels={"name": _NAME},
+            annotations={"description": "Holds the write-scoped Google OAuth token; never mirrored elsewhere."},
         )
         GoogleMcpApp(self, "app")
 
