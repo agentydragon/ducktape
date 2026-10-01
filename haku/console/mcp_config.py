@@ -23,7 +23,6 @@ from haku.console.config import KubernetesAuthorizationConfig
 from haku.console.identity.naming import normalize_agent_name
 from haku.console.tool_call_actor import RuntimeActor
 from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
-from haku.sandbox.config import SandboxEnvironmentConfig
 from mcp_infra.prefix import MCPMountPrefix
 
 
@@ -244,12 +243,6 @@ class ConsoleConfigFile(BaseModel):
     # A deploy-reviewed fail-safe maximum for approval-created temporary grants. Tool schema bounds
     # remain useful client guidance, but these server-side settings are authoritative.
     kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
-    # The one Agent Sandbox environment the `sandbox` in-process server hands out: which warm pool
-    # it claims from and the reviewed bootstrap each claim runs. Unset → the server is not offered.
-    # Editing this keeps live claims usable; a claim whose recorded pod properties no longer match
-    # is reported in its `warnings` rather than refused (see haku/sandbox/README.md).
-    agent_sandbox: SandboxEnvironmentConfig | None = None
-
     @model_validator(mode="before")
     @classmethod
     def _reject_retired_runtime_shape(cls, value: object) -> object:

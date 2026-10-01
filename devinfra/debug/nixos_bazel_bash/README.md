@@ -202,7 +202,7 @@ interpreter, verified live on wyrm2).
 
 **Outcome**: with the filesystem defaults in place, the Nix-built Haku sandbox image runs
 `bazel test //...` at 25/26 — only the known no-Docker-socket e2e test fails. Full write-up:
-[the Haku sandbox image notes](../../../haku/sandbox/image/README.md).
+[the parked Haku sandbox image notes](../../../haku/x/sandbox_mcp/image/README.md).
 
 ## Status
 

@@ -125,23 +125,24 @@ performance and cause issues.` It warns and proceeds rather than clamping. codex
 - `gotcha`: `CODEX_HOME` under `/tmp` makes codex refuse to create PATH-alias helper binaries
   (warns, proceeds). Harmless for `exec`, but put `CODEX_HOME` outside `/tmp` for a real worker.
 
-## Launching workers: what haku-console already gives us
+## Former Haku Console Sandbox MCP (retired)
 
-The haku-console MCP proxy (`https://haku.allegedly.works/mcp`, reached with the
-`haku-console-agent-api` bearer readable from the `haku-sandbox` namespace) already exposes an
-agent-launch primitive: `sandbox__provision_sandbox` / `sandbox__exec_sandbox` /
+At the time of the 2026-08-28 investigation, the haku-console MCP proxy
+(`https://haku.allegedly.works/mcp`, reached with the `haku-console-agent-api` bearer readable from
+the `haku-sandbox` namespace) exposed an agent-launch primitive:
+`sandbox__provision_sandbox` / `sandbox__exec_sandbox` /
 `sandbox__dispose_sandbox` / `sandbox__list_sandboxes` (in-process server, sandbox reads
-auto-approved; provision was auto-approved in this session). Provisioned `cc-fleet-probe` →
-ready pod in seconds, ran bash, disposed cleanly.
+auto-approved; provision was auto-approved in that session). Provisioned `cc-fleet-probe` →
+ready pod in seconds, ran bash, disposed cleanly. The server was later removed in PR #8620 and the
+agent-facing `/mcp` endpoint disabled in PR #8621. The notes below describe historical behavior.
 
-**But** the provisioned sandbox is Haku's own state sandbox (`/workspace/haku-state`, user
+**But** that provisioned sandbox was Haku's own state sandbox (`/workspace/haku-state`, user
 `workspace`): **no `claude`/`codex`/`node`, no LLM env, no LiteLLM key**. Its egress is the correct
 worker posture though — reaches in-cluster `litellm` (401) and `github.com` (200) but is fenced
 from `api.openai.com` (502 CONNECT). So the launch/exec/dispose _primitive_ is built and usable
-today; making it a _coding-worker_ launcher is config, not new code: point a sandbox template at
-the `agent-workspace` image (which bakes both CLIs) and reflect a worker LiteLLM key into the
-namespace. That is the "easier way that doesn't require a haku-console build-out" — reuse the
-existing sandbox tool surface with a worker-flavored template.
+at that time. The proposed coding-worker launcher depended on reusing this Haku sandbox tool
+surface with a worker-flavored template; that path is retired and the warm-pool feature will not be
+ported.
 
 **Update (2026-08-29):** two follow-up digs (cluster wiring; codex source at `rust-v0.150.1`) worked
 out how to actually run the fleet as durable pods. Headlines: the `sandbox__*` pool is one of **three**
@@ -225,11 +226,11 @@ operator-approved hostexec read above got past this):
   point sending it.
 - **sandbox baked key** — none, as above.
 
-The web session _can_ read secrets in `haku-sandbox`. So the clean durable mechanism (and the one
-that unblocks future sessions with zero approval dance) is to **mint a worker key and reflect it
-into `haku-sandbox`** (ESO/reflector, the same pattern the aiquota bearer uses into
-`haku-egress-proxy`), then read it with kubectl. Alternatively add `claude-web` as a real SOPS
-recipient once its age key works, or the operator hands over a scoped key directly.
+At the time, the web session could read secrets in `haku-sandbox`, so the proposed durable
+mechanism was to mint a worker key and reflect it into that namespace. That recommendation depended
+on the now-retired Console sandbox path and must not be used to revive it. Any future credential
+grant to an Agentplane-managed Haku runner needs a supported sandbox identity and permission model;
+the open design is tracked in [issue #8596](https://github.com/agentydragon/ducktape/issues/8596).
 
 ## Economics (why this is worth doing)
 
@@ -250,30 +251,19 @@ the orchestrator; don't let a Luna worker sub-dispatch to more Luna. This matche
 doctrine (`haku/archive/2026_08_multi_agent.md`): dispatch only to strictly-subset-privileged,
 spend-capped principals.
 
-## Next steps (not done here)
+## Follow-up boundary
 
-1. **Durable worker key**: mint `claude-web-workers` (or similar) in `tf/gitops/litellm-keys`
-   (both `chatgpt/ant-messages/*` and `chatgpt/oai-responses/*`, Luna fallback, a real budget cap
-   — unlike the uncapped `agent_workspaces_codex`), reflect into `haku-sandbox`, add a
-   `try_export_from_k8s` in `devinfra/secrets/web_env.sh`. Then a web session dispatches workers
-   with no approval dance.
-2. **Live-fire verification**: with that key, confirm a real Luna completion on both lanes and that
-   the 372k window fix yields a healthy >200k session.
-3. **Codex config metadata**: add `model_context_window`/`model_max_output_tokens` to the baked
-   codex configs.
-4. **Worker-flavored sandbox template**: point a `sandbox__provision` template at the
-   `agent-workspace` image + reflected key, turning the existing launch primitive into a
-   coding-worker launcher.
-5. **aiquota**: not inspected (operator says the 5h window rarely binds; would need a bearer read).
-   Reachable via haku-console if a live quota snapshot is wanted.
+The original worker-key and worker-template plan from this investigation depended on the retired
+Haku Console Sandbox MCP and should not be resumed. The Console server, its Haku-specific template
+and warm pool have been removed; warm pools will not be ported. A future full Haku migration through
+Agentplane is gated on the sandbox identity and permission design tracked in
+[issue #8596](https://github.com/agentydragon/ducktape/issues/8596). This investigation does not
+choose that design or specify a replacement coding-worker launcher.
 
 ## Reproduction notes
 
-- MCP to haku-console: `POST https://haku.allegedly.works/mcp`, `Authorization: Bearer <token>`
-  where the token is `kubectl -n haku-sandbox get secret haku-console-agent-api -o
-jsonpath={.data.token} | base64 -d`. Server is **stateless** Streamable HTTP — do **not** send an
-  `mcp-session-id` header (an empty one makes calls return 0 bytes). Responses are SSE; the JSON is
-  the `data:` line.
+- The Haku Console MCP endpoint and its sandbox token lookup were disabled with the retired server;
+  these historical HTTP reproduction steps no longer work.
 - Claude Code window probe: the warning is on stderr at startup and appears with a placeholder key,
   so capture full output to a file (`… >out 2>&1`) rather than piping through `grep` under
   `timeout` (the kill drops buffered output).

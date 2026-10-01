@@ -69,8 +69,6 @@ IMAGES = (
     "haku-console-static",
     "haku-kube-api-proxy",
     "haku-openclaw-spike",
-    # The trailing `-image` is in the repository path too, unlike every other entry.
-    "haku-sandbox-image",
     "homeassistant-component-installer",
     "homeassistant-onboarding",
     "homeassistant-token-provisioner",

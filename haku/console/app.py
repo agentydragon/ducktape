@@ -55,7 +55,6 @@ from haku.console.identity.operator_identity_store import PostgresOperatorIdenti
 from haku.console.mcp import approval, catalog_reconciler, mount, server, tool_call_service
 from haku.console.mcp.in_process_servers import (
     InProcessServerDependencies,
-    SandboxServerConfig,
     build_in_process_servers,
 )
 from haku.console.mcp_config import (
@@ -72,12 +71,10 @@ from haku.console.tools import (
     grants as grants_tools,
     kubernetes as kubernetes_tools,
     routine as routine_tools,
-    sandbox as sandbox_tools,
 )
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder
-from haku.sandbox.kubernetes_client import InClusterSandboxClient
 
 # SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
 # gazelle cannot see the dependency.
@@ -260,7 +257,6 @@ def create_app(
     # standard queue), superseding the bespoke launch-routine capability tier. Same
     # `launch_routine` config/secret; independent of the Google connection above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
-    sandbox_server: SandboxServerConfig | None = None
     if in_process_servers is None:
         # Configured rather than switched on separately: `config.yaml` is where the server is
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
@@ -285,22 +281,12 @@ def create_app(
                 indexes=tuple(console_config.recall_indexes.values()),
                 budget=settings.recall_index.chunk_budget,
             )
-        # Claims are created lazily on first use, so this holds no Kubernetes connection until an
-        # Agent provisions; `aclose` below is what releases it.
-        sandbox_server = (
-            SandboxServerConfig(
-                client=InClusterSandboxClient(console_config.agent_sandbox), environment=console_config.agent_sandbox
-            )
-            if console_config.agent_sandbox is not None and sandbox_tools.SANDBOX_SERVER_ID in configured_server_ids
-            else None
-        )
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(
                 routine_launcher=routine_launcher,
                 index=index_searcher,
                 recall_access_profiles=tuple(console_config.access_profiles),
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes.values()),
-                sandbox=sandbox_server,
                 # The `grants` server fronts Kubernetes grants plus the kubernetes SAR check
                 # (`kubernetes_can_i`, #4918), so it needs the kubernetes authorization service; it
                 # registers only when that is configured (as it always is in the deployed config).
@@ -382,8 +368,6 @@ def create_app(
                 await tool_calls.aclose()
                 if kubernetes_authorization is not None:
                     await kubernetes_authorization.aclose()
-                if sandbox_server is not None:
-                    await sandbox_server.client.aclose()
                 await console_event_hub.aclose()
                 await approval_notifier.aclose()
 

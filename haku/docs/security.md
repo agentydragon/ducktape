@@ -100,25 +100,14 @@ all-`.readonly` Google token); Haku-owned write credentials are separately scope
 canonical hard-rule inventory.
 Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
 
-### `sandbox` in-process server
+### Retired Console Sandbox MCP
 
-The whole surface (`provision_sandbox`, `exec_sandbox`, `dispose_sandbox`, and the reads
-`get_sandbox_info`/`list_sandboxes`) auto-approves for authenticated Agents under the
-console's reviewed policy — `dispose_sandbox` included, since it only releases the
-ephemeral claim Haku itself created (a re-clonable haku-state checkout and a rebuildable
-Bazel cache), and gating it merely stranded claims against the namespace quota. Unlike
-the read-only auto-approvals, `exec_sandbox` runs arbitrary Bash in the box — but it
-grants no authority beyond what the Haku agent already holds: the sandbox pod runs as
-Haku's own `haku` ServiceAccount in `haku-sandbox`, so `exec_sandbox` ≈ a `kubectl exec`
-Haku can already run, and every pod there is egress-fenced by the
-`haku-sandbox-force-proxy` CCNP + baseline PodSecurity (no `host*`), both outside Haku's
-RBAC. A prompt-injected Haku therefore gains only the removal of the per-call operator tap within its existing
-`haku-sandbox` blast radius; the box builds a git-synced haku-state checkout locally (no
-RBE — source never leaves the cluster). The server itself is credential-free: Console's
-own ServiceAccount holds the claim/exec RBAC (client in `haku/sandbox`, tools in
-<../console/tools/sandbox.py>).
-Source of truth: <../console/auto_approval/>, <../console/mcp_config.py>,
-<../../cluster/cdk8s/haku/console_config.py>, <../../cluster/cdk8s/haku/workspaces.py>.
+The former in-process `sandbox` server provisioned claims and ran bounded commands in a
+Haku-specific warm pool. It is absent from the deployed catalog, and its Haku-specific
+template, pool, janitor, and Console Role/RoleBinding are no longer active. The implementation
+and old deployment resources are retained as reference under
+<../x/sandbox_mcp/README.md>; do not treat that archive as current access policy. The generic
+Agent Sandbox constructs remain active for other workspace users.
 
 ### Agent-facing `withdraw_tool_call` (`/mcp`)
 

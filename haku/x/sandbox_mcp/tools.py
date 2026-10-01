@@ -8,8 +8,8 @@ from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from haku.sandbox.config import SandboxEnvironmentConfig
-from haku.sandbox.models import DisposeSandboxResult, SandboxExecResult, SandboxInfo, SandboxListPage, SandboxName
+from haku.x.sandbox_mcp.config import SandboxEnvironmentConfig
+from haku.x.sandbox_mcp.models import DisposeSandboxResult, SandboxExecResult, SandboxInfo, SandboxListPage, SandboxName
 
 SANDBOX_SERVER_ID = "sandbox"
 _READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)

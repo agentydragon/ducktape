@@ -12,7 +12,6 @@ from dataclasses import dataclass
 import haku.console.tools.grants as grants_tools
 import haku.console.tools.recall_index as recall_index_tools
 import haku.console.tools.routine as routine_tools
-import haku.console.tools.sandbox as sandbox_tools
 from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import (
     AccessProfile,
@@ -22,15 +21,6 @@ from haku.console.mcp_config import (
     const_in_process_server,
 )
 from haku.console.recall_index_access import RecallIndexAccessPolicy
-from haku.sandbox.config import SandboxEnvironmentConfig
-
-
-@dataclass(frozen=True, slots=True)
-class SandboxServerConfig:
-    """The sandbox lifecycle client plus the environment whose limits its tool schema advertises."""
-
-    client: sandbox_tools.SandboxClient
-    environment: SandboxEnvironmentConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,9 +37,6 @@ class InProcessServerDependencies:
     # The unified grant server fronting every grant domain (kubernetes | http) plus the kubernetes
     # SAR check (`kubernetes_can_i`) — one server, no separate `kubernetes` server (#4918).
     grants: grants_tools.GrantsToolsService | None = None
-    # The Agent Sandbox lifecycle client and the environment it hands out — set only when
-    # `config.yaml` both lists the server and configures `agent_sandbox`.
-    sandbox: SandboxServerConfig | None = None
     recall_access_profiles: tuple[AccessProfile, ...] = ()
     configured_recall_index_ids: tuple[str, ...] = ()
 
@@ -77,11 +64,5 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
             builder=lambda _token: grants_tools.build_mcp(grants),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=in_process_access.authorizer_for(grants_tools.GRANTS_SERVER_ID),
-        )
-    if (sandbox := dependencies.sandbox) is not None:
-        servers[sandbox_tools.SANDBOX_SERVER_ID] = InProcessServerRegistration(
-            builder=lambda _token: sandbox_tools.build_mcp(sandbox.client, sandbox.environment),
-            credential_kind=InProcessCredentialKind.NONE,
-            authorizer=in_process_access.authorizer_for(sandbox_tools.SANDBOX_SERVER_ID),
         )
     return servers

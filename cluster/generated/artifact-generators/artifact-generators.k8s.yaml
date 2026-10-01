@@ -577,8 +577,6 @@ spec:
     - copy:
         - from: "@repo/cluster/generated/haku/workspaces/app/**"
           to: "@artifact/cluster/generated/haku/workspaces/app/"
-        - from: "@repo/cluster/k8s/haku/workspaces/app-image-pins/**"
-          to: "@artifact/cluster/k8s/haku/workspaces/app-image-pins/"
       name: haku-workspaces-app
       originRevision: "@repo"
     - copy:

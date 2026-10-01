@@ -228,17 +228,12 @@ py_library(
     name = "workspaces",
     srcs = ["workspaces.py"],
     deps = [
-        ":kube_api_proxy",
         ":namespace",
-        "//cluster/cdk8s:agent_sandbox",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/forgejo:secret_copy",
-        "//cluster/cdk8s/kyverno:janitor",
-        "//cluster/cdk8s/providers/agent_sandbox:sandbox_template",
-        "//cluster/cdk8s/providers/agent_sandbox:sandboxtemplate",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "@pypi//cdk8s",
@@ -279,20 +274,6 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":mailbox",
-        "//:conftest",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_workspaces",
-    srcs = ["test_workspaces.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":workspaces",
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//more_itertools",

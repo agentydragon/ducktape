@@ -232,21 +232,6 @@ the runtimes differ in where the sandbox runs — see
   coupled to the runtime question. Under the Agent SDK this is simpler still —
   hooks there are in-process callbacks and Python has both `PreCompact` and `Stop`
   (see <docs/agent_sdk_runtime.md>).
-- **Cut the sandbox over to the Nix image** — `haku/sandbox/image/default.nix`
-  builds in CI and publishes to `haku-sandbox-image-nix`, but the SandboxTemplate still pulls
-  the apt/Dockerfile build. The blocker is a **runtime** question a green build can't answer:
-  whether the Bazel bazelisk downloads (and `rules_python`'s hermetic CPython) can find
-  `libstdc++.so.6` under NixOS glibc. Run the checklist in
-  <sandbox/image/README.md> § _Cutting over_ against a throwaway Pod;
-  if it passes, delete the Dockerfile and collapse the two workflows into one. If it fails,
-  try `nix-ld` via pod env before abandoning it. **Depends on nothing** — the probe needs no
-  change to the template, the warm pool, or the MCP config.
-- **Deduplicate the agent pod images** — once the Nix cutover lands, the Haku sandbox image
-  and <../x/codex_pod_image/default.nix> share a real substrate (git, tea, jq, curl, kubectl,
-  cacert, tini, the coreutils shell set) that is currently written out twice. Extract the
-  common `buildEnv` paths into one module and let each image add only its distinctive tools
-  (bazelisk/JDK/cc for Haku; codex/claude-code/ssh for the codex pod). Not worth doing before
-  the cutover — the shared list is speculative until the Nix image is the real one.
 - **Auto-sync the Forgejo ducktape mirror, and decide whether agents may PR against it** —
   `forgejo-http.forgejo:3000/haku/ducktape.git` exists but is not automatically mirrored, and
   measured 3 commits behind `devel` (`97a23895` vs `a4c497f7`) on 2026-07-25. The sandbox

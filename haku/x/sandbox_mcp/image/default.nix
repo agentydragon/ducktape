@@ -1,7 +1,10 @@
+# PARKED ARCHIVE: Nix-built OCI image for the retired Haku Console sandbox MCP.
+# This derivation is not built or published by active CI and has no active deployment consumer.
+#
 # Nix-built OCI image for the Haku sandbox — the Nix replacement for the Dockerfile
 # beside it. Same job (see that file's header): an in-cluster EXEC TARGET where an agent
 # runs `bazel run //cli:...` / `bazel test //...` against a git-synced haku-state checkout,
-# driven through haku/sandbox.
+# driven by the retired Haku Console Sandbox MCP.
 #
 # Why Nix: the Dockerfile's tool set is an `apt-get install` line nobody revisits, and it
 # has now produced the same class of bug three times — a missing `kubectl`, then a
@@ -12,9 +15,9 @@
 # `tini` as PID 1 also reaps the exec zombies a long-lived claim accumulates (a run driven
 # through many backgrounded `exec_sandbox` calls left 5 in one session).
 #
-# STATUS (2026-07-26): WORKS. `bazel test //...` is 25/26 in a probe pod — only
-# //ui/e2e:test_e2e fails, the known no-Docker-socket gap. Not yet what the SandboxTemplate
-# pulls; cutover checklist in <README.md>.
+# Historical probe (2026-07-26): `bazel test //...` was 25/26 in a probe pod — only
+# //ui/e2e:test_e2e failed, the known no-Docker-socket gap. This image was not the active
+# SandboxTemplate image; no cutover is planned.
 #
 # WHY THIS FILE LOOKS THE WAY IT DOES. NixOS glibc compiles nix-store paths into its library
 # search path, so FHS binaries *downloaded at runtime* — Bazel's extracted helpers, and every

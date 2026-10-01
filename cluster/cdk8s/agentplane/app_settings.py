@@ -183,9 +183,9 @@ def settings(
                         ],
                         action_policy_sets=[GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
                         thread_preset=_THREAD_PRESET_HAKU_CLAUDE,
-                        # Shallow clone of haku-state over the in-cluster Forgejo, the way
-                        # haku-sandbox-setup.sh clones it for Haku's own sandboxes
-                        # (haku/sandbox/image/haku-sandbox-setup.sh): --depth 1
+                        # Shallow clone of haku-state over the in-cluster Forgejo, matching the
+                        # retired Console sandbox bootstrap's --depth 1 clone policy
+                        # (haku/x/sandbox_mcp/image/haku-sandbox-setup.sh):
                         # because the box only needs the HEAD checkout, not full history. The
                         # URL's userinfo carries the literal placeholder string as the password
                         # half; git turns that into a Basic Authorization header, and the

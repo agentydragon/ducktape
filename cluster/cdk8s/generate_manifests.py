@@ -1433,19 +1433,16 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
     )
-    haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR, haku_workspaces.PINS_DIR)
+    haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
     haku_workspaces.haku_workspaces(
         flux_chart,
         write_directory(
             root,
             haku_workspaces_app_artifact,
             haku_workspaces.chart,
-            components=[posixpath.relpath(haku_workspaces.PINS_DIR, haku_workspaces.OUTPUT_DIR)],
         ),
-        agent_sandbox_controller_kustomization,
         haku_rbac_kustomization,
         haku_egress_proxy_kustomization,
-        kyverno_policies_kustomization,
         external_secrets_operator_kustomization,
     )
     haku_managed_agent_artifact = artifact("haku-managed-agent", "haku/runtime/x/managed_agent/self_hosted/deploy")

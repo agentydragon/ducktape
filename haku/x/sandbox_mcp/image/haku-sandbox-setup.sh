@@ -6,7 +6,7 @@
 # see it. Deviation: changing any of it now needs an image rebuild + rollout, where the
 # in-YAML version was a ConfigMap edit picked up on the next claim. Accepted — the
 # environment provenance never covered the image tag either way
-# (haku/sandbox/config.py), so no drift detection is lost.
+# (../config.py), so no drift detection is lost.
 #
 # The steps a given box does not want are switched off by env, below — never by a second
 # copy of this file, because "similar setup to the haku sandbox" is the whole requirement

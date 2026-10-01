@@ -1,3 +1,6 @@
+# PARKED ARCHIVE: image for the retired Haku Console Sandbox MCP.
+# Its former publisher is archived under `workflows/`; no active CI builds or publishes it.
+#
 # Haku sandbox image — the toolchain haku-console's `sandbox` server hands out.
 #
 # This is an in-cluster EXEC TARGET, not an agent-loop runtime: the agent execs
@@ -33,8 +36,9 @@
 # it any target that pulls the cc toolchain (e.g. //cli:bookmark) fails analysis with
 # "Cannot find gcc or CC".
 #
-# Built by ducktape CI (.github/workflows/haku-sandbox-image.yml) and
-# pushed to the Forgejo registry — a trusted, operator-reviewed substrate. Haku's
+# Formerly built by the workflow archived at
+# haku/x/sandbox_mcp/image/workflows/haku-sandbox-image.yml and pushed to the Forgejo
+# registry. Haku's
 # method rides in only as the haku-state checkout, run via `bazel run`, bounded by
 # the pod's operator-owned creds/egress/RBAC (see cluster/docs security model).
 FROM debian:bookworm-slim

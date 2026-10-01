@@ -14,8 +14,8 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, ApiException, Configuration, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 
-from haku.sandbox.config import SandboxEnvironmentConfig
-from haku.sandbox.models import (
+from haku.x.sandbox_mcp.config import SandboxEnvironmentConfig
+from haku.x.sandbox_mcp.models import (
     BootstrapState,
     DisposeSandboxResult,
     SandboxExecResult,

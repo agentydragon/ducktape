@@ -84,13 +84,10 @@ ducktapePkgs
   # Build: nix build .#nix-rbe-container-image
   # Load:  docker load < result
   nix-rbe-container-image = import ../../devinfra/rbe_container_image/x/nix { inherit pkgs; };
-  # Haku sandbox image (plain Docker, no NixOS/systemd) — the Nix
-  # replacement for haku/sandbox/image/Dockerfile. Builds
-  # in CI but is NOT yet what the SandboxTemplate pulls; cutover is gated
-  # on the runtime checklist in that directory's README.
+  # Parked Haku Console sandbox image (plain Docker, no NixOS/systemd).
   # Build: nix build .#haku-sandbox-image
   # Load:  docker load < result
-  haku-sandbox-image = import ../../haku/sandbox/image { inherit pkgs; };
+  haku-sandbox-image = import ../../haku/x/sandbox_mcp/image { inherit pkgs; };
   # agentplane's sandbox image: a box's command-line tools, as one list
   # (agentplane/images/sandbox.nix).
   # Build: nix build .#agentplane-sandbox-image

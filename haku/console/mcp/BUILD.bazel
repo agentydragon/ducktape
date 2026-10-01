@@ -124,8 +124,6 @@ py_library(
         "//haku/console/tools:grants",
         "//haku/console/tools:recall_index",
         "//haku/console/tools:routine",
-        "//haku/console/tools:sandbox",
-        "//haku/sandbox:config",
     ],
 )
 

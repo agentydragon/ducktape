@@ -1,17 +1,19 @@
+# ARCHIVED WORKFLOW COPY: GitHub only loads workflow files from .github/workflows.
+# This file documents the retired image publisher; no active workflow builds or publishes it.
+#
 # Build and push the Haku sandbox image (bazelisk + JDK + git toolchain,
 # no nix/docker/RBE) to the Forgejo OCI registry
 # (git.allegedly.works/ducktape-ci/haku-sandbox-image) — not GHCR, so the pull
-# credential is provisioned in code (tf/gitops/forgejo-images) rather than a
-# manual GHCR "make public" click. Consumed by the Haku SandboxTemplate in
-# cluster/generated/haku/workspaces/app/. Mirrors agent-workspace-image.yml.
+# credential was provisioned in code (tf/gitops/forgejo-images). The retired
+# Haku SandboxTemplate consumed this image. Mirrors agent-workspace-image.yml.
 name: Haku Sandbox Image
 
 on:
   push:
     branches: [devel]
     paths:
-      - "haku/sandbox/image/**"
-      - ".github/workflows/haku-sandbox-image.yml"
+      - "haku/x/sandbox_mcp/image/**"
+      - "haku/x/sandbox_mcp/image/workflows/haku-sandbox-image.yml"
   workflow_dispatch:
 
 concurrency:
@@ -43,6 +45,6 @@ jobs:
         run: |
           TS=$(date -u +%Y%m%d%H%M%S)
           REF="$IMAGE:${GITHUB_REF_NAME}-${TS}-${GITHUB_SHA:0:7}"
-          docker build -t "$REF" haku/sandbox/image
+          docker build -t "$REF" haku/x/sandbox_mcp/image
           docker push "$REF"
           echo "pushed \`$REF\`" >> "$GITHUB_STEP_SUMMARY"

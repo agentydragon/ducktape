@@ -1,23 +1,16 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-# The sandbox image's per-claim bootstrap, checked against the SandboxTemplate by
-# //cluster/cdk8s:test_haku_sandbox_setup.
-exports_files(
-    ["image/haku-sandbox-setup.sh"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-)
+package(default_visibility = ["//visibility:public"])
 
 py_library(
     name = "config",
     srcs = ["config.py"],
-    visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "models",
     srcs = ["models.py"],
-    visibility = ["//visibility:public"],
     deps = [
         "//mcp_infra/exec:models",
         "@pypi//pydantic",
@@ -27,7 +20,6 @@ py_library(
 py_library(
     name = "kubernetes_client",
     srcs = ["kubernetes_client.py"],
-    visibility = ["//visibility:public"],
     deps = [
         ":config",
         ":models",
@@ -37,6 +29,19 @@ py_library(
         "//util:kubernetes",
         "@pypi//fastmcp_slim",
         "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "tools",
+    srcs = ["tools.py"],
+    deps = [
+        ":config",
+        ":models",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//pydantic",
     ],
 )
 
@@ -64,6 +69,23 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_tools",
+    srcs = ["test_tools.py"],
+    deps = [
+        ":tools",
+        "//:conftest",
+        "//haku/console:conftest",
+        ":config",
+        ":models",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pytest_bazel",
     ],
 )

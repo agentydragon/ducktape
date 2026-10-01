@@ -207,11 +207,11 @@ not run live** — treat as design, not a paved procedure.
 
 ### Which codex interface survives a pod boundary
 
-| Interface               | Transport                          | Mid-turn steer                          | Durable across a process restart                                 | Reachable via today's tools                         |
+| Interface               | Transport                          | Mid-turn steer                          | Durable across a process restart                                 | Current Haku access                                  |
 | ----------------------- | ---------------------------------- | --------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------- |
-| `codex exec` / `resume` | one-shot                           | no                                      | **yes** — resumes from `CODEX_HOME` on disk (Recipe A, verified) | **yes** — one-shot fits the MCP `exec_sandbox` tool |
-| `codex app-server`      | websocket, or `stdio://`           | **yes** (`turn/steer`,`turn/interrupt`) | `thread/resume` exists (disk-resume not re-verified)             | needs a network path in/out of the pod              |
-| `codex mcp-server`      | **stdio only, deprecated 0.150.1** | no                                      | **no** — `codex-reply` resolves the thread from an in-memory map | dead end                                            |
+| `codex exec` / `resume` | one-shot                           | no                                      | **yes** — resumes from `CODEX_HOME` on disk (Recipe A, verified) | former Haku MCP path retired; Agentplane Actions are separate |
+| `codex app-server`      | websocket, or `stdio://`           | **yes** (`turn/steer`,`turn/interrupt`) | `thread/resume` exists (disk-resume not re-verified)             | no current Haku runner; needs a network path         |
+| `codex mcp-server`      | **stdio only, deprecated 0.150.1** | no                                      | **no** — `codex-reply` resolves the thread from an in-memory map | dead end                                             |
 
 codex source (`rust-v0.150.1`): mcp-server is stdio-only and prints a deprecation warning
 (`codex-rs/cli/src/main.rs`, `mcp-server/src/lib.rs`); the network `--listen` transport lives in the
@@ -233,36 +233,36 @@ Tier-2 below is "rebuild it," with that code in git history as the reference.
 
 ### Three sandbox systems — don't conflate them
 
-- **`sandbox__*` MCP tools** (what a web session reaches via haku-console) → `haku-sandbox` ns, image
-  `haku-sandbox-image` (**no codex/node/claude**). `exec_sandbox` is **one-shot `pods/exec` with
-  `stdin=False`, buffered output, 5-min / 100 KB cap** (`haku/sandbox/kubernetes_client.py`) — it cannot
-  hold a live stdio JSON-RPC channel, and a web session has **no** direct `kubectl exec`/attach RBAC. Fine
-  for one-shot `codex exec`; useless for `app-server` stdio.
+- **Former Haku Console `sandbox__*` MCP tools (retired)** → `haku-sandbox` namespace and the
+  `haku-sandbox-image` (**no codex/node/claude**). `exec_sandbox` was **one-shot `pods/exec` with
+  `stdin=False`, buffered output, 5-min / 100 KB cap**
+  (`haku/x/sandbox_mcp/kubernetes_client.py`) — it could not hold a live stdio JSON-RPC channel.
+  The source is archived; this is not a current web-session launch path.
 - **`haku/runner` runtimes** (`codex_app_server`) → the pod pattern above; gone since #5992.
 - **legacy `agent-workspaces`** → image `agent-workspace` bakes claude+codex+node
   (`cluster/images/agent-workspace/Dockerfile`), region-pinned OVH.
 
-### Egress + placement — already the right posture
+### Former Haku sandbox egress and placement (historical)
 
-Sandbox egress is **namespace-fixed** by a Cilium policy: reaches **in-cluster LiteLLM**
+The former Haku claim workload's egress was **namespace-fixed** by a Cilium policy: it reached **in-cluster LiteLLM**
 (`litellm.litellm.svc:4000`) and GitHub through a fenced proxy, **blocked from `api.openai.com`** (workers
 hit LiteLLM in-cluster; no public OpenAI egress; a worker cannot widen it). Pods schedule on any always-on
-node (roaming laptops excluded by taint); only the legacy `agent-workspace` template pins OVH. Claim
-lifetime is a **renew-on-exec deadline** (8h initial, +2h per exec) plus a 7-day Kyverno backstop — no
-idle-timer field, so a claim with no exec activity is reaped.
+node (roaming laptops excluded by taint). The Haku-specific pool, template, and janitor have since
+been removed. The namespace egress policy remains relevant to other admitted workloads. Full Haku
+migration through Agentplane is gated on the identity and grant design in
+[issue #8596](https://github.com/agentydragon/ducktape/issues/8596).
 
-### Two-tier plan
+### Retired two-tier proposal
 
-1. **Turn-based, durable, ~now:** one-shot `codex exec`/`resume` in a codex-image sandbox via
-   `exec_sandbox`. Blockers, both in README § Next steps: point a template the MCP pool serves at a codex
-   image, and reflect a worker LiteLLM key. Costs: 5-min/100 KB per exec, no live stream, no mid-turn.
-2. **Live / mid-turn:** drive `codex app-server` — a network `--listen` reachable via ingress, or expose
-   the removed `haku/runner` runtime's pattern as a haku-console tool. Not mcp-server.
+The proposal to reuse the Haku `exec_sandbox` tool for one-shot workers and add a worker-flavored
+template is superseded: that Console MCP path is retired, and the Haku warm pool will not be ported.
+This document does not define a successor launch path. Keep the Codex transport findings above as
+historical research; resolve full Haku runner permissions separately under issue #8596.
 
 ## Not yet paved / limitations
 
-- `codex mcp-server` and the two pod-deployment tiers are characterized from source / manifests
-  (§ Running the fleet as cluster pods), not run live.
+- `codex mcp-server` and the former Haku Console pod path are characterized from source / manifests
+  (§ Running the fleet as cluster pods); the Haku Console Sandbox MCP is no longer deployed.
 - Concurrent (interleaved) turns across app-server threads were not stress-tested; threads were
   driven one at a time.
 - The file-mailbox worker-initiated loop is sketched, not executed end-to-end (app-server `steer`

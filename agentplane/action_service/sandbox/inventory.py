@@ -224,7 +224,7 @@ class SandboxInventory:
             # TODO(sandbox-lifetime): so a forgotten box keeps its 2500m of the namespace's
             # `limits.cpu` quota until someone disposes it. Expire idle boxes instead:
             # `shutdownPolicy: Delete` with a `shutdownTime` each `exec` pushes forward, as
-            # haku-console's claims do (`haku/sandbox/kubernetes_client.py`).
+            # the retired Haku Console claims did (`haku/x/sandbox_mcp/kubernetes_client.py`).
             "spec": {
                 "podTemplate": {**pod_template, "spec": spec},
                 # Carried from the template, not dropped: a Pod whose container mounts a volume the

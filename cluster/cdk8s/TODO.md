@@ -82,16 +82,6 @@ factory instead of a raw-dict escape hatch -- worth doing sometime, not urgent.
 Done: `providers/kyverno` targets `v2beta1` (or offers it alongside `v1`), and
 `preconditions` has a typed factory built from the real `any`/`all` shape.
 
-## Haku setup-script contract
-
-`test_haku_sandbox_setup.py` checks the generated SandboxTemplate's environment against
-the image's `haku-sandbox-setup.sh`. The script has no Settings contract; the similarly
-named `haku/runtime/agent/config.py` configures a different binary.
-
-Choose a small script-owned input contract or a Python bootstrap with Settings before
-retiring this real cross-artifact test. Keep the image/runtime package independent of
-`cluster/`.
-
 ## Extract only when another caller needs it
 
 A second Haku deployment may justify Environment props. Namespace-default charts may

@@ -1,15 +1,12 @@
-# Build the Nix-based Haku sandbox image (haku/sandbox/image/default.nix)
+# ARCHIVED WORKFLOW COPY: GitHub only loads workflow files from .github/workflows.
+# This file documents the retired image publisher; no active workflow builds or publishes it.
+#
+# Build the Nix-based Haku sandbox image (haku/x/sandbox_mcp/image/default.nix)
 # and push it to the Forgejo OCI registry, through nix-image.yml.
 #
-# Deliberately a DIFFERENT image repo from the apt-based haku-sandbox-image.yml
-# (`-nix` suffix): the Nix image is not yet what the SandboxTemplate pulls, and pushing it
-# under the same name would let Flux/the template roll an image whose runtime behaviour
-# nobody has confirmed yet. Publishing it under its own name is what makes the cutover
-# checklist in haku/sandbox/image/README.md runnable at all — you need a
-# pullable ref to point a scratch SandboxTemplate at.
-#
-# Once the checklist passes, this workflow and haku-sandbox-image.yml collapse into one and
-# the Dockerfile goes away.
+# The Nix image was published under its own repository while the old lane evaluated a
+# possible migration away from the apt-based image. That migration did not happen; both image
+# sources and their publisher definitions are retained only as historical reference.
 name: Haku Sandbox Image (Nix)
 
 on:
@@ -18,10 +15,10 @@ on:
     paths:
       # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
-      - ".github/workflows/haku-sandbox-image-nix.yml"
+      - "haku/x/sandbox_mcp/image/workflows/haku-sandbox-image-nix.yml"
       - ".github/workflows/nix-image.yml"
       - "flake.lock"
-      - "haku/sandbox/image/**"
+      - "haku/x/sandbox_mcp/image/**"
       - "nix/flake/packages.nix"
       - "nix/lib/nix-ld-image.nix"
       # keep-sorted end
@@ -36,10 +33,10 @@ on:
     paths:
       # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
-      - ".github/workflows/haku-sandbox-image-nix.yml"
+      - "haku/x/sandbox_mcp/image/workflows/haku-sandbox-image-nix.yml"
       - ".github/workflows/nix-image.yml"
       - "flake.lock"
-      - "haku/sandbox/image/**"
+      - "haku/x/sandbox_mcp/image/**"
       - "nix/flake/packages.nix"
       - "nix/lib/nix-ld-image.nix"
       # keep-sorted end

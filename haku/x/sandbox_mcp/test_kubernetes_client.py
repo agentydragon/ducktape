@@ -12,8 +12,8 @@ import pytest_bazel
 from fastmcp.exceptions import ToolError
 from kubernetes_asyncio.client import ApiException
 
-from haku.sandbox.config import SandboxEnvironmentConfig
-from haku.sandbox.kubernetes_client import (
+from haku.x.sandbox_mcp.config import SandboxEnvironmentConfig
+from haku.x.sandbox_mcp.kubernetes_client import (
     BOOTSTRAP_HASH_ANNOTATION,
     BOOTSTRAP_STARTED_AT_ANNOTATION,
     BOOTSTRAP_STATE_ANNOTATION,

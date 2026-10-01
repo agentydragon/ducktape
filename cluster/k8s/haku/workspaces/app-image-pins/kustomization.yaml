@@ -1,5 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1alpha1
-kind: Component
-images:
-  - name: git.allegedly.works/ducktape-ci/haku-sandbox-image
-    newTag: devel-20260930074120-931466d # {"$imagepolicy": "flux-system:haku-sandbox-image:tag"}

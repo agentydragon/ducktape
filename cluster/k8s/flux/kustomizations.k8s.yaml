@@ -3477,18 +3477,14 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: General Haku workspaces in haku-sandbox.
+    description: Haku workspace credential mirrors in haku-sandbox.
   name: haku-workspaces
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: agent-sandbox-controller
-      namespace: ducktape-flux
     - name: haku-rbac
       namespace: ducktape-flux
     - name: haku-egress-proxy
-      namespace: ducktape-flux
-    - name: kyverno-policies
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux

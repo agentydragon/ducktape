@@ -1,22 +1,13 @@
-# Retired Haku z.ai dispatch lane
+# Parked Haku components
 
-This tree is historical reference material for the retired Haku z.ai worker lane.
-It is intentionally outside the active Flux root and is not reconciled.
+This tree holds Haku components removed from active use but kept for historical reference. Each
+component README records its status and any reactivation boundary. Nothing in this tree is an active
+Flux source by virtue of its location here.
 
-The follow-up retirement removed the active Flux registrations for:
+- [`dispatch/`](dispatch/) — retired Haku z.ai dispatch plane and worker-zone perimeter. Its live
+  namespaces and resources were pruned after the Flux registrations were suspended and removed.
+- [`sandbox_mcp/`](sandbox_mcp/README.md) — retired Console Sandbox MCP, Haku-specific warm pool,
+  image, and deployment snapshot. The active resources were removed through the Haku workspaces
+  chart; its snapshot under `deploy/` is not reconciled.
 
-- the Haku dispatch namespace, database, workers-LiteLLM, and dispatcher;
-- the z.ai worker-zone namespace and its Kyverno proxy-injection policy;
-- the shared Haku-zones mitmproxy and its namespace.
-
-PR #3982 first changed the two namespace Kustomizations to
-`deletionPolicy: Delete`. The follow-up removal then allowed Flux to prune the
-live namespaces and their contents rather than silently orphaning them.
-
-The global LiteLLM z.ai provider and unrelated z.ai integrations are not part of
-this archive.
-
-The retired deployment packages are kept beside the Haku code they served:
-
-- dispatch plane: [`dispatch/`](dispatch/)
-- worker-zone perimeter: [`zones/`](zones/)
+The unrelated shared LiteLLM z.ai provider and generic Agent Sandbox constructs remain active.

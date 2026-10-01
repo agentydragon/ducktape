@@ -7,7 +7,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from haku.sandbox.config import SandboxEnvironmentConfig
+from haku.x.sandbox_mcp.config import SandboxEnvironmentConfig
 
 RAW_CONFIG: dict[str, Any] = {
     "sandbox": {

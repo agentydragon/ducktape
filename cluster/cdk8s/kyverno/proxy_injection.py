@@ -271,7 +271,7 @@ def inject_haku_egress_proxy_chart(app: App) -> Chart:
     haku_forgejo_token). A bypass here sends git straight to Forgejo with the placeholder
     and every clone fails "Credentials are incorrect or have expired". Gotcha: the `.svc`
     entries still bypass forgejo-http.forgejo.svc.cluster.local, so anything that needs
-    the credential must use the short service name, as haku-sandbox-setup.sh does.
+    the credential must use the short service name, as the retired Haku sandbox bootstrap did.
     """
     chart = Chart(app, "inject-haku-egress-proxy", disable_resource_name_hashes=True)
     _injection_policy(

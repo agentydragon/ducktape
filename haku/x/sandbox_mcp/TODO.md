@@ -1,3 +1,5 @@
+# Parked follow-ups for the retired Console sandbox client. Revisit only after an explicit reactivation decision.
+
 # TODO — Agent Sandbox client
 
 ## Bind the session bearer from a Secret
@@ -25,7 +27,7 @@ did not yet contain.
 template now names. The pod's image is in its spec and needs no annotation, but the
 template side is out of reach: Console's Role in `haku-sandbox` grants only
 `sandboxclaims`, `sandboxes`, `pods`, and `pods/exec`
-(<../../cluster/cdk8s/haku/workspaces.py>). Reading the
+(<../../../cluster/cdk8s/haku/workspaces.py>). Reading the
 `SandboxWarmPool` or its template needs a new rule, so this is an RBAC change plus a
 comparison, not a comparison alone.
 
