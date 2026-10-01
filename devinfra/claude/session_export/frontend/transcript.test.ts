@@ -34,6 +34,117 @@ describe("adaptSessionEvent", () => {
 });
 
 describe("foldSessionEvents", () => {
+  it("renders peer messages and folds held, released, and dropped message states", () => {
+    const folded = foldSessionEvents([
+      event(1, "system", {
+        type: "system",
+        subtype: "peer_message_hold",
+        message_uuid: "peer-message-1",
+        from: "agent-17",
+        from_name: "Review agent",
+        state: "held",
+        cause: "mode-mismatch",
+      }),
+      event(2, "user", {
+        type: "user",
+        uuid: "peer-message-1",
+        origin: { kind: "peer", from: "agent-17", name: "Review agent" },
+        message: { content: [{ type: "text", text: "The test expects active, but the fixture says paused." }] },
+      }),
+      event(3, "system", {
+        type: "system",
+        subtype: "peer_message_hold",
+        message_uuid: "peer-message-1",
+        state: "released",
+      }),
+      event(4, "system", {
+        type: "system",
+        subtype: "peer_message_hold",
+        message_uuid: "peer-message-2",
+        from: "agent-42",
+        from_name: "Build agent",
+        state: "held",
+        cause: "no-mode-asserted",
+      }),
+      event(5, "system", {
+        type: "system",
+        subtype: "peer_message_hold",
+        message_uuid: "peer-message-2",
+        state: "dropped",
+        outcome: "expired",
+      }),
+      event(6, "system", {
+        type: "system",
+        subtype: "peer_message_hold",
+        message_uuid: "invalid-held-message",
+        state: "held",
+      }),
+    ]);
+
+    expect(folded.map((item) => item.kind)).toEqual(["peer-message", "peer-hold"]);
+    expect(folded[0]).toMatchObject({
+      kind: "peer-message",
+      messageUuid: "peer-message-1",
+      from: "agent-17",
+      name: "Review agent",
+      text: "The test expects active, but the fixture says paused.",
+      events: [{ event_id: "event-2" }, { event_id: "event-1" }, { event_id: "event-3" }],
+    });
+    expect(folded[1]).toMatchObject({
+      kind: "peer-hold",
+      messageUuid: "peer-message-2",
+      from: "agent-42",
+      name: "Build agent",
+      state: "dropped",
+      cause: "no-mode-asserted",
+      outcome: "expired",
+      events: [{ event_id: "event-4" }, { event_id: "event-5" }],
+    });
+  });
+
+  it("keeps a held peer row and applies release even when the peer message arrives later", () => {
+    const [hold] = foldSessionEvents([
+      event(1, "system", {
+        type: "system",
+        subtype: "peer_message_hold",
+        message_uuid: "pending-message",
+        from: "agent-17",
+        state: "held",
+        cause: "mode-mismatch",
+      }),
+    ]);
+    expect(hold).toMatchObject({ kind: "peer-hold", state: "held", from: "agent-17", cause: "mode-mismatch" });
+
+    const released = foldSessionEvents([
+      event(1, "system", {
+        type: "system",
+        subtype: "peer_message_hold",
+        message_uuid: "pending-message",
+        from: "agent-17",
+        state: "held",
+      }),
+      event(2, "system", {
+        type: "system",
+        subtype: "peer_message_hold",
+        message_uuid: "pending-message",
+        state: "released",
+      }),
+      event(3, "user", {
+        type: "user",
+        uuid: "pending-message",
+        origin: { kind: "peer", from: "agent-17", name: "Review agent" },
+        message: { content: [{ type: "text", text: "The review is complete." }] },
+      }),
+    ]);
+    expect(released).toMatchObject([
+      {
+        kind: "peer-message",
+        messageUuid: "pending-message",
+        events: [{ event_id: "event-1" }, { event_id: "event-2" }, { event_id: "event-3" }],
+      },
+    ]);
+  });
+
   it("turns messages, tool results, task updates, and turn usage into ordered transcript items", () => {
     const folded = foldSessionEvents([
       event(6, "assistant", {

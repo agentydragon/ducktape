@@ -15,6 +15,24 @@ export type TranscriptMessage = TranscriptBase & {
   parentToolUseId?: string;
 };
 
+export type TranscriptPeerMessage = TranscriptBase & {
+  kind: "peer-message";
+  messageUuid: string;
+  from: string;
+  name?: string;
+  text: string;
+};
+
+export type TranscriptPeerHold = TranscriptBase & {
+  kind: "peer-hold";
+  messageUuid: string;
+  from: string;
+  name?: string;
+  state: "held" | "dropped";
+  cause?: string;
+  outcome?: string;
+};
+
 export type TranscriptToolStatus = "running" | "complete" | "error" | "denied" | "interrupted";
 
 export type TranscriptToolImage = {
@@ -83,6 +101,8 @@ export type TranscriptNotice = TranscriptBase & {
 
 export type TranscriptItem =
   | TranscriptMessage
+  | TranscriptPeerMessage
+  | TranscriptPeerHold
   | TranscriptToolRun
   | TranscriptActivity
   | TranscriptThinking
@@ -109,6 +129,50 @@ function object(value: unknown): JsonObject | null {
 
 function string(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function safePeerLabel(value: unknown): string | null {
+  const label = string(value);
+  if (label === null) return null;
+  const normalized = label.replace(/[\p{C}\p{Z}]+/gu, " ").trim();
+  if (!/[\p{L}\p{N}\p{P}\p{S}]/u.test(normalized)) return null;
+  const characters = Array.from(normalized);
+  return characters.length > 64 ? `${characters.slice(0, 63).join("")}…` : normalized;
+}
+
+type PeerHoldState = "held" | "released" | "dropped";
+
+type DecodedPeerHold = {
+  messageUuid: string;
+  from: string;
+  name?: string;
+  state: PeerHoldState;
+  cause?: string;
+  outcome?: string;
+};
+
+function decodePeerHold(payload: JsonObject): DecodedPeerHold | null {
+  if (payload.type !== "system" || payload.subtype !== "peer_message_hold") return null;
+  const messageUuid = string(payload.message_uuid);
+  const state = string(payload.state);
+  if (messageUuid === null || (state !== "held" && state !== "released" && state !== "dropped")) return null;
+  const from = safePeerLabel(payload.from);
+  if (state === "held" && from === null) return null;
+  const cause = string(payload.cause);
+  const outcome = string(payload.outcome);
+  const validCode = (code: string | null): string | undefined =>
+    code !== null && /^[a-z][a-z-]{0,40}$/.test(code) ? code : undefined;
+  const name = safePeerLabel(payload.from_name);
+  const causeCode = validCode(cause);
+  const outcomeCode = validCode(outcome);
+  return {
+    messageUuid,
+    from: from ?? "",
+    ...(name === null ? {} : { name }),
+    state,
+    ...(causeCode === undefined ? {} : { cause: causeCode }),
+    ...(outcomeCode === undefined ? {} : { outcome: outcomeCode }),
+  };
 }
 
 function textFrom(value: unknown, depth = 0): string | null {
@@ -243,9 +307,10 @@ function sendToolMessage(tool: TranscriptToolCall): string | null {
 /**
  * Adapt Ducktape's lossless event envelope into transcript rows. Tool calls are
  * grouped when adjacent in one assistant content list; results, progress, task
- * updates and policy denials are correlated back to those calls. This follows
- * the extracted Claude Web fold boundary while keeping Ducktape's original
- * events attached for inspection.
+ * updates and policy denials are correlated back to those calls. Peer-origin
+ * messages and hold transitions are joined by message UUID. This follows the
+ * extracted Claude Web fold boundary while keeping Ducktape's original events
+ * attached for inspection.
  */
 export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
   const ordered = [...events].sort(sequenceOrder).map(adaptSessionEvent);
@@ -258,6 +323,9 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
   const deniedTools = new Map<string, SessionEvent[]>();
   const pendingSubagentActivity = new Map<string, TranscriptSubagentActivity>();
   const countedSubagentEvents = new Set<string>();
+  const peerHoldsByMessageUuid = new Map<string, TranscriptPeerHold>();
+  const peerMessagesByUuid = new Map<string, TranscriptPeerMessage>();
+  const pendingPeerLifecycleEvents = new Map<string, SessionEvent[]>();
 
   const addMessage = (
     role: "user" | "assistant",
@@ -288,6 +356,99 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
       ...(parentToolUseId === undefined ? {} : { parentToolUseId }),
       events: [event],
     });
+  };
+
+  const addPeerMessage = (payload: JsonObject, event: SessionEvent): boolean => {
+    const origin = object(payload.origin);
+    if (origin?.kind !== "peer") return false;
+    const from = safePeerLabel(origin.from);
+    if (from === null) return false;
+    const text = contentBlocks(payload)
+      .map((value) => {
+        const block = object(value);
+        return block?.type === "text" || block?.type === "connector_text" ? textFrom(block.text) : null;
+      })
+      .filter((part): part is string => part !== null)
+      .join("\n");
+    if (text === "") return false;
+    const messageUuid = string(payload.uuid) ?? eventId(event);
+    const name = safePeerLabel(origin.name) ?? safePeerLabel(origin.from_name);
+    const peerMessage: TranscriptPeerMessage = {
+      kind: "peer-message",
+      id: `peer-message-${messageUuid}`,
+      messageUuid,
+      from,
+      ...(name === null ? {} : { name }),
+      text,
+      events: [event],
+    };
+    const pendingLifecycle = pendingPeerLifecycleEvents.get(messageUuid);
+    if (pendingLifecycle !== undefined) {
+      for (const pendingEvent of pendingLifecycle) addEvent(peerMessage.events, pendingEvent);
+      pendingPeerLifecycleEvents.delete(messageUuid);
+    }
+    peerMessage.events.sort(sequenceOrder);
+    peerMessagesByUuid.set(messageUuid, peerMessage);
+    items.push(peerMessage);
+    return true;
+  };
+
+  const foldPeerHold = (payload: JsonObject, event: SessionEvent): boolean => {
+    if (payload.type !== "system" || payload.subtype !== "peer_message_hold") return false;
+    const hold = decodePeerHold(payload);
+    if (hold === null) return true;
+    const previous = peerHoldsByMessageUuid.get(hold.messageUuid);
+    if (hold.state === "released") {
+      if (previous !== undefined) {
+        addEvent(previous.events, event);
+        peerHoldsByMessageUuid.delete(hold.messageUuid);
+        const index = items.indexOf(previous);
+        if (index !== -1) items.splice(index, 1);
+        const peerMessage = peerMessagesByUuid.get(hold.messageUuid);
+        if (peerMessage !== undefined) {
+          for (const holdEvent of previous.events) addEvent(peerMessage.events, holdEvent);
+          peerMessage.events.sort(sequenceOrder);
+        } else {
+          pendingPeerLifecycleEvents.set(hold.messageUuid, [...previous.events]);
+        }
+      }
+      return true;
+    }
+    const from = hold.from || previous?.from;
+    if (from === undefined || from === "") return true;
+    if (previous !== undefined) {
+      previous.from = from;
+      previous.name = hold.name ?? previous.name;
+      previous.state = hold.state;
+      previous.cause = hold.cause ?? previous.cause;
+      previous.outcome = hold.outcome;
+      addEvent(previous.events, event);
+      const peerMessage = peerMessagesByUuid.get(hold.messageUuid);
+      if (peerMessage !== undefined) {
+        addEvent(peerMessage.events, event);
+        peerMessage.events.sort(sequenceOrder);
+      }
+      return true;
+    }
+    const foldedHold: TranscriptPeerHold = {
+      kind: "peer-hold",
+      id: `peer-hold-${eventId(event)}`,
+      messageUuid: hold.messageUuid,
+      from,
+      ...(hold.name === undefined ? {} : { name: hold.name }),
+      state: hold.state,
+      ...(hold.cause === undefined ? {} : { cause: hold.cause }),
+      ...(hold.outcome === undefined ? {} : { outcome: hold.outcome }),
+      events: [event],
+    };
+    peerHoldsByMessageUuid.set(hold.messageUuid, foldedHold);
+    const peerMessage = peerMessagesByUuid.get(hold.messageUuid);
+    if (peerMessage !== undefined) {
+      addEvent(peerMessage.events, event);
+      peerMessage.events.sort(sequenceOrder);
+    }
+    items.push(foldedHold);
+    return true;
   };
 
   const accumulateSubagentActivity = (parentToolUseId: string, payload: JsonObject, event: SessionEvent): void => {
@@ -409,6 +570,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     if (type === "user" || type === "assistant") {
       const role = type;
       if (role === "assistant" && parentToolUseId !== null) accumulateSubagentActivity(parentToolUseId, payload, event);
+      if (role === "user" && addPeerMessage(payload, event)) continue;
       let text = "";
       let currentRun: TranscriptToolRun | null = null;
       const flushText = (): void => {
@@ -512,7 +674,9 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
 
     if (type === "system") {
       const subtype = string(payload.subtype) ?? "system event";
-      if (subtype.startsWith("task_")) {
+      if (subtype === "peer_message_hold") {
+        foldPeerHold(payload, event);
+      } else if (subtype.startsWith("task_")) {
         addActivity(event, payload, subtype);
       } else if (subtype === "permission_denied") {
         const toolUseId = string(payload.tool_use_id) ?? string(object(payload.tool_use)?.id);

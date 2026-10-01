@@ -389,17 +389,33 @@ function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showT
       ? item.role === "user"
         ? "You"
         : "Claude"
-      : item.kind === "tool-run"
-        ? item.tools.length === 1
-          ? (item.tools[0]?.name ?? "Tool")
-          : "Tool run"
-        : item.kind === "activity"
-          ? item.title
-          : item.kind === "thinking"
-            ? "Thinking"
-            : item.title;
+      : item.kind === "peer-message"
+        ? `Message from ${item.name ?? item.from}`
+        : item.kind === "peer-hold"
+          ? item.state === "held"
+            ? "Peer message held"
+            : "Peer message dropped"
+          : item.kind === "tool-run"
+            ? item.tools.length === 1
+              ? (item.tools[0]?.name ?? "Tool")
+              : "Tool run"
+            : item.kind === "activity"
+              ? item.title
+              : item.kind === "thinking"
+                ? "Thinking"
+                : item.title;
   const color =
-    item.kind === "message" ? (item.role === "user" ? "blue" : "violet") : item.kind === "tool-run" ? "cyan" : "gray";
+    item.kind === "message" || item.kind === "peer-message"
+      ? item.kind === "message" && item.role === "assistant"
+        ? "violet"
+        : "blue"
+      : item.kind === "tool-run"
+        ? "cyan"
+        : item.kind === "peer-hold"
+          ? item.state === "held"
+            ? "yellow"
+            : "gray"
+          : "gray";
   return (
     <Paper
       component="article"
@@ -407,6 +423,8 @@ function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showT
       data-fold-kind={item.kind}
       data-tool-count={item.kind === "tool-run" ? item.tools.length : undefined}
       data-parent-tool-use-id={item.kind === "message" || item.kind === "tool-run" ? item.parentToolUseId : undefined}
+      data-peer-from={item.kind === "peer-message" || item.kind === "peer-hold" ? item.from : undefined}
+      data-peer-state={item.kind === "peer-hold" ? item.state : undefined}
       withBorder
       radius="sm"
       p="md"
@@ -448,6 +466,25 @@ function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showT
           <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {item.text}
           </Text>
+        )}
+        {item.kind === "peer-message" && (
+          <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {item.text}
+          </Text>
+        )}
+        {item.kind === "peer-hold" && (
+          <Stack gap="xs">
+            <Text size="sm" c="dimmed">
+              From {item.name ?? item.from}
+            </Text>
+            <Group gap="xs">
+              <Badge variant="light" color={item.state === "held" ? "yellow" : "gray"}>
+                {item.state === "held" ? "Held" : "Dropped"}
+              </Badge>
+              {item.cause !== undefined && <Badge variant="light">{item.cause.replaceAll("-", " ")}</Badge>}
+              {item.outcome !== undefined && <Badge variant="light">{item.outcome.replaceAll("-", " ")}</Badge>}
+            </Group>
+          </Stack>
         )}
         {item.kind === "tool-run" && (
           <>

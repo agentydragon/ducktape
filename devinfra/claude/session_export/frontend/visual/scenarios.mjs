@@ -16,6 +16,12 @@ const SUBAGENT_READY = [
   '[data-subagent-latest-tool="Grep"]',
   '[data-parent-tool-use-id="agent-17"] [data-tool-name="Grep"]',
 ];
+const PEER_HOLD_READY = [
+  "#session-viewer-title",
+  '[data-fold-kind="peer-message"][data-peer-from="plan-agent"]',
+  '[data-fold-kind="peer-hold"][data-peer-state="held"]',
+  '[data-fold-kind="peer-hold"][data-peer-state="dropped"]',
+];
 
 export const SCENARIOS = {
   SessionViewer: { element: "#app", readySelectors: VIEWER_READY },
@@ -35,6 +41,12 @@ export const SCENARIOS = {
   SessionSubagent_mobile: {
     element: "#app",
     readySelectors: SUBAGENT_READY,
+    viewport: { width: 420, height: 900 },
+  },
+  SessionPeerHold: { element: "#app", readySelectors: PEER_HOLD_READY },
+  SessionPeerHold_mobile: {
+    element: "#app",
+    readySelectors: PEER_HOLD_READY,
     viewport: { width: 420, height: 900 },
   },
   SessionSync: { element: "#app", readySelectors: SYNC_READY },

@@ -328,6 +328,58 @@ const subagentEventPage: SessionEventPage = {
   last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a503",
 };
 
+const peerHoldEventPage: SessionEventPage = {
+  data: [
+    fixtureEvent(1, "system", {
+      type: "system",
+      subtype: "peer_message_hold",
+      message_uuid: "peer-pending-1",
+      from: "plan-agent",
+      from_name: "Planning agent",
+      state: "held",
+      cause: "mode-mismatch",
+    }),
+    fixtureEvent(2, "user", {
+      type: "user",
+      uuid: "peer-pending-1",
+      origin: { kind: "peer", from: "plan-agent", name: "Planning agent" },
+      message: { content: [{ type: "text", text: "The fixture uses paused, so the assertion should expect paused." }] },
+    }),
+    fixtureEvent(3, "user", {
+      type: "user",
+      uuid: "peer-released-1",
+      origin: { kind: "peer", from: "review-agent", name: "Review agent" },
+      message: { content: [{ type: "text", text: "I confirmed the cause in the generated manifest." }] },
+    }),
+    fixtureEvent(4, "system", {
+      type: "system",
+      subtype: "peer_message_hold",
+      message_uuid: "peer-released-1",
+      from: "review-agent",
+      state: "held",
+      cause: "no-mode-asserted",
+    }),
+    fixtureEvent(5, "system", {
+      type: "system",
+      subtype: "peer_message_hold",
+      message_uuid: "peer-released-1",
+      state: "released",
+    }),
+    fixtureEvent(6, "system", {
+      type: "system",
+      subtype: "peer_message_hold",
+      message_uuid: "peer-dropped-1",
+      from: "build-agent",
+      from_name: "Build agent",
+      state: "dropped",
+      outcome: "expired",
+    }),
+  ],
+  has_more: false,
+  first_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
+  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a506",
+};
+
 function mockFetch(input: RequestInfo | URL): Promise<Response> {
   const requestUrl = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
   const url = new URL(requestUrl, window.location.href);
@@ -348,7 +400,9 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
       ? toolResultEventPage
       : page.startsWith("SessionSubagent")
         ? subagentEventPage
-        : eventPage;
+        : page.startsWith("SessionPeerHold")
+          ? peerHoldEventPage
+          : eventPage;
     return Promise.resolve(json(events));
   }
   return Promise.reject(new Error(`Unmocked session sync request: ${url.pathname}`));
