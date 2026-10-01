@@ -172,6 +172,7 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
     assert haku["kubernetes_grants"] == [
         "cluster-diagnostics",
         "haku-sandbox-write",
+        "agentplane-testing-operator",
         "agentplane-staging-metadata",
         "agentplane-staging-logs",
         "coinbase-credentials",
@@ -226,6 +227,7 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
         for rule in app_cluster_role["rules"]
     )
     assert config["kubernetes_binding_cleanup_namespaces"] == [
+        "agentplane-testing",
         "clickhouse",
         "ducktape-flux",
         "haku-console",
@@ -271,6 +273,61 @@ def test_managed_haku_public_coder_reader_and_restart_have_named_bind_delegation
         and doc["metadata"].get("namespace") == "public-coder-agent"
         and doc["metadata"]["name"] == "agentplane-staging-external-bindings"
         for doc in docs
+    )
+
+
+def test_managed_haku_testing_operator_reuses_static_role_with_external_delegation(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    staging_docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(staging_docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    assert config["kubernetes_grants"]["agentplane-testing-operator"] == {
+        "kind": "RoleBinding",
+        "namespace": "agentplane-testing",
+        "role_ref": {"kind": "Role", "name": "agentplane-testing-operator"},
+    }
+    assert "agentplane-testing-operator" in config["sandbox_presets"]["haku"]["kubernetes_grants"]
+    assert "agentplane-testing" in config["kubernetes_binding_cleanup_namespaces"]
+    assert "agentplane-testing" in binding_delegation.external_scopes(staging.ENV)
+
+    testing_docs = agentplane_manifests[testing.ENV.namespace]
+    assert (
+        _by_name(testing_docs, "Role", "agentplane-testing-operator")["metadata"]["namespace"] == "agentplane-testing"
+    )
+    static_binding = _by_name(testing_docs, "RoleBinding", "agent-agentplane-testing-operator")
+    assert static_binding["roleRef"]["name"] == "agentplane-testing-operator"
+    assert {subject["name"] for subject in static_binding["subjects"]} >= {
+        "oidc-ksbx-groups:haku",
+        "haku:access-profile:haku",
+        "haku",
+    }
+
+    external_docs = Cdk8sTesting.synth(binding_delegation.chart(Cdk8sTesting.app(), staging.ENV, "agentplane-testing"))
+    role = _by_name(external_docs, "Role", "agentplane-staging-external-bindings")
+    assert role["metadata"]["namespace"] == "agentplane-testing"
+    assert role["rules"] == [
+        {
+            "apiGroups": ["rbac.authorization.k8s.io"],
+            "resources": ["rolebindings"],
+            "verbs": ["create", "get", "list", "delete"],
+        },
+        {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]},
+        {
+            "apiGroups": ["rbac.authorization.k8s.io"],
+            "resourceNames": ["agentplane-testing-operator"],
+            "resources": ["roles"],
+            "verbs": ["bind"],
+        },
+    ]
+    delegated_binding = _by_name(external_docs, "RoleBinding", "agentplane-staging-external-bindings")
+    assert delegated_binding["subjects"] == [
+        {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
+    ]
+    assert not any(
+        doc["kind"] in {"Role", "RoleBinding"}
+        and doc["metadata"].get("namespace") == "agentplane-testing"
+        and doc["metadata"]["name"] == "agentplane-staging-external-bindings"
+        for doc in staging_docs
     )
 
 

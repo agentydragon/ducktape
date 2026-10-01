@@ -19,6 +19,8 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
+TESTING_OPERATOR_ROLE_NAME = "agentplane-testing-operator"
+
 _SANDBOX_RULES = [
     RolePolicyRule(resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]),
     RolePolicyRule(
@@ -148,7 +150,7 @@ class AgentRbac(Construct):
         Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name="agentplane-testing-operator", namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=TESTING_OPERATOR_ROLE_NAME, namespace=env.namespace),
             rules=[*_SANDBOX_RULES, _ACTION_POLICY_RULE, _TOKEN_RULE],
         )
 
@@ -156,7 +158,7 @@ class AgentRbac(Construct):
             self,
             "rolebinding",
             metadata=ApiObjectMetadata(name="agent-agentplane-testing-operator", namespace=env.namespace),
-            role=Role.from_role_name(self, "role-ref", "agentplane-testing-operator"),
+            role=Role.from_role_name(self, "role-ref", TESTING_OPERATOR_ROLE_NAME),
         ).add_subjects(
             # Haku and public-coder agent identities plus the interactive
             # kubectl-sandbox group. public-coder is listed explicitly because this

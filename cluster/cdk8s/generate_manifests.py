@@ -1452,7 +1452,7 @@ def generate_manifests(root: Path) -> None:
         haku_egress_proxy_kustomization,
     )
     agentplane_testing_artifact = artifact("agentplane-testing", testing.ENV.output_dir, testing.ENV.image_pins)
-    testing.agentplane_testing(
+    agentplane_testing_kustomization = testing.agentplane_testing(
         flux_chart,
         agentplane_testing_artifact,
         agentplane_testing_health_checks,
@@ -1526,6 +1526,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         staging.ENV,
         {
+            "agentplane-testing": agentplane_testing_kustomization,
             "haku-sandbox": haku_rbac_kustomization,
             "haku-console": haku_console_kustomization,
             "clickhouse": clickhouse_kustomization,

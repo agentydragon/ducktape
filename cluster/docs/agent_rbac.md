@@ -207,6 +207,17 @@ duplicate ClusterRoleBindings for those capabilities.
 The narrow restart Role is introduced by PR #8672. This managed-grant change
 must deploy after that Role split: until it lands, the reader Role still
 includes the VMI `delete` verb and the separate restart Role is absent.
+
+The preset also selects the existing `agentplane-testing-operator` Role in
+`agentplane-testing`; its static Haku RoleBinding remains Flux-owned. This is a
+**testing-only write grant**: it can create, patch, and delete Sandboxes, create
+Pod exec and port-forward sessions, create/patch/delete ActionPolicySets and
+ActionPolicyBindings, and mint the `agentplane-agent` ServiceAccount token used
+by the testing app. It also reads testing SandboxTemplates, Pods, and Pod logs.
+It grants no write access in `agentplane-staging` and no direct Kubernetes
+Secret read. Pod exec can expose data mounted in testing Pods, and a holder can
+operate every Sandbox in the testing namespace and use that environment's
+credentialless MCP fixtures. Treat it as operator authority, not a diagnostics reader.
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
 read selection. Other Kyverno `agent-readable-*` namespaces still grant the static
 Haku identities; managed Haku SAs require explicit catalog entries before they receive

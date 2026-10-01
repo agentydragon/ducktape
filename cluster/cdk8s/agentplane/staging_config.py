@@ -79,6 +79,11 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
             "haku-sandbox-write": RoleBindingGrant(
                 kind="RoleBinding", namespace="haku-sandbox", role_ref=RoleRef(kind="Role", name="haku-sandbox-admin")
             ),
+            "agentplane-testing-operator": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="agentplane-testing",
+                role_ref=RoleRef(kind="Role", name="agentplane-testing-operator"),
+            ),
             "agentplane-staging-metadata": RoleBindingGrant(
                 kind="RoleBinding",
                 namespace=_NAMESPACE,
@@ -128,6 +133,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         # Retain cleanup authority when a catalog choice is disabled while its
         # existing Sandboxes still hold a binding in that scope.
         kubernetes_binding_cleanup_namespaces=[
+            "agentplane-testing",
             "clickhouse",
             "ducktape-flux",
             "haku-console",
