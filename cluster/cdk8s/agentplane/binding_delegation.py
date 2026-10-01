@@ -63,6 +63,8 @@ def chart(app: App, env: Environment, target_namespace: str) -> Chart:
             k8s.PolicyRule(
                 api_groups=[_RBAC_GROUP], resources=["rolebindings"], verbs=["create", "get", "list", "delete"]
             ),
+            # Persisted bindings can retain Role names after catalog removal.
+            k8s.PolicyRule(api_groups=[_RBAC_GROUP], resources=["roles"], verbs=["get"]),
             *[
                 k8s.PolicyRule(api_groups=[_RBAC_GROUP], resources=["roles"], resource_names=[name], verbs=["bind"])
                 for name in role_names
