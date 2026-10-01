@@ -173,7 +173,7 @@ spec:
         name: plaid_ro
         passwordSecret:
           name: plaid-mcp-db-readonly
-      - comment: "Runtime role for plaid-spend: read-only Plaid source rows and its own configuration schema."
+      - comment: Read-only runtime role for plaid-spend's four Plaid source tables.
         ensure: present
         login: true
         name: plaid_spend
@@ -223,7 +223,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   annotations:
-    description: Grants source reads and provisions plaid-spend's private configuration schema.
+    description: Grants the minimal Plaid source reads needed by plaid_ro and plaid_spend.
     kustomize.toolkit.fluxcd.io/force: enabled
   name: plaid-mcp-db-readonly-provisioner
   namespace: plaid-mcp
@@ -241,7 +241,7 @@ spec:
               for attempt in $(seq 1 60); do
                 role_count=$(psql --tuples-only --no-align --quiet -c "SELECT count(*) FROM pg_roles WHERE rolname IN ('plaid_ro', 'plaid_spend')" 2>/dev/null || true)
                 if [[ "$role_count" == 2 ]]; then break; fi
-                if [[ "$attempt" == 60 ]]; then echo 'CNPG did not create plaid_spend role' >&2; exit 1; fi
+                if [[ "$attempt" == 60 ]]; then echo 'CNPG did not create Plaid read roles' >&2; exit 1; fi
                 sleep 2
               done
               exec psql --set=ON_ERROR_STOP=1 -f /sql/readonly-role.sql

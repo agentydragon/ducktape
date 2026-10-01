@@ -8,84 +8,7 @@ data:
   PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-desktop/
   PLAID_SPEND_API_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-desktop/
   PLAID_SPEND_API_OIDC_JWKS_URI: https://auth.allegedly.works/application/o/plaid-spend-desktop/jwks/
-  PLAID_SPEND_BROWSER_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend/
-  PLAID_SPEND_PUBLIC_BASE_URL: https://plaid-spend.allegedly.works
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: plaid-spend-oidc-reader
-  namespace: plaid-mcp
-automountServiceAccountToken: false
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: plaid-spend-web-oidc-reader
-  namespace: authentik
-rules:
-  - apiGroups:
-      - ""
-    resourceNames:
-      - plaid-spend-web-oidc-config
-    resources:
-      - secrets
-    verbs:
-      - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: plaid-spend-web-oidc-reader
-  namespace: authentik
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: plaid-spend-web-oidc-reader
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: plaid-spend-oidc-reader
-    namespace: plaid-mcp
----
-apiVersion: external-secrets.io/v1
-kind: ClusterSecretStore
-metadata:
-  name: kubernetes-plaid-spend-web-oidc-secret-store
-spec:
-  conditions:
-    - namespaces:
-        - plaid-mcp
-  provider:
-    kubernetes:
-      auth:
-        serviceAccount:
-          name: plaid-spend-oidc-reader
-      remoteNamespace: authentik
-      server:
-        caProvider:
-          key: ca.crt
-          name: kube-root-ca.crt
-          namespace: default
-          type: ConfigMap
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: plaid-spend-web-oidc-config
-  namespace: plaid-mcp
-spec:
-  dataFrom:
-    - extract:
-        key: plaid-spend-web-oidc-config
-  refreshInterval: 10m
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-plaid-spend-web-oidc-secret-store
-  target:
-    creationPolicy: Owner
-    deletionPolicy: Delete
-    name: plaid-spend-web-oidc-config
+  PLAID_SPEND_CARDS_CONFIG_PATH: /etc/plaid-spend/cards.json
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -98,7 +21,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    description: Separate Plaid spend API and Authentik settings page; subscribes to committed plaid_spend_changed invalidations and recomputes the per-user view.
+    description: Separate Plaid spend API; reads one SOPS-managed shared card configuration and subscribes to committed plaid_spend_changed invalidations.
   labels:
     app.kubernetes.io/name: plaid-spend
   name: plaid-spend
@@ -115,15 +38,10 @@ spec:
     spec:
       containers:
         - env:
-            - name: PLAID_SPEND_PUBLIC_BASE_URL
+            - name: PLAID_SPEND_CARDS_CONFIG_PATH
               valueFrom:
                 configMapKeyRef:
-                  key: PLAID_SPEND_PUBLIC_BASE_URL
-                  name: plaid-spend-config
-            - name: PLAID_SPEND_BROWSER_OIDC_ISSUER
-              valueFrom:
-                configMapKeyRef:
-                  key: PLAID_SPEND_BROWSER_OIDC_ISSUER
+                  key: PLAID_SPEND_CARDS_CONFIG_PATH
                   name: plaid-spend-config
             - name: PLAID_SPEND_API_OIDC_ISSUER
               valueFrom:
@@ -150,21 +68,6 @@ spec:
                 secretKeyRef:
                   key: DATABASE_URL
                   name: plaid-mcp-db-spend
-            - name: PLAID_SPEND_BROWSER_OIDC_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  key: client_id
-                  name: plaid-spend-web-oidc-config
-            - name: PLAID_SPEND_BROWSER_OIDC_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  key: client_secret
-                  name: plaid-spend-web-oidc-config
-            - name: PLAID_SPEND_BROWSER_OIDC_SESSION_SECRET
-              valueFrom:
-                secretKeyRef:
-                  key: session_secret
-                  name: plaid-spend-web-oidc-config
           image: git.allegedly.works/ducktape-ci/plaid-spend:unset
           imagePullPolicy: Always
           livenessProbe:
@@ -199,12 +102,20 @@ spec:
             runAsGroup: 1000
             runAsNonRoot: true
             runAsUser: 1000
+          volumeMounts:
+            - mountPath: /etc/plaid-spend
+              name: cards
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
       securityContext:
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: plaid-spend
+      volumes:
+        - name: cards
+          secret:
+            secretName: plaid-spend-cards
 ---
 apiVersion: v1
 kind: Service
@@ -227,7 +138,7 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   annotations:
-    description: Plaid spend API and Authentik-protected shared settings page.
+    description: Public entry point for the Authentik-authenticated Plaid Spend API.
   name: plaid-spend
   namespace: plaid-mcp
 spec:

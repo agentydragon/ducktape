@@ -81,7 +81,7 @@ def _cluster(chart: Chart) -> None:
                     ensure=ClusterSpecManagedRolesEnsure.PRESENT,
                     login=True,
                     password_secret=ClusterSpecManagedRolesPasswordSecret(name=SPEND.name),
-                    comment="Runtime role for plaid-spend: read-only Plaid source rows and its own configuration schema.",
+                    comment="Read-only runtime role for plaid-spend's four Plaid source tables.",
                 ),
             ]
         ),
@@ -107,7 +107,7 @@ def _readonly_credentials(chart: Chart) -> None:
 
 
 def _spend_credentials(chart: Chart) -> None:
-    """Mint the least-privileged DB credential for plaid-spend."""
+    """Mint the spend service's table-scoped read-only database credential."""
     mint_db_role_secret(
         chart,
         "spend-external-secret",
@@ -175,7 +175,7 @@ def _readonly_provisioner(chart: Chart) -> None:
             name=_PROVISIONER,
             namespace=NAMESPACE,
             annotations={
-                "description": "Grants source reads and provisions plaid-spend's private configuration schema.",
+                "description": "Grants the minimal Plaid source reads needed by plaid_ro and plaid_spend.",
                 "kustomize.toolkit.fluxcd.io/force": "enabled",
             },
         ),
@@ -203,7 +203,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                                 '  role_count=$(psql --tuples-only --no-align --quiet -c "SELECT count(*) FROM pg_roles'
                                 " WHERE rolname IN ('plaid_ro', 'plaid_spend')\" 2>/dev/null || true)\n"
                                 '  if [[ "$role_count" == 2 ]]; then break; fi\n'
-                                "  if [[ \"$attempt\" == 60 ]]; then echo 'CNPG did not create plaid_spend role' >&2;"
+                                "  if [[ \"$attempt\" == 60 ]]; then echo 'CNPG did not create Plaid read roles' >&2;"
                                 " exit 1; fi\n"
                                 "  sleep 2\n"
                                 "done\n"

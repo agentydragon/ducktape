@@ -46,23 +46,6 @@ class CardConfiguration(BaseModel):
         return self
 
 
-class AccountOption(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    account_id: str
-    account_name: str
-    institution_name: str
-    mask: str | None
-    currency: str
-
-
-class SettingsState(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    accounts: list[AccountOption]
-    config: CardConfiguration
-
-
 class CardView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

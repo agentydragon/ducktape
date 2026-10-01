@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import Field, SecretStr, field_validator
+from pathlib import Path
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,24 +14,13 @@ class SpendSettings(BaseSettings):
     database_url: str = Field(validation_alias="DATABASE_URL")
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
+    cards_config_path: Path = Path("/etc/plaid-spend/cards.json")
 
     api_oidc_issuer: str
     api_oidc_client_id: str
     api_oidc_discovered_issuer: str
     api_oidc_jwks_uri: str
     api_oidc_signing_algorithms: str = "RS256"
-
-    browser_oidc_issuer: str
-    browser_oidc_client_id: str
-    browser_oidc_client_secret: SecretStr
-    browser_oidc_session_secret: SecretStr
-    browser_oidc_session_seconds: int = Field(default=28_800, gt=0)
-    public_base_url: str
-
-    @field_validator("public_base_url", mode="after")
-    @classmethod
-    def _strip_trailing_slash(cls, value: str) -> str:
-        return value.rstrip("/")
 
     @property
     def api_signing_algorithms(self) -> tuple[str, ...]:
