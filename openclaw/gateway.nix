@@ -28,8 +28,7 @@ let
   };
 
   # Require the reviewed local patch to match nix-openclaw's OpenClaw release.
-  distPatch =
-    ./patches + "/openclaw-${sourceInfo.releaseVersion}-dist.patch";
+  distPatch = ./patches + "/openclaw-${sourceInfo.releaseVersion}-dist.patch";
 
   # Keep nix-openclaw's pinned npm wrapper and lockfile intact. Add only this
   # repo's release-specific dist patch, applying it fail-closed.
