@@ -29,8 +29,6 @@ Proposed execution order for the Thread correctness/UI track:
   the frontend’s later Thread launch (`SANDBOX_REASONING_DEFAULT`).
 - **Workspace design, unranked:** reconcile once-per-Sandbox bootstrap and per-Thread working
   directories, especially for the finance-agent repo (`THREAD_WORKSPACE_BOOTSTRAP`).
-- **Reported UI status drift, unranked:** reconcile Thread status dots in the composer and
-  left sidebar (`THREAD_STATUS_PARITY`).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Low priority / deferred:** bounded browser cache state (`THREAD_LAZY_HISTORY`, desire D6),
@@ -120,7 +118,6 @@ flowchart TB
     THREAD_ACTIVITY_DENSITY["Planned UI after mock review<br/>compact activity with per-item disclosure<br/>preserve status, ordering, and Raw evidence"]:::future
     SANDBOX_REASONING_DEFAULT["Reported UI bug<br/>Sandbox default reasoning effort<br/>not reflected in later Thread launch"]:::future
     THREAD_WORKSPACE_BOOTSTRAP["Unranked workspace design<br/>one Sandbox bootstrap vs Thread cwd<br/>finance-agent repo as natural cwd"]:::future
-    THREAD_STATUS_PARITY["Reported UI drift<br/>composer and sidebar Thread dots<br/>reconcile evidence and status semantics"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
@@ -594,24 +591,6 @@ Git checkout (and can work there without a manual `cd`); a second Thread has the
 chosen sharing/isolation behavior. Test both the create-and-launch and later-Thread paths with
 preset and explicit cwd overrides, plus reload and bootstrap replay/failure. Record the chosen
 workspace contract in [launch presets](../docs/launch_presets.md) before changing runtime behavior.
-
-### `THREAD_STATUS_PARITY` — reconcile composer and sidebar Thread status dots
-
-**Operator report:** the dot by the composer sometimes disagrees with the same Thread's dot in
-the left sidebar. Current code does use different projections: `threads/projected_session.tsx`
-computes a multi-axis status from that Thread's sync window, feed/harness view state, Sandbox
-availability, and freshness; `sidebar.tsx` reduces the `/threads` live snapshot to a green/gray
-dot using Sandbox state, snapshot freshness, and the Thread's `harness_state` and `active_turn_id`.
-The shared `ThreadStatusDot` component is presentation, not a shared status derivation. These
-projections can legitimately have different freshness; determine whether observed disagreement is
-stale data, inconsistent status mapping, or both, rather than asserting a backend bug.
-
-**Acceptance:** define one documented meaning for each dot/tooltip (including catching up,
-reconnecting, failed feed, stopped/lost harness, archived/deleted Sandbox, and active turn), and
-make divergent freshness explicit rather than showing contradictory live claims. Test the same
-Thread in both surfaces across running/idle, turn start/end, disconnect/reconnect, and reload,
-including snapshots that arrive in a different order. Do not promote retained history to a live
-running claim without evidence.
 
 ### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
 
