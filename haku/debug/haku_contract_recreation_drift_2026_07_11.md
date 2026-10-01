@@ -291,7 +291,7 @@ During an in-process-to-remote migration, adding `server_url` can leave the old 
 
 ### S. Managed-agent parity tests normalize away real fields
 
-`haku/runtime/x/managed_agent/agent_shared.yaml` claims full toolset identity across cloud and self-hosted surfaces, but `haku/base/test_agent_config_ssot.py:28-40` discards `default_config.enabled`. Self-hosted MCP toolsets explicitly enable it while cloud Terraform omits it. The cloud runtime is parked, so this is dormant. Compare the complete normalized tool/default configuration or generate both surfaces from the shared model.
+`haku/runtime/x/managed_agent/agent_shared.yaml` claims full toolset identity across cloud and self-hosted surfaces, but `haku/runtime/x/managed_agent/test_agent_config_ssot.py:28-40` discards `default_config.enabled`. Self-hosted MCP toolsets explicitly enable it while cloud Terraform omits it. The cloud runtime is parked, so this is dormant. Compare the complete normalized tool/default configuration or generate both surfaces from the shared model.
 
 ### T. Bridge runtime validation is manually synchronized with the TypeScript union
 
