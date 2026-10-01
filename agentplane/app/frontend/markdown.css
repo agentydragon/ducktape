@@ -38,3 +38,30 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* A reasoning preview keeps Markdown's inline formatting while treating its block structure as
+   one continuous line. The parent clips this inline flow and supplies the ellipsis. */
+.agentplane-markdown--single-line {
+  display: inline;
+  white-space: inherit;
+}
+
+.agentplane-markdown--single-line
+  :where(h1, h2, h3, h4, h5, h6, p, ul, ol, li, pre, blockquote, table, tbody, thead, tr, td, th) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  white-space: inherit;
+}
+
+.agentplane-markdown--single-line :where(ul, ol) {
+  list-style: none;
+}
+
+.agentplane-markdown--single-line pre {
+  white-space: inherit;
+}
+
+.agentplane-markdown--single-line :where(code) {
+  overflow-wrap: normal;
+}

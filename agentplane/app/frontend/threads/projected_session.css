@@ -36,3 +36,78 @@
   background-color: var(--mantine-color-blue-light);
   max-width: min(34rem, 80%);
 }
+
+.agentplane-reasoning-row {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--mantine-spacing-xs);
+}
+
+.agentplane-reasoning-details,
+.agentplane-reasoning-static {
+  min-width: 0;
+  flex: 1;
+}
+
+.agentplane-reasoning-details > summary {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--mantine-spacing-xs);
+  cursor: pointer;
+  list-style: none;
+}
+
+.agentplane-reasoning-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.agentplane-reasoning-details > summary::before {
+  flex: none;
+  width: 0;
+  height: 0;
+  border-block: 0.25em solid transparent;
+  border-inline-start: 0.35em solid currentColor;
+  content: "";
+}
+
+.agentplane-reasoning-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.agentplane-reasoning-summary {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--mantine-spacing-xs);
+  white-space: nowrap;
+}
+
+.agentplane-reasoning-title {
+  flex: none;
+}
+
+.agentplane-reasoning-preview {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentplane-reasoning-preview .agentplane-markdown--single-line {
+  white-space: inherit;
+}
+
+.agentplane-reasoning-retry {
+  flex: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--mantine-primary-color-filled);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

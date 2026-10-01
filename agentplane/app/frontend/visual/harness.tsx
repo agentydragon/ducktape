@@ -950,9 +950,13 @@ function standardRows(threadId: string): Record<string, unknown>[] {
       arguments: '{"path":"README.md"}',
       output: "# ducktape\n\nRepository instructions are available.",
     }),
-    item(20, "r-1", ItemKind.REASONING, "I will inspect the repository structure before proposing a change.", {
-      threadId,
-    }),
+    item(
+      20,
+      "r-1",
+      ItemKind.REASONING,
+      "I will inspect the repository structure, compare **the relevant implementation and tests**, then confirm which path preserves the existing behavior before proposing a change.",
+      { threadId }
+    ),
     item(28, "m-1", ItemKind.ASSISTANT_TEXT, "I found the project files and the relevant tests.", { threadId }),
     lifecycle(
       31,
@@ -1238,7 +1242,10 @@ function codeFenceRows(threadId: string): Record<string, unknown>[] {
 /** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
  * `EntityCard` renders it directly -- the standalone case, distinct from `standardRows`'s reasoning
  * step, which sits right after a tool call and so is always part of a run. */
-function standaloneReasoningRows(threadId: string): Record<string, unknown>[] {
+function standaloneReasoningRows(threadId: string, longPreview: boolean): Record<string, unknown>[] {
+  const reasoning = longPreview
+    ? "Weighing whether to **add a retry** or fix the root cause first. The latest results point toward the projection path, so I should verify it before changing client behavior."
+    : "Weighing which path to try next.";
   const rows = [
     viewState(24, null),
     entity(
@@ -1252,9 +1259,7 @@ function standaloneReasoningRows(threadId: string): Record<string, unknown>[] {
         input_ref: payload(4, "user-1", "confirmed_input", "What should we try next?"),
       }
     ),
-    item(20, "r-solo", ItemKind.REASONING, "Weighing whether to add a retry or fix the root cause first.", {
-      threadId,
-    }),
+    item(20, "r-solo", ItemKind.REASONING, reasoning, { threadId }),
     item(24, "m-1", ItemKind.ASSISTANT_TEXT, "Let's fix the root cause.", { threadId }),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
@@ -1339,7 +1344,7 @@ function threadEntityRows(threadId: string): Record<string, unknown>[] {
   if (scenario.lifecycleGroup) return lifecycleGroupRows(threadId);
   if (scenario.markdownCodeFence) return codeFenceRows(threadId);
   if (scenario.streamingInterleaved) return streamingInterleavedRows(threadId);
-  if (scenario.standaloneReasoning) return standaloneReasoningRows(threadId);
+  if (scenario.standaloneReasoning) return standaloneReasoningRows(threadId, scenario.longReasoningPreview ?? false);
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
   return standardRows(threadId);
 }
@@ -2071,7 +2076,7 @@ function openRun(summaries: HTMLElement[]): void {
 if (scenario.openReasoning) {
   const openReasoning = new MutationObserver(() => {
     const summaries = [...document.querySelectorAll("summary")];
-    const step = summaries.find((candidate) => candidate.textContent === "Reasoning");
+    const step = document.querySelector("details.agentplane-reasoning-details > summary");
     if (!step) {
       openRun(summaries);
       return;

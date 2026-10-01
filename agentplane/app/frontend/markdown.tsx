@@ -133,9 +133,10 @@ function codeFence(node: Element, key: string): ReactNode | null {
   });
 }
 
-function toReactNode(node: ChildNode, key: string): ReactNode {
+function toReactNode(node: ChildNode, key: string, singleLine: boolean): ReactNode {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent;
   if (!(node instanceof Element)) return null;
+  if (singleLine && (node.tagName === "BR" || node.tagName === "HR")) return " ";
 
   const renderedCodeFence = codeFence(node, key);
   if (renderedCodeFence !== null) return renderedCodeFence;
@@ -146,7 +147,7 @@ function toReactNode(node: ChildNode, key: string): ReactNode {
       .filter((attribute) => attribute.name !== STREAMING_CURSOR_MARKER)
       .map((attribute) => [attribute.name === "class" ? "className" : attribute.name, attribute.value])
   );
-  const children = [...node.childNodes].map((child, index) => toReactNode(child, `${key}.${index}`));
+  const children = [...node.childNodes].map((child, index) => toReactNode(child, `${key}.${index}`, singleLine));
   // This key stays fixed as text changes, so React reuses the cursor DOM node through streaming.
   return createElement(node.tagName.toLowerCase(), { ...props, key: cursor ? STREAMING_CURSOR_KEY : key }, ...children);
 }
@@ -160,7 +161,15 @@ function toReactNode(node: ChildNode, key: string): ReactNode {
  * `theme.fontSizes`/`lineHeights` like the rest of the app; `component="div"` because the content can
  * contain block-level tags that a `Text`'s default `<p>` can't legally contain.
  */
-export function Markdown({ source, streaming = false }: { source: string; streaming?: boolean }): JSX.Element {
+export function Markdown({
+  source,
+  streaming = false,
+  singleLine = false,
+}: {
+  source: string;
+  streaming?: boolean;
+  singleLine?: boolean;
+}): JSX.Element {
   const content = useMemo(() => {
     const rendered = marked.parse(source);
     if (typeof rendered !== "string") throw new Error("asynchronous Markdown rendering is not supported");
@@ -175,10 +184,10 @@ export function Markdown({ source, streaming = false }: { source: string; stream
     const template = document.createElement("template");
     template.innerHTML = sanitized;
     if (streaming) appendStreamingCursor(template.content);
-    return [...template.content.childNodes].map((node, index) => toReactNode(node, String(index)));
-  }, [source, streaming]);
+    return [...template.content.childNodes].map((node, index) => toReactNode(node, String(index), singleLine));
+  }, [source, singleLine, streaming]);
   return (
-    <Text component="div" className="agentplane-markdown">
+    <Text component="div" className={`agentplane-markdown${singleLine ? " agentplane-markdown--single-line" : ""}`}>
       {content}
     </Text>
   );

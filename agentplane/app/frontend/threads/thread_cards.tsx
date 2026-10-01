@@ -1,6 +1,6 @@
 import { Alert, Badge, Box, Group, Paper, Stack, Text } from "@mantine/core";
 import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
-import { type JSX, type ReactNode } from "react";
+import { type JSX, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 import { HighlightedText } from "../json_view";
 import { Markdown } from "../markdown";
@@ -92,6 +92,78 @@ function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; fo
   );
 }
 
+function ReasoningPreview({
+  reference,
+  open,
+  overflows,
+  setOpen,
+  onOverflowChange,
+}: {
+  reference: PayloadRef;
+  open: boolean;
+  overflows: boolean;
+  setOpen: (open: boolean) => void;
+  onOverflowChange: (overflows: boolean) => void;
+}): JSX.Element {
+  const { body, error, retry } = useThreadSync().usePayload(reference);
+  const preview = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const element = preview.current;
+    if (body === null || !element) {
+      onOverflowChange(false);
+      return;
+    }
+    const measure = () => {
+      const next = element.scrollWidth > element.clientWidth + 1;
+      onOverflowChange(next);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [body, onOverflowChange]);
+
+  const summary = (
+    <div className="agentplane-reasoning-summary">
+      <Text component="span" className="agentplane-reasoning-title" c="dimmed">
+        Reasoning
+      </Text>
+      <div className="agentplane-reasoning-preview" ref={preview}>
+        {body === null ? (
+          <Text component="span" c="dimmed">
+            {error ? "Preview unavailable" : "Loading preview…"}
+          </Text>
+        ) : (
+          <Markdown source={body} singleLine />
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="agentplane-reasoning-row">
+      {overflows && body !== null && body.trim().length > 0 ? (
+        <details
+          className="agentplane-reasoning-details"
+          open={open}
+          onToggle={(event) => setOpen(event.currentTarget.open)}
+        >
+          <summary>{summary}</summary>
+          {open && <Markdown source={body} />}
+        </details>
+      ) : (
+        <div className="agentplane-reasoning-static">{summary}</div>
+      )}
+      {error && (
+        <button className="agentplane-reasoning-retry" onClick={retry} type="button">
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** A sent message once the server has accepted it and is working on it, but before the harness's
  * own confirmed_input entity lands -- the moment the message is fully ordered in history (it has a
  * cursor) and no longer needs the composer's Retry/Dismiss affordances, so it can read as the
@@ -117,7 +189,10 @@ export function EntityCard({
   // Computed unconditionally (hooks can't follow the entity-kind branches below): null, and so
   // always closed, for anything but a reasoning step with a body to disclose.
   const reasoningTextRef = "kind" in entity.state && entity.state.kind === ItemKind.REASONING ? entity.textRef : null;
-  const [reasoningOpen] = useRetainedDisclosure(reasoningTextRef && payloadDisclosureId(reasoningTextRef));
+  const [reasoningOpen, setReasoningOpen] = useRetainedDisclosure(
+    reasoningTextRef && payloadDisclosureId(reasoningTextRef)
+  );
+  const [reasoningOverflows, setReasoningOverflows] = useState(false);
   const discardedId =
     "kind" in entity.state && entity.state.recovery === RecoveryDisposition.ABSENT
       ? `${entity.projectionEpoch}:${entity.entityId}:discarded`
@@ -206,7 +281,17 @@ export function EntityCard({
       )}
       {reasoning ? (
         entity.textRef ? (
-          <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
+          discardedId === null ? (
+            <ReasoningPreview
+              reference={entity.textRef}
+              open={reasoningOpen}
+              overflows={reasoningOverflows}
+              setOpen={setReasoningOpen}
+              onOverflowChange={setReasoningOverflows}
+            />
+          ) : (
+            <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
+          )
         ) : (
           <Text c="dimmed">Reasoning</Text>
         )
@@ -259,7 +344,12 @@ export function EntityCard({
       </Paper>
     );
   }
-  if (reasoning) return <CollapsibleCard open={reasoningOpen}>{body}</CollapsibleCard>;
+  if (reasoning)
+    return (
+      <CollapsibleCard open={reasoningOpen && reasoningOverflows} stableInlineSize>
+        {body}
+      </CollapsibleCard>
+    );
   return <Box style={{ position: "relative" }}>{body}</Box>;
 }
 
@@ -321,9 +411,27 @@ function recoveryPresentation(recovery: number): { label: string; color: string 
  * it shows nothing but its one line -- a run/group's `summary`, or reasoning's own "Reasoning"
  * disclosure -- so the full card padding and border its opened content warrants would only pad out
  * that one line. */
-export function CollapsibleCard({ open, children }: { open: boolean; children: ReactNode }): JSX.Element {
+export function CollapsibleCard({
+  open,
+  children,
+  stableInlineSize = false,
+}: {
+  open: boolean;
+  children: ReactNode;
+  stableInlineSize?: boolean;
+}): JSX.Element {
   return (
-    <Paper p={open ? "sm" : "xs"} withBorder={open} style={{ position: "relative" }}>
+    <Paper
+      p={open ? "sm" : "xs"}
+      withBorder={open && !stableInlineSize}
+      style={{
+        position: "relative",
+        ...(stableInlineSize && {
+          paddingInline: "var(--mantine-spacing-xs)",
+          boxShadow: open ? "inset 0 0 0 1px var(--mantine-color-default-border)" : undefined,
+        }),
+      }}
+    >
       {children}
     </Paper>
   );
