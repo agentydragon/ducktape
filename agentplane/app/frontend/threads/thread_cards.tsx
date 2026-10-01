@@ -117,7 +117,10 @@ function ReasoningPreview({
       return;
     }
     const measure = () => {
-      const next = content.getBoundingClientRect().width > element.clientWidth + 1;
+      const range = document.createRange();
+      range.selectNodeContents(content);
+      const next = range.getBoundingClientRect().width > element.clientWidth + 1;
+      range.detach();
       onOverflowChange(next);
     };
     measure();
