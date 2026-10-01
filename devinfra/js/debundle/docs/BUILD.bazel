@@ -3,7 +3,9 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "bazel_integration.md",
     "cli.md",
+    "design.md",
     "peel_proposer.md",
+    "purity_soundness.md",
     "selectors.md",
     "spec_editing.md",
 ])
