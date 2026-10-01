@@ -1,4 +1,23 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import {
+  Accordion,
+  Alert,
+  Badge,
+  Button,
+  Center,
+  Code,
+  Group,
+  Loader,
+  NavLink,
+  Paper,
+  ScrollArea,
+  Select,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
 
 import {
   ApiError,
@@ -56,9 +75,10 @@ function eventTime(event: SessionEvent): string {
   return Number.isNaN(date.getTime()) ? event.created_at : date.toLocaleString();
 }
 
-function StatusDot({ status }: { status: string }): JSX.Element {
-  const color = status === "active" || status === "paused" ? ` status-dot-${status}` : "";
-  return <span className={`status-dot${color}`} role="img" aria-label={`Status: ${status}`} title={status} />;
+function statusColor(status: string): "green" | "yellow" | "gray" {
+  if (status === "active") return "green";
+  if (status === "paused") return "yellow";
+  return "gray";
 }
 
 function SessionRow({
@@ -71,39 +91,67 @@ function SessionRow({
   onSelect: () => void;
 }): JSX.Element {
   return (
-    <li>
-      <button
-        type="button"
-        className={`session-item${selected ? " selected" : ""}`}
-        aria-pressed={selected}
-        onClick={onSelect}
-      >
-        <span className="session-item-title">{session.title || "Untitled session"}</span>
-        <span className="session-item-meta">
-          <StatusDot status={session.status} />
-          <time dateTime={session.updated_at}>{new Date(session.updated_at).toLocaleDateString()}</time>
-        </span>
-        <span className="session-item-subtitle">{sessionSubtitle(session)}</span>
-      </button>
-    </li>
+    <NavLink
+      component="button"
+      type="button"
+      active={selected}
+      aria-pressed={selected}
+      onClick={onSelect}
+      label={<Text size="sm" fw={600} truncate>{session.title || "Untitled session"}</Text>}
+      description={
+        <Stack gap={4} mt={6}>
+          <Group gap="xs">
+            <Badge size="xs" variant="light" color={statusColor(session.status)}>
+              {session.status}
+            </Badge>
+            <Text component="time" size="xs" c="dimmed" dateTime={session.updated_at}>
+              {new Date(session.updated_at).toLocaleDateString()}
+            </Text>
+          </Group>
+          <Text size="xs" c="dimmed" ff="monospace" truncate>
+            {sessionSubtitle(session)}
+          </Text>
+        </Stack>
+      }
+    />
   );
 }
 
 function EventCard({ event }: { event: SessionEvent }): JSX.Element {
   const text = eventText(event);
   return (
-    <article className="transcript-event">
-      <header>
-        <strong>{event.event_type}</strong>
-        <span>#{event.sequence_num}</span>
-        <time dateTime={event.created_at}>{eventTime(event)}</time>
-      </header>
-      {text !== null && <p className="transcript-text">{text}</p>}
-      <details>
-        <summary>{text === null ? "Event payload" : "Raw event payload"}</summary>
-        <pre>{JSON.stringify(event.payload, null, 2)}</pre>
-      </details>
-    </article>
+    <Paper component="article" withBorder radius="sm" p="md">
+      <Stack gap="sm">
+        <Group justify="space-between" align="center" gap="xs">
+          <Group gap="xs">
+            <Badge variant="light" color="gray">
+              {event.event_type.replaceAll("_", " ")}
+            </Badge>
+            <Text size="xs" c="dimmed">
+              #{event.sequence_num}
+            </Text>
+          </Group>
+          <Text component="time" size="xs" c="dimmed" dateTime={event.created_at}>
+            {eventTime(event)}
+          </Text>
+        </Group>
+        {text !== null && (
+          <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {text}
+          </Text>
+        )}
+        <Accordion variant="contained" radius="sm">
+          <Accordion.Item value="payload">
+            <Accordion.Control>{text === null ? "Event payload" : "Raw event payload"}</Accordion.Control>
+            <Accordion.Panel>
+              <ScrollArea type="auto" mah={384}>
+                <Code block>{JSON.stringify(event.payload, null, 2)}</Code>
+              </ScrollArea>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
+      </Stack>
+    </Paper>
   );
 }
 
@@ -205,6 +253,8 @@ export function SessionViewer(): JSX.Element {
   }, [search, sessions]);
 
   const selectedSession = sessions.find((session) => session.id === selectedId) ?? null;
+  const watchLabel =
+    watchStatus === "connected" ? "Live updates on" : watchStatus === "connecting" ? "Connecting…" : "Reconnecting…";
 
   const loadMoreSessions = useCallback(async (): Promise<void> => {
     if (nextSessionCursor === null || loadingMoreSessions) return;
@@ -241,118 +291,148 @@ export function SessionViewer(): JSX.Element {
   }, [loadingMoreEvents, nextEventCursor, selectedId]);
 
   return (
-    <section className="session-viewer" aria-labelledby="session-viewer-title">
-      <header className="session-viewer-heading">
-        <div>
-          <h2 id="session-viewer-title">Sessions</h2>
-          <p className="hint">Read-only view of the synced Claude Code session history.</p>
-        </div>
-        {resumeToken !== null && (
-          <span role="status" className={`watch-state watch-${watchStatus}`}>
-            {watchStatus === "connected"
-              ? "Live updates on"
-              : watchStatus === "connecting"
-                ? "Connecting…"
-                : "Reconnecting…"}
-          </span>
-        )}
-        <button type="button" className="secondary" onClick={() => setRefreshCount((count) => count + 1)}>
-          Refresh
-        </button>
-      </header>
-      <div className="session-tools">
-        <label className="search-label">
-          <span>Search loaded sessions</span>
-          <input type="search" value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
-        </label>
-        <label className="filter-label">
-          <span>Status</span>
-          <select value={filter} onChange={(event) => setFilter(event.currentTarget.value as StatusFilter)}>
-            <option value="all">All sessions</option>
-            <option value="active">Active</option>
-            <option value="paused">Paused</option>
-            <option value="archived">Archived</option>
-          </select>
-        </label>
-      </div>
-      {sessionError !== null && (
-        <p role="alert" className="error viewer-error">
-          {sessionError}
-        </p>
-      )}
-      <div className="session-browser">
-        <aside className="session-list" aria-label="Session list">
-          {loadingSessions ? (
-            <p className="empty-state">Loading sessions…</p>
-          ) : visibleSessions.length === 0 ? (
-            <p className="empty-state">
-              {sessions.length === 0 ? "No sessions in the sync yet." : "No matching sessions."}
-            </p>
-          ) : (
-            <ul>
-              {visibleSessions.map((session) => (
-                <SessionRow
-                  key={session.id}
-                  session={session}
-                  selected={session.id === selectedId}
-                  onSelect={() => setSelectedId(session.id)}
-                />
-              ))}
-            </ul>
-          )}
-          {nextSessionCursor !== null && (
-            <button
-              type="button"
-              className="secondary load-more"
-              disabled={loadingMoreSessions}
-              onClick={() => void loadMoreSessions()}
-            >
-              {loadingMoreSessions ? "Loading…" : "Load more sessions"}
-            </button>
-          )}
-        </aside>
-        <div className="transcript-panel" aria-busy={loadingEvents}>
-          {selectedSession === null ? (
-            <p className="empty-state">Select a session to view its transcript.</p>
-          ) : (
-            <>
-              <header className="transcript-heading">
-                <div>
-                  <h3>{selectedSession.title || "Untitled session"}</h3>
-                  <p className="hint">{sessionSubtitle(selectedSession)}</p>
-                </div>
-                <StatusDot status={selectedSession.status} />
-              </header>
-              {eventError !== null && (
-                <p role="alert" className="error">
-                  {eventError}
-                </p>
-              )}
-              {loadingEvents ? (
-                <p className="empty-state">Loading transcript…</p>
-              ) : events.length === 0 ? (
-                <p className="empty-state">No events are stored for this session yet.</p>
+    <Paper component="div" role="region" aria-labelledby="session-viewer-title" withBorder radius="md" p="md">
+      <Stack gap="md">
+        <Group justify="space-between" align="center">
+          <Stack gap={4}>
+            <Title id="session-viewer-title" order={2} size="h3">
+              Sessions
+            </Title>
+            <Text size="sm" c="dimmed">
+              Read-only view of the synced Claude Code session history.
+            </Text>
+          </Stack>
+          <Group gap="sm">
+            {resumeToken !== null && (
+              <Badge role="status" variant="dot" color={watchStatus === "connected" ? "green" : "yellow"}>
+                {watchLabel}
+              </Badge>
+            )}
+            <Button variant="default" onClick={() => setRefreshCount((count) => count + 1)}>
+              Refresh
+            </Button>
+          </Group>
+        </Group>
+
+        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+          <TextInput
+            label="Search loaded sessions"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)}
+          />
+          <Select
+            label="Status"
+            data={[
+              { value: "all", label: "All sessions" },
+              { value: "active", label: "Active" },
+              { value: "paused", label: "Paused" },
+              { value: "archived", label: "Archived" },
+            ]}
+            value={filter}
+            onChange={(value) => {
+              if (value !== null) setFilter(value as StatusFilter);
+            }}
+          />
+        </SimpleGrid>
+
+        {sessionError !== null && <Alert color="red" title="Could not load sessions">{sessionError}</Alert>}
+
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+          <Paper component="aside" aria-label="Session list" withBorder radius="sm" p="xs">
+            <ScrollArea h="min(32rem, 60vh)" type="auto">
+              {loadingSessions ? (
+                <Center h={240}>
+                  <Loader size="sm" aria-label="Loading sessions" />
+                </Center>
+              ) : visibleSessions.length === 0 ? (
+                <Center h={180} px="md">
+                  <Text c="dimmed" ta="center">
+                    {sessions.length === 0 ? "No sessions in the sync yet." : "No matching sessions."}
+                  </Text>
+                </Center>
               ) : (
-                <>
-                  {events.map((event) => (
-                    <EventCard key={`${event.sequence_num}-${event.event_id}`} event={event} />
+                <Stack gap={4}>
+                  {visibleSessions.map((session) => (
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      selected={session.id === selectedId}
+                      onSelect={() => setSelectedId(session.id)}
+                    />
                   ))}
-                  {hasMoreEvents && (
-                    <button
-                      type="button"
-                      className="secondary load-more"
-                      disabled={loadingMoreEvents}
-                      onClick={() => void loadMoreEvents()}
-                    >
-                      {loadingMoreEvents ? "Loading…" : "Load more events"}
-                    </button>
-                  )}
-                </>
+                </Stack>
               )}
-            </>
-          )}
-        </div>
-      </div>
-    </section>
+              {nextSessionCursor !== null && (
+                <Button
+                  fullWidth
+                  variant="default"
+                  mt="xs"
+                  loading={loadingMoreSessions}
+                  onClick={() => void loadMoreSessions()}
+                >
+                  Load more sessions
+                </Button>
+              )}
+            </ScrollArea>
+          </Paper>
+
+          <Paper component="div" role="region" aria-label="Session transcript" withBorder radius="sm" p="md">
+            {selectedSession === null ? (
+              <Center h={240}>
+                <Text c="dimmed" ta="center">
+                  Select a session to view its transcript.
+                </Text>
+              </Center>
+            ) : (
+              <Stack gap="md" aria-busy={loadingEvents}>
+                <Group justify="space-between" align="flex-start" gap="xs">
+                  <Stack gap={4}>
+                    <Title order={4}>{selectedSession.title || "Untitled session"}</Title>
+                    <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
+                      {sessionSubtitle(selectedSession)}
+                    </Text>
+                  </Stack>
+                  <Badge variant="light" color={statusColor(selectedSession.status)}>
+                    {selectedSession.status}
+                  </Badge>
+                </Group>
+
+                {eventError !== null && <Alert color="red" title="Could not load transcript">{eventError}</Alert>}
+
+                {loadingEvents ? (
+                  <Center h={180}>
+                    <Loader size="sm" aria-label="Loading transcript" />
+                  </Center>
+                ) : events.length === 0 ? (
+                  <Center h={180}>
+                    <Text c="dimmed" ta="center">
+                      No events are stored for this session yet.
+                    </Text>
+                  </Center>
+                ) : (
+                  <ScrollArea h="min(32rem, 60vh)" type="auto">
+                    <Stack gap="sm" pr="sm">
+                      {events.map((event) => (
+                        <EventCard key={`${event.sequence_num}-${event.event_id}`} event={event} />
+                      ))}
+                      {hasMoreEvents && (
+                        <Button
+                          variant="default"
+                          loading={loadingMoreEvents}
+                          onClick={() => void loadMoreEvents()}
+                        >
+                          Load more events
+                        </Button>
+                      )}
+                    </Stack>
+                  </ScrollArea>
+                )}
+              </Stack>
+            )}
+          </Paper>
+        </SimpleGrid>
+      </Stack>
+    </Paper>
   );
 }

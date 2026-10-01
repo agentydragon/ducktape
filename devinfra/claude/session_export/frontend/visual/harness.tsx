@@ -1,3 +1,6 @@
+import "@mantine/core/styles.css";
+
+import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import type { SessionEventPage, SessionListPage, SessionSummary } from "../api";
@@ -110,4 +113,8 @@ window.fetch = mockFetch;
 const root = document.getElementById("app");
 if (!root) throw new Error("Visual test harness is missing #app");
 
-createRoot(root).render(<SessionViewer />);
+createRoot(root).render(
+  <MantineProvider defaultColorScheme="auto">
+    <SessionViewer />
+  </MantineProvider>
+);

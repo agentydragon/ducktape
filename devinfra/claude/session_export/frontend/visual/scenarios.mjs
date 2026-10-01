@@ -1,4 +1,4 @@
-const READY = [".session-item-title", ".transcript-event"];
+const READY = ["#session-viewer-title", "article"];
 
 export const SCENARIOS = {
   SessionViewer: { element: "#app", readySelectors: READY },

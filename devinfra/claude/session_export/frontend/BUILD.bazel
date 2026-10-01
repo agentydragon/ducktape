@@ -86,6 +86,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -104,6 +105,7 @@ ts_library(
     deps = [
         ":app",
         ":page_css",
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
@@ -177,6 +179,7 @@ ts_library(
         ":api",
         ":page_css",
         ":viewer",
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
