@@ -41,9 +41,13 @@ Proposed execution order for the Thread correctness/UI track:
   provisional; compare them with the full roadmap when scheduling. `HARNESS_CONFIG_ISOLATION` is
   the shared technical prerequisite.
 
-The independent Action Service track still has console policy parity (`CONSOLE_POLICIES`) and Haku
-MCP/tool-approval retirement (`MCP_CONSOLE_INTERNAL`, `MCPAGG`, `RETIRE_TOOLS`). Transcript
-search/lookup (`T3`) remains deferred. Priority is not a dependency between these tracks.
+Haku Console's deployed config disables its agent-facing `/mcp` endpoint and MCP OAuth discovery
+routes ([#8621](https://github.com/agentydragon/ducktape/pull/8621)), so migrating its tools and
+auto-approval policies into Action Service is no longer planned. Console's browser approval queue,
+APIs, catalog and audit ledger remain deployed and Haku-owned. The queue is a likely next Haku
+retirement; disabling `/mcp` has not completed it, and no audit-ledger deletion is implied. This
+cleanup is outside the Agentplane DAG.
+Transcript search/lookup (`T3`) remains deferred. Priority is not a dependency between these tracks.
 
 ## DAG
 
@@ -62,11 +66,6 @@ flowchart TB
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
-    MCP_CONSOLE_INTERNAL["Deferred migration<br/>Console's in-process grants server<br/>temporary-grant Action surface"]:::future
-    MCPAGG["Capstone<br/>every Console MCP server has an ActionGroup<br/>the aggregator can be retired"]:::milestone
-    RETIRE_MCP_CATALOG["Deferred migration<br/>retire Haku Console's connected-MCP catalog<br/>once the Action catalog answers for it"]:::future
-    RETIRE_APPROVAL_QUEUE["Deferred migration<br/>retire Haku Console's tool-call approval queue<br/>once Decisions and the approval UI cover it"]:::future
-    RETIRE_TOOLS["Capstone<br/>Haku Console owns no tool call<br/>catalog and approval queue both gone"]:::milestone
     INPUT_DELIVERY["Remaining native evidence<br/>input/interrupt/recovery gaps<br/>exact upstream requests and queue fates"]:::active
     T3["Deferred product work<br/>thread search and lookup<br/>later prioritization"]:::future
     PC_EGRESS_CREDENTIALS["Planned configuration<br/>public-coder's iron-proxy substitutions as EgressCredentials<br/>plus its dedicated ServiceAccount"]:::future
@@ -95,7 +94,6 @@ flowchart TB
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
-    CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>some first need Haku's sandbox identity, a grants surface, or DENY_LISTS"]:::future
 
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
@@ -121,19 +119,12 @@ flowchart TB
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
     NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
 
-    ELEVATE --> CONSOLE_POLICIES
-    ELEVATE -- grants half --> MCP_CONSOLE_INTERNAL
-    MCP_CONSOLE_INTERNAL --> MCPAGG
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
     CROSS_IDENTITY_READ_POLICY --> AG
     CROSS_IDENTITY_READ_POLICY -. cross-Identity delivery .-> ING
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
-    MCPAGG -. replacement surface .-> RETIRE_MCP_CATALOG
-    CONSOLE_POLICIES -. policy parity .-> RETIRE_APPROVAL_QUEUE
-    RETIRE_MCP_CATALOG --> RETIRE_TOOLS
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
-    RETIRE_APPROVAL_QUEUE --> RETIRE_TOOLS
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_SKILLS
@@ -193,10 +184,8 @@ multi-operator management or per-operator ownership model. A Connection binds to
 the principal policies bind to; backend credentials are the ActionGroup executor's auth modes
 ([MCP executor transports](../action_service/README.md#mcp-executor-transports)), shared by every
 caller of the group, and no linked token, static bearer, or kubeconfig reaches the MCP
-client, Sandbox, transcript, or Action prompt. Generic tool discovery stays compact; a client that needs more opts into a schema or description per
-Action. What remains of the Haku Console cutover is Action Service counterparts for its
-in-process servers (`MCP_CONSOLE_INTERNAL`), policy parity (`CONSOLE_POLICIES`), and retiring the
-aggregator (`MCPAGG`, `RETIRE_TOOLS`).
+client, Sandbox, transcript, or Action prompt. Generic tool discovery stays compact; a client that
+needs more opts into a schema or description per Action.
 The deny lists of the landed [action policies](../docs/action_policies.md) are `DENY_LISTS`.
 Processes that must outlive an SSH connection to the `ssh-mcp` server
 (<../../x/ssh_mcp_server/README.md>) are `SSHDURABLE`.
@@ -408,55 +397,6 @@ bundle the way an `ActionPolicySet` does; whether expiry works as it does for th
 given that Kubernetes RBAC has no expiry of its own and something must sweep; and whether this
 shares `ACCESS`'s credential boundary or only its authority decisions. Respect existing GitOps
 ownership: an account's bindings must not fight a reconciler for the same objects.
-
-### `CONSOLE_POLICIES` — console auto-approval policies without a set
-
-**Deferred migration:** the Haku console's `auto_approval_policies`
-(`cluster/cdk8s/haku/console_config.py`) is the reviewed authority the Action policy model
-replaces. What remains, each with what it needs; an entry leaves when its set is written or
-another route replaces it.
-
-- **`exact_tools` over `grants`** (`kubernetes_reads`, `grants_whoami`, `grants_own_revoke`):
-  `grants` has no Action Service counterpart, so no set can name these until one exists, the
-  `grants` half of `MCP_CONSOLE_INTERNAL`.
-- **`grant_self_list` and grants self-introspection** (`grants_own_list`,
-  `grants_self_introspection`): `list_grants(principal=self)` is argument-only, an
-  `argument_schema` set over a `grants` ActionGroup; but the grant model itself is console-owned,
-  so this waits on the Action Service having its own grant surface, not on a kind.
-
-  **Keep policy introspection separate from grant introspection.**
-  `get_action_policy(target=SELF)` reports the policy applied to the caller using the same
-  `resolve_bindings` source admission uses, so reported and enforced decisions cannot drift.
-  The console's `grants` tools inspect something else: expiring access. `grants_whoami`, `grant_self_list`, `kubernetes_can_i`, `get_grant`
-  and `revoke_grants` are all that surface, and what they wait on is **temporary grants**, which is
-  `ELEVATE` -- a caller asking for a set plus an `expiresAt`, approval writing the
-  `ActionPolicyBinding` with that expiry. `BindingSpec.expires_at` already exists, so what is
-  missing is the request-and-approve flow, not the storage.
-
-- **Schema auto-denial** (was: `autoDenyIf` equivalent): the console records a call whose arguments
-  fail the registered tool schema as born-denied. The Action Service refuses such a request at
-  admission before persisting anything, so the audit row the console keeps does not exist here.
-  This is **not** a denial rule and does not wait on `DENY_LISTS`: the request never reached a
-  policy, so what is missing is a durable record of an admission rejection, not a policy kind that
-  denies it. Give it its own node when `CONSOLE_POLICIES` needs it.
-
-**The composition layer, which the list above omits.** What is actually bound to an agent is the
-`any_of` bundles `public_coder_v1` and `haku_v1`, and `manual_review`, which is `type: never`.
-
-These need no kind. `ActionPolicyBinding.policySets` is a list and evaluation unions across every
-set of every binding a subject has, so an `any_of` bundle is one binding naming several sets, and
-`manual_review` is the absence of a binding. What the bundles do is turn the leaf list into
-per-agent progress:
-
-- **`public_coder_v1`** = `kubernetes_reads` + `grants_self_introspection` +
-  `grants_own_revoke`, the `grants` trio, which the list above puts behind the Action Service
-  having its own grant surface. That trio is the whole remaining distance for this agent, and it
-  is the same blocker `PC_EGRESS` meets from the other side.
-- **`haku_v1`** = `haku_sandbox_control` plus the `grants` trio, so it waits on both halves of
-  `MCP_CONSOLE_INTERNAL` and is the long pole.
-
-Nothing waits on this except `RETIRE_APPROVAL_QUEUE`, which needs policy parity for the
-affordances it retires.
 
 ## Named gates and acceptance evidence
 
@@ -854,61 +794,6 @@ consumers are listed here rather than discovered later:
 `cluster/cdk8s/haku_egress_proxy.py` and `egress_fences.py` generate the proxy and its fence.
 Deleting this namespace because this entry says "retire the old proxy" would remove the fence in
 front of Haku's sandbox and CI.
-
-### `MCP_CONSOLE_INTERNAL` — counterparts for the console-internal servers
-
-**Deferred migration:** the deployed Console catalog now offers only its in-process `grants`
-server. [#8620](https://github.com/agentydragon/ducktape/pull/8620) removed the `sandbox` server,
-its profile grant, and its auto-approval policy without an Action Service migration. The separate
-[#8621](https://github.com/agentydragon/ducktape/pull/8621) proposes disabling Console's own
-agent-facing `/mcp` endpoint; disabling an ingress does not itself replace Console's grant model,
-browser APIs, or approval ledger. If the older Haku-identity Sandbox workflow is needed later,
-assess that as a new product requirement, not an automatic prerequisite for this migration.
-
-- **`grants` has no Action Service counterpart**, so this is not configuration: the surface
-  has to exist first. It also waits on `ELEVATE`: its tools are about access that expires, and
-  temporary grants are what the Action Service is missing, not the tool definitions.
-
-### `MCPAGG` — every Console MCP server has an ActionGroup
-
-**Capstone** over `MCP_CONSOLE_INTERNAL`, whose servers are the only ones Console fronts.
-
-Use the implemented generic Action MCP frontend as the replacement surface; do not build a second
-frontend, approval coordinator, or authority store. The real-client proof (§ Tested on staging) is
-the client-compatibility evidence, not just a protocol fixture. Generic Action tools are the
-facade; the direct tools a group configures for external Connections are not required for migration.
-
-The retirements themselves are separate nodes: `RETIRE_MCP_CATALOG` waits on this one,
-`RETIRE_APPROVAL_QUEUE` does not.
-
-### `RETIRE_MCP_CATALOG` — retire Haku Console's connected-MCP catalog
-
-**Deferred migration:** Console's own catalog of connected MCP servers goes once the Action
-catalog answers for the same servers, which is what `MCPAGG` establishes. Its own clock: a
-catalog can be retired while the approval queue still runs, because a tool an agent can no
-longer discover through Console is not a tool Console still approves.
-
-Preserve the catalog's export and a rollback path before removing it.
-
-### `RETIRE_APPROVAL_QUEUE` — retire Haku Console's tool-call approval queue
-
-**Deferred migration:** Console's tool-call application and approval queue goes once Decisions
-and the integration app's approval UI cover the same workflows, and once policy parity exists —
-`CONSOLE_POLICIES`, since an auto-approval policy is exactly what decides whether a call reaches
-this queue at all. Its own clock, and the slower of the two: it waits on a UI and on policy
-coverage, where the catalog waits only on the Action catalog.
-
-Preserve tool-call audit and export evidence before removing it.
-
-### `RETIRE_TOOLS` — Haku Console owns no tool call
-
-**Capstone.** True when both retirements above have landed. It carries no work of its own; it
-is what other tracks wait on when they need "Console is out of the tool-call business" rather
-than one half of it.
-
-What is retired is the surface an agent calls — the role the Action Service now serves, per
-[its README](../action_service/README.md) — so parity is measured against that role, not against
-the aggregator's shape. Console has no conversation management left to keep.
 
 ### `INPUT_DELIVERY` — remaining native queue and recovery evidence
 
