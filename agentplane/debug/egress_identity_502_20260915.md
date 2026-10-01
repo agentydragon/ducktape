@@ -19,7 +19,7 @@ decision was for the internal LLM-ingress service and had no Sandbox identity.
 - BuildBuddy invocation
   [`92f9cd4c`](https://app.buildbuddy.io/invocation/92f9cd4c-2f08-4914-b14d-cc343381b0b0)
   failed `test_a_policy_granted_after_the_sandbox_is_running_takes_effect[claude]`
-  after 831.99 seconds. The failure was the *initial* expected-denial check for
+  after 831.99 seconds. The failure was the _initial_ expected-denial check for
   `github.com`; the decision history was empty. The later policy grant and retry
   never ran.
 - Retained Agentplane events for sandbox `accept-bind-1-upyrf` record command
