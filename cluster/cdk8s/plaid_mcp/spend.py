@@ -8,8 +8,8 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.flux import kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.plaid_mcp import db
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
