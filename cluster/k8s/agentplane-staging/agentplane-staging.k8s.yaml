@@ -1766,6 +1766,7 @@ data:
           - public-ducktape-reads
           - public-ducktape-fork-reads
           - public-gaffer-private-reads
+          - github-identity-reads
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -1791,6 +1792,8 @@ data:
           - github-clone
           - github-agentydragon-agent
           - github-actions-logs
+        action_policy_sets:
+          - github-identity-reads
         thread_preset: haku-claude
         bootstrap: |
           #!/bin/sh
@@ -1813,6 +1816,12 @@ data:
           - github-clone
           - github-actions-logs
           - buildbuddy
+        action_policy_sets:
+          - public-github-reads
+          - public-ducktape-reads
+          - public-ducktape-fork-reads
+          - public-gaffer-private-reads
+          - github-identity-reads
         thread_preset: finance-agent-codex
         bootstrap: |
           #!/bin/sh
