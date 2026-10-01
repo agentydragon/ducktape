@@ -163,6 +163,13 @@ removal prevents new selection, while retained cleanup scopes let old bindings b
 deleted when their Sandboxes are deleted. The app may `bind` only the catalog's named
 Roles/ClusterRoles and cannot edit their rules.
 
+Kubernetes RBAC does not constrain a ClusterRole's `bind` permission to
+namespaced RoleBindings. Because the app can create ClusterRoleBindings for the
+catalog's cluster grant, a compromised app identity could bind the named
+metadata and logs ClusterRoles cluster-wide too. The catalog and reconciler
+enforce the configured binding kind during ordinary operation; this remains a
+delegation limit of the app ServiceAccount's Kubernetes permissions.
+
 The Haku preset currently selects `cluster-diagnostics-reader` cluster-wide,
 `haku-sandbox-admin` within `haku-sandbox`, the common metadata and pod-log readers
 within `agentplane-staging`, and `get` on exactly
@@ -189,7 +196,10 @@ for box in "$HAKU_A" "$HAKU_B" "$OTHER"; do
 done
 for box in "$HAKU_A" "$HAKU_B"; do
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl get nodes -o name
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging get pods -o name
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging auth can-i get pods/log
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n haku-sandbox auth can-i create jobs
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging auth can-i create jobs
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging get secret coinbase-api-credentials -o 'jsonpath={.metadata.name}'
 done
 kubectl -n agentplane-staging exec "$OTHER" -c runner -- kubectl get nodes -o name
@@ -198,11 +208,13 @@ kubectl -n agentplane-staging exec "$OTHER" -c runner -- kubectl -n agentplane-s
 
 The three `whoami` results must name three distinct
 `system:serviceaccount:agentplane-staging:<sandbox-name>` principals. Both Haku boxes
-must read Nodes, be allowed to create Jobs only in `haku-sandbox`, and return only
-`coinbase-api-credentials` from the Secret read. The last two commands must return
-`Forbidden`. Never use `-o yaml`, `-o json`, `describe`, shell tracing, or an agent
-transcript for the Secret: those can expose the key. The metadata-only output above
-still performs a real Secret `get` without printing its data.
+must read Nodes and staging Pod metadata, answer `yes` for staging `pods/log`
+reads and `haku-sandbox` Job creation, answer `no` for staging Job creation,
+and return only `coinbase-api-credentials` from the Secret read. The last two
+commands must return `Forbidden`. Never use `-o yaml`, `-o json`, `describe`, shell
+tracing, or an agent transcript for the Secret: those can expose the key. The
+metadata-only output above still performs a real Secret `get` without printing
+its data.
 
 For shared Role propagation, create a dummy `agentplane-grant-probe` Secret in
 staging with a harmless literal value, then verify both Haku boxes are denied `get`
