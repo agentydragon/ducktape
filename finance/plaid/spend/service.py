@@ -424,7 +424,7 @@ class SpendService:
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(self._stopping.wait(), timeout=3)
 
-    def _on_notification(self, connection: asyncpg.Connection, pid: int, channel: str, payload: str) -> None:
+    def _on_notification(self, connection: object, pid: int, channel: str, payload: object) -> None:
         del connection, pid
         if channel == _CONFIG_CHANNEL and payload == self._instance_id:
             return
