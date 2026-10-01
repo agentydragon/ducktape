@@ -7,7 +7,6 @@ py_library(
     srcs = ["app.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:forgejo_images",
@@ -16,6 +15,7 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:vm_image_restart",
         "//cluster/cdk8s/forgejo:secret_copy",
         "//cluster/cdk8s/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
@@ -24,6 +24,5 @@ py_library(
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//jsii",
     ],
 )

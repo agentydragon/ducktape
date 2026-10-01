@@ -10,9 +10,8 @@ image-automation markers override this chart's placeholder image tags
 
 from __future__ import annotations
 
-import jsii
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ConfigMap, IApiResource, Role, RoleBinding, RolePolicyRule, ServiceAccount, k8s
+from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgress,
     CiliumNetworkPolicySpecEgressToPorts,
@@ -32,7 +31,6 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 )
 
 from cluster.cdk8s import cilium, forgejo_images, namespaces, node_scheduling
-from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
@@ -42,6 +40,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Ne
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vm_image_restart import OPT_IN_ANNOTATION, VmImageRestartController
 
 NAME = "cpap-sync"
 NAMESPACE = "cpap-sync"
@@ -49,12 +48,8 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cpap-sync"
 # The tags come from image-pins/kustomization.yaml.
 _IMAGE = "git.allegedly.works/ducktape-ci/cpap-sync:unset"
 _GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/cpap-gateway:unset"
-_VM_IMAGE_RESTART_CONTROLLER = "git.allegedly.works/ducktape-ci/vm-image-restart:unset"
 _LABELS = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "sync"}
 _GATEWAY = "cpap-gateway"
-_VM_IMAGE_RESTART_CONTROLLER_NAME = "vm-image-restart"
-_VM_IMAGE_RESTART_STATE = "vm-image-restart-state"
-_VM_IMAGE_RESTART_OPT_IN = "ducktape.org/auto-restart-template-changes"
 # The gateway VM's forwarder listens on 18080; the Service presents it on 80.
 _CARD = ServiceRef(
     name="cpap-card",
@@ -69,28 +64,6 @@ _CARD_SECRET = "cpap-ezshare"
 CARD_SECRET_FILE = f"{_CARD_SECRET}.sops.yaml"
 
 
-@jsii.implements(IApiResource)
-class _NamedApiResource:
-    """An RBAC resource restricted to one KubeVirt object by resource name."""
-
-    def __init__(self, *, api_group: str, resource_type: str, resource_name: str) -> None:
-        self._api_group = api_group
-        self._resource_type = resource_type
-        self._resource_name = resource_name
-
-    @property
-    def api_group(self) -> str:
-        return self._api_group
-
-    @property
-    def resource_type(self) -> str:
-        return self._resource_type
-
-    @property
-    def resource_name(self) -> str | None:
-        return self._resource_name
-
-
 def _gateway_vm(chart: Chart) -> VirtualMachine:
     return container_disk_vm(
         chart,
@@ -98,7 +71,7 @@ def _gateway_vm(chart: Chart) -> VirtualMachine:
         name=_GATEWAY,
         namespace=NAMESPACE,
         annotations={
-            _VM_IMAGE_RESTART_OPT_IN: "true",
+            OPT_IN_ANNOTATION: "true",
             "description": (
                 "Always-on KubeVirt gateway for the CPAP ez Share WiFi card. The USB adapter stays physically "
                 "attached to OptiPlex and is passed through to this VM; the VM exposes only the card's HTTP API "
@@ -261,8 +234,8 @@ def chart(app: App) -> Chart:
             ],
         ),
     )
-    _gateway_vm(chart)
-    _vm_image_restart_controller(chart)
+    gateway = _gateway_vm(chart)
+    VmImageRestartController(chart, "vm-image-restart-controller", target_vm=gateway)
     NetworkPolicy(
         chart,
         "egress",
@@ -312,124 +285,6 @@ def chart(app: App) -> Chart:
         ],
     )
     return chart
-
-
-def _vm_image_restart_controller(chart: Chart) -> None:
-    """A single-VM controller which replaces only the VMI, never the VM object or its identity."""
-    labels = {"app.kubernetes.io/name": _VM_IMAGE_RESTART_CONTROLLER_NAME}
-    service_account = ServiceAccount(
-        chart,
-        "vm-image-restart-service-account",
-        metadata=ApiObjectMetadata(
-            name=_VM_IMAGE_RESTART_CONTROLLER_NAME,
-            namespace=NAMESPACE,
-            annotations={"description": "Identity for the KubeVirt VM image restart controller."},
-        ),
-    )
-    vm_resource = _NamedApiResource(api_group="kubevirt.io", resource_type="virtualmachines", resource_name=_GATEWAY)
-    vmi_resource = _NamedApiResource(
-        api_group="kubevirt.io", resource_type="virtualmachineinstances", resource_name=_GATEWAY
-    )
-    state_resource = ConfigMap.from_config_map_name(chart, "vm-image-restart-state-ref", _VM_IMAGE_RESTART_STATE)
-    Role(
-        chart,
-        "vm-image-restart-role",
-        metadata=ApiObjectMetadata(
-            name=_VM_IMAGE_RESTART_CONTROLLER_NAME,
-            namespace=NAMESPACE,
-            annotations={"description": "Narrow permissions for restarting and observing the configured VM."},
-        ),
-        rules=[
-            RolePolicyRule(resources=[vm_resource], verbs=["get"]),
-            RolePolicyRule(resources=[vmi_resource], verbs=["get", "delete"]),
-            RolePolicyRule(resources=[state_resource], verbs=["get", "patch"]),
-            RolePolicyRule(resources=[custom_resource("", "events")], verbs=["create"]),
-        ],
-    )
-    RoleBinding(
-        chart,
-        "vm-image-restart-role-binding",
-        metadata=ApiObjectMetadata(name=_VM_IMAGE_RESTART_CONTROLLER_NAME, namespace=NAMESPACE),
-        role=Role.from_role_name(chart, "vm-image-restart-role-ref", _VM_IMAGE_RESTART_CONTROLLER_NAME),
-    ).add_subjects(service_account)
-    ConfigMap(
-        chart,
-        "vm-image-restart-state",
-        metadata=ApiObjectMetadata(
-            name=_VM_IMAGE_RESTART_STATE,
-            namespace=NAMESPACE,
-            annotations={"description": "Durable rollout state and bounded retry count for the configured VM."},
-        ),
-    )
-    k8s.KubeDeployment(
-        chart,
-        "vm-image-restart-deployment",
-        metadata=k8s.ObjectMeta(
-            name=_VM_IMAGE_RESTART_CONTROLLER_NAME,
-            namespace=NAMESPACE,
-            labels=labels,
-            annotations={
-                "description": "Applies staged image/template changes to the configured stateless KubeVirt VM."
-            },
-        ),
-        spec=k8s.DeploymentSpec(
-            replicas=1,
-            strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=labels),
-            template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=labels),
-                spec=k8s.PodSpec(
-                    service_account_name=_VM_IMAGE_RESTART_CONTROLLER_NAME,
-                    automount_service_account_token=True,
-                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
-                    security_context=k8s.PodSecurityContext(
-                        run_as_non_root=True,
-                        run_as_user=65532,
-                        run_as_group=65532,
-                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
-                    ),
-                    containers=[
-                        k8s.Container(
-                            name=_VM_IMAGE_RESTART_CONTROLLER_NAME,
-                            image=_VM_IMAGE_RESTART_CONTROLLER,
-                            image_pull_policy="IfNotPresent",
-                            env=[
-                                k8s.EnvVar(name="TARGET_NAMESPACE", value=NAMESPACE),
-                                k8s.EnvVar(name="TARGET_VM_NAME", value=_GATEWAY),
-                                k8s.EnvVar(name="STATE_CONFIGMAP_NAME", value=_VM_IMAGE_RESTART_STATE),
-                            ],
-                            security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False,
-                                read_only_root_filesystem=True,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
-                            ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("48Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                            ),
-                        )
-                    ],
-                ),
-            ),
-        ),
-    )
-    NetworkPolicy(
-        chart,
-        "vm-image-restart-egress",
-        metadata=ApiObjectMetadata(
-            name=f"{_VM_IMAGE_RESTART_CONTROLLER_NAME}-egress",
-            namespace=NAMESPACE,
-            annotations={"description": "Allows the restart controller to reach only DNS and the Kubernetes API."},
-        ),
-        endpoint_selector=labels,
-        egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443])],
-    )
 
 
 def cpap_sync(

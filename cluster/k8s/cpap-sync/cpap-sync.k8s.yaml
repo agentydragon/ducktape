@@ -340,10 +340,19 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   annotations:
-    description: Identity for the KubeVirt VM image restart controller.
+    description: Identity for the generic KubeVirt VM image restart controller.
   name: vm-image-restart
   namespace: cpap-sync
 automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  annotations:
+    description: Durable rollout state and bounded retry count for the configured VM.
+  name: vm-image-restart-state
+  namespace: cpap-sync
+immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -401,26 +410,20 @@ subjects:
     name: vm-image-restart
     namespace: cpap-sync
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  annotations:
-    description: Durable rollout state and bounded retry count for the configured VM.
-  name: vm-image-restart-state
-  namespace: cpap-sync
-immutable: false
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    description: Applies staged image/template changes to the configured stateless KubeVirt VM.
+    description: Applies staged image/template changes to one configured stateless KubeVirt VM.
   labels:
     app.kubernetes.io/name: vm-image-restart
   name: vm-image-restart
   namespace: cpap-sync
 spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
   replicas: 1
+  revisionHistoryLimit: 10
   selector:
     matchLabels:
       app.kubernetes.io/name: vm-image-restart
@@ -430,6 +433,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: vm-image-restart
+        cdk8s.io/metadata.addr: cpap-sync-vm-image-restart-controller-deployment-c82c8636
     spec:
       automountServiceAccountToken: true
       containers:
@@ -455,16 +459,25 @@ spec:
             capabilities:
               drop:
                 - ALL
+            privileged: false
             readOnlyRootFilesystem: true
+            runAsNonRoot: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
+      restartPolicy: Always
       securityContext:
+        fsGroupChangePolicy: Always
         runAsGroup: 65532
         runAsNonRoot: true
         runAsUser: 65532
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: vm-image-restart
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
