@@ -1714,6 +1714,13 @@ data:
           through the proxy when reading invocation details or logs from the allowed BuildBuddy API host. The
           proxy substitutes the cluster-held API key; never read, print, or persist the real key or bypass the
           proxy. If no applicable rule is present, report the missing access instead of guessing a credential.
+      haku-claude:
+        title: Haku
+        harness: HARNESS_CLAUDE
+        model: anthropic-max20/ant-messages/claude-sonnet-5
+        cwd: /state/workspaces/{session_id}
+        reasoning_effort: medium
+        instructions: "You are Haku, the operator's tireless background executive assistant. Your haku-state checkout -- your memory, your method, and your only write surface -- is at haku-state, with git auth already in place. It also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end. Commit and push haku-state as you go."
       finance-agent-codex:
         title: Finance agent / Codex
         harness: HARNESS_CODEX
@@ -1743,13 +1750,6 @@ data:
 
           This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
           action against a real financial account.
-      haku-claude:
-        title: Haku
-        harness: HARNESS_CLAUDE
-        model: anthropic-max20/ant-messages/claude-sonnet-5
-        cwd: /state/workspaces/{session_id}
-        reasoning_effort: medium
-        instructions: "You are Haku, the operator's tireless background executive assistant. Your haku-state checkout -- your memory, your method, and your only write surface -- is at haku-state, with git auth already in place. It also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end. Commit and push haku-state as you go."
     sandbox_presets:
       public-coder:
         title: Public coder
@@ -1773,26 +1773,6 @@ data:
           if [ ! -f "$marker" ]; then
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
-      finance-agent:
-        title: Finance agent
-        template: agentplane-runner
-        policies:
-          - basic
-          - packages
-          - forgejo-finance-agent
-          - plaid-pgweb
-          - github-agentydragon-agent
-          - github-clone
-          - github-actions-logs
-          - buildbuddy
-        thread_preset: finance-agent-codex
-        bootstrap: |
-          marker=/state/workspaces/.agentplane-finance-agent-ready
-          mkdir -p /state/workspaces
-          if [ ! -f "$marker" ]; then
-            git clone --branch main --single-branch http://finance-agent:agentplane-credential-forgejo-finance-agent@forgejo-http.forgejo.svc.cluster.local:3000/finance-agent/finance-agent.git /state/workspaces/finance-agent
-            printf '%s\n' 'finance-agent workspace initialized' > "$marker"
-          fi
       haku:
         title: Haku
         template: agentplane-runner
@@ -1813,12 +1793,34 @@ data:
           - github-actions-logs
         thread_preset: haku-claude
         bootstrap: |
+          #!/bin/sh
           marker=/state/workspaces/.agentplane-haku-ready
           mkdir -p /state/workspaces
           if [ ! -f "$marker" ]; then
             git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git /state/workspaces/haku-state
             git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git /state/workspaces/ducktape
             printf '%s\n' 'haku workspace initialized' > "$marker"
+          fi
+      finance-agent:
+        title: Finance agent
+        template: agentplane-runner
+        policies:
+          - basic
+          - packages
+          - forgejo-finance-agent
+          - plaid-pgweb
+          - github-agentydragon-agent
+          - github-clone
+          - github-actions-logs
+          - buildbuddy
+        thread_preset: finance-agent-codex
+        bootstrap: |
+          #!/bin/sh
+          marker=/state/workspaces/.agentplane-finance-agent-ready
+          mkdir -p /state/workspaces
+          if [ ! -f "$marker" ]; then
+            git clone --branch main --single-branch http://finance-agent:agentplane-credential-forgejo-finance-agent@forgejo-http.forgejo.svc.cluster.local:3000/finance-agent/finance-agent.git /state/workspaces/finance-agent
+            printf '%s\n' 'finance-agent workspace initialized' > "$marker"
           fi
     default_policies:
       - basic
