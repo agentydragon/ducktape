@@ -255,11 +255,7 @@ def test_managed_haku_read_grants_cover_declarative_namespace_opt_ins(
 
     external_grant_namespaces = {grant["namespace"] for grant in catalog.values() if grant["kind"] == "RoleBinding"}
     expected_external_scopes = (external_grant_namespaces | cleanup_namespaces) - {"agentplane-staging"}
-    assert expected_external_scopes == expected_external_namespaces | {
-        "ducktape-flux",
-        "haku-console",
-        "haku-sandbox",
-    }
+    assert expected_external_scopes == expected_external_namespaces | {"ducktape-flux", "haku-console", "haku-sandbox"}
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
         and doc["metadata"]["name"] == "agentplane-staging-external-bindings"
@@ -286,10 +282,17 @@ def test_managed_haku_read_grants_cover_declarative_namespace_opt_ins(
     namespace_owners["haku-sandbox"] = {"haku-rbac"}
     namespace_owners["flux-system"] = set()
     namespace_owners["ducktape-flux"] = set()
+    # The clickhouse Namespace is emitted alongside the operator resources, but
+    # its service Kustomization owns the namespace-scoped workload and grants.
+    delegation_owner_overrides = {"clickhouse": "clickhouse"}
     for namespace in expected_external_scopes:
         owners = namespace_owners[namespace]
         is_bootstrap_root = namespace in {"flux-system", "ducktape-flux"}
-        expected_dependency = None if is_bootstrap_root else sorted(owners)
+        expected_dependency = (
+            None
+            if is_bootstrap_root
+            else [delegation_owner_overrides.get(namespace, owner) for owner in sorted(owners)]
+        )
         assert is_bootstrap_root or len(owners) == 1, (namespace, owners)
 
         path = generated_dir / "agentplane/binding-delegation/agentplane-staging" / namespace
