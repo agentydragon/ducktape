@@ -51,8 +51,8 @@
       "release": "plaid-spend-desktop"
     },
     "plaid-spend-desktop-extension": {
-      "target": "//finance/plaid/spend/desktop/gnome:plaid_spend_extension",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/finance/plaid/spend/desktop/gnome/plaid-spend-desktop.zip",
+      "target": "//finance/plaid/spend/gnome:plaid_spend_extension",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/finance/plaid/spend/gnome/plaid-spend-desktop.zip",
       "release": "plaid-spend-desktop"
     },
     "bbapi": {

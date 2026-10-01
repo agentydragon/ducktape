@@ -45,6 +45,7 @@ class ModelRequest[RequestT: StreamableRequest]:
 
     _exchange: ModelExchange[RequestT]
     model: str
+    effort: str | None
     # The instruction text the model sees outside the conversation: the harness's system prompt,
     # and any developer preamble it sends alongside.
     system_text: str

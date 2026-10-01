@@ -58,6 +58,7 @@ const THREAD: ThreadView = {
   last_cursor: 1,
   last_event_at: null,
   harness_state: "HARNESS_STATE_RUNNING",
+  reasoning_effort: "low",
 };
 let favicon: HTMLLinkElement;
 
@@ -162,7 +163,12 @@ function viewState({
     pending: false,
     turnId: null,
     state: {
-      controls: { applied_model: model, active_turn_id: activeTurn, harness_state: harness },
+      controls: {
+        applied_model: model,
+        applied_reasoning_effort: null,
+        active_turn_id: activeTurn,
+        harness_state: harness,
+      },
       operational: { status, last_verified_cursor: "1", feed_error: null },
     },
     textRef: null,
@@ -510,6 +516,25 @@ it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | n
   const texts = (role: string) => [...container.querySelectorAll(`[role="${role}"]`)].map((node) => node.textContent);
   expect(texts("status")).toEqual(status === null ? [] : [expect.stringContaining(status)]);
   expect(texts("alert")).toEqual(alert === null ? [] : [matching(alert)]);
+});
+
+it("shows the applied effort and sends a change command without optimistically changing it", async () => {
+  const container = await render();
+  const picker = container.querySelector<HTMLInputElement>('input[aria-label="Reasoning effort"]');
+  expect(picker?.value).toBe("low");
+  await act(async () => picker?.click());
+  const high = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (option) => option.textContent === "high"
+  );
+  expect(high).toBeDefined();
+  await act(async () => high?.click());
+  expect(sentOperations()).toContainEqual({
+    case: "changeReasoningEffort",
+    value: expect.objectContaining({ effort: "high" }),
+  });
+  expect(picker?.value).toBe("low");
+  await rerender(container, threadState({ rows: [viewState()] }));
+  expect(picker?.value).toBe("low");
 });
 
 it.each([
@@ -1106,6 +1131,11 @@ describe("EntityCard", () => {
       "model_changed",
       { case: "modelChanged", value: { previousModel: "test-model", model: "test-model-next" } },
       "Model changed to test-model-next",
+    ],
+    [
+      "reasoning_effort_changed",
+      { case: "reasoningEffortChanged", value: { previousEffort: "low", effort: "high" } },
+      "Reasoning effort changed to high",
     ],
     ["harness_exited", { case: "harnessExited", value: { exitCode: 3 } }, "Harness exited with code 3"],
   ])("shows an ordinary %s as one line with no disclosure of its own", async (observation, event, line) => {

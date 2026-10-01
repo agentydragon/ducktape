@@ -76,6 +76,7 @@ def assert_sourced(entries: Sequence[event_log_pb2.EventEntry]) -> None:
         "turn_completed",
         "harness_user_message_confirmed",
         "model_changed",
+        "reasoning_effort_changed",
     )
     for entry in entries:
         if kind(entry) in derived:

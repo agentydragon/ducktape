@@ -17,13 +17,12 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
-from cluster.cdk8s.flux import kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.seaweedfs import s3
 
-_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/backup"
+_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant"
 _NAME = "home-assistant-backups"
 _NAMESPACE = "home-assistant"
 # SOPS-encrypted in credentials-secret.sops.yaml.
@@ -101,7 +100,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_yaml(
-        root / _OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[write_charts(root, _OUTPUT_DIR, chart), "credentials-secret.sops.yaml"]),
-    )
+    write_charts(root, _OUTPUT_DIR, chart, manifest_name="backup.k8s.yaml")

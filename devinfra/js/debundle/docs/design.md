@@ -167,7 +167,7 @@ pass changes the _emitted_ identifier in the destination module's
 text; it does not change what a binding _is_. The schedule keys
 on the original (scrambled) source-chunk local; the rename pass
 applies as a final post-processing step that reads
-`LogicalModule.rename_map` and rewrites the emitted source.
+`PlannedModule.rename_map` and rewrites the emitted source.
 
 ### Two binding kinds
 
@@ -216,7 +216,7 @@ Let the input _chunk_ be a sequence of top-level statements
 `S_1, ..., S_n` in source order. Let the spec be a partial map
 `owner: binding → ModuleId` (over bindings of kind `Owned`);
 bindings without an explicit owner default to the _residual_
-module (a synthesized `LogicalModule` with `residual: true` that
+module (a synthesized `PlannedModule` with `residual: true` that
 holds whatever is left over).
 
 For each statement `S`:

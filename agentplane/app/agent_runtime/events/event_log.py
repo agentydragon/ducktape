@@ -202,6 +202,8 @@ def _project_attached(attached: protocol_pb2.Attached, entry: event_log_pb2.Even
             attached.active_turn_id = ""
         case "model_changed":
             attached.spec.model = event.model_changed.model
+        case "reasoning_effort_changed":
+            attached.spec.reasoning_effort = event.reasoning_effort_changed.effort
 
 
 async def append(

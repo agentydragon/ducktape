@@ -46,6 +46,18 @@ async def test_baseline_turn(codex: CodexHarness, openai_responses: OpenAIRespon
     frames.assert_item_lifecycles(captured, wire.UserMessageItem)
 
 
+async def test_turn_effort_override_reaches_responses(codex: CodexHarness, openai_responses: OpenAIResponses) -> None:
+    async with codex.start(openai_responses) as run:
+        for effort in ("low", "high"):
+            turn = await run.start_turn(f"Reply with exactly: {effort.upper()}_OK", effort=effort)
+            async with await openai_responses.await_next_request() as exchange:
+                assert exchange.request.reasoning_config is not None
+                assert exchange.request.reasoning_config["effort"] == effort
+                await exchange.send(*sse.response_stream([sse.Message(f"{effort.upper()}_OK")], model=MODEL).events)
+            assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
+    assert len([frame for frame in run.native_frames() if frame.get("method") == "turn/started"]) == 2
+
+
 async def test_idle_resume_replays_the_thread_from_disk(codex: CodexHarness, openai_responses: OpenAIResponses) -> None:
     async with codex.start(openai_responses, persist=True) as first:
         turn = await first.start_turn("Reply with exactly: IDLE_RESUME_SEED_OK")

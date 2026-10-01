@@ -10,6 +10,10 @@ message ChangeModel {
   string model = 1;
 }
 
+message ChangeReasoningEffort {
+  string effort = 1;
+}
+
 // Ends exactly this active turn. A runner must not carry an interrupt forward to a later turn.
 message InterruptTurn {
   string turn_id = 1;
@@ -27,5 +31,6 @@ message Command {
     ChangeModel change_model = 3;
     InterruptTurn interrupt_turn = 4;
     StopRunnerSession stop_runner_session = 5;
+    ChangeReasoningEffort change_reasoning_effort = 6;
   }
 }

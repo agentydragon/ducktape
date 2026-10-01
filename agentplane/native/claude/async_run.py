@@ -170,5 +170,11 @@ class ClaudeRun:
             raise RuntimeError(f"Claude model switch failed: {response}")
         return response
 
+    async def set_effort(self, effort: str) -> wire.ControlResponseFrame:
+        response = (await self._claude().set_effort(effort)).response
+        if not isinstance(response, wire.ControlResponseFrame):
+            raise RuntimeError(f"Claude effort switch failed: {response}")
+        return response
+
     async def crash(self) -> int:
         return await self._native().crash()

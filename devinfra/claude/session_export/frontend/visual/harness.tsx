@@ -108,7 +108,31 @@ const eventPage: SessionEventPage = {
         content: [
           { type: "thinking", thinking: "I should inspect the failing test and its fixture." },
           { type: "text", text: "I’ll read the test file and follow the fixture." },
+          {
+            type: "tool_use",
+            id: "tool-bash",
+            name: "Bash",
+            input: { command: "rg -n 'foldSessionEvents' devinfra/claude/session_export/frontend" },
+          },
+          {
+            type: "tool_use",
+            id: "tool-grep",
+            name: "Grep",
+            input: { pattern: "foldSessionEvents", path: "devinfra/claude" },
+          },
+          {
+            type: "tool_use",
+            id: "tool-glob",
+            name: "Glob",
+            input: { pattern: "**/*.test.ts", path: "devinfra/claude" },
+          },
           { type: "tool_use", id: "tool-read", name: "Read", input: { file_path: "tests/test_viewer.py" } },
+          {
+            type: "tool_use",
+            id: "tool-agent",
+            name: "Task",
+            input: { description: "Check the session status fixture" },
+          },
         ],
       },
     }),
@@ -119,8 +143,28 @@ const eventPage: SessionEventPage = {
         content: [
           {
             type: "tool_result",
+            tool_use_id: "tool-bash",
+            content: [{ type: "text", text: "Found the event fold and its tests." }],
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "tool-grep",
+            content: [{ type: "text", text: "3 matches in the session viewer." }],
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "tool-glob",
+            content: [{ type: "text", text: "Found 6 frontend test files." }],
+          },
+          {
+            type: "tool_result",
             tool_use_id: "tool-read",
             content: [{ type: "text", text: "The fixture marks the session paused, but the test expected active." }],
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "tool-agent",
+            content: [{ type: "text", text: "The assertion should expect paused." }],
           },
         ],
       },
@@ -129,6 +173,7 @@ const eventPage: SessionEventPage = {
       type: "system",
       subtype: "task_started",
       task_id: "task-tests",
+      parent_tool_use_id: "tool-agent",
       task_type: "agent",
       description: "Check the session status fixture",
     }),
@@ -136,6 +181,7 @@ const eventPage: SessionEventPage = {
       type: "system",
       subtype: "task_notification",
       task_id: "task-tests",
+      parent_tool_use_id: "tool-agent",
       status: "completed",
       summary: "The fixture uses paused; the assertion expected active.",
     }),
@@ -148,10 +194,42 @@ const eventPage: SessionEventPage = {
             type: "text",
             text: "The fixture and assertion disagree. I’ll update the expectation to match the intended paused state.",
           },
+          {
+            type: "tool_use",
+            id: "tool-image",
+            name: "Read",
+            input: { file_path: "docs/session-sync-flow.png" },
+          },
         ],
       },
     }),
-    fixtureEvent(7, "result", {
+    fixtureEvent(7, "user", {
+      type: "user",
+      tool_use_result: {
+        tool_use_id: "tool-image",
+        structuredContent: { kind: "synthetic-image-fixture" },
+      },
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tool-image",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/png",
+                  data: "iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAAt0lEQVR4nO3RoRECAQADwa8LWkPRL/Kx0AFI5sKKcxGZ2eM8z5d2O359QIAFWID/NMDjAR4P8HhfgW+Xx1TX+3MqwIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMM+PNA7QCPB3g8wOMBHg/weIDHAzzeGwqER1q6RCsJAAAAAElFTkSuQmCC",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }),
+    fixtureEvent(8, "result", {
       type: "result",
       usage: { total_tokens: 2315 },
       total_cost_usd: 0.0123,
@@ -160,7 +238,7 @@ const eventPage: SessionEventPage = {
   ],
   has_more: false,
   first_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
-  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a507",
+  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a508",
 };
 
 function mockFetch(input: RequestInfo | URL): Promise<Response> {

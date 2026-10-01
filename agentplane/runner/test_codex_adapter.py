@@ -49,6 +49,16 @@ class RecordedSession:
         self.record.model = model
         self.recorded.append(("model_changed", command_id, model, list(sources)))
 
+    async def reasoning_effort_changed(self, command_id: str, effort: str, *, sources: Sequence[int]) -> None:
+        self.record.reasoning_effort = effort
+        self.recorded.append(("effort_changed", command_id, effort, list(sources)))
+
+    async def _noop(self, command_id: str, reason: str, *, sources: Sequence[int]) -> None:
+        self.recorded.append(("noop", command_id, reason, list(sources)))
+
+    async def _fail(self, command_id: str, reason: str, *, sources: Sequence[int]) -> None:
+        self.recorded.append(("failed", command_id, reason, list(sources)))
+
     async def confirm_user_message(
         self,
         *,
@@ -100,6 +110,28 @@ async def test_a_turn_start_answer_is_recorded_before_the_frames_after_it_are_tr
     ]
     assert recorded.reply is not None
     recorded.reply.set_result(NativeReceipt(answer, 2))
+    await submit
+
+
+async def test_effort_waits_for_matching_turn_start_answer() -> None:
+    recorded = RecordedSession()
+    adapter = _adapter(recorded)
+    await adapter.change_reasoning_effort("effort-1", "high")
+    assert recorded.recorded == []
+    submit = asyncio.create_task(adapter.submit("input-1", "Say PING"))
+    await recorded.requested.wait()
+    request = cast(wire.TurnStartRequest, recorded.native[-1])
+    assert request.params.effort == "high"
+    assert recorded.recorded == []
+    answer = _frame(
+        wire.Response(
+            id=request.id, result=_frame(wire.TurnResult(turn=wire.Turn(id="t", status=wire.TurnStatus.IN_PROGRESS)))
+        )
+    )
+    await adapter.on_frame(answer, 8)
+    assert recorded.recorded[0] == ("effort_changed", "effort-1", "high", [8])
+    assert recorded.reply is not None
+    recorded.reply.set_result(NativeReceipt(answer, 8))
     await submit
 
 

@@ -10,7 +10,7 @@ let
 in
 {
   options.ducktape.plaidSpend = {
-    enable = lib.mkEnableOption "Plaid statement-cycle spend panel client";
+    enable = lib.mkEnableOption "Plaid statement-cycle spend CLI and panel client";
 
     apiUrl = lib.mkOption {
       type = lib.types.str;

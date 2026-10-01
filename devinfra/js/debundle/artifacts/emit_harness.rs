@@ -9,14 +9,13 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use artifact::{
-    ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, ChunksReport,
-    EmissionFiles, OutputMetrics, PackageManifest, chunk_id_for_js_path, get_chunk_entry_path,
-    materialize_artifact_scripts, module_path_from_path, normalize_module_path,
-    path_from_module_path, write_json,
+    ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, EmissionFiles,
+    OutputMetrics, chunk_id_for_js_path, get_chunk_entry_path, materialize_artifact_scripts,
+    module_path_from_path, normalize_module_path, path_from_module_path, write_json,
 };
-use identifier_rename_queue::compute_identifier_rename_queue;
 use output_layout::DebundleOutputLayout;
 use spec::EmitBrowserHarnessConfig;
+use write_tree::write_common_emission_reports;
 
 /// Harness-relative module specifier for a chunk's emitted entry file,
 /// resolved from a snapshot `*.js` script path.
@@ -134,14 +133,13 @@ pub fn emit_browser_harness(
 
     fs::write(app_root.join("index.html"), index_html)?;
     fs::write(app_root.join("bootstrap.js"), bootstrap)?;
-    write_json(
-        layout.chunks_report(),
-        &ChunksReport {
-            chunks: chunk_records,
-        },
+    write_common_emission_reports(
+        &layout,
+        files,
+        chunk_records,
+        decomposition_by_chunk,
+        excluded_chunk_ids,
     )?;
-    let queue = compute_identifier_rename_queue(files, decomposition_by_chunk, excluded_chunk_ids)?;
-    write_json(layout.rename_queue_report(), &queue)?;
     let runtime = HarnessRuntimeReport {
         app_root: format!("../{}", output_layout::APP_DIR),
         copied_assets,
@@ -174,12 +172,6 @@ pub fn emit_browser_harness(
         &ProvenanceReport {
             source_html_path: module_path_from_path(&source_html_path),
             source_html,
-        },
-    )?;
-    write_json(
-        app_root.join("package.json"),
-        &PackageManifest {
-            module_type: "module",
         },
     )?;
     Ok(())
