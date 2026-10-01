@@ -15,6 +15,12 @@ rules:
       - delete
   - apiGroups:
       - rbac.authorization.k8s.io
+    resources:
+      - roles
+    verbs:
+      - get
+  - apiGroups:
+      - rbac.authorization.k8s.io
     resourceNames:
       - agentplane-testing-operator
     resources:

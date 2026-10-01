@@ -239,6 +239,7 @@ def test_managed_haku_testing_operator_reuses_static_role_with_external_delegati
             "resources": ["rolebindings"],
             "verbs": ["create", "get", "list", "delete"],
         },
+        {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]},
         {
             "apiGroups": ["rbac.authorization.k8s.io"],
             "resourceNames": ["agentplane-testing-operator"],
