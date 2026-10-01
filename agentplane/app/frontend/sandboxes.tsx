@@ -311,7 +311,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           disabled={kubernetesGrantCatalogState !== "ready"}
           placeholder={
             kubernetesGrantCatalogState === "ready"
-              ? "No Kubernetes grants available"
+              ? kubernetesGrantOptions.length > 0
+                ? "Select Kubernetes grants"
+                : "No Kubernetes grants available"
               : kubernetesGrantCatalogState === "loading"
                 ? "Loading Kubernetes grants…"
                 : "Could not load Kubernetes grants"
