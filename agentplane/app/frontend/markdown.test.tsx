@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // jsdom rather than this package's usual happy-dom: DOMPurify.sanitize (in `Markdown`) strips the
 // tag off the first top-level node of what it sanitizes under happy-dom -- see the note in
-// syntax_highlight.test.ts -- and every case here starts with a different element (h1, pre, ...).
+// code_block.test.ts -- and every case here starts with a different element (h1, pre, ...).
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -55,32 +55,40 @@ describe("Markdown", () => {
     expect(paragraph?.textContent).toBe("The answer is still being written.");
   });
 
-  it("syntax-highlights a fenced code block in a registered language", async () => {
-    // "import" is itself the grammar's first highlighted token, so this doesn't depend on any
-    // leading plain-text span (see the jsdom-vs-happy-dom note in syntax_highlight.test.ts).
+  it("uses the CodeMirror language extension for a registered fenced block", async () => {
     const rendered = await render("```python\nimport os\n```");
 
-    const code = rendered.querySelector("pre code");
-    expect(code?.className).toBe("agentplane-hljs");
-    expect(code?.querySelector(".hljs-keyword")?.textContent).toBe("import");
-    expect(code?.textContent).toBe("import os\n");
+    const code = rendered.querySelector(".agentplane-code-block");
+    expect(code).not.toBeNull();
+    expect(code?.querySelector(".cm-editor")).not.toBeNull();
+    expect(
+      Array.from(code?.querySelectorAll(".cm-line") ?? [])
+        .map((line) => line.textContent)
+        .join("\n")
+    ).toBe("import os\n");
   });
 
   it("falls back to plain, unhighlighted code for an unrecognized language, without throwing", async () => {
     const rendered = await render('```elixir\nIO.puts("hi")\n```');
 
-    const code = rendered.querySelector("pre code");
-    expect(code?.className).toBe("");
-    expect(code?.querySelector("span")).toBeNull();
-    expect(code?.textContent).toBe('IO.puts("hi")\n');
+    const code = rendered.querySelector(".agentplane-code-block");
+    expect(code?.querySelector(".cm-editor")).not.toBeNull();
+    expect(
+      Array.from(code?.querySelectorAll(".cm-line") ?? [])
+        .map((line) => line.textContent)
+        .join("\n")
+    ).toBe('IO.puts("hi")\n');
   });
 
   it("falls back to plain, unhighlighted code for a fence with no language", async () => {
     const rendered = await render("```\n<not a real tag>\n```");
 
-    const code = rendered.querySelector("pre code");
-    expect(code?.className).toBe("");
-    expect(code?.querySelector("span")).toBeNull();
-    expect(code?.textContent).toBe("<not a real tag>\n");
+    const code = rendered.querySelector(".agentplane-code-block");
+    expect(code?.querySelector(".cm-editor")).not.toBeNull();
+    expect(
+      Array.from(code?.querySelectorAll(".cm-line") ?? [])
+        .map((line) => line.textContent)
+        .join("\n")
+    ).toBe("<not a real tag>\n");
   });
 });

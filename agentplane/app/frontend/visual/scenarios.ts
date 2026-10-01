@@ -72,9 +72,10 @@ export interface Scenario extends ScenarioOptions {
   /** Click the Evidence icon of the row at this thread anchor once it mounts: which rows show
    * their evidence is not in the URL. */
   openEvidence?: string;
-  /** One assistant message containing a fenced code block, to exercise Markdown's syntax
-   * highlighting of a registered language (`markdown.tsx`'s `Renderer.code` override). */
+  /** One assistant message containing a fenced code block, rendered by the shared code widget. */
   markdownCodeFence?: boolean;
+  /** Put bidi, zero-width, and control characters in SSH arguments and output for marker review. */
+  hiddenCodepoints?: boolean;
   /** Interleave completed assistant text, folded tool/reasoning runs, and streaming assistant text. */
   streamingInterleaved?: boolean;
   /** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
@@ -158,7 +159,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 1100 },
     recovery: "tools",
     openRecoveryDetails: true,
-    readySelectors: ['[aria-label="Retention unknown"]', "details[open] details[open] pre"],
+    readySelectors: ['[aria-label="Retention unknown"]', "details[open] details[open] .agentplane-code-block"],
     captureViewport: true,
   },
   session_recovery_tools_open_phone: {
@@ -167,7 +168,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 412, height: 1100 },
     recovery: "tools",
     openRecoveryDetails: true,
-    readySelectors: ['[aria-label="Retention unknown"]', "details[open] details[open] pre"],
+    readySelectors: ['[aria-label="Retention unknown"]', "details[open] details[open] .agentplane-code-block"],
     captureViewport: true,
   },
   session_error: {
@@ -367,7 +368,10 @@ export const SCENARIOS: Record<string, Scenario> = {
     pendingActions: true,
     openActionReview: true,
     captureViewport: true,
-    readySelectors: ['button[aria-label="Hide pending action details"]', ".action-affordance-notice pre"],
+    readySelectors: [
+      'button[aria-label="Hide pending action details"]',
+      ".action-affordance-notice .agentplane-code-block",
+    ],
   },
   actions_attention_composer_open_phone: {
     element: "#app",
@@ -376,7 +380,10 @@ export const SCENARIOS: Record<string, Scenario> = {
     pendingActions: true,
     openActionReview: true,
     captureViewport: true,
-    readySelectors: ['button[aria-label="Hide pending action details"]', ".action-affordance-notice pre"],
+    readySelectors: [
+      'button[aria-label="Hide pending action details"]',
+      ".action-affordance-notice .agentplane-code-block",
+    ],
   },
   actions: { element: "#app", route: "/actions", viewport: { width: 1200, height: 1100 }, readySelectors: ["details"] },
   actions_phone: {
@@ -430,6 +437,19 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 3760 },
     actionGroupsUnavailable: true,
     readySelectors: ["details", '[role="alert"]'],
+  },
+  // SSH arguments and output contain bidi, zero-width, and C0 controls. All should be readable as
+  // labeled CodeMirror markers in the specialized command/result preview.
+  actions_hidden_codepoints: {
+    element: "#app",
+    route: "/actions",
+    viewport: { width: 1200, height: 1700 },
+    hiddenCodepoints: true,
+    readySelectors: [
+      ".cm-agentplane-special-char-bidi",
+      ".cm-agentplane-special-char-ignorable",
+      ".cm-agentplane-special-char-control",
+    ],
   },
 
   connections: {
@@ -520,7 +540,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: `${SANDBOX_ROUTE}?tab=status`,
     viewport: { width: 1200, height: 900 },
     outputName: "sandbox-status-raw",
-    readySelectors: [".agentplane-hljs"],
+    readySelectors: [".agentplane-code-block"],
     openRaw: true,
   },
   sandbox_status_raw_phone: {
@@ -528,7 +548,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: `${SANDBOX_ROUTE}?tab=status`,
     viewport: PHONE,
     outputName: "sandbox-status-raw-phone",
-    readySelectors: [".agentplane-hljs"],
+    readySelectors: [".agentplane-code-block"],
     openRaw: true,
   },
   // The read-only action policy: both bindings, every set state, and the auto-approval list.
@@ -685,7 +705,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 700 },
     outputName: "session-markdown-code-fence",
     markdownCodeFence: true,
-    readySelectors: [".agentplane-hljs"],
+    readySelectors: [".agentplane-code-block"],
   },
   // A standalone reasoning step (no neighboring tool call, so it's never folded into a run) at
   // rest: collapsed, it should read as one plain dimmed line, no card chrome around it -- like a
@@ -718,7 +738,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 1300 },
     outputName: "session-tool-payloads",
     openToolPayloads: true,
-    readySelectors: [".agentplane-hljs .hljs-attr", "details[open] + details[open] .agentplane-hljs"],
+    readySelectors: [".agentplane-code-block .cm-content", "details[open] + details[open] .agentplane-code-block"],
   },
   session_tool_payloads_phone: {
     element: "#app",
@@ -726,7 +746,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { ...PHONE, height: 1500 },
     outputName: "session-tool-payloads-phone",
     openToolPayloads: true,
-    readySelectors: [".agentplane-hljs .hljs-attr", "details[open] + details[open] .agentplane-hljs"],
+    readySelectors: [".agentplane-code-block .cm-content", "details[open] + details[open] .agentplane-code-block"],
   },
   // A row's evidence opened from its corner icon: on the user bubble, the one card with no header
   // row to hold the icon, and at phone width in the last reply's header row.

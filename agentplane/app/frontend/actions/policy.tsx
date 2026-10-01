@@ -1,6 +1,7 @@
 import type { JSX } from "react";
-import { Alert, Badge, Code, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
+import { Alert, Badge, Box, Code, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 
+import { CodeBlock } from "../code_block";
 import { expiry } from "../egress";
 import type {
   ActionPolicyBindingView,
@@ -254,14 +255,14 @@ function PolicyList({
                   {/* On a phone the schema folds under the actions, wrapped so the table keeps
                       to the viewport. */}
                   {effective.policy.type === "argument_schema" && (
-                    <Code block hiddenFrom="sm" mt="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                      {JSON.stringify(effective.policy.argument_schema)}
-                    </Code>
+                    <Box hiddenFrom="sm" mt="xs">
+                      <CodeBlock text={JSON.stringify(effective.policy.argument_schema)} language="json" />
+                    </Box>
                   )}
                 </Table.Td>
                 <Table.Td visibleFrom="sm">
                   {effective.policy.type === "argument_schema" ? (
-                    <Code block>{JSON.stringify(effective.policy.argument_schema, null, 1)}</Code>
+                    <CodeBlock text={JSON.stringify(effective.policy.argument_schema, null, 1)} language="json" />
                   ) : (
                     <Text size="sm" c="dimmed">
                       any

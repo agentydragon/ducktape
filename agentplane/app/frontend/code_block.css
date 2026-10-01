@@ -1,0 +1,89 @@
+/* CodeMirror is the single code-shaped viewer across arguments, results, thread payloads, and
+   Markdown fences. Preserve the app's compact monospace blocks while allowing long lines to wrap. */
+.agentplane-code-block {
+  --agentplane-code-key: var(--mantine-color-blue-8);
+  --agentplane-code-string: var(--mantine-color-green-9);
+  --agentplane-code-number: var(--mantine-color-orange-9);
+  --agentplane-code-literal: var(--mantine-color-grape-8);
+  --agentplane-code-keyword: var(--mantine-color-red-8);
+  --agentplane-code-variable: var(--mantine-color-indigo-7);
+  --agentplane-code-comment: var(--mantine-color-gray-6);
+  --agentplane-code-meta: var(--mantine-color-gray-7);
+  --agentplane-code-title: var(--mantine-color-pink-8);
+  display: block;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agentplane-code-block-label,
+.agentplane-code-block-muted {
+  border: 0;
+  background: transparent;
+}
+
+.agentplane-code-block .cm-scroller {
+  overflow-wrap: anywhere;
+}
+
+.agentplane-code-block .cm-content {
+  white-space: pre-wrap;
+}
+
+.cm-agentplane-special-char {
+  border: 1px solid currentColor;
+  border-radius: 0.2em;
+  cursor: help;
+  display: inline-block;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.78em;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-inline: 0.08em;
+  padding-inline: 0.16em;
+  white-space: nowrap;
+}
+
+.cm-agentplane-special-char-bidi,
+.cm-agentplane-special-char-control {
+  background-color: var(--mantine-color-red-light);
+  color: var(--mantine-color-red-8);
+}
+
+.cm-agentplane-special-char-ignorable {
+  background-color: var(--mantine-color-orange-light);
+  color: var(--mantine-color-orange-8);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block {
+  --agentplane-code-key: var(--mantine-color-blue-3);
+  --agentplane-code-string: var(--mantine-color-green-3);
+  --agentplane-code-number: var(--mantine-color-orange-3);
+  --agentplane-code-literal: var(--mantine-color-grape-3);
+  --agentplane-code-keyword: var(--mantine-color-red-4);
+  --agentplane-code-variable: var(--mantine-color-indigo-3);
+  --agentplane-code-comment: var(--mantine-color-dark-2);
+  --agentplane-code-meta: var(--mantine-color-gray-5);
+  --agentplane-code-title: var(--mantine-color-pink-3);
+}
+
+[data-mantine-color-scheme="dark"] .cm-agentplane-special-char-bidi,
+[data-mantine-color-scheme="dark"] .cm-agentplane-special-char-control {
+  color: var(--mantine-color-red-3);
+}
+
+[data-mantine-color-scheme="dark"] .cm-agentplane-special-char-ignorable {
+  color: var(--mantine-color-orange-3);
+}
+
+.agentplane-code-block-placeholder {
+  background-color: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+}
+
+.agentplane-code-block-placeholder-label,
+.agentplane-code-block-placeholder-muted {
+  border: 0;
+  background: transparent;
+}

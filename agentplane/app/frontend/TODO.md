@@ -55,14 +55,10 @@ build time.
   (as the prominent-lifecycle `Alert color="red"` at ~line 376 and the failed-tool-call `Badge color="red"` at
   ~line 444 already do).
 
-## Hidden characters in what the operator approves
+## Hidden characters in ordinary Action text
 
-Bidi controls, zero-width and other default-ignorable characters, and control characters render
-invisibly, so a command or argument can read differently from what runs. highlight.js escapes only
-markup characters and `JSON.stringify` only C0 controls, so neither the highlighted views
-(`syntax_highlight.tsx`) nor plain text (titles, descriptions, stdout, drawn arguments) show them.
-One way: in `highlight()`, between highlight.js and DOMPurify, wrap each
-`[\p{Bidi_Control}\p{Default_Ignorable_Code_Point}]` match and each control character other than tab
-and newline in a span showing its code point; do the same in plain text through a small React helper;
-and warn on the card, as GitHub does for bidi text. Bidi controls and tag characters warrant a loud
-marker; emoji joiners and variation selectors a quiet one.
+The shared CodeMirror viewer now marks bidi controls, zero-width/default-ignorable characters,
+control characters, and Unicode line separators in code-shaped Action arguments, shell commands,
+results, and fenced Markdown. It keeps the source text intact and distinguishes bidi/control markers
+from quieter formatting markers. Ordinary Action titles and descriptions still render as plain text;
+decide whether they also need inline markers or an approval-card warning.

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 CHECK_NAME = "PR mergeability"
@@ -77,6 +77,9 @@ class GitHubApi:
 
     def get_git_commit(self, sha: str) -> dict[str, Any]:
         return cast(dict[str, Any], self.request("GET", f"git/commits/{sha}"))
+
+    def get_git_ref(self, ref: str) -> dict[str, Any]:
+        return cast(dict[str, Any], self.request("GET", f"git/ref/heads/{quote(ref, safe='/')}"))
 
     def list_open_pull_requests(self, base_branch: str) -> list[dict[str, Any]]:
         pull_requests: list[dict[str, Any]] = []
@@ -219,7 +222,12 @@ def inspect_pull_request(
                     last_problem = f"GitHub's synthetic merge commit `{merge_sha}` is not available: {error}"
                 else:
                     parents = [parent.get("sha", "") for parent in merge_commit.get("parents", [])]
-                    if parents == [base_sha, head_sha]:
+                    try:
+                        live_base_sha = api.get_git_ref(base_ref).get("object", {}).get("sha", "")
+                    except GitHubApiError as error:
+                        last_problem = f"GitHub's current `{base_ref}` ref is not available: {error}"
+                        live_base_sha = ""
+                    if live_base_sha and parents == [live_base_sha, head_sha]:
                         return Assessment(
                             head_sha,
                             "success",
@@ -227,15 +235,18 @@ def inspect_pull_request(
                             (
                                 f"GitHub's current synthetic merge commit is available and has the expected parents.\n\n"
                                 f"- PR head: `{head_sha}`\n"
-                                f"- Current base: `{base_sha}`\n"
+                                f"- Current base: `{live_base_sha}`\n"
+                                f"- PR base metadata: `{base_sha}`\n"
                                 f"- Synthetic merge: `{merge_sha}`\n"
                                 f"- Merge parents: `{parents[0]}` + `{parents[1]}`"
                             ),
                         )
-                    last_problem = (
-                        f"GitHub reports the PR as mergeable, but synthetic merge `{merge_sha}` has parents "
-                        f"`{', '.join(parents) or 'none'}`; expected current base `{base_sha}` and PR head `{head_sha}`."
-                    )
+                    if live_base_sha:
+                        last_problem = (
+                            f"GitHub reports the PR as mergeable, but synthetic merge `{merge_sha}` has parents "
+                            f"`{', '.join(parents) or 'none'}`; expected live `{base_ref}` ref `{live_base_sha}` "
+                            f"and PR head `{head_sha}` (PR base metadata says `{base_sha}`)."
+                        )
         else:
             last_problem = "GitHub has not finished calculating whether this pull request is mergeable."
             last_was_mergeable = False

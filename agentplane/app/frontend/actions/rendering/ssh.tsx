@@ -1,10 +1,10 @@
 // The `exec` tool of the SSH MCP server (x/ssh_mcp_server/server.py): the call as the operator decides
 // it, the target and the exact command, and what came back, the exit code and the output.
-import { Badge, Button, Code, Group, Stack, Text } from "@mantine/core";
+import { Badge, Button, Group, Stack, Text } from "@mantine/core";
 import { type JSX, useState } from "react";
 import { z } from "zod";
 
-import { HighlightedCode } from "../../syntax_highlight";
+import { CodeBlock } from "../../code_block";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "./entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "./result_entry";
 
@@ -31,17 +31,11 @@ const execResult = z.strictObject({
 // Past this many lines, an output stream shows its first lines and a button for the rest.
 const COLLAPSED_LINES = 20;
 
-// Wrapped, so a long output line reads where it sits instead of scrolling sideways, as the
-// highlighted command does.
-const WRAPPED = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
-
 function ExecArguments({ args }: PreviewProps<z.infer<typeof execArguments>>): JSX.Element {
   return (
     <Stack gap={4}>
-      <Text size="sm" fw={600} ff="monospace" style={{ overflowWrap: "anywhere" }}>
-        {args.user}@{args.host}
-      </Text>
-      <HighlightedCode text={args.command} language="bash" />
+      <CodeBlock text={`${args.user}@${args.host}`} presentation="label" />
+      <CodeBlock text={args.command} language="bash" />
       {args.timeout_seconds != null && (
         <Text size="xs" c="dimmed">
           Timeout {args.timeout_seconds} s
@@ -56,9 +50,7 @@ function ExecResult({ result }: ResultPreviewProps<z.infer<typeof execResult>>):
     <Stack gap="xs">
       <Group gap="xs">
         <Badge color={result.exit_code === 0 ? "green" : "red"}>Exit {result.exit_code}</Badge>
-        <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
-          {result.user}@{result.host}
-        </Text>
+        <CodeBlock text={`${result.user}@${result.host}`} presentation="muted" />
       </Group>
       <OutputStream name="stdout" text={result.stdout} truncated={result.stdout_truncated} />
       <OutputStream name="stderr" text={result.stderr} truncated={result.stderr_truncated} />
@@ -98,9 +90,7 @@ function OutputStream({
           </Text>
         )}
       </Text>
-      <Code block style={WRAPPED}>
-        {(long && !expanded ? lines.slice(0, COLLAPSED_LINES) : lines).join("\n")}
-      </Code>
+      <CodeBlock text={(long && !expanded ? lines.slice(0, COLLAPSED_LINES) : lines).join("\n")} />
       {long && (
         <Button
           variant="subtle"

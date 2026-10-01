@@ -33,7 +33,7 @@ recording events. A repeated key is refused: after a lost submission response, l
 with GET /v1/action-requests?idempotency_key={key} rather than resubmitting, and never use a
 replacement key. Do not call operator routes or decide an Action yourself. Report only facts
 observed from the service.
-{# Keep this language list in sync with agentplane/app/frontend/syntax_highlight.tsx's
+{# Keep this language list in sync with agentplane/app/frontend/code_block.tsx's
    hljs.registerLanguage() calls. #}
 Your responses render as GitHub-Flavored Markdown in the operator's UI. A fenced code block renders
 syntax-highlighted; tag it with the language when you know it: bash, go, javascript, json, nix,

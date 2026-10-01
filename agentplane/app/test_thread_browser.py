@@ -451,7 +451,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await expect(frame_summary).to_be_visible()
                 assert not any("/frames?" in url for url in requests)
                 await frame_summary.click()
-                frame = first_card.locator("pre")
+                frame = first_card.locator(".agentplane-code-block")
                 await expect(frame).to_contain_text("test-text-delta")
                 assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
                 await first_card.get_by_role("button", name="Evidence", exact=True).click()
@@ -561,8 +561,9 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     for entry in (source.entries[-4], stderr, checkpoint, last):
         record = dialog.locator(f'[data-debug-observation="{entry.cursor}"]')
         await record.locator("summary").click()
-        await expect(record.locator("pre")).to_be_visible()
-        assert json_format.Parse(await record.locator("pre").inner_text(), event_log_pb2.EventEntry()) == entry
+        frame = record.locator(".agentplane-code-block")
+        await expect(frame).to_be_visible()
+        assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == entry
         assert any(url.endswith(f"/observations/{entry.cursor}") for url in requests)
     await page.screenshot(path=undeclared_outputs_dir() / f"chronological-debug-{'phone' if phone else 'desktop'}.png")
     await dialog.get_by_role("button", name="Older observations", exact=True).click()
@@ -1087,7 +1088,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
         await lifecycle.get_by_role("button", name="Evidence", exact=True).click()
         raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
         await raw_frames.click()
-        frame = raw_frames.locator("..").locator("pre")
+        frame = raw_frames.locator("..").locator(".agentplane-code-block")
         await expect(frame).to_contain_text("unsafe diagnostic")
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
         await lifecycle.get_by_role("button", name="Evidence", exact=True).click()
