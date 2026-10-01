@@ -288,7 +288,7 @@ creation_rules:
 
   # Shared Plaid Spend display settings: Flux applies them, and the user's
   # workstations can decrypt them to edit the card selection and limits.
-  - path_regex: cluster/k8s/agents/plaid-mcp/spend/cards\.sops\.yaml$
+  - path_regex: cluster/k8s/agents/plaid-mcp/cards\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:

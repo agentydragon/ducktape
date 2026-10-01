@@ -1,10 +1,10 @@
-"""plaid-mcp's `app/`: the Plaid link web UI Deployment, webhook receiver and daily sync CronJob,
+"""plaid-mcp's web UI Deployment, webhook receiver and daily sync CronJob,
 their shared config, the Secret-managing RBAC, the Service and ingress policy.
 
-The images' tags are the placeholder "unset"; the hand-written `app/image-pins/kustomization.yaml`
+The images' tags are the placeholder "unset"; the hand-written `image-pins/kustomization.yaml`
 overrides them at `kustomize build` time via Flux's image-automation markers
 (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker). `plaid-client-credentials.sops.yaml`
-stays hand-written beside the generated output.
+stays hand-written beside the generated output in the flat Plaid manifest directory.
 """
 
 from __future__ import annotations
@@ -19,10 +19,9 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.plaid_mcp.db import NAMESPACE, POSTGRES
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
@@ -30,13 +29,12 @@ from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, E
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/app"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp"
 _NAME = "plaid-mcp"
 _CONFIG_MAP = "plaid-mcp-config"
 _SECRET_MANAGER = "plaid-mcp-secret-manager"
 _CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-client-credentials")
 _OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-link-oidc-config")
-_CREDENTIALS_FILE = "plaid-client-credentials.sops.yaml"
 # The link web UI authenticates browser sessions with Authentik OIDC.
 _WEB = ServiceRef(
     name=_NAME,
@@ -293,11 +291,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        # No `namespace:` override: the OIDC reader's Role and RoleBinding live in authentik,
-        # and every other object here, including the SOPS Secret, already names plaid-mcp.
-        kustomize_kustomization(
-            resources=[write_charts(root, OUTPUT_DIR, chart), _CREDENTIALS_FILE], components=["./image-pins"]
-        ),
-    )
+    write_charts(root, OUTPUT_DIR, chart, manifest_name="app.k8s.yaml")
