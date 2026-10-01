@@ -2381,7 +2381,6 @@ data:
       - activitywatch
       - agent-sandbox-system
       - agentplane-index
-      - agentplane-staging
       - agentplane-testing
       - airlock
       - authentik

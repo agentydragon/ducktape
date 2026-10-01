@@ -194,7 +194,9 @@ def test_haku_grant_catalog_keeps_external_delegation_out_of_app(
     assert {
         tuple(rule.get("resourceNames", [])) for rule in app_cluster_role["rules"] if rule["verbs"] == ["bind"]
     } == {("agent-readable-namespace-logs",), ("agent-readable-namespace-metadata",), ("cluster-diagnostics-reader",)}
-    assert {"haku-sandbox", staging.ENV.namespace} <= set(config["kubernetes_binding_cleanup_namespaces"])
+    cleanup_namespaces = set(config["kubernetes_binding_cleanup_namespaces"])
+    assert "haku-sandbox" in cleanup_namespaces
+    assert staging.ENV.namespace not in cleanup_namespaces
     assert config["kubernetes_cluster_binding_cleanup"] is True
 
 

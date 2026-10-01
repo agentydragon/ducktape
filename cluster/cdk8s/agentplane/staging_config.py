@@ -156,12 +156,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         # Retain cleanup authority when a catalog choice is disabled while its
         # existing Sandboxes still hold a binding in that scope.
         kubernetes_binding_cleanup_namespaces=sorted(
-            {
-                _NAMESPACE,
-                "haku-sandbox",
-                *_HAKU_AGENT_READABLE_LOG_NAMESPACES,
-                *_HAKU_AGENT_READABLE_METADATA_ONLY_NAMESPACES,
-            }
+            {"haku-sandbox", *_HAKU_AGENT_READABLE_LOG_NAMESPACES, *_HAKU_AGENT_READABLE_METADATA_ONLY_NAMESPACES}
         ),
         kubernetes_cluster_binding_cleanup=True,
     )

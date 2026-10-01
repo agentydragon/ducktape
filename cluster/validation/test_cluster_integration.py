@@ -249,11 +249,12 @@ def test_managed_haku_read_grants_cover_declarative_namespace_opt_ins(
     assert actual == expected
     cleanup_namespaces = set(config["kubernetes_binding_cleanup_namespaces"])
     expected_namespaces = {namespace for namespace, _ in expected}
-    assert expected_namespaces <= cleanup_namespaces
+    expected_external_namespaces = expected_namespaces - {"agentplane-staging"}
+    assert expected_external_namespaces <= cleanup_namespaces
 
     external_grant_namespaces = {grant["namespace"] for grant in catalog.values() if grant["kind"] == "RoleBinding"}
     expected_external_scopes = (external_grant_namespaces | cleanup_namespaces) - {"agentplane-staging"}
-    assert expected_external_scopes == (expected_namespaces - {"agentplane-staging"}) | {"haku-sandbox"}
+    assert expected_external_scopes == expected_external_namespaces | {"haku-sandbox"}
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
         and doc["metadata"]["name"] == "agentplane-staging-external-bindings"
