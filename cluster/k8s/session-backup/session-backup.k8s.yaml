@@ -1,0 +1,396 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+  name: session-backup
+spec: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: session-backup-data
+  namespace: session-backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: seaweedfs-ovh
+  volumeMode: Filesystem
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: session-backup
+  name: session-backup
+  namespace: session-backup
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: session-backup-rest-server-deployment-c82f8470
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: session-backup
+        cdk8s.io/metadata.addr: session-backup-rest-server-deployment-c82f8470
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: DATA_DIRECTORY
+              value: /data
+            - name: PASSWORD_FILE
+              value: /auth/.htpasswd
+            - name: OPTIONS
+              value: --append-only --private-repos
+          image: docker.io/restic/rest-server:0.14.0@sha256:d2aff06f47eb38637dff580c3e6bce4af98f386c396a25d32eb6727ec96214a5
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 15
+            tcpSocket:
+              port: 8000
+          name: rest-server
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            tcpSocket:
+              port: 8000
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /auth
+              name: secret-session-backup-rest-server-auth
+              readOnly: true
+            - mountPath: /data
+              name: pvc-session-backup-data
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: secret-session-backup-rest-server-auth
+          secret:
+            defaultMode: 288
+            items:
+              - key: .htpasswd
+                path: .htpasswd
+            secretName: session-backup-rest-server-auth
+        - name: pvc-session-backup-data
+          persistentVolumeClaim:
+            claimName: session-backup-data
+            readOnly: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: session-backup
+  name: session-backup
+  namespace: session-backup
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8000
+      protocol: TCP
+      targetPort: 8000
+  selector:
+    cdk8s.io/metadata.addr: session-backup-rest-server-deployment-c82f8470
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: session-backup
+  namespace: session-backup
+spec:
+  hostnames:
+    - restic.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: session-backup
+          port: 8000
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: session-backup
+  namespace: session-backup
+spec:
+  egressDeny:
+    - toEntities:
+        - all
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: session-backup
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: SeaweedFS copy of the session-backup Restic REST server data.
+  name: session-backup-backups
+  namespace: session-backup
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: session-backup-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: session-backup-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: SeaweedFS copy of the session-backup Restic REST server data.
+  name: session-backup-backups
+  namespace: session-backup
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: session-backup-backups
+  namespace: session-backup
+spec:
+  identityRef:
+    name: session-backup-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: session-backup-seaweedfs-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: session-backup-volsync-egress
+  namespace: session-backup
+spec:
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+    - ports:
+        - port: 8333
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: seaweedfs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: s3
+              app.kubernetes.io/instance: seaweedfs
+              app.kubernetes.io/managed-by: seaweedfs-operator
+              app.kubernetes.io/name: seaweedfs
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: session-backup-volsync
+  policyTypes:
+    - Egress
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: session-backup-volsync-repository-reader
+  namespace: session-backup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: session-backup-volsync-repository-reader
+  namespace: session-backup
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - session-backup-seaweedfs-credentials
+      - session-backup-volsync-restic-password
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: session-backup-volsync-repository-reader
+  namespace: session-backup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: session-backup-volsync-repository-reader
+subjects:
+  - kind: ServiceAccount
+    name: session-backup-volsync-repository-reader
+    namespace: session-backup
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: session-backup-volsync-s3
+  namespace: session-backup
+spec:
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: session-backup-volsync-repository-reader
+          namespace: session-backup
+      remoteNamespace: session-backup
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: session-backup-server-data-restic
+  namespace: session-backup
+spec:
+  data:
+    - remoteRef:
+        key: session-backup-seaweedfs-credentials
+        property: AWS_ACCESS_KEY_ID
+      secretKey: AWS_ACCESS_KEY_ID
+    - remoteRef:
+        key: session-backup-seaweedfs-credentials
+        property: AWS_SECRET_ACCESS_KEY
+      secretKey: AWS_SECRET_ACCESS_KEY
+    - remoteRef:
+        key: session-backup-volsync-restic-password
+        property: RESTIC_PASSWORD
+      secretKey: RESTIC_PASSWORD
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: session-backup-volsync-s3
+  target:
+    creationPolicy: Owner
+    name: session-backup-server-data-restic
+    template:
+      mergePolicy: Merge
+      templateFrom:
+        - literal: |
+            RESTIC_REPOSITORY: s3:http://seaweedfs-s3.seaweedfs.svc:8333/session-backup-backups
+            AWS_DEFAULT_REGION: us-east-1
+      type: Opaque
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: session-backup-server-data-restic
+  namespace: session-backup
+spec:
+  restic:
+    cacheAccessModes:
+      - ReadWriteOnce
+    cacheCapacity: 1Gi
+    cacheStorageClassName: local-path-ovh-hdd
+    copyMethod: Direct
+    moverPodLabels:
+      app.kubernetes.io/name: session-backup-volsync
+    moverResources:
+      limits:
+        cpu: "1"
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+    moverSecurityContext:
+      fsGroup: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      runAsUser: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    pruneIntervalDays: 7
+    repository: session-backup-server-data-restic
+    retain:
+      daily: 7
+      monthly: 6
+      weekly: 4
+  sourcePVC: session-backup-data
+  trigger:
+    schedule: 47 08 * * *

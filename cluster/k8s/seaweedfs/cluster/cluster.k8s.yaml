@@ -426,6 +426,7 @@ spec:
               - oci-cache
               - plaid-mcp
               - public-coder-agent
+              - session-backup
               - study-casino
               - tofu-state
     - group: seaweed.seaweedfs.com
@@ -457,6 +458,7 @@ spec:
               - oci-cache
               - plaid-mcp
               - public-coder-agent
+              - session-backup
               - study-casino
               - tofu-state
     - group: seaweed.seaweedfs.com
@@ -488,6 +490,7 @@ spec:
               - oci-cache
               - plaid-mcp
               - public-coder-agent
+              - session-backup
               - study-casino
               - tofu-state
   to:
