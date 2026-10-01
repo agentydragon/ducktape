@@ -31,6 +31,30 @@ ts_library(
 )
 
 ts_library(
+    name = "tab_metadata",
+    srcs = ["tab_metadata.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "tab_metadata_test",
+    testonly = True,
+    srcs = ["tab_metadata.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":tab_metadata",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "thread_tab",
+    srcs = ["thread_favicon.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":tab_metadata"],
+)
+
+ts_library(
     name = "client",
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
@@ -897,6 +921,7 @@ ts_library(
         ":settings",
         ":shell_css",
         ":sidebar",
+        ":tab_metadata",
         ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -941,6 +966,7 @@ spa_bundle(
     name = "bundle",
     entry_point = "main.js",
     jsx = "automatic",
+    public = glob(["public/**/*"]),
     deps = [":main_lib"],
 )
 
@@ -986,6 +1012,7 @@ vitest_bin.vitest_test(
         "//agentplane/app/frontend/threads:local_commands_test",
         ":markdown_test",
         ":mcp_servers_test",
+        ":tab_metadata_test",
         "//agentplane/app/frontend/threads:projected_session_test",
         ":push_test",
         "//agentplane/app/frontend/threads:retained_disclosures_test",
