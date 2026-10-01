@@ -46,6 +46,7 @@ ts_library(
     deps = [
         ":api",
         ":status",
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -59,6 +60,7 @@ ts_library(
     deps = [
         ":api",
         ":status",
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -74,6 +76,7 @@ ts_library(
         ":overview",
         ":pairing",
         ":viewer",
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -92,11 +95,6 @@ ts_library(
     ],
 )
 
-js_library(
-    name = "page_css",
-    srcs = ["page.css"],
-)
-
 ts_library(
     name = "main",
     srcs = ["main.tsx"],
@@ -104,7 +102,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":app",
-        ":page_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -119,7 +116,6 @@ spa_bundle(
     jsx = "automatic",
     deps = [
         ":main",
-        ":page_css",
     ],
 )
 
@@ -161,7 +157,7 @@ vitest_bin.vitest_test(
     ],
 )
 
-# The screenshot harness mounts the real viewer with a deterministic API fixture. CI publishes
+# The screenshot harness mounts the full app with deterministic API fixtures. CI publishes
 # the desktop, dark, and narrow captures on the PR visual-review page.
 js_library(
     name = "visual_scenarios",
@@ -177,8 +173,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
-        ":page_css",
-        ":viewer",
+        ":app",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

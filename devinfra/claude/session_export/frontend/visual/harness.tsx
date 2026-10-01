@@ -3,9 +3,53 @@ import "@mantine/core/styles.css";
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
-import type { SessionEventPage, SessionListPage, SessionSummary } from "../api";
-import { SessionViewer } from "../viewer";
-import "../page.css";
+import type { SessionEventPage, SessionListPage, SessionSummary, SyncStatus } from "../api";
+import { App } from "../app";
+
+const FIXED_NOW = Date.parse("2026-09-30T18:45:00Z");
+Date.now = () => FIXED_NOW;
+
+const unpairedStatus: SyncStatus = {
+  state: "unpaired",
+  pairing_started: false,
+  credential: null,
+  sessions: 2,
+  sessions_behind: 0,
+  poll_interval_seconds: 300,
+  last_cycle: null,
+  last_failure: null,
+  live: {
+    following: false,
+    watching: false,
+    streams: 0,
+    last_event_at: null,
+    problems: [],
+    failure: null,
+  },
+};
+
+const pairedStatus: SyncStatus = {
+  state: "idle",
+  pairing_started: false,
+  credential: {
+    organization_uuid: "93a9fc36-0c85-49d4-bfa9-0c1ff7c469a1",
+    scopes: ["user:profile", "user:sessions:claude_code"],
+    access_token_expires_at: "2026-09-30T20:45:00Z",
+  },
+  sessions: 2,
+  sessions_behind: 1,
+  poll_interval_seconds: 300,
+  last_cycle: { finished_at: "2026-09-30T18:42:00Z", behind: 1, events_read: 3 },
+  last_failure: null,
+  live: {
+    following: true,
+    watching: true,
+    streams: 1,
+    last_event_at: "2026-09-30T18:43:00Z",
+    problems: [],
+    failure: null,
+  },
+};
 
 const sessions: Array<SessionSummary & { git_branch: string; repo_path: string }> = [
   {
@@ -31,7 +75,6 @@ const sessions: Array<SessionSummary & { git_branch: string; repo_path: string }
 ];
 
 const sessionPage: SessionListPage = { data: sessions, next_cursor: null, resume_token: null };
-
 const eventPage: SessionEventPage = {
   data: [
     {
@@ -87,8 +130,8 @@ const eventPage: SessionEventPage = {
       sent_by_account_id: null,
       payload: {
         tool_name: "Read",
-        content: [{ type: "text", text: "The viewer styles are in frontend/page.css." }],
-        file_path: "devinfra/claude/session_export/frontend/page.css",
+        content: [{ type: "text", text: "The session sync is current." }],
+        file_path: "devinfra/claude/session_export/frontend/app.tsx",
       },
     },
   ],
@@ -103,9 +146,16 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
   const json = (body: unknown): Response =>
     new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 
+  if (url.pathname === "/api/status") {
+    const page = new URLSearchParams(window.location.search).get("page") ?? "";
+    return Promise.resolve(json(page.includes("_paired") ? pairedStatus : unpairedStatus));
+  }
+  if (url.pathname === "/api/pairing") return Promise.resolve(json({ authorization_url: "https://claude.ai/code" }));
+  if (url.pathname === "/api/pairing/complete") return Promise.resolve(json(pairedStatus));
+  if (url.pathname === "/api/sync") return Promise.resolve(new Response(null, { status: 202 }));
   if (url.pathname === "/v1/code/sessions") return Promise.resolve(json(sessionPage));
   if (/^\/v1\/code\/sessions\/[^/]+\/events$/.test(url.pathname)) return Promise.resolve(json(eventPage));
-  return Promise.reject(new Error(`Unmocked viewer request: ${url.pathname}`));
+  return Promise.reject(new Error(`Unmocked session sync request: ${url.pathname}`));
 }
 
 window.fetch = mockFetch;
@@ -115,6 +165,6 @@ if (!root) throw new Error("Visual test harness is missing #app");
 
 createRoot(root).render(
   <MantineProvider defaultColorScheme="auto">
-    <SessionViewer />
+    <App />
   </MantineProvider>
 );
