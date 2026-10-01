@@ -23,8 +23,8 @@ Proposed execution order for the Thread correctness/UI track:
   the current model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one
   runner-owned command queue; no app outbox or combined-start expansion in this batch.
 - **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Compact activity
-  mocks (`THREAD_ACTIVITY_MOCKS`), Sandbox continuation (`THREAD_SUSPEND_RESUME`), and native
-  resume/recovery remain on the board but are excluded from this dispatch batch.
+  mocks (`THREAD_ACTIVITY_MOCKS`) and native resume/recovery remain on the board but are excluded
+  from this dispatch batch.
 - **Reported UI bug, unranked:** Sandbox-level default reasoning effort appears not to carry into
   the frontend’s later Thread launch (`SANDBOX_REASONING_DEFAULT`).
 - **Workspace design, unranked:** reconcile once-per-Sandbox bootstrap and per-Thread working
@@ -105,7 +105,6 @@ flowchart TB
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
-    THREAD_SUSPEND_RESUME["P1 deployed acceptance pending<br/>both harnesses across Sandbox suspend/resume<br/>same original Threads and retained context"]:::active
     SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
@@ -1019,23 +1018,6 @@ unreachable runners at deletion, and incomplete recovery state. Storage inspecti
 and native evidence can proceed independently; full archive-preservation acceptance
 requires Event durability and app replication. Gate lifecycle automation on its own
 evidence without blocking ordinary messaging and UI work.
-
-### `THREAD_SUSPEND_RESUME` — continue existing Threads after Sandbox resume
-
-**Implementation landed:** [#8388](https://github.com/agentydragon/ducktape/pull/8388)
-added a Thread-scoped resume API and “Resume harness” control, plus frontend coverage for
-the open and reloaded Thread views. [#8407](https://github.com/agentydragon/ducktape/pull/8407)
-added conversation reconciliation around interruption and resume. The prior staging report
-remains an observed symptom, not a currently verified reproduction.
-
-**Remaining: deployed acceptance.** Run
-`//agentplane/acceptance:test_suspend_resume` from a controlled host after the app and runner
-images reach `agentplane-testing`. This manual target opens one Claude and one Codex Thread
-in an owned Sandbox, confirms each seed turn, suspends until the old Pod is gone, resumes the
-same Sandbox and original Threads, then requires native-resume evidence, input confirmation,
-retained per-Thread tokens, and no cross-Thread context. CI and component tests do not prove
-this deployed lifecycle. If the target passes against the current images, close this task; if
-it fails, record the observed failure and keep only the narrower unresolved follow-up.
 
 ### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
 
