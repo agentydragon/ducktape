@@ -849,7 +849,8 @@ it("folds a run of tool calls and reasoning behind its summary until it is opene
       testItem(2, ItemKind.REASONING, {}, { textRef: reference("test-entity-2", "text") }),
       testItem(3, ItemKind.TOOL_CALL, { tool_name: "test-shell", completion: "tool", tool_succeeded: false }),
     ],
-    false
+    false,
+    { "test-entity-2:text": "The plan is to **inspect** the evidence." }
   );
   const summary = run.querySelector("summary")!;
   expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
@@ -859,7 +860,8 @@ it("folds a run of tool calls and reasoning behind its summary until it is opene
   await toggle(summary);
   expect(run.textContent).toContain("test-read");
   expect(run.textContent).toContain("test-shell");
-  expect(summaries(run)).toContain("Reasoning");
+  expect(run.textContent).toContain("The plan is to inspect the evidence.");
+  expect(run.querySelector(".agentplane-reasoning-preview strong")?.textContent).toBe("inspect");
   // Each step keeps its own evidence; the run is not an entity and has none.
   expect(run.querySelectorAll('button[aria-label="Evidence"]')).toHaveLength(3);
 });
@@ -895,9 +897,14 @@ it("shows a lone reasoning step as its own reasoning block, and assistant text w
       testItem(2, ItemKind.ASSISTANT_TEXT, {}, { textRef: reference("test-entity-2", "text") }),
     ],
     false,
-    { "test-entity-2:text": "Test body of test-entity-2" }
+    {
+      "test-entity-1:text": "Reasoning preview body",
+      "test-entity-2:text": "Test body of test-entity-2",
+    }
   );
-  expect(summaries(reasoning)).toEqual(["Reasoning"]);
+  expect(reasoning.querySelector("details.agentplane-reasoning-details")).toBeNull();
+  expect(reasoning.querySelector(".agentplane-reasoning-title")?.textContent).toBe("Reasoning");
+  expect(reasoning.textContent).toContain("Reasoning preview body");
   expect(answer.textContent).toContain("Test body of test-entity-2");
   for (const row of [reasoning, answer]) expect(row.textContent).not.toMatch(/assistant/i);
 });
