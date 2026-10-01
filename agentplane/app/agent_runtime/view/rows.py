@@ -141,6 +141,7 @@ def _view_state_entity(
         state=ThreadViewState(
             controls=ThreadControlsState(
                 applied_model=state.controls.applied_model,
+                applied_reasoning_effort=state.controls.applied_reasoning_effort,
                 active_turn_id=state.controls.active_turn_id,
                 harness_state=state.controls.harness_state,
             ),

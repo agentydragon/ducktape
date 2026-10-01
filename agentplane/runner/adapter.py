@@ -49,6 +49,10 @@ class HarnessAdapter(abc.ABC):
         """Apply one model command, reporting its causal effect through the owning Session."""
 
     @abc.abstractmethod
+    async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
+        """Select an effort, reporting an effect only on native confirmation."""
+
+    @abc.abstractmethod
     async def on_frame(self, frame: dict[str, Any], source_sequence: int) -> None:
         """Translate one parsed stdout frame into session events, answering the harness if it asked.
 

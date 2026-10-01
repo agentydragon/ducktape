@@ -35,6 +35,7 @@ class MessagesRequest(BaseModel):
     messages: list[Message]
     tools: list[Tool] = []
     thinking: ThinkingConfig
+    output_config: dict[str, str] | None = None
 
     @property
     def tool_names(self) -> list[str]:

@@ -10,19 +10,17 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
     AnalysisHints, AtomicUnitConflict, BindingKind, DepKind, KnownEffect, LocalEffectPolicy,
-    LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
-    OwnerGraphOptions, RedundantPurityHint, top_level_id,
+    LogicalModuleIndex, ModuleId, OwnerGraphAndUnits, OwnerGraphOptions, PlannedModule,
+    RedundantPurityHint, top_level_id,
 };
 use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
 use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
 
 use artifact::{
-    ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysisReport, ChunkArtifact, ChunkBundle,
-    ChunkDecompositionOutput, ChunkFileRecord, ChunkId, ChunkLogicalModulesSummary, ChunkMetadata,
-    ChunkTable, ChunkValidationSummary, DirectoryDependencyFact, FileMetadata, FileRole, JsChunk,
-    JsFile, JsFileBody, SelectedModuleLowering, get_chunk_entry_path, join_module_path,
-    module_path_dirname, normalize_module_path, normalize_relative_module_specifier,
-    relative_module_path,
+    ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle, ChunkId, ChunkTable,
+    ChunkValidationSummary, DirectoryDependencyFact, FileMetadata, FileRole, JsFile, JsFileBody,
+    SelectedModuleLowering, get_chunk_entry_path, join_module_path, module_path_dirname,
+    normalize_module_path, normalize_relative_module_specifier, relative_module_path,
 };
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use output_layout::MODULES_REPORT;

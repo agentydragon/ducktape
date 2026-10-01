@@ -147,6 +147,7 @@ class Controls:
     applied_model: str | None = None
     active_turn_id: str | None = None
     harness_state: str | None = None
+    applied_reasoning_effort: str | None = None
 
 
 @dataclass(frozen=True)
@@ -217,7 +218,15 @@ class ProjectionBatch:
 
 _SILENT = frozenset({"native", "harness_stderr", "debug_checkpoint"})
 _LIFECYCLE = frozenset(
-    {"turn_started", "turn_completed", "model_changed", "harness_started", "harness_exited", "harness_lost"}
+    {
+        "turn_started",
+        "turn_completed",
+        "model_changed",
+        "reasoning_effort_changed",
+        "harness_started",
+        "harness_exited",
+        "harness_lost",
+    }
 )
 
 
@@ -274,6 +283,8 @@ def touched_keys(batch: EventBatch) -> TouchedKeys:
                 commands.add(event.turn_completed.interrupted_by_command_id)
             case "model_changed":
                 commands.add(event.model_changed.command_id)
+            case "reasoning_effort_changed":
+                commands.add(event.reasoning_effort_changed.command_id)
             case "harness_exited":
                 commands.add(event.harness_exited.stopped_by_command_id)
     return TouchedKeys(
@@ -491,6 +502,10 @@ class _Fold:
                 if event.model_changed.command_id:
                     self._settle(entry, event.model_changed.command_id, CommandOutcome.EFFECTED)
                 controls = replace(controls, applied_model=event.model_changed.model)
+            case "reasoning_effort_changed":
+                if event.reasoning_effort_changed.command_id:
+                    self._settle(entry, event.reasoning_effort_changed.command_id, CommandOutcome.EFFECTED)
+                controls = replace(controls, applied_reasoning_effort=event.reasoning_effort_changed.effort)
             case "harness_started":
                 controls = replace(controls, harness_state="running")
             case "harness_exited":

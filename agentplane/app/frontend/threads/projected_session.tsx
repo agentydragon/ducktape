@@ -656,6 +656,8 @@ function ProjectedSessionBody({
   useEffect(() => installThreadFavicon(status, pulseEpoch.current), [status.color, status.pulse]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
+  const selectedModel = controls?.applied_model ?? thread.model;
+  const effortOptions = modelOptions.find((option) => option.model === selectedModel)?.reasoning_efforts ?? [];
   useEffect(() => {
     let active = true;
     void models().then(
@@ -816,6 +818,25 @@ function ProjectedSessionBody({
                 )
               }
             />
+            {effortOptions.length > 0 && (
+              <Select
+                aria-label="Reasoning effort"
+                data={effortOptions}
+                value={controls?.applied_reasoning_effort ?? thread.reasoning_effort ?? null}
+                placeholder="Effort"
+                disabled={!running}
+                w={120}
+                onChange={(effort) =>
+                  effort &&
+                  commands.submit(
+                    create(CommandSchema, {
+                      commandId: crypto.randomUUID(),
+                      operation: { case: "changeReasoningEffort", value: { effort } },
+                    })
+                  )
+                }
+              />
+            )}
           </Group>
           <TopbarActions>
             <Menu position="bottom-end" withArrow shadow="md">

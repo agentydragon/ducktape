@@ -58,6 +58,7 @@ class ClaudeAdapter(HarnessAdapter):
         self._tool_result_message: tuple[str, int] | None = None
         # Sent `set_model` requests by id, as (command id, model), until `on_frame` translates the answer.
         self._model_changes: dict[str, tuple[str, str]] = {}
+        self._effort_changes: dict[str, tuple[str, str]] = {}
         self._message_id = ""
         # Content block index to item id for the message being streamed.
         self._block_items: dict[int, str] = {}
@@ -151,6 +152,14 @@ class ClaudeAdapter(HarnessAdapter):
         finally:
             self._model_changes.pop(request.request_id, None)
 
+    async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
+        request = driver.set_effort(effort)
+        self._effort_changes[request.request_id] = (command_id, effort)
+        try:
+            await self.harness.request(request)
+        finally:
+            self._effort_changes.pop(request.request_id, None)
+
     async def on_frame(self, frame: Frame, source_sequence: int) -> None:
         sources = [source_sequence]
         parsed = wire.parse_frame(frame)
@@ -173,6 +182,14 @@ class ClaudeAdapter(HarnessAdapter):
                 else:
                     await self.session._fail(
                         command_id, f"Claude Code refused model switch: {response.error}", sources=sources
+                    )
+            case wire.ControlResponseFrame(response=response) if response.request_id in self._effort_changes:
+                command_id, effort = self._effort_changes.pop(response.request_id)
+                if response.subtype == "success":
+                    await self.session.reasoning_effort_changed(command_id, effort, sources=sources)
+                else:
+                    await self.session._fail(
+                        command_id, f"Claude Code refused reasoning effort switch: {response.error}", sources=sources
                     )
             case wire.ControlRequestFrame() as request:
                 await self._answer_control_request(request)

@@ -340,7 +340,7 @@ fn resolve_test_module_id(id: ModuleId, residual_idx: usize) -> ModuleId {
 fn factorization_from_facts(
     facts: &[StatementFacts],
     bindings: HashMap<swc_ecma_ast::Id, BindingKind>,
-    logical_modules: Vec<LogicalModule>,
+    logical_modules: Vec<PlannedModule>,
     default_destination: ModuleId,
 ) -> ChunkFactorization {
     ChunkFactorization::build_with(
@@ -372,8 +372,8 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFacto
         let resolved = resolve_test_module_id(*id, residual_idx);
         bindings.insert(test_id(name), BindingKind::Owned { module: resolved });
     }
-    let mut logical_modules: Vec<LogicalModule> = (0..explicit_count)
-        .map(|i| LogicalModule {
+    let mut logical_modules: Vec<PlannedModule> = (0..explicit_count)
+        .map(|i| PlannedModule {
             id: format!("mod_{i}"),
             target_file: format!("mod_{i}.js"),
             residual: false,
@@ -381,7 +381,7 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFacto
             anonymous_statement_ordinals: Vec::new(),
         })
         .collect();
-    logical_modules.push(LogicalModule {
+    logical_modules.push(PlannedModule {
         id: "residual".to_string(),
         target_file: "residual/unhandled.js".to_string(),
         residual: true,
@@ -413,14 +413,14 @@ fn factorization_with_residual_module(
         bindings.insert(test_id(name), BindingKind::Owned { module: logical });
     }
     let logical_modules = vec![
-        LogicalModule {
+        PlannedModule {
             id: "residual".to_string(),
             target_file: "residual/unhandled.js".to_string(),
             residual: true,
             rename_map: HashMap::new(),
             anonymous_statement_ordinals: Vec::new(),
         },
-        LogicalModule {
+        PlannedModule {
             id: "mod_1".to_string(),
             target_file: "mod_1.js".to_string(),
             residual: false,

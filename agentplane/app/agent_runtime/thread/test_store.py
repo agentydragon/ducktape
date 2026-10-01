@@ -84,6 +84,7 @@ async def test_threads_list_reflects_attached_harness_and_active_turn_state(
     (running,) = await store.list_threads()
     assert running.harness_state == "HARNESS_STATE_RUNNING"
     assert running.feed_status == "active"
+    assert running.reasoning_effort == SPEC.reasoning_effort
     assert running.active_turn_id == "turn-1"
     got_thread = await store.get_thread(thread)
     assert got_thread is not None

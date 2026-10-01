@@ -6,7 +6,7 @@ use analysis::atomic_units::{AtomicUnit, OwnerGraphAndUnits};
 use analysis::factor_assembly::{AtomicUnitConflict, assemble_partition};
 use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::partition::Partition;
-use analysis::{LogicalModule, LogicalModuleIndex, ModuleId, ModuleQuotient, OwnerGraphReport};
+use analysis::{LogicalModuleIndex, ModuleId, ModuleQuotient, OwnerGraphReport, PlannedModule};
 
 use crate::ChunkAnalysis;
 use crate::esm_import_order::EsmImportOrder;
@@ -63,7 +63,7 @@ impl ChunkFactorization {
         chunk_id: String,
         precomputed: OwnerGraphAndUnits,
         bindings: HashMap<swc_ecma_ast::Id, analysis::BindingKind>,
-        logical_modules: Vec<LogicalModule>,
+        logical_modules: Vec<PlannedModule>,
         chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
         default_destination: ModuleId,
     ) -> Self {

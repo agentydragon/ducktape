@@ -79,6 +79,9 @@ class DerivingAdapter(HarnessAdapter):
     async def change_model(self, command_id: str, model: str) -> None:
         raise AssertionError(f"unexpected model command {(command_id, model)!r}")
 
+    async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
+        raise AssertionError(f"unexpected effort command {(command_id, effort)!r}")
+
     async def on_frame(self, frame: dict[str, Any], source_sequence: int) -> None:
         await self.session.emit(
             event_pb2.TextDelta(item_id="test-item", text=str(frame["n"])), sources=[source_sequence]

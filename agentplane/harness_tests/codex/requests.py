@@ -67,6 +67,7 @@ class ClientMetadata(BaseModel):
 
 
 class ResponsesRequest(BaseModel):
+    reasoning_config: dict[str, str] | None = Field(default=None, alias="reasoning")
     model: str
     instructions: str
     input: list[InputItem]

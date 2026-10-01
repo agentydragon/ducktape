@@ -70,7 +70,12 @@ class ClaudeHarness:
     async def set_model(self, model: str) -> ClaudeReceipt:
         return await self.request(driver.set_model(model))
 
-    async def request(self, request: wire.InterruptRequest | wire.SetModelRequest) -> ClaudeReceipt:
+    async def set_effort(self, effort: str) -> ClaudeReceipt:
+        return await self.request(driver.set_effort(effort))
+
+    async def request(
+        self, request: wire.InterruptRequest | wire.SetModelRequest | wire.ApplyFlagSettingsRequest
+    ) -> ClaudeReceipt:
         """Send one control request and return Claude's response to it. A caller that translates the
         answer itself builds the request with `driver`, so it knows the request id before sending."""
         receipt = await self.transport.request(

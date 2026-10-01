@@ -13,8 +13,9 @@ import httpx
 from dbus_next.aio import MessageBus
 from dbus_next.constants import PropertyAccess
 from dbus_next.service import ServiceInterface, dbus_property, method, signal as dbus_signal
-from plaid_spend_desktop.credentials import SecretServiceTokenStore
-from plaid_spend_desktop.oauth import AuthenticationRequiredError, Authenticator, OAuthConfig
+
+from .credentials import SecretServiceTokenStore
+from .oauth import AuthenticationRequiredError, Authenticator, OAuthConfig
 
 BUS_NAME = "works.allegedly.PlaidSpend"
 OBJECT_PATH = "/works/allegedly/PlaidSpend"

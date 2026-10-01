@@ -47,13 +47,17 @@ def entry(
 
 
 def admitted(
-    cursor: int, command_id: str, operation: command_pb2.SubmitInput | command_pb2.ChangeModel
+    cursor: int,
+    command_id: str,
+    operation: command_pb2.SubmitInput | command_pb2.ChangeModel | command_pb2.ChangeReasoningEffort,
 ) -> event_log_pb2.EventEntry:
     command = command_pb2.Command(command_id=command_id)
     if isinstance(operation, command_pb2.SubmitInput):
         command.submit_input.CopyFrom(operation)
-    else:
+    elif isinstance(operation, command_pb2.ChangeModel):
         command.change_model.CopyFrom(operation)
+    else:
+        command.change_reasoning_effort.CopyFrom(operation)
     return entry(cursor, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)))
 
 
@@ -195,6 +199,26 @@ def replay(entries: list[event_log_pb2.EventEntry], sizes: list[int]) -> Store:
         start += size
     assert start == len(entries)
     return store
+
+
+def test_effort_change_settles_its_command_and_updates_controls() -> None:
+    store = Store()
+    result = store.apply(
+        [
+            admitted(1, "effort-1", command_pb2.ChangeReasoningEffort(effort="high")),
+            entry(
+                2,
+                event_pb2.Event(
+                    reasoning_effort_changed=event_pb2.ReasoningEffortChanged(
+                        command_id="effort-1", previous_effort="low", effort="high"
+                    )
+                ),
+            ),
+        ]
+    )
+    assert store.state.controls.applied_reasoning_effort == "high"
+    assert store.commands["effort-1"].outcome == CommandOutcome.EFFECTED
+    assert result.lifecycle_upserts[0].observation == "reasoning_effort_changed"
 
 
 def test_batch_partitions_have_identical_materialization(script: list[event_log_pb2.EventEntry]) -> None:

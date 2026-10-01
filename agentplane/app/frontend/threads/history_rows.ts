@@ -55,6 +55,8 @@ export function lifecyclePresentation(observation: string, event: unknown): Life
     }
     case "modelChanged":
       return { label: `Model changed to ${parsed.value.model}`, prominent: false, diagnostic: null };
+    case "reasoningEffortChanged":
+      return { label: `Reasoning effort changed to ${parsed.value.effort}`, prominent: false, diagnostic: null };
     case "harnessStarted":
       return { label: "Harness started", prominent: false, diagnostic: null };
     case "harnessExited":

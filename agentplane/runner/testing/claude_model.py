@@ -36,6 +36,7 @@ class ClaudeModel(ScriptedModel[MessagesRequest]):
         return ModelRequest(
             _exchange=exchange,
             model=request.model,
+            effort=(request.output_config or {}).get("effort"),
             system_text=request.system_text,
             # Claude Code adds `<system-reminder>` blocks of its own to the user turn on a resumed
             # session; they are harness context, not user input.

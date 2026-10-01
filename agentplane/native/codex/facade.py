@@ -68,13 +68,17 @@ class CodexHarness:
             )
         )
 
-    def turn_start_request(self, *, thread_id: str, text: str, model: str | None = None) -> wire.TurnStartRequest:
+    def turn_start_request(
+        self, *, thread_id: str, text: str, model: str | None = None, effort: str | None = None
+    ) -> wire.TurnStartRequest:
         """A `turn/start` with this facade's next request id, for a caller that translates the answer
         by that id when it arrives and sends it with `request`."""
-        return driver.turn_start(self._request_id(), thread_id=thread_id, text=text, model=model)
+        return driver.turn_start(self._request_id(), thread_id=thread_id, text=text, model=model, effort=effort)
 
-    async def start_turn(self, *, thread_id: str, text: str, model: str | None = None) -> CodexReceipt:
-        return await self.request(self.turn_start_request(thread_id=thread_id, text=text, model=model))
+    async def start_turn(
+        self, *, thread_id: str, text: str, model: str | None = None, effort: str | None = None
+    ) -> CodexReceipt:
+        return await self.request(self.turn_start_request(thread_id=thread_id, text=text, model=model, effort=effort))
 
     async def steer(self, *, thread_id: str, turn_id: str, text: str) -> CodexReceipt:
         return await self.request(driver.steer(self._request_id(), thread_id=thread_id, turn_id=turn_id, text=text))

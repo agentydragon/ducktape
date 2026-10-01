@@ -62,6 +62,40 @@ async def test_one_turn_streams_reasoning_and_text(
         }
 
 
+async def test_effort_change_is_confirmed_and_used_by_next_model_request(
+    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+) -> None:
+    if spec.harness == protocol_pb2.HARNESS_CLAUDE:
+        # Haiku rejects the native effort setting before a model request; use an effort-capable model.
+        spec.model = "agentplane-test/claude-opus-4-6"
+        model.model = spec.model
+    async with await client.attach("effort-change-1", spec=spec) as session:
+        assert session.attached.spec.reasoning_effort == "low"
+        for index, effort in enumerate(("high", "low"), start=1):
+            command_id = f"effort-{index}"
+            await session.switch_reasoning_effort(command_id, effort)
+            admitted = await session.until(events.is_kind("command_admitted"))
+            assert admitted.event.command_admitted.command.command_id == command_id
+            assert admitted.event.command_admitted.command.change_reasoning_effort.effort == effort
+            if spec.harness == protocol_pb2.HARNESS_CLAUDE:
+                # Claude's settings control response is the proof. Merely sending it is not.
+                changed = await session.until(events.is_kind("reasoning_effort_changed"))
+                assert changed.event.reasoning_effort_changed.command_id == command_id
+                assert changed.event.source_sequences
+            await session.send(f"input-{index}", f"Reply with exactly: EFFORT_{index}_OK")
+            request = await model.request()
+            assert request.effort == effort
+            await model.reply(request, Text(f"EFFORT_{index}_OK"))
+            if spec.harness == protocol_pb2.HARNESS_CODEX:
+                # The matched turn/start answer, not command admission, settles Codex's effect.
+                changed = await session.until(events.is_kind("reasoning_effort_changed"))
+                assert changed.event.reasoning_effort_changed.command_id == command_id
+                assert changed.event.source_sequences
+            assert changed.event.reasoning_effort_changed.effort == effort
+            await session.until(events.turn_completed)
+        events.assert_sourced(session.seen)
+
+
 async def test_tool_call_reports_arguments_and_result(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:

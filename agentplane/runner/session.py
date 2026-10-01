@@ -270,6 +270,22 @@ class Session:
                 self._dispatched_commands.discard(command_id)
                 await self._fail(command_id, str(error), sources=[])
             return
+        if operation == "change_reasoning_effort":
+            effort = command.change_reasoning_effort.effort
+            if not effort:
+                await self._fail(command_id, "change_reasoning_effort.effort is required", sources=[])
+                return
+            if effort == self.record.reasoning_effort:
+                await self._noop(command_id, "the requested reasoning effort is already active", sources=[])
+                return
+            await self.journal.dispatch_planned(command_id)
+            self._dispatched_commands.add(command_id)
+            try:
+                await self.adapter.change_reasoning_effort(command_id, effort)
+            except (HarnessGoneError, RuntimeError) as error:
+                self._dispatched_commands.discard(command_id)
+                await self._fail(command_id, str(error), sources=[])
+            return
         if operation == "interrupt_turn":
             target = command.interrupt_turn.turn_id
             if not target:
@@ -314,6 +330,20 @@ class Session:
         self.store.write(self.session_id, self.record)
         await self.emit(
             event_pb2.ModelChanged(command_id=command_id, previous_model=previous, model=model),
+            sources=sources,
+            terminal_command_ids=[command_id],
+        )
+
+    async def reasoning_effort_changed(self, command_id: str, effort: str, *, sources: Sequence[int]) -> None:
+        """Record effort only after the native control/turn acknowledgement."""
+        stored = await self.journal.get(command_id)
+        if stored is not None and stored.terminal_cursor is not None:
+            return
+        previous = self.record.reasoning_effort
+        self.record.reasoning_effort = effort
+        self.store.write(self.session_id, self.record)
+        await self.emit(
+            event_pb2.ReasoningEffortChanged(command_id=command_id, previous_effort=previous, effort=effort),
             sources=sources,
             terminal_command_ids=[command_id],
         )

@@ -1,8 +1,8 @@
-"""The public-coder-agent devbox: its KubeVirt VirtualMachine, SSH Service, Bazel cache claim and
-BuildBuddy API key.
+"""The public-coder-agent devbox: its KubeVirt VirtualMachine, SSH Service, Bazel cache claim,
+BuildBuddy API key and VM-image restart controller.
 
 Hand-written beside the generated output: the sshd host key's SOPS Secret, and `image-pins/`,
-whose image-automation marker overrides the VM's placeholder containerDisk tag
+whose image-automation markers override the VM and controller placeholder image tags
 (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
 """
 
@@ -48,6 +48,7 @@ from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_lab
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
+from cluster.cdk8s.vm_image_restart import OPT_IN_ANNOTATION, VmImageRestartController
 
 NAMESPACE = "public-coder-agent"
 VM_NAME = "public-coder-devbox"
@@ -135,6 +136,7 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
         "virtual-machine",
         name=VM_NAME,
         namespace=NAMESPACE,
+        annotations={OPT_IN_ANNOTATION: "true"},
         # This is an ephemeral VM disk (accepted tradeoff: no checkout or other local
         # state survives an image update or VM restart). Flux ImageUpdateAutomation
         # sets the tag in image-pins/ after .github/workflows/public-coder-devbox-image.yml
@@ -208,7 +210,8 @@ def write_manifests(root: Path) -> Service:
     app = App()
     chart = Chart(app, VM_NAME, disable_resource_name_hashes=True)
     service = ssh_service(chart)
-    virtual_machine(chart)
+    vm = virtual_machine(chart)
+    VmImageRestartController(chart, "vm-image-restart-controller", target_vm=vm)
     _bazel_cache_claim(chart)
     _buildbuddy_api_key(chart)
     write_yaml(
@@ -236,7 +239,8 @@ def public_coder_agent_devbox(
         depends_on=flux_kustomization_depends_on_many(kubevirt, external_secrets_operator),
         description=(
             "KubeVirt build/test devbox for public-coder-agent "
-            "(Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root "
+            "(Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root and automatic "
+            "restart after staged VM image changes "
             "apart from the sshd host key and SSH access through ../sshpiper."
         ),
     )

@@ -35,6 +35,7 @@ class RecordedSession:
         self.emitted: list[object] = []
         self.noops: list[tuple[str, str]] = []
         self.model_changes: list[tuple[str, str, list[int]]] = []
+        self.effort_changes: list[tuple[str, str, list[int]]] = []
         self.failures: list[tuple[str, str, list[int]]] = []
         self.requested = asyncio.Event()
         self.reply: asyncio.Future[NativeReceipt] | None = None
@@ -62,6 +63,9 @@ class RecordedSession:
 
     async def model_changed(self, command_id: str, model: str, *, sources: list[int]) -> None:
         self.model_changes.append((command_id, model, sources))
+
+    async def reasoning_effort_changed(self, command_id: str, effort: str, *, sources: list[int]) -> None:
+        self.effort_changes.append((command_id, effort, sources))
 
     async def emit(self, observation: object, *, sources: list[int]) -> None:
         self.emitted.append(observation)
@@ -226,6 +230,35 @@ async def test_a_refused_model_switch_fails_its_command() -> None:
         [],
         [("switch-1", "Claude Code refused model switch: unknown model", [7])],
     )
+
+
+async def test_effort_requires_matching_successful_native_control_response() -> None:
+    recorded = RecordedSession()
+    adapter = ClaudeAdapter(
+        cast(Session, recorded), ClaudeLaunch(binary=Path("/bin/false"), base_url="http://unused", auth_token="unused")
+    )
+    change = asyncio.create_task(adapter.change_reasoning_effort("effort-1", "high"))
+    await recorded.requested.wait()
+    request = cast(wire.ApplyFlagSettingsRequest, recorded.native[-1])
+    assert request.request.settings == {"effortLevel": "high"}
+    assert recorded.effort_changes == []
+    answer = _control_response(request.request_id)
+    await adapter.on_frame(answer, 7)
+    assert recorded.effort_changes == [("effort-1", "high", [7])]
+    assert recorded.reply is not None
+    recorded.reply.set_result(NativeReceipt(answer, 7))
+    await change
+
+    recorded.requested.clear()
+    change = asyncio.create_task(adapter.change_reasoning_effort("effort-2", "low"))
+    await recorded.requested.wait()
+    answer = _control_response(cast(wire.ApplyFlagSettingsRequest, recorded.native[-1]).request_id, error="denied")
+    await adapter.on_frame(answer, 9)
+    assert recorded.reply is not None
+    recorded.reply.set_result(NativeReceipt(answer, 9))
+    await change
+    assert recorded.effort_changes == [("effort-1", "high", [7])]
+    assert recorded.failures[-1] == ("effort-2", "Claude Code refused reasoning effort switch: denied", [9])
 
 
 if __name__ == "__main__":

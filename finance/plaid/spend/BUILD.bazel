@@ -1,6 +1,3 @@
-# Gazelle's repo-root import mapping cannot infer the desktop wheel's package root.
-# The hand-written wheel BUILD declares its imports and stripped path explicitly.
-# gazelle:exclude desktop/plaid_spend_desktop
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")

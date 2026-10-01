@@ -33,8 +33,6 @@ would be for.
    `thread_payload_chunk` has no column for; without them a compacted body answers only its final
    reference.
 4. **Measure it on `agentplane-testing`.**
-   - A PING turn under 3 s. Measured at 5.2 s (Codex) and 7.5 s (Claude); the runner's per-Event
-     journal commits are most of it (<../../debug/turn_latency_20260924.md>).
    - The live log's traffic for a reader scrolled away from an active tail (**E5**).
    - Shapes against `ELECTRIC_MAX_SHAPES`: one entity shape per thread, plus one per payload field
      in use.

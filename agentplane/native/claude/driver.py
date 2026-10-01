@@ -67,5 +67,9 @@ def interrupt(*, cancel_queued: bool, reason: str = "capture") -> wire.Interrupt
     return wire.InterruptRequest(request=wire.InterruptBody(reason=reason, cancel_queued=cancel_queued))
 
 
+def set_effort(effort: str) -> wire.ApplyFlagSettingsRequest:
+    return wire.ApplyFlagSettingsRequest(request=wire.ApplyFlagSettingsBody(settings={"effortLevel": effort}))
+
+
 def set_model(model: str) -> wire.SetModelRequest:
     return wire.SetModelRequest(request=wire.SetModelBody(model=model))

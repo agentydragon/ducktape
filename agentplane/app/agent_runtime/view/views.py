@@ -40,6 +40,7 @@ class ThreadControlsState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     applied_model: str | None
+    applied_reasoning_effort: str | None = None
     active_turn_id: str | None
     harness_state: str | None
 
@@ -174,6 +175,9 @@ class ThreadView(BaseModel):
     )
     active_turn_id: str | None = Field(
         default=None, description="The runner's currently active turn, or None when it is idle."
+    )
+    reasoning_effort: str | None = Field(
+        default=None, description="Last attached runner reasoning effort; None before attachment."
     )
     feed_status: Literal["active", "ended", "failed"] | None = Field(
         default=None, description="Runner feed lifecycle; None before the first attachment."
