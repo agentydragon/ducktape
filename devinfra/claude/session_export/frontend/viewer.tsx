@@ -56,6 +56,11 @@ function eventTime(event: SessionEvent): string {
   return Number.isNaN(date.getTime()) ? event.created_at : date.toLocaleString();
 }
 
+function StatusDot({ status }: { status: string }): JSX.Element {
+  const color = status === "active" || status === "paused" ? ` status-dot-${status}` : "";
+  return <span className={`status-dot${color}`} role="img" aria-label={`Status: ${status}`} title={status} />;
+}
+
 function SessionRow({
   session,
   selected,
@@ -75,7 +80,7 @@ function SessionRow({
       >
         <span className="session-item-title">{session.title || "Untitled session"}</span>
         <span className="session-item-meta">
-          <span className={`status-pill status-${session.status}`}>{session.status}</span>
+          <StatusDot status={session.status} />
           <time dateTime={session.updated_at}>{new Date(session.updated_at).toLocaleDateString()}</time>
         </span>
         <span className="session-item-subtitle">{sessionSubtitle(session)}</span>
@@ -316,7 +321,7 @@ export function SessionViewer(): JSX.Element {
                   <h3>{selectedSession.title || "Untitled session"}</h3>
                   <p className="hint">{sessionSubtitle(selectedSession)}</p>
                 </div>
-                <span className={`status-pill status-${selectedSession.status}`}>{selectedSession.status}</span>
+                <StatusDot status={selectedSession.status} />
               </header>
               {eventError !== null && (
                 <p role="alert" className="error">

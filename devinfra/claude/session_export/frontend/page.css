@@ -10,9 +10,7 @@
   --error-bg: #fdecea;
   --error-text: #8a1c14;
   --status-active: #28743f;
-  --status-active-border: #489b62;
   --status-paused: #815d13;
-  --status-paused-border: #bd8a2e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -27,9 +25,7 @@
     --error-bg: #3a1f1c;
     --error-text: #f5b5ae;
     --status-active: #91d5a3;
-    --status-active-border: #4c945f;
     --status-paused: #e4bd72;
-    --status-paused-border: #94712f;
   }
 }
 
@@ -299,26 +295,21 @@ button.session-item.selected {
   white-space: nowrap;
 }
 
-.status-pill {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--muted);
+.status-dot {
+  background: var(--muted);
+  border-radius: 50%;
   display: inline-block;
-  font-size: 0.75rem;
-  line-height: 1.3;
-  padding: 2px 8px;
-  white-space: nowrap;
+  flex: 0 0 auto;
+  height: 0.55rem;
+  width: 0.55rem;
 }
 
-.status-active {
-  border-color: var(--status-active-border);
-  color: var(--status-active);
+.status-dot-active {
+  background: var(--status-active);
 }
 
-.status-paused {
-  border-color: var(--status-paused-border);
-  color: var(--status-paused);
+.status-dot-paused {
+  background: var(--status-paused);
 }
 
 .transcript-panel {
