@@ -26,7 +26,7 @@ pkgs.stdenvNoCC.mkDerivation {
     cp -r ${src}/src/plaid_spend_desktop "$out/lib/plaid-spend-desktop/"
     install -Dm644 ${src}/gnome/metadata.json "$extDir/metadata.json"
     install -Dm644 ${src}/gnome/extension.js "$extDir/extension.js"
-    wrapProgram ${pythonEnv}/bin/python "$out/bin/plaid-spend-daemon" \
+    makeWrapper ${pythonEnv}/bin/python "$out/bin/plaid-spend-daemon" \
       --add-flags "-m plaid_spend_desktop.daemon" \
       --prefix PYTHONPATH : "$out/lib/plaid-spend-desktop" \
       --prefix PATH : ${
