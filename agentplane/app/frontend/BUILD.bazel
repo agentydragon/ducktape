@@ -814,8 +814,8 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":markdown_css",
         ":code_block",
+        ":markdown_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
@@ -860,8 +860,8 @@ ts_library(
         "//:node_modules/@codemirror/state",
         "//:node_modules/@codemirror/view",
         "//:node_modules/@types/react",
-        "//:node_modules/highlight.js",
         "//:node_modules/@uiw/react-codemirror",
+        "//:node_modules/highlight.js",
         "//:node_modules/react",
     ],
 )
