@@ -12,6 +12,7 @@ export type TranscriptMessage = TranscriptBase & {
   role: "user" | "assistant";
   text: string;
   originToolUseId?: string;
+  parentToolUseId?: string;
 };
 
 export type TranscriptToolStatus = "running" | "complete" | "error" | "denied" | "interrupted";
@@ -21,11 +22,19 @@ export type TranscriptToolImage = {
   mimeType: string;
 };
 
+export type TranscriptSubagentActivity = {
+  latestToolName: string;
+  toolCallCount: number;
+  model?: string;
+};
+
 export type TranscriptToolCall = {
   id: string;
   toolUseId: string;
   name: string;
   input: unknown;
+  parentToolUseId?: string;
+  subagentActivity?: TranscriptSubagentActivity;
   result?: string;
   outputImages?: TranscriptToolImage[];
   toolUseResult?: JsonObject;
@@ -43,6 +52,7 @@ export type TranscriptToolRun = TranscriptBase & {
   tools: TranscriptToolCall[];
   status: TranscriptToolStatus;
   standalone: boolean;
+  parentToolUseId?: string;
 };
 
 export type TranscriptActivity = TranscriptBase & {
@@ -229,12 +239,15 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     { activity: TranscriptActivity; tool?: TranscriptToolCall; run?: TranscriptToolRun }
   >();
   const deniedTools = new Map<string, SessionEvent[]>();
+  const pendingSubagentActivity = new Map<string, TranscriptSubagentActivity>();
+  const countedSubagentEvents = new Set<string>();
 
   const addMessage = (
     role: "user" | "assistant",
     text: string,
     event: SessionEvent,
-    originToolUseId?: string
+    originToolUseId?: string,
+    parentToolUseId?: string
   ): void => {
     const previous = items.at(-1);
     if (
@@ -242,6 +255,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
       previous?.kind === "message" &&
       previous.role === role &&
       previous.originToolUseId === undefined &&
+      previous.parentToolUseId === parentToolUseId &&
       previous.events.at(-1)?.event_id === event.event_id
     ) {
       previous.text = `${previous.text}\n${text}`;
@@ -254,8 +268,35 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
       role,
       text,
       ...(originToolUseId === undefined ? {} : { originToolUseId }),
+      ...(parentToolUseId === undefined ? {} : { parentToolUseId }),
       events: [event],
     });
+  };
+
+  const accumulateSubagentActivity = (parentToolUseId: string, payload: JsonObject, event: SessionEvent): void => {
+    const eventKey = eventId(event);
+    if (countedSubagentEvents.has(eventKey)) return;
+    const message = object(payload.message);
+    const model = string(message?.model);
+    const existing =
+      toolsById.get(parentToolUseId)?.call.subagentActivity ?? pendingSubagentActivity.get(parentToolUseId);
+    let activity = existing;
+    for (const value of contentBlocks(payload)) {
+      const block = object(value);
+      const name = block?.type === "tool_use" ? string(block.name) : null;
+      if (name !== null) {
+        activity = {
+          latestToolName: name,
+          toolCallCount: (activity?.toolCallCount ?? 0) + 1,
+          ...((model ?? activity?.model) === undefined ? {} : { model: model ?? activity?.model }),
+        };
+      }
+    }
+    countedSubagentEvents.add(eventKey);
+    if (activity === existing || activity === undefined) return;
+    const parent = toolsById.get(parentToolUseId);
+    if (parent !== undefined) parent.call.subagentActivity = activity;
+    else pendingSubagentActivity.set(parentToolUseId, activity);
   };
 
   const addToolResult = (
@@ -346,14 +387,16 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
 
   for (const adapted of ordered) {
     const { sourceEvent: event, payload, type } = adapted;
+    const parentToolUseId = string(payload.parent_tool_use_id);
 
     if (type === "user" || type === "assistant") {
       const role = type;
+      if (role === "assistant" && parentToolUseId !== null) accumulateSubagentActivity(parentToolUseId, payload, event);
       let text = "";
       let currentRun: TranscriptToolRun | null = null;
       const flushText = (): void => {
         if (text !== "") {
-          addMessage(role, text, event);
+          addMessage(role, text, event, undefined, parentToolUseId ?? undefined);
           text = "";
         }
       };
@@ -380,6 +423,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
               tools: [],
               status: "running",
               standalone,
+              ...(parentToolUseId === null ? {} : { parentToolUseId }),
               events: [...(deniedTools.get(id) ?? []), event],
             };
             items.push(currentRun);
@@ -392,12 +436,17 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
             toolUseId: id,
             name,
             input: block.input ?? null,
+            ...(parentToolUseId === null ? {} : { parentToolUseId }),
+            ...(pendingSubagentActivity.get(id) === undefined
+              ? {}
+              : { subagentActivity: pendingSubagentActivity.get(id) }),
             status: deniedEvents.length > 0 ? "denied" : "running",
             policyDenied: deniedEvents.length > 0,
             tasks: [],
             events: [...deniedEvents, event],
           };
           deniedTools.delete(id);
+          pendingSubagentActivity.delete(id);
           run.tools.push(call);
           run.status = aggregateStatus(run.tools);
           for (const deniedEvent of deniedEvents) addEvent(run.events, deniedEvent);

@@ -121,7 +121,9 @@ describe("ActionHistory", () => {
   it("shows the exact arguments open, as the pending card does", async () => {
     const container = await render({ list: async () => [request("succeeded", 1)], decide: vi.fn() }, withoutGroups);
     expect(container.textContent).toContain("Exact arguments (unredacted)");
-    const block = [...container.querySelectorAll("pre")].find((pre) => pre.textContent?.includes("test-exact-token"));
+    const block = [...container.querySelectorAll(".agentplane-code-block")].find((node) =>
+      node.textContent?.includes("test-exact-token")
+    );
     if (!block) throw new Error("missing the arguments");
     expect(block.closest("details, [aria-hidden='true'], [hidden]")).toBeNull();
   });
@@ -217,7 +219,13 @@ describe("ActionHistory", () => {
     );
     // The request widget shows the command alone in its block, the response widget the exit code.
     const drawn = (): { request: boolean; response: boolean } => ({
-      request: [...container.querySelectorAll("pre")].some((block) => block.textContent === "echo test-output"),
+      request: [...container.querySelectorAll(".agentplane-code-block")].some(
+        (block) =>
+          [...block.querySelectorAll(".cm-line")]
+            .map((line) => line.textContent ?? "")
+            .join("\n")
+            .trim() === "echo test-output"
+      ),
       response: container.textContent?.includes("Exit 0") ?? false,
     });
     const switches = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');

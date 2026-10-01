@@ -241,6 +241,93 @@ const eventPage: SessionEventPage = {
   last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a508",
 };
 
+const toolResultEventPage: SessionEventPage = {
+  data: [
+    fixtureEvent(1, "assistant", {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "tool-image", name: "Read", input: { file_path: "docs/session-sync-flow.png" } },
+        ],
+      },
+    }),
+    fixtureEvent(2, "user", {
+      type: "user",
+      tool_use_result: { tool_use_id: "tool-image", structuredContent: { kind: "synthetic-image-fixture" } },
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tool-image",
+            content: [
+              { type: "text", text: "A small synthetic diagram is attached." },
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/png",
+                  data: "iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAAt0lEQVR4nO3RoRECAQADwa8LWkPRL/Kx0AFI5sKKcxGZ2eM8z5d2O359QIAFWID/NMDjAR4P8HhfgW+Xx1TX+3MqwIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMM+PNA7QCPB3g8wOMBHg/weIDHAzzeGwqER1q6RCsJAAAAAElFTkSuQmCC",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }),
+    fixtureEvent(3, "result", {
+      type: "result",
+      usage: { total_tokens: 2315 },
+      total_cost_usd: 0.0123,
+      duration_ms: 2000,
+    }),
+  ],
+  has_more: false,
+  first_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
+  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a503",
+};
+
+const subagentEventPage: SessionEventPage = {
+  data: [
+    fixtureEvent(1, "user", {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "Check why the session status test fails." }] },
+    }),
+    fixtureEvent(2, "assistant", {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: "I’ll ask an agent to inspect the test and its fixture." },
+          {
+            type: "tool_use",
+            id: "agent-17",
+            name: "Task",
+            input: { description: "Check the session status test" },
+          },
+        ],
+      },
+    }),
+    fixtureEvent(3, "assistant", {
+      type: "assistant",
+      parent_tool_use_id: "agent-17",
+      message: {
+        role: "assistant",
+        model: "claude-sonnet-4-5-20250929",
+        content: [
+          { type: "tool_use", id: "agent-read", name: "Read", input: { file_path: "tests/test_viewer.py" } },
+          { type: "tool_use", id: "agent-grep", name: "Grep", input: { pattern: "status", path: "tests" } },
+          { type: "text", text: "The fixture says paused, but the test expects active." },
+        ],
+      },
+    }),
+  ],
+  has_more: false,
+  first_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
+  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a503",
+};
+
 function mockFetch(input: RequestInfo | URL): Promise<Response> {
   const requestUrl = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
   const url = new URL(requestUrl, window.location.href);
@@ -255,7 +342,15 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
   if (url.pathname === "/api/pairing/complete") return Promise.resolve(json(pairedStatus));
   if (url.pathname === "/api/sync") return Promise.resolve(new Response(null, { status: 202 }));
   if (url.pathname === "/v1/code/sessions") return Promise.resolve(json(sessionPage));
-  if (/^\/v1\/code\/sessions\/[^/]+\/events$/.test(url.pathname)) return Promise.resolve(json(eventPage));
+  if (/^\/v1\/code\/sessions\/[^/]+\/events$/.test(url.pathname)) {
+    const page = new URLSearchParams(window.location.search).get("page") ?? "";
+    const events = page.startsWith("SessionToolResult")
+      ? toolResultEventPage
+      : page.startsWith("SessionSubagent")
+        ? subagentEventPage
+        : eventPage;
+    return Promise.resolve(json(events));
+  }
   return Promise.reject(new Error(`Unmocked session sync request: ${url.pathname}`));
 }
 

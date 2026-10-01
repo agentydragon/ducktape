@@ -876,7 +876,6 @@ rules:
       - get
       - list
       - watch
-      - delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -889,6 +888,48 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: public-coder-agent-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:haku
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:public-coder
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    description: Allows the existing public-coder and Haku subjects to restart only public-coder-devbox.
+  name: public-coder-agent-devbox-vmi-restart
+  namespace: public-coder-agent
+rules:
+  - apiGroups:
+      - kubevirt.io
+    resourceNames:
+      - public-coder-devbox
+    resources:
+      - virtualmachineinstances
+    verbs:
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    description: Binds the existing public-coder and Haku subjects to the devbox restart Role.
+  name: public-coder-agent-devbox-vmi-restart
+  namespace: public-coder-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: public-coder-agent-devbox-vmi-restart
 subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group

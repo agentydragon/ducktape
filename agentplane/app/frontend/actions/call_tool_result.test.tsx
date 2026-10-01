@@ -61,7 +61,7 @@ describe("CallToolResultView", () => {
     });
     // Re-serialized, so pretty-printed: the one-line string as stored is not what shows.
     expect(container.textContent).toContain('"total_count": 1');
-    expect(container.querySelector(".hljs-attr")).not.toBeNull();
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
   });
 
   it("renders a text block that is not JSON as its text, never as markup", async () => {
@@ -69,7 +69,7 @@ describe("CallToolResultView", () => {
     const container = await render({ content: [{ type: "text", text }], isError: false });
     expect(container.textContent).toContain(text);
     expect(container.querySelector("b, img")).toBeNull();
-    expect(container.querySelector(".hljs-string")).toBeNull();
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
   });
 
   it("flags a result the tool marked as an error", async () => {

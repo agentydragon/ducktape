@@ -7,6 +7,7 @@ import base64
 import contextlib
 import hashlib
 import hmac
+import html
 import logging
 import secrets
 import time
@@ -48,6 +49,30 @@ class OAuthConfig:
 class CallbackResult:
     code: str | None = None
     error: str | None = None
+    error_description: str | None = None
+
+
+def _display_text(value: str, limit: int) -> str:
+    """Keep callback errors safe for both HTML and terminal display."""
+    return "".join(character for character in value if character.isprintable()).strip()[:limit]
+
+
+def _callback_error(query: dict[str, list[str]]) -> CallbackResult | None:
+    error = _display_text(query.get("error", [""])[0], 80)
+    if not error:
+        return None
+    description = _display_text(query.get("error_description", [""])[0], 240)
+    return CallbackResult(error=error, error_description=description or None)
+
+
+def _format_callback_error(callback: CallbackResult) -> str:
+    error = callback.error or "unknown_error"
+    message = f"Authentik rejected Plaid Spend sign-in ({error})"
+    if callback.error_description:
+        message += f": {callback.error_description}"
+    if error == "invalid_request":
+        message += ". Check that the Authentik provider allows the authorization_code grant"
+    return message
 
 
 class Authenticator:
@@ -110,12 +135,12 @@ class Authenticator:
                         callback_future.set_exception(RuntimeError("Authentik returned an invalid login state"))
                     return
 
-                error = query.get("error", [""])[0]
-                if error:
+                callback_error = _callback_error(query)
+                if callback_error is not None:
                     if not callback_future.done():
-                        callback_future.set_result(CallbackResult(error=error[:80]))
+                        callback_future.set_result(callback_error)
                     await self._write_callback_response(
-                        writer, HTTPStatus.OK, "Plaid Spend sign-in was not completed. You can close this tab."
+                        writer, HTTPStatus.OK, f"{_format_callback_error(callback_error)}. You can close this tab."
                     )
                     return
 
@@ -170,7 +195,7 @@ class Authenticator:
             await server.wait_closed()
 
         if callback.error:
-            raise RuntimeError(f"Authentik sign-in failed: {callback.error}")
+            raise RuntimeError(_format_callback_error(callback))
         if callback.code is None:
             raise RuntimeError("Authentik sign-in did not return a code")
 
@@ -250,12 +275,13 @@ class Authenticator:
     async def _write_callback_response(writer: asyncio.StreamWriter, status: HTTPStatus, message: str) -> None:
         body = (
             '<!doctype html><html><head><meta charset="utf-8"><title>Plaid Spend</title></head>'
-            f"<body><p>{message}</p></body></html>"
+            f"<body><p>{html.escape(message, quote=False)}</p></body></html>"
         ).encode()
         response = (
             f"HTTP/1.1 {status.value} {status.phrase}\r\n"
             "Content-Type: text/html; charset=utf-8\r\n"
             "Cache-Control: no-store\r\n"
+            "Content-Security-Policy: default-src 'none'; base-uri 'none'; frame-ancestors 'none'\r\n"
             "Connection: close\r\n"
             f"Content-Length: {len(body)}\r\n\r\n"
         ).encode("ascii") + body

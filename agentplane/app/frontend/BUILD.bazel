@@ -302,7 +302,7 @@ ts_library(
     deps = [
         ":actions_rendering_entry",
         ":actions_rendering_result_entry",
-        ":syntax_highlight",
+        ":code_block",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -724,6 +724,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":actions_client",
+        ":code_block",
         ":egress",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -813,8 +814,8 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":code_block",
         ":markdown_css",
-        ":syntax_highlight",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
@@ -840,54 +841,54 @@ ts_library(
     ],
 )
 
-# syntax_highlight.tsx imports this for the bundler; esbuild resolves it beside the emitted
-# syntax_highlight.js and folds it into the SPA's stylesheet, so it travels as a dep of the library
-# that imports it.
 js_library(
-    name = "syntax_highlight_css",
-    srcs = ["syntax_highlight.css"],
+    name = "code_block_css",
+    srcs = ["code_block.css"],
 )
 
-# The one highlight.js setup: its core build with the json and bash grammars, sanitized output, and
-# the token colours.
+# The single read-only CodeMirror widget for syntax-highlighted code and special-character markers.
 ts_library(
-    name = "syntax_highlight",
+    name = "code_block",
     srcs = [
-        "syntax_highlight.tsx",
+        "code_block.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":syntax_highlight_css",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/dompurify",
+        ":code_block_css",
+        "//:node_modules/@codemirror/lang-json",
+        "//:node_modules/@codemirror/lang-yaml",
+        "//:node_modules/@codemirror/language",
+        "//:node_modules/@codemirror/legacy-modes",
+        "//:node_modules/@codemirror/state",
+        "//:node_modules/@codemirror/view",
+        "//:node_modules/@lezer/highlight",
+        "//:node_modules/@replit/codemirror-lang-nix",
         "//:node_modules/@types/react",
-        "//:node_modules/dompurify",
-        "//:node_modules/highlight.js",
+        "//:node_modules/@uiw/react-codemirror",
         "//:node_modules/react",
     ],
 )
 
 ts_library(
-    name = "syntax_highlight_test",
+    name = "code_block_test",
     testonly = True,
-    srcs = ["syntax_highlight.test.ts"],
+    srcs = ["code_block.test.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":syntax_highlight",
+        ":code_block",
         "//:node_modules/vitest",
     ],
 )
 
-# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site.
+# The JSON and plain-text adapters reuse the shared CodeMirror payload widget.
 ts_library(
     name = "json_view",
     srcs = ["json_view.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":syntax_highlight",
-        "//:node_modules/@mantine/core",
+        ":code_block",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -1059,12 +1060,12 @@ vitest_bin.vitest_test(
         ":settings_test",
         ":sidebar_test",
         ":stream_status_test",
-        ":syntax_highlight_test",
+        ":code_block_test",
         ":thread_groups_test",
         "//agentplane/app/frontend/threads:thread_store_test",
         "//agentplane/app/frontend/threads:thread_title_test",
         "//:node_modules/happy-dom",
-        # syntax_highlight.test.ts runs in jsdom; see the note there.
+        # code_block.test.ts runs in jsdom; see the note there.
         "//:node_modules/jsdom",
         "//:node_modules/vitest",
     ],

@@ -32,7 +32,7 @@
 }
 
 /* A `pre` does not wrap by default, so a fenced code block would otherwise overflow past the
-   message bubble instead of wrapping in place -- the same treatment `.agentplane-hljs` gives
+   message bubble instead of wrapping in place -- the same treatment `.agentplane-code-block` gives
    highlighted code. */
 .agentplane-markdown :where(pre) {
   white-space: pre-wrap;

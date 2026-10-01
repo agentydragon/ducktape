@@ -1,6 +1,6 @@
 # gazelle:ignore
 load("@rules_python//python:packaging.bzl", "py_wheel")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "credentials",
@@ -13,6 +13,16 @@ py_library(
     deps = [
         ":credentials",
         "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "test_oauth",
+    srcs = ["test_oauth.py"],
+    deps = [
+        ":oauth",
+        "//:conftest",
+        "@pypi//pytest_bazel",
     ],
 )
 

@@ -165,6 +165,65 @@ describe("foldSessionEvents", () => {
     expect(folded[0].events.map((item) => item.event_id)).toEqual(["event-1", "event-2", "event-3", "event-4"]);
   });
 
+  it("attributes child tool calls to their parent agent and summarizes its live activity", () => {
+    const folded = foldSessionEvents([
+      event(1, "assistant", {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "agent-1",
+              name: "Task",
+              input: { description: "Check the failing test" },
+            },
+          ],
+        },
+      }),
+      event(2, "assistant", {
+        type: "assistant",
+        parent_tool_use_id: "agent-1",
+        message: {
+          model: "claude-sonnet-4-5-20250929",
+          content: [
+            { type: "tool_use", id: "agent-read", name: "Read", input: { file_path: "test_viewer.py" } },
+            { type: "tool_use", id: "agent-grep", name: "Grep", input: { pattern: "status", path: "tests" } },
+            { type: "text", text: "The fixture and assertion disagree." },
+          ],
+        },
+      }),
+    ]);
+
+    expect(folded[0]).toMatchObject({
+      kind: "tool-run",
+      tools: [
+        {
+          toolUseId: "agent-1",
+          name: "Task",
+          status: "running",
+          subagentActivity: {
+            latestToolName: "Grep",
+            toolCallCount: 2,
+            model: "claude-sonnet-4-5-20250929",
+          },
+        },
+      ],
+    });
+    expect(folded[1]).toMatchObject({
+      kind: "tool-run",
+      parentToolUseId: "agent-1",
+      tools: [
+        { name: "Read", parentToolUseId: "agent-1" },
+        { name: "Grep", parentToolUseId: "agent-1" },
+      ],
+    });
+    expect(folded[2]).toMatchObject({
+      kind: "message",
+      parentToolUseId: "agent-1",
+      text: "The fixture and assertion disagree.",
+    });
+  });
+
   it("starts a separate run after an intervening content block and applies standalone tool boundaries", () => {
     const folded = foldSessionEvents([
       event(1, "assistant", {

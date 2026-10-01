@@ -25,9 +25,9 @@ async function drawn(node: ReactNode | null): Promise<HTMLDivElement> {
 
 /** The labels of the output streams shown, in order, with each one's text. */
 function streams(container: HTMLElement): Array<[string, string]> {
-  return [...container.querySelectorAll("pre")].map((block) => [
+  return [...container.querySelectorAll(".agentplane-code-block-block")].map((block) => [
     block.previousElementSibling?.textContent ?? "",
-    block.textContent ?? "",
+    [...block.querySelectorAll(".cm-line")].map((line) => line.textContent ?? "").join("\n"),
   ]);
 }
 
@@ -36,18 +36,16 @@ describe("ssh exec arguments", () => {
     const command = 'echo "<b>test</b>" > /tmp/test-file && cat /tmp/test-file';
     const container = await drawn(renderPreview(execArgumentsPreview, { ...ARGUMENTS, command }));
     expect(container.textContent).toContain("test-user@test-host.example");
-    expect(container.querySelector("pre")?.textContent).toBe(command);
+    expect(streams(container)[0][1]).toBe(command);
     expect(container.querySelector("b")).toBeNull();
     expect(container.textContent).not.toContain("Timeout");
   });
 
-  it("highlights the command as shell", async () => {
-    // syntax_highlight.test.ts checks the whole command survives highlighting; happy-dom, which this
-    // file runs in, drops the text ahead of the first token.
+  it("uses the CodeMirror shell language for the command", async () => {
     const command = 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"';
     const container = await drawn(renderPreview(execArgumentsPreview, { ...ARGUMENTS, command }));
-    expect(container.querySelector("pre .hljs-string")?.textContent).toBe('"restarted at $(date -Is)"');
-    expect(container.querySelector("pre .hljs-string .hljs-subst")?.textContent).toBe("$(date -Is)");
+    expect(container.querySelector(".agentplane-code-block .cm-editor")).not.toBeNull();
+    expect(streams(container)[0][1]).toBe(command);
   });
 
   it("shows the timeout when the call sets one", async () => {
@@ -93,12 +91,12 @@ describe("ssh exec result", () => {
     const container = await drawn(
       renderResultPreview(execResultPreview, { ...VALUE, stdout: `${lines.join("\n")}\n` })
     );
-    expect(container.querySelector("pre")?.textContent).toBe(lines.slice(0, 20).join("\n"));
+    expect(streams(container)[0][1]).toBe(lines.slice(0, 20).join("\n"));
     const more = container.querySelector("button");
     expect(more?.textContent).toBe("Show all 45 lines");
     expect(more?.getAttribute("aria-expanded")).toBe("false");
     await act(async () => more?.click());
-    expect(container.querySelector("pre")?.textContent).toBe(lines.join("\n"));
+    expect(streams(container)[0][1]).toBe(lines.join("\n"));
     expect(more?.textContent).toBe("Show the first 20 lines");
   });
 

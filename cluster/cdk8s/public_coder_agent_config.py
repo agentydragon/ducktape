@@ -84,11 +84,15 @@ _KUBECONFIG_CONFIG_MAP_NAME = "public-coder-agent-kubeconfig"
 # Rendered by the kustomization.yaml's configMapGenerator.
 _SSH_CONFIG_MAP_NAME = "public-coder-agent-ssh"
 _RBAC_GROUP = "rbac.authorization.k8s.io"
-# Every read public-coder gets, Haku gets too: bound to the same roles.
-_HAKU_SUPERSET_SUBJECTS = [
+# Haku's static OIDC groups and Console ServiceAccount.
+_HAKU_STATIC_SUBJECTS = [
     k8s.Subject(kind="Group", name="oidc-ksbx-groups:haku", api_group=_RBAC_GROUP),
     k8s.Subject(kind="Group", name="haku:access-profile:haku", api_group=_RBAC_GROUP),
     k8s.Subject(kind="ServiceAccount", name="haku", namespace="haku-sandbox"),
+]
+# Every access-profile permission public-coder gets, Haku gets too: bound to the same roles.
+_HAKU_SUPERSET_SUBJECTS = [
+    *_HAKU_STATIC_SUBJECTS,
     k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group=_RBAC_GROUP),
 ]
 _READ = ["get", "list", "watch"]
@@ -876,9 +880,8 @@ def _rbac(scope: Construct) -> None:
             # Pod metrics (metrics.k8s.io) -- nodes_top / pods_top equivalents.
             k8s.PolicyRule(api_groups=["metrics.k8s.io"], resources=["pods"], verbs=["get", "list"]),
             # The devbox is the public-coder agent's ephemeral build machine. Restrict
-            # image-rollout inspection and restart to this one named KubeVirt VM/VMI; deleting the
-            # VMI (not the VM) lets runStrategy: Always recreate it from the current Flux-updated
-            # containerDisk template.
+            # image-rollout inspection to this one named KubeVirt VM/VMI. Restart permission is
+            # granted separately to Haku's static identities below.
             k8s.PolicyRule(
                 api_groups=["kubevirt.io"],
                 resources=["virtualmachines"],
@@ -891,7 +894,7 @@ def _rbac(scope: Construct) -> None:
                 resource_names=["public-coder-devbox"],
                 # A named VMI waiter establishes its resource version with a list+watch;
                 # resourceNames requires the caller to field-select this exact VMI.
-                verbs=["get", "list", "watch", "delete"],
+                verbs=["get", "list", "watch"],
             ),
         ],
     )
@@ -904,6 +907,44 @@ def _rbac(scope: Construct) -> None:
             annotations={"description": "Binds public-coder and its Haku superset to the reader Role."},
         ),
         role_ref=_role_ref("Role", reader),
+        subjects=_HAKU_SUPERSET_SUBJECTS,
+    )
+
+    # Deleting the VMI (not the VM) lets runStrategy: Always recreate the devbox from the
+    # current Flux-updated containerDisk template. Keep the reader's existing subjects on this
+    # separate narrow Role so none loses its effective permission. Managed Agentplane SAs are
+    # not among these static subjects; their grant selection is a later change.
+    devbox_vmi_restart = "public-coder-agent-devbox-vmi-restart"
+    k8s.KubeRole(
+        scope,
+        "devbox-vmi-restart",
+        metadata=k8s.ObjectMeta(
+            name=devbox_vmi_restart,
+            namespace=NAMESPACE,
+            annotations={
+                "description": "Allows the existing public-coder and Haku subjects to restart only public-coder-devbox."
+            },
+        ),
+        rules=[
+            k8s.PolicyRule(
+                api_groups=["kubevirt.io"],
+                resources=["virtualmachineinstances"],
+                resource_names=["public-coder-devbox"],
+                verbs=["delete"],
+            )
+        ],
+    )
+    k8s.KubeRoleBinding(
+        scope,
+        "devbox-vmi-restart-binding",
+        metadata=k8s.ObjectMeta(
+            name=devbox_vmi_restart,
+            namespace=NAMESPACE,
+            annotations={
+                "description": "Binds the existing public-coder and Haku subjects to the devbox restart Role."
+            },
+        ),
+        role_ref=_role_ref("Role", devbox_vmi_restart),
         subjects=_HAKU_SUPERSET_SUBJECTS,
     )
 

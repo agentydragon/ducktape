@@ -3,7 +3,7 @@ import DOMPurify from "dompurify";
 import { Marked } from "marked";
 import { createElement, type JSX, type ReactNode, useMemo } from "react";
 
-import { highlight, isRegisteredLanguage } from "./syntax_highlight";
+import { CodeBlock, isRegisteredLanguage } from "./code_block";
 
 import "./markdown.css";
 
@@ -16,9 +16,8 @@ const VOID_TAGS = new Set(["BR", "HR"]);
 
 // The agent's own text, so the source is untrusted: sanitize the rendered HTML down to the tags a
 // transcript needs, with no attributes that can navigate or script. The `code` renderer override
-// highlights a fenced block by its declared language when that language is one of
-// `syntax_highlight.tsx`'s registered grammars; an unrecognized or absent language, or a raw
-// (non-fenced) code span, falls back to plain, escaped text rather than guessing.
+// marks fenced blocks so they can be mounted as the shared read-only CodeMirror widget after
+// sanitization; unrecognized or absent languages stay plain text rather than being guessed.
 const marked = new Marked({
   gfm: true,
   breaks: true,
@@ -28,10 +27,8 @@ const marked = new Marked({
       // newline before the closing tag; matched here since this override replaces that renderer.
       const code = `${text.replace(/\n$/, "")}\n`;
       const language = lang?.match(/^\S*/)?.[0];
-      if (language !== undefined && isRegisteredLanguage(language)) {
-        return `<pre><code class="agentplane-hljs">${highlight(code, language)}</code></pre>`;
-      }
-      return `<pre><code>${escapeHtml(code)}</code></pre>`;
+      const languageClass = language !== undefined && isRegisteredLanguage(language) ? ` language-${language}` : "";
+      return `<pre><code class="agentplane-code-fence${languageClass}">${escapeHtml(code)}</code></pre>`;
     },
   },
 });
@@ -109,9 +106,39 @@ function appendStreamingCursor(content: DocumentFragment): void {
   else parent.append(cursor);
 }
 
+function codeFence(node: Element, key: string): ReactNode | null {
+  if (node.tagName !== "PRE") return null;
+  const code = node.firstElementChild;
+  if (code?.tagName !== "CODE" || !code.classList.contains("agentplane-code-fence")) return null;
+
+  const languageClass = Array.from(code.classList).find((name) => name.startsWith("language-"));
+  const language = languageClass?.slice("language-".length);
+  const cursor = code.querySelector(`[${STREAMING_CURSOR_MARKER}]`);
+  let textBeforeCursor = "";
+  const findCursor = (parent: ParentNode): boolean => {
+    for (const child of parent.childNodes) {
+      if (child === cursor) return true;
+      if (child.nodeType === Node.TEXT_NODE) textBeforeCursor += child.textContent ?? "";
+      else if (child instanceof Element && findCursor(child)) return true;
+    }
+    return false;
+  };
+  const cursorOffset = cursor && findCursor(code) ? textBeforeCursor.length : null;
+
+  return createElement(CodeBlock, {
+    key,
+    text: code.textContent ?? "",
+    ...(language !== undefined && isRegisteredLanguage(language) ? { language } : {}),
+    ...(cursorOffset !== null ? { streamingCursorOffset: cursorOffset } : {}),
+  });
+}
+
 function toReactNode(node: ChildNode, key: string): ReactNode {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent;
   if (!(node instanceof Element)) return null;
+
+  const renderedCodeFence = codeFence(node, key);
+  if (renderedCodeFence !== null) return renderedCodeFence;
 
   const cursor = node.hasAttribute(STREAMING_CURSOR_MARKER);
   const props = Object.fromEntries(
@@ -139,10 +166,9 @@ export function Markdown({ source, streaming = false }: { source: string; stream
     if (typeof rendered !== "string") throw new Error("asynchronous Markdown rendering is not supported");
     const sanitized = DOMPurify.sanitize(rendered, {
       ALLOWED_TAGS,
-      // `class` is here for the highlighter's `hljs-*` spans (see the `code` renderer above);
-      // DOMPurify's allowlist isn't per-tag, so raw HTML in the source could also carry a `class`
-      // on another allowed tag -- still just CSS, never navigation or script, so it stays within
-      // this module's stated sanitizing goal.
+      // `class` marks generated code fences and lets token CSS style permitted inline elements.
+      // DOMPurify's allowlist isn't per-tag, so raw HTML in the source can also carry a `class` on
+      // another allowed tag -- still just CSS, never navigation or script.
       ALLOWED_ATTR: ["align", "class", "href", "title"],
       ALLOW_DATA_ATTR: false,
     });

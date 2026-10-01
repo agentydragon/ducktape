@@ -288,7 +288,7 @@ describe("global Action affordance", () => {
         "1 action waiting for review"
       );
       expect(container.querySelector('.action-affordance-notice button[aria-expanded="false"]')).not.toBeNull();
-      expect(container.querySelector(".action-affordance-notice pre")).toBeNull();
+      expect(container.querySelector(".action-affordance-notice .agentplane-code-block")).toBeNull();
       expect(document.querySelector('[aria-modal="true"]')).toBeNull();
       expect(document.querySelector(".mantine-Drawer-root")).toBeNull();
       expect(close).not.toHaveBeenCalled();
@@ -299,7 +299,7 @@ describe("global Action affordance", () => {
       expect(container.querySelector("[data-current-path]")?.getAttribute("data-current-path")).toBe("/actions");
 
       await act(async () => button(container, "Review").click());
-      expect(container.querySelector(".action-affordance-notice pre")).not.toBeNull();
+      expect(container.querySelector(".action-affordance-notice .agentplane-code-block")).not.toBeNull();
       expect(container.textContent).toContain("Exact arguments (unredacted)");
       await send([first, second]);
       expect(container.querySelector(".action-affordance-notice")?.textContent).toContain(second.title);

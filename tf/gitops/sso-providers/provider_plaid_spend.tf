@@ -5,6 +5,7 @@ resource "authentik_provider_oauth2" "plaid_spend_desktop" {
   name               = "plaid-spend-desktop-oauth2"
   client_id          = "plaid-spend-desktop"
   client_type        = "public"
+  grant_types        = ["authorization_code", "refresh_token"]
   authorization_flow = data.authentik_flow.implicit_consent.id
   invalidation_flow  = data.authentik_flow.invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
