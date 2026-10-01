@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/public-coder-agent
-    newTag: devel-20261001182745-c14925c # {"$imagepolicy": "flux-system:public-coder-agent:tag"}
+    newTag: devel-20261001185217-83e981c # {"$imagepolicy": "flux-system:public-coder-agent:tag"}

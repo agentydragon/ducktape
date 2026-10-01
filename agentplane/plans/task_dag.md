@@ -23,8 +23,8 @@ Proposed execution order for the Thread correctness/UI track:
   the current model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one
   runner-owned command queue; no app outbox or combined-start expansion in this batch.
 - **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Compact activity
-  mocks (`THREAD_ACTIVITY_MOCKS`), Sandbox continuation (`THREAD_SUSPEND_RESUME`), and native
-  resume/recovery remain on the board but are excluded from this dispatch batch.
+  mocks (`THREAD_ACTIVITY_MOCKS`) and native resume/recovery remain on the board but are excluded
+  from this dispatch batch.
 - **Reported UI bug, unranked:** Sandbox-level default reasoning effort appears not to carry into
   the frontend’s later Thread launch (`SANDBOX_REASONING_DEFAULT`).
 - **Workspace design, unranked:** reconcile once-per-Sandbox bootstrap and per-Thread working
@@ -105,7 +105,6 @@ flowchart TB
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
-    THREAD_SUSPEND_RESUME["Reported continuation failure<br/>Thread stays finalized after Sandbox resume<br/>resume native conversation and allow new input"]:::active
     SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
@@ -1017,48 +1016,6 @@ unreachable runners at deletion, and incomplete recovery state. Storage inspecti
 and native evidence can proceed independently; full archive-preservation acceptance
 requires Event durability and app replication. Gate lifecycle automation on its own
 evidence without blocking ordinary messaging and UI work.
-
-### `THREAD_SUSPEND_RESUME` — continue existing Threads after Sandbox resume
-
-**P1, reported on staging:** after suspending and resuming its Sandbox,
-[Thread 70bf54a7-81e1-46f5-8fed-381ae1ce870f](https://agentplane-staging.allegedly.works/#/threads/70bf54a7-81e1-46f5-8fed-381ae1ce870f)
-appears finalized and cannot accept further messages. Record this as an observed
-symptom, not a diagnosed storage loss or harness failure. Sandbox readiness, an ended
-runner attachment, and the lifetime of its Thread must not be conflated.
-
-**Existing mechanism to wire through:** `Runner.open` with a known `session_id` and
-its matching stored `spec` calls `Session.ensure_running`; the Claude adapter uses
-its retained native resume ID and Codex calls `thread/resume`. `test_attach.py` and
-`test_restart.py` already exercise this path against both harnesses with retained
-conversation assertions. This is not proof of deployed Sandbox resume: the app's
-Sandbox resume route only changes Kubernetes operating mode, ingestion attaches
-without a spec, and the Thread composer disables submission for an ended feed.
-Trace and expose the missing product continuation path, reusing the existing runner
-operation rather than presuming a new native resume protocol is needed. Validate
-deployed state before attributing this particular report to those code paths.
-
-Resume the native conversation in a new harness process as needed, preserve the same
-Thread ID/URL and history, and restore message submission once its runner/harness is
-ready. Preserve the retained journal and single Event sequence; align with
-`THREAD_EVENT_CONTINUITY` without gating a working existing-session resume path on
-that larger identity cutover.
-Do not merely enable the composer against a dead session, create a replacement Thread,
-or treat a fresh harness without the original context as a successful resume. Missing
-recovery state must be explicit. This does not introduce offline command admission or
-automatic replay of unsettled predecessor commands (`THREAD_SUCCESSOR_DELIVERY`).
-For this first implementation, the acceptance scope starts from an idle harness after a
-completed turn. Recovery of an in-flight turn, including tool calls aborted by harness
-shutdown, is deferred for a later design and implementation pass.
-
-Add integration and deployed acceptance for both Claude and Codex: create at least two
-Threads in one fixture Sandbox, complete a turn in each, suspend until the old Pod is
-gone, resume, and continue each original Thread with a new message. Pin native resume
-and retained context with exact mocked-LLM request assertions; deployed acceptance must
-observe new input confirmation and a completed reply, not just a Ready Pod. Verify
-monotonic replay without duplicate history and no cross-Thread routing/context mix-up.
-Add focused frontend coverage that the original page and a reloaded page both recover
-from the ended attachment and can send successfully. Use owned test fixtures, not the
-operator's affected Thread. Archive-before-deletion work does not gate this regression.
 
 ### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
 

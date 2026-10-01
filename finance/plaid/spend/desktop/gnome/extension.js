@@ -195,7 +195,6 @@ const PlaidSpendIndicator = GObject.registerClass(
       }
 
       this._label.set_text(label);
-      this.set_tooltip_text(this._error ? `Plaid Spend · ${this._error}` : "Plaid Spend statement-cycle spend");
       this.accessible_name = `Plaid Spend ${label}`;
       this._renderPopup();
     }
