@@ -15,6 +15,7 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:vm_image_restart",
         "//cluster/cdk8s/forgejo:secret_copy",
         "//cluster/cdk8s/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",

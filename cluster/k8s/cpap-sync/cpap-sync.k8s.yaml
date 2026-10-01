@@ -279,6 +279,7 @@ kind: VirtualMachine
 metadata:
   annotations:
     description: Always-on KubeVirt gateway for the CPAP ez Share WiFi card. The USB adapter stays physically attached to OptiPlex and is passed through to this VM; the VM exposes only the card's HTTP API to the sync Service.
+    ducktape.org/auto-restart-template-changes: "true"
   labels:
     app.kubernetes.io/name: cpap-gateway
   name: cpap-gateway
@@ -334,6 +335,184 @@ spec:
         - name: cpap-secret
           secret:
             secretName: cpap-ezshare
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: Identity for the generic KubeVirt VM image restart controller.
+  name: vm-image-restart
+  namespace: cpap-sync
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  annotations:
+    description: Durable rollout state and bounded retry count for the configured VM.
+  name: vm-image-restart-state
+  namespace: cpap-sync
+immutable: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    description: Narrow permissions for restarting and observing the configured VM.
+  name: vm-image-restart
+  namespace: cpap-sync
+rules:
+  - apiGroups:
+      - kubevirt.io
+    resourceNames:
+      - cpap-gateway
+    resources:
+      - virtualmachines
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kubevirt.io
+    resourceNames:
+      - cpap-gateway
+    resources:
+      - virtualmachineinstances
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - vm-image-restart-state
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vm-image-restart
+  namespace: cpap-sync
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vm-image-restart
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: vm-image-restart
+    namespace: cpap-sync
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Applies staged image/template changes to one configured stateless KubeVirt VM.
+  labels:
+    app.kubernetes.io/name: vm-image-restart
+  name: vm-image-restart
+  namespace: cpap-sync
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vm-image-restart
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vm-image-restart
+        cdk8s.io/metadata.addr: cpap-sync-vm-image-restart-controller-deployment-c82c8636
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: TARGET_NAMESPACE
+              value: cpap-sync
+            - name: TARGET_VM_NAME
+              value: cpap-gateway
+            - name: STATE_CONFIGMAP_NAME
+              value: vm-image-restart-state
+          image: git.allegedly.works/ducktape-ci/vm-image-restart:unset
+          imagePullPolicy: IfNotPresent
+          name: vm-image-restart
+          resources:
+            limits:
+              cpu: 200m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 48Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: Always
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: vm-image-restart
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Allows the restart controller to reach only DNS and the Kubernetes API.
+  name: vm-image-restart-egress
+  namespace: cpap-sync
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: vm-image-restart
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

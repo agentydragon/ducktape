@@ -157,11 +157,15 @@ def settings(
                     "haku": SandboxPreset(
                         title="Haku",
                         template="agentplane-runner",
-                        # At least claude-ai's own reach (actions_staging_policies.py's
-                        # EgressBinding for haku-agent binds the same superset at the
-                        # ServiceAccount level); listed again here because a preset's
-                        # `policies` are what a *launch* is granted, independent of which
-                        # caller/ServiceAccount stamps it.
+                        # These policies are what a *launch* is granted, independent of
+                        # which caller/ServiceAccount stamps it.
+                        #
+                        # TODO(#8596): once Agentplane has a deliberate identity and credential
+                        # path for managed sandboxes (they currently get one ServiceAccount
+                        # per Sandbox, and whether to keep that is open), plumb the view-only
+                        # Coinbase key into these runners and grant only the chosen identity
+                        # the required Secret read and Coinbase egress. OAuth-connected
+                        # Connections retain their separate static claude-ai grant.
                         policies=[
                             BASIC_POLICY,
                             FORGEJO_HAKU_POLICY,
@@ -172,7 +176,6 @@ def settings(
                             ACTIVITYWATCH_READ_POLICY,
                             AIQUOTA_READ_POLICY,
                             HAKU_MAILBOX_POLICY,
-                            COINBASE_POLICY,
                             PLAID_PGWEB_POLICY,
                             GITHUB_CLONE_POLICY,
                             GITHUB_AGENTYDRAGON_AGENT_POLICY,

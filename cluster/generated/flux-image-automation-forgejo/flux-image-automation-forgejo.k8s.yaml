@@ -1422,3 +1422,28 @@ spec:
   policy:
     alphabetical:
       order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: vm-image-restart
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/vm-image-restart
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: vm-image-restart
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: vm-image-restart
+  policy:
+    alphabetical:
+      order: asc

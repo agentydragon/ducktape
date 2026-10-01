@@ -1788,7 +1788,6 @@ data:
           - activitywatch-read
           - aiquota-read
           - haku-mailbox
-          - coinbase
           - plaid-pgweb
           - github-clone
           - github-agentydragon-agent
@@ -4227,10 +4226,6 @@ subjects:
     kind: ServiceAccount
     name: claude-ai
     namespace: agentplane-staging
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: haku-agent
-    namespace: agentplane-staging
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
@@ -4342,7 +4337,6 @@ spec:
     - activitywatch-read
     - aiquota-read
     - haku-mailbox
-    - coinbase
     - plaid-pgweb
     - agentplane-testing
     - github-downloads

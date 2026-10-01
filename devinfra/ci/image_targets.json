@@ -194,6 +194,10 @@
       "target": "//cpap:image",
       "registry": "forgejo"
     },
+    "vm-image-restart": {
+      "target": "//cluster/controllers/vm_image_restart:image",
+      "registry": "forgejo"
+    },
     "claude-session-sync": {
       "target": "//devinfra/claude/session_export:image",
       "test": "//devinfra/claude/session_export/...",

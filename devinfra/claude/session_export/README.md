@@ -91,11 +91,11 @@ No way to revoke an OAuth grant is known; whether logging out of all devices doe
 `sync` keeps a PostgreSQL database level with every session instead of writing an archive: the first cycle backfills,
 later ones read what changed. It needs an OAuth credential from `pair` and the connection string in
 `SESSION_SYNC_DATABASE_URL`. Schema, cycle semantics and the `json`/`jsonb` choice: [docs/sync.md](docs/sync.md).
-`serve` adds a login-protected page that pairs the sync by pasting back the redirect URL, for a
-deployment where nothing can listen on the loopback port ([docs/serve.md](docs/serve.md)). The page also browses
-synced sessions and their event history, while the sync follows recently active sessions over the server's event
-streams between cycles ([docs/sync.md](docs/sync.md) § Live following). The browser follows committed mirror changes
-across web replicas. In the cluster: [docs/deploy.md](docs/deploy.md).
+`serve` adds a login-protected UI with separate `/sessions` and `/sync` pages for browsing synced sessions and
+managing pairing/status, for a deployment where nothing can listen on the loopback port ([docs/serve.md](docs/serve.md)).
+The sync follows recently active sessions over the server's event streams between cycles ([docs/sync.md](docs/sync.md)
+§ Live following). The browser follows committed mirror changes across web replicas. In the cluster:
+[docs/deploy.md](docs/deploy.md).
 
 ## Archive
 

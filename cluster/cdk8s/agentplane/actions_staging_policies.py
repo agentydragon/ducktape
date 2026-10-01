@@ -341,8 +341,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     # Haku's own credentials (forgejo-haku, haku-mailbox) are bound to claude-ai today only
     # because claude-ai happens to be "the connection Haku runs through" (see the
     # EgressBinding comment below) -- a historical accident, not a reason to keep growing
-    # that account's authority. Granted at least claude-ai's own permissions (egress,
-    # Action Service reads, the Coinbase Role, and the acceptance-suite token) below.
+    # that account's authority. haku-agent is a static caller identity, not the per-Sandbox
+    # ServiceAccount on managed runner Pods; Coinbase key delivery to those runners is tracked
+    # in #8596.
     haku_agent = ServiceAccount(
         scope,
         "serviceaccount-haku-agent",
@@ -465,7 +466,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         "rolebinding-claude-ai-coinbase",
         metadata=ApiObjectMetadata(name="claude-ai-coinbase-reader", namespace=_NAMESPACE),
         role=coinbase_reader,
-    ).add_subjects(claude_ai, haku_agent)
+    ).add_subjects(claude_ai)
     EgressPolicy(
         scope,
         "egresspolicy-coinbase",
@@ -588,10 +589,8 @@ def add_staging_action_policies(scope: Construct) -> None:
         ],
     )
 
-    # What a sandbox of haku-agent's may reach: at least everything claude-ai's sandboxes may
-    # reach (see the comment above), so the "haku" preset (app_settings.py) -- which clones
-    # haku-state over `forgejo-haku` and works from it -- has no less reach than claude-ai's
-    # Haku-flavored sandboxes already have.
+    # Haku-like managed sandboxes keep their Haku-specific access, but do not get Coinbase
+    # egress or the key until a supported managed-runner identity/credential path exists (#8596).
     _sandbox_egress_binding(
         scope,
         haku_agent,
@@ -605,7 +604,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
-            COINBASE_POLICY,
             PLAID_PGWEB_POLICY,
             _AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,

@@ -90,7 +90,7 @@ flowchart TB
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
     ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
-    SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
+    SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>identity choice open; see #8596"]:::future
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
@@ -274,18 +274,18 @@ to Sandbox creation and optional preset defaults. Presets only prefill values; n
 the apiserver nor credential handling interprets preset names as authority. This does
 not require the broad `PROFILES` design.
 
-Resolve the credential path for those principals with `ACCESS`. The principal itself
-already exists: each Sandbox runs as a ServiceAccount of its own, created and owned by the
-app at launch. Separate ServiceAccounts can
-share role definitions without sharing identity;
-Threads inside one Sandbox share its workload authority. Preserve live Sandbox UID/Pod
-attribution in workload authentication. Distinct ServiceAccounts in accepted namespaces
-are already supported by that authenticator; a wholesale identity-model replacement is
-not a prerequisite. There is nothing left to unify on the policy subject: an external
-caller and a Sandbox already resolve to the same one kind, a ServiceAccount.
+Resolve the credential path for those principals with `ACCESS`. Current implementation
+creates and owns a ServiceAccount per Sandbox at launch. That is current behavior, not a
+settled identity choice: decide whether managed Agents should keep per-Sandbox accounts, use a
+stable per-Agent account, or use another scoped mechanism for Kubernetes RBAC and credential
+delivery. OAuth-connected Connections already have static caller ServiceAccounts and remain a
+separate path. Coinbase key delivery to Agentplane-managed runners is tracked in
+[#8596](https://github.com/agentydragon/ducktape/issues/8596).
 
-The credential path and whether/how Kubernetes RBAC objects represent grants remain
-open under `ACCESS`; their canonical design questions are in
+Preserve live Sandbox UID/Pod attribution in workload authentication. Distinct ServiceAccounts
+in accepted namespaces are already supported by that authenticator. The credential path and
+whether/how Kubernetes RBAC objects represent grants remain open under `ACCESS`; their
+canonical design questions are in
 [external-system permissions](external_access.md#kubernetes-sandbox-access-decisions).
 This task integrates the chosen model into Sandbox creation, access inspection/change,
 and lifecycle cleanup, including cross-namespace resources where applicable. Respect

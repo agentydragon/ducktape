@@ -53,6 +53,11 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
 
     @asynccontextmanager
     async def serving(*, subject: str = OWNER, token_status: int = 200) -> AsyncIterator[str]:
+        frontend_dir = tmp_path / "frontend"
+        frontend_dir.mkdir()
+        (frontend_dir / "index.html").write_text(
+            "<!doctype html><title>session sync test shell</title>", encoding="utf-8"
+        )
         private_key, public_key = generate_rsa_keypair()
         idp_sock, app_sock = bind_free_port(), bind_free_port()
         idp_url, app_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, app_sock))
@@ -85,7 +90,10 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
         # The app runs in this loop, not in `serve_app`'s thread: its `store` holds this loop's asyncpg connections.
         async with (
             serve_app(idp, sock=idp_sock),
-            serve_app_in_loop(create_app(supervisor=supervisor, settings=settings, store=store), sock=app_sock),
+            serve_app_in_loop(
+                create_app(supervisor=supervisor, settings=settings, store=store, frontend_dir=frontend_dir),
+                sock=app_sock,
+            ),
         ):
             yield app_url
 
@@ -106,9 +114,16 @@ async def test_everything_but_health_needs_the_login_and_the_owner_completes_it(
         assert (await browser.get("/api/status")).status_code == 401
         page = await browser.get("/")
         assert (page.status_code, page.headers["location"]) == (303, "/auth/login")
+        sessions_page = await browser.get("/sessions")
+        sync_page = await browser.get("/sync")
+        assert (sessions_page.status_code, sessions_page.headers["location"]) == (303, "/auth/login")
+        assert (sync_page.status_code, sync_page.headers["location"]) == (303, "/auth/login")
 
         landed = await browser.get("/auth/login", follow_redirects=True)
-        assert landed.url.path == "/"  # the login ends at the root, which only the SPA mount serves
+        assert landed.url.path == "/sessions"
+        assert (await browser.get("/sync")).text == (await browser.get("/sessions")).text
+        root = await browser.get("/")
+        assert (root.status_code, root.headers["location"]) == (307, "/sessions")
         status = await browser.get("/api/status")
 
     assert status.status_code == 200

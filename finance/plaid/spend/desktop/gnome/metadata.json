@@ -1,0 +1,7 @@
+{
+  "uuid": "plaid-spend@allegedly.works",
+  "name": "Plaid Spend",
+  "description": "Statement-cycle spend and card alerts from the Plaid Spend service",
+  "version": 1,
+  "shell-version": ["45", "46", "47", "48", "49", "50"]
+}

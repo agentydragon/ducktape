@@ -1,0 +1,67 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "controller",
+    srcs = ["controller.py"],
+    deps = [
+        ":settings",
+        "//util:kubernetes_watch",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+    ],
+)
+
+aspect_py_binary(
+    name = "controller_bin",
+    main = "controller.py",
+    deps = [":controller"],
+)
+
+py_image_layer(
+    name = "controller_layer",
+    binary = ":controller_bin",
+    group = "65532",
+    owner = "65532",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("controller_bin"),
+    env = py_image_env(binary_name = "controller_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":controller_layer"],
+    user = "65532:65532",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["vm-image-restart:latest"],
+)
+
+py_test(
+    name = "test_controller",
+    srcs = ["test_controller.py"],
+    deps = [
+        ":controller",
+        ":settings",
+        "//:conftest",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

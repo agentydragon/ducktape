@@ -94,6 +94,7 @@ IMAGES = (
     "tana-firebase-resigner",
     "tana-litellm-proxy",
     "tana-mcp",
+    "vm-image-restart",
     # keep-sorted end
 )
 
