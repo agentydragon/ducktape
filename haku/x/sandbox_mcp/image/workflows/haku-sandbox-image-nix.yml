@@ -15,10 +15,10 @@ on:
     paths:
       # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
-      - "haku/x/sandbox_mcp/image/workflows/haku-sandbox-image-nix.yml"
       - ".github/workflows/nix-image.yml"
       - "flake.lock"
       - "haku/x/sandbox_mcp/image/**"
+      - "haku/x/sandbox_mcp/image/workflows/haku-sandbox-image-nix.yml"
       - "nix/flake/packages.nix"
       - "nix/lib/nix-ld-image.nix"
       # keep-sorted end
@@ -33,10 +33,10 @@ on:
     paths:
       # keep-sorted start
       - ".github/actions/setup-nix-attic/action.yml"
-      - "haku/x/sandbox_mcp/image/workflows/haku-sandbox-image-nix.yml"
       - ".github/workflows/nix-image.yml"
       - "flake.lock"
       - "haku/x/sandbox_mcp/image/**"
+      - "haku/x/sandbox_mcp/image/workflows/haku-sandbox-image-nix.yml"
       - "nix/flake/packages.nix"
       - "nix/lib/nix-ld-image.nix"
       # keep-sorted end

@@ -53,10 +53,7 @@ from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp import approval, catalog_reconciler, mount, server, tool_call_service
-from haku.console.mcp.in_process_servers import (
-    InProcessServerDependencies,
-    build_in_process_servers,
-)
+from haku.console.mcp.in_process_servers import InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_config import (
     InProcessServers,
     LoadedStaticAgent,
@@ -67,11 +64,7 @@ from haku.console.models import ConfigResponse
 from haku.console.notifications import console_events, push, push_routes
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.settings import Settings
-from haku.console.tools import (
-    grants as grants_tools,
-    kubernetes as kubernetes_tools,
-    routine as routine_tools,
-)
+from haku.console.tools import grants as grants_tools, kubernetes as kubernetes_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder

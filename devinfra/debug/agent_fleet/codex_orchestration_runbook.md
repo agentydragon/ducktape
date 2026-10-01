@@ -207,11 +207,11 @@ not run live** — treat as design, not a paved procedure.
 
 ### Which codex interface survives a pod boundary
 
-| Interface               | Transport                          | Mid-turn steer                          | Durable across a process restart                                 | Current Haku access                                  |
-| ----------------------- | ---------------------------------- | --------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------- |
+| Interface               | Transport                          | Mid-turn steer                          | Durable across a process restart                                 | Current Haku access                                           |
+| ----------------------- | ---------------------------------- | --------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------- |
 | `codex exec` / `resume` | one-shot                           | no                                      | **yes** — resumes from `CODEX_HOME` on disk (Recipe A, verified) | former Haku MCP path retired; Agentplane Actions are separate |
-| `codex app-server`      | websocket, or `stdio://`           | **yes** (`turn/steer`,`turn/interrupt`) | `thread/resume` exists (disk-resume not re-verified)             | no current Haku runner; needs a network path         |
-| `codex mcp-server`      | **stdio only, deprecated 0.150.1** | no                                      | **no** — `codex-reply` resolves the thread from an in-memory map | dead end                                             |
+| `codex app-server`      | websocket, or `stdio://`           | **yes** (`turn/steer`,`turn/interrupt`) | `thread/resume` exists (disk-resume not re-verified)             | no current Haku runner; needs a network path                  |
+| `codex mcp-server`      | **stdio only, deprecated 0.150.1** | no                                      | **no** — `codex-reply` resolves the thread from an in-memory map | dead end                                                      |
 
 codex source (`rust-v0.150.1`): mcp-server is stdio-only and prints a deprecation warning
 (`codex-rs/cli/src/main.rs`, `mcp-server/src/lib.rs`); the network `--listen` transport lives in the

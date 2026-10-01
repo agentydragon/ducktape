@@ -5,13 +5,13 @@ The Console sandbox template, warm pool, and image pin were retired with the San
 
 from __future__ import annotations
 
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMergePolicy,
 )
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import external_creds, forgejo_images
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many

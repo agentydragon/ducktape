@@ -243,6 +243,7 @@ class ConsoleConfigFile(BaseModel):
     # A deploy-reviewed fail-safe maximum for approval-created temporary grants. Tool schema bounds
     # remain useful client guidance, but these server-side settings are authoritative.
     kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
+
     @model_validator(mode="before")
     @classmethod
     def _reject_retired_runtime_shape(cls, value: object) -> object:

@@ -7,9 +7,15 @@ import pytest_bazel
 from fastmcp import Client
 from mcp.types import Tool
 
-from haku.x.sandbox_mcp.tools import build_mcp
 from haku.x.sandbox_mcp.config import SandboxEnvironmentConfig
-from haku.x.sandbox_mcp.models import DisposeSandboxResult, SandboxExecResult, SandboxInfo, SandboxListPage, SandboxWarning
+from haku.x.sandbox_mcp.models import (
+    DisposeSandboxResult,
+    SandboxExecResult,
+    SandboxInfo,
+    SandboxListPage,
+    SandboxWarning,
+)
+from haku.x.sandbox_mcp.tools import build_mcp
 from mcp_infra.exec.models import Exited
 
 NOW = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)

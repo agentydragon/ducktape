@@ -1436,11 +1436,7 @@ def generate_manifests(root: Path) -> None:
     haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
     haku_workspaces.haku_workspaces(
         flux_chart,
-        write_directory(
-            root,
-            haku_workspaces_app_artifact,
-            haku_workspaces.chart,
-        ),
+        write_directory(root, haku_workspaces_app_artifact, haku_workspaces.chart),
         haku_rbac_kustomization,
         haku_egress_proxy_kustomization,
         external_secrets_operator_kustomization,

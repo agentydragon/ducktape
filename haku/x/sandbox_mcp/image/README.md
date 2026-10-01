@@ -4,9 +4,9 @@ This image was the exec target for the retired Haku Console Sandbox MCP. It is p
 reference under `haku/x/sandbox_mcp/image/`; neither variant has an active deployment consumer, and
 the build workflows are archived beside the image source.
 
-| Source | Former publish workflow | Former registry image |
-| --- | --- | --- |
-| `Dockerfile` | `workflows/haku-sandbox-image.yml` | `ducktape-ci/haku-sandbox-image` |
+| Source        | Former publish workflow                | Former registry image                |
+| ------------- | -------------------------------------- | ------------------------------------ |
+| `Dockerfile`  | `workflows/haku-sandbox-image.yml`     | `ducktape-ci/haku-sandbox-image`     |
 | `default.nix` | `workflows/haku-sandbox-image-nix.yml` | `ducktape-ci/haku-sandbox-image-nix` |
 
 Both variants use `haku-sandbox-setup.sh`. The old Nix probe passed 25/26 tests in a probe Pod;
