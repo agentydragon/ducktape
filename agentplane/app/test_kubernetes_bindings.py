@@ -355,5 +355,35 @@ async def test_orphan_sweep_checks_sandbox_created_after_list_snapshot() -> None
     assert rbac.deletes == 0
 
 
+@pytest.mark.parametrize("status", [404, 403])
+async def test_orphan_sweep_skips_only_missing_namespaces(status: int) -> None:
+    custom, core = FakeCustomObjectsApi(), FakeCoreV1Api()
+    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
+
+    class MissingNamespaceRbac(FakeRbac):
+        def __init__(self) -> None:
+            super().__init__()
+            self.listed: list[str] = []
+
+        async def list_namespaced_role_binding(
+            self, namespace: str, *, label_selector: str
+        ) -> k8s_client.V1RoleBindingList:
+            self.listed.append(namespace)
+            if namespace == "a-missing":
+                raise k8s_client.ApiException(status=status)
+            return await super().list_namespaced_role_binding(namespace, label_selector=label_selector)
+
+    rbac = MissingNamespaceRbac()
+    bindings = KubernetesBindings(inventory, cast(Any, rbac), cleanup_namespaces={"a-missing", "z-present"})
+    if status == 403:
+        with pytest.raises(k8s_client.ApiException) as error:
+            await bindings.reconcile_once()
+        assert error.value.status == 403
+        assert rbac.listed == ["a-missing"]
+    else:
+        await bindings.reconcile_once()
+        assert rbac.listed == ["a-missing", "z-present"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
