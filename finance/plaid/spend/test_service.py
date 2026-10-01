@@ -12,11 +12,7 @@ from finance.plaid.spend.service import SpendService
 
 class _FakeConnection:
     def __init__(
-        self,
-        *,
-        accounts: list[dict[str, Any]],
-        liabilities: list[dict[str, Any]],
-        transactions: list[dict[str, Any]],
+        self, *, accounts: list[dict[str, Any]], liabilities: list[dict[str, Any]], transactions: list[dict[str, Any]]
     ) -> None:
         self.accounts = accounts
         self.liabilities = liabilities
