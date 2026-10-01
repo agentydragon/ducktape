@@ -87,6 +87,7 @@ def _deployment(chart: Chart) -> None:
                 metadata=k8s.ObjectMeta(labels=_WEB.pods.selector),
                 spec=k8s.PodSpec(
                     service_account_name=_NAME,
+                    automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     volumes=[k8s.Volume(name="cards", secret=k8s.SecretVolumeSource(secret_name=_CARD_CONFIG.name))],
