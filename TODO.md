@@ -45,7 +45,7 @@
 - [ ] Remove `pybind11_abseil_rename_pypi_hub.patch` and its `single_version_override` after a released pybind11_abseil version contains [upstream PR #73](https://github.com/pybind/pybind11_abseil/pull/73); bump the dependency and rerun the OR-Tools consumer build together.
 - [ ] Remove the two `rules_tf` provider-mirror exit-code patches after [rules_tf PR #28](https://github.com/yanndegat/rules_tf/pull/28) merges; retain `rules_tf_exclude_dotterraform.patch`, which is a separate source-packaging fix.
 - [ ] Re-test and retire the rugged Mutter patch only when the selected nixpkgs Mutter source has equivalent inhibit ownership/zero-guard logic and rugged passes fresh-login, reboot, and relevant external-monitor auto-rotate checks.
-- [ ] On the next nix-openclaw/OpenClaw bump, re-audit the remaining local `2026.9.5` wrapper and dist patch: retire each only after both images build and the corresponding Nix-mode, plugin, and startup contracts are proven against upstream.
+- [ ] On the next OpenClaw bump, re-audit the remaining local `2026.9.5` dist patch: retire it only after both images build and the corresponding Nix-mode, plugin, and startup contracts are proven against upstream.
 
 ## Skills
 

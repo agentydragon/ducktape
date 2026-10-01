@@ -311,7 +311,10 @@ py_library(
 py_library(
     name = "app_settings",
     srcs = ["app_settings.py"],
-    data = ["public_coder_instructions.md"],
+    data = [
+        "haku_bootstrap.sh",
+        "public_coder_instructions.md",
+    ],
     visibility = [
         "//agentplane/acceptance:__pkg__",
         "//cluster/cdk8s:__pkg__",
@@ -361,6 +364,10 @@ py_library(
 py_library(
     name = "staging_config",
     srcs = ["staging_config.py"],
+    data = [
+        "finance_agent_bootstrap.sh",
+        "finance_agent_instructions.md",
+    ],
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/validation:__pkg__",
@@ -369,6 +376,7 @@ py_library(
         ":app_settings",
         "//agentplane/app:action_federation",
         "//agentplane/app:main",
+        "//agentplane/app:presets",
         "//cluster/cdk8s:model_rosters",
         "//cluster/cdk8s/litellm:keys",
     ],

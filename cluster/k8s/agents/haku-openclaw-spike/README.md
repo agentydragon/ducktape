@@ -10,20 +10,19 @@ tools.
 
 `haku/openclaw_spike/default.nix` builds the image entirely with Nix, using the
 same `dockerTools.buildLayeredImage` approach as public-coder. The gateway is
-packaged through nix-openclaw's tested npm-package path, with the stable
-OpenClaw wrapper and lockfile spliced over nix-openclaw's older default. Claude
-Code and the spike's tools are layered from the locked Nix package set, so the
-image has one controlled runtime closure and one Node executable.
+packaged through nix-openclaw's tested npm-package path using its pinned
+OpenClaw wrapper and lockfile. Claude Code and the spike's tools are layered
+from the locked Nix package set.
 
-The current branch targets stable OpenClaw `2026.8.1`. Deployment image tags
+The current branch targets stable OpenClaw `2026.9.5`. Deployment image tags
 remain Flux-managed: they advance only after the corresponding image-publish
-workflow runs on `devel`. Both images use the shared wrapper at
-`openclaw/npm_wrapper/`; regenerate it once per gateway bump, then update
-`stableSourceInfo.releaseVersion` and `gatewayNpmDepsHash`.
+workflow runs on `devel`. Both images use the package and source metadata pinned
+by nix-openclaw; release-specific local dist repairs live in
+`openclaw/patches/` and are shared through `openclaw/gateway.nix`.
 
-Use this npm-package path, **not** a from-source `sourceInfo` override.
-The from-source nix-openclaw path is not the path validated for this image and
-lacks the offline store materialization needed by the gateway build.
+Keep using nix-openclaw's npm-package path. Its separate from-source pnpm build
+is not the path validated for this image and lacks the offline store
+materialization needed by the gateway build.
 
 This replaced an earlier hybrid that used the upstream
 `ghcr.io/openclaw/openclaw` image as a Docker base and layered Nix tools on top.

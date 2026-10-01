@@ -33,6 +33,7 @@ def test_forgejo_password_has_one_reader_and_exact_source_access() -> None:
     assert set(secrets) == {
         "agentplane-github-pat",
         "haku-forgejo-git",
+        "finance-agent-git-creds",
         "grocy-sf-readonly",
         "home-assistant-readonly",
         "activitywatch-read-token",

@@ -13,8 +13,7 @@ on:
       # file rather than openclaw/** on purpose: the rest of that directory is
       # public-coder's image and does not belong in this trigger.
       - "openclaw/gateway.nix"
-      - "openclaw/npm_wrapper/**"
-      - "openclaw/patch-openclaw-npm-dist.mjs"
+      - "openclaw/patches/**"
       - "openclaw/proxy-setup.mjs"
       - "flake.nix"
       - "flake.lock"
@@ -32,8 +31,7 @@ on:
       # file rather than openclaw/** on purpose: the rest of that directory is
       # public-coder's image and does not belong in this trigger.
       - "openclaw/gateway.nix"
-      - "openclaw/npm_wrapper/**"
-      - "openclaw/patch-openclaw-npm-dist.mjs"
+      - "openclaw/patches/**"
       - "openclaw/proxy-setup.mjs"
       - "flake.nix"
       - "flake.lock"
@@ -104,11 +102,9 @@ jobs:
           }
           # openclaw --version does not import the gateway runtime modules, so
           # it passes even when the gateway is missing runtime deps. Actually
-          # load the gateway: the npm-path install copies openclaw deps from
-          # node_modules/openclaw/node_modules, and a hoisted (non-nested) lock
-          # left the gateway with zero deps, crashing at its first import
-          # (tslog). Run the real gateway briefly and reject a module-resolution
-          # failure; a config/network failure after modules load is expected.
+          # load the gateway to exercise module resolution against the pinned
+          # npm dependency tree. Run it briefly and reject module-resolution
+          # failures; a config/network failure after modules load is expected.
           gw_out="$(timeout 15 openclaw gateway 2>&1 || true)"
           if printf %s "$gw_out" | grep -qE "openclaw requires (Node|Bun)|ERR_MODULE_NOT_FOUND|Cannot find package"; then
             echo "FATAL: gateway runtime validation failed:" >&2

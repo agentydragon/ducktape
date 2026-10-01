@@ -380,8 +380,9 @@ def _openclaw_container() -> k8s.Container:
             # instead of letting the 60-second default expire.
             _env("OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS", "86400000"),
             # Turn off the gateway's background database integrity verifier. Not an upstream
-            # knob -- openclaw/patch-openclaw-npm-dist.mjs adds it, because upstream guards the
-            # verifier only behind a vitest-only test flag and hardcodes its schedule.
+            # knob -- the release-specific patch under openclaw/patches adds it, because
+            # upstream guards the verifier only behind a vitest-only test flag and hardcodes
+            # its schedule.
             #
             # It forks a worker that copies every registered agent database out of this volume
             # into the container filesystem and scans the copy: 2.25 GiB read and 1.59 GiB

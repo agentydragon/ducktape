@@ -23,7 +23,6 @@ on:
       - "openclaw/bundle-runtime-plugin.sh"
       - "openclaw/default.nix"
       - "openclaw/gateway.nix"
-      - "openclaw/npm_wrapper/**"
       - "openclaw/patches/**"
       - "openclaw/proxy-setup.mjs"
       # keep-sorted end
@@ -45,7 +44,6 @@ on:
       - "openclaw/bundle-runtime-plugin.sh"
       - "openclaw/default.nix"
       - "openclaw/gateway.nix"
-      - "openclaw/npm_wrapper/**"
       - "openclaw/patches/**"
       - "openclaw/proxy-setup.mjs"
       # keep-sorted end
