@@ -34,13 +34,10 @@ def chart(app: App) -> Chart:
             namespace=NAMESPACE,
             annotations={
                 "description": (
-                    "Haku's own compute identity in haku-sandbox — carried by whatever Haku workload runs "
-                    "here: the sandbox exec-target pods the provisioning MCP hands out "
-                    "(cluster/k8s/haku/workspaces/) and the managed-agent worker "
-                    "(haku/runtime/x/managed_agent/self_hosted/deploy/). Bound to haku-sandbox-admin (full "
-                    "CRUD in this namespace) by rolebinding-haku.yaml, so `kubectl` works out of the box. "
-                    "Deliberately NOT tied to one runtime — it's Haku operating its own compute; the "
-                    "exec-target pods don't run an agent harness. cluster-diagnostics read is a follow-up."
+                    "Haku's direct compute identity for workloads in haku-sandbox. Bound to "
+                    "haku-sandbox-admin for writes here and cluster-diagnostics-reader for "
+                    "secret-free cluster diagnostics. Agentplane-managed Haku Sandboxes use "
+                    "their own per-Sandbox ServiceAccounts and catalog-selected bindings."
                 )
             },
         ),
