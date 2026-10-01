@@ -20,8 +20,8 @@ python314Packages.buildPythonApplication {
     httpx
   ];
   pythonImportsCheck = [
-    "spend_desktop.cli"
-    "spend_desktop.daemon"
+    "spend.desktop.cli"
+    "spend.desktop.daemon"
   ];
   doCheck = false;
   dontUsePytestCheck = true;

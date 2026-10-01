@@ -38,7 +38,7 @@ py_library(
 
 py_binary(
     name = "plaid_spend_cli",
-    main_module = "finance.plaid.spend_desktop.cli",
+    main_module = "finance.plaid.spend.desktop.cli",
     visibility = ["//visibility:public"],
     deps = [":cli"],
 )
@@ -53,8 +53,8 @@ py_wheel(
     distribution = "plaid-spend-desktop",
     entry_points = {
         "console_scripts": [
-            "plaid-spend = spend_desktop.cli:main",
-            "plaid-spend-daemon = spend_desktop.daemon:main",
+            "plaid-spend = spend.desktop.cli:main",
+            "plaid-spend-daemon = spend.desktop.daemon:main",
         ],
     },
     python_requires = ">=3.14",
