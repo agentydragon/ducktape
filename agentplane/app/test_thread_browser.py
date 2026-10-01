@@ -489,7 +489,9 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await run.locator("summary", has_text="Output").click()
                 await expect(run.get_by_text("On-demand tool output", exact=True)).to_be_visible()
                 await run.get_by_text("Reasoning", exact=True).click()
-                await expect(page.get_by_text("On-demand reasoning", exact=True)).to_be_visible()
+                await expect(
+                    run.locator("details.agentplane-reasoning-details > .agentplane-markdown")
+                ).to_contain_text("On-demand reasoning")
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-expanded.png")
 
                 await page.reload()
