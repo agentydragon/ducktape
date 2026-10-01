@@ -116,24 +116,32 @@ function ReasoningPreview({
       return;
     }
     const measure = () => {
-      const previewOverflow = element.style.overflow;
-      const markdownOverflow = content.style.overflow;
-      const markdownWidth = content.style.width;
-      const markdownMaxWidth = content.style.maxWidth;
-      // Both wrappers clip the line for display. Temporarily expose it and size the Markdown to
-      // `max-content` so measurement uses the full formatted line rather than its visible portion.
-      element.style.overflow = "visible";
-      content.style.overflow = "visible";
-      content.style.width = "max-content";
-      content.style.maxWidth = "none";
+      // The visible wrappers clip the line, which makes their scroll and Range bounds report only
+      // the visible portion. Measure a hidden copy outside that layout at its intrinsic width.
+      const measurement = content.cloneNode(true) as HTMLElement;
+      const style = getComputedStyle(content);
+      Object.assign(measurement.style, {
+        position: "fixed",
+        left: "-100000px",
+        top: "0",
+        width: "max-content",
+        maxWidth: "none",
+        overflow: "visible",
+        textOverflow: "clip",
+        whiteSpace: "nowrap",
+        visibility: "hidden",
+        pointerEvents: "none",
+        font: style.font,
+        lineHeight: style.lineHeight,
+        letterSpacing: style.letterSpacing,
+        wordSpacing: style.wordSpacing,
+      });
+      document.body.append(measurement);
       let contentWidth: number;
       try {
-        contentWidth = content.getBoundingClientRect().width;
+        contentWidth = measurement.getBoundingClientRect().width;
       } finally {
-        content.style.maxWidth = markdownMaxWidth;
-        content.style.width = markdownWidth;
-        content.style.overflow = markdownOverflow;
-        element.style.overflow = previewOverflow;
+        measurement.remove();
       }
       onOverflowChange(contentWidth > element.clientWidth + 1);
     };
