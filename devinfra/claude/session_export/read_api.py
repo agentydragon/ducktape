@@ -92,16 +92,14 @@ def create_read_api(store: SessionStore) -> APIRouter:
             limit=limit, statuses=effective_statuses, before=before
         )
         next_cursor = _encode_session_cursor(*next_position) if has_more and next_position is not None else None
-        return SessionListPage(
-            data=[SessionSummary.model_validate(session) for session in data], next_cursor=next_cursor
-        )
+        return SessionListPage(data=data, next_cursor=next_cursor)
 
     @router.get("/sessions/{session_id}", response_model=SessionDetail)
     async def get_session(session_id: str) -> SessionDetail:
         raw = await store.session(_session_id(session_id))
         if raw is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found.")
-        return SessionDetail(session=SessionSummary.model_validate(raw))
+        return SessionDetail(session=raw)
 
     @router.get("/sessions/{session_id}/events", response_model=SessionEventPage)
     async def list_events(
@@ -121,7 +119,7 @@ def create_read_api(store: SessionStore) -> APIRouter:
             after=sequence if sort_order == "asc" else None,
             before=sequence if sort_order == "desc" else None,
         )
-        events = [Event.model_validate(event) for event in data]
+        events = data
         return SessionEventPage(
             data=events,
             has_more=has_more,
