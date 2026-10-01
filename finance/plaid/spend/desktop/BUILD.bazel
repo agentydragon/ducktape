@@ -1,50 +1,5 @@
 # gazelle:ignore
 load("@rules_python//python:packaging.bzl", "py_wheel")
-load("//devinfra/python:defs.bzl", "py_library")
-
-py_library(
-    name = "credentials",
-    srcs = ["plaid_spend_desktop/credentials.py"],
-    imports = ["."],
-)
-
-py_library(
-    name = "oauth",
-    srcs = ["plaid_spend_desktop/oauth.py"],
-    imports = ["."],
-    deps = [
-        ":credentials",
-        "@pypi//httpx",
-    ],
-)
-
-py_library(
-    name = "daemon",
-    srcs = ["plaid_spend_desktop/daemon.py"],
-    imports = ["."],
-    deps = [
-        ":credentials",
-        ":oauth",
-        "@pypi//dbus_next",
-        "@pypi//httpx",
-    ],
-)
-
-py_library(
-    name = "cli",
-    srcs = ["plaid_spend_desktop/cli.py"],
-    imports = ["."],
-    deps = [
-        "@pypi//babel",
-        "@pypi//dbus_next",
-    ],
-)
-
-py_library(
-    name = "package_init",
-    srcs = ["plaid_spend_desktop/__init__.py"],
-    imports = ["."],
-)
 
 py_wheel(
     name = "plaid_spend_desktop_wheel",
@@ -65,10 +20,10 @@ py_wheel(
     version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [
-        ":cli",
-        ":credentials",
-        ":daemon",
-        ":oauth",
-        ":package_init",
+        "//finance/plaid/spend/desktop/plaid_spend_desktop:cli",
+        "//finance/plaid/spend/desktop/plaid_spend_desktop:credentials",
+        "//finance/plaid/spend/desktop/plaid_spend_desktop:daemon",
+        "//finance/plaid/spend/desktop/plaid_spend_desktop:oauth",
+        "//finance/plaid/spend/desktop/plaid_spend_desktop:package_init",
     ],
 )
