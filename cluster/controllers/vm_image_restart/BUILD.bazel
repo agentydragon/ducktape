@@ -4,20 +4,20 @@ load("//devinfra/python:defs.bzl", "py_library")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
-    name = "controller_lib",
+    name = "controller",
     srcs = ["controller.py"],
     deps = ["@pypi//kubernetes_asyncio"],
 )
 
 aspect_py_binary(
-    name = "controller",
+    name = "controller_bin",
     main = "controller.py",
-    deps = [":controller_lib"],
+    deps = [":controller"],
 )
 
 py_image_layer(
     name = "controller_layer",
-    binary = ":controller",
+    binary = ":controller_bin",
     group = "65532",
     owner = "65532",
 )
@@ -25,8 +25,8 @@ py_image_layer(
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("controller"),
-    env = py_image_env(binary_name = "controller"),
+    entrypoint = py_image_entrypoint("controller_bin"),
+    env = py_image_env(binary_name = "controller_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":controller_layer"],
     user = "65532:65532",
