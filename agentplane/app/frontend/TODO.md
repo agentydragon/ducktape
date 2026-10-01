@@ -13,9 +13,6 @@ build time.
 
 ## Thread view UX
 
-- Give the browser document `<title>` useful context, including the open thread's title, and reflect
-  the thread status in the tab/favicon using the existing status dot's visual language, colors, and
-  animations.
 - **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`threads/thread_evidence.tsx`, the
   magnifying-glass `IconZoomCode` button) renders unconditionally at every one of its 7 call sites, one per
   message/entity, whether or not a reader is looking at that row. Consider a per-message overflow affordance
