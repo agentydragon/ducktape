@@ -12,6 +12,9 @@ defaults, batch atomicity, gate queries). Workflow docs: `docs/selectors.md` (po
 selector authoring), `docs/spec_editing.md` (module/binding editing).
 How selectors actually resolve: `docs/selector_resolution.md`.
 
+Import planning and emission helpers are grouped under `lowering/imports/`.
+They remain separate modules and passes, composed by the lowering crate.
+
 Selector implementation is grouped under `selectors/`: AST matching and
 `source_match` live in `matching/`, selector solving in `resolution/`, selector
 generation and minimization in `authoring/`, and selector-debt reporting in

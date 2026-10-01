@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
+import asyncpg
 import pytest
 import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, SyncAlreadyRunningError
@@ -78,6 +80,68 @@ async def test_failed_sync_run_does_not_mark_link_synced(storage: PlaidLinkStora
     link = await storage.get_link("item-investments")
     assert link is not None
     assert link.last_synced_at is None
+
+
+async def test_spend_changed_notifies_after_commit_and_on_link_removal(
+    storage: PlaidLinkStorage, db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _add_link(storage)
+    listener_url = make_url(db_url).set(drivername="postgresql").render_as_string(hide_password=False)
+    listener = await asyncpg.connect(listener_url)
+    notifications: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+    await listener.add_listener(
+        "plaid_spend_changed", lambda _connection, _pid, channel, payload: notifications.put_nowait((channel, payload))
+    )
+    allow_commit = asyncio.Event()
+    finish_task: asyncio.Task[None] | None = None
+
+    async def assert_no_notification() -> None:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(notifications.get(), timeout=0.05)
+
+    try:
+        run_id = await storage.begin_sync_run(trigger="test", item_id="item-investments", configured_windows={})
+        commit_entered = asyncio.Event()
+        original_commit = AsyncSession.commit
+
+        async def paused_commit(session: AsyncSession) -> None:
+            commit_entered.set()
+            await allow_commit.wait()
+            await original_commit(session)
+
+        with monkeypatch.context() as patcher:
+            patcher.setattr(AsyncSession, "commit", paused_commit)
+            finish_task = asyncio.create_task(storage.finish_sync_run(run_id, status="succeeded"))
+            await asyncio.wait_for(commit_entered.wait(), timeout=5)
+            await assert_no_notification()
+            allow_commit.set()
+            await finish_task
+
+        assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
+        assert await listener.fetchval("SELECT status FROM sync_runs WHERE run_id = $1", run_id) == "succeeded"
+
+        failed_run_id = await storage.begin_sync_run(trigger="test", item_id="item-investments", configured_windows={})
+        await storage.finish_sync_run(failed_run_id, status="failed", error_summary="expected failure")
+        await storage.purge_link_data("missing-item")
+        await assert_no_notification()
+
+        await storage.apply_accounts(
+            item_id="item-investments",
+            accounts=[{"account_id": "account-investments", "name": "Brokerage", "type": "investment"}],
+            captured_at=datetime.now(UTC),
+        )
+        await storage.purge_link_data("item-investments")
+        assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
+        assert await listener.fetchval("SELECT count(*) FROM links WHERE item_id = $1", "item-investments") == 0
+        assert (
+            await listener.fetchval("SELECT count(*) FROM accounts WHERE account_id = $1", "account-investments") == 0
+        )
+        await assert_no_notification()
+    finally:
+        allow_commit.set()
+        if finish_task is not None and not finish_task.done():
+            await asyncio.gather(finish_task, return_exceptions=True)
+        await listener.close()
 
 
 async def test_transaction_delta_commits_changes_and_cursor_together(storage: PlaidLinkStorage, db_url: str) -> None:

@@ -12,7 +12,7 @@ use super::quotient::{EndpointView, partition_endpoints};
 /// The canonical chunk-wide ESM I-graph. The realizability gate
 /// (Pass-2 simulator's `i_successors`, linker / source-import
 /// positions) and the emitter
-/// (`lowering::plan_references::collect_phantom_side_effect_providers`,
+/// (`lowering::imports::plan_references::collect_phantom_side_effect_providers`,
 /// `esm_import_order::EsmImportOrder::build`)
 /// MUST drive their topology decisions through this single set so
 /// they cannot drift apart.

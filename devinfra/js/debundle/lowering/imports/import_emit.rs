@@ -1,4 +1,4 @@
-use super::*;
+use super::super::*;
 
 /// Map plan-side `original -> exported` to `actual_local -> exported`.
 ///
@@ -8,7 +8,7 @@ use super::*;
 /// alias. Collisions still mint a fresh local through the ledger's
 /// taken-name service ([`RenameLedger::mint`]) and get recorded in
 /// `renames` so the consuming body can be rewritten after emission.
-pub(super) fn disambiguate_import_locals(
+pub(crate) fn disambiguate_import_locals(
     bindings: &BTreeMap<String, String>,
     ledger: &mut RenameLedger,
     scope: RenameScope,
@@ -40,7 +40,7 @@ pub(super) fn disambiguate_import_locals(
 /// local `B` is a vendor import). Prefer the entry's actual local name so the
 /// moved body keeps referring to the same residual binding it referenced in
 /// the original chunk.
-pub(super) fn disambiguate_residual_entry_import_locals(
+pub(crate) fn disambiguate_residual_entry_import_locals(
     bindings: &BTreeMap<String, EntryExport>,
     ledger: &mut RenameLedger,
     scope: RenameScope,
@@ -61,7 +61,7 @@ pub(super) fn disambiguate_residual_entry_import_locals(
 
 /// Pre-fill `exported` on `export { local }` re-export specifiers whose
 /// `local` is about to be renamed, so the public export name survives.
-pub(super) fn preserve_export_specifier_names(
+pub(crate) fn preserve_export_specifier_names(
     item: &mut ModuleItem,
     renames: &BTreeMap<String, String>,
 ) {
@@ -85,7 +85,7 @@ pub(super) fn preserve_export_specifier_names(
     }
 }
 
-pub(super) fn relative_source(from_file: &str, target_file: &str) -> String {
+pub(crate) fn relative_source(from_file: &str, target_file: &str) -> String {
     let from_dir = std::path::Path::new(from_file)
         .parent()
         .and_then(|parent| parent.to_str())
@@ -98,7 +98,7 @@ pub(super) fn relative_source(from_file: &str, target_file: &str) -> String {
     rel
 }
 
-pub(super) fn import_decl_for_plan(
+pub(crate) fn import_decl_for_plan(
     entry_file: &str,
     target_file: &str,
     bindings: &BTreeMap<String, String>,

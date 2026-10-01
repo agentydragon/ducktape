@@ -3,9 +3,9 @@
 //! export and adds a second name for the same binding; this pass then uses
 //! that alias only in importers that are part of the materialization set.
 
-use super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
-use super::util::is_valid_js_identifier;
-use super::*;
+use super::super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
+use super::super::util::is_valid_js_identifier;
+use super::super::*;
 
 const CROSS_CHUNK_IMPORT_RENAME_CONTRIBUTOR: &str = "spec-named cross-chunk import readability";
 

@@ -38,6 +38,9 @@ def chart(app: App) -> Chart:
         schema="forgejo_codex",
     )
     terraform.gitops_terraform(chart, "agentydragon", name="forgejo-agentydragon", variables=None)
+    # forgejo_collaborator.haku grants write to the haku agent account provisioned by
+    # tf/gitops/haku-state.
+    terraform.gitops_terraform(chart, "finance-agent", name="finance-agent", variables=None, depends_on=[haku_state])
     return chart
 
 

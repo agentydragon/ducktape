@@ -35,30 +35,24 @@ mod anonymous;
 mod body_facts;
 mod chunk_ast;
 mod chunk_renames;
-mod cross_chunk_imports;
 mod cross_module;
 mod exports;
-mod import_emit;
-mod imports_cross;
-mod imports_runtime;
+mod imports;
 mod io;
 mod lower;
 mod materialize;
 mod naturalize;
-mod plan_references;
 mod plans;
 mod rebind_fold;
 pub mod rename_ledger;
 #[cfg(test)]
 mod rename_ledger_proptest;
 mod rewrite_runtime;
-mod runtime_imports;
 mod scope_names;
 mod util;
-mod vendor_imports;
 mod visitors;
 
-pub use cross_chunk_imports::naturalize_cross_chunk_imports;
+pub use imports::naturalize_cross_chunk_imports;
 
 use anonymous::ResolvedAnonymousStatement;
 use body_facts::{ModuleBodyFacts, collect_module_body_facts};
@@ -73,12 +67,15 @@ use exports::{
     export_named_for_bindings, reject_duplicate_export_names, reject_duplicate_member_bindings,
     trim_dead_named_specifiers,
 };
-use imports_cross::{
-    ImportLocalRenameSink, collect_entry_exports_by_original_local, cross_module_imports_for_plan,
-    final_module_exports, phantom_side_effect_imports, residual_entry_imports_for_moved_body,
-};
-use imports_runtime::{
-    group_specifiers_into_import_decls, import_decl_module_item, resolve_imported_binding,
+use imports::{
+    ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
+    PlannedVendorReimports, RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind,
+    RuntimeImportLookup, VendorReimportOracle, collect_entry_exports_by_original_local,
+    collect_imported_reexports_by_module, cross_module_imports_for_plan, final_module_exports,
+    group_specifiers_into_import_decls, import_decl_module_item, imported_binding_named_specifier,
+    phantom_side_effect_imports, plan_module_reference_needs, plan_vendor_reimports,
+    record_runtime_imports, residual_entry_imports_for_moved_body, resolve_imported_binding,
+    runtime_reimport_named_specifier, runtime_reimport_specifier,
     source_chunk_imports_for_moved_body,
 };
 use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_json};
@@ -91,10 +88,6 @@ use materialize::{
     finish_logical_chunk, prepare_logical_chunk, resolve_prepared_chunks,
 };
 use naturalize::{NaturalizedRenames, collect_plan_export_rename_intents, naturalize_module_body};
-use plan_references::{
-    ArtifactSourceImportResolutionCache, EntryExport, ModuleReferenceNeeds, RuntimeImportLookup,
-    collect_imported_reexports_by_module, plan_module_reference_needs,
-};
 use plans::{
     LogicalRequest, MemberRequest, ModulePlan, known_effect_from_member_effect,
     logical_requests_for_chunk,
@@ -105,12 +98,7 @@ use rename_ledger::{
     SealedRenames, merge_module_renames,
 };
 use rewrite_runtime::rewrite_runtime_sources_for_target;
-use runtime_imports::{
-    RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind, imported_binding_named_specifier,
-    record_runtime_imports, runtime_reimport_named_specifier, runtime_reimport_specifier,
-};
 use util::normalize_optional_relative_dir;
-use vendor_imports::{PlannedVendorReimports, VendorReimportOracle, plan_vendor_reimports};
 use visitors::{
     IdentifierRenamer, RenameAndShorthandNaturalizer, RenameCaptureProbe, ShorthandNaturalizer,
 };
