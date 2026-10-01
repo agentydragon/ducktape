@@ -133,10 +133,8 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     assert _PUBLIC_CODER_SUBJECT not in haku_cluster_binding["subjects"]
 
 
-def test_public_coder_devbox_restart_is_bound_only_to_haku_static_subjects(
-    app_objects: list[dict[str, Any]],
-) -> None:
-    """The named VMI delete is isolated from the shared read-only public-coder Role."""
+def test_public_coder_devbox_restart_preserves_reader_subjects(app_objects: list[dict[str, Any]]) -> None:
+    """The delete grant is isolated without changing the reader's existing subject set."""
     reader = _one(_named(app_objects, "public-coder-agent-reader"), "Role")
     reader_vmi_rule = one(rule for rule in reader["rules"] if "virtualmachineinstances" in rule["resources"])
     assert reader_vmi_rule["verbs"] == _READ
@@ -154,8 +152,8 @@ def test_public_coder_devbox_restart_is_bound_only_to_haku_static_subjects(
         }
     ]
     assert binding["roleRef"]["name"] == role["metadata"]["name"]
-    assert _subjects(binding) == _HAKU_SUBJECTS
-    assert _PUBLIC_CODER_SUBJECT not in binding["subjects"]
+    assert _subjects(binding) == _HAKU_SUBJECTS | {("Group", console_config.PUBLIC_CODER_GROUP, None)}
+    assert _PUBLIC_CODER_SUBJECT in binding["subjects"]
 
 
 def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credential(
