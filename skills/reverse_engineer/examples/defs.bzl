@@ -35,7 +35,7 @@ GOROOT=$("{go}" env GOROOT)
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 cp {srcs} "$T/"
-printf 'module garble_target\\ngo 1.26.0\\n' > "$T/go.mod"
+printf 'module garble_target\\ngo 1.27.1\\n' > "$T/go.mod"
 export GOROOT GOCACHE="$T/.cache" GOPATH="$T/.gopath"
 cd "$T" && "$GOROOT/bin/go" build -o "$OUT" .
 """.format(
@@ -74,7 +74,7 @@ GOROOT=$("{go}" env GOROOT)
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 cp {srcs} "$T/"
-printf 'module garble_target\\ngo 1.26.0\\n' > "$T/go.mod"
+printf 'module garble_target\\ngo 1.27.1\\n' > "$T/go.mod"
 export GOROOT
 export PATH="$GOROOT/bin:$PATH"
 export GOCACHE="$T/.cache" GOPATH="$T/.gopath" XDG_CACHE_HOME="$T/.xdg"

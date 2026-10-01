@@ -1,6 +1,6 @@
 module github.com/anthropics/anthropic/api-go/environment-manager
 
-go 1.26.0
+go 1.27.1
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.9.1

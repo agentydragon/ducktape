@@ -6,7 +6,8 @@
 bytes for three functions (`assert_eq` on literal hex). These are artifacts of
 the Go compiler's codegen, not of the diffing technique — they broke and needed
 regenerating when this repo's `go_sdk` toolchain version bumped (1.26.2 →
-1.26.4), and will break again on any future Go/garble version change.
+1.26.4), and will break again for this 1.27.1 probe or any future Go/garble
+version change.
 
 String VMAs and garbled function names proved toolchain-stable across that bump
 (`.rodata` layout and garble's seed+symbol-based naming didn't move) — only the

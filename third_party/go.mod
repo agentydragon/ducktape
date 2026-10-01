@@ -1,6 +1,6 @@
 module github.com/agentydragon/ducktape
 
-go 1.26.2
+go 1.27.1
 
 // Direct dependencies for skills/.../genkit (20q eval)
 require (
