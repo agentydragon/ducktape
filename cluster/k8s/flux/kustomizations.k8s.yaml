@@ -3896,6 +3896,48 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in clickhouse.
+  name: agentplane-staging-binding-delegation-clickhouse
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: clickhouse
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/clickhouse
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in haku-console.
+  name: agentplane-staging-binding-delegation-haku-console
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: haku-console
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/haku-console
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Delegates managed Sandbox RoleBinding reconciliation in haku-sandbox.
   name: agentplane-staging-binding-delegation-haku-sandbox
   namespace: ducktape-flux

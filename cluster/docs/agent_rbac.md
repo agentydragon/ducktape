@@ -184,6 +184,9 @@ within `agentplane-staging`, and `get` on exactly
 `agentplane-staging/coinbase-api-credentials` via the existing
 `claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its
 rules are shared while its static `claude-ai` RoleBinding remains Flux-owned.
+The preset also selects the existing Haku Console metadata and ClickHouse
+diagnostics Roles in their respective namespaces. Their managed binding
+delegation lives in separate Flux Kustomizations dependent on those services.
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
 read selection. Other Kyverno `agent-readable-*` namespaces still grant the static
 Haku identities; managed Haku SAs require explicit catalog entries before they receive

@@ -89,6 +89,16 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
                 namespace=_NAMESPACE,
                 role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
             ),
+            "haku-console-metadata": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="haku-console",
+                role_ref=RoleRef(kind="Role", name="agent-haku-console-metadata-reader"),
+            ),
+            "clickhouse-diagnostics": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="clickhouse",
+                role_ref=RoleRef(kind="Role", name="agent-clickhouse-diagnostics-reader"),
+            ),
             "coinbase-credentials": RoleBindingGrant(
                 kind="RoleBinding",
                 namespace=_NAMESPACE,
@@ -97,9 +107,10 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         },
         # Retain cleanup authority when a catalog choice is disabled while its
         # existing Sandboxes still hold a binding in that scope.
-        kubernetes_binding_cleanup_namespaces=["haku-sandbox"],
+        kubernetes_binding_cleanup_namespaces=["clickhouse", "haku-console", "haku-sandbox"],
         kubernetes_cluster_binding_cleanup=True,
     )
+    cfg.sandbox_presets["haku"].kubernetes_grants.extend(["haku-console-metadata", "clickhouse-diagnostics"])
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
     # they name staging-only credentials (forgejo-finance-agent, plaid-pgweb) that
     # agentplane-testing never provisions, and unlike "haku" they have no other caller,

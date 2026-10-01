@@ -1479,7 +1479,7 @@ def generate_manifests(root: Path) -> None:
     )
     parked_flux_kustomizations.haku_dispatch(flux_chart, cnpg_kustomization, external_secrets_operator_kustomization)
     haku_console_artifact = artifact("haku-console", haku_charts.PATH)
-    haku_charts.haku_console(
+    haku_console_kustomization = haku_charts.haku_console(
         flux_chart,
         write_directory(
             root,
@@ -1522,7 +1522,15 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
     )
-    binding_delegation.add_flux_kustomizations(flux_chart, staging.ENV, {"haku-sandbox": haku_rbac_kustomization})
+    binding_delegation.add_flux_kustomizations(
+        flux_chart,
+        staging.ENV,
+        {
+            "haku-sandbox": haku_rbac_kustomization,
+            "haku-console": haku_console_kustomization,
+            "clickhouse": clickhouse_kustomization,
+        },
+    )
     # Every artifact built above except the parked nodes': those Kustomizations are suspended.
     write_artifact_generators(
         root,

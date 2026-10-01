@@ -174,6 +174,8 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
         "agentplane-staging-metadata",
         "agentplane-staging-logs",
         "coinbase-credentials",
+        "haku-console-metadata",
+        "clickhouse-diagnostics",
     ]
     assert config["kubernetes_grants"]["cluster-diagnostics"] == {
         "kind": "ClusterRoleBinding",
@@ -183,6 +185,16 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
         "kind": "RoleBinding",
         "namespace": "haku-sandbox",
         "role_ref": {"kind": "Role", "name": "haku-sandbox-admin"},
+    }
+    assert config["kubernetes_grants"]["haku-console-metadata"] == {
+        "kind": "RoleBinding",
+        "namespace": "haku-console",
+        "role_ref": {"kind": "Role", "name": "agent-haku-console-metadata-reader"},
+    }
+    assert config["kubernetes_grants"]["clickhouse-diagnostics"] == {
+        "kind": "RoleBinding",
+        "namespace": "clickhouse",
+        "role_ref": {"kind": "Role", "name": "agent-clickhouse-diagnostics-reader"},
     }
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
@@ -194,7 +206,7 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
     assert {
         tuple(rule.get("resourceNames", [])) for rule in app_cluster_role["rules"] if rule["verbs"] == ["bind"]
     } == {("agent-readable-namespace-logs",), ("agent-readable-namespace-metadata",), ("cluster-diagnostics-reader",)}
-    assert config["kubernetes_binding_cleanup_namespaces"] == ["haku-sandbox"]
+    assert config["kubernetes_binding_cleanup_namespaces"] == ["clickhouse", "haku-console", "haku-sandbox"]
     assert config["kubernetes_cluster_binding_cleanup"] is True
 
 

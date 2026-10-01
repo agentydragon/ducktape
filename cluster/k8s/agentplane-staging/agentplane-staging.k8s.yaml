@@ -1909,6 +1909,8 @@ data:
           - agentplane-staging-metadata
           - agentplane-staging-logs
           - coinbase-credentials
+          - haku-console-metadata
+          - clickhouse-diagnostics
         thread_preset: haku-claude
         bootstrap: |
           #!/bin/sh
@@ -1979,6 +1981,18 @@ data:
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-logs
+      haku-console-metadata:
+        kind: RoleBinding
+        namespace: haku-console
+        role_ref:
+          kind: Role
+          name: agent-haku-console-metadata-reader
+      clickhouse-diagnostics:
+        kind: RoleBinding
+        namespace: clickhouse
+        role_ref:
+          kind: Role
+          name: agent-clickhouse-diagnostics-reader
       coinbase-credentials:
         kind: RoleBinding
         namespace: agentplane-staging
@@ -1986,6 +2000,8 @@ data:
           kind: Role
           name: claude-ai-coinbase-reader
     kubernetes_binding_cleanup_namespaces:
+      - clickhouse
+      - haku-console
       - haku-sandbox
     kubernetes_cluster_binding_cleanup: true
     default_policies:

@@ -199,6 +199,37 @@ def test_agentplane_external_delegation_has_independent_flux_ownership(k8s_dir: 
     assert flux["spec"]["dependsOn"] == [{"name": "haku-rbac", "namespace": "ducktape-flux"}]
 
 
+def test_haku_service_read_delegation_is_scoped_to_owning_namespaces(k8s_dir: Path, generated_dir: Path) -> None:
+    flux_objects = list(yaml.safe_load_all((k8s_dir / "flux/kustomizations.k8s.yaml").read_text()))
+    for namespace, role_name, owner in (
+        ("haku-console", "agent-haku-console-metadata-reader", "haku-console"),
+        ("clickhouse", "agent-clickhouse-diagnostics-reader", "clickhouse"),
+    ):
+        path = generated_dir / f"agentplane/binding-delegation/agentplane-staging/{namespace}"
+        objects = list(yaml.safe_load_all((path / f"{namespace}.k8s.yaml").read_text()))
+        role = one(doc for doc in objects if doc["kind"] == "Role")
+        binding = one(doc for doc in objects if doc["kind"] == "RoleBinding")
+        assert role["metadata"]["namespace"] == binding["metadata"]["namespace"] == namespace
+        assert [rule for rule in role["rules"] if rule["verbs"] == ["bind"]] == [
+            {
+                "apiGroups": ["rbac.authorization.k8s.io"],
+                "resourceNames": [role_name],
+                "resources": ["roles"],
+                "verbs": ["bind"],
+            }
+        ]
+        assert binding["subjects"] == [
+            {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
+        ]
+        flux = one(
+            doc
+            for doc in flux_objects
+            if doc["kind"] == "Kustomization"
+            and doc["metadata"]["name"] == f"agentplane-staging-binding-delegation-{namespace}"
+        )
+        assert flux["spec"]["dependsOn"] == [{"name": owner, "namespace": "ducktape-flux"}]
+
+
 def test_files_flux_rewrites_use_block_style(k8s_dir: Path) -> None:
     """A flow mapping in a file Flux rewrites fails prettier on every open PR at once.
 
