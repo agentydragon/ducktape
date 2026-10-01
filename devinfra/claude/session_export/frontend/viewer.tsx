@@ -180,6 +180,20 @@ function toolAction(tool: TranscriptToolCall): { label: string; value: string; c
   return null;
 }
 
+function toolRunPreview(item: TranscriptToolRun): string {
+  const previews = item.tools.slice(0, 3).map((tool) => {
+    const action = toolAction(tool);
+    const firstLine = action?.value.split("\n")[0]?.trim();
+    const summary = firstLine === undefined || firstLine === "" ? tool.name : firstLine;
+    const shortSummary = summary.length > 120 ? `${summary.slice(0, 117)}…` : summary;
+    return item.tools.length === 1 || firstLine === undefined || firstLine === ""
+      ? shortSummary
+      : `${tool.name}: ${shortSummary}`;
+  });
+  if (item.tools.length > 3) previews.push(`+${item.tools.length - 3} more`);
+  return previews.join(" · ");
+}
+
 function toolArguments(tool: TranscriptToolCall): string | null {
   if (tool.input === null || tool.input === undefined) return null;
   return typeof tool.input === "string" ? tool.input : JSON.stringify(tool.input, null, 2);
@@ -436,17 +450,22 @@ function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showT
           </Text>
         )}
         {item.kind === "tool-run" && (
-          <Accordion key={showToolDetails ? "expanded" : "compact"} defaultValue={showToolDetails ? "details" : null}>
-            <Accordion.Item value="details">
-              <Accordion.Control>Tool details and original events</Accordion.Control>
-              <Accordion.Panel>
-                <Stack gap="sm">
-                  <ToolRun item={item} />
-                  <RawEvents item={item} />
-                </Stack>
-              </Accordion.Panel>
-            </Accordion.Item>
-          </Accordion>
+          <>
+            <Text size="sm" c="dimmed" lineClamp={2} style={{ overflowWrap: "anywhere" }}>
+              {toolRunPreview(item)}
+            </Text>
+            <Accordion key={showToolDetails ? "expanded" : "compact"} defaultValue={showToolDetails ? "details" : null}>
+              <Accordion.Item value="details">
+                <Accordion.Control>Tool details and original events</Accordion.Control>
+                <Accordion.Panel>
+                  <Stack gap="sm">
+                    <ToolRun item={item} />
+                    <RawEvents item={item} />
+                  </Stack>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+          </>
         )}
         {item.kind === "activity" && item.detail !== undefined && (
           <Text size="sm" c="dimmed">
