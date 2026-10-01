@@ -118,20 +118,24 @@ function ReasoningPreview({
     const measure = () => {
       const previewOverflow = element.style.overflow;
       const markdownOverflow = content.style.overflow;
-      // Both wrappers clip the line for display. Temporarily expose it so Range measures the full
-      // formatted text rather than the visible, ellipsized portion.
+      const markdownWidth = content.style.width;
+      const markdownMaxWidth = content.style.maxWidth;
+      // Both wrappers clip the line for display. Temporarily expose it and size the Markdown to
+      // `max-content` so measurement uses the full formatted line rather than its visible portion.
       element.style.overflow = "visible";
       content.style.overflow = "visible";
-      let width: number;
+      content.style.width = "max-content";
+      content.style.maxWidth = "none";
+      let contentWidth: number;
       try {
-        const range = document.createRange();
-        range.selectNodeContents(content);
-        width = range.getBoundingClientRect().width;
+        contentWidth = content.getBoundingClientRect().width;
       } finally {
+        content.style.maxWidth = markdownMaxWidth;
+        content.style.width = markdownWidth;
         content.style.overflow = markdownOverflow;
         element.style.overflow = previewOverflow;
       }
-      onOverflowChange(width > element.clientWidth + 1);
+      onOverflowChange(contentWidth > element.clientWidth + 1);
     };
     measure();
     const observer = new ResizeObserver(measure);
