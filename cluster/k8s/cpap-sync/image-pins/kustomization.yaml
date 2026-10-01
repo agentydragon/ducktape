@@ -6,6 +6,6 @@ images:
   - name: git.allegedly.works/ducktape-ci/cpap-gateway
     newTag: devel-20261001021328-3939c81 # {"$imagepolicy": "flux-system:cpap-gateway:tag"}
   - name: git.allegedly.works/ducktape-ci/vm-image-restart
-    newTag: unset # {"$imagepolicy": "flux-system:vm-image-restart:tag"}
+    newTag: devel-20261001034458-59deeaa # {"$imagepolicy": "flux-system:vm-image-restart:tag"}
 configurations:
   - kustomizeconfig

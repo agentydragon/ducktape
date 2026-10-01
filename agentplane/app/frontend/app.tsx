@@ -15,6 +15,7 @@ import { Sidebar } from "./sidebar";
 import { electricThreadSync } from "./threads/thread_store";
 import { ThreadSyncContext } from "./threads/thread_sync";
 import { TopbarContext, TopbarTitle, type TopbarSlots } from "./topbar";
+import { appDocumentTitle } from "./tab_metadata";
 import "./shell.css";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
@@ -82,9 +83,9 @@ function ActionsPage(): JSX.Element {
   );
 }
 
-function ThreadRoute(): JSX.Element {
+function ThreadRoute({ settingsOpen }: { settingsOpen: boolean }): JSX.Element {
   const threadId = required(useParams().threadId, "threadId");
-  return <ProjectedSession key={threadId} threadId={threadId} />;
+  return <ProjectedSession key={threadId} threadId={threadId} settingsOpen={settingsOpen} />;
 }
 
 // Matches sidebar.css's phone breakpoint (max-width: 560px) from the other side.
@@ -98,6 +99,15 @@ function AppRoutes(): JSX.Element {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
     location.pathname === "/mcp-servers" ? "mcp-servers" : null
   );
+  const routeTitle =
+    settingsTab !== null
+      ? appDocumentTitle(location.pathname, true)
+      : threadRoute === null
+        ? appDocumentTitle(location.pathname, false)
+        : null;
+  useEffect(() => {
+    if (routeTitle !== null) document.title = routeTitle;
+  }, [routeTitle]);
   // Open by default at desktop width, closed at phone width; the CSS media query then decides
   // whether "closed" means a collapsed-to-nothing column or a fully hidden overlay. Crossing the
   // breakpoint resets to that side's default -- an "open" docked column left over from a resize
@@ -144,7 +154,7 @@ function AppRoutes(): JSX.Element {
               <Route path="/actions/:requestId" element={<ActionRequests />} />
               <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
               <Route path="/sandboxes/:name" element={<SandboxRoute />} />
-              <Route path="/threads/:threadId" element={<ThreadRoute />} />
+              <Route path="/threads/:threadId" element={<ThreadRoute settingsOpen={settingsTab !== null} />} />
               <Route path="*" element={<ThreadsLanding />} />
             </Routes>
           </TopbarContext.Provider>

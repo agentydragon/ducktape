@@ -45,6 +45,8 @@ import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronol
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusDot } from "../thread_status_dot";
 import { TopbarActions, TopbarTitle } from "../topbar";
+import { installThreadFavicon, type ThreadFaviconPulseEpoch } from "../thread_favicon";
+import { appDocumentTitle, threadDocumentTitle, type ThreadTabStatus } from "../tab_metadata";
 import "./projected_session.css";
 
 /** A run of tool calls and reasoning steps, folded behind its summary until opened. */
@@ -605,18 +607,13 @@ function VirtualizedHistory({
   );
 }
 
-interface ThreadStatus {
-  color: string;
-  label: string;
-  pulse?: boolean;
-}
-
 type Operational = Extract<ThreadEntity["state"], { operational: unknown }>["operational"];
 
 /** The browser's sync of the thread, the runner feed into the server (`operational`) and the
- * harness process are independent state machines; this collapses them into one dot by severity,
- * worst axis first. While the sync is not current, the rest is not either; and an archived thread
- * or an unavailable sandbox makes the retained feed and harness state history, not a live claim. */
+ * harness process are independent state machines; this collapses them into one status by severity,
+ * worst axis first, for the composer dot and browser tab. While the sync is not current, the rest is
+ * not either; and an archived thread or an unavailable sandbox makes the retained feed and harness
+ * state history, not a live claim. */
 function threadStatus({
   sync,
   degraded,
@@ -634,25 +631,32 @@ function threadStatus({
   operational: Operational | null;
   harness: string | null;
   activeTurn: boolean;
-}): ThreadStatus {
-  if (sync.window?.error) return { color: "red", label: `Thread sync stopped: ${sync.window.error}` };
-  if (!sync.window) return { color: "yellow", pulse: true, label: "Connecting…" };
-  if (sync.error || degraded) return { color: "yellow", pulse: true, label: "Reconnecting…" };
-  if (!sync.window.caughtUp) return { color: "yellow", pulse: true, label: "Catching up…" };
-  if (archived) return { color: "gray", label: "Thread archived" };
-  if (!available) return { color: "gray", label: "Sandbox unavailable" };
-  if (operational?.status === "failed") return { color: "red", label: "Runner feed failed" };
-  if (harness === "lost") return { color: "red", label: "Harness lost" };
+}): ThreadTabStatus {
+  if (sync.window?.error)
+    return { color: "red", label: `Thread sync stopped: ${sync.window.error}`, tabLabel: "Sync error" };
+  if (!sync.window) return { color: "yellow", pulse: true, label: "Connecting…", tabLabel: "Connecting" };
+  if (sync.error || degraded) return { color: "yellow", pulse: true, label: "Reconnecting…", tabLabel: "Reconnecting" };
+  if (!sync.window.caughtUp) return { color: "yellow", pulse: true, label: "Catching up…", tabLabel: "Catching up" };
+  if (archived) return { color: "gray", label: "Thread archived", tabLabel: "Archived" };
+  if (!available) return { color: "gray", label: "Sandbox unavailable", tabLabel: "Unavailable" };
+  if (operational?.status === "failed") return { color: "red", label: "Runner feed failed", tabLabel: "Runner failed" };
+  if (harness === "lost") return { color: "red", label: "Harness lost", tabLabel: "Harness lost" };
   if (operational?.status === "ended") {
-    return { color: "gray", label: `Runner feed ended · harness ${harness ?? "unknown"}` };
+    return {
+      color: "gray",
+      label: `Runner feed ended · harness ${harness ?? "unknown"}`,
+      tabLabel: "Ended",
+    };
   }
-  if (harness === null) return { color: "yellow", label: "No harness observed" };
-  if (harness === "stopped") return { color: "gray", label: "Runner feed active · harness stopped" };
+  if (harness === null) return { color: "yellow", label: "No harness observed", tabLabel: "Starting" };
+  if (harness === "stopped")
+    return { color: "gray", label: "Runner feed active · harness stopped", tabLabel: "Stopped" };
   return {
     color: "green",
     label: activeTurn
       ? `Turn running · Runner feed active · harness ${harness}`
       : `Runner feed active · harness ${harness}`,
+    tabLabel: activeTurn ? "Running" : "Ready",
     pulse: activeTurn,
   };
 }
@@ -664,6 +668,7 @@ function ProjectedSessionBody({
   history,
   available,
   degraded,
+  onStatusLabelChange,
 }: {
   threadId: string;
   entities: ThreadEntity[];
@@ -671,6 +676,7 @@ function ProjectedSessionBody({
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
   available: boolean;
   degraded: boolean;
+  onStatusLabelChange: (label: string) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
   const sync = useThreadSync().useThread();
@@ -689,6 +695,20 @@ function ProjectedSessionBody({
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const activeTurn = controls?.active_turn_id ?? null;
+  const status = threadStatus({
+    sync,
+    degraded,
+    archived: thread.archived,
+    available,
+    operational,
+    harness: controls?.harness_state ?? null,
+    activeTurn: Boolean(running && activeTurn),
+  });
+  const pulseEpoch = useRef<ThreadFaviconPulseEpoch>({ current: null });
+  if (status.pulse) pulseEpoch.current.current ??= Date.now();
+  else pulseEpoch.current.current = null;
+  useEffect(() => onStatusLabelChange(status.tabLabel), [onStatusLabelChange, status.tabLabel]);
+  useEffect(() => installThreadFavicon(status, pulseEpoch.current), [status.color, status.pulse]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   useEffect(() => {
@@ -821,17 +841,7 @@ function ProjectedSessionBody({
         />
         <Group justify="space-between" wrap="nowrap" pb="xs">
           <Group gap="xs" wrap="nowrap">
-            <ThreadStatusDot
-              {...threadStatus({
-                sync,
-                degraded,
-                archived: thread.archived,
-                available,
-                operational,
-                harness: controls?.harness_state ?? null,
-                activeTurn: Boolean(running && activeTurn),
-              })}
-            />
+            <ThreadStatusDot color={status.color} label={status.label} pulse={status.pulse} />
             {canResume && (
               <Button size="xs" aria-label="Resume harness" loading={resuming} onClick={() => void resume()}>
                 Resume harness
@@ -927,12 +937,14 @@ function SyncedThread({
   thread,
   available,
   inventory,
+  onStatusLabelChange,
 }: {
   threadId: string;
   thread: ThreadView;
   available: boolean;
   /** The sandbox inventory's stream, which the page's one stale notice covers too. */
   inventory: StreamStatus;
+  onStatusLabelChange: (label: string) => void;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
@@ -962,6 +974,7 @@ function SyncedThread({
         history={shown}
         available={available}
         degraded={stream !== null && stream.standing !== "current"}
+        onStatusLabelChange={onStatusLabelChange}
       />
     </>
   );
@@ -991,9 +1004,16 @@ function harnessLabel(harness: ThreadView["harness"]): string {
   }
 }
 
-export function ProjectedSession({ threadId }: { threadId: string }): JSX.Element {
+export function ProjectedSession({
+  threadId,
+  settingsOpen = false,
+}: {
+  threadId: string;
+  settingsOpen?: boolean;
+}): JSX.Element {
   const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
+  const [tabStatus, setTabStatus] = useState("Connecting");
   const [error, setError] = useState<string | null>(null);
   const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
@@ -1002,6 +1022,11 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
   useEffect(() => {
     void getThread(threadId).then(setThread, (reason: unknown) => setError(displayableError(reason)));
   }, [threadId]);
+  useEffect(() => {
+    document.title = settingsOpen
+      ? appDocumentTitle("/", true)
+      : threadDocumentTitle(thread?.name, threadId, tabStatus);
+  }, [thread?.name, tabStatus, threadId, settingsOpen]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
@@ -1044,6 +1069,7 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
               thread={thread}
               available={inventoryFresh && sandbox?.state === "running"}
               inventory={environment.stream}
+              onStatusLabelChange={setTabStatus}
             />
           </sync.Thread>
         )}

@@ -58,6 +58,7 @@ const THREAD: ThreadView = {
   last_event_at: null,
   harness_state: "HARNESS_STATE_RUNNING",
 };
+let favicon: HTMLLinkElement;
 
 // What the sandbox inventory stream reports -- nothing at all while `sandboxes` is null -- and
 // whether it then drops. By default the thread's sandbox is running on a current inventory, so its
@@ -68,6 +69,12 @@ let inventoryFresh = true;
 let inventoryDrops = false;
 
 beforeEach(() => {
+  document.title = "Agentplane";
+  favicon = document.createElement("link");
+  favicon.id = "agentplane-favicon";
+  favicon.rel = "icon";
+  favicon.href = "/favicon.svg";
+  document.head.append(favicon);
   localStorage.clear();
   sandboxes = [{ name: THREAD.sandbox, state: "running" }];
   inventoryFresh = true;
@@ -116,6 +123,8 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.resetAllMocks();
+  favicon.remove();
+  document.title = "Agentplane";
 });
 
 function viewState({
@@ -404,12 +413,20 @@ it.each([
 });
 
 it("pulses and labels the healthy status dot while a turn is active", async () => {
+  vi.useFakeTimers();
   const dot = (await render(threadState({ rows: [viewState({ activeTurn: "turn-1" })] }))).querySelector(
     ".agentplane-thread-status-dot"
   );
   expect(dot?.getAttribute("aria-label")).toBe("Turn running · Runner feed active · harness running");
   expect(dot?.getAttribute("style")).toContain("--mantine-color-green-6");
   expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(true);
+  expect(document.title).toBe("Test thread · Running — Agentplane");
+  const firstFrame = favicon.getAttribute("href");
+  expect(firstFrame).toMatch(/^data:image\/svg\+xml,/);
+  await act(async () => {
+    vi.advanceTimersByTime(100);
+  });
+  expect(favicon.getAttribute("href")).not.toBe(firstFrame);
 });
 
 it("does not show active-turn status when the runner is not active", async () => {
