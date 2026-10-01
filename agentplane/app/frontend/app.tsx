@@ -83,9 +83,9 @@ function ActionsPage(): JSX.Element {
   );
 }
 
-function ThreadRoute(): JSX.Element {
+function ThreadRoute({ settingsOpen }: { settingsOpen: boolean }): JSX.Element {
   const threadId = required(useParams().threadId, "threadId");
-  return <ProjectedSession key={threadId} threadId={threadId} />;
+  return <ProjectedSession key={threadId} threadId={threadId} settingsOpen={settingsOpen} />;
 }
 
 // Matches sidebar.css's phone breakpoint (max-width: 560px) from the other side.
@@ -99,7 +99,12 @@ function AppRoutes(): JSX.Element {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
     location.pathname === "/mcp-servers" ? "mcp-servers" : null
   );
-  const routeTitle = threadRoute === null ? appDocumentTitle(location.pathname, settingsTab !== null) : null;
+  const routeTitle =
+    settingsTab !== null
+      ? appDocumentTitle(location.pathname, true)
+      : threadRoute === null
+        ? appDocumentTitle(location.pathname, false)
+        : null;
   useEffect(() => {
     if (routeTitle !== null) document.title = routeTitle;
   }, [routeTitle]);
@@ -149,7 +154,7 @@ function AppRoutes(): JSX.Element {
               <Route path="/actions/:requestId" element={<ActionRequests />} />
               <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
               <Route path="/sandboxes/:name" element={<SandboxRoute />} />
-              <Route path="/threads/:threadId" element={<ThreadRoute />} />
+              <Route path="/threads/:threadId" element={<ThreadRoute settingsOpen={settingsTab !== null} />} />
               <Route path="*" element={<ThreadsLanding />} />
             </Routes>
           </TopbarContext.Provider>

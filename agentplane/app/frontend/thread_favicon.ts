@@ -5,6 +5,10 @@ const FAVICON_PATH = "/favicon.svg";
 const PULSE_PERIOD_MS = 1_200;
 const FRAME_INTERVAL_MS = 100;
 
+export interface ThreadFaviconPulseEpoch {
+  current: number | null;
+}
+
 const FALLBACK_COLORS = {
   green: "#40c057",
   yellow: "#fab005",
@@ -23,15 +27,15 @@ function faviconUrl(status: ThreadTabStatus, level: number): string {
 }
 
 /** Set the thread's status in the favicon. A pulsing status follows the in-page dot's 1.2s breath. */
-export function installThreadFavicon(status: ThreadTabStatus): () => void {
+export function installThreadFavicon(status: ThreadTabStatus, pulseEpoch: ThreadFaviconPulseEpoch): () => void {
   const icon = document.getElementById(FAVICON_ID);
   if (!(icon instanceof HTMLLinkElement)) return () => {};
 
   const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const startedAt = Date.now();
   let timer: number | undefined;
 
   const update = (): void => {
+    const startedAt = pulseEpoch.current ?? Date.now();
     const level =
       status.pulse && !motionPreference.matches
         ? (1 - Math.cos((2 * Math.PI * ((Date.now() - startedAt) % PULSE_PERIOD_MS)) / PULSE_PERIOD_MS)) / 2
@@ -39,7 +43,10 @@ export function installThreadFavicon(status: ThreadTabStatus): () => void {
     icon.href = faviconUrl(status, level);
   };
 
-  const syncAnimation = (): void => {
+  const syncAnimation = (event?: MediaQueryListEvent): void => {
+    // The CSS dot's animation is removed for reduced motion. Re-enabling motion starts that
+    // animation from its first frame, so restart the favicon's shared epoch at the same time.
+    if (event && !event.matches && status.pulse) pulseEpoch.current = Date.now();
     if (status.pulse && !motionPreference.matches && timer === undefined) {
       timer = window.setInterval(update, FRAME_INTERVAL_MS);
     } else if ((!status.pulse || motionPreference.matches) && timer !== undefined) {

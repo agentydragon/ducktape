@@ -45,8 +45,8 @@ import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronol
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusDot } from "../thread_status_dot";
 import { TopbarActions, TopbarTitle } from "../topbar";
-import { installThreadFavicon } from "../thread_favicon";
-import { threadDocumentTitle, type ThreadTabStatus } from "../tab_metadata";
+import { installThreadFavicon, type ThreadFaviconPulseEpoch } from "../thread_favicon";
+import { appDocumentTitle, threadDocumentTitle, type ThreadTabStatus } from "../tab_metadata";
 import "./projected_session.css";
 
 /** A run of tool calls and reasoning steps, folded behind its summary until opened. */
@@ -704,8 +704,11 @@ function ProjectedSessionBody({
     harness: controls?.harness_state ?? null,
     activeTurn: Boolean(running && activeTurn),
   });
+  const pulseEpoch = useRef<number | null>(null);
+  if (status.pulse) pulseEpoch.current ??= Date.now();
+  else pulseEpoch.current = null;
   useEffect(() => onStatusLabelChange(status.tabLabel), [onStatusLabelChange, status.tabLabel]);
-  useEffect(() => installThreadFavicon(status), [status.color, status.pulse]);
+  useEffect(() => installThreadFavicon(status, pulseEpoch.current), [status.color, status.pulse]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   useEffect(() => {
@@ -1001,7 +1004,13 @@ function harnessLabel(harness: ThreadView["harness"]): string {
   }
 }
 
-export function ProjectedSession({ threadId }: { threadId: string }): JSX.Element {
+export function ProjectedSession({
+  threadId,
+  settingsOpen = false,
+}: {
+  threadId: string;
+  settingsOpen?: boolean;
+}): JSX.Element {
   const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [tabStatus, setTabStatus] = useState("Connecting");
@@ -1014,8 +1023,10 @@ export function ProjectedSession({ threadId }: { threadId: string }): JSX.Elemen
     void getThread(threadId).then(setThread, (reason: unknown) => setError(displayableError(reason)));
   }, [threadId]);
   useEffect(() => {
-    document.title = threadDocumentTitle(thread?.name, threadId, tabStatus);
-  }, [thread?.name, tabStatus, threadId]);
+    document.title = settingsOpen
+      ? appDocumentTitle("/", true)
+      : threadDocumentTitle(thread?.name, threadId, tabStatus);
+  }, [thread?.name, tabStatus, threadId, settingsOpen]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
