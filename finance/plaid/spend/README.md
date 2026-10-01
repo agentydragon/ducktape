@@ -1,5 +1,8 @@
 # Plaid Spend
 
+The per-user CLI and daemon live in [`desktop/`](desktop/README.md), and the GNOME extension lives
+in `gnome/`.
+
 `//finance/plaid/spend:server_image` serves the same backend-computed statement-cycle view to the
 Authentik-protected browser UI and desktop clients. The card selection, labels, limits, and alert
 thresholds live in the SOPS-managed `plaid-spend-cards` Secret at
@@ -7,9 +10,9 @@ thresholds live in the SOPS-managed `plaid-spend-cards` Secret at
 
 The browser at `/` signs in through the confidential Authentik `plaid-spend-web` client. The server
 keeps OIDC tokens out of the browser and authenticates page, stylesheet, script, view, and event
-requests with a signed session cookie. The GNOME client continues to use the separate public
-`plaid-spend-desktop` client and Bearer-token API. Both clients read the same global card view and
-notification-backed event stream.
+requests with a signed session cookie. The GNOME panel and `plaid-spend` CLI use the separate public
+`plaid-spend-desktop` client and Bearer-token API. Both desktop clients read the same global card view
+and notification-backed event stream.
 
 ## API
 

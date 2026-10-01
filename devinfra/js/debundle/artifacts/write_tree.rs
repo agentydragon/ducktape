@@ -51,12 +51,13 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         ))
     };
 
-    let queue = compute_identifier_rename_queue(
+    write_common_emission_reports(
+        &layout,
         input.files,
+        input.chunk_records,
         input.decomposition_by_chunk,
         input.excluded_chunk_ids,
     )?;
-    write_json(layout.rename_queue_report(), &queue)?;
     let manifest = ArtifactManifest {
         counts: input.counts.clone(),
         chunks: input.chunk_records.to_vec(),
@@ -68,10 +69,26 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         decomposition_metrics,
     };
     write_json(layout.output_report(), &manifest)?;
+
+    Ok(())
+}
+
+/// The browser harness extends the same emitted tree with HTML and assets.
+/// Keep its chunks report, rename queue and package marker aligned with tree
+/// output.
+pub fn write_common_emission_reports(
+    layout: &DebundleOutputLayout,
+    files: &EmissionFiles,
+    chunk_records: &[ArtifactChunkRecord],
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
+    excluded_chunk_ids: &BTreeSet<ChunkId>,
+) -> Result<()> {
+    let queue = compute_identifier_rename_queue(files, decomposition_by_chunk, excluded_chunk_ids)?;
+    write_json(layout.rename_queue_report(), &queue)?;
     write_json(
         layout.chunks_report(),
         &ChunksReport {
-            chunks: input.chunk_records,
+            chunks: chunk_records,
         },
     )?;
     write_json(
@@ -80,6 +97,5 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
             module_type: "module",
         },
     )?;
-
     Ok(())
 }

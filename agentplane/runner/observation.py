@@ -14,6 +14,7 @@ Observation = (
     | event_pb2.CommandNoop
     | event_pb2.HarnessUserMessageConfirmed
     | event_pb2.ModelChanged
+    | event_pb2.ReasoningEffortChanged
     | event_pb2.TurnStarted
     | event_pb2.TurnCompleted
     | event_pb2.ItemStarted
@@ -37,6 +38,7 @@ _FIELDS: dict[type[Message], str] = {
     event_pb2.CommandNoop: "command_noop",
     event_pb2.HarnessUserMessageConfirmed: "harness_user_message_confirmed",
     event_pb2.ModelChanged: "model_changed",
+    event_pb2.ReasoningEffortChanged: "reasoning_effort_changed",
     event_pb2.TurnStarted: "turn_started",
     event_pb2.TurnCompleted: "turn_completed",
     event_pb2.ItemStarted: "item_started",

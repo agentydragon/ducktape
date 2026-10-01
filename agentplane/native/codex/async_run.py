@@ -192,10 +192,10 @@ class CodexRun:
     def native_frames(self) -> list[dict[str, Any]]:
         return self._native().stdout_frames()
 
-    async def start_turn(self, text: str, *, model: str | None = None) -> CodexTurn:
+    async def start_turn(self, text: str, *, model: str | None = None, effort: str | None = None) -> CodexTurn:
         thread_id = self.thread_id
         events = self.events()
-        response = _require(await self._codex().start_turn(thread_id=thread_id, text=text, model=model))
+        response = _require(await self._codex().start_turn(thread_id=thread_id, text=text, model=model, effort=effort))
         result = wire.TurnResult.model_validate(response.result)
         return CodexTurn(thread_id, result.turn.id, events)
 

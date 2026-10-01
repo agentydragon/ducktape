@@ -179,6 +179,7 @@ function commandOutcomeLabel(operation: string, outcome: string): string {
     {
       submit_input: "Input",
       change_model: "Model change",
+      change_reasoning_effort: "Reasoning effort change",
       interrupt_turn: "Interrupt",
       stop_runner_session: "Harness shutdown",
     }[operation] ?? "Command";

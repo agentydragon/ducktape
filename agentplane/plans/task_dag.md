@@ -25,8 +25,6 @@ Proposed execution order for the Thread correctness/UI track:
 - **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Compact activity
   mocks (`THREAD_ACTIVITY_MOCKS`) and native resume/recovery remain on the board but are excluded
   from this dispatch batch.
-- **Reported UI bug, unranked:** Sandbox-level default reasoning effort appears not to carry into
-  the frontend’s later Thread launch (`SANDBOX_REASONING_DEFAULT`).
 - **Workspace design, unranked:** reconcile once-per-Sandbox bootstrap and per-Thread working
   directories, especially for the finance-agent repo (`THREAD_WORKSPACE_BOOTSTRAP`).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
@@ -115,7 +113,6 @@ flowchart TB
     LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
     THREAD_ACTIVITY_MOCKS["P1 UI design<br/>mock compact tool/reasoning activity<br/>one-line calls with individual expansion"]:::future
     THREAD_ACTIVITY_DENSITY["Planned UI after mock review<br/>compact activity with per-item disclosure<br/>preserve status, ordering, and Raw evidence"]:::future
-    SANDBOX_REASONING_DEFAULT["Reported UI bug<br/>Sandbox default reasoning effort<br/>not reflected in later Thread launch"]:::future
     THREAD_WORKSPACE_BOOTSTRAP["Unranked workspace design<br/>one Sandbox bootstrap vs Thread cwd<br/>finance-agent repo as natural cwd"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
@@ -467,14 +464,22 @@ records the last run). Signed offline tests alone do not close this gate.
 passed five egress cases, both instruction cases, and the preset case. Claude's late-binding
 case failed before executing its GitHub probe: retained Events show command admission,
 input confirmation, and `TURN_STATUS_FAILED` with an HTTP 502 diagnostic. In the same
-08:01–08:03 UTC window on 2026-09-15, central egress logged three `ApiException` failures
-and `unavailable` refusals before identifying a Sandbox. Its per-Sandbox decision query
-therefore returned no rows. The model vendor is not established as the source of the 502.
+08:01–08:03 UTC window on 2026-09-15, central egress denied three POSTs to testing's LLM
+ingress with `reason=unavailable` and no Sandbox identity. These are consistent with
+the failed case being unable to reach its model endpoint, but cannot be correlated
+directly to its sandbox. Its GitHub decision history was empty. The retained `(504)`
+`ApiException` logs were from the staging app/actions Kubernetes watchers, not central
+egress. Kube-apiserver logs also showed handler and etcd timeouts in the window. This
+suggests control-plane degradation
+may have contributed to identity lookup failures, but there is no request-level evidence
+proving which Kubernetes call failed or linking a specific API-server timeout to egress.
+The model vendor is not established as the source of the 502. See the
+[investigation note](../debug/egress_identity_502_20260915.md).
 
-The shared workload resolver now logs the fixed Kubernetes operation and numeric API status
-without exception bodies, reasons, headers or tracebacks. The historical type-only logs cannot
-identify which operation failed. After this diagnostic reaches the proxy, retain new safe
-failure evidence and correlate it with Kubernetes health; this is not an incident repair.
+The shared workload resolver's fixed-operation/numeric-status diagnostic for TokenReview
+failures is now deployed in staging. The historical type-only logs cannot identify which
+operation failed. The new diagnostic improves future evidence but does not establish an
+incident repair.
 
 Correlate the path from runner/sidecar through central egress authentication, Kubernetes
 TokenReview, Agentplane LLM ingress, LiteLLM, and the model backend. Identify
@@ -531,22 +536,6 @@ coverage of the reviewed cases, including reload and reconnect.
 Reasoning and tool arguments and output already load on demand (`LazyBody` in
 `projected_session.tsx`); compact rows keep that loading and explicitly distinguish unloaded,
 streaming, empty, and unavailable details.
-
-### `SANDBOX_REASONING_DEFAULT` — honor Sandbox reasoning effort on later Thread launch
-
-**Operator report, not yet reproduced:** setting a default reasoning effort at the Sandbox level
-appears not to take effect in the frontend when launching subsequent Threads from that Sandbox.
-Check the effective `binding.thread_defaults` returned for the Sandbox, the Thread launch form's
-initial selection after model options load, and the submitted session-open request. Distinguish a
-frontend prefill/reset bug from incorrect preset resolution or a backend launch bug; do not assume
-which layer is at fault. In particular, inspect the model-catalog and Sandbox-default effects in
-`app/frontend/sandbox_page.tsx` for ordering or validation interactions.
-
-**Acceptance:** with a Sandbox default reasoning effort different from the model's first offered
-effort, open its page and launch a later Thread without changing the effort. The form must show
-the effective Sandbox default, and the created Thread must use it. Explicit per-Thread changes
-must override that default without changing future launches. Cover initial load, reload, and a
-model/harness change (where a now-invalid effort must be handled intentionally) in frontend tests.
 
 ### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
 

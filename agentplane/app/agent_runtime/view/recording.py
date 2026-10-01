@@ -129,6 +129,7 @@ async def _fold_state(
         fold.Position(checkpoint.source_id, checkpoint.projection_epoch, checkpoint.through_cursor),
         fold.Controls(
             applied_model=view.controls.applied_model,
+            applied_reasoning_effort=view.controls.applied_reasoning_effort,
             active_turn_id=view.controls.active_turn_id,
             harness_state=view.controls.harness_state,
         ),

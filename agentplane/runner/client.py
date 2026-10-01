@@ -86,6 +86,13 @@ class Attachment:
             command_pb2.Command(command_id=command_id, change_model=command_pb2.ChangeModel(model=model))
         )
 
+    async def switch_reasoning_effort(self, command_id: str, effort: str) -> None:
+        await self.command(
+            command_pb2.Command(
+                command_id=command_id, change_reasoning_effort=command_pb2.ChangeReasoningEffort(effort=effort)
+            )
+        )
+
     async def stop_runner_session(self, command_id: str) -> None:
         await self.command(
             command_pb2.Command(command_id=command_id, stop_runner_session=command_pb2.StopRunnerSession())

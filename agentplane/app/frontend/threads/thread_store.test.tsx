@@ -102,7 +102,7 @@ function viewState(through: string, epoch = "epoch-1"): Json {
     entity_id: "current",
     revision_cursor: through,
     state: JSON.stringify({
-      controls: { applied_model: null, active_turn_id: null, harness_state: null },
+      controls: { applied_model: null, applied_reasoning_effort: null, active_turn_id: null, harness_state: null },
       operational: { status: "active", last_verified_cursor: through, feed_error: null },
     }),
   };

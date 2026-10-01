@@ -44,27 +44,6 @@ use crate::{
     SelfRewriteOutputs, seed_bundled_partial_swap_self_rewrites,
 };
 
-pub struct EmissionRewriteResult {
-    pub artifact: ChunkBundle,
-    /// (swapped chunk, chunk export) → count of references rewritten in
-    /// pass-through files and vendor self-rewrites; folded into the
-    /// partial-swap manifests' `references_rewritten` alongside
-    /// lowering's construction-time counts.
-    pub references_by_symbol: BTreeMap<(ChunkId, String), usize>,
-}
-
-pub fn apply_emission_rewrites(
-    mut artifact: ChunkBundle,
-    plan: &VendorResolutionPlan,
-    references: &ArtifactIndexes,
-) -> Result<EmissionRewriteResult> {
-    let references_by_symbol = apply_emission_rewrites_in_place(&mut artifact, plan, references)?;
-    Ok(EmissionRewriteResult {
-        artifact,
-        references_by_symbol,
-    })
-}
-
 /// Body-only emit pass: ASTs are taken out for parallel rewrites and put back
 /// at the same file paths. The caller may retain its output-path indexes.
 pub fn apply_emission_rewrites_in_place(

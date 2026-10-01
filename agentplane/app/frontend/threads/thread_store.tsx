@@ -49,6 +49,7 @@ const stateSchema = z.union([
   z.object({
     controls: z.object({
       applied_model: z.string().nullable(),
+      applied_reasoning_effort: z.string().nullable(),
       active_turn_id: z.string().nullable(),
       harness_state: z.string().nullable(),
     }),

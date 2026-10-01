@@ -371,6 +371,17 @@ class SetModelRequest(BaseModel):
     request: SetModelBody
 
 
+class ApplyFlagSettingsBody(BaseModel):
+    subtype: Literal["apply_flag_settings"] = "apply_flag_settings"
+    settings: dict[str, str]
+
+
+class ApplyFlagSettingsRequest(BaseModel):
+    type: Literal["control_request"] = "control_request"
+    request_id: str = Field(default_factory=lambda: f"capture-{uuid4().hex}")
+    request: ApplyFlagSettingsBody
+
+
 class UserInput(BaseModel):
     type: Literal["user"] = "user"
     message: UserMessage
@@ -383,4 +394,6 @@ class ControlResponse(BaseModel):
     response: ControlResponseBody
 
 
-Outbound = InitializeRequest | InterruptRequest | SetModelRequest | UserInput | ControlResponse
+Outbound = (
+    InitializeRequest | InterruptRequest | SetModelRequest | ApplyFlagSettingsRequest | UserInput | ControlResponse
+)

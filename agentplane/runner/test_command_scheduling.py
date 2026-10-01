@@ -57,6 +57,9 @@ class BlockingAdapter(HarnessAdapter):
     async def change_model(self, command_id: str, model: str) -> None:
         self.model_changes.append((command_id, model))
 
+    async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
+        raise AssertionError(f"unexpected effort command {(command_id, effort)!r}")
+
     async def on_frame(self, frame: dict[str, Any], source_sequence: int) -> None:
         raise AssertionError(f"unexpected native frame {(frame, source_sequence)!r}")
 

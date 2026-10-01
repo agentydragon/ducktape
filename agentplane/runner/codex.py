@@ -48,6 +48,7 @@ class _TurnStart:
     command_id: str
     text: str
     model_change: tuple[str, str] | None
+    effort_change: tuple[str, str] | None
 
 
 class CodexAdapter(HarnessAdapter):
@@ -60,6 +61,7 @@ class CodexAdapter(HarnessAdapter):
         # Codex chooses the model in turn/start. A received ChangeModel remains here until a
         # subsequent user command actually starts a turn using it.
         self._pending_model_changes: list[tuple[str, str]] = []
+        self._pending_effort_changes: list[tuple[str, str]] = []
         # Sent `turn/start` requests by id, until `on_frame` translates Codex's answer.
         self._turn_starts: dict[wire.RequestId, _TurnStart] = {}
 
@@ -137,9 +139,11 @@ class CodexAdapter(HarnessAdapter):
 
     async def submit(self, command_id: str, text: str) -> None:
         model_change = await self._take_pending_model_change()
+        effort_change = await self._take_pending_effort_change()
+        effort = effort_change[1] if effort_change is not None else self.session.record.reasoning_effort
         model = model_change[1] if model_change is not None else self.session.record.model
-        request = self.harness.turn_start_request(thread_id=self._thread_id, text=text, model=model)
-        self._turn_starts[request.id] = _TurnStart(command_id, text, model_change)
+        request = self.harness.turn_start_request(thread_id=self._thread_id, text=text, model=model, effort=effort)
+        self._turn_starts[request.id] = _TurnStart(command_id, text, model_change, effort_change)
         try:
             # `on_frame` records what the answer proves. Waiting for it keeps normal commands one
             # turn/start at a time.
@@ -167,6 +171,20 @@ class CodexAdapter(HarnessAdapter):
         for command_id, _ in superseded:
             await self.session._noop(
                 command_id, "superseded by a later model command before any Codex turn selected it", sources=[]
+            )
+        return selected
+
+    async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
+        self._pending_effort_changes.append((command_id, effort))
+
+    async def _take_pending_effort_change(self) -> tuple[str, str] | None:
+        if not self._pending_effort_changes:
+            return None
+        *superseded, selected = self._pending_effort_changes
+        self._pending_effort_changes = []
+        for command_id, _ in superseded:
+            await self.session._noop(
+                command_id, "superseded by a later effort command before any Codex turn selected it", sources=[]
             )
         return selected
 
@@ -219,12 +237,18 @@ class CodexAdapter(HarnessAdapter):
                 await self.session._fail(
                     start.model_change[0], f"Codex did not select the requested model: {reason}", sources=sources
                 )
+            if start.effort_change is not None:
+                await self.session._fail(
+                    start.effort_change[0], f"Codex did not select the requested effort: {reason}", sources=sources
+                )
             await self.session._fail(start.command_id, reason, sources=sources)
             return
         if start.model_change is not None:
             # The answer proves Codex accepted the turn that selected this model. This, rather than
             # command receipt or a guessed future boundary, is its causal effect.
             await self.session.model_changed(*start.model_change, sources=sources)
+        if start.effort_change is not None:
+            await self.session.reasoning_effort_changed(*start.effort_change, sources=sources)
         turn_id = wire.TurnResult.model_validate(response.result).turn.id
         if turn_id != self.session.active_turn_id:
             await self.session.emit(

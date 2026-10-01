@@ -173,7 +173,10 @@ rust_library(
 
 rust_library(
     name = "artifact",
-    srcs = ["artifacts/artifact.rs"],
+    srcs = [
+        "artifacts/artifact.rs",
+        "artifacts/emission_files.rs",
+    ],
     crate_root = "artifacts/artifact.rs",
     edition = "2024",
     deps = [
@@ -338,9 +341,9 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
-        ":identifier_rename_queue",
         ":output_layout",
         ":spec",
+        ":write_tree",
         "@crates//:anyhow",
         "@crates//:lol_html",
         "@crates//:serde",

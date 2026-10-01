@@ -373,6 +373,7 @@ class TurnStartParams(Wire, OmitNone):
     input: list[TextInput]
     # Codex lets a turn override its thread's original model.
     model: str | None = None
+    effort: str | None = None
 
 
 class TurnStartRequest(Wire):

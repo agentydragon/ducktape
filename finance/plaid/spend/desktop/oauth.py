@@ -15,7 +15,8 @@ from http import HTTPStatus
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
-from plaid_spend_desktop.credentials import SecretServiceTokenStore
+
+from .credentials import SecretServiceTokenStore
 
 logger = logging.getLogger(__name__)
 

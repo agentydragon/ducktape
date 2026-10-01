@@ -80,6 +80,12 @@ message ModelChanged {
   string model = 3;
 }
 
+message ReasoningEffortChanged {
+  string command_id = 1;
+  string previous_effort = 2;
+  string effort = 3;
+}
+
 message TurnCompleted {
   string turn_id = 1;
   TurnStatus status = 2;
@@ -196,5 +202,6 @@ message Event {
     ModelChanged model_changed = 21;
     DebugCheckpoint debug_checkpoint = 22;
     ConversationReconciled conversation_reconciled = 23;
+    ReasoningEffortChanged reasoning_effort_changed = 24;
   }
 }
