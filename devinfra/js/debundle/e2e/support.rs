@@ -31,8 +31,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use swc_common::FileName;
 use swc_common::sync::Lrc;
 use swc_ecma_ast::{
-    Decl, ExportSpecifier, Module, ModuleDecl, ModuleExportName, ModuleItem, ObjectPatProp, Pat,
-    Stmt,
+    Decl, ExportSpecifier, Expr, Lit, Module, ModuleDecl, ModuleExportName, ModuleItem,
+    ObjectPatProp, Pat, Stmt, VarDeclKind,
 };
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 use tempfile::TempDir;
@@ -1249,6 +1249,95 @@ pub fn assert_module_source(
             !code.contains(*needle),
             "{module_path} unexpectedly contained {needle:?}\n--- {module_path} ---\n{code}",
         );
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum VariableDeclarationKind {
+    Const,
+    Let,
+    Var,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum VariableInitializerKind {
+    Array,
+    Arrow,
+    Binary,
+    Call,
+    Identifier,
+    Number,
+    Object,
+    String,
+    Other,
+}
+
+/// Assert the top-level variable declarators in an emitted module by AST.
+/// Each expected entry gives a declarator's kind, bound names, and initializer
+/// shape. Runtime assertions pin initializer values and effects.
+pub fn assert_module_variable_declarators(
+    out_root: &Path,
+    module_path: &str,
+    expected: &[(VariableDeclarationKind, &[&str], VariableInitializerKind)],
+) {
+    let source = fs::read_to_string(out_root.join(module_path))
+        .unwrap_or_else(|e| panic!("read {module_path}: {e}"));
+    let module = parse_module(&source);
+    let mut actual = Vec::new();
+    for item in &module.body {
+        let declaration = match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) => Some(declaration),
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
+                Decl::Var(declaration) => Some(declaration),
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some(declaration) = declaration else {
+            continue;
+        };
+        let kind = match &declaration.kind {
+            VarDeclKind::Const => VariableDeclarationKind::Const,
+            VarDeclKind::Let => VariableDeclarationKind::Let,
+            VarDeclKind::Var => VariableDeclarationKind::Var,
+        };
+        for declarator in &declaration.decls {
+            let mut bindings = Vec::new();
+            collect_declared_bindings_from_pat(&declarator.name, &mut bindings);
+            actual.push((
+                kind,
+                bindings,
+                declarator.init.as_deref().map(variable_initializer_kind),
+            ));
+        }
+    }
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|(kind, bindings, initializer)| {
+            (
+                *kind,
+                bindings.iter().map(|name| (*name).to_string()).collect(),
+                Some(*initializer),
+            )
+        })
+        .collect();
+    assert_eq!(
+        actual, expected,
+        "top-level variable declarators differed in {module_path}; source:\n{source}",
+    );
+}
+
+fn variable_initializer_kind(expr: &Expr) -> VariableInitializerKind {
+    match expr {
+        Expr::Array(_) => VariableInitializerKind::Array,
+        Expr::Arrow(_) => VariableInitializerKind::Arrow,
+        Expr::Bin(_) => VariableInitializerKind::Binary,
+        Expr::Call(_) => VariableInitializerKind::Call,
+        Expr::Ident(_) => VariableInitializerKind::Identifier,
+        Expr::Lit(Lit::Num(_)) => VariableInitializerKind::Number,
+        Expr::Lit(Lit::Str(_)) => VariableInitializerKind::String,
+        Expr::Object(_) => VariableInitializerKind::Object,
+        _ => VariableInitializerKind::Other,
     }
 }
 
