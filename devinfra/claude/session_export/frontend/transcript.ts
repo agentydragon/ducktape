@@ -16,12 +16,19 @@ export type TranscriptMessage = TranscriptBase & {
 
 export type TranscriptToolStatus = "running" | "complete" | "error" | "denied" | "interrupted";
 
+export type TranscriptToolImage = {
+  data: string;
+  mimeType: string;
+};
+
 export type TranscriptToolCall = {
   id: string;
   toolUseId: string;
   name: string;
   input: unknown;
   result?: string;
+  outputImages?: TranscriptToolImage[];
+  toolUseResult?: JsonObject;
   progress?: string;
   summary?: string;
   failed?: boolean;
@@ -111,15 +118,30 @@ function textFrom(value: unknown, depth = 0): string | null {
   return null;
 }
 
-function toolResultText(value: unknown): string | null {
-  const record = object(value);
-  if (record === null) return textFrom(value);
-  const output: string[] = [];
-  for (const key of ["stdout", "stderr", "output", "content", "message", "result", "summary"]) {
-    const text = textFrom(record[key]);
-    if (text !== null && !output.includes(text)) output.push(text);
+type TranscriptToolResultContent = {
+  text: string | null;
+  images: TranscriptToolImage[];
+};
+
+function toolResultContent(value: unknown): TranscriptToolResultContent {
+  if (typeof value === "string") return { text: string(value), images: [] };
+  if (!Array.isArray(value)) return { text: null, images: [] };
+
+  const text: string[] = [];
+  const images: TranscriptToolImage[] = [];
+  for (const part of value) {
+    const block = object(part);
+    if (block?.type === "text") {
+      const blockText = string(block.text);
+      if (blockText !== null) text.push(blockText);
+    } else if (block?.type === "image") {
+      const source = object(block.source);
+      const data = string(source?.data) ?? string(block.data);
+      const mimeType = string(source?.media_type) ?? string(block.mimeType) ?? "image/png";
+      if (data !== null && /^image\/[a-z0-9.+-]+$/i.test(mimeType)) images.push({ data, mimeType });
+    }
   }
-  return output.length === 0 ? textFrom(value) : output.join("\n");
+  return { text: text.length === 0 ? null : text.join("\n"), images };
 }
 
 function eventId(event: SessionEvent): string {
@@ -238,13 +260,14 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
 
   const addToolResult = (
     toolUseId: string | null,
-    result: string | null,
+    result: TranscriptToolResultContent,
     failed: boolean,
     event: SessionEvent
   ): void => {
     const match = toolUseId === null ? undefined : toolsById.get(toolUseId);
     if (match !== undefined) {
-      match.call.result = result ?? match.call.result;
+      match.call.result = result.text ?? match.call.result;
+      if (result.images.length > 0) match.call.outputImages = result.images;
       match.call.failed = failed;
       match.call.status = failed ? "error" : match.call.policyDenied ? "denied" : "complete";
       addEvent(match.call.events, event);
@@ -258,7 +281,8 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
       toolUseId: callId,
       name: "Tool result",
       input: null,
-      result: result ?? undefined,
+      result: result.text ?? undefined,
+      ...(result.images.length === 0 ? {} : { outputImages: result.images }),
       failed,
       status: failed ? "error" : "complete",
       tasks: [],
@@ -274,6 +298,14 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     };
     items.push(run);
     if (toolUseId !== null) toolsById.set(toolUseId, { call, run });
+  };
+
+  const attachToolUseResult = (toolUseId: string, result: JsonObject, event: SessionEvent): void => {
+    const match = toolsById.get(toolUseId);
+    if (match === undefined) return;
+    match.call.toolUseResult = result;
+    addEvent(match.call.events, event);
+    addEvent(match.run.events, event);
   };
 
   const addActivity = (event: SessionEvent, payload: JsonObject, subtype: string): void => {
@@ -389,7 +421,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
             });
         } else if (blockType === "tool_result") {
           flushText();
-          addToolResult(string(block.tool_use_id), toolResultText(block.content), block.is_error === true, event);
+          addToolResult(string(block.tool_use_id), toolResultContent(block.content), block.is_error === true, event);
         } else {
           flushText();
           const description = textFrom(block);
@@ -407,7 +439,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
       const toolResult = object(payload.tool_use_result);
       if (toolResult !== null) {
         const linkedId = string(payload.tool_use_id) ?? string(toolResult.tool_use_id);
-        if (linkedId !== null) addToolResult(linkedId, toolResultText(toolResult), toolResult.is_error === true, event);
+        if (linkedId !== null) attachToolUseResult(linkedId, toolResult, event);
       }
       continue;
     }

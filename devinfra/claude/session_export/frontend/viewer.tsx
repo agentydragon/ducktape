@@ -7,6 +7,7 @@ import {
   Center,
   Code,
   Group,
+  Image,
   Loader,
   NavLink,
   Paper,
@@ -220,14 +221,28 @@ function ToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
                 </Text>
               )}
               {tool.summary !== undefined && <Text size="sm">{tool.summary}</Text>}
-              {tool.result !== undefined && (
+              {(tool.result !== undefined || (tool.outputImages?.length ?? 0) > 0) && (
                 <Stack gap={4}>
                   <Text size="xs" c="dimmed">
-                    {tool.failed ? "Error output" : "Output"}
+                    {tool.failed ? "Error output" : tool.name === "Bash" ? "Command output" : "Output"}
                   </Text>
-                  <Code block style={{ maxHeight: 240, overflow: "auto", whiteSpace: "pre-wrap" }}>
-                    {tool.result}
-                  </Code>
+                  {tool.result !== undefined && (
+                    <Code block style={{ maxHeight: 240, overflow: "auto", whiteSpace: "pre-wrap" }}>
+                      {tool.result}
+                    </Code>
+                  )}
+                  {tool.outputImages?.map((outputImage, imageIndex) => (
+                    <Image
+                      key={`${outputImage.mimeType}-${imageIndex}`}
+                      src={`data:${outputImage.mimeType};base64,${outputImage.data}`}
+                      alt={`Tool output ${imageIndex + 1}`}
+                      w={240}
+                      h={180}
+                      fit="contain"
+                      radius="sm"
+                      data-tool-output-image
+                    />
+                  ))}
                 </Stack>
               )}
               {tool.tasks.map((task) => (

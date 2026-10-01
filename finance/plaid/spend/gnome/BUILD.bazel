@@ -1,5 +1,6 @@
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
+load("//devinfra/python:defs.bzl", "py_test")
 
 pkg_files(
     name = "extension_files",
@@ -16,4 +17,35 @@ pkg_zip(
     srcs = [":extension_files"],
     out = "plaid-spend-desktop.zip",
     visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "test_fixtures",
+    testonly = True,
+    srcs = glob(["fixtures/*.json"]),
+)
+
+py_test(
+    name = "test_render",
+    size = "medium",
+    srcs = ["test_render.py"],
+    data = [
+        ":plaid_spend_extension",
+        ":test_fixtures",
+        "//gnome/test_image:gnome_shell_test",
+    ],
+    requires_docker = True,
+    tags = ["visual"],
+    deps = [
+        "//:conftest",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "//util/testing:visual_review",
+        "@pypi//docker",
+        "@pypi//pillow",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+    ],
 )

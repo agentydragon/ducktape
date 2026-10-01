@@ -734,12 +734,15 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
 
 
 @threads.post("/{thread_id}/resume")
-async def resume_thread(store: Store, bridge: runner_bridge.Bridge, thread_id: UUID) -> dict[str, object]:
+async def resume_thread(
+    store: Store, bridge: runner_bridge.Bridge, inventory: Inventory, thread_id: UUID
+) -> dict[str, object]:
     thread = await store.get_thread(thread_id)
     if thread is None:
         raise ThreadNotFoundError(thread_id)
     if thread.archived:
         raise HTTPException(status.HTTP_409_CONFLICT, "an archived Thread cannot be resumed")
+    await runner_bridge.ready_sandbox_for_session(inventory, thread.sandbox)
     return MessageToDict(
         await bridge.resume_thread(thread_id, expected_harness=thread.harness.value, expected_cwd=thread.cwd)
     )

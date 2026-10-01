@@ -3,5 +3,7 @@ kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/public-coder-devbox
     newTag: devel-20261001184020-0d80624 # {"$imagepolicy": "flux-system:public-coder-devbox:tag"}
+  - name: git.allegedly.works/ducktape-ci/vm-image-restart
+    newTag: devel-20261001034458-59deeaa # {"$imagepolicy": "flux-system:vm-image-restart:tag"}
 configurations:
   - kustomizeconfig
