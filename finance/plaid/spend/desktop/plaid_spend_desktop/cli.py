@@ -36,6 +36,8 @@ def _parser() -> argparse.ArgumentParser:
 
 async def _call(bus: MessageBus, member: str, *, interface: str = INTERFACE_NAME) -> list[Any]:
     reply = await bus.call(Message(destination=BUS_NAME, path=OBJECT_PATH, interface=interface, member=member))
+    if reply is None:
+        raise RuntimeError(f"Plaid Spend D-Bus call {member} returned no reply")
     if reply.message_type == MessageType.ERROR:
         detail = str(reply.body[0]) if reply.body else reply.error_name
         if reply.error_name == "org.freedesktop.DBus.Error.ServiceUnknown":
@@ -55,6 +57,8 @@ async def _property(bus: MessageBus, name: str) -> str:
             body=[INTERFACE_NAME, name],
         )
     )
+    if reply is None:
+        raise RuntimeError(f"Plaid Spend D-Bus property {name} returned no reply")
     if reply.message_type == MessageType.ERROR:
         detail = str(reply.body[0]) if reply.body else reply.error_name
         raise RuntimeError(detail)
@@ -73,7 +77,9 @@ def _format_money(minor_units: Any, currency: Any) -> str:
     code = currency.upper()
     precision = get_currency_precision(code)
     amount = Decimal(minor_units).scaleb(-precision)
-    return format_currency(amount, code, locale="en_US", currency_display="code")
+    fraction = f".{'0' * precision}" if precision else ""
+    currency_format = f"¤¤ #,##0{fraction}"
+    return format_currency(amount, code, currency_format, locale="en_US", currency_digits=False)
 
 
 def _card_title(card: dict[str, Any]) -> str:
