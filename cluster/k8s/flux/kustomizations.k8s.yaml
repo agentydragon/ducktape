@@ -1767,15 +1767,7 @@ spec:
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
-  healthCheckExprs:
-    - apiVersion: v1
-      current: has(data.token) && data.token != ''
-      kind: Secret
   healthChecks:
-    - apiVersion: v1
-      kind: Secret
-      name: alloy-control-plane-token
-      namespace: monitoring
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: kube-prometheus-stack

@@ -336,25 +336,25 @@ The agent-box VM and its `codex` user are live (see
 ## Alloy `allow_arbitrary_file_access`: decide the residual components
 
 Native scrapes in `cluster/cdk8s/monitoring/config.alloy` cover apiserver and kubelet,
-and clearing the spurious token fixes coredns. Three consumers of
-`bearerTokenFile` are still rejected by Alloy and therefore still unscraped:
-`monitoring-kube-controller-manager`, `monitoring-kube-scheduler`, and
-`volsync-system/volsync`. The last one is emitted by the volsync chart, so
-kube-prometheus-stack values cannot reach it.
+and clearing the spurious token fixes coredns. The remaining consumer of
+`bearerTokenFile` rejected by Alloy is `volsync-system/volsync`; it is emitted by the
+volsync chart, so kube-prometheus-stack values cannot reach it. The
+`kube-controller-manager` and `kube-scheduler` ServiceMonitors are disabled while their
+Talos metrics endpoints remain loopback-only.
 
-The alternative is `allow_arbitrary_file_access = true` on
-`prometheus.operator.servicemonitors`, which fixes the token rejection for all three (though
-the control-plane two are now loopback-only, below) but grants
-file access to every ServiceMonitor in the cluster rather than to named jobs.
+`allow_arbitrary_file_access = true` on `prometheus.operator.servicemonitors` would fix
+the token rejection for volsync, but it cannot make the central Alloy reach the
+loopback-only control-plane endpoints. The control-plane rule alerts are disabled with
+their ServiceMonitors so absent `up` series do not page.
 Today that is close to free — only `monitoring-operator`, `kubevirt-operator`
 and `seaweedfs-operator-manager-role` can write ServiceMonitors, and Alloy
 mounts nothing but its own ConfigMap and service-account token — so the flag
 would hand a hostile author only a credential they could already obtain.
 
-- [ ] controller-manager and scheduler: since the #7918 fix they bind to
-      loopback only, so neither a native scrape nor the flag reaches 10257/10259
-      over the network. Either a host-network scraper on each control-plane node
-      reads `localhost`, or their ServiceMonitors (`monitoring/stack.py`) go.
+- [ ] Restore controller-manager and scheduler metrics and alerts after
+      [#8567](https://github.com/agentydragon/ducktape/issues/8567) selects and implements
+      a valid loopback scrape topology; remove the temporary ServiceMonitor and alert
+      disables in `cluster/cdk8s/monitoring/stack.py` and verify all control-plane nodes.
 - [ ] `volsync`: a `postRenderers` patch on its HelmRelease, an upstream values
       knob, or the flag.
 - [ ] Re-evaluate if Alloy ever mounts a Secret. The flag's low cost rests on
