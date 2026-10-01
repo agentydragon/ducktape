@@ -90,10 +90,22 @@
 }
 
 .agentplane-reasoning-preview {
+  position: relative;
   min-width: 0;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentplane-reasoning-preview-measurement {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  width: max-content;
+  max-width: none;
+  visibility: hidden;
+  pointer-events: none;
   white-space: nowrap;
 }
 

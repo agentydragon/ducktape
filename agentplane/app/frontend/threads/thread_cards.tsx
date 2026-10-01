@@ -107,15 +107,17 @@ function ReasoningPreview({
 }): JSX.Element {
   const { body, error, retry } = useThreadSync().usePayload(reference);
   const preview = useRef<HTMLDivElement>(null);
+  const measurement = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     const element = preview.current;
-    if (body === null || !element) {
+    const content = measurement.current;
+    if (body === null || !element || !content) {
       onOverflowChange(false);
       return;
     }
     const measure = () => {
-      const next = element.scrollWidth > element.clientWidth + 1;
+      const next = content.getBoundingClientRect().width > element.clientWidth + 1;
       onOverflowChange(next);
     };
     measure();
@@ -136,6 +138,11 @@ function ReasoningPreview({
           </Text>
         ) : (
           <Markdown source={body} singleLine />
+        )}
+        {body !== null && (
+          <div className="agentplane-reasoning-preview-measurement" ref={measurement} aria-hidden="true">
+            <Markdown source={body} singleLine />
+          </div>
         )}
       </div>
     </div>

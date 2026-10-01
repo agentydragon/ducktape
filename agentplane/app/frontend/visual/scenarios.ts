@@ -688,7 +688,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     outputName: "session-reasoning",
     openReasoning: true,
-    readySelectors: ["details[open] details[open] .agentplane-markdown"],
+    readySelectors: ["details.agentplane-reasoning-details[open] > .agentplane-markdown"],
   },
   session_reasoning_phone: {
     element: "#app",
@@ -696,7 +696,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     outputName: "session-reasoning-phone",
     openReasoning: true,
-    readySelectors: ["details[open] details[open] .agentplane-markdown"],
+    readySelectors: ["details.agentplane-reasoning-details[open] > .agentplane-markdown"],
   },
   // A fenced code block in a registered language, syntax-highlighted in prose the way tool-call
   // Arguments/Output already are -- distinct from session_tool_payloads below, which is the
