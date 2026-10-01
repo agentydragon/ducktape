@@ -1,12 +1,15 @@
 """Read-only Claude Code-shaped routes backed by the synchronized PostgreSQL mirror."""
 
+import asyncio
 import base64
 import json
+from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette import status
 
@@ -54,6 +57,25 @@ def _decode_session_cursor(cursor: str | None) -> tuple[datetime, str] | None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid session cursor.") from invalid
 
 
+def _encode_resume_token(revision: int) -> str:
+    return f"1:{revision}"
+
+
+def _decode_resume_token(token: str | None) -> int:
+    try:
+        version, value = (token or "").split(":", 1)
+        if version != "1" or not value.isdecimal():
+            raise ValueError
+        return int(value)
+    except ValueError as invalid:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid session resume token.") from invalid
+
+
+def _sse_event(revision: int, event: str, data: object) -> str:
+    body = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return f"id: {_encode_resume_token(revision)}\nevent: {event}\ndata: {body}\n\n"
+
+
 def _session_id(value: str) -> str:
     if not value.startswith(("session_", "cse_")):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found.")
@@ -88,12 +110,52 @@ def create_read_api(store: SessionStore) -> APIRouter:
         # Claude Code's initial unfiltered bootstrap asks for active and paused sessions.
         effective_statuses = statuses if statuses is not None else ["active", "paused"]
         before = _decode_session_cursor(cursor)
+        # Take the watermark before paging. A concurrent change may be replayed twice, never
+        # omitted, because any write after this read has a greater revision.
+        resume_token = _encode_resume_token(await store.current_change_revision())
         data, has_more, next_position = await store.session_page(
             limit=limit, statuses=effective_statuses, before=before
         )
         next_cursor = _encode_session_cursor(*next_position) if has_more and next_position is not None else None
         return SessionListPage(
-            data=[SessionSummary.model_validate(session) for session in data], next_cursor=next_cursor
+            data=[SessionSummary.model_validate(session) for session in data],
+            next_cursor=next_cursor,
+            resume_token=resume_token,
+        )
+
+    @router.get("/sessions/watch")
+    async def watch_sessions(
+        request: Request, resume_token: str | None = None, last_event_id: Annotated[str | None, Header()] = None
+    ) -> StreamingResponse:
+        token = last_event_id or resume_token
+        if token is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Load a session page before opening the watch.")
+        start_revision = _decode_resume_token(token)
+
+        async def events() -> AsyncIterator[str]:
+            revision = start_revision
+            # Each web replica listens independently. PostgreSQL notifications only wake this loop;
+            # the durable journal is the replay source after disconnects and reconnects.
+            async with store.listen_for_changes() as notified:
+                while not await request.is_disconnected():
+                    notified.clear()
+                    changes = await store.changes_after(revision)
+                    if revision < changes.oldest_retained or revision > changes.current_revision:
+                        revision = changes.current_revision
+                        yield _sse_event(revision, "reset", {"reason": "resume_cursor_unavailable"})
+                        continue
+                    if changes.changes:
+                        for change in changes.changes:
+                            revision = change.revision
+                            yield _sse_event(revision, "changed", {"session_ids": change.session_ids})
+                        continue
+                    try:
+                        await asyncio.wait_for(notified.wait(), timeout=15)
+                    except TimeoutError:
+                        yield ": keep-alive\n\n"
+
+        return StreamingResponse(
+            events(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
         )
 
     @router.get("/sessions/{session_id}", response_model=SessionDetail)

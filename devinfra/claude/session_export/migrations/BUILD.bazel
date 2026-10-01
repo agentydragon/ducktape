@@ -6,6 +6,7 @@ filegroup(
         "env.py",
         "script.py.mako",
         "//devinfra/claude/session_export/migrations/versions:0001_sessions.py",
+        "//devinfra/claude/session_export/migrations/versions:0002_session_change_feed.py",
     ],
     visibility = ["//devinfra/claude/session_export:__pkg__"],
 )

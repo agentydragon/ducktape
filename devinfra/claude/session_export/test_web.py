@@ -1,5 +1,7 @@
 """The page's boundary as a browser meets it: a real login round trip against a mock IdP, then the API."""
 
+import asyncio
+import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import timedelta
@@ -32,6 +34,17 @@ from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 OWNER = "test-owner-subject"
 
 Serve = Callable[..., AbstractAsyncContextManager[str]]
+
+
+async def _next_sse_frame(response: httpx.Response) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    async for line in response.aiter_lines():
+        if line == "" and fields:
+            return fields
+        name, separator, value = line.partition(":")
+        if separator:
+            fields[name] = value.lstrip()
+    raise AssertionError("watch stream ended before sending an event")
 
 
 @pytest.fixture
@@ -225,6 +238,34 @@ async def test_claude_shaped_read_routes_page_sessions_and_events(
     assert [int(event["sequence_num"]) for event in older.json()["data"]] == [1]
     assert newest.json()["has_more"] is True
     assert older.json()["has_more"] is False
+
+
+async def test_session_watch_replays_changes_and_resumes_from_last_event_id(
+    owner: httpx.AsyncClient, store: SessionStore
+) -> None:
+    page = await owner.get("/v1/code/sessions")
+    resume_token = page.json()["resume_token"]
+    session = make_session("session_watch0001", status="active")
+    await store.upsert_sessions([session])
+
+    async with owner.stream("GET", "/v1/code/sessions/watch", params={"resume_token": resume_token}) as response:
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        first = await asyncio.wait_for(_next_sse_frame(response), timeout=3)
+
+    assert first["event"] == "changed"
+    assert json.loads(first["data"]) == {"session_ids": [session.id]}
+
+    updated = make_session(session.id, title="Updated watch session", status="active")
+    async with owner.stream(
+        "GET", "/v1/code/sessions/watch", params={"resume_token": resume_token}, headers={"Last-Event-ID": first["id"]}
+    ) as response:
+        await store.upsert_sessions([updated])
+        second = await asyncio.wait_for(_next_sse_frame(response), timeout=3)
+
+    assert second["id"] == "1:2"
+    assert second["event"] == "changed"
+    assert json.loads(second["data"]) == {"session_ids": [session.id]}
 
 
 async def test_a_pasted_url_from_another_attempt_is_a_client_error(owner: httpx.AsyncClient) -> None:

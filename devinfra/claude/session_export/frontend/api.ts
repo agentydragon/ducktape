@@ -77,3 +77,8 @@ export function listSessionEvents(sessionId: string, cursor?: string): Promise<S
   if (cursor !== undefined) query.set("cursor", cursor);
   return call("GET", `/v1/code/sessions/${encodeURIComponent(sessionId)}/events?${query}`);
 }
+
+export function watchSessions(resumeToken: string): EventSource {
+  const query = new URLSearchParams({ resume_token: resumeToken });
+  return new EventSource(`/v1/code/sessions/watch?${query}`);
+}

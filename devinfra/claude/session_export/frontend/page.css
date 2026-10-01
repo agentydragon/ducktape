@@ -205,6 +205,16 @@ select {
   margin: 0;
 }
 
+.watch-state {
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.watch-connected {
+  color: var(--status-active);
+}
+
 .session-tools {
   align-items: end;
   border-bottom: 1px solid var(--border);
