@@ -133,6 +133,29 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     assert _PUBLIC_CODER_SUBJECT not in haku_cluster_binding["subjects"]
 
 
+def test_public_coder_devbox_restart_preserves_reader_subjects(app_objects: list[dict[str, Any]]) -> None:
+    """The delete grant is isolated without changing the reader's existing subject set."""
+    reader = _one(_named(app_objects, "public-coder-agent-reader"), "Role")
+    reader_vmi_rule = one(rule for rule in reader["rules"] if "virtualmachineinstances" in rule["resources"])
+    assert reader_vmi_rule["verbs"] == _READ
+    assert "delete" not in {verb for rule in reader["rules"] for verb in rule["verbs"]}
+
+    restart = _named(app_objects, "public-coder-agent-devbox-vmi-restart")
+    role = _one(restart, "Role")
+    binding = _one(restart, "RoleBinding")
+    assert role["rules"] == [
+        {
+            "apiGroups": ["kubevirt.io"],
+            "resourceNames": ["public-coder-devbox"],
+            "resources": ["virtualmachineinstances"],
+            "verbs": ["delete"],
+        }
+    ]
+    assert binding["roleRef"]["name"] == role["metadata"]["name"]
+    assert _subjects(binding) == _HAKU_SUBJECTS | {("Group", console_config.PUBLIC_CODER_GROUP, None)}
+    assert _PUBLIC_CODER_SUBJECT in binding["subjects"]
+
+
 def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credential(
     app_objects: list[dict[str, Any]], proxy_objects: list[dict[str, Any]]
 ) -> None:
