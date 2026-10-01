@@ -173,6 +173,7 @@ def test_agentplane_external_delegation_has_independent_flux_ownership(k8s_dir: 
             "resources": ["rolebindings"],
             "verbs": ["create", "get", "list", "delete"],
         },
+        {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]},
         {
             "apiGroups": ["rbac.authorization.k8s.io"],
             "resourceNames": ["haku-sandbox-admin"],
