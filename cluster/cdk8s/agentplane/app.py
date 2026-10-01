@@ -201,6 +201,11 @@ class App(Construct):
                     verbs=["create", "get", "list", "delete"],
                 )
             )
+            # Persisted grants can outlive catalog entries; keep role reads for
+            # their old names while bind remains limited to configured names.
+            role_binding_rules.append(
+                RolePolicyRule(resources=[custom_resource("rbac.authorization.k8s.io", "roles")], verbs=["get"])
+            )
         if role_binding_grant_names:
             role_binding_rules.extend(
                 RolePolicyRule(resources=[named_resource("rbac.authorization.k8s.io", "roles", name)], verbs=["bind"])
@@ -239,6 +244,9 @@ class App(Construct):
                         )
                         for name in bind_cluster_roles
                     ],
+                    # The stored selection can refer to a catalog entry later
+                    # removed; GET validates it without widening BIND.
+                    k8s.PolicyRule(api_groups=["rbac.authorization.k8s.io"], resources=["clusterroles"], verbs=["get"]),
                 ],
             )
             k8s.KubeClusterRoleBinding(

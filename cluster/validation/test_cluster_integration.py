@@ -173,6 +173,7 @@ def test_agentplane_external_delegation_has_independent_flux_ownership(k8s_dir: 
             "resources": ["rolebindings"],
             "verbs": ["create", "get", "list", "delete"],
         },
+        {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]},
         {
             "apiGroups": ["rbac.authorization.k8s.io"],
             "resourceNames": ["haku-sandbox-admin"],
@@ -296,6 +297,7 @@ def test_managed_haku_read_grants_cover_declarative_namespace_opt_ins(
             "resources": ["rolebindings"],
             "verbs": ["create", "get", "list", "delete"],
         }
+        assert {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]} in role["rules"]
         expected_bound_roles = {
             grant["role_ref"]["name"]
             for grant in catalog.values()

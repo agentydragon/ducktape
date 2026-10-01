@@ -185,9 +185,11 @@ within `agentplane-staging`, and `get` on exactly
 `claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its
 rules are shared while its static `claude-ai` RoleBinding remains Flux-owned.
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
-read selection. The Haku preset also names explicit metadata and pod-log catalog
-entries for every active cluster-managed `agent-readable-*` namespace, matching the
-static Haku subjects' label-generated readers. Parked namespaces and the separate
+read selection. Kyverno's other `agent-readable-*` Roles continue to grant the
+static Haku identities access, while managed Haku SAs receive namespaced readers
+only through explicit catalog entries. The Haku preset names metadata and pod-log
+catalog entries for every active cluster-managed `agent-readable-*` namespace,
+matching the static Haku subjects' label-generated readers. Parked namespaces and the separate
 Props Git source are excluded. The `flux-system` delegation Kustomization has no
 `dependsOn` because that namespace is the bootstrap root and has no generated
 dependency construct. The catalog fixes each namespace and Role reference at
