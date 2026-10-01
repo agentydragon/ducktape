@@ -496,7 +496,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await reasoning_details.locator("summary").click()
                 expanded_reasoning = reasoning_details.locator(":scope > .agentplane-markdown")
                 await expect(expanded_reasoning).to_contain_text("On-demand reasoning reaches past one line.")
-                await expect(expanded_reasoning.locator("strong")).to_have_text("reaches")
+                await expect(expanded_reasoning.locator("strong").first).to_have_text("reaches")
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-expanded.png")
 
                 await page.reload()
