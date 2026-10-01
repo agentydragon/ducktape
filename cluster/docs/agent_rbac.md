@@ -169,7 +169,7 @@ Flux Kustomization for the app ServiceAccount's RoleBinding management Role and
 RoleBinding. The `haku-sandbox` delegation depends on `haku-rbac`, which depends
 on the namespace owner. The `agentplane-testing` delegation depends on the
 testing environment's Kustomization, which creates its namespace and Role.
-A failure in either delegation Kustomization does not
+A failure in an external delegation Kustomization does not
 block the Agentplane app Kustomization. Keep an external delegation while its namespace
 is in the retained cleanup scopes, even if its catalog entry is removed.
 
@@ -186,6 +186,21 @@ within `agentplane-staging`, and `get` on exactly
 `agentplane-staging/coinbase-api-credentials` via the existing
 `claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its
 rules are shared while its static `claude-ai` RoleBinding remains Flux-owned.
+The preset also selects the existing Haku Console metadata and ClickHouse
+diagnostics Roles in their respective namespaces. Their managed-binding
+delegations depend on the owning service Kustomizations. It also selects the
+`ducktape-flux` reader Role and the public-coder VolSync status Role. The
+`ducktape-flux` namespace and Role are owned by the bootstrap Flux source, so
+their independent delegation has no generated predecessor; the public-coder
+VolSync delegation depends on the public-coder app Kustomization. The preset's
+public-coder reader observes Pods, logs, ConfigMaps, service and workload
+metadata, RBAC/Flux metadata, Pod metrics, and the named `public-coder-devbox`
+VM/VMI; it has no Secret read or Pod exec. The separate
+`public-coder-agent-devbox-vmi-restart` Role permits only `delete` on that named
+VMI, causing its `runStrategy: Always` VM to recreate it. Flux owns these Role
+rules and static Haku bindings; managed Haku can bind only the listed Roles.
+The narrower restart Role is introduced by PR #8672; managed-grant deployment
+must follow that Role split.
 The preset also selects the existing `agentplane-testing-operator` Role in
 `agentplane-testing`; its static Haku RoleBinding remains Flux-owned. This is a
 **testing-only write grant**: it can create, patch, and delete Sandboxes, create
@@ -202,9 +217,9 @@ static Haku identities access, while managed Haku SAs receive namespaced readers
 only through explicit catalog entries. The Haku preset names metadata and pod-log
 catalog entries for every active cluster-managed `agent-readable-*` namespace,
 matching the static Haku subjects' label-generated readers. Parked namespaces and the separate
-Props Git source are excluded. The `flux-system` delegation Kustomization has no
-`dependsOn` because that namespace is the bootstrap root and has no generated
-dependency construct. The catalog fixes each namespace and Role reference at
+Props Git source are excluded. The `flux-system` and `ducktape-flux` delegation
+Kustomizations have no `dependsOn` because those namespaces are bootstrap roots
+and have no generated dependency construct. The catalog fixes each namespace and Role reference at
 Sandbox creation; a later namespace label change does not silently widen existing
 Sandboxes. The cluster integration test derives active opt-ins, checks each
 target-owned delegation and dependency, and requires a new label opt-in to add an

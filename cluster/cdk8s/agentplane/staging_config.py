@@ -158,13 +158,55 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
                 namespace=_NAMESPACE,
                 role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
             ),
+            "haku-console-metadata": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="haku-console",
+                role_ref=RoleRef(kind="Role", name="agent-haku-console-metadata-reader"),
+            ),
+            "clickhouse-diagnostics": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="clickhouse",
+                role_ref=RoleRef(kind="Role", name="agent-clickhouse-diagnostics-reader"),
+            ),
+            "ducktape-flux-read": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="ducktape-flux",
+                role_ref=RoleRef(kind="Role", name="ducktape-flux-reader"),
+            ),
+            "public-coder-volsync-status": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="agent-public-coder-extended-diagnostics-reader"),
+            ),
+            "public-coder-agent-reader": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="public-coder-agent-reader"),
+            ),
+            "public-coder-agent-devbox-vmi-restart": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="public-coder-agent-devbox-vmi-restart"),
+            ),
         },
         # Retain cleanup authority when a catalog choice is disabled while its
         # existing Sandboxes still hold a binding in that scope.
         kubernetes_binding_cleanup_namespaces=sorted(
-            {"haku-sandbox", *_HAKU_AGENT_READABLE_LOG_NAMESPACES, *_HAKU_AGENT_READABLE_METADATA_ONLY_NAMESPACES}
+            {
+                "haku-sandbox",
+                "haku-console",
+                "ducktape-flux",
+                *_HAKU_AGENT_READABLE_LOG_NAMESPACES,
+                *_HAKU_AGENT_READABLE_METADATA_ONLY_NAMESPACES,
+            }
         ),
         kubernetes_cluster_binding_cleanup=True,
+    )
+    cfg.sandbox_presets["haku"].kubernetes_grants.extend(
+        ["haku-console-metadata", "clickhouse-diagnostics", "ducktape-flux-read", "public-coder-volsync-status"]
+    )
+    cfg.sandbox_presets["haku"].kubernetes_grants.extend(
+        ["public-coder-agent-reader", "public-coder-agent-devbox-vmi-restart"]
     )
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
     # they name staging-only credentials (forgejo-finance-agent, plaid-pgweb) that

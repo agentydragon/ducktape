@@ -2,7 +2,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: agentplane-staging-external-bindings
-  namespace: clickhouse
+  namespace: ducktape-flux
 rules:
   - apiGroups:
       - rbac.authorization.k8s.io
@@ -22,7 +22,7 @@ rules:
   - apiGroups:
       - rbac.authorization.k8s.io
     resourceNames:
-      - agent-clickhouse-diagnostics-reader
+      - ducktape-flux-reader
     resources:
       - roles
     verbs:
@@ -32,7 +32,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: agentplane-staging-external-bindings
-  namespace: clickhouse
+  namespace: ducktape-flux
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

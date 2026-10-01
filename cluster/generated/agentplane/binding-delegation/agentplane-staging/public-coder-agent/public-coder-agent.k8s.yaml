@@ -19,6 +19,30 @@ rules:
       - roles
     verbs:
       - get
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - agent-public-coder-extended-diagnostics-reader
+    resources:
+      - roles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - public-coder-agent-devbox-vmi-restart
+    resources:
+      - roles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - public-coder-agent-reader
+    resources:
+      - roles
+    verbs:
+      - bind
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

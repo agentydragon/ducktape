@@ -1481,7 +1481,7 @@ def generate_manifests(root: Path) -> None:
     )
     parked_flux_kustomizations.haku_dispatch(flux_chart, cnpg_kustomization, external_secrets_operator_kustomization)
     haku_console_artifact = artifact("haku-console", haku_charts.PATH)
-    haku_charts.haku_console(
+    haku_console_kustomization = haku_charts.haku_console(
         flux_chart,
         write_directory(
             root,
@@ -1536,9 +1536,11 @@ def generate_manifests(root: Path) -> None:
             "authentik": authentik_kustomization,
             "cert-manager": cert_manager_kustomization,
             "cli-proxy-api": cli_proxy_api_kustomization,
-            "clickhouse": clickhouse_operator_kustomization,
+            "clickhouse": clickhouse_kustomization,
             "cnpg-system": cnpg_kustomization,
-            # flux-system is the bootstrap root and has no generated Kustomization construct.
+            "ducktape-flux": None,
+            "haku-console": haku_console_kustomization,
+            # Bootstrap roots have no generated owner Kustomization to depend on.
             "flux-system": None,
             "gatus": gatus_kustomization,
             "grocy-sf": grocy_sf_kustomization,

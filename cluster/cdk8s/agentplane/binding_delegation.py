@@ -91,14 +91,15 @@ def write_manifests(root: Path, env: Environment) -> None:
 def add_flux_kustomizations(
     flux_chart: Chart, env: Environment, target_dependencies: Mapping[str, Kustomization | None]
 ) -> None:
-    """Each target owner gates its delegation, except the flux-system bootstrap root."""
+    """Each target owner gates its delegation; bootstrap roots have no generated owner."""
     scopes = external_scopes(env)
     if missing := set(scopes) - target_dependencies.keys():
         raise ValueError(f"managed binding scopes lack namespace dependencies: {sorted(missing)}")
-    if missing := {scope for scope in scopes if scope != "flux-system" and target_dependencies[scope] is None}:
+    bootstrap_scopes = {"flux-system", "ducktape-flux"}
+    if missing := {scope for scope in scopes if scope not in bootstrap_scopes and target_dependencies[scope] is None}:
         raise ValueError(f"managed binding scopes lack namespace dependencies: {sorted(missing)}")
-    if "flux-system" in scopes and target_dependencies["flux-system"] is not None:
-        raise ValueError("flux-system is the bootstrap root and has no generated Flux dependency")
+    if unexpected := {scope for scope in scopes if scope in bootstrap_scopes and target_dependencies[scope] is not None}:
+        raise ValueError(f"bootstrap namespaces have no generated Flux dependency: {sorted(unexpected)}")
     source = KustomizationSpecSourceRef(
         kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
     )

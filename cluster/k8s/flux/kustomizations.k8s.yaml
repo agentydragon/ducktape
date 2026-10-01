@@ -4069,7 +4069,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: clickhouse-operator
+    - name: clickhouse
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/clickhouse
@@ -4094,6 +4094,24 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/cnpg-system
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in ducktape-flux.
+  name: agentplane-staging-binding-delegation-ducktape-flux
+  namespace: ducktape-flux
+spec:
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/ducktape-flux
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4196,6 +4214,27 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/haku-ci
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in haku-console.
+  name: agentplane-staging-binding-delegation-haku-console
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: haku-console
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/haku-console
   prune: true
   retryInterval: 1m
   sourceRef:

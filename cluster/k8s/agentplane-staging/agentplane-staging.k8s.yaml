@@ -1978,6 +1978,12 @@ data:
           - tana-mcp-logs
           - vm-images-publisher-metadata
           - coinbase-credentials
+          - haku-console-metadata
+          - clickhouse-diagnostics
+          - ducktape-flux-read
+          - public-coder-volsync-status
+          - public-coder-agent-reader
+          - public-coder-agent-devbox-vmi-restart
         thread_preset: haku-claude
         bootstrap: |
           #!/bin/sh
@@ -2396,6 +2402,42 @@ data:
         role_ref:
           kind: Role
           name: claude-ai-coinbase-reader
+      haku-console-metadata:
+        kind: RoleBinding
+        namespace: haku-console
+        role_ref:
+          kind: Role
+          name: agent-haku-console-metadata-reader
+      clickhouse-diagnostics:
+        kind: RoleBinding
+        namespace: clickhouse
+        role_ref:
+          kind: Role
+          name: agent-clickhouse-diagnostics-reader
+      ducktape-flux-read:
+        kind: RoleBinding
+        namespace: ducktape-flux
+        role_ref:
+          kind: Role
+          name: ducktape-flux-reader
+      public-coder-volsync-status:
+        kind: RoleBinding
+        namespace: public-coder-agent
+        role_ref:
+          kind: Role
+          name: agent-public-coder-extended-diagnostics-reader
+      public-coder-agent-reader:
+        kind: RoleBinding
+        namespace: public-coder-agent
+        role_ref:
+          kind: Role
+          name: public-coder-agent-reader
+      public-coder-agent-devbox-vmi-restart:
+        kind: RoleBinding
+        namespace: public-coder-agent
+        role_ref:
+          kind: Role
+          name: public-coder-agent-devbox-vmi-restart
     kubernetes_binding_cleanup_namespaces:
       - activitywatch
       - agent-sandbox-system
@@ -2407,11 +2449,13 @@ data:
       - cli-proxy-api
       - clickhouse
       - cnpg-system
+      - ducktape-flux
       - flux-system
       - gatus
       - grocy-sf
       - grocy-vallejo
       - haku-ci
+      - haku-console
       - haku-sandbox
       - litellm
       - local-path-storage
