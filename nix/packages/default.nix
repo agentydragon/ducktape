@@ -241,8 +241,8 @@ let
     claudeApi = ducktape-claude-api;
   };
 
-  plaidSpendDesktop = pkgs.callPackage ./plaid-spend-desktop.nix {
-    inherit lib python314;
+  plaid-spend-desktop = pkgs.callPackage ./plaid-spend-desktop.nix {
+    inherit artifacts lib python314Packages;
   };
 
   mkBinaryArtifact =
@@ -292,7 +292,7 @@ rec {
   inherit ducktape-git-hooks;
   inherit ducktape-claude-api;
   inherit aiquota;
-  inherit plaidSpendDesktop;
+  inherit plaid-spend-desktop;
 
   bbr = mkWheel {
     pname = "bbr";

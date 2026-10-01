@@ -1522,6 +1522,10 @@ dbus-fast==5.0.22 \
     --hash=sha256:f8244561e503cffcd5e6b1ff6544a44aa0b65b6856f2f64d04345ebf82f8ac48 \
     --hash=sha256:fb73f1d8374253b7c17d69e902cf2ded1bfb089cb6ae67c10b4e0bdfe1b8fe08
     # via ducktape (pyproject.toml)
+dbus-next==0.2.3 \
+    --hash=sha256:58948f9aff9db08316734c0be2a120f6dc502124d9642f55e90ac82ffb16a18b \
+    --hash=sha256:f4eae26909332ada528c0a3549dda8d4f088f9b365153952a408e28023a626a5
+    # via ducktape (pyproject.toml)
 dbus-python==1.4.0 \
     --hash=sha256:991666e498f60dbf3e49b8b7678f5559b8a65034fdf61aae62cdecdb7d89c770
     # via ducktape (pyproject.toml)

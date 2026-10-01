@@ -45,6 +45,16 @@
       "output": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip",
       "release": "aiquota"
     },
+    "plaid-spend-desktop": {
+      "target": "//finance/plaid/spend/desktop:plaid_spend_desktop_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/finance/plaid/spend/desktop/plaid_spend_desktop-0.1.0-py3-none-any.whl",
+      "release": "plaid-spend-desktop"
+    },
+    "plaid-spend-desktop-extension": {
+      "target": "//finance/plaid/spend/desktop/gnome:plaid_spend_extension",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/finance/plaid/spend/desktop/gnome/plaid-spend-desktop.zip",
+      "release": "plaid-spend-desktop"
+    },
     "bbapi": {
       "target": "//devinfra/buildbuddy_cli:bbapi",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi",
@@ -107,6 +117,10 @@
     },
     "aiquota": {
       "tests": "//aiquota/...",
+      "nixPackage": true
+    },
+    "plaid-spend-desktop": {
+      "tests": "",
       "nixPackage": true
     },
     "bbapi": {

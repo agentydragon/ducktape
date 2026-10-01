@@ -1,0 +1,19 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
+
+pkg_files(
+    name = "extension_files",
+    srcs = [
+        "extension.js",
+        "metadata.json",
+    ],
+    strip_prefix = strip_prefix.from_pkg(),
+    visibility = ["//visibility:public"],
+)
+
+pkg_zip(
+    name = "plaid_spend_extension",
+    srcs = [":extension_files"],
+    out = "plaid-spend-desktop.zip",
+    visibility = ["//visibility:public"],
+)

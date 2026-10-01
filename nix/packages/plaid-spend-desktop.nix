@@ -1,42 +1,43 @@
 {
+  artifacts,
   lib,
   pkgs,
-  python314,
+  python314Packages,
 }:
 let
-  src = ../../finance/plaid/spend/desktop;
   extensionUuid = "plaid-spend@allegedly.works";
-  pythonEnv = python314.withPackages (pythonPackages: [
-    pythonPackages.dbus-next
-    pythonPackages.httpx
-  ]);
+  extensionZip = artifacts."plaid-spend-desktop-extension";
 in
-pkgs.stdenvNoCC.mkDerivation {
+python314Packages.buildPythonApplication {
   pname = "plaid-spend-desktop";
   version = "0.1.0";
-  dontUnpack = true;
+  format = "wheel";
+  src = artifacts."plaid-spend-desktop";
 
-  nativeBuildInputs = [ pkgs.makeWrapper ];
+  propagatedBuildInputs = with python314Packages; [
+    dbus-next
+    httpx
+  ];
+  pythonImportsCheck = [ "plaid_spend_desktop.daemon" ];
+  doCheck = false;
+  dontUsePytestCheck = true;
 
-  installPhase = ''
-    runHook preInstall
+  nativeBuildInputs = [
+    pkgs.makeWrapper
+    pkgs.unzip
+  ];
+  postInstall = ''
+    extensionDir="$out/share/gnome-shell/extensions/${extensionUuid}"
+    mkdir -p "$extensionDir"
+    unzip -o ${extensionZip} -d "$extensionDir"
 
-    extDir="$out/share/gnome-shell/extensions/${extensionUuid}"
-    install -d "$extDir" "$out/lib/plaid-spend-desktop" "$out/bin"
-    cp -r ${src}/src/plaid_spend_desktop "$out/lib/plaid-spend-desktop/"
-    install -Dm644 ${src}/gnome/metadata.json "$extDir/metadata.json"
-    install -Dm644 ${src}/gnome/extension.js "$extDir/extension.js"
-    makeWrapper ${pythonEnv}/bin/python "$out/bin/plaid-spend-daemon" \
-      --add-flags "-m plaid_spend_desktop.daemon" \
-      --prefix PYTHONPATH : "$out/lib/plaid-spend-desktop" \
+    wrapProgram "$out/bin/plaid-spend-daemon" \
       --prefix PATH : ${
         lib.makeBinPath [
           pkgs.libsecret
           pkgs.xdg-utils
         ]
       }
-
-    runHook postInstall
   '';
 
   passthru.extensionUuid = extensionUuid;
