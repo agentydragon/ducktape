@@ -2,9 +2,9 @@
 
 The configured VM is stateless and uses `runStrategy: Always`. KubeVirt marks
 non-live-updatable template changes with `RestartRequired`, but leaves the old VMI
-running. This controller watches one configured, explicitly opted-in VM by polling its
-namespaced API objects. It stores rollout progress in a dedicated ConfigMap so a pod
-restart cannot repeat a restart indefinitely.
+running. This controller watches one configured, explicitly opted-in VM through
+namespaced list/watch streams. It stores rollout progress in a dedicated ConfigMap so a
+pod restart cannot repeat a restart indefinitely.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from collections.abc import Awaitable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol, cast
 
-from kubernetes_asyncio import client, config
+from kubernetes_asyncio import client, config, watch
 from kubernetes_asyncio.client import ApiException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -25,7 +25,9 @@ from cluster.controllers.vm_image_restart.settings import Settings
 CONTROLLER = "vm-image-restart"
 OPT_IN_ANNOTATION = "ducktape.org/auto-restart-template-changes"
 STATE_KEY = "state"
-POLL_SECONDS = 15
+WATCH_TIMEOUT_SECONDS = 300
+WATCH_RETRY_SECONDS = 5
+RECONCILE_RETRY_SECONDS = 30
 MAX_RESTART_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = (15, 60, 180)
 ROLLOUT_TIMEOUT = timedelta(minutes=30)
@@ -113,6 +115,132 @@ async def _get_vmi(api: VMApi, settings: Settings) -> dict[str, Any] | None:
         if exc.status == 404:
             return None
         raise
+
+
+async def _get_vm(api: VMApi, settings: Settings) -> dict[str, Any] | None:
+    try:
+        return cast(
+            dict[str, Any],
+            await api.get_namespaced_custom_object(
+                group="kubevirt.io",
+                version="v1",
+                namespace=settings.target_namespace,
+                plural="virtualmachines",
+                name=settings.target_vm_name,
+            ),
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            return None
+        raise
+
+
+async def _watch_target(
+    api: client.CustomObjectsApi, settings: Settings, plural: str, changed: asyncio.Event
+) -> None:
+    """List then watch one named KubeVirt object, relisting when its RV expires."""
+    # Name-scoped list/watch RBAC is enforced by this field selector.
+    field_selector = f"metadata.name={settings.target_vm_name}"
+    resource_version: str | None = None
+    while True:
+        try:
+            if resource_version is None:
+                listed = cast(
+                    dict[str, Any],
+                    await api.list_namespaced_custom_object(
+                        group="kubevirt.io",
+                        version="v1",
+                        namespace=settings.target_namespace,
+                        plural=plural,
+                        field_selector=field_selector,
+                    ),
+                )
+                resource_version = listed.get("metadata", {}).get("resourceVersion")
+                if not resource_version:
+                    raise RuntimeError(f"list of {plural} returned no resourceVersion")
+                # The initial list establishes the watch's resourceVersion and current state.
+                changed.set()
+
+            watcher = watch.Watch()
+            try:
+                async for event in watcher.stream(
+                    api.list_namespaced_custom_object,
+                    group="kubevirt.io",
+                    version="v1",
+                    namespace=settings.target_namespace,
+                    plural=plural,
+                    field_selector=field_selector,
+                    resource_version=resource_version,
+                    timeout_seconds=WATCH_TIMEOUT_SECONDS,
+                    _request_timeout=(10, WATCH_TIMEOUT_SECONDS + 30),
+                ):
+                    event_type = event.get("type")
+                    obj = event.get("object") or {}
+                    if event_type == "ERROR":
+                        status_code = obj.get("code") if isinstance(obj, dict) else None
+                        try:
+                            status_code = int(status_code) if status_code is not None else None
+                        except (TypeError, ValueError):
+                            status_code = None
+                        if status_code == 410:
+                            resource_version = None
+                            break
+                        reason = obj.get("message", "unknown watch error") if isinstance(obj, dict) else str(obj)
+                        raise ApiException(status=status_code, reason=reason)
+
+                    metadata = obj.get("metadata", {}) if isinstance(obj, dict) else {}
+                    event_resource_version = metadata.get("resourceVersion")
+                    if event_resource_version:
+                        resource_version = event_resource_version
+                    if event_type != "BOOKMARK":
+                        changed.set()
+            finally:
+                await watcher.close()
+        except asyncio.CancelledError:
+            raise
+        except ApiException as exc:
+            if exc.status == 410:
+                resource_version = None
+                continue
+            logger.warning(
+                "watch failed for %s/%s %s: %s", settings.target_namespace, settings.target_vm_name, plural, exc
+            )
+            await asyncio.sleep(WATCH_RETRY_SECONDS)
+        except Exception:
+            logger.exception("watch failed for %s/%s %s", settings.target_namespace, settings.target_vm_name, plural)
+            await asyncio.sleep(WATCH_RETRY_SECONDS)
+
+
+async def _next_reconcile_delay(vm_api: VMApi, core: CoreApi, settings: Settings) -> float | None:
+    """Return the next retry/timeout timer; normal reconciles are watch-triggered."""
+    state = await _read_state(core, settings)
+    if state is None or state.phase != "Restarting":
+        return None
+
+    deadlines = [state.started_at + ROLLOUT_TIMEOUT]
+    vm = await _get_vm(vm_api, settings)
+    if vm is None:
+        return max(0.0, (deadlines[0] - _utcnow()).total_seconds())
+    vmi = await _get_vmi(vm_api, settings)
+    if vmi is not None:
+        metadata = vmi.get("metadata", {})
+        generation = int(vm.get("status", {}).get("desiredGeneration") or vm["metadata"].get("generation", 0))
+        observed_generation = int(vm.get("status", {}).get("observedGeneration", 0))
+        vmi_image = _container_disk_image(vmi.get("spec", {}))
+        restart_still_needed = (
+            _restart_required(vm)
+            and (observed_generation < generation or vmi_image != state.image)
+            and (vmi_image != state.image or _ready(vmi))
+        )
+        if (
+            metadata.get("uid") == state.old_vmi_uid
+            and not metadata.get("deletionTimestamp")
+            and restart_still_needed
+            and state.attempts < MAX_RESTART_ATTEMPTS
+        ):
+            deadlines.append(state.next_attempt_at)
+
+    return max(0.0, (min(deadlines) - _utcnow()).total_seconds())
 
 
 async def _read_state(core: CoreApi, settings: Settings) -> RestartState | None:
@@ -281,13 +409,9 @@ async def _request_restart(
 
 
 async def reconcile(vm_api: VMApi, core: CoreApi, settings: Settings) -> None:
-    vm = await vm_api.get_namespaced_custom_object(
-        group="kubevirt.io",
-        version="v1",
-        namespace=settings.target_namespace,
-        plural="virtualmachines",
-        name=settings.target_vm_name,
-    )
+    vm = await _get_vm(vm_api, settings)
+    if vm is None:
+        return
     annotations = vm.get("metadata", {}).get("annotations", {})
     if annotations.get(OPT_IN_ANNOTATION) != "true":
         return
@@ -429,6 +553,28 @@ async def reconcile(vm_api: VMApi, core: CoreApi, settings: Settings) -> None:
         await _request_restart(vm_api=vm_api, core=core, settings=settings, vm=vm, state=state, vmi=vmi)
 
 
+async def _run_reconcile_loop(
+    vm_api: VMApi, core: CoreApi, settings: Settings, changed: asyncio.Event
+) -> None:
+    while True:
+        await changed.wait()
+        changed.clear()
+        try:
+            await reconcile(vm_api, core, settings)
+            delay = await _next_reconcile_delay(vm_api, core, settings)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("reconciliation failed for %s/%s", settings.target_namespace, settings.target_vm_name)
+            delay = RECONCILE_RETRY_SECONDS
+
+        if delay is not None:
+            try:
+                await asyncio.wait_for(changed.wait(), timeout=delay)
+            except TimeoutError:
+                changed.set()
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     settings = Settings()
@@ -436,14 +582,18 @@ async def main() -> None:
     async with client.ApiClient() as api_client:
         vm_api = client.CustomObjectsApi(api_client)
         core = client.CoreV1Api(api_client)
-        while True:
-            try:
-                await reconcile(vm_api, core, settings)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("reconciliation failed for %s/%s", settings.target_namespace, settings.target_vm_name)
-            await asyncio.sleep(POLL_SECONDS)
+        changed = asyncio.Event()
+        changed.set()
+        watchers = [
+            asyncio.create_task(_watch_target(vm_api, settings, plural, changed))
+            for plural in ("virtualmachines", "virtualmachineinstances")
+        ]
+        try:
+            await _run_reconcile_loop(vm_api, core, settings, changed)
+        finally:
+            for task in watchers:
+                task.cancel()
+            await asyncio.gather(*watchers, return_exceptions=True)
 
 
 if __name__ == "__main__":

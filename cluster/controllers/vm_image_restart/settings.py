@@ -11,6 +11,6 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(case_sensitive=False, extra="ignore", frozen=True, populate_by_name=True)
 
-    target_namespace: str = Field(validation_alias="TARGET_NAMESPACE", min_length=1)
-    target_vm_name: str = Field(validation_alias="TARGET_VM_NAME", min_length=1)
-    state_configmap_name: str = Field(validation_alias="STATE_CONFIGMAP_NAME", min_length=1)
+    target_namespace: str = Field(min_length=1)
+    target_vm_name: str = Field(min_length=1)
+    state_configmap_name: str = Field(min_length=1)

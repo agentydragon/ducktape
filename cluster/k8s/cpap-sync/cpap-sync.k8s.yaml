@@ -370,6 +370,8 @@ rules:
       - virtualmachines
     verbs:
       - get
+      - list
+      - watch
   - apiGroups:
       - kubevirt.io
     resourceNames:
@@ -378,6 +380,8 @@ rules:
       - virtualmachineinstances
     verbs:
       - get
+      - list
+      - watch
       - delete
   - apiGroups:
       - ""

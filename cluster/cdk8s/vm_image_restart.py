@@ -106,8 +106,8 @@ class VmImageRestartController(Construct):
                 annotations={"description": "Narrow permissions for restarting and observing the configured VM."},
             ),
             rules=[
-                RolePolicyRule(resources=[vm_resource], verbs=["get"]),
-                RolePolicyRule(resources=[vmi_resource], verbs=["get", "delete"]),
+                RolePolicyRule(resources=[vm_resource], verbs=["get", "list", "watch"]),
+                RolePolicyRule(resources=[vmi_resource], verbs=["get", "list", "watch", "delete"]),
                 RolePolicyRule(resources=[state], verbs=["get", "patch"]),
                 RolePolicyRule(resources=[custom_resource("", "events")], verbs=["create"]),
             ],
