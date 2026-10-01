@@ -99,6 +99,16 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
                 namespace="clickhouse",
                 role_ref=RoleRef(kind="Role", name="agent-clickhouse-diagnostics-reader"),
             ),
+            "ducktape-flux-read": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="ducktape-flux",
+                role_ref=RoleRef(kind="Role", name="ducktape-flux-reader"),
+            ),
+            "public-coder-volsync-status": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="agent-public-coder-extended-diagnostics-reader"),
+            ),
             "coinbase-credentials": RoleBindingGrant(
                 kind="RoleBinding",
                 namespace=_NAMESPACE,
@@ -107,10 +117,18 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         },
         # Retain cleanup authority when a catalog choice is disabled while its
         # existing Sandboxes still hold a binding in that scope.
-        kubernetes_binding_cleanup_namespaces=["clickhouse", "haku-console", "haku-sandbox"],
+        kubernetes_binding_cleanup_namespaces=[
+            "clickhouse",
+            "ducktape-flux",
+            "haku-console",
+            "haku-sandbox",
+            "public-coder-agent",
+        ],
         kubernetes_cluster_binding_cleanup=True,
     )
-    cfg.sandbox_presets["haku"].kubernetes_grants.extend(["haku-console-metadata", "clickhouse-diagnostics"])
+    cfg.sandbox_presets["haku"].kubernetes_grants.extend(
+        ["haku-console-metadata", "clickhouse-diagnostics", "ducktape-flux-read", "public-coder-volsync-status"]
+    )
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
     # they name staging-only credentials (forgejo-finance-agent, plaid-pgweb) that
     # agentplane-testing never provisions, and unlike "haku" they have no other caller,

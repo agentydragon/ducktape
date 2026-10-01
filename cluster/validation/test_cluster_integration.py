@@ -204,6 +204,8 @@ def test_haku_service_read_delegation_is_scoped_to_owning_namespaces(k8s_dir: Pa
     for namespace, role_name, owner in (
         ("haku-console", "agent-haku-console-metadata-reader", "haku-console"),
         ("clickhouse", "agent-clickhouse-diagnostics-reader", "clickhouse"),
+        ("ducktape-flux", "ducktape-flux-reader", None),
+        ("public-coder-agent", "agent-public-coder-extended-diagnostics-reader", "public-coder-agent-app"),
     ):
         path = generated_dir / f"agentplane/binding-delegation/agentplane-staging/{namespace}"
         objects = list(yaml.safe_load_all((path / f"{namespace}.k8s.yaml").read_text()))
@@ -227,7 +229,10 @@ def test_haku_service_read_delegation_is_scoped_to_owning_namespaces(k8s_dir: Pa
             if doc["kind"] == "Kustomization"
             and doc["metadata"]["name"] == f"agentplane-staging-binding-delegation-{namespace}"
         )
-        assert flux["spec"]["dependsOn"] == [{"name": owner, "namespace": "ducktape-flux"}]
+        if owner is None:
+            assert "dependsOn" not in flux["spec"]
+        else:
+            assert flux["spec"]["dependsOn"] == [{"name": owner, "namespace": "ducktape-flux"}]
 
 
 def test_files_flux_rewrites_use_block_style(k8s_dir: Path) -> None:
