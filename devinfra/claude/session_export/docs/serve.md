@@ -1,17 +1,24 @@
-# The session sync page
+# The session sync web UI
 
 `export_sessions_bin serve` runs the [sync](sync.md) loop and the page in one process for local use. In the cluster,
 `web` serves the owner-authenticated page and `control` owns the sync loop and OAuth credential. The web Deployment
 can have several replicas; all control actions are forwarded to the one control Pod, which keeps the rotating refresh
 token and pairing attempt single-owned.
 
-## What the page shows
+The authenticated UI has two pages: `/sessions` browses the synced session history, and `/sync` shows sync status and
+pairing controls. The root URL `/` redirects to `/sessions`.
 
-The page includes a read-only session browser: filter by status, search the loaded session summaries, select a
-session, and read its events in chronological order. The browser reads the local PostgreSQL mirror through the
-Claude Code-shaped routes below.
+## Sessions page
 
-Two mechanisms keep the database current, and the page reports each on its own ([sync.md](sync.md) has the design):
+The read-only session browser filters by status, searches loaded session summaries, and shows selected session events
+in chronological order. It reads the local PostgreSQL mirror through the Claude Code-shaped routes below.
+
+## Sync page
+
+The sync page reports how the mirror is kept current, whether through live following or polling, and provides pairing
+controls.
+
+Two mechanisms keep the database current ([sync.md](sync.md) has the design):
 
 - **Live following** streams the events of the sessions in use as they happen; a session watch finds new sessions at
   once. It shows the sessions streaming, whether the watch is connected, and when an event last arrived.
@@ -78,6 +85,7 @@ the shared database, so a reconnect can land on any replica. The journal retains
 | `INTERVAL_SECONDS`, `WORKERS`                         | Between cycles (300); sessions read at once (3)                                       |
 | `LIVE_STREAMS`, `LIVE_WINDOW_SECONDS`                 | Sessions streamed live at once (20; 0 is off); how recent a last event follows (1800) |
 
-A cycle that fails is shown on the page and retried at the next interval; the process keeps running so the page
-can still pair again. The page also shows whether live following is on, whether the session watch is connected, how many streams
-are open, when an event last arrived over one, and any source that is failing with its reason ([sync.md](sync.md) § Live following).
+A cycle that fails is shown on the sync page and retried at the next interval; the process keeps running so the page
+can still pair again. The sync page also shows whether live following is on, whether the session watch is connected,
+how many streams are open, when an event last arrived over one, and any source that is failing with its reason
+([sync.md](sync.md) § Live following).

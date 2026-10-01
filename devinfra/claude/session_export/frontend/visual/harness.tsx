@@ -162,9 +162,11 @@ window.fetch = mockFetch;
 
 const root = document.getElementById("app");
 if (!root) throw new Error("Visual test harness is missing #app");
+const scenario = new URLSearchParams(window.location.search).get("page") ?? "";
+const pathname = scenario.startsWith("SessionSync") ? "/sync" : "/sessions";
 
 createRoot(root).render(
   <MantineProvider defaultColorScheme="auto">
-    <App />
+    <App pathname={pathname} />
   </MantineProvider>
 );

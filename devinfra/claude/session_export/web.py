@@ -6,6 +6,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette import status
@@ -105,6 +106,18 @@ def _frontend(app: FastAPI, frontend_dir: Path | None) -> None:
         else:
             frontend_dir = index.parent
     if frontend_dir is not None:
+        index = frontend_dir / "index.html"
+        if index.is_file():
+
+            def serve_spa() -> FileResponse:
+                return FileResponse(index)
+
+            def redirect_home() -> RedirectResponse:
+                return RedirectResponse("/sessions", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+            app.add_api_route("/sessions", serve_spa, methods=["GET"], include_in_schema=False)
+            app.add_api_route("/sync", serve_spa, methods=["GET"], include_in_schema=False)
+            app.add_api_route("/", redirect_home, methods=["GET"], include_in_schema=False)
         app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
 
