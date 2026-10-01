@@ -74,7 +74,10 @@ _HAKU = _ClientCredentials(name="haku-k8s", secret="haku-client-credentials")
 _AGENT_BOX_CODEX = _ClientCredentials(name="agent-box-codex", secret="agent-box-codex-client-credentials")
 _HAKU_MAIL = _ClientCredentials(name="haku-mail", secret="haku-mail-client-credentials")
 _ALLOY_OTLP = _ClientCredentials(name="alloy-otlp", secret="alloy-otlp-client-credentials")
-_CLIENT_CREDENTIALS = (_KUBECTL_SANDBOX, _HAKU, _AGENT_BOX_CODEX, _HAKU_MAIL, _ALLOY_OTLP)
+_CLIENT_CREDENTIALS_BY_DIRECTORY = {
+    credential.directory: credential
+    for credential in (_KUBECTL_SANDBOX, _HAKU, _AGENT_BOX_CODEX, _HAKU_MAIL, _ALLOY_OTLP)
+}
 
 # Each entry mints (and for proxy consumers, exchanges) an Authentik client_credentials JWT and
 # commits it SOPS-encrypted.
@@ -226,7 +229,21 @@ def _mount(name: str, path: str) -> k8s.VolumeMount:
     return k8s.VolumeMount(name=name, mount_path=path, read_only=True)
 
 
+def _rotation_client_credentials() -> tuple[_ClientCredentials, ...]:
+    """Return the distinct credential Secrets used by ROTATIONS, in roster order."""
+    credentials: dict[Path, _ClientCredentials] = {}
+    for rotation in ROTATIONS.rotations:
+        credential = _CLIENT_CREDENTIALS_BY_DIRECTORY.get(rotation.credentials_dir)
+        if credential is None:
+            raise ValueError(
+                f"no Kubernetes client-credential Secret is mapped for {rotation.credentials_dir}"
+            )
+        credentials.setdefault(rotation.credentials_dir, credential)
+    return tuple(credentials.values())
+
+
 def _cronjob(chart: Chart) -> None:
+    client_credentials = _rotation_client_credentials()
     k8s.KubeCronJob(
         chart,
         "cronjob",
@@ -271,7 +288,7 @@ def _cronjob(chart: Chart) -> None:
                                     name="rotations-config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name)
                                 ),
                                 _secret_volume("github-pat", _GITHUB_PAT),
-                                *(_secret_volume(c.volume, c.secret) for c in _CLIENT_CREDENTIALS),
+                                *(_secret_volume(c.volume, c.secret) for c in client_credentials),
                             ],
                             security_context=k8s.PodSecurityContext(
                                 run_as_non_root=True,
@@ -289,7 +306,7 @@ def _cronjob(chart: Chart) -> None:
                                     volume_mounts=[
                                         _mount("rotations-config", _CONFIG_DIR),
                                         _mount("github-pat", "/var/run/secrets/github-pat"),
-                                        *(_mount(c.volume, str(c.directory)) for c in _CLIENT_CREDENTIALS),
+                                        *(_mount(c.volume, str(c.directory)) for c in client_credentials),
                                     ],
                                     resources=k8s.ResourceRequirements(
                                         requests={
