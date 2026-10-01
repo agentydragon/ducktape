@@ -19,10 +19,9 @@ is an explicit temporary operational constraint, never an implicit correctness a
 
 Proposed execution order for the Thread correctness/UI track:
 
-- **P0:** finish the reported submission/retry failure (`THREAD_SUBMIT_500`) and close
-  deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`), including the current
-  model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one runner-owned
-  command queue; no app outbox or combined-start expansion in this batch.
+- **P0:** close deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`), including
+  the current model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one
+  runner-owned command queue; no app outbox or combined-start expansion in this batch.
 - **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Compact activity
   mocks (`THREAD_ACTIVITY_MOCKS`), Sandbox continuation (`THREAD_SUSPEND_RESUME`), and native
   resume/recovery remain on the board but are excluded from this dispatch batch.
@@ -115,7 +114,6 @@ flowchart TB
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_LAZY_HISTORY["Deferred desire D6<br/>bound browser cache after loading<br/>long content remains on demand"]:::future
     THREAD_EVIDENCE_RETENTION["Low-priority design<br/>optional app-wide / per-Thread raw retention<br/>lossless storage remains the default contract"]:::future
-    THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
     EGRESS_IDENTITY_AVAILABILITY["P0 observed availability failure<br/>egress authentication ApiException / 502<br/>trace Kubernetes, ingress, LiteLLM hops"]:::active
     LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
@@ -1262,20 +1260,6 @@ stable URL and pending input survive app/browser restart, while operational stat
 and runner effects remain distinct. Each preset field is individually editable.
 Do not infer native resume from Sandbox readiness or silently transfer unsettled
 commands into a successor scope.
-
-### `THREAD_SUBMIT_500` — investigate failed submission and retry
-
-**Reported on staging:** in [Thread 70bf54a7-81e1-46f5-8fed-381ae1ce870f](https://agentplane-staging.allegedly.works/#/threads/70bf54a7-81e1-46f5-8fed-381ae1ce870f),
-submitting “test out the egress boundaries and allowances and autoapproved actions”
-showed “Awaiting saved confirmation” and “Internal Server Error”; Retry also failed.
-Correlate the original Command ID with the app traceback, runner admission journal,
-and archived Event prefix to establish whether admission occurred before the 500.
-Pin the failure and same-ID retry in an integration test: retained input must not be
-lost or duplicated, and the UI must not claim admission or execution without evidence.
-
-Verify the relay-retention change from [#7035](https://github.com/agentydragon/ducktape/pull/7035)
-on its deployed image before removing this task; its gated service-consumer test
-demonstrates the cancellation mechanism, not the original staging attempt's packet order.
 
 ### `THREAD_LAZY_HISTORY` — deferred browser-cache bound (D6)
 
