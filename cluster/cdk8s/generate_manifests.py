@@ -372,7 +372,7 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, kyverno_artifact, kyverno_app.chart, kyverno_app.background_controller_rbac_chart),
     )
     local_path_provisioner_artifact = artifact("local-path-provisioner", local_path_provisioner.OUTPUT_DIR)
-    local_path_provisioner.local_path_provisioner(
+    local_path_provisioner_kustomization = local_path_provisioner.local_path_provisioner(
         flux_chart, write_directory(root, local_path_provisioner_artifact, local_path_provisioner.chart)
     )
     monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
@@ -385,7 +385,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, monitoring_namespace_artifact, monitoring_namespace.chart)
     )
     node_feature_discovery_artifact = artifact("node-feature-discovery", node_feature_discovery.OUTPUT_DIR)
-    node_feature_discovery.node_feature_discovery(
+    node_feature_discovery_kustomization = node_feature_discovery.node_feature_discovery(
         flux_chart, write_directory(root, node_feature_discovery_artifact, node_feature_discovery.chart)
     )
     nvidia_runtimeclass_artifact = artifact("nvidia-runtimeclass", nvidia_runtimeclass.OUTPUT_DIR)
@@ -401,7 +401,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart
     )
     openebs_lvm_artifact = artifact("openebs-lvm", openebs_lvm_storage.OUTPUT_DIR)
-    openebs_lvm_storage.openebs_lvm(
+    openebs_lvm_kustomization = openebs_lvm_storage.openebs_lvm(
         flux_chart,
         write_directory(root, openebs_lvm_artifact, openebs_lvm_storage.chart),
         snapshot_controller_crds_kustomization,
@@ -508,7 +508,7 @@ def generate_manifests(root: Path) -> None:
         monitoring_namespace_kustomization,
     )
     nvidia_device_plugin_artifact = artifact("nvidia-device-plugin", nvidia_device_plugin.OUTPUT_DIR)
-    nvidia_device_plugin.nvidia_device_plugin(
+    nvidia_device_plugin_kustomization = nvidia_device_plugin.nvidia_device_plugin(
         flux_chart, write_directory(root, nvidia_device_plugin_artifact, nvidia_device_plugin.chart)
     )
     cert_manager_artifact = artifact("cert-manager", cert_manager_app.OUTPUT_DIR)
@@ -667,7 +667,7 @@ def generate_manifests(root: Path) -> None:
     website_artifact = artifact("website", website.OUTPUT_DIR)
     website.website(flux_chart, write_directory(root, website_artifact, website.chart), kyverno_kustomization)
     proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
-    proxmox_proxy.proxmox_proxy(
+    proxmox_proxy_kustomization = proxmox_proxy.proxmox_proxy(
         flux_chart,
         write_directory(
             root, proxmox_proxy_artifact, proxmox_proxy.chart, config_map_generator=[proxmox_proxy.config_map(mesh)]
@@ -847,7 +847,7 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
     )
     monitoring_loki_artifact = artifact("monitoring-loki", loki.OUTPUT_DIR)
-    loki.loki(
+    loki_kustomization = loki.loki(
         flux_chart,
         write_directory(root, monitoring_loki_artifact, loki.chart),
         seaweedfs_operator_kustomization,
@@ -907,7 +907,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, seaweedfs_csi_artifact, seaweedfs_csi_driver.chart)
     )
     vm_images_publisher_artifact = artifact("vm-images-publisher", vm_images_publisher_publisher.OUTPUT_DIR)
-    vm_images_publisher_flux_kustomizations.vm_images_publisher(
+    vm_images_publisher_kustomization = vm_images_publisher_flux_kustomizations.vm_images_publisher(
         flux_chart, vm_images_publisher_artifact, seaweedfs_operator_kustomization
     )
     kubectl_passthrough_mcp_artifact = artifact("kubectl-passthrough-mcp", kubectl_passthrough_mcp.OUTPUT_DIR)
@@ -948,7 +948,7 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
     )
     gatus_artifact = artifact("gatus", gatus_app.OUTPUT_DIR)
-    gatus_app.gatus(
+    gatus_kustomization = gatus_app.gatus(
         flux_chart,
         write_directory(root, gatus_artifact, gatus_app.chart, config_map_generator=[gatus_app.CONFIG_MAP]),
         cnpg_kustomization,
@@ -1003,7 +1003,7 @@ def generate_manifests(root: Path) -> None:
         volsync_kustomization,
     )
     oci_cache_artifact = artifact("oci-cache", oci_cache_zot.OUTPUT_DIR)
-    oci_cache_flux_kustomizations.oci_cache(
+    oci_cache_kustomization = oci_cache_flux_kustomizations.oci_cache(
         flux_chart,
         oci_cache_artifact,
         valkey_kustomization,
@@ -1030,7 +1030,7 @@ def generate_manifests(root: Path) -> None:
         tofu_controller_kustomization,
     )
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
-    haku_ci_runner.haku_ci(
+    haku_ci_kustomization = haku_ci_runner.haku_ci(
         flux_chart,
         write_directory(root, haku_ci_artifact, haku_ci_runner.chart),
         keda_kustomization,
@@ -1073,13 +1073,13 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     activitywatch_artifact = artifact("activitywatch", activitywatch_app.OUTPUT_DIR)
-    activitywatch_flux_kustomizations.activitywatch(
+    activitywatch_kustomization = activitywatch_flux_kustomizations.activitywatch(
         flux_chart, activitywatch_artifact, external_secrets_operator_kustomization
     )
     agentplane_index_artifact = artifact(
         "agentplane-index", agentplane_index_workers.OUTPUT_DIR, agentplane_index_workers.PINS_DIR
     )
-    agentplane_index_workers.agentplane_index(
+    agentplane_index_kustomization = agentplane_index_workers.agentplane_index(
         flux_chart,
         write_directory(
             root,
@@ -1101,7 +1101,9 @@ def generate_manifests(root: Path) -> None:
         components=[posixpath.relpath(airlock.PINS_DIR, airlock.OUTPUT_DIR)],
         config_map_generator=[airlock.CONFIG_MAP],
     )
-    agents_flux_kustomizations.airlock(flux_chart, airlock_directory, external_secrets_operator_kustomization)
+    airlock_kustomization = agents_flux_kustomizations.airlock(
+        flux_chart, airlock_directory, external_secrets_operator_kustomization
+    )
     authentik_jwt_rotation_artifact = artifact(
         "authentik-jwt-rotation", authentik_jwt_rotation.OUTPUT_DIR, authentik_jwt_rotation.PINS_DIR
     )
@@ -1128,7 +1130,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     plaid_mcp_artifact = artifact("plaid-mcp", f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp")
-    agents_flux_kustomizations.plaid_mcp(
+    plaid_mcp_kustomization = agents_flux_kustomizations.plaid_mcp(
         flux_chart,
         plaid_mcp_artifact,
         cnpg_kustomization,
@@ -1137,7 +1139,7 @@ def generate_manifests(root: Path) -> None:
         authentik_tf_kustomization,
     )
     tana_mcp_artifact = artifact("tana-mcp", tana_mcp.OUTPUT_DIR)
-    agents_flux_kustomizations.tana_mcp(
+    tana_mcp_kustomization = agents_flux_kustomizations.tana_mcp(
         flux_chart,
         tana_mcp_artifact,
         external_secrets_operator_kustomization,
@@ -1145,7 +1147,7 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     cli_proxy_api_artifact = artifact("cli-proxy-api", cli_proxy_api.OUTPUT_DIR)
-    cli_proxy_api.cli_proxy_api(
+    cli_proxy_api_kustomization = cli_proxy_api.cli_proxy_api(
         flux_chart,
         write_directory(
             root,
@@ -1288,7 +1290,7 @@ def generate_manifests(root: Path) -> None:
         components=["./image-pins"],
         config_map_generator=[nix_cache_attic.SERVER_CONFIG_MAP, nix_cache_attic.ROTATORS_CONFIG_MAP],
     )
-    nix_cache_flux_kustomizations.nix_cache(
+    nix_cache_kustomization = nix_cache_flux_kustomizations.nix_cache(
         flux_chart,
         nix_cache_directory,
         cnpg_kustomization,
@@ -1322,7 +1324,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     study_casino_artifact = artifact("study-casino", study_casino_app.OUTPUT_DIR, study_casino_app.PINS_DIR)
-    study_casino_app.study_casino(
+    study_casino_kustomization = study_casino_app.study_casino(
         flux_chart,
         write_directory(
             root,
@@ -1335,7 +1337,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
-    litellm_proxy.litellm(
+    litellm_kustomization = litellm_proxy.litellm(
         flux_chart,
         litellm_artifact,
         cnpg_kustomization,
@@ -1526,13 +1528,40 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         staging.ENV,
         {
+            "activitywatch": activitywatch_kustomization,
+            "agent-sandbox-system": agent_sandbox_controller_kustomization,
+            "agentplane-index": agentplane_index_kustomization,
             "agentplane-testing": agentplane_testing_kustomization,
-            "haku-sandbox": haku_rbac_kustomization,
-            "haku-console": haku_console_kustomization,
+            "airlock": airlock_kustomization,
+            "authentik": authentik_kustomization,
+            "cert-manager": cert_manager_kustomization,
+            "cli-proxy-api": cli_proxy_api_kustomization,
             "clickhouse": clickhouse_kustomization,
-            # This namespace and its reader Role are in the bootstrap ducktape Flux source.
+            "cnpg-system": cnpg_kustomization,
             "ducktape-flux": None,
+            "haku-console": haku_console_kustomization,
+            # Bootstrap roots have no generated owner Kustomization to depend on.
+            "flux-system": None,
+            "gatus": gatus_kustomization,
+            "grocy-sf": grocy_sf_kustomization,
+            "grocy-vallejo": grocy_vallejo_kustomization,
+            "haku-ci": haku_ci_kustomization,
+            "haku-sandbox": haku_rbac_kustomization,
+            "litellm": litellm_kustomization,
+            "local-path-storage": local_path_provisioner_kustomization,
+            "loki": loki_kustomization,
+            "monitoring": monitoring_namespace_kustomization,
+            "nix-cache": nix_cache_kustomization,
+            "node-feature-discovery": node_feature_discovery_kustomization,
+            "nvidia-device-plugin": nvidia_device_plugin_kustomization,
+            "oci-cache": oci_cache_kustomization,
+            "openebs": openebs_lvm_kustomization,
+            "plaid-mcp": plaid_mcp_kustomization,
+            "proxmox-proxy": proxmox_proxy_kustomization,
             "public-coder-agent": public_coder_agent_app_kustomization,
+            "study-casino": study_casino_kustomization,
+            "tana-mcp": tana_mcp_kustomization,
+            "vm-images-publisher": vm_images_publisher_kustomization,
         },
     )
     # Every artifact built above except the parked nodes': those Kustomizations are suspended.

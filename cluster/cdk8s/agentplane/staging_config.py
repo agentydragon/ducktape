@@ -32,6 +32,62 @@ from cluster.cdk8s.litellm.keys import ANTIGRAVITY_CLIENT_MODELS, CLAUDE_CLIENT_
 from cluster.cdk8s.model_rosters import ApiShape, Provider, codex_responses_name, exposed_name
 
 _NAMESPACE = "agentplane-staging"
+# The static Haku identities receive Kyverno's metadata/log readers in these
+# approved namespaces. Keep the explicit managed-Sandbox catalog in sync with
+# the deployed Namespace labels; test_cluster_integration checks that contract.
+_HAKU_AGENT_READABLE_LOG_NAMESPACES = (
+    "activitywatch",
+    "agentplane-index",
+    "agentplane-testing",
+    "airlock",
+    "authentik",
+    "cert-manager",
+    "cli-proxy-api",
+    "clickhouse",
+    "cnpg-system",
+    "flux-system",
+    "gatus",
+    "grocy-sf",
+    "grocy-vallejo",
+    "haku-ci",
+    "litellm",
+    "local-path-storage",
+    "loki",
+    "monitoring",
+    "node-feature-discovery",
+    "nvidia-device-plugin",
+    "oci-cache",
+    "openebs",
+    "plaid-mcp",
+    "proxmox-proxy",
+    "study-casino",
+    "tana-mcp",
+)
+_HAKU_AGENT_READABLE_METADATA_ONLY_NAMESPACES = (
+    "agent-sandbox-system",
+    "nix-cache",
+    "public-coder-agent",
+    "vm-images-publisher",
+)
+
+
+def _haku_extra_read_grants() -> dict[str, RoleBindingGrant]:
+    grants: dict[str, RoleBindingGrant] = {}
+    for namespace in sorted((*_HAKU_AGENT_READABLE_LOG_NAMESPACES, *_HAKU_AGENT_READABLE_METADATA_ONLY_NAMESPACES)):
+        grants[f"{namespace}-metadata"] = RoleBindingGrant(
+            kind="RoleBinding",
+            namespace=namespace,
+            role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-metadata"),
+        )
+        if namespace in _HAKU_AGENT_READABLE_LOG_NAMESPACES:
+            grants[f"{namespace}-logs"] = RoleBindingGrant(
+                kind="RoleBinding",
+                namespace=namespace,
+                role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
+            )
+    return grants
+
+
 _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
 _FINANCE_AGENT_INSTRUCTIONS = (
     Path(__file__).with_name("finance_agent_instructions.md").read_text(encoding="utf-8").strip()
@@ -66,6 +122,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         # agentplane-testing. `claude-sonnet-5` matches the model in the parked self-hosted
         # configuration at haku/runtime/x/managed_agent/self_hosted/haku.agent.yaml.
         haku_preset_model=exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, "claude-sonnet-5"),
+        haku_extra_kubernetes_grants=list(_haku_extra_read_grants()),
         kubernetes_grants={
             "sandbox-tool-config": RoleBindingGrant(
                 kind="RoleBinding",
@@ -93,6 +150,12 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
                 kind="RoleBinding",
                 namespace=_NAMESPACE,
                 role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
+            ),
+            **_haku_extra_read_grants(),
+            "coinbase-credentials": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace=_NAMESPACE,
+                role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
             ),
             "haku-console-metadata": RoleBindingGrant(
                 kind="RoleBinding",
@@ -124,22 +187,18 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
                 namespace="public-coder-agent",
                 role_ref=RoleRef(kind="Role", name="public-coder-agent-devbox-vmi-restart"),
             ),
-            "coinbase-credentials": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace=_NAMESPACE,
-                role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
-            ),
         },
         # Retain cleanup authority when a catalog choice is disabled while its
         # existing Sandboxes still hold a binding in that scope.
-        kubernetes_binding_cleanup_namespaces=[
-            "agentplane-testing",
-            "clickhouse",
-            "ducktape-flux",
-            "haku-console",
-            "haku-sandbox",
-            "public-coder-agent",
-        ],
+        kubernetes_binding_cleanup_namespaces=sorted(
+            {
+                "haku-sandbox",
+                "haku-console",
+                "ducktape-flux",
+                *_HAKU_AGENT_READABLE_LOG_NAMESPACES,
+                *_HAKU_AGENT_READABLE_METADATA_ONLY_NAMESPACES,
+            }
+        ),
         kubernetes_cluster_binding_cleanup=True,
     )
     cfg.sandbox_presets["haku"].kubernetes_grants.extend(

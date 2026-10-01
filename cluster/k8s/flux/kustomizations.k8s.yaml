@@ -3896,6 +3896,69 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in activitywatch.
+  name: agentplane-staging-binding-delegation-activitywatch
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: activitywatch
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/activitywatch
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in agent-sandbox-system.
+  name: agentplane-staging-binding-delegation-agent-sandbox-system
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: agent-sandbox-controller
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/agent-sandbox-system
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in agentplane-index.
+  name: agentplane-staging-binding-delegation-agentplane-index
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: agentplane-index
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/agentplane-index
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Delegates managed Sandbox RoleBinding reconciliation in agentplane-testing.
   name: agentplane-staging-binding-delegation-agentplane-testing
   namespace: ducktape-flux
@@ -3905,6 +3968,90 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/agentplane-testing
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in airlock.
+  name: agentplane-staging-binding-delegation-airlock
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: airlock
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/airlock
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in authentik.
+  name: agentplane-staging-binding-delegation-authentik
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: authentik
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/authentik
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in cert-manager.
+  name: agentplane-staging-binding-delegation-cert-manager
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: cert-manager
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/cert-manager
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in cli-proxy-api.
+  name: agentplane-staging-binding-delegation-cli-proxy-api
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: cli-proxy-api
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/cli-proxy-api
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3938,12 +4085,135 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in cnpg-system.
+  name: agentplane-staging-binding-delegation-cnpg-system
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: cnpg
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/cnpg-system
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Delegates managed Sandbox RoleBinding reconciliation in ducktape-flux.
   name: agentplane-staging-binding-delegation-ducktape-flux
   namespace: ducktape-flux
 spec:
   interval: 10m
   path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/ducktape-flux
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in flux-system.
+  name: agentplane-staging-binding-delegation-flux-system
+  namespace: ducktape-flux
+spec:
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/flux-system
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in gatus.
+  name: agentplane-staging-binding-delegation-gatus
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: gatus
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/gatus
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in grocy-sf.
+  name: agentplane-staging-binding-delegation-grocy-sf
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: grocy-sf
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/grocy-sf
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in grocy-vallejo.
+  name: agentplane-staging-binding-delegation-grocy-vallejo
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: grocy-vallejo
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/grocy-vallejo
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in haku-ci.
+  name: agentplane-staging-binding-delegation-haku-ci
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: haku-ci
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/haku-ci
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3998,6 +4268,237 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in litellm.
+  name: agentplane-staging-binding-delegation-litellm
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: litellm
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/litellm
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in local-path-storage.
+  name: agentplane-staging-binding-delegation-local-path-storage
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: local-path-provisioner
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/local-path-storage
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in loki.
+  name: agentplane-staging-binding-delegation-loki
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: loki
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/loki
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in monitoring.
+  name: agentplane-staging-binding-delegation-monitoring
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: monitoring-namespace
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/monitoring
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in nix-cache.
+  name: agentplane-staging-binding-delegation-nix-cache
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: nix-cache
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/nix-cache
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in node-feature-discovery.
+  name: agentplane-staging-binding-delegation-node-feature-discovery
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: node-feature-discovery
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/node-feature-discovery
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in nvidia-device-plugin.
+  name: agentplane-staging-binding-delegation-nvidia-device-plugin
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: nvidia-device-plugin
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/nvidia-device-plugin
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in oci-cache.
+  name: agentplane-staging-binding-delegation-oci-cache
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: oci-cache
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/oci-cache
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in openebs.
+  name: agentplane-staging-binding-delegation-openebs
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: openebs-lvm
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/openebs
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in plaid-mcp.
+  name: agentplane-staging-binding-delegation-plaid-mcp
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: plaid-mcp
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/plaid-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in proxmox-proxy.
+  name: agentplane-staging-binding-delegation-proxmox-proxy
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: proxmox-proxy
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/proxmox-proxy
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Delegates managed Sandbox RoleBinding reconciliation in public-coder-agent.
   name: agentplane-staging-binding-delegation-public-coder-agent
   namespace: ducktape-flux
@@ -4007,6 +4508,69 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/public-coder-agent
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in study-casino.
+  name: agentplane-staging-binding-delegation-study-casino
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: study-casino
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/study-casino
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in tana-mcp.
+  name: agentplane-staging-binding-delegation-tana-mcp
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: tana-mcp
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/tana-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in vm-images-publisher.
+  name: agentplane-staging-binding-delegation-vm-images-publisher
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: vm-images-publisher
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/vm-images-publisher
   prune: true
   retryInterval: 1m
   sourceRef:

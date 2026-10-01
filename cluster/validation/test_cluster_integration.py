@@ -200,6 +200,145 @@ def test_agentplane_external_delegation_has_independent_flux_ownership(k8s_dir: 
     assert flux["spec"]["dependsOn"] == [{"name": "haku-rbac", "namespace": "ducktape-flux"}]
 
 
+def test_managed_haku_read_grants_cover_declarative_namespace_opt_ins(
+    cluster: ParsedCluster, k8s_dir: Path, repo_root: Path, generated_dir: Path
+) -> None:
+    """A Haku preset launch gets the same labeled namespace readers as static Haku.
+
+    Only active Namespace manifests participate. A new label opt-in must add
+    a Haku catalog/default entry and an independently owned delegation Kustomization.
+    """
+    metadata_label = "rbac.ducktape.io/agent-readable-metadata"
+    logs_label = "rbac.ducktape.io/agent-readable-logs"
+    expected: set[tuple[str, str]] = set()
+
+    # Props is separately sourced and absent live; parked workloads are suspended.
+    # Match static Haku's live scope through active, local Flux builds only.
+    active_resources = cluster.flux_kust_resources(repo_root)
+    namespace_owners: dict[str, set[str]] = {}
+    for owner, resources in active_resources.items():
+        for resource in resources:
+            if resource.kind != "Namespace":
+                continue
+            namespace_owners.setdefault(resource.name, set()).add(owner)
+            labels = resource.metadata.labels
+            if labels.get(metadata_label) == "true" or labels.get(logs_label) == "true":
+                expected.add((resource.name, "agent-readable-namespace-metadata"))
+            if labels.get(logs_label) == "true":
+                expected.add((resource.name, "agent-readable-namespace-logs"))
+
+    # Flux applies this label via its bootstrap overlay, not a literal Namespace.
+    flux_system_kustomization = (k8s_dir / "flux/flux-system/kustomization.yaml").read_text()
+    assert "path: /metadata/labels/rbac.ducktape.io~1agent-readable-logs" in flux_system_kustomization
+    expected.update(
+        {("flux-system", "agent-readable-namespace-metadata"), ("flux-system", "agent-readable-namespace-logs")}
+    )
+
+    staging_docs = list(yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text()))
+    app_config = one(
+        doc for doc in staging_docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
+    )
+    config = yaml.safe_load(app_config["data"]["config.yaml"])
+    catalog = config["kubernetes_grants"]
+    haku_grants = set(config["sandbox_presets"]["haku"]["kubernetes_grants"])
+    reader_roles = {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
+    actual = {
+        (grant["namespace"], grant["role_ref"]["name"])
+        for name in haku_grants
+        if (grant := catalog[name])["role_ref"]["name"] in reader_roles
+    }
+    assert actual == expected
+    cleanup_namespaces = set(config["kubernetes_binding_cleanup_namespaces"])
+    expected_namespaces = {namespace for namespace, _ in expected}
+    expected_external_namespaces = expected_namespaces - {"agentplane-staging"}
+    assert expected_external_namespaces <= cleanup_namespaces
+
+    external_grant_namespaces = {grant["namespace"] for grant in catalog.values() if grant["kind"] == "RoleBinding"}
+    expected_external_scopes = (external_grant_namespaces | cleanup_namespaces) - {"agentplane-staging"}
+    assert expected_external_scopes == expected_external_namespaces | {"ducktape-flux", "haku-console", "haku-sandbox"}
+    assert not any(
+        doc["kind"] in {"Role", "RoleBinding"}
+        and doc["metadata"]["name"] in {"agentplane-staging-managed-bindings", "agentplane-staging-external-bindings"}
+        and doc["metadata"].get("namespace") != "agentplane-staging"
+        for doc in staging_docs
+    )
+
+    for name in haku_grants:
+        grant = catalog[name]
+        if grant["role_ref"]["name"] in reader_roles:
+            assert grant["kind"] == "RoleBinding"
+            assert grant["role_ref"]["kind"] == "ClusterRole"
+
+    flux_objects = list(yaml.safe_load_all((k8s_dir / "flux/kustomizations.k8s.yaml").read_text()))
+    delegation_name = "agentplane-staging-binding-delegation-"
+    flux_by_name = {
+        doc["metadata"]["name"]: doc
+        for doc in flux_objects
+        if doc["kind"] == "Kustomization" and doc["metadata"]["name"].startswith(delegation_name)
+    }
+    expected_flux_names = {f"{delegation_name}{namespace}" for namespace in expected_external_scopes}
+    assert set(flux_by_name) == expected_flux_names
+
+    namespace_owners["haku-sandbox"] = {"haku-rbac"}
+    namespace_owners["flux-system"] = set()
+    namespace_owners["ducktape-flux"] = set()
+    # The clickhouse Namespace is emitted alongside the operator resources, but
+    # its service Kustomization owns the namespace-scoped workload and grants.
+    delegation_owner_overrides = {"clickhouse": "clickhouse"}
+    for namespace in expected_external_scopes:
+        owners = namespace_owners[namespace]
+        is_bootstrap_root = namespace in {"flux-system", "ducktape-flux"}
+        expected_dependency = (
+            None
+            if is_bootstrap_root
+            else [delegation_owner_overrides.get(namespace, owner) for owner in sorted(owners)]
+        )
+        assert is_bootstrap_root or len(owners) == 1, (namespace, owners)
+
+        path = generated_dir / "agentplane/binding-delegation/agentplane-staging" / namespace
+        objects = list(yaml.safe_load_all((path / f"{namespace}.k8s.yaml").read_text()))
+        role = one(doc for doc in objects if doc["kind"] == "Role")
+        binding = one(doc for doc in objects if doc["kind"] == "RoleBinding")
+        delegation_role = "agentplane-staging-external-bindings"
+        assert role["metadata"] == {"name": delegation_role, "namespace": namespace}
+        assert role["rules"][0] == {
+            "apiGroups": ["rbac.authorization.k8s.io"],
+            "resources": ["rolebindings"],
+            "verbs": ["create", "get", "list", "delete"],
+        }
+        assert {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]} in role["rules"]
+        expected_bound_roles = {
+            grant["role_ref"]["name"]
+            for grant in catalog.values()
+            if grant["kind"] == "RoleBinding"
+            and grant["namespace"] == namespace
+            and grant["role_ref"]["kind"] == "Role"
+        }
+        actual_bound_roles = {
+            tuple(rule.get("resourceNames", []))
+            for rule in role["rules"]
+            if rule["resources"] == ["roles"] and rule["verbs"] == ["bind"]
+        }
+        assert actual_bound_roles == {(name,) for name in expected_bound_roles}
+        assert binding["metadata"] == {"name": delegation_role, "namespace": namespace}
+        assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": delegation_role}
+        assert binding["subjects"] == [
+            {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
+        ]
+        assert yaml.safe_load((path / "kustomization.yaml").read_text())["resources"] == [f"{namespace}.k8s.yaml"]
+
+        flux = flux_by_name[f"{delegation_name}{namespace}"]
+        assert flux["spec"]["sourceRef"] == {"kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"}
+        assert flux["spec"]["path"] == (
+            f"./cluster/generated/agentplane/binding-delegation/agentplane-staging/{namespace}"
+        )
+        if expected_dependency is None:
+            # Bootstrap roots have no generated construct representing their owner.
+            assert "dependsOn" not in flux["spec"]
+        else:
+            assert flux["spec"]["dependsOn"] == [{"name": expected_dependency[0], "namespace": "ducktape-flux"}]
+
+
 def test_haku_service_read_delegation_is_scoped_to_owning_namespaces(k8s_dir: Path, generated_dir: Path) -> None:
     flux_objects = list(yaml.safe_load_all((k8s_dir / "flux/kustomizations.k8s.yaml").read_text()))
     for namespace, role_names, owner in (
@@ -240,6 +379,7 @@ def test_haku_service_read_delegation_is_scoped_to_owning_namespaces(k8s_dir: Pa
             and doc["metadata"]["name"] == f"agentplane-staging-binding-delegation-{namespace}"
         )
         if owner is None:
+            # ducktape-flux is bootstrap-owned, like flux-system, and has no generated owner Kustomization.
             assert "dependsOn" not in flux["spec"]
         else:
             assert flux["spec"]["dependsOn"] == [{"name": owner, "namespace": "ducktape-flux"}]

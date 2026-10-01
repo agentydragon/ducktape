@@ -169,13 +169,15 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
     haku = config["sandbox_presets"]["haku"]
-    assert haku["kubernetes_grants"] == [
+    assert haku["kubernetes_grants"][:5] == [
         "cluster-diagnostics",
         "haku-sandbox-write",
         "agentplane-testing-operator",
         "agentplane-staging-metadata",
         "agentplane-staging-logs",
-        "coinbase-credentials",
+    ]
+    assert "coinbase-credentials" in haku["kubernetes_grants"]
+    assert haku["kubernetes_grants"][-6:] == [
         "haku-console-metadata",
         "clickhouse-diagnostics",
         "ducktape-flux-read",
@@ -226,14 +228,16 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
         rule["resources"] == ["clusterroles"] and rule["verbs"] == ["get"] and not rule.get("resourceNames")
         for rule in app_cluster_role["rules"]
     )
-    assert config["kubernetes_binding_cleanup_namespaces"] == [
+    cleanup_namespaces = set(config["kubernetes_binding_cleanup_namespaces"])
+    assert {
         "agentplane-testing",
         "clickhouse",
         "ducktape-flux",
         "haku-console",
         "haku-sandbox",
         "public-coder-agent",
-    ]
+    } <= cleanup_namespaces
+    assert staging.ENV.namespace not in cleanup_namespaces
     assert config["kubernetes_cluster_binding_cleanup"] is True
 
 

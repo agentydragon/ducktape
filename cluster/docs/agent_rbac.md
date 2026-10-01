@@ -223,6 +223,15 @@ read selection. Other Kyverno `agent-readable-*` namespaces still grant the stat
 Haku identities; managed Haku SAs require explicit catalog entries before they receive
 those namespaced readers. No namespace label silently widens them.
 
+The Haku preset's explicit catalog now mirrors the metadata/log labels on every active
+cluster-managed Namespace. Log-labeled namespaces receive both metadata and pod-log
+grants; metadata-only labels receive only the metadata grant. Props stays excluded
+because its Namespace is absent from the live cluster and its Flux source is parked.
+The `flux-system` and `ducktape-flux` delegation Kustomizations have no `dependsOn`:
+they are bootstrap roots without generated owner Kustomizations. The cluster integration
+test derives active label opt-ins and checks their catalog grants, preset defaults, and
+target-owned delegation dependencies together.
+
 ### Staging acceptance for managed Haku grants
 
 After the stacked grant PRs deploy, use the staging operator UI to create two Sandboxes

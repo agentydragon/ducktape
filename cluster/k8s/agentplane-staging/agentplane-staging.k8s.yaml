@@ -1921,6 +1921,62 @@ data:
           - agentplane-testing-operator
           - agentplane-staging-metadata
           - agentplane-staging-logs
+          - activitywatch-metadata
+          - activitywatch-logs
+          - agent-sandbox-system-metadata
+          - agentplane-index-metadata
+          - agentplane-index-logs
+          - agentplane-testing-metadata
+          - agentplane-testing-logs
+          - airlock-metadata
+          - airlock-logs
+          - authentik-metadata
+          - authentik-logs
+          - cert-manager-metadata
+          - cert-manager-logs
+          - cli-proxy-api-metadata
+          - cli-proxy-api-logs
+          - clickhouse-metadata
+          - clickhouse-logs
+          - cnpg-system-metadata
+          - cnpg-system-logs
+          - flux-system-metadata
+          - flux-system-logs
+          - gatus-metadata
+          - gatus-logs
+          - grocy-sf-metadata
+          - grocy-sf-logs
+          - grocy-vallejo-metadata
+          - grocy-vallejo-logs
+          - haku-ci-metadata
+          - haku-ci-logs
+          - litellm-metadata
+          - litellm-logs
+          - local-path-storage-metadata
+          - local-path-storage-logs
+          - loki-metadata
+          - loki-logs
+          - monitoring-metadata
+          - monitoring-logs
+          - nix-cache-metadata
+          - node-feature-discovery-metadata
+          - node-feature-discovery-logs
+          - nvidia-device-plugin-metadata
+          - nvidia-device-plugin-logs
+          - oci-cache-metadata
+          - oci-cache-logs
+          - openebs-metadata
+          - openebs-logs
+          - plaid-mcp-metadata
+          - plaid-mcp-logs
+          - proxmox-proxy-metadata
+          - proxmox-proxy-logs
+          - public-coder-agent-metadata
+          - study-casino-metadata
+          - study-casino-logs
+          - tana-mcp-metadata
+          - tana-mcp-logs
+          - vm-images-publisher-metadata
           - coinbase-credentials
           - haku-console-metadata
           - clickhouse-diagnostics
@@ -2004,6 +2060,348 @@ data:
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-logs
+      activitywatch-metadata:
+        kind: RoleBinding
+        namespace: activitywatch
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      activitywatch-logs:
+        kind: RoleBinding
+        namespace: activitywatch
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      agent-sandbox-system-metadata:
+        kind: RoleBinding
+        namespace: agent-sandbox-system
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      agentplane-index-metadata:
+        kind: RoleBinding
+        namespace: agentplane-index
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      agentplane-index-logs:
+        kind: RoleBinding
+        namespace: agentplane-index
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      agentplane-testing-metadata:
+        kind: RoleBinding
+        namespace: agentplane-testing
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      agentplane-testing-logs:
+        kind: RoleBinding
+        namespace: agentplane-testing
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      airlock-metadata:
+        kind: RoleBinding
+        namespace: airlock
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      airlock-logs:
+        kind: RoleBinding
+        namespace: airlock
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      authentik-metadata:
+        kind: RoleBinding
+        namespace: authentik
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      authentik-logs:
+        kind: RoleBinding
+        namespace: authentik
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      cert-manager-metadata:
+        kind: RoleBinding
+        namespace: cert-manager
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      cert-manager-logs:
+        kind: RoleBinding
+        namespace: cert-manager
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      cli-proxy-api-metadata:
+        kind: RoleBinding
+        namespace: cli-proxy-api
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      cli-proxy-api-logs:
+        kind: RoleBinding
+        namespace: cli-proxy-api
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      clickhouse-metadata:
+        kind: RoleBinding
+        namespace: clickhouse
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      clickhouse-logs:
+        kind: RoleBinding
+        namespace: clickhouse
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      cnpg-system-metadata:
+        kind: RoleBinding
+        namespace: cnpg-system
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      cnpg-system-logs:
+        kind: RoleBinding
+        namespace: cnpg-system
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      flux-system-metadata:
+        kind: RoleBinding
+        namespace: flux-system
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      flux-system-logs:
+        kind: RoleBinding
+        namespace: flux-system
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      gatus-metadata:
+        kind: RoleBinding
+        namespace: gatus
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      gatus-logs:
+        kind: RoleBinding
+        namespace: gatus
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      grocy-sf-metadata:
+        kind: RoleBinding
+        namespace: grocy-sf
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      grocy-sf-logs:
+        kind: RoleBinding
+        namespace: grocy-sf
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      grocy-vallejo-metadata:
+        kind: RoleBinding
+        namespace: grocy-vallejo
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      grocy-vallejo-logs:
+        kind: RoleBinding
+        namespace: grocy-vallejo
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      haku-ci-metadata:
+        kind: RoleBinding
+        namespace: haku-ci
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      haku-ci-logs:
+        kind: RoleBinding
+        namespace: haku-ci
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      litellm-metadata:
+        kind: RoleBinding
+        namespace: litellm
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      litellm-logs:
+        kind: RoleBinding
+        namespace: litellm
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      local-path-storage-metadata:
+        kind: RoleBinding
+        namespace: local-path-storage
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      local-path-storage-logs:
+        kind: RoleBinding
+        namespace: local-path-storage
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      loki-metadata:
+        kind: RoleBinding
+        namespace: loki
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      loki-logs:
+        kind: RoleBinding
+        namespace: loki
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      monitoring-metadata:
+        kind: RoleBinding
+        namespace: monitoring
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      monitoring-logs:
+        kind: RoleBinding
+        namespace: monitoring
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      nix-cache-metadata:
+        kind: RoleBinding
+        namespace: nix-cache
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      node-feature-discovery-metadata:
+        kind: RoleBinding
+        namespace: node-feature-discovery
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      node-feature-discovery-logs:
+        kind: RoleBinding
+        namespace: node-feature-discovery
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      nvidia-device-plugin-metadata:
+        kind: RoleBinding
+        namespace: nvidia-device-plugin
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      nvidia-device-plugin-logs:
+        kind: RoleBinding
+        namespace: nvidia-device-plugin
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      oci-cache-metadata:
+        kind: RoleBinding
+        namespace: oci-cache
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      oci-cache-logs:
+        kind: RoleBinding
+        namespace: oci-cache
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      openebs-metadata:
+        kind: RoleBinding
+        namespace: openebs
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      openebs-logs:
+        kind: RoleBinding
+        namespace: openebs
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      plaid-mcp-metadata:
+        kind: RoleBinding
+        namespace: plaid-mcp
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      plaid-mcp-logs:
+        kind: RoleBinding
+        namespace: plaid-mcp
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      proxmox-proxy-metadata:
+        kind: RoleBinding
+        namespace: proxmox-proxy
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      proxmox-proxy-logs:
+        kind: RoleBinding
+        namespace: proxmox-proxy
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      public-coder-agent-metadata:
+        kind: RoleBinding
+        namespace: public-coder-agent
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      study-casino-metadata:
+        kind: RoleBinding
+        namespace: study-casino
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      study-casino-logs:
+        kind: RoleBinding
+        namespace: study-casino
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      tana-mcp-metadata:
+        kind: RoleBinding
+        namespace: tana-mcp
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      tana-mcp-logs:
+        kind: RoleBinding
+        namespace: tana-mcp
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      vm-images-publisher-metadata:
+        kind: RoleBinding
+        namespace: vm-images-publisher
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      coinbase-credentials:
+        kind: RoleBinding
+        namespace: agentplane-staging
+        role_ref:
+          kind: Role
+          name: claude-ai-coinbase-reader
       haku-console-metadata:
         kind: RoleBinding
         namespace: haku-console
@@ -2040,19 +2438,40 @@ data:
         role_ref:
           kind: Role
           name: public-coder-agent-devbox-vmi-restart
-      coinbase-credentials:
-        kind: RoleBinding
-        namespace: agentplane-staging
-        role_ref:
-          kind: Role
-          name: claude-ai-coinbase-reader
     kubernetes_binding_cleanup_namespaces:
+      - activitywatch
+      - agent-sandbox-system
+      - agentplane-index
       - agentplane-testing
+      - airlock
+      - authentik
+      - cert-manager
+      - cli-proxy-api
       - clickhouse
+      - cnpg-system
       - ducktape-flux
+      - flux-system
+      - gatus
+      - grocy-sf
+      - grocy-vallejo
+      - haku-ci
       - haku-console
       - haku-sandbox
+      - litellm
+      - local-path-storage
+      - loki
+      - monitoring
+      - nix-cache
+      - node-feature-discovery
+      - nvidia-device-plugin
+      - oci-cache
+      - openebs
+      - plaid-mcp
+      - proxmox-proxy
       - public-coder-agent
+      - study-casino
+      - tana-mcp
+      - vm-images-publisher
     kubernetes_cluster_binding_cleanup: true
     default_policies:
       - basic

@@ -91,20 +91,27 @@ def write_manifests(root: Path, env: Environment) -> None:
 def add_flux_kustomizations(
     flux_chart: Chart, env: Environment, target_dependencies: Mapping[str, Kustomization | None]
 ) -> None:
-    """Depend on target owners; None is reserved for bootstrap-owned namespaces."""
+    """Each target owner gates its delegation; bootstrap roots have no generated owner."""
     scopes = external_scopes(env)
     if missing := set(scopes) - target_dependencies.keys():
         raise ValueError(f"managed binding scopes lack namespace dependencies: {sorted(missing)}")
+    bootstrap_scopes = {"flux-system", "ducktape-flux"}
+    if missing := {scope for scope in scopes if scope not in bootstrap_scopes and target_dependencies[scope] is None}:
+        raise ValueError(f"managed binding scopes lack namespace dependencies: {sorted(missing)}")
+    if unexpected := {
+        scope for scope in scopes if scope in bootstrap_scopes and target_dependencies[scope] is not None
+    }:
+        raise ValueError(f"bootstrap namespaces have no generated Flux dependency: {sorted(unexpected)}")
     source = KustomizationSpecSourceRef(
         kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
     )
     for target_namespace in scopes:
-        owner = target_dependencies[target_namespace]
+        dependency = target_dependencies[target_namespace]
         flux_kustomization(
             flux_chart,
             f"{env.namespace}-binding-delegation-{target_namespace}",
             source,
             path=f"./{directory(env, target_namespace)}",
-            depends_on=[flux_kustomization_depends_on(owner)] if owner is not None else None,
+            depends_on=[flux_kustomization_depends_on(dependency)] if dependency is not None else None,
             description=f"Delegates managed Sandbox RoleBinding reconciliation in {target_namespace}.",
         )
