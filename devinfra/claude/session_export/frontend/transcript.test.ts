@@ -88,7 +88,7 @@ describe("foldSessionEvents", () => {
       from: "agent-17",
       name: "Review agent",
       text: "The test expects active, but the fixture says paused.",
-      events: [{ event_id: "event-2" }, { event_id: "event-1" }, { event_id: "event-3" }],
+      events: [{ event_id: "event-1" }, { event_id: "event-2" }, { event_id: "event-3" }],
     });
     expect(folded[1]).toMatchObject({
       kind: "peer-hold",
