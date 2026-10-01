@@ -20,6 +20,7 @@ filegroup(
         "//agentplane/app/migrations/versions:0013_operator_session_idle.py",
         "//agentplane/app/migrations/versions:0014_operator_session_login.py",
         "//agentplane/app/migrations/versions:0015_event_payload_json.py",
+        "//agentplane/app/migrations/versions:0016_thread_payload_chunk_json.py",
     ],
     visibility = ["//agentplane/app:__pkg__"],
 )
