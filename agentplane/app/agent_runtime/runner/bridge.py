@@ -8,7 +8,7 @@ from typing import Annotated
 from uuid import UUID
 
 import grpc
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,7 +17,7 @@ from agentplane.app.agent_runtime.ingestion import Ingester
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.changes import Changes
-from agentplane.app.inventory import SandboxInventory, SandboxNotFoundError
+from agentplane.app.inventory import SandboxInventory, SandboxNotFoundError, SandboxView
 from agentplane.app.presets import PresetCatalog
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
@@ -28,6 +28,21 @@ from agentplane.runner.client import RunnerError
 
 COMMAND_ADMISSION_S = 15
 ADMISSION_REREAD_S = 2
+
+
+async def ready_sandbox_for_session(inventory: SandboxInventory, name: str) -> SandboxView | None:
+    """Return an existing Sandbox only after its selected Kubernetes grants are provisioned.
+
+    A missing inventory row preserves the concrete-spec runner path. Sandboxes without selected
+    grants are unaffected; Kubernetes binding readiness matters only for a nonempty selection.
+    """
+    try:
+        sandbox = await inventory.get(name)
+    except SandboxNotFoundError:
+        return None
+    if sandbox.kubernetes_grants and not sandbox.kubernetes_grants_ready:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Kubernetes grants are not ready")
+    return sandbox
 
 
 class MalformedMessageError(Exception):
@@ -233,13 +248,10 @@ async def open_session(bridge: Bridge, name: str, body: NewSession, request: Req
     presets = request.app.state.presets
     if not isinstance(inventory, SandboxInventory) or not isinstance(presets, PresetCatalog):
         raise TypeError("the app's inventory or preset catalog is not configured")
-    try:
-        binding = await inventory.binding(name)
-    except SandboxNotFoundError:
-        # Preserve the old concrete-spec path: its runner address remains the authority that decides
-        # whether the sandbox is reachable. Tests and non-Kubernetes embeddings may supply one
-        # without keeping a second inventory record solely for preset lookup.
-        binding = None
+    sandbox = await ready_sandbox_for_session(inventory, name)
+    # A missing inventory row still preserves the old concrete-spec path: its runner address remains
+    # the authority that decides whether the sandbox is reachable.
+    binding = sandbox.binding if sandbox is not None else None
     resolved = dict(body.spec)
     if binding is not None and binding.thread_defaults is not None:
         resolved = binding.thread_defaults.proto_json(body.session_id) | resolved
