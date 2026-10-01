@@ -59,6 +59,7 @@ IMAGES = (
     "cli-proxy-api",
     "cpap-gateway",
     "cpap-sync",
+    "vm-image-restart",
     "forgejo-token-rotation",
     "github-api-proxy",
     "github-graphql-rate-exporter",
