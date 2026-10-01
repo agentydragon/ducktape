@@ -97,7 +97,11 @@ function SessionRow({
       active={selected}
       aria-pressed={selected}
       onClick={onSelect}
-      label={<Text size="sm" fw={600} truncate>{session.title || "Untitled session"}</Text>}
+      label={
+        <Text size="sm" fw={600} truncate>
+          {session.title || "Untitled session"}
+        </Text>
+      }
       description={
         <Stack gap={4} mt={6}>
           <Group gap="xs">
@@ -336,7 +340,11 @@ export function SessionViewer(): JSX.Element {
           />
         </SimpleGrid>
 
-        {sessionError !== null && <Alert color="red" title="Could not load sessions">{sessionError}</Alert>}
+        {sessionError !== null && (
+          <Alert color="red" title="Could not load sessions">
+            {sessionError}
+          </Alert>
+        )}
 
         <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
           <Paper component="aside" aria-label="Session list" withBorder radius="sm" p="xs">
@@ -398,7 +406,11 @@ export function SessionViewer(): JSX.Element {
                   </Badge>
                 </Group>
 
-                {eventError !== null && <Alert color="red" title="Could not load transcript">{eventError}</Alert>}
+                {eventError !== null && (
+                  <Alert color="red" title="Could not load transcript">
+                    {eventError}
+                  </Alert>
+                )}
 
                 {loadingEvents ? (
                   <Center h={180}>
@@ -417,11 +429,7 @@ export function SessionViewer(): JSX.Element {
                         <EventCard key={`${event.sequence_num}-${event.event_id}`} event={event} />
                       ))}
                       {hasMoreEvents && (
-                        <Button
-                          variant="default"
-                          loading={loadingMoreEvents}
-                          onClick={() => void loadMoreEvents()}
-                        >
+                        <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
                           Load more events
                         </Button>
                       )}
