@@ -70,9 +70,7 @@ def _group(config: dict[str, JsonValue]) -> ActionGroup:
 
 
 def _request(action: ActionIdentity) -> ExecutionRequest:
-    return ExecutionRequest(
-        request_id=uuid4(), action=action, arguments={}, caller=CALLER.account
-    )
+    return ExecutionRequest(request_id=uuid4(), action=action, arguments={}, caller=CALLER.account)
 
 
 async def test_empty_catalog_has_no_echo_fallback(engine: AsyncEngine) -> None:

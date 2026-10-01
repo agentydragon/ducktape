@@ -93,10 +93,7 @@ class FakeInventory:
 
 def _request(action: str, arguments: dict[str, JsonValue], caller: ServiceAccountRef = CALLER) -> ExecutionRequest:
     return ExecutionRequest(
-        request_id=uuid4(),
-        action=ActionIdentity(group="sandbox", name=action),
-        arguments=arguments,
-        caller=caller,
+        request_id=uuid4(), action=ActionIdentity(group="sandbox", name=action), arguments=arguments, caller=caller
     )
 
 

@@ -20,11 +20,6 @@ def downgrade() -> None:
     for column in ("origin", "correlation"):
         op.add_column(
             "action_request",
-            sa.Column(
-                column,
-                postgresql.JSONB(),
-                server_default=sa.text("'{}'::jsonb"),
-                nullable=False,
-            ),
+            sa.Column(column, postgresql.JSONB(), server_default=sa.text("'{}'::jsonb"), nullable=False),
         )
         op.alter_column("action_request", column, server_default=None)

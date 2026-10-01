@@ -63,9 +63,7 @@ def _group() -> ActionGroup:
 
 
 def _request(*, action: ActionIdentity, arguments: dict[str, Any]) -> ExecutionRequest:
-    return ExecutionRequest(
-        request_id=uuid4(), action=action, arguments=arguments, caller=CALLER.account
-    )
+    return ExecutionRequest(request_id=uuid4(), action=action, arguments=arguments, caller=CALLER.account)
 
 
 async def _allowed_execution(service: ActionService, *, idempotency_key: str) -> Any:

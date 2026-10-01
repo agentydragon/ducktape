@@ -197,7 +197,8 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         assert pending["state"] == "decision_pending"
         assert pending["caller"] is None
         assert pending["arguments"]["nested"]["api_key"] == "[redacted]"
-        assert "origin" not in pending and "correlation" not in pending
+        assert "origin" not in pending
+        assert "correlation" not in pending
         # The caller-authored operator summary is projected verbatim.
         assert pending["title"] == envelope["title"]
         assert pending["description"] == envelope["description"]
