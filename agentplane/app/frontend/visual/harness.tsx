@@ -135,6 +135,13 @@ const SANDBOXES: SandboxView[] = [
   },
 ];
 
+if (scenario.grantError) {
+  const sandbox = SANDBOXES[0]!;
+  sandbox.state = "waiting_for_grants";
+  sandbox.kubernetes_grants_ready = false;
+  sandbox.kubernetes_grant_error = "ApiException (403)";
+}
+
 if (scenario.threadlessSandbox) {
   SANDBOXES.push({
     name: "test-provisioning",

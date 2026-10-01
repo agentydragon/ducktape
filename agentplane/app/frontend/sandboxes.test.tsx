@@ -192,9 +192,10 @@ it("pre-fills the preset's policy sets and Kubernetes grants, shows role scope, 
 it("allows an operator to remove the preset grant and sends an explicit empty grant list", async () => {
   const { container } = await render();
   await act(async () => {
-    const remove = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.getAttribute("aria-label")?.includes("workspace-read")
+    const pill = [...container.querySelectorAll<HTMLElement>(".mantine-Pill-root")].find((node) =>
+      node.textContent?.includes("workspace-read")
     );
+    const remove = pill?.querySelector<HTMLButtonElement>(".mantine-Pill-remove");
     if (!remove) throw new Error("Missing selected workspace-read grant control");
     remove.click();
   });

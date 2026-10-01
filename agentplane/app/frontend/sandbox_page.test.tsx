@@ -58,6 +58,7 @@ afterEach(async () => {
   (live.snapshot.sandbox as SandboxView).kubernetes_grants = [];
   (live.snapshot.sandbox as SandboxView).kubernetes_grants_ready = true;
   (live.snapshot.sandbox as SandboxView).kubernetes_grant_error = null;
+  (live.snapshot.sandbox as SandboxView).state = "running";
 });
 afterAll(() => vi.unstubAllGlobals());
 
@@ -172,6 +173,7 @@ it("lets a later Thread override the Sandbox reasoning default locally", async (
 });
 
 it("shows the selected Kubernetes grant scope, role, and application error", async () => {
+  (live.snapshot.sandbox as SandboxView).state = "waiting_for_grants";
   (live.snapshot.sandbox as SandboxView).kubernetes_grants = [
     {
       name: "workspace-read",
@@ -190,7 +192,8 @@ it("shows the selected Kubernetes grant scope, role, and application error", asy
   );
   if (!statusTab) throw new Error("Missing Status tab");
   await act(async () => statusTab.click());
-  expect(container.textContent).toContain("Applying");
+  expect(container.textContent).toContain("Error");
+  expect(container.textContent).toContain("Kubernetes grants are not ready; sessions cannot start yet.");
   expect(container.textContent).toContain("workspace-read · RoleBinding · namespace agentplane-test");
   expect(container.textContent).toContain("Role/workspace-reader");
   expect(container.textContent).toContain("binding controller is waiting");

@@ -90,7 +90,11 @@ function KubernetesGrantStatus({ sandbox }: { sandbox: SandboxView }): JSX.Eleme
     <Stack gap="xs">
       <Group gap="xs">
         <Title order={5}>Kubernetes grants</Title>
-        {!sandbox.kubernetes_grants_ready && <Badge color="yellow">Applying</Badge>}
+        {!sandbox.kubernetes_grants_ready && (
+          <Badge color={sandbox.kubernetes_grant_error ? "red" : "yellow"}>
+            {sandbox.kubernetes_grant_error ? "Error" : "Applying"}
+          </Badge>
+        )}
       </Group>
       {sandbox.kubernetes_grant_error && (
         <Text c="red" role="alert">
@@ -407,7 +411,11 @@ export function SandboxPage({
       {error && <Text c="red">{error}</Text>}
       {live.snapshot !== null && sandbox === null && <Text c="red">There is no sandbox {name} any more.</Text>}
       {sandbox && sandbox.state !== "running" && (
-        <Text>The sandbox is {sandbox.state}; sessions need a running Pod.</Text>
+        <Text>
+          {sandbox.state === "waiting_for_grants"
+            ? "Kubernetes grants are not ready; sessions cannot start yet."
+            : `The sandbox is ${sandbox.state}; sessions need a running Pod.`}
+        </Text>
       )}
       <Tabs
         value={tab}
