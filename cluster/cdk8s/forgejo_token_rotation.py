@@ -105,6 +105,7 @@ def _credentials_secret(rotation: Rotation) -> str:
 def _credentials_volume(rotation: Rotation) -> str:
     return f"{rotation.credentials_dir.name}-forgejo"
 
+
 # The content hash in the ConfigMap's name rolls the CronJob's template on a roster change.
 CONFIG_MAP = ConfigMapArgs(
     name="forgejo-token-rotations-config",
