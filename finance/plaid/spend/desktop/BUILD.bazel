@@ -47,8 +47,8 @@ py_wheel(
         "dbus-next>=0.2.3",
         "httpx>=0.27.0",
     ],
-    version = "0.1.0",
     strip_path_prefixes = ["finance/plaid/spend/desktop/"],
+    version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [
         ":credentials",

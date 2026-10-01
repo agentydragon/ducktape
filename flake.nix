@@ -99,9 +99,11 @@
       # PR overrides may include new artifacts that have not been published and
       # pinned yet. Keep their original filename from the local build output; for
       # published artifacts, use the pin URL's basename as usual.
-      artifactSpecs = artifactData.pins // builtins.mapAttrs (
-        name: path: (artifactData.pins.${name} or { }) // { overridePath = path; }
-      ) artifactOverrides;
+      artifactSpecs =
+        artifactData.pins
+        // builtins.mapAttrs (
+          name: path: (artifactData.pins.${name} or { }) // { overridePath = path; }
+        ) artifactOverrides;
 
       # Keep the developer Ruff binary aligned with the repository's pinned
       # Python and Bazel toolchains while nixpkgs catches up.
