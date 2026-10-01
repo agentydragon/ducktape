@@ -51,62 +51,25 @@ _SERVER_CONFIG_MAP = "attic-config"
 
 ROTATOR_CONFIG = Config(
     tokens=[
-        Token(
-            name="wyrm2 attic reader",
-            sops_file=Path("secrets/hosts/wyrm2-attic.yaml"),
-            sub="wyrm2",
-            validity="1 year",
-            pull=["main", "gaffer"],
-        ),
-        Token(
-            name="rugged attic reader",
-            sops_file=Path("secrets/hosts/rugged-attic.yaml"),
-            sub="rugged",
-            validity="1 year",
-            pull=["main", "gaffer"],
-        ),
-        Token(
-            name="iguana attic reader",
-            sops_file=Path("secrets/hosts/iguana-attic.yaml"),
-            sub="iguana",
-            validity="1 year",
-            pull=["main", "gaffer"],
-        ),
-        Token(
-            name="atlas attic reader",
-            sops_file=Path("secrets/hosts/atlas-attic.yaml"),
-            sub="atlas",
-            validity="1 year",
-            pull=["main", "gaffer"],
-        ),
-        Token(
-            name="gecko attic reader",
-            sops_file=Path("secrets/hosts/gecko-attic.yaml"),
-            sub="gecko",
-            validity="1 year",
-            pull=["main", "gaffer"],
-        ),
-        Token(
-            name="agent-box attic reader",
-            sops_file=Path("secrets/hosts/agent-box-attic.yaml"),
-            sub="agent-box",
-            validity="1 year",
-            pull=["main", "gaffer"],
-        ),
-        Token(
-            name="claude-web attic reader",
-            sops_file=Path("secrets/claude-web-attic.yaml"),
-            sub="claude-web",
-            validity="1 year",
-            pull=["main", "gaffer"],
-        ),
-        Token(
-            name="haku attic reader",
-            sops_file=Path("secrets/haku-attic.yaml"),
-            sub="haku",
-            validity="1 year",
-            pull=["main", "gaffer"],
-        ),
+        *[
+            Token(
+                name=f"{sub} attic reader",
+                sops_file=Path(secret_file),
+                sub=sub,
+                validity="1 year",
+                pull=["main", "gaffer"],
+            )
+            for sub, secret_file in [
+                ("wyrm2", "secrets/hosts/wyrm2-attic.yaml"),
+                ("rugged", "secrets/hosts/rugged-attic.yaml"),
+                ("iguana", "secrets/hosts/iguana-attic.yaml"),
+                ("atlas", "secrets/hosts/atlas-attic.yaml"),
+                ("gecko", "secrets/hosts/gecko-attic.yaml"),
+                ("agent-box", "secrets/hosts/agent-box-attic.yaml"),
+                ("claude-web", "secrets/claude-web-attic.yaml"),
+                ("haku", "secrets/haku-attic.yaml"),
+            ]
+        ],
         # CI reads main and gaffer for Nix substituter access. Public is an
         # anonymous-readable bootstrap cache required before CI credentials exist.
         Token(
