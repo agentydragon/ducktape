@@ -19,13 +19,31 @@ if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
 }
 
 // happy-dom exposes IntersectionObserver but does not calculate visibility or call observers.
-// Treat observed nodes as visible so tests exercise the mounted CodeMirror view instead of its
-// near-viewport placeholder.
-if (typeof window !== "undefined") {
+// Treat code-block placeholders as visible so tests exercise the mounted CodeMirror view, while
+// leaving any other observer users to happy-dom's implementation.
+const NativeIntersectionObserver = globalThis.IntersectionObserver;
+if (typeof window !== "undefined" && typeof NativeIntersectionObserver !== "undefined") {
   class VisibleIntersectionObserver implements IntersectionObserver {
-    constructor(private readonly callback: IntersectionObserverCallback) {}
+    private readonly observer: IntersectionObserver;
+    readonly root: Element | Document | null;
+    readonly rootMargin: string;
+    readonly thresholds: ReadonlyArray<number>;
+
+    constructor(
+      private readonly callback: IntersectionObserverCallback,
+      options?: IntersectionObserverInit
+    ) {
+      this.observer = new NativeIntersectionObserver((entries) => this.callback(entries, this), options);
+      this.root = options?.root ?? null;
+      this.rootMargin = options?.rootMargin ?? "0px";
+      this.thresholds = Array.isArray(options?.threshold) ? options.threshold : [options?.threshold ?? 0];
+    }
 
     observe(target: Element): void {
+      if (!target.matches(".agentplane-code-block-placeholder")) {
+        this.observer.observe(target);
+        return;
+      }
       const bounds = target.getBoundingClientRect();
       this.callback(
         [
@@ -43,10 +61,14 @@ if (typeof window !== "undefined") {
       );
     }
 
-    disconnect(): void {}
-    unobserve(_target: Element): void {}
+    disconnect(): void {
+      this.observer.disconnect();
+    }
+    unobserve(target: Element): void {
+      this.observer.unobserve(target);
+    }
     takeRecords(): IntersectionObserverEntry[] {
-      return [];
+      return this.observer.takeRecords();
     }
   }
 
