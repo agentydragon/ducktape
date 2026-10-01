@@ -16,7 +16,7 @@ def _mcp(calendar=None):
 async def test_tool_surface():
     async with Client(_mcp()) as client:
         tools = {tool.name for tool in await client.list_tools()}
-    assert tools == {"create_event", "get_event", "list_event_instances", "list_events"}
+    assert tools == {"create_event", "update_event", "delete_event", "get_event", "list_event_instances", "list_events"}
 
 
 async def test_create_event_dispatches_to_calendar_client():
@@ -59,6 +59,34 @@ async def test_create_event_accepts_explicit_null_lists():
     assert args.reminders == []
     assert args.attendees == []
     assert args.recurrence is None
+
+
+async def test_update_event_dispatches_only_the_set_fields():
+    calendar = Mock()
+    calendar.update_event.return_value = CalendarEvent(event_id="evt1", summary="Court hearing")
+    async with Client(_mcp(calendar=calendar)) as client:
+        result = await client.call_tool("update_event", {"event_id": "evt1", "summary": "Court hearing"})
+    assert not result.is_error
+    assert result.data.summary == "Court hearing"
+    (args,), _kwargs = calendar.update_event.call_args
+    assert args.event_id == "evt1"
+    assert args.summary == "Court hearing"
+    assert args.start is None
+    assert args.end is None
+    assert args.reminders is None
+    assert args.attendees is None
+    assert args.recurrence is None
+
+
+async def test_delete_event_dispatches_to_calendar_client():
+    calendar = Mock()
+    calendar.delete_event.return_value = None
+    async with Client(_mcp(calendar=calendar)) as client:
+        result = await client.call_tool("delete_event", {"event_id": "evt1", "calendar_id": "team"})
+    assert not result.is_error
+    (args,), _kwargs = calendar.delete_event.call_args
+    assert args.event_id == "evt1"
+    assert args.calendar_id == "team"
 
 
 async def test_read_tools_dispatch_to_calendar_client():

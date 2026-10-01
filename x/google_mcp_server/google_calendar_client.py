@@ -81,21 +81,78 @@ class CreateCalendarEventArgs(BaseModel):
 
     @model_validator(mode="after")
     def _validate_recurrence(self) -> CreateCalendarEventArgs:
-        if self.recurrence is None:
-            return self
-        for line in self.recurrence:
-            if not line or line != line.strip() or "\n" in line or "\r" in line:
-                raise ValueError("each recurrence item must be one non-empty unfolded content line")
-            if not line.startswith("RRULE:"):
-                raise ValueError("only RRULE recurrence lines are supported")
-            component_names = {part.split("=", 1)[0].upper() for part in line.removeprefix("RRULE:").split(";")}
-            if {"COUNT", "UNTIL"} <= component_names:
-                raise ValueError("RRULE cannot contain both COUNT and UNTIL")
-        try:
-            rrulestr("\n".join(self.recurrence), dtstart=_event_dtstart(self.start), forceset=True)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"invalid RRULE recurrence: {exc}") from exc
+        _validate_rrule_lines(self.recurrence, self.start)
         return self
+
+
+class UpdateCalendarEventArgs(BaseModel):
+    """Partially update a Google Calendar event. Only fields set here are changed; every field
+    left unset (`None`) leaves the existing event's value alone — this is a patch, not a
+    replacement."""
+
+    event_id: str = Field(description="Google Calendar event or recurring-series master ID to update.")
+    calendar_id: str = Field(
+        default="primary", description="Calendar the event belongs to; 'primary' is the operator's main calendar."
+    )
+    summary: str | None = Field(default=None, description="Event title. Unset leaves the existing title.")
+    start: EventDateTime | None = Field(default=None, description="Unset leaves the existing start.")
+    end: EventDateTime | None = Field(default=None, description="Unset leaves the existing end.")
+    description: str | None = Field(default=None, description="Event body text. Unset leaves the existing body.")
+    location: str | None = Field(default=None, description="Unset leaves the existing location.")
+    reminders: list[CalendarReminder] | None = Field(
+        default=None,
+        description="Overrides the calendar's default reminders. Unset leaves the existing reminders; "
+        "an empty list reverts to the calendar default.",
+    )
+    attendees: list[str] | None = Field(
+        default=None, description="Attendee email addresses. Unset leaves the existing attendees."
+    )
+    recurrence: list[str] | None = Field(
+        default=None,
+        min_length=1,
+        description="RFC 5545 RRULE content lines, one per item (for example "
+        "'RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12'). Unset leaves the existing recurrence. "
+        "Only RRULE is currently supported.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_recurrence(self) -> UpdateCalendarEventArgs:
+        _validate_rrule_lines(self.recurrence, self.start)
+        return self
+
+
+class DeleteCalendarEventArgs(BaseModel):
+    """Delete a Google Calendar event or recurring series."""
+
+    event_id: str = Field(description="Google Calendar event or recurring-series master ID to delete.")
+    calendar_id: str = Field(
+        default="primary", description="Calendar the event belongs to; 'primary' is the operator's main calendar."
+    )
+
+
+def _validate_rrule_lines(recurrence: list[str] | None, start: EventDateTime | None) -> None:
+    """Shared RRULE validation for `CreateCalendarEventArgs` and `UpdateCalendarEventArgs`.
+
+    `start` seeds `DTSTART` for the parse check below; an update that patches `recurrence`
+    without also patching `start` has no `DTSTART` of its own (the existing event's start is
+    left untouched), so the syntax check falls back to the current time — sufficient to catch a
+    malformed RRULE without knowing the real start the patched event will keep.
+    """
+    if recurrence is None:
+        return
+    for line in recurrence:
+        if not line or line != line.strip() or "\n" in line or "\r" in line:
+            raise ValueError("each recurrence item must be one non-empty unfolded content line")
+        if not line.startswith("RRULE:"):
+            raise ValueError("only RRULE recurrence lines are supported")
+        component_names = {part.split("=", 1)[0].upper() for part in line.removeprefix("RRULE:").split(";")}
+        if {"COUNT", "UNTIL"} <= component_names:
+            raise ValueError("RRULE cannot contain both COUNT and UNTIL")
+    dtstart = _event_dtstart(start) if start is not None else dt.datetime.now(dt.UTC)
+    try:
+        rrulestr("\n".join(recurrence), dtstart=dtstart, forceset=True)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid RRULE recurrence: {exc}") from exc
 
 
 def _event_dtstart(value: EventDateTime) -> dt.datetime:
@@ -241,6 +298,23 @@ class _EventInsert(BaseModel):
     recurrence: list[str] | None = None
 
 
+# --- Google Calendar `events.patch` request-body model (camelCase wire shape) ---
+# Every field is optional: `model_dump(exclude_none=True)` sends only what the caller set, so an
+# unset field leaves the existing event's value alone (true partial update, not `events.update`'s
+# full replacement).
+class _EventPatch(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    summary: str | None = None
+    start: _EventDateTime | None = None
+    end: _EventDateTime | None = None
+    description: str | None = None
+    location: str | None = None
+    attendees: list[_Attendee] | None = None
+    reminders: _Reminders | None = None
+    recurrence: list[str] | None = None
+
+
 class CalendarToolsClient:
     """Focused event reads and creation over a raw Calendar service."""
 
@@ -269,6 +343,39 @@ class CalendarToolsClient:
             .execute()
         )
         return CalendarEvent.model_validate(created)
+
+    def update_event(self, args: UpdateCalendarEventArgs) -> CalendarEvent:
+        body = _EventPatch(
+            summary=args.summary,
+            start=_EventDateTime.of(args.start) if args.start is not None else None,
+            end=_EventDateTime.of(args.end) if args.end is not None else None,
+            description=args.description,
+            location=args.location,
+            attendees=[_Attendee(email=email) for email in args.attendees] if args.attendees is not None else None,
+            # An explicit empty list reverts to the calendar default (clearing any prior
+            # overrides); `None` (unset) omits the key entirely, leaving existing reminders alone.
+            reminders=_Reminders(
+                use_default=not args.reminders,
+                overrides=[_ReminderOverride(method=r.method, minutes=r.minutes_before_start) for r in args.reminders],
+            )
+            if args.reminders is not None
+            else None,
+            recurrence=args.recurrence,
+        )
+        updated = (
+            self.service.events()
+            .patch(
+                calendarId=args.calendar_id,
+                eventId=args.event_id,
+                body=body.model_dump(by_alias=True, exclude_none=True),
+            )
+            .execute()
+        )
+        return CalendarEvent.model_validate(updated)
+
+    def delete_event(self, args: DeleteCalendarEventArgs) -> None:
+        # Google's delete returns an empty body — nothing to validate into a CalendarEvent.
+        self.service.events().delete(calendarId=args.calendar_id, eventId=args.event_id).execute()
 
     def get_event(self, calendar_id: str, event_id: str) -> CalendarEvent:
         event = self.service.events().get(calendarId=calendar_id, eventId=event_id).execute()

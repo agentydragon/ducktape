@@ -10,6 +10,8 @@ describe("generated MCP tool argument schemas", () => {
     expect(keys).toContain("gmail.drafts_create");
     expect(keys).toContain("gmail.threads_modify_labels");
     expect(keys).toContain("google_calendar.create_event");
+    expect(keys).toContain("google_calendar.update_event");
+    expect(keys).toContain("google_calendar.delete_event");
     expect(keys).toContain("google_calendar.get_event");
     expect(keys).toContain("google_calendar.list_events");
     expect(keys).toContain("google_calendar.list_event_instances");

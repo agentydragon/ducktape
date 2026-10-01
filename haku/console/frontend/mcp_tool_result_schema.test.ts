@@ -16,6 +16,8 @@ describe("generated MCP tool result schemas", () => {
     expect(keys).not.toContain("google_calendar.calendar_summary");
     // A `-> None` return has no structured result, so it has no entry.
     expect(keys).not.toContain("gmail.labels_delete");
+    expect(keys).not.toContain("google_calendar.delete_event");
+    expect(keys).toContain("google_calendar.update_event");
     // grocy-sf's batch-tool result schemas are now reflected (the allowlisted preview tools).
     expect(keys.filter((key) => key.startsWith("grocy-sf."))).toHaveLength(15);
     expect(keys).toContain("grocy-sf.stock_add");

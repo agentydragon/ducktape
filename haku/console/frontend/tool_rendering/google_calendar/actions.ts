@@ -9,7 +9,11 @@ export const googleCalendarActions: Record<string, ActionEntry> = {
   create_event: fromArgs(mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event"), (a) => ({
     text: a.recurrence?.length ? "Google Calendar: Create recurring event" : "Google Calendar: Create event",
   })),
+  update_event: fromArgs(mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "update_event"), (a) => ({
+    text: a.recurrence?.length ? "Google Calendar: Update recurring event" : "Google Calendar: Update event",
+  })),
   get_event: fixed("Google Calendar: Get event"),
   list_events: fixed("Google Calendar: List events"),
   list_event_instances: fixed("Google Calendar: List event instances"),
+  delete_event: fixed("Google Calendar: Delete event", true),
 };

@@ -191,6 +191,18 @@ async def test_calendar_create_stays_manual() -> None:
     assert evaluation == "manual: Agent policy 'haku_v1' did not auto-approve google_calendar/create_event"
 
 
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [("update_event", {"event_id": "evt1", "summary": "Court hearing"}), ("delete_event", {"event_id": "evt1"})],
+)
+async def test_calendar_update_and_delete_stay_manual(tool_name: str, arguments: dict) -> None:
+    # Not in _GOOGLE_CALENDAR_READS_ACTIONS (cluster/cdk8s/agentplane/actions_staging_policies.py):
+    # writes stay on the human-approval path, same as create_event above.
+    policy_id, evaluation = _approval(await _calendar_decision(tool_name, arguments))
+    assert policy_id is None
+    assert evaluation == f"manual: Agent policy 'haku_v1' did not auto-approve google_calendar/{tool_name}"
+
+
 async def test_calendar_read_with_invalid_arguments_is_auto_denied() -> None:
     denial = await _calendar_decision("list_events", {"max_results": 251})
     assert isinstance(denial, PolicyDenial)

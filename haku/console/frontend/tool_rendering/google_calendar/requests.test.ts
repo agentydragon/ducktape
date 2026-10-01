@@ -4,8 +4,9 @@ import { renderPreview } from "../entry";
 import { formatEventDateTimeRange, googleCalendarPreviews, humanizeRRule } from "./requests";
 
 describe("googleCalendarPreviews", () => {
-  it("has no entry for create_event — it's a combined widget (calls.tsx) instead", () => {
+  it("has no entry for create_event/update_event — they're combined widgets (calls.tsx) instead", () => {
     expect("create_event" in googleCalendarPreviews).toBe(false);
+    expect("update_event" in googleCalendarPreviews).toBe(false);
   });
 
   it("humanizes an RRULE", () => {
@@ -18,6 +19,10 @@ describe("googleCalendarPreviews", () => {
     expect(
       renderPreview(googleCalendarPreviews.list_event_instances, { recurring_event_id: "series1" }, "compact")
     ).not.toBeNull();
+  });
+
+  it("renders delete_event by its target event id", () => {
+    expect(renderPreview(googleCalendarPreviews.delete_event, { event_id: "evt1" }, "compact")).not.toBeNull();
   });
 });
 

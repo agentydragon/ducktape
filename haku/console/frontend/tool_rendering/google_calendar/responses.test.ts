@@ -14,8 +14,13 @@ const recurringEvent = {
 };
 
 describe("googleCalendarResultPreviews", () => {
-  it("has no entry for create_event — it's a combined widget (calls.tsx) instead", () => {
+  it("has no entry for create_event/update_event — they're combined widgets (calls.tsx) instead", () => {
     expect("create_event" in googleCalendarResultPreviews).toBe(false);
+    expect("update_event" in googleCalendarResultPreviews).toBe(false);
+  });
+
+  it("has no entry for delete_event — it returns nothing to render", () => {
+    expect("delete_event" in googleCalendarResultPreviews).toBe(false);
   });
 
   it("renders the focused event shape for get", () => {

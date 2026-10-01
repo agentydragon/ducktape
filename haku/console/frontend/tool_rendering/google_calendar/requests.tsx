@@ -21,6 +21,9 @@ import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids";
 export const zCreateCalendarEventArgs: z.ZodType<
   McpToolArgumentsFor<typeof GOOGLE_CALENDAR_SERVER_ID, "create_event">
 > = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
+export const zUpdateCalendarEventArgs: z.ZodType<
+  McpToolArgumentsFor<typeof GOOGLE_CALENDAR_SERVER_ID, "update_event">
+> = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "update_event");
 const zGetCalendarEventArgs: z.ZodType<McpToolArgumentsFor<typeof GOOGLE_CALENDAR_SERVER_ID, "get_event">> =
   mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "get_event");
 const zListCalendarEventsArgs: z.ZodType<McpToolArgumentsFor<typeof GOOGLE_CALENDAR_SERVER_ID, "list_events">> =
@@ -28,11 +31,15 @@ const zListCalendarEventsArgs: z.ZodType<McpToolArgumentsFor<typeof GOOGLE_CALEN
 const zListCalendarEventInstancesArgs: z.ZodType<
   McpToolArgumentsFor<typeof GOOGLE_CALENDAR_SERVER_ID, "list_event_instances">
 > = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "list_event_instances");
+const zDeleteCalendarEventArgs: z.ZodType<McpToolArgumentsFor<typeof GOOGLE_CALENDAR_SERVER_ID, "delete_event">> =
+  mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "delete_event");
 
 export type CreateCalendarEventArgs = z.infer<typeof zCreateCalendarEventArgs>;
+export type UpdateCalendarEventArgs = z.infer<typeof zUpdateCalendarEventArgs>;
 type GetCalendarEventArgs = z.infer<typeof zGetCalendarEventArgs>;
 type ListCalendarEventsArgs = z.infer<typeof zListCalendarEventsArgs>;
 type ListCalendarEventInstancesArgs = z.infer<typeof zListCalendarEventInstancesArgs>;
+type DeleteCalendarEventArgs = z.infer<typeof zDeleteCalendarEventArgs>;
 type EventDateTime = CreateCalendarEventArgs["start"];
 type CalendarReminder = NonNullable<CreateCalendarEventArgs["reminders"]>[number];
 
@@ -257,7 +264,64 @@ export function CreateCalendarEventPreview({ args, variant }: PreviewProps<Creat
   );
 }
 
+// Exported for google_calendar/calls.tsx's combined update_event widget, which renders this
+// pre-execution and CalendarEventResultView (responses.tsx) once the call has finished. Unlike
+// create, every field here but event_id is an optional patch: the title leads with the new
+// summary when one is set, else the event id being targeted, and each remaining field only shows
+// up when this call actually changes it.
+export function UpdateCalendarEventPreview({ args, variant }: PreviewProps<UpdateCalendarEventArgs>): JSX.Element {
+  const when = args.start && args.end ? formatEventDateTimeRange(args.start, args.end) : null;
+  return (
+    <Stack gap={6}>
+      <PreviewTitle>{args.summary ?? args.event_id}</PreviewTitle>
+      {args.summary && (
+        <Field label="Event" mono>
+          {args.event_id}
+        </Field>
+      )}
+      {when && (
+        <Field icon={<ClockIcon size={15} />} label="When">
+          <span title={when.title}>{when.text}</span>
+        </Field>
+      )}
+      {args.recurrence && args.recurrence.length > 0 && (
+        <RecurrenceField recurrence={args.recurrence} variant={variant} />
+      )}
+      {variant === "detailed" && (
+        <>
+          {args.location && (
+            <Field icon={<MapPinIcon size={15} />} label="Location">
+              {args.location}
+            </Field>
+          )}
+          {args.description && <PreviewText c="dimmed">{args.description}</PreviewText>}
+          {args.calendar_id && args.calendar_id !== "primary" && <CalendarField calendarId={args.calendar_id} />}
+          {args.reminders && args.reminders.length > 0 && (
+            <Field icon={<BellIcon size={15} />} label="Reminders">
+              {args.reminders.map(formatReminder).join(" · ")}
+            </Field>
+          )}
+          {args.attendees && args.attendees.length > 0 && (
+            <Field icon={<UsersIcon size={15} />} label="Attendees">
+              {args.attendees.join(", ")}
+            </Field>
+          )}
+        </>
+      )}
+    </Stack>
+  );
+}
+
 function GetCalendarEventPreview({ args }: PreviewProps<GetCalendarEventArgs>) {
+  return (
+    <Stack gap="xs">
+      <PreviewTitle>{args.event_id}</PreviewTitle>
+      {args.calendar_id && args.calendar_id !== "primary" && <CalendarField calendarId={args.calendar_id} />}
+    </Stack>
+  );
+}
+
+function DeleteCalendarEventPreview({ args }: PreviewProps<DeleteCalendarEventArgs>) {
   return (
     <Stack gap="xs">
       <PreviewTitle>{args.event_id}</PreviewTitle>
@@ -299,14 +363,17 @@ function ListCalendarEventInstancesPreview({ args, variant }: PreviewProps<ListC
   );
 }
 
-/** Per-tool preview widgets for the `google_calendar` server. `create_event` has no entry here —
- * its pending/finished states are one combined widget (calls.tsx), not a separate args-only one. */
+/** Per-tool preview widgets for the `google_calendar` server. `create_event`/`update_event` have
+ * no entry here — their pending/finished states are combined widgets (calls.tsx), not separate
+ * args-only ones. */
 export const googleCalendarPreviews: {
   get_event: ToolPreview<typeof zGetCalendarEventArgs>;
   list_events: ToolPreview<typeof zListCalendarEventsArgs>;
   list_event_instances: ToolPreview<typeof zListCalendarEventInstancesArgs>;
+  delete_event: ToolPreview<typeof zDeleteCalendarEventArgs>;
 } = {
   get_event: definePreview(zGetCalendarEventArgs, GetCalendarEventPreview),
   list_events: definePreview(zListCalendarEventsArgs, ListCalendarEventsPreview),
   list_event_instances: definePreview(zListCalendarEventInstancesArgs, ListCalendarEventInstancesPreview),
+  delete_event: definePreview(zDeleteCalendarEventArgs, DeleteCalendarEventPreview),
 } satisfies Record<string, ToolPreview>;

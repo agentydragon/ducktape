@@ -39,7 +39,14 @@ _EXPECTED_TOOLS = {
         "threads_list",
         "threads_modify_labels",
     ),
-    "google_calendar": ("create_event", "get_event", "list_event_instances", "list_events"),
+    "google_calendar": (
+        "create_event",
+        "delete_event",
+        "get_event",
+        "list_event_instances",
+        "list_events",
+        "update_event",
+    ),
     "grants": ("create_grant", "get_grant", "kubernetes_can_i", "list_grants", "revoke_grants", "whoami"),
     # grocy-sf is reflected only for the batch tools the console renders previews for.
     "grocy-sf": (
@@ -63,7 +70,7 @@ _EXPECTED_TOOLS = {
 }
 _SERVER_IDS = list(_EXPECTED_TOOLS)
 _RESULT_SERVER_IDS = [*_SERVER_IDS, "haku-console"]
-_RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grants", "grocy-sf", "haku_routine")
+_RESULT_TOOLS_MATCH_ARGUMENTS = ("grants", "grocy-sf", "haku_routine")
 
 
 def _assert_catalog_shape(schema: dict[str, object], title: str, server_ids: list[str] = _SERVER_IDS) -> None:
@@ -147,6 +154,13 @@ async def test_nullable_fastmcp_arguments_remain_nullable() -> None:
     Draft202012Validator(schema["properties"]["google_calendar"]["properties"]["get_event"]).validate(
         {"event_id": "series1"}
     )
+    # update_event is a partial patch: every field but event_id is nullable/omittable.
+    Draft202012Validator(schema["properties"]["google_calendar"]["properties"]["update_event"]).validate(
+        {"event_id": "series1", "summary": "Renamed event"}
+    )
+    Draft202012Validator(schema["properties"]["google_calendar"]["properties"]["delete_event"]).validate(
+        {"event_id": "series1"}
+    )
 
 
 async def test_exports_result_catalog() -> None:
@@ -168,6 +182,12 @@ async def test_exports_result_catalog() -> None:
     assert "threads_modify_labels" in gmail
     # `id` is the one required field of a Draft resource.
     assert gmail["drafts_create"].get("required") == ["id"]
+
+    calendar = schema["properties"]["google_calendar"]["properties"]
+    # delete_event also returns `-> None`, so (like gmail.labels_delete) it is omitted; the other
+    # five calendar tools all return a CalendarEvent or page and keep their result schema.
+    assert "delete_event" not in calendar
+    assert list(calendar) == ["create_event", "get_event", "list_event_instances", "list_events", "update_event"]
 
     Draft202012Validator.check_schema(schema)
 
@@ -250,6 +270,7 @@ async def test_result_schemas_validate_and_terminate_recursion() -> None:
     }
     Draft202012Validator(calendar["create_event"]).validate(event)
     Draft202012Validator(calendar["get_event"]).validate(event)
+    Draft202012Validator(calendar["update_event"]).validate(event)
     Draft202012Validator(calendar["list_events"]).validate({"events": [event], "next_page_token": "next"})
     Draft202012Validator(calendar["list_event_instances"]).validate({"events": [event]})
 

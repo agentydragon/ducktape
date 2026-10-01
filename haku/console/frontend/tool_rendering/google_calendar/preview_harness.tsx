@@ -36,6 +36,40 @@ const PREVIEW_FIXTURES = [
     },
   },
   {
+    title: "Rename an event to drop the emoji alarm-dismiss title",
+    serverId: "google_calendar",
+    toolName: "update_event",
+    args: {
+      event_id: "0k5rq2n8vd1m3jf7",
+      summary: "Court hearing — trial reminder",
+    },
+    result: {
+      event_id: "0k5rq2n8vd1m3jf7",
+      status: "confirmed",
+      summary: "Court hearing — trial reminder",
+      start: { date_time: "2026-08-03T09:00:00-07:00", time_zone: "America/Los_Angeles" },
+      end: { date_time: "2026-08-03T10:00:00-07:00", time_zone: "America/Los_Angeles" },
+      html_link: "https://www.google.com/calendar/event?eid=MGs1cnEybjh2ZDFtM2pmNyBmYW1pbHlAZ3JvdXA",
+    },
+  },
+  {
+    title: "Reschedule a recurring series",
+    serverId: "google_calendar",
+    toolName: "update_event",
+    args: {
+      event_id: "series-standup",
+      start: { date_time: "2026-07-20T10:00:00-07:00", time_zone: "America/Los_Angeles" },
+      end: { date_time: "2026-07-20T10:15:00-07:00", time_zone: "America/Los_Angeles" },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"],
+    },
+  },
+  {
+    title: "Delete a cancelled event",
+    serverId: "google_calendar",
+    toolName: "delete_event",
+    args: { event_id: "evt-cancelled" },
+  },
+  {
     title: "Get a recurring series",
     serverId: "google_calendar",
     toolName: "get_event",

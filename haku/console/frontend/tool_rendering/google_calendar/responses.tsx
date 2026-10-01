@@ -17,6 +17,8 @@ import { formatEventDateTimeRange, RecurrenceField } from "./requests";
 
 export const zCreateEventResult: z.ZodType<McpToolResultFor<typeof GOOGLE_CALENDAR_SERVER_ID, "create_event">> =
   mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
+export const zUpdateEventResult: z.ZodType<McpToolResultFor<typeof GOOGLE_CALENDAR_SERVER_ID, "update_event">> =
+  mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "update_event");
 const zGetEventResult: z.ZodType<McpToolResultFor<typeof GOOGLE_CALENDAR_SERVER_ID, "get_event">> = mcpToolResultSchema(
   GOOGLE_CALENDAR_SERVER_ID,
   "get_event"
@@ -113,9 +115,10 @@ function CalendarEventsPageResultView({ result, variant }: ResultPreviewProps<Ca
   );
 }
 
-/** Per-tool result widgets for the `google_calendar` server. `create_event` has no entry here —
- * its pending/finished states are one combined widget (calls.tsx), not a separate result-only
- * one. */
+/** Per-tool result widgets for the `google_calendar` server. `create_event`/`update_event` have no
+ * entry here — their pending/finished states are combined widgets (calls.tsx), not separate
+ * result-only ones. `delete_event` returns nothing (Google's delete has an empty body), so it has
+ * no result widget either. */
 export const googleCalendarResultPreviews: {
   get_event: ToolResultPreview<typeof zGetEventResult>;
   list_events: ToolResultPreview<typeof zListEventsResult>;

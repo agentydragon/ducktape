@@ -24,9 +24,11 @@ from x.google_mcp_server.google_calendar_client import (
     CalendarReminder,
     CalendarToolsClient,
     CreateCalendarEventArgs,
+    DeleteCalendarEventArgs,
     EventDateTime,
     ListCalendarEventInstancesArgs,
     ListCalendarEventsArgs,
+    UpdateCalendarEventArgs,
 )
 from x.google_mcp_server.google_service import build_google_api_service
 
@@ -53,6 +55,34 @@ _RecurrenceAnn = Annotated[
         description="RFC 5545 RRULE content lines, one per item (for example "
         "'RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12'). DTSTART and DTEND come from start/end. "
         "COUNT includes the first occurrence. Only RRULE is currently supported.",
+    ),
+]
+# update_event's reminders/attendees/recurrence: `None` (the default — omitted) means "leave this
+# field alone"; an explicit empty list is a real value (revert reminders to the calendar default,
+# clear attendees). Distinct wording from the create_event annotations above, whose `None` just
+# means "no override", since create has no existing event to leave alone.
+_UpdateRemindersAnn = Annotated[
+    list[CalendarReminder] | None,
+    Field(
+        default=None,
+        description="Overrides the calendar's default reminders. Omit to leave the event's existing reminders "
+        "unchanged; an empty list reverts to the calendar default.",
+    ),
+]
+_UpdateAttendeesAnn = Annotated[
+    list[str] | None,
+    Field(
+        default=None, description="Attendee email addresses. Omit to leave the event's existing attendees unchanged."
+    ),
+]
+_UpdateRecurrenceAnn = Annotated[
+    list[str] | None,
+    Field(
+        default=None,
+        min_length=1,
+        description="RFC 5545 RRULE content lines, one per item (for example "
+        "'RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12'). Omit to leave the event's existing recurrence unchanged. "
+        "Only RRULE is currently supported.",
     ),
 ]
 
@@ -91,6 +121,59 @@ def build_mcp(calendar: CalendarToolsClient) -> FastMCP:
             recurrence=recurrence,
         )
         return calendar.create_event(args)
+
+    @mcp.tool
+    async def update_event(
+        event_id: Annotated[str, Field(description="Google Calendar event or recurring-series master ID to update.")],
+        calendar_id: Annotated[
+            str, Field(description="Calendar the event belongs to; 'primary' is the operator's main calendar.")
+        ] = "primary",
+        summary: Annotated[
+            str | None, Field(default=None, description="Event title. Omit to leave it unchanged.")
+        ] = None,
+        start: Annotated[
+            EventDateTime | None, Field(default=None, description="Omit to leave the existing start unchanged.")
+        ] = None,
+        end: Annotated[
+            EventDateTime | None, Field(default=None, description="Omit to leave the existing end unchanged.")
+        ] = None,
+        description: Annotated[
+            str | None, Field(default=None, description="Event body text. Omit to leave it unchanged.")
+        ] = None,
+        location: Annotated[
+            str | None, Field(default=None, description="Omit to leave the existing location unchanged.")
+        ] = None,
+        reminders: _UpdateRemindersAnn = None,
+        attendees: _UpdateAttendeesAnn = None,
+        recurrence: _UpdateRecurrenceAnn = None,
+    ) -> CalendarEvent:
+        """Partially update an event — only the fields you set are changed; every field you leave
+        unset keeps the existing event's value. Use this to rename an event, reschedule it, or
+        change one field without resending the whole event."""
+        args = UpdateCalendarEventArgs(
+            event_id=event_id,
+            calendar_id=calendar_id,
+            summary=summary,
+            start=start,
+            end=end,
+            description=description,
+            location=location,
+            reminders=reminders,
+            attendees=attendees,
+            recurrence=recurrence,
+        )
+        return calendar.update_event(args)
+
+    @mcp.tool
+    async def delete_event(
+        event_id: Annotated[str, Field(description="Google Calendar event or recurring-series master ID to delete.")],
+        calendar_id: Annotated[
+            str, Field(description="Calendar the event belongs to; 'primary' is the operator's main calendar.")
+        ] = "primary",
+    ) -> None:
+        """Delete an event or recurring series. This removes it from the calendar entirely and
+        cannot be undone."""
+        calendar.delete_event(DeleteCalendarEventArgs(event_id=event_id, calendar_id=calendar_id))
 
     @mcp.tool(annotations=_READ_ONLY)
     async def get_event(
