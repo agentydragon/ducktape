@@ -930,7 +930,7 @@ function command(
   );
 }
 
-function standardRows(threadId: string): Record<string, unknown>[] {
+function standardRows(threadId: string, longReasoningPreview: boolean): Record<string, unknown>[] {
   const rows = [
     viewState(34, "turn-visual"),
     entity(
@@ -954,7 +954,11 @@ function standardRows(threadId: string): Record<string, unknown>[] {
       20,
       "r-1",
       ItemKind.REASONING,
-      "I will inspect the repository structure, compare **the relevant implementation and tests**, then confirm which path preserves the existing behavior before proposing a change.",
+      longReasoningPreview
+        ? "I will compare the projected row with its source payload. **The streamed body must retain its Markdown formatting** while the one-line preview clips what does not fit. I will verify the fetch path and expanded content before changing behavior. ".repeat(
+            2
+          )
+        : "I will inspect the repository structure, compare **the relevant implementation and tests**, then confirm which path preserves the existing behavior before proposing a change.",
       { threadId }
     ),
     item(28, "m-1", ItemKind.ASSISTANT_TEXT, "I found the project files and the relevant tests.", { threadId }),
@@ -1346,7 +1350,7 @@ function threadEntityRows(threadId: string): Record<string, unknown>[] {
   if (scenario.streamingInterleaved) return streamingInterleavedRows(threadId);
   if (scenario.standaloneReasoning) return standaloneReasoningRows(threadId, scenario.longReasoningPreview ?? false);
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
-  return standardRows(threadId);
+  return standardRows(threadId, scenario.longReasoningPreview ?? false);
 }
 
 function threadScope(threadId: string): Record<string, string> {

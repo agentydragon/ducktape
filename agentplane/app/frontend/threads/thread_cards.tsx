@@ -116,11 +116,22 @@ function ReasoningPreview({
       return;
     }
     const measure = () => {
-      const range = document.createRange();
-      range.selectNodeContents(content);
-      // The Markdown wrapper is clipped, so its scrollWidth can equal its clientWidth even when
-      // its inline descendants continue past the preview. Measure the laid-out content itself.
-      onOverflowChange(range.getBoundingClientRect().right > element.getBoundingClientRect().right + 1);
+      const previewOverflow = element.style.overflow;
+      const markdownOverflow = content.style.overflow;
+      // Both wrappers clip the line for display. Temporarily expose it so Range measures the full
+      // formatted text rather than the visible, ellipsized portion.
+      element.style.overflow = "visible";
+      content.style.overflow = "visible";
+      let width: number;
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(content);
+        width = range.getBoundingClientRect().width;
+      } finally {
+        content.style.overflow = markdownOverflow;
+        element.style.overflow = previewOverflow;
+      }
+      onOverflowChange(width > element.clientWidth + 1);
     };
     measure();
     const observer = new ResizeObserver(measure);

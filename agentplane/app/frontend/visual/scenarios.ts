@@ -82,7 +82,7 @@ export interface Scenario extends ScenarioOptions {
    * `EntityCard` renders it directly -- the standalone case, distinct from `openReasoning`'s
    * reasoning-nested-inside-a-run-card one. */
   standaloneReasoning?: boolean;
-  /** Give the standalone reasoning step enough Markdown to exercise a clipped inline preview. */
+  /** Give reasoning enough Markdown to exercise a clipped inline preview and disclosure. */
   longReasoningPreview?: boolean;
   pendingCommands?: "mixed" | "controls" | "outcomes";
   /** Answer a command POST as the app does when a runner misses its admission deadline. Without
@@ -688,6 +688,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     outputName: "session-reasoning",
     openReasoning: true,
+    longReasoningPreview: true,
     readySelectors: ["details.agentplane-reasoning-details[open] > .agentplane-markdown"],
   },
   session_reasoning_phone: {
@@ -696,6 +697,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     outputName: "session-reasoning-phone",
     openReasoning: true,
+    longReasoningPreview: true,
     readySelectors: ["details.agentplane-reasoning-details[open] > .agentplane-markdown"],
   },
   // A fenced code block in a registered language, syntax-highlighted in prose the way tool-call
