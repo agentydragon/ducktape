@@ -1,11 +1,21 @@
-# Plaid Spend desktop client
+# Plaid Spend clients
 
-This directory contains the per-user client for `https://plaid-spend.allegedly.works`:
+This directory contains the per-user clients for `https://plaid-spend.allegedly.works`:
 
 - `plaid-spend-daemon` owns the Authentik login, bearer token, SSE connection and session-bus API.
+- `plaid-spend` prints the current view, reports the daemon status, or starts sign-in.
 - The GNOME Shell extension renders current statement-cycle spend and opens the login flow.
 
-The extension and daemon are installed together by the `ducktape.plaidSpend` Home Manager module. The daemon starts for the graphical session on opted-in hosts. First use offers a sign-in action in the panel popup.
+The CLI, extension and daemon are installed together by the `ducktape.plaidSpend` Home Manager module. The daemon starts for the graphical session on opted-in hosts. The CLI works from a terminal in that user session without opening the panel extension.
+
+```sh
+plaid-spend             # show statement-cycle spend
+plaid-spend --json      # print the API view as JSON
+plaid-spend status      # show daemon connection and sign-in state
+plaid-spend login       # start Authentik sign-in in the browser
+```
+
+The CLI reads the same view and status over the session D-Bus interface as the panel extension. OAuth tokens remain owned by the daemon and stored in Secret Service.
 
 ## Wire contract
 

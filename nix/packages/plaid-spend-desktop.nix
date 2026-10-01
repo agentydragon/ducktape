@@ -15,10 +15,14 @@ python314Packages.buildPythonApplication {
   src = artifacts."plaid-spend-desktop";
 
   propagatedBuildInputs = with python314Packages; [
+    babel
     dbus-next
     httpx
   ];
-  pythonImportsCheck = [ "plaid_spend_desktop.daemon" ];
+  pythonImportsCheck = [
+    "plaid_spend_desktop.cli"
+    "plaid_spend_desktop.daemon"
+  ];
   doCheck = false;
   dontUsePytestCheck = true;
 
@@ -43,10 +47,10 @@ python314Packages.buildPythonApplication {
   passthru.extensionUuid = extensionUuid;
 
   meta = {
-    description = "GNOME panel client for server-computed Plaid statement-cycle spend";
+    description = "CLI and GNOME clients for server-computed Plaid statement-cycle spend";
     homepage = "https://github.com/agentydragon/ducktape";
     license = lib.licenses.agpl3Only;
-    mainProgram = "plaid-spend-daemon";
+    mainProgram = "plaid-spend";
     platforms = lib.platforms.linux;
   };
 }
