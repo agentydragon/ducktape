@@ -35,7 +35,7 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken,
 )
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import ConfigMap
+from cdk8s_plus_34 import ConfigMap, Role, RolePolicyRule
 from constructs import Construct
 
 from agentplane.egress import sidecar
@@ -66,7 +66,8 @@ _CA_BUNDLE_PATH = "/etc/ssl/certs/ca-certificates.crt"
 # Where Debian's JDKs keep the system trust store; Bazel's embedded JDK reads it only when told to.
 _JAVA_TRUST_STORE_PATH = "/etc/ssl/certs/java/cacerts"
 # Configuration files for the box's tools, one key each, mounted file by file.
-_TOOL_CONFIG_MAP_NAME = "agentplane-sandbox-tool-config"
+TOOL_CONFIG_MAP_NAME = "agentplane-sandbox-tool-config"
+TOOL_CONFIG_READER_ROLE_NAME = "agentplane-sandbox-tool-config-reader"
 _TOOL_CONFIG_VOLUME_NAME = "tool-config"
 _BAZELRC_KEY = "bazel.bazelrc"
 _KUBECONFIG_KEY = "kubeconfig"
@@ -142,10 +143,10 @@ def add_tool_config(scope: Construct, env: Environment) -> None:
     the box's own projected token: the box has no token of its own to put there; the sidecar holds
     it."""
     passthrough = " ".join(f"--test_env={var.name}" for var in egress_env())
-    ConfigMap(
+    tool_config = ConfigMap(
         scope,
         "sandbox-tool-config",
-        metadata=ApiObjectMetadata(name=_TOOL_CONFIG_MAP_NAME, namespace=env.namespace),
+        metadata=ApiObjectMetadata(name=TOOL_CONFIG_MAP_NAME, namespace=env.namespace),
         data={
             _BAZELRC_KEY: (
                 f"startup --host_jvm_args=-Djavax.net.ssl.trustStore={_JAVA_TRUST_STORE_PATH}\ncommon {passthrough}\n"
@@ -169,6 +170,12 @@ def add_tool_config(scope: Construct, env: Environment) -> None:
                 }
             ),
         },
+    )
+    Role(
+        scope,
+        "sandbox-tool-config-reader-role",
+        metadata=ApiObjectMetadata(name=TOOL_CONFIG_READER_ROLE_NAME, namespace=env.namespace),
+        rules=[RolePolicyRule(resources=[tool_config], verbs=["get"])],
     )
 
 
@@ -248,7 +255,7 @@ def _egress_volumes(env: Environment) -> list[SandboxTemplateSpecPodTemplateSpec
         ),
         SandboxTemplateSpecPodTemplateSpecVolumes(
             name=_TOOL_CONFIG_VOLUME_NAME,
-            config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(name=_TOOL_CONFIG_MAP_NAME),
+            config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(name=TOOL_CONFIG_MAP_NAME),
         ),
         # The Pod's identity, and to nobody else: this volume is mounted by the egress sidecar
         # alone, so no token here is readable from the container an agent runs commands in.

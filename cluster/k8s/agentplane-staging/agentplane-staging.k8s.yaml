@@ -1350,6 +1350,21 @@ data:
     current-context: in-cluster
 immutable: false
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-sandbox-tool-config-reader
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-sandbox-tool-config
+    resources:
+      - configmaps
+    verbs:
+      - get
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -1510,6 +1525,23 @@ rules:
     verbs:
       - create
       - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - rolebindings
+    verbs:
+      - create
+      - get
+      - list
+      - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - agentplane-sandbox-tool-config-reader
+    resources:
+      - roles
+    verbs:
+      - bind
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -1850,6 +1882,13 @@ data:
             git clone --branch main --single-branch http://finance-agent:agentplane-credential-forgejo-finance-agent@forgejo-http.forgejo.svc.cluster.local:3000/finance-agent/finance-agent.git /state/workspaces/finance-agent
             printf '%s\n' 'finance-agent workspace initialized' >"$marker"
           fi
+    kubernetes_grants:
+      sandbox-tool-config:
+        kind: RoleBinding
+        namespace: agentplane-staging
+        role_ref:
+          kind: Role
+          name: agentplane-sandbox-tool-config-reader
     default_policies:
       - basic
     egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081

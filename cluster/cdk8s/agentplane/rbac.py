@@ -10,42 +10,14 @@ from __future__ import annotations
 
 from typing import cast
 
-import jsii
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ApiResource, Group, IApiResource, Role, RoleBinding, RolePolicyRule, ServiceAccount, k8s
 from constructs import Construct
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
-
-
-@jsii.implements(IApiResource)
-class _NamedApiResource:
-    """An `IApiResource` naming one specific object, for a rule's `resourceNames` --
-    the manual form of what `Secret.from_secret_name()` and its siblings generate
-    for their own typed resource kinds, needed here because no cdk8s-plus type
-    covers the `serviceaccounts/token` subresource.
-    """
-
-    def __init__(self, *, api_group: str, resource_type: str, resource_name: str) -> None:
-        self._api_group = api_group
-        self._resource_type = resource_type
-        self._resource_name = resource_name
-
-    @property
-    def api_group(self) -> str:
-        return self._api_group
-
-    @property
-    def resource_type(self) -> str:
-        return self._resource_type
-
-    @property
-    def resource_name(self) -> str | None:
-        return self._resource_name
-
 
 _SANDBOX_RULES = [
     RolePolicyRule(resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]),
@@ -68,10 +40,7 @@ _SANDBOX_RULES = [
 # assuming that account -- it holds no RoleBinding, so the token is an identity for
 # the app and nothing else in the cluster.
 _TOKEN_RULE = RolePolicyRule(
-    resources=[
-        _NamedApiResource(api_group="", resource_type="serviceaccounts/token", resource_name="agentplane-agent")
-    ],
-    verbs=["create"],
+    resources=[named_resource("", "serviceaccounts/token", "agentplane-agent")], verbs=["create"]
 )
 
 # testing's MCP acceptance scenario additionally creates, expires, and deletes the

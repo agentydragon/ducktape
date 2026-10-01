@@ -14,7 +14,6 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
-        "@pypi//jsii",
     ],
 )
 
@@ -210,6 +209,7 @@ py_library(
         ":pod_disruption_budget",
         ":sandbox_pod",
         "//agentplane/action_service/sandbox:binding",
+        "//agentplane/app:kubernetes_grants",
         "//agentplane/app:main",
         "//agentplane/app:oidc",
         "//cluster/cdk8s:api_resource",
@@ -323,6 +323,7 @@ py_library(
         ":model_display_names",
         "//agentplane/app:action_federation",
         "//agentplane/app:api",
+        "//agentplane/app:kubernetes_grants",
         "//agentplane/app:main",
         "//agentplane/app:presets",
         "//cluster/cdk8s:model_rosters",
@@ -374,7 +375,9 @@ py_library(
     ],
     deps = [
         ":app_settings",
+        ":sandbox_pod",
         "//agentplane/app:action_federation",
+        "//agentplane/app:kubernetes_grants",
         "//agentplane/app:main",
         "//agentplane/app:presets",
         "//cluster/cdk8s:model_rosters",

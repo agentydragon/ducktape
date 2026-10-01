@@ -47,6 +47,8 @@ py_library(
         ":electric",
         ":identity",
         ":inventory",
+        ":kubernetes_bindings",
+        ":kubernetes_grants",
         ":live",
         ":oidc",
         ":operator_sessions",
@@ -94,6 +96,7 @@ py_library(
     name = "inventory",
     srcs = ["inventory.py"],
     deps = [
+        ":kubernetes_grants",
         ":presets",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
@@ -127,6 +130,8 @@ py_library(
         ":electric",
         ":identity",
         ":inventory",
+        ":kubernetes_bindings",
+        ":kubernetes_grants",
         ":live",
         ":oidc",
         ":operator_sessions",
@@ -263,6 +268,8 @@ py_test(
         ":electric",
         ":identity",
         ":inventory",
+        ":kubernetes_bindings",
+        ":kubernetes_grants",
         ":live",
         ":operator_sessions",
         ":presets",
@@ -283,6 +290,7 @@ py_test(
         "//agentplane/runner/testing:unanswering_runner",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -1263,5 +1271,43 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "kubernetes_bindings",
+    srcs = ["kubernetes_bindings.py"],
+    deps = [
+        ":inventory",
+        ":kubernetes_grants",
+        "//util:agent_sandbox",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "kubernetes_grants",
+    srcs = ["kubernetes_grants.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_kubernetes_bindings",
+    srcs = ["test_kubernetes_bindings.py"],
+    deps = [
+        ":conftest",
+        ":inventory",
+        ":kubernetes_bindings",
+        ":kubernetes_grants",
+        "//:conftest",
+        "//agentplane/app/testing:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

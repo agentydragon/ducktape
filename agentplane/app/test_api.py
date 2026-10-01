@@ -6,11 +6,15 @@ import asyncio
 import socket
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
+from types import SimpleNamespace
+from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
+from kubernetes_asyncio import client as k8s_client
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
@@ -26,8 +30,10 @@ from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
-from agentplane.app.identity import TokenReviewer
+from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
 from agentplane.app.inventory import SandboxInventory
+from agentplane.app.kubernetes_bindings import KubernetesBindings
+from agentplane.app.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import Harness, PresetCatalog, SandboxPreset, ThreadPreset
@@ -299,6 +305,64 @@ def test_a_missing_action_policy_set_creates_nothing(client: TestClient, custom_
     assert response.status_code == 422, response.text
     assert "github-reads" in response.json()["detail"]
     assert {name for kind, name in custom_objects.objects if kind == "sandboxes"} == seeded
+
+
+def test_kubernetes_grant_picker_requires_an_approved_name_and_operator(
+    client: TestClient, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    app = cast(Any, client.app)
+    app.state.kubernetes_grants = {
+        "config": RoleBindingGrant(
+            kind="RoleBinding", namespace=NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
+        )
+    }
+    choices = client.get("/kubernetes-grants")
+    assert choices.status_code == 200
+    assert [(row["name"], row["namespace"], row["role_ref"]["name"]) for row in choices.json()] == [
+        ("config", NAMESPACE, "config-reader")
+    ]
+    before = set(core_v1.service_accounts)
+    for body, status_code in (
+        ({"kubernetes_grants": ["missing"]}, 422),
+        ({"kubernetes_grants": ["config"]}, 403),
+        ({"kubernetes_grants": ["config"], "role_ref": {"kind": "Role", "name": "admin"}}, 422),
+    ):
+        response = client.post("/sandboxes", json={"slug": "coder", "template": TEMPLATE, **body})
+        assert response.status_code == status_code, response.text
+    assert set(core_v1.service_accounts) == before
+    assert not any(kind == "rolebindings" for kind, _ in custom_objects.objects)
+
+
+def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_account(
+    client: TestClient, inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    app = cast(Any, client.app)
+    app.state.kubernetes_grants = {
+        "config": RoleBindingGrant(
+            kind="RoleBinding", namespace=NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
+        )
+    }
+    rbac = SimpleNamespace(
+        read_namespaced_role_binding=AsyncMock(side_effect=k8s_client.ApiException(status=404)),
+        create_namespaced_role_binding=AsyncMock(),
+    )
+    app.state.kubernetes_bindings = KubernetesBindings(inventory, cast(Any, rbac))
+    app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
+    try:
+        response = client.post(
+            "/sandboxes", json={"slug": "coder", "template": TEMPLATE, "kubernetes_grants": ["config"]}
+        )
+    finally:
+        app.dependency_overrides.pop(require_caller)
+    assert response.status_code == 201, response.text
+    row = response.json()
+    assert row["kubernetes_grants_ready"] is True
+    assert row["kubernetes_grants"][0]["grant"]["role_ref"] == {"kind": "Role", "name": "config-reader"}
+    bound = rbac.create_namespaced_role_binding.await_args.args[1]
+    assert bound.role_ref.name == "config-reader"
+    assert [(subject.namespace, subject.name) for subject in bound.subjects] == [(NAMESPACE, row["name"])]
+    stored = custom_objects.objects[("sandboxes", row["name"])]
+    assert stored["metadata"]["annotations"]["agentplane.allegedly.works/kubernetes-grants"]
 
 
 def _written_bindings(custom_objects: FakeCustomObjectsApi) -> list[tuple[str, list[str]]]:
@@ -762,6 +826,7 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
             "template": "agentplane-test-runner",
             "policies": ["github"],
             "action_policy_sets": ["github-reads"],
+            "kubernetes_grants": [],
             "thread_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "test-codex-model",

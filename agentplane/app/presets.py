@@ -69,6 +69,9 @@ class SandboxPreset(BaseModel):
         default_factory=list,
         description="ActionPolicySet names every launch is bound to: what its harness may do without the operator.",
     )
+    kubernetes_grants: list[str] = Field(
+        default_factory=list, description="Enabled Kubernetes grant names to prefill at Sandbox launch."
+    )
     thread_preset: str
     bootstrap: str = Field(default="", max_length=65_536)
 
@@ -90,6 +93,7 @@ class SandboxPresetView(BaseModel):
     template: str
     policies: list[str]
     action_policy_sets: list[str]
+    kubernetes_grants: list[str]
     thread_defaults: ThreadDefaults
     bootstrap: str
 
@@ -122,6 +126,7 @@ class PresetCatalog(BaseModel):
                 template=preset.template,
                 policies=preset.policies,
                 action_policy_sets=preset.action_policy_sets,
+                kubernetes_grants=preset.kubernetes_grants,
                 thread_defaults=self.threads[preset.thread_preset].defaults(),
                 bootstrap=preset.bootstrap,
             )

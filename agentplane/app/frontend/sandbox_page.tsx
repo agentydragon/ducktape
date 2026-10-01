@@ -85,6 +85,37 @@ function ConditionsTable({ conditions }: { conditions: Condition[] }): JSX.Eleme
   );
 }
 
+function KubernetesGrantStatus({ sandbox }: { sandbox: SandboxView }): JSX.Element {
+  return (
+    <Stack gap="xs">
+      <Group gap="xs">
+        <Title order={5}>Kubernetes grants</Title>
+        {!sandbox.kubernetes_grants_ready && <Badge color="yellow">Applying</Badge>}
+      </Group>
+      {sandbox.kubernetes_grant_error && (
+        <Text c="red" role="alert">
+          {sandbox.kubernetes_grant_error}
+        </Text>
+      )}
+      {sandbox.kubernetes_grants.length > 0 ? (
+        sandbox.kubernetes_grants.map(({ name, grant }) => (
+          <Text key={name} size="sm">
+            {name} · {grant.kind}
+            {grant.kind === "RoleBinding" ? ` · namespace ${grant.namespace}` : " · cluster"} → {grant.role_ref.kind}/
+            {grant.role_ref.name}
+          </Text>
+        ))
+      ) : (
+        <Text size="sm" c="dimmed">
+          {sandbox.kubernetes_grants_ready
+            ? "No Kubernetes grants selected."
+            : "Waiting for the selected grants to apply."}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
 /** What Kubernetes says about the sandbox: the Sandbox CR's own status, then its Pod's. */
 function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
   const [raw, setRaw] = useState(false);
@@ -109,6 +140,7 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
             egress and action-policy bindings name.
           </Text>
           {sandbox.conditions.length > 0 && <ConditionsTable conditions={sandbox.conditions} />}
+          <KubernetesGrantStatus sandbox={sandbox} />
           {sandbox.pod ? (
             <>
               <Text size="sm">
