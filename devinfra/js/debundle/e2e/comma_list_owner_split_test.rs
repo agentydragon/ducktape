@@ -24,12 +24,15 @@
 //! regressions, not just emission-shape regressions.
 
 use debundle_e2e_support::*;
-use std::fs;
 
-// --- Helpers --------------------------------------------------------------
-
-fn read(path_root: &std::path::Path, rel: &str) -> String {
-    fs::read_to_string(path_root.join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"))
+macro_rules! variable_declarator {
+    ($kind:ident, $initializer:ident, [$($binding:expr),+ $(,)?]) => {
+        (
+            VariableDeclarationKind::$kind,
+            &[$($binding),+],
+            VariableInitializerKind::$initializer,
+        )
+    };
 }
 
 // --- Two-way split across kinds ------------------------------------------
@@ -47,24 +50,15 @@ export { a, b };
         ],
     ));
 
-    let mod_a = read(&fixture.out_root, "static/app/modules/mod_a.js");
-    let mod_b = read(&fixture.out_root, "static/app/modules/mod_b.js");
-
-    assert!(
-        mod_a.contains("const a = 1"),
-        "mod_a.js must declare `const a = 1`; got:\n{mod_a}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &[variable_declarator!(Const, Number, ["a"])],
     );
-    assert!(
-        !mod_a.contains("b = 2"),
-        "mod_a.js must not steal `b = 2`; got:\n{mod_a}",
-    );
-    assert!(
-        mod_b.contains("const b = 2"),
-        "mod_b.js must declare `const b = 2`; got:\n{mod_b}",
-    );
-    assert!(
-        !mod_b.contains("a = 1"),
-        "mod_b.js must not steal `a = 1`; got:\n{mod_b}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &[variable_declarator!(Const, Number, ["b"])],
     );
 
     assert_module_exports(
@@ -95,16 +89,15 @@ export { a, b };
         ],
     ));
 
-    let mod_a = read(&fixture.out_root, "static/app/modules/mod_a.js");
-    let mod_b = read(&fixture.out_root, "static/app/modules/mod_b.js");
-
-    assert!(
-        mod_a.contains("let a = 1"),
-        "mod_a.js must declare `let a = 1` (preserving `let`); got:\n{mod_a}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &[variable_declarator!(Let, Number, ["a"])],
     );
-    assert!(
-        mod_b.contains("let b = 2"),
-        "mod_b.js must declare `let b = 2` (preserving `let`); got:\n{mod_b}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &[variable_declarator!(Let, Number, ["b"])],
     );
     assert_entry_output(&fixture, "1 2\n");
 }
@@ -122,16 +115,15 @@ export { a, b };
         ],
     ));
 
-    let mod_a = read(&fixture.out_root, "static/app/modules/mod_a.js");
-    let mod_b = read(&fixture.out_root, "static/app/modules/mod_b.js");
-
-    assert!(
-        mod_a.contains("var a = 1"),
-        "mod_a.js must declare `var a = 1` (preserving `var`); got:\n{mod_a}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &[variable_declarator!(Var, Number, ["a"])],
     );
-    assert!(
-        mod_b.contains("var b = 2"),
-        "mod_b.js must declare `var b = 2` (preserving `var`); got:\n{mod_b}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &[variable_declarator!(Var, Number, ["b"])],
     );
     assert_entry_output(&fixture, "1 2\n");
 }
@@ -166,15 +158,15 @@ console.log(a, b);
         &["a"],
     );
 
-    let mod_a = read(&fixture.out_root, "static/app/modules/mod_a.js");
-    let mod_b = read(&fixture.out_root, "static/app/modules/mod_b.js");
-    assert!(
-        mod_a.contains("a = 1") && !mod_a.contains("b = 2"),
-        "mod_a.js must own only `a = 1`; got:\n{mod_a}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &[variable_declarator!(Const, Number, ["a"])],
     );
-    assert!(
-        mod_b.contains("b = 2") && !mod_b.contains("a = 1"),
-        "mod_b.js must own only `b = 2`; got:\n{mod_b}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &[variable_declarator!(Const, Number, ["b"])],
     );
     assert_entry_output(&fixture, "1 2\n");
 }
@@ -195,21 +187,13 @@ export { a, b, c };
         ],
     ));
 
-    let mod_a = read(&fixture.out_root, "static/app/modules/mod_a.js");
-    let mod_b = read(&fixture.out_root, "static/app/modules/mod_b.js");
-    let mod_c = read(&fixture.out_root, "static/app/modules/mod_c.js");
-    assert!(
-        mod_a.contains("const a = 1") && !mod_a.contains("b = 2") && !mod_a.contains("c = 3"),
-        "mod_a.js must own only `a = 1`; got:\n{mod_a}",
-    );
-    assert!(
-        mod_b.contains("const b = 2") && !mod_b.contains("a = 1") && !mod_b.contains("c = 3"),
-        "mod_b.js must own only `b = 2`; got:\n{mod_b}",
-    );
-    assert!(
-        mod_c.contains("const c = 3") && !mod_c.contains("a = 1") && !mod_c.contains("b = 2"),
-        "mod_c.js must own only `c = 3`; got:\n{mod_c}",
-    );
+    for (module, binding) in [("mod_a", "a"), ("mod_b", "b"), ("mod_c", "c")] {
+        assert_module_variable_declarators(
+            &fixture.out_root,
+            &format!("static/app/modules/{module}.js"),
+            &[variable_declarator!(Const, Number, [binding])],
+        );
+    }
     assert_entry_output(&fixture, "1 2 3\n");
 }
 
@@ -231,19 +215,18 @@ export { a, b, c };
         )],
     ));
 
-    let mod_x = read(&fixture.out_root, "static/app/modules/mod_x.js");
-    let residual = read(
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_x.js",
+        &[
+            variable_declarator!(Const, Number, ["a"]),
+            variable_declarator!(Const, Number, ["c"]),
+        ],
+    );
+    assert_module_variable_declarators(
         &fixture.out_root,
         "static/app/modules/residual/unhandled.js",
-    );
-
-    assert!(
-        mod_x.contains("a = 1") && mod_x.contains("c = 3") && !mod_x.contains("b = 2"),
-        "mod_x.js must own `a` and `c`, not `b`; got:\n{mod_x}",
-    );
-    assert!(
-        residual.contains("b = 2") && !residual.contains("a = 1") && !residual.contains("c = 3"),
-        "residual must own only `b`; got:\n{residual}",
+        &[variable_declarator!(Const, Number, ["b"])],
     );
     assert_entry_output(&fixture, "1 2 3\n");
 }
@@ -267,15 +250,21 @@ export { A, B };
         ],
     ));
 
-    let mod_a = read(&fixture.out_root, "static/app/modules/mod_a.js");
-    let mod_b = read(&fixture.out_root, "static/app/modules/mod_b.js");
-    assert!(
-        mod_a.contains("const A = 1") && !mod_a.contains("sideEffect()"),
-        "mod_a.js must not contain `sideEffect()` call; got:\n{mod_a}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &[variable_declarator!(Const, Number, ["A"])],
     );
-    assert!(
-        mod_b.contains("sideEffect()"),
-        "mod_b.js must keep the `sideEffect()` call; got:\n{mod_b}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &[],
+        &["sideEffect()"],
+    );
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &[variable_declarator!(Const, Call, ["B"])],
     );
 
     // Behaviour: prints `init` once during module init, then `1 42`.
@@ -300,14 +289,16 @@ export { a, b };
         ],
     ));
 
-    let mod_b = read(&fixture.out_root, "static/app/modules/mod_b.js");
-    assert!(
-        mod_b.contains("import"),
-        "mod_b.js must import `a` from mod_a; got:\n{mod_b}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &["import"],
+        &[],
     );
-    assert!(
-        mod_b.contains("const b = a + 1"),
-        "mod_b.js must keep `b = a + 1`; got:\n{mod_b}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &[variable_declarator!(Const, Binary, ["b"])],
     );
     assert_entry_output(&fixture, "1 2\n");
 }
@@ -330,14 +321,16 @@ export { a, b };
         ],
     ));
 
-    let mod_b = read(&fixture.out_root, "static/app/modules/mod_b.js");
-    assert!(
-        mod_b.contains("import"),
-        "mod_b.js must import `a` from mod_a; got:\n{mod_b}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &["import"],
+        &[],
     );
-    assert!(
-        mod_b.contains("=> a + 1") || mod_b.contains("=>a + 1"),
-        "mod_b.js must keep `() => a + 1`; got:\n{mod_b}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &[variable_declarator!(Const, Arrow, ["b"])],
     );
     assert_entry_output(&fixture, "1 2\n");
 }
@@ -362,21 +355,21 @@ export { a, b, c, d };
         ],
     ));
 
-    let mod_ad = read(&fixture.out_root, "static/app/modules/mod_ad.js");
-    let mod_bc = read(&fixture.out_root, "static/app/modules/mod_bc.js");
-    assert!(
-        mod_ad.contains("a = 1")
-            && mod_ad.contains("d = 4")
-            && !mod_ad.contains("b = 2")
-            && !mod_ad.contains("c = 3"),
-        "mod_ad.js must own only `a` and `d`; got:\n{mod_ad}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_ad.js",
+        &[
+            variable_declarator!(Const, Number, ["a"]),
+            variable_declarator!(Const, Number, ["d"]),
+        ],
     );
-    assert!(
-        mod_bc.contains("b = 2")
-            && mod_bc.contains("c = 3")
-            && !mod_bc.contains("a = 1")
-            && !mod_bc.contains("d = 4"),
-        "mod_bc.js must own only `b` and `c`; got:\n{mod_bc}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_bc.js",
+        &[
+            variable_declarator!(Const, Number, ["b"]),
+            variable_declarator!(Const, Number, ["c"]),
+        ],
     );
     assert_entry_output(&fixture, "1 2 3 4\n");
 }
@@ -399,14 +392,14 @@ export { x, y };
         vec![logical_module("mod_xy", &[Member::new("x")])],
     ));
 
-    let mod_xy = read(&fixture.out_root, "static/app/modules/mod_xy.js");
     // Claiming `x` alone pulls the whole destructure into mod_xy
     // (destructure-atomicity). The declarator must land here
     // intact with both `x` and `y` bound, even though the spec
     // only named `x`.
-    assert!(
-        mod_xy.contains("{ x, y }") || mod_xy.contains("{x, y}") || mod_xy.contains("{x,y}"),
-        "mod_xy.js must keep the destructuring declarator intact; got:\n{mod_xy}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_xy.js",
+        &[variable_declarator!(Const, Identifier, ["x", "y"])],
     );
     assert_entry_output(&fixture, "10 20\n");
 }
@@ -461,20 +454,20 @@ export { a, x, y, b };
         ],
     ));
 
-    let mod_a = read(&fixture.out_root, "static/app/modules/mod_a.js");
-    let mod_xy = read(&fixture.out_root, "static/app/modules/mod_xy.js");
-    let mod_b = read(&fixture.out_root, "static/app/modules/mod_b.js");
-    assert!(
-        mod_a.contains("a = 1") && !mod_a.contains("{ x, y }"),
-        "mod_a.js must own only `a = 1`; got:\n{mod_a}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &[variable_declarator!(Const, Number, ["a"])],
     );
-    assert!(
-        mod_xy.contains("x") && mod_xy.contains("y"),
-        "mod_xy.js must own the destructuring declarator; got:\n{mod_xy}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_xy.js",
+        &[variable_declarator!(Const, Identifier, ["x", "y"])],
     );
-    assert!(
-        mod_b.contains("b = 2") && !mod_b.contains("{ x, y }"),
-        "mod_b.js must own only `b = 2`; got:\n{mod_b}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &[variable_declarator!(Const, Number, ["b"])],
     );
     assert_entry_output(&fixture, "1 10 20 2\n");
 }
@@ -500,15 +493,15 @@ export { a, b };
         ],
     ));
 
-    let mod_a = read(&fixture.out_root, "static/app/modules/mod_a.js");
-    let mod_b = read(&fixture.out_root, "static/app/modules/mod_b.js");
-    assert!(
-        mod_a.contains("touch(\"a\")"),
-        "mod_a.js must keep `touch(\"a\")`; got:\n{mod_a}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &[variable_declarator!(Const, Call, ["a"])],
     );
-    assert!(
-        mod_b.contains("touch(\"b\")"),
-        "mod_b.js must keep `touch(\"b\")`; got:\n{mod_b}",
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &[variable_declarator!(Const, Call, ["b"])],
     );
 
     // The two modules must initialize in source order — `a` first,

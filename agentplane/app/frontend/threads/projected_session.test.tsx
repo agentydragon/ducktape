@@ -432,7 +432,8 @@ it("pulses and labels the healthy status dot while a turn is active", async () =
   expect(svg(firstFrame)).toContain('<path d="M5 14.5 27 5 18 27');
   expect(svg(firstFrame)).toContain('fill="none"');
   expect(svg(firstFrame)).not.toContain("<rect");
-  expect(svg(firstFrame)).toContain('<circle cx="25"');
+  expect(svg(firstFrame)).toContain('stroke="#102a43" stroke-width="3"');
+  expect(svg(firstFrame)).toContain('fill="none" stroke="#fff" stroke-width="1.5"');
   await act(async () => {
     vi.advanceTimersByTime(700);
   });
@@ -440,7 +441,7 @@ it("pulses and labels the healthy status dot while a turn is active", async () =
   await act(async () => {
     vi.advanceTimersByTime(600);
   });
-  expect(svg(favicon.getAttribute("href"))).toContain('<circle cx="25"');
+  expect(svg(favicon.getAttribute("href"))).toContain('<circle cx="24.5"');
 });
 
 it("does not show active-turn status when the runner is not active", async () => {
