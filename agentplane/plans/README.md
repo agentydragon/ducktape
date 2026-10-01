@@ -18,8 +18,8 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [Profiles](profiles.md) — broader capability profiles remain deferred
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
-- [Push mechanism](push_mechanism.md) — shared design for `UISHELL_DRAWER`'s badge and
-  `NO_MANUAL_REFRESH`'s Settings tabs, not yet confirmed
+- [Push mechanism](push_mechanism.md) — remaining push/subscription design for
+  `NO_MANUAL_REFRESH`'s Settings tabs; the Actions attention drawer shipped in PR #8618
 
 ## Implemented contracts
 

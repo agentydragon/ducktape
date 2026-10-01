@@ -102,7 +102,6 @@ flowchart TB
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>some first need Haku's sandbox identity, a grants surface, or DENY_LISTS"]:::future
 
-    UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
@@ -1212,19 +1211,6 @@ behavior before promising offline delivery; this deferred Hub must not silently 
 an app command queue to the current runner-only design. Test approval/denial while an
 agent is busy or disconnected, duplicate/replayed events, subscription cancellation,
 unauthorized sources/destinations, and truthful delivery state after reconnect.
-
-### `UISHELL_DRAWER` — pending-approval badge and drawer
-
-**Planned UI:** a persistent badge, reachable from any route regardless of phone collapse state,
-opens a non-modal drawer over the current page showing pending Action approvals
-(group/name, caller, collapsible arguments, Approve/Deny) — the shape
-`haku/console/frontend/shell_chrome.tsx` already ships for its own approval queue.
-
-At phone width the badge goes in `app.tsx`'s sticky `.agentplane-mobile-topbar` (`shell.css`),
-which holds only the hamburger. The subscription plumbing is designed in [the push mechanism
-plan](push_mechanism.md) (not yet confirmed): lift `/actions/stream` into an app-shell-level
-provider so the badge and the `/actions`/`/actions/history` pages share one subscription instead
-of each opening their own.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
 

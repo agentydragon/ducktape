@@ -55,43 +55,6 @@ build time.
   (as the prominent-lifecycle `Alert color="red"` at ~line 376 and the failed-tool-call `Badge color="red"` at
   ~line 444 already do).
 
-## Approval-arrival attention, and merging the pending/history Action pages
-
-A pending decision (`ActionRequests`, `actions/requests.tsx`, `/actions`) currently only shows up if
-the operator is already on the Actions page -- nothing calls attention to a new one arriving while
-working elsewhere, e.g. inside a thread. `haku/console` has already solved a closely related
-problem, worth drawing on rather than reinventing:
-
-- Its approvals surface is a **non-modal drawer** (`haku/console/frontend/shell_chrome.tsx`),
-  triggered from a rail button present on every page, floating over whatever page is showing rather
-  than being its own route -- driven by a live WebSocket (`console_events.ts`) that invalidates
-  panels across every open tab without a reload.
-- For when no console tab is even open, it separately uses **Web Push**
-  (`haku/console/notifications/push.py`/`push_routes.py` + the service worker
-  `frontend/sw.ts`): one versioned OS notification per queued call, with Approve/Deny actions in the
-  notification itself (calling the ordinary exact-Origin decision endpoint under the operator's
-  session), deep-linking into a small chrome-free approval window (`approvals_embed_page.tsx`)
-  rather than the full console.
-
-Agentplane's `ActionRequests` already has the live signal this would build on (`/actions/stream`,
-consumed by `useActionRequests` in `requests.tsx`) -- what's missing is anything that grabs attention
-outside the Actions page itself. Whatever surfaces this must not navigate the operator away from a
-thread they're reading (mirroring haku-console's drawer-over-content pattern, not a route change),
-and needs to read well on both mobile and desktop.
-
-**Tension worth resolving deliberately, not by copying haku-console verbatim**: haku-console does
-_not_ actually merge pending and history into one page -- pending decisions live in the cross-page
-drawer, while decided calls stay on their own separate full page (`frontend/tool_calls_page.tsx`,
-its own README section "Past tool calls -- full-page history"). Merging agentplane's
-`ActionRequests` (`requests.tsx`) and `ActionHistory` (`history.tsx`) into one page, pending-then-
-past, is a different shape than that. The two already share one data source (`useActionRequests` in
-`requests.tsx` -- one hook both components call, then filter by `request.state`), so the merge
-itself would be a straightforward rendering/routing change -- the open question is whether merging
-them into one page is still the right shape once pending decisions also get a cross-page drawer, or
-whether the drawer supersedes the need for a merged page.
-
-Needs more design thinking and probably mocks before implementing.
-
 ## Hidden characters in what the operator approves
 
 Bidi controls, zero-width and other default-ignorable characters, and control characters render
