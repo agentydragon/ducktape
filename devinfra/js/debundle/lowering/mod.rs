@@ -10,7 +10,7 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
     AnalysisHints, AtomicUnitConflict, BindingKind, DepKind, KnownEffect, LocalEffectPolicy,
-    LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
+    LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
     OwnerGraphOptions, RedundantPurityHint, top_level_id,
 };
 use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};

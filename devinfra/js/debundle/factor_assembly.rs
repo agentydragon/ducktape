@@ -17,7 +17,7 @@ use swc_ecma_ast::Id;
 
 use crate::atomic_units::AtomicUnit;
 use crate::graph::{DepKind, OwnerGraph, OwnerId};
-use crate::ids::{BindingKind, LogicalModule, LogicalModuleIndex, ModuleId};
+use crate::ids::{BindingKind, LogicalModuleIndex, ModuleId, PlannedModule};
 use crate::partition::Partition;
 
 /// One owner's claimed destination inside a conflicting atomic
@@ -69,7 +69,7 @@ pub fn assemble_partition(
     owner_graph: &OwnerGraph,
     atomic_units: &[AtomicUnit],
     bindings: &HashMap<Id, BindingKind>,
-    logical_modules: &[LogicalModule],
+    logical_modules: &[PlannedModule],
     default_destination: ModuleId,
 ) -> AssemblyOutcome {
     let claims = compute_owner_claims(owner_graph, bindings, logical_modules);
@@ -97,7 +97,7 @@ pub fn assemble_partition(
 fn compute_owner_claims(
     owner_graph: &OwnerGraph,
     bindings: &HashMap<Id, BindingKind>,
-    logical_modules: &[LogicalModule],
+    logical_modules: &[PlannedModule],
 ) -> Vec<Option<ModuleId>> {
     let mut claims = vec![None; owner_graph.num_nodes()];
     for node in owner_graph.iter_nodes() {
