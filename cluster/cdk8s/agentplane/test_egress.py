@@ -9,10 +9,11 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
+from cdk8s import Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.egress import sidecar
-from cluster.cdk8s.agentplane import staging, testing
+from cluster.cdk8s.agentplane import binding_delegation, staging, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
@@ -178,6 +179,8 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
         "clickhouse-diagnostics",
         "ducktape-flux-read",
         "public-coder-volsync-status",
+        "public-coder-agent-reader",
+        "public-coder-agent-devbox-vmi-restart",
     ]
     assert config["kubernetes_grants"]["cluster-diagnostics"] == {
         "kind": "ClusterRoleBinding",
@@ -226,6 +229,45 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
         "public-coder-agent",
     ]
     assert config["kubernetes_cluster_binding_cleanup"] is True
+
+
+def test_managed_haku_public_coder_reader_and_restart_have_named_bind_delegation(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    for name in ("public-coder-agent-reader", "public-coder-agent-devbox-vmi-restart"):
+        assert config["kubernetes_grants"][name] == {
+            "kind": "RoleBinding",
+            "namespace": "public-coder-agent",
+            "role_ref": {"kind": "Role", "name": name},
+        }
+        assert name in config["sandbox_presets"]["haku"]["kubernetes_grants"]
+    assert "public-coder-agent" in config["kubernetes_binding_cleanup_namespaces"]
+
+    delegated = Cdk8sTesting.synth(binding_delegation.chart(Cdk8sTesting.app(), staging.ENV, "public-coder-agent"))
+    role = _by_name(delegated, "Role", "agentplane-staging-external-bindings")
+    assert role["metadata"]["namespace"] == "public-coder-agent"
+    assert role["rules"][0] == {
+        "apiGroups": ["rbac.authorization.k8s.io"],
+        "resources": ["rolebindings"],
+        "verbs": ["create", "get", "list", "delete"],
+    }
+    assert {tuple(rule.get("resourceNames", [])) for rule in role["rules"] if rule["verbs"] == ["bind"]} == {
+        ("agent-public-coder-extended-diagnostics-reader",),
+        ("public-coder-agent-reader",),
+        ("public-coder-agent-devbox-vmi-restart",),
+    }
+    binding = _by_name(delegated, "RoleBinding", "agentplane-staging-external-bindings")
+    assert binding["subjects"] == [
+        {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
+    ]
+    assert not any(
+        doc["kind"] in {"Role", "RoleBinding"}
+        and doc["metadata"].get("namespace") == "public-coder-agent"
+        and doc["metadata"]["name"] == "agentplane-staging-external-bindings"
+        for doc in docs
+    )
 
 
 def test_upstream_bundles_have_independent_environment_ownership(

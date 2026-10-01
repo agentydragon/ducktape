@@ -191,7 +191,22 @@ It also selects the `ducktape-flux` reader Role and the public-coder VolSync
 status Role. The former namespace and Role are owned by the bootstrap Flux
 source, so its independent delegation Kustomization has no generated predecessor;
 the latter depends on the public-coder app Kustomization. Public-coder's wider
-reader and named VMI restart grants remain separate follow-ups.
+reader and named VMI restart grants are also explicit Haku preset choices within
+`public-coder-agent`. The reader observes Pods, logs, ConfigMaps, service and
+workload metadata, RBAC/Flux metadata, Pod metrics, and the named
+`public-coder-devbox` VM/VMI; it has no Secret read or Pod exec. The separate
+`public-coder-agent-devbox-vmi-restart` Role permits only `delete` on that named
+VMI, causing its `runStrategy: Always` VM to recreate it. Flux owns these Role
+rules and the existing static Haku bindings; the independent public-coder
+delegation permits Agentplane to bind only these named Roles and the VolSync
+status Role to managed Sandbox SAs.
+Managed Haku's existing `cluster-diagnostics-reader` covers the static
+public-coder node and cluster-metadata readers, so this catalog adds no
+duplicate ClusterRoleBindings for those capabilities.
+
+The narrow restart Role is introduced by PR #8672. This managed-grant change
+must deploy after that Role split: until it lands, the reader Role still
+includes the VMI `delete` verb and the separate restart Role is absent.
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
 read selection. Other Kyverno `agent-readable-*` namespaces still grant the static
 Haku identities; managed Haku SAs require explicit catalog entries before they receive
