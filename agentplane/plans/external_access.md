@@ -74,11 +74,28 @@ Conversely, using Kubernetes RBAC objects does not decide whether desired grants
 Kubernetes or are reconciled from an app ledger.
 
 The app currently creates a ServiceAccount per Sandbox at launch and owns it by
-`ownerReference`; whether Agentplane should keep per-Sandbox identities, use a stable
-per-Agent ServiceAccount, or choose another scoped mechanism remains open. In particular,
-managed runner Pods currently use their per-Sandbox account, while OAuth-connected Connections
-already have static caller ServiceAccounts. The Coinbase credential/identity decision for
-managed runners is tracked in [#8596](https://github.com/agentydragon/ducktape/issues/8596).
+`ownerReference`; whether Agentplane should keep per-Sandbox identities, share a Haku identity
+across Haku-mode managed Sandboxes, or offer a launch-time choice remains open. Managed runner
+Pods currently use their per-Sandbox account, while OAuth-connected Connections already have
+static caller ServiceAccounts. The Coinbase credential/identity decision for managed runners is
+tracked in [#8596](https://github.com/agentydragon/ducktape/issues/8596).
+For Haku-mode managed Sandboxes, the concrete candidates are:
+
+- **Per-Sandbox identity:** keep one ServiceAccount per Sandbox and let its preset select the
+  default RoleBindings to materialize for that account (a proposed extension to today's
+  prefill-only preset behavior); add temporary permissions as grants scoped to that Sandbox.
+- **Shared Haku identity:** run Haku-mode managed Sandboxes under one Haku-specific ServiceAccount
+  with a shared standing permission set.
+- **Launch-time hybrid:** let each Sandbox choose between a new per-Sandbox ServiceAccount and the
+  shared Haku ServiceAccount.
+
+No candidate is selected. This leaves a real tension: per-Sandbox identities let a RoleBinding
+target one Sandbox, while a shared identity makes the default Haku permission set straightforward
+but a RoleBinding added to it reaches every runner using that identity. Any shared-identity design
+must explain what separate enforcement or identity boundary keeps Sandbox-only temporary grants
+isolated. OAuth-connected Connections' existing static caller ServiceAccounts remain a separate
+path. Full-Haku migration is gated on resolving this design, not on porting Haku's warm-pool
+feature.
 Keep the existing [workload authentication](../docs/workload_authentication.md) boundary
 distinct from credentials authorizing Kubernetes API calls; authenticating a Sandbox to
 Agentplane does not itself grant Kubernetes access. Any design must explain effective-access

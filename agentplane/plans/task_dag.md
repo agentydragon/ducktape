@@ -276,10 +276,12 @@ not require the broad `PROFILES` design.
 
 Resolve the credential path for those principals with `ACCESS`. Current implementation
 creates and owns a ServiceAccount per Sandbox at launch. That is current behavior, not a
-settled identity choice: decide whether managed Agents should keep per-Sandbox accounts, use a
-stable per-Agent account, or use another scoped mechanism for Kubernetes RBAC and credential
-delivery. OAuth-connected Connections already have static caller ServiceAccounts and remain a
-separate path. Coinbase key delivery to Agentplane-managed runners is tracked in
+settled identity choice. The open models are per-Sandbox ServiceAccounts with preset-selected
+default RoleBindings (a proposed extension to presets), one shared Haku-specific ServiceAccount
+for Haku-mode managed runners, or a launch-time choice between those identities. Resolve how
+Sandbox-only temporary grants remain isolated and revocable alongside shared/default Haku
+permissions; no model is selected. OAuth-connected Connections already have static caller
+ServiceAccounts and remain a separate path. Managed-runner Coinbase key delivery is tracked in
 [#8596](https://github.com/agentydragon/ducktape/issues/8596).
 
 Preserve live Sandbox UID/Pod attribution in workload authentication. Distinct ServiceAccounts
