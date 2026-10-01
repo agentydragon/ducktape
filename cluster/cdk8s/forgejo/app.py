@@ -1,7 +1,8 @@
 """Forgejo: the Helm release, its git volume, S3 bucket, identity and credentials, metrics
 token, route, public SSH listener, disruption budget and ServiceMonitor.
 
-Hand-written beside the generated output: `forgejo-admin-password.sops.yaml`.
+Hand-written beside the generated outputs: `forgejo-admin-password.sops.yaml`. OAuth OIDC credentials
+come from `tf/gitops/sso-providers/`.
 """
 
 from __future__ import annotations
@@ -33,10 +34,9 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSel
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.forgejo import cache, db
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -44,7 +44,7 @@ from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/app"
+_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo"
 _NAME = "forgejo"
 _NAMESPACE = "forgejo"
 HOSTNAME = "git.allegedly.works"
@@ -440,8 +440,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    # The OAuth OIDC credentials are provisioned by tf/gitops/sso-providers/ as a k8s Secret.
-    write_yaml(
-        root / _OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[write_charts(root, _OUTPUT_DIR, chart), "forgejo-admin-password.sops.yaml"]),
-    )
+    write_charts(root, _OUTPUT_DIR, chart, manifest_name="app.k8s.yaml")

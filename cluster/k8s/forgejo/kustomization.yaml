@@ -2,6 +2,8 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - forgejo.k8s.yaml
-  - db
+  - db.k8s.yaml
+  - forgejo-db-ssd-creds.sops.yaml
   - cache/cache.k8s.yaml
-  - app
+  - app.k8s.yaml
+  - forgejo-admin-password.sops.yaml

@@ -8,12 +8,11 @@ from pathlib import Path
 from cdk8s import App, Chart
 
 from cluster.cdk8s import cnpg, node_scheduling
-from cluster.cdk8s.flux import kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/db"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo"
 NAMESPACE = "forgejo"
 DATABASE = "forgejo"
 POSTGRES = cnpg.PostgresRef(
@@ -22,7 +21,6 @@ POSTGRES = cnpg.PostgresRef(
     # Not `<cluster>-app`: CNPG reserves that name for a Secret it generates itself.
     app_secret=SecretRef(namespace=NAMESPACE, name="forgejo-db-ssd-creds"),
 )
-_CREDENTIALS_FILE = f"{POSTGRES.app_secret.name}.sops.yaml"
 
 
 def _chart(app: App) -> Chart:
@@ -54,7 +52,4 @@ def _chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[write_charts(root, OUTPUT_DIR, _chart), _CREDENTIALS_FILE]),
-    )
+    write_charts(root, OUTPUT_DIR, _chart, manifest_name="db.k8s.yaml")
