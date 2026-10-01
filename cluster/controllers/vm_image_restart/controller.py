@@ -135,9 +135,7 @@ async def _get_vm(api: VMApi, settings: Settings) -> dict[str, Any] | None:
         raise
 
 
-async def _watch_target(
-    api: client.CustomObjectsApi, settings: Settings, plural: str, changed: asyncio.Event
-) -> None:
+async def _watch_target(api: client.CustomObjectsApi, settings: Settings, plural: str, changed: asyncio.Event) -> None:
     """List then watch one named KubeVirt object, relisting when its RV expires."""
     # Name-scoped list/watch RBAC is enforced by this field selector.
     field_selector = f"metadata.name={settings.target_vm_name}"
@@ -180,7 +178,7 @@ async def _watch_target(
                         status_code = obj.get("code") if isinstance(obj, dict) else None
                         try:
                             status_code = int(status_code) if status_code is not None else None
-                        except (TypeError, ValueError):
+                        except TypeError, ValueError:
                             status_code = None
                         if status_code == 410:
                             resource_version = None
@@ -553,9 +551,7 @@ async def reconcile(vm_api: VMApi, core: CoreApi, settings: Settings) -> None:
         await _request_restart(vm_api=vm_api, core=core, settings=settings, vm=vm, state=state, vmi=vmi)
 
 
-async def _run_reconcile_loop(
-    vm_api: VMApi, core: CoreApi, settings: Settings, changed: asyncio.Event
-) -> None:
+async def _run_reconcile_loop(vm_api: VMApi, core: CoreApi, settings: Settings, changed: asyncio.Event) -> None:
     while True:
         await changed.wait()
         changed.clear()
