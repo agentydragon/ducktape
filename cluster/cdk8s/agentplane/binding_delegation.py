@@ -98,7 +98,9 @@ def add_flux_kustomizations(
     bootstrap_scopes = {"flux-system", "ducktape-flux"}
     if missing := {scope for scope in scopes if scope not in bootstrap_scopes and target_dependencies[scope] is None}:
         raise ValueError(f"managed binding scopes lack namespace dependencies: {sorted(missing)}")
-    if unexpected := {scope for scope in scopes if scope in bootstrap_scopes and target_dependencies[scope] is not None}:
+    if unexpected := {
+        scope for scope in scopes if scope in bootstrap_scopes and target_dependencies[scope] is not None
+    }:
         raise ValueError(f"bootstrap namespaces have no generated Flux dependency: {sorted(unexpected)}")
     source = KustomizationSpecSourceRef(
         kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"

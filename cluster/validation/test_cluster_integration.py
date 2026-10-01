@@ -258,7 +258,7 @@ def test_managed_haku_read_grants_cover_declarative_namespace_opt_ins(
     assert expected_external_scopes == expected_external_namespaces | {"ducktape-flux", "haku-console", "haku-sandbox"}
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
-        and doc["metadata"]["name"] == "agentplane-staging-external-bindings"
+        and doc["metadata"]["name"] in {"agentplane-staging-managed-bindings", "agentplane-staging-external-bindings"}
         and doc["metadata"].get("namespace") != "agentplane-staging"
         for doc in staging_docs
     )

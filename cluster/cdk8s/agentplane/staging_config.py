@@ -27,7 +27,6 @@ from cluster.cdk8s.agentplane.app_settings import (
     SSH_READS_SET,
     settings,
 )
-from cluster.cdk8s.agentplane.rbac import TESTING_OPERATOR_ROLE_NAME
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME
 from cluster.cdk8s.litellm.keys import ANTIGRAVITY_CLIENT_MODELS, CLAUDE_CLIENT_MODELS, GPT6_OAI_LANE_MODELS
 from cluster.cdk8s.model_rosters import ApiShape, Provider, codex_responses_name, exposed_name
@@ -140,7 +139,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
             "agentplane-testing-operator": RoleBindingGrant(
                 kind="RoleBinding",
                 namespace="agentplane-testing",
-                role_ref=RoleRef(kind="Role", name=TESTING_OPERATOR_ROLE_NAME),
+                role_ref=RoleRef(kind="Role", name="agentplane-testing-operator"),
             ),
             "agentplane-staging-metadata": RoleBindingGrant(
                 kind="RoleBinding",

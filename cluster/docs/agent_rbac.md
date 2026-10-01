@@ -167,9 +167,7 @@ The app's own Flux Kustomization owns delegation in `agentplane-staging` and at
 cluster scope. Each external target namespace has a separate, GitRepository-sourced
 Flux Kustomization for the app ServiceAccount's RoleBinding management Role and
 RoleBinding. The `haku-sandbox` delegation depends on `haku-rbac`, which depends
-on the namespace owner. The `agentplane-testing` delegation depends on the
-testing environment's Kustomization, which creates its namespace and Role.
-A failure in an external delegation Kustomization does not
+on the namespace owner. A failure in this delegation Kustomization does not
 block the Agentplane app Kustomization. Keep an external delegation while its namespace
 is in the retained cleanup scopes, even if its catalog entry is removed.
 
@@ -187,20 +185,29 @@ within `agentplane-staging`, and `get` on exactly
 `claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its
 rules are shared while its static `claude-ai` RoleBinding remains Flux-owned.
 The preset also selects the existing Haku Console metadata and ClickHouse
-diagnostics Roles in their respective namespaces. Their managed-binding
-delegations depend on the owning service Kustomizations. It also selects the
-`ducktape-flux` reader Role and the public-coder VolSync status Role. The
-`ducktape-flux` namespace and Role are owned by the bootstrap Flux source, so
-their independent delegation has no generated predecessor; the public-coder
-VolSync delegation depends on the public-coder app Kustomization. The preset's
-public-coder reader observes Pods, logs, ConfigMaps, service and workload
-metadata, RBAC/Flux metadata, Pod metrics, and the named `public-coder-devbox`
-VM/VMI; it has no Secret read or Pod exec. The separate
+diagnostics Roles in their respective namespaces. Their managed binding
+delegation lives in separate Flux Kustomizations dependent on those services.
+It also selects the `ducktape-flux` reader Role and the public-coder VolSync
+status Role. The former namespace and Role are owned by the bootstrap Flux
+source, so its independent delegation Kustomization has no generated predecessor;
+the latter depends on the public-coder app Kustomization. Public-coder's wider
+reader and named VMI restart grants are also explicit Haku preset choices within
+`public-coder-agent`. The reader observes Pods, logs, ConfigMaps, service and
+workload metadata, RBAC/Flux metadata, Pod metrics, and the named
+`public-coder-devbox` VM/VMI; it has no Secret read or Pod exec. The separate
 `public-coder-agent-devbox-vmi-restart` Role permits only `delete` on that named
 VMI, causing its `runStrategy: Always` VM to recreate it. Flux owns these Role
-rules and static Haku bindings; managed Haku can bind only the listed Roles.
-The narrower restart Role is introduced by PR #8672; managed-grant deployment
-must follow that Role split.
+rules and the existing static Haku bindings; the independent public-coder
+delegation permits Agentplane to bind only these named Roles and the VolSync
+status Role to managed Sandbox SAs.
+Managed Haku's existing `cluster-diagnostics-reader` covers the static
+public-coder node and cluster-metadata readers, so this catalog adds no
+duplicate ClusterRoleBindings for those capabilities.
+
+The narrow restart Role is introduced by PR #8672. This managed-grant change
+must deploy after that Role split: until it lands, the reader Role still
+includes the VMI `delete` verb and the separate restart Role is absent.
+
 The preset also selects the existing `agentplane-testing-operator` Role in
 `agentplane-testing`; its static Haku RoleBinding remains Flux-owned. This is a
 **testing-only write grant**: it can create, patch, and delete Sandboxes, create
@@ -212,18 +219,18 @@ Secret read. Pod exec can expose data mounted in testing Pods, and a holder can
 operate every Sandbox in the testing namespace and use that environment's
 credentialless MCP fixtures. Treat it as operator authority, not a diagnostics reader.
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
-read selection. Kyverno's other `agent-readable-*` Roles continue to grant the
-static Haku identities access, while managed Haku SAs receive namespaced readers
-only through explicit catalog entries. The Haku preset names metadata and pod-log
-catalog entries for every active cluster-managed `agent-readable-*` namespace,
-matching the static Haku subjects' label-generated readers. Parked namespaces and the separate
-Props Git source are excluded. The `flux-system` and `ducktape-flux` delegation
-Kustomizations have no `dependsOn` because those namespaces are bootstrap roots
-and have no generated dependency construct. The catalog fixes each namespace and Role reference at
-Sandbox creation; a later namespace label change does not silently widen existing
-Sandboxes. The cluster integration test derives active opt-ins, checks each
-target-owned delegation and dependency, and requires a new label opt-in to add an
-explicit managed grant and Haku preset default.
+read selection. Other Kyverno `agent-readable-*` namespaces still grant the static
+Haku identities; managed Haku SAs require explicit catalog entries before they receive
+those namespaced readers. No namespace label silently widens them.
+
+The Haku preset's explicit catalog now mirrors the metadata/log labels on every active
+cluster-managed Namespace. Log-labeled namespaces receive both metadata and pod-log
+grants; metadata-only labels receive only the metadata grant. Props stays excluded
+because its Namespace is absent from the live cluster and its Flux source is parked.
+The `flux-system` and `ducktape-flux` delegation Kustomizations have no `dependsOn`:
+they are bootstrap roots without generated owner Kustomizations. The cluster integration
+test derives active label opt-ins and checks their catalog grants, preset defaults, and
+target-owned delegation dependencies together.
 
 ### Staging acceptance for managed Haku grants
 
@@ -242,25 +249,20 @@ for box in "$HAKU_A" "$HAKU_B"; do
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl get nodes -o name
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging get pods -o name
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging auth can-i get pods/log
-  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n monitoring auth can-i get pods/log
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n haku-sandbox auth can-i create jobs
-  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-testing auth can-i create sandboxes.agents.x-k8s.io
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging auth can-i create jobs
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging get secret coinbase-api-credentials -o 'jsonpath={.metadata.name}'
 done
 kubectl -n agentplane-staging exec "$OTHER" -c runner -- kubectl get nodes -o name
-kubectl -n agentplane-staging exec "$OTHER" -c runner -- kubectl -n agentplane-testing auth can-i create sandboxes.agents.x-k8s.io
 kubectl -n agentplane-staging exec "$OTHER" -c runner -- kubectl -n agentplane-staging get secret coinbase-api-credentials -o name
 ```
 
 The three `whoami` results must name three distinct
 `system:serviceaccount:agentplane-staging:<sandbox-name>` principals. Both Haku boxes
-must read Nodes and staging Pod metadata, answer `yes` for staging and monitoring
-`pods/log` reads, `haku-sandbox` Job creation, and testing Sandbox creation. They
-must answer `no` for staging Job creation and return only
-`coinbase-api-credentials` from the Secret read. `OTHER` must answer `no` for
-testing Sandbox creation; its Node and Secret reads must return `Forbidden`.
-Never use `-o yaml`, `-o json`, `describe`, shell
+must read Nodes and staging Pod metadata, answer `yes` for staging `pods/log`
+reads and `haku-sandbox` Job creation, answer `no` for staging Job creation,
+and return only `coinbase-api-credentials` from the Secret read. The last two
+commands must return `Forbidden`. Never use `-o yaml`, `-o json`, `describe`, shell
 tracing, or an agent transcript for the Secret: those can expose the key. The
 metadata-only output above still performs a real Secret `get` without printing
 its data.
