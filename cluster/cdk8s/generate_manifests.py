@@ -78,7 +78,7 @@ from cluster.cdk8s.activitywatch import (
     app as activitywatch_app,
     flux_kustomizations as activitywatch_flux_kustomizations,
 )
-from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
+from cluster.cdk8s.agentplane import binding_delegation, generation as agentplane_generation, staging, testing
 from cluster.cdk8s.agentplane_index import workers as agentplane_index_workers
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
 from cluster.cdk8s.artifact_generators import (
@@ -251,6 +251,7 @@ def generate_manifests(root: Path) -> None:
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(
         root, staging.ENV, staging.chart
     )
+    binding_delegation.write_manifests(root, staging.ENV)
     agentplane_testing_resource_chart = agentplane_generation.write_environment_manifests(
         root, testing.ENV, testing.chart, litellm_credentials.agentplane_testing_chart
     )
@@ -1521,6 +1522,7 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
     )
+    binding_delegation.add_flux_kustomizations(flux_chart, staging.ENV, {"haku-sandbox": haku_rbac_kustomization})
     # Every artifact built above except the parked nodes': those Kustomizations are suspended.
     write_artifact_generators(
         root,

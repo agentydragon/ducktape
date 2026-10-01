@@ -1680,6 +1680,7 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s/activitywatch:app",
         "//cluster/cdk8s/activitywatch:flux_kustomizations",
+        "//cluster/cdk8s/agentplane:binding_delegation",
         "//cluster/cdk8s/agentplane:generation",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:testing",

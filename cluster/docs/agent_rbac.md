@@ -163,6 +163,14 @@ removal prevents new selection, while retained cleanup scopes let old bindings b
 deleted when their Sandboxes are deleted. The app may `bind` only the catalog's named
 Roles/ClusterRoles and cannot edit their rules.
 
+The app's own Flux Kustomization owns delegation in `agentplane-staging` and at
+cluster scope. Each external target namespace has a separate, GitRepository-sourced
+Flux Kustomization for the app ServiceAccount's RoleBinding management Role and
+RoleBinding. The `haku-sandbox` delegation depends on `haku-rbac`, which depends
+on the namespace owner. A failure in this delegation Kustomization does not
+block the Agentplane app Kustomization. Keep an external delegation while its namespace
+is in the retained cleanup scopes, even if its catalog entry is removed.
+
 Kubernetes RBAC does not constrain a ClusterRole's `bind` permission to
 namespaced RoleBindings. Because the app can create ClusterRoleBindings for the
 catalog's cluster grant, a compromised app identity could bind the named

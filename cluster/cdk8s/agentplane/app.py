@@ -201,43 +201,19 @@ class App(Construct):
                     verbs=["create", "get", "list", "delete"],
                 )
             )
+            # Persisted grants can outlive catalog entries; keep role reads for
+            # their old names while bind remains limited to configured names.
+            role_binding_rules.append(
+                RolePolicyRule(resources=[custom_resource("rbac.authorization.k8s.io", "roles")], verbs=["get"])
+            )
         if role_binding_grant_names:
             role_binding_rules.extend(
                 RolePolicyRule(resources=[named_resource("rbac.authorization.k8s.io", "roles", name)], verbs=["bind"])
                 for name in role_binding_grant_names
             )
-        for target_namespace in sorted(role_binding_namespaces - {namespace}):
-            role = Role(
-                self,
-                f"managed-bindings-role-{target_namespace}",
-                metadata=ApiObjectMetadata(name=f"{namespace}-managed-bindings", namespace=target_namespace),
-                rules=[
-                    RolePolicyRule(
-                        resources=[custom_resource("rbac.authorization.k8s.io", "rolebindings")],
-                        verbs=["create", "get", "list", "delete"],
-                    ),
-                    *[
-                        RolePolicyRule(
-                            resources=[named_resource("rbac.authorization.k8s.io", "roles", name)], verbs=["bind"]
-                        )
-                        for name in sorted(
-                            {
-                                grant.role_ref.name
-                                for grant in grants
-                                if isinstance(grant, RoleBindingGrant)
-                                and grant.namespace == target_namespace
-                                and grant.role_ref.kind == "Role"
-                            }
-                        )
-                    ],
-                ],
-            )
-            RoleBinding(
-                self,
-                f"managed-bindings-binding-{target_namespace}",
-                metadata=ApiObjectMetadata(name=f"{namespace}-managed-bindings", namespace=target_namespace),
-                role=role,
-            ).add_subjects(app_service_account)
+        # External namespace delegation is rendered into one independent Flux
+        # Kustomization per target by binding_delegation.py. The app's own
+        # Kustomization must not fail because an unrelated namespace is absent.
         bind_cluster_roles = sorted({grant.role_ref.name for grant in grants if grant.role_ref.kind == "ClusterRole"})
         uses_cluster_binding = self.env.app_config.kubernetes_cluster_binding_cleanup or any(
             isinstance(grant, ClusterRoleBindingGrant) for grant in grants
@@ -268,6 +244,9 @@ class App(Construct):
                         )
                         for name in bind_cluster_roles
                     ],
+                    # The stored selection can refer to a catalog entry later
+                    # removed; GET validates it without widening BIND.
+                    k8s.PolicyRule(api_groups=["rbac.authorization.k8s.io"], resources=["clusterroles"], verbs=["get"]),
                 ],
             )
             k8s.KubeClusterRoleBinding(
