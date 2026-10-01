@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-
+from datetime import datetime
 
 # How many resync periods a kind may miss before a store calls itself stale: one late cycle is a
 # slow API server, three in a row is a wedge.
