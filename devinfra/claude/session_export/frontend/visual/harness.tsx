@@ -380,6 +380,28 @@ const peerHoldEventPage: SessionEventPage = {
   last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a506",
 };
 
+const peerMessageEventPage: SessionEventPage = {
+  data: [
+    fixtureEvent(1, "user", {
+      type: "user",
+      uuid: "peer-handback-1",
+      origin: {
+        kind: "peer",
+        from: "review-agent",
+        name: "Review agent",
+        handback: true,
+        handbackNote: "I verified the fixture against the generated manifest and found the mismatch.",
+      },
+      message: {
+        content: [{ type: "text", text: "The manifest is correct; update the test to expect paused." }],
+      },
+    }),
+  ],
+  has_more: false,
+  first_id: "peer-handback-1",
+  last_id: "peer-handback-1",
+};
+
 function mockFetch(input: RequestInfo | URL): Promise<Response> {
   const requestUrl = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
   const url = new URL(requestUrl, window.location.href);
@@ -400,9 +422,11 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
       ? toolResultEventPage
       : page.startsWith("SessionSubagent")
         ? subagentEventPage
-        : page.startsWith("SessionPeerHold")
-          ? peerHoldEventPage
-          : eventPage;
+        : page.startsWith("SessionPeerMessage")
+          ? peerMessageEventPage
+          : page.startsWith("SessionPeerHold")
+            ? peerHoldEventPage
+            : eventPage;
     return Promise.resolve(json(events));
   }
   return Promise.reject(new Error(`Unmocked session sync request: ${url.pathname}`));

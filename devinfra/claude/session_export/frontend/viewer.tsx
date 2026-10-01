@@ -424,6 +424,7 @@ function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showT
       data-tool-count={item.kind === "tool-run" ? item.tools.length : undefined}
       data-parent-tool-use-id={item.kind === "message" || item.kind === "tool-run" ? item.parentToolUseId : undefined}
       data-peer-from={item.kind === "peer-message" || item.kind === "peer-hold" ? item.from : undefined}
+      data-peer-handback={item.kind === "peer-message" && item.handback ? "true" : undefined}
       data-peer-state={item.kind === "peer-hold" ? item.state : undefined}
       withBorder
       radius="sm"
@@ -455,6 +456,11 @@ function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showT
                 {item.status}
               </Badge>
             )}
+            {item.kind === "peer-message" && item.handback && (
+              <Badge size="xs" variant="light" color="yellow">
+                Subagent hand-back
+              </Badge>
+            )}
           </Group>
           {time !== null && (
             <Text component="time" size="xs" c="dimmed" dateTime={item.events.at(-1)?.created_at}>
@@ -468,9 +474,18 @@ function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showT
           </Text>
         )}
         {item.kind === "peer-message" && (
-          <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {item.text}
-          </Text>
+          <Stack gap="xs">
+            {item.handbackNote !== undefined && (
+              <Alert variant="light" color="yellow" title="Hand-back note">
+                <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                  {item.handbackNote}
+                </Text>
+              </Alert>
+            )}
+            <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {item.text}
+            </Text>
+          </Stack>
         )}
         {item.kind === "peer-hold" && (
           <Stack gap="xs">

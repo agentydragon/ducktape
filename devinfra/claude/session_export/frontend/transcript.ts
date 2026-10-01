@@ -20,6 +20,8 @@ export type TranscriptPeerMessage = TranscriptBase & {
   messageUuid: string;
   from: string;
   name?: string;
+  handback?: boolean;
+  handbackNote?: string;
   text: string;
 };
 
@@ -373,12 +375,15 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     if (text === "") return false;
     const messageUuid = string(payload.uuid) ?? eventId(event);
     const name = safePeerLabel(origin.name) ?? safePeerLabel(origin.from_name);
+    const handbackNote = string(origin.handbackNote) ?? string(origin.handback_note);
     const peerMessage: TranscriptPeerMessage = {
       kind: "peer-message",
       id: `peer-message-${messageUuid}`,
       messageUuid,
       from,
       ...(name === null ? {} : { name }),
+      ...(origin.handback === true || handbackNote !== undefined ? { handback: true } : {}),
+      ...(handbackNote === undefined ? {} : { handbackNote }),
       text,
       events: [event],
     };

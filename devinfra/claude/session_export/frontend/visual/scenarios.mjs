@@ -22,6 +22,10 @@ const PEER_HOLD_READY = [
   '[data-fold-kind="peer-hold"][data-peer-state="held"]',
   '[data-fold-kind="peer-hold"][data-peer-state="dropped"]',
 ];
+const PEER_MESSAGE_READY = [
+  "#session-viewer-title",
+  '[data-fold-kind="peer-message"][data-peer-from="review-agent"][data-peer-handback="true"]',
+];
 
 export const SCENARIOS = {
   SessionViewer: { element: "#app", readySelectors: VIEWER_READY },
@@ -47,6 +51,12 @@ export const SCENARIOS = {
   SessionPeerHold_mobile: {
     element: "#app",
     readySelectors: PEER_HOLD_READY,
+    viewport: { width: 420, height: 900 },
+  },
+  SessionPeerMessage: { element: "#app", readySelectors: PEER_MESSAGE_READY },
+  SessionPeerMessage_mobile: {
+    element: "#app",
+    readySelectors: PEER_MESSAGE_READY,
     viewport: { width: 420, height: 900 },
   },
   SessionSync: { element: "#app", readySelectors: SYNC_READY },
