@@ -116,7 +116,11 @@ function ReasoningPreview({
       return;
     }
     const measure = () => {
-      onOverflowChange(content.scrollWidth > content.clientWidth + 1);
+      const range = document.createRange();
+      range.selectNodeContents(content);
+      // The Markdown wrapper is clipped, so its scrollWidth can equal its clientWidth even when
+      // its inline descendants continue past the preview. Measure the laid-out content itself.
+      onOverflowChange(range.getBoundingClientRect().right > element.getBoundingClientRect().right + 1);
     };
     measure();
     const observer = new ResizeObserver(measure);
