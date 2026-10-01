@@ -215,7 +215,12 @@ class KubernetesBindings:
     async def _sweep_orphans(self, live_uids: set[str]) -> None:
         selector = f"{MANAGED_BY_LABEL}={MANAGED_BY_APP}"
         for namespace in sorted(self._cleanup_namespaces):
-            bindings = await self._rbac.list_namespaced_role_binding(namespace, label_selector=selector)
+            try:
+                bindings = await self._rbac.list_namespaced_role_binding(namespace, label_selector=selector)
+            except k8s_client.ApiException as error:
+                if error.status == 404:
+                    continue  # The namespace and its RoleBindings are already gone.
+                raise
             for binding in bindings.items:
                 if await self._is_confirmed_orphan(binding, live_uids):
                     assert binding.metadata is not None
