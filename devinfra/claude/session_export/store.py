@@ -264,7 +264,7 @@ class SessionStore:
         )
         notified = asyncio.Event()
 
-        async def on_notification(_connection: asyncpg.Connection, _pid: int, _channel: str, _payload: str, /) -> None:
+        async def on_notification(_connection: object, _pid: int, _channel: str, _payload: object, /) -> None:
             notified.set()
 
         listener_added = False
