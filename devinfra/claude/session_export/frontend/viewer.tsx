@@ -15,6 +15,7 @@ import {
   Select,
   SimpleGrid,
   Stack,
+  Switch,
   Text,
   TextInput,
   Title,
@@ -38,8 +39,25 @@ import {
 
 type StatusFilter = "all" | "active" | "paused" | "archived";
 type WatchStatus = "connecting" | "connected" | "reconnecting";
+type RoutineGroup = { kind: "routine-group"; id: string; count: number };
+type TranscriptRow = TranscriptItem | RoutineGroup;
 
 const ALL_STATUSES = ["active", "paused", "archived"];
+
+function transcriptRows(items: TranscriptItem[], showRoutineEvents: boolean): TranscriptRow[] {
+  if (showRoutineEvents) return items;
+  const rows: TranscriptRow[] = [];
+  for (const item of items) {
+    if (item.kind === "notice" && item.routine) {
+      const previous = rows.at(-1);
+      if (previous?.kind === "routine-group") previous.count += 1;
+      else rows.push({ kind: "routine-group", id: item.id, count: 1 });
+    } else {
+      rows.push(item);
+    }
+  }
+  return rows;
+}
 
 function errorMessage(reason: unknown): string {
   return reason instanceof ApiError || reason instanceof Error ? reason.message : "Could not load sessions.";
@@ -335,7 +353,22 @@ function rawEvents(item: TranscriptItem): string {
   );
 }
 
-function TranscriptCard({ item }: { item: TranscriptItem }): JSX.Element {
+function RawEvents({ item }: { item: TranscriptItem }): JSX.Element {
+  return (
+    <Accordion variant="contained" radius="sm">
+      <Accordion.Item value="raw-events">
+        <Accordion.Control>Original event data</Accordion.Control>
+        <Accordion.Panel>
+          <ScrollArea type="auto" mah={384}>
+            <Code block>{rawEvents(item)}</Code>
+          </ScrollArea>
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
+  );
+}
+
+function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showToolDetails: boolean }): JSX.Element {
   const time = transcriptEventTime(item);
   const title =
     item.kind === "message"
@@ -402,7 +435,19 @@ function TranscriptCard({ item }: { item: TranscriptItem }): JSX.Element {
             {item.text}
           </Text>
         )}
-        {item.kind === "tool-run" && <ToolRun item={item} />}
+        {item.kind === "tool-run" && (
+          <Accordion key={showToolDetails ? "expanded" : "compact"} defaultValue={showToolDetails ? "details" : null}>
+            <Accordion.Item value="details">
+              <Accordion.Control>Tool details and original events</Accordion.Control>
+              <Accordion.Panel>
+                <Stack gap="sm">
+                  <ToolRun item={item} />
+                  <RawEvents item={item} />
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
+        )}
         {item.kind === "activity" && item.detail !== undefined && (
           <Text size="sm" c="dimmed">
             {item.detail}
@@ -437,16 +482,7 @@ function TranscriptCard({ item }: { item: TranscriptItem }): JSX.Element {
             {item.detail}
           </Text>
         )}
-        <Accordion variant="contained" radius="sm">
-          <Accordion.Item value="raw-events">
-            <Accordion.Control>Original event data</Accordion.Control>
-            <Accordion.Panel>
-              <ScrollArea type="auto" mah={384}>
-                <Code block>{rawEvents(item)}</Code>
-              </ScrollArea>
-            </Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
+        {item.kind !== "tool-run" && <RawEvents item={item} />}
       </Stack>
     </Paper>
   );
@@ -455,6 +491,9 @@ function TranscriptCard({ item }: { item: TranscriptItem }): JSX.Element {
 export function SessionViewer(): JSX.Element {
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
+  const [showRoutineEvents, setShowRoutineEvents] = useState(false);
+  const [showToolDetails, setShowToolDetails] = useState(false);
+  const [showRawEvents, setShowRawEvents] = useState(false);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [nextSessionCursor, setNextSessionCursor] = useState<string | null>(null);
   const [resumeToken, setResumeToken] = useState<string | null>(null);
@@ -558,6 +597,8 @@ export function SessionViewer(): JSX.Element {
 
   const selectedSession = sessions.find((session) => session.id === selectedId) ?? null;
   const transcript = useMemo(() => foldSessionEvents(events), [events]);
+  const rows = useMemo(() => transcriptRows(transcript, showRoutineEvents), [transcript, showRoutineEvents]);
+  const routineEventCount = transcript.filter((item) => item.kind === "notice" && item.routine).length;
   const watchLabel =
     watchStatus === "connected" ? "Live updates on" : watchStatus === "connecting" ? "Connecting…" : "Reconnecting…";
 
@@ -707,6 +748,28 @@ export function SessionViewer(): JSX.Element {
                   </Badge>
                 </Group>
 
+                <Group gap="md">
+                  <Switch
+                    label="Raw event stream"
+                    checked={showRawEvents}
+                    onChange={(event) => setShowRawEvents(event.currentTarget.checked)}
+                  />
+                  {!showRawEvents && (
+                    <>
+                      <Switch
+                        label={`Show routine events (${routineEventCount})`}
+                        checked={showRoutineEvents}
+                        onChange={(event) => setShowRoutineEvents(event.currentTarget.checked)}
+                      />
+                      <Switch
+                        label="Expand tool details"
+                        checked={showToolDetails}
+                        onChange={(event) => setShowToolDetails(event.currentTarget.checked)}
+                      />
+                    </>
+                  )}
+                </Group>
+
                 {eventError !== null && (
                   <Alert color="red" title="Could not load transcript">
                     {eventError}
@@ -717,7 +780,7 @@ export function SessionViewer(): JSX.Element {
                   <Center h={180}>
                     <Loader size="sm" aria-label="Loading transcript" />
                   </Center>
-                ) : transcript.length === 0 ? (
+                ) : (showRawEvents ? events.length === 0 : transcript.length === 0) ? (
                   <Center h={180}>
                     <Text c="dimmed" ta="center">
                       No events are stored for this session yet.
@@ -726,9 +789,51 @@ export function SessionViewer(): JSX.Element {
                 ) : (
                   <ScrollArea h="min(32rem, 60vh)" type="auto">
                     <Stack gap="sm" pr="sm">
-                      {transcript.map((item) => (
-                        <TranscriptCard key={`${item.kind}-${item.id}`} item={item} />
-                      ))}
+                      {showRawEvents
+                        ? events.map((event) => (
+                            <Paper
+                              key={event.event_id}
+                              component="article"
+                              aria-label={`Raw event ${event.sequence_num}`}
+                              data-raw-event
+                              withBorder
+                              radius="sm"
+                              p="sm"
+                            >
+                              <Text size="xs" c="dimmed" mb="xs">
+                                {event.sequence_num} · {event.event_type}
+                              </Text>
+                              <Code block style={{ maxHeight: 384, overflow: "auto", whiteSpace: "pre-wrap" }}>
+                                {JSON.stringify(event, null, 2)}
+                              </Code>
+                            </Paper>
+                          ))
+                        : rows.map((row) =>
+                            row.kind === "routine-group" ? (
+                              <Paper
+                                key={`routine-${row.id}`}
+                                data-fold-kind="routine-group"
+                                withBorder
+                                radius="sm"
+                                p="xs"
+                              >
+                                <Group justify="space-between" gap="xs">
+                                  <Text size="xs" c="dimmed">
+                                    {row.count} routine {row.count === 1 ? "event" : "events"} hidden
+                                  </Text>
+                                  <Button size="compact-xs" variant="subtle" onClick={() => setShowRoutineEvents(true)}>
+                                    Show
+                                  </Button>
+                                </Group>
+                              </Paper>
+                            ) : (
+                              <TranscriptCard
+                                key={`${row.kind}-${row.id}`}
+                                item={row}
+                                showToolDetails={showToolDetails}
+                              />
+                            )
+                          )}
                       {hasMoreEvents && (
                         <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
                           Load more events

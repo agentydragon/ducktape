@@ -78,6 +78,7 @@ export type TranscriptNotice = TranscriptBase & {
   kind: "notice";
   title: string;
   detail?: string;
+  routine?: boolean;
 };
 
 export type TranscriptItem =
@@ -179,6 +180,18 @@ function statusText(value: unknown, fallback: string): string {
   const status = string(value);
   if (status === null) return fallback;
   return status.replaceAll("_", " ");
+}
+
+function hookFailed(payload: JsonObject): boolean {
+  const response = object(payload.response) ?? object(payload.result) ?? payload;
+  const status = string(response.status)?.toLowerCase();
+  return (
+    response.is_error === true ||
+    (response.error !== undefined && response.error !== null && response.error !== "") ||
+    (typeof response.exit_code === "number" && response.exit_code !== 0) ||
+    status === "error" ||
+    status === "failed"
+  );
 }
 
 function usageDetails(payload: JsonObject): string[] {
@@ -521,9 +534,24 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
           id: eventId(event),
           title,
           detail: textFrom(payload.message) ?? textFrom(payload.description) ?? undefined,
+          routine: subtype === "hook_started" || (subtype === "hook_response" && !hookFailed(payload)),
           events: [event],
         });
       }
+      continue;
+    }
+
+    if (type === "env_manager_log") {
+      const data = object(payload.data) ?? payload;
+      const level = string(data.level)?.toLowerCase() ?? "info";
+      items.push({
+        kind: "notice",
+        id: eventId(event),
+        title: `Runner log · ${level}`,
+        detail: textFrom(data.message) ?? undefined,
+        routine: level !== "warn" && level !== "warning" && level !== "error" && level !== "fatal",
+        events: [event],
+      });
       continue;
     }
 
