@@ -36,6 +36,7 @@ spec:
       labels:
         app.kubernetes.io/name: plaid-spend
     spec:
+      automountServiceAccountToken: false
       containers:
         - env:
             - name: PLAID_SPEND_CARDS_CONFIG_PATH
