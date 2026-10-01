@@ -921,7 +921,9 @@ def _rbac(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(
             name=devbox_vmi_restart,
             namespace=NAMESPACE,
-            annotations={"description": "Allows the existing public-coder and Haku subjects to restart only public-coder-devbox."},
+            annotations={
+                "description": "Allows the existing public-coder and Haku subjects to restart only public-coder-devbox."
+            },
         ),
         rules=[
             k8s.PolicyRule(
@@ -938,7 +940,9 @@ def _rbac(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(
             name=devbox_vmi_restart,
             namespace=NAMESPACE,
-            annotations={"description": "Binds the existing public-coder and Haku subjects to the devbox restart Role."},
+            annotations={
+                "description": "Binds the existing public-coder and Haku subjects to the devbox restart Role."
+            },
         ),
         role_ref=_role_ref("Role", devbox_vmi_restart),
         subjects=_HAKU_SUPERSET_SUBJECTS,
