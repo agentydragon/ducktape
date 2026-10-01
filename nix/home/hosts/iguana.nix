@@ -19,6 +19,11 @@
 
   ducktape.codex.chatgptPackage = ducktapePackages.chatgpt;
 
+  ducktape.sessionBackup = {
+    enable = true;
+    host = "iguana";
+  };
+
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/iguana-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/iguana-github.sops.key;
 

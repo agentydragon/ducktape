@@ -1,0 +1,6 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "snapshot-codex-sqlite",
+    srcs = ["snapshot-codex-sqlite.py"],
+)
