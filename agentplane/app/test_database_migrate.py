@@ -1,16 +1,14 @@
-"""The migration history against a real PostgreSQL: it reaches the models, re-running it is a no-op,
-and a database already stamped at an earlier revision is carried to the models."""
+"""The migration history against a real PostgreSQL: it refuses a database that differs from the models,
+re-running it is a no-op, and a database already stamped at an earlier revision is carried to the models."""
 
 import os
 import subprocess
 import sys
 import uuid
 
+import pytest
 import pytest_bazel
-from alembic.autogenerate import compare_metadata
-from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.engine import Connection
 
 from agentplane.app.database_migrate import RUNNER
 
@@ -18,36 +16,49 @@ from agentplane.app.database_migrate import RUNNER
 # gazelle:include_dep @pypi//psycopg
 
 
-def _drift(connection: Connection) -> list[object]:
-    """What Alembic would have to emit to turn the live schema into the models."""
-    context = MigrationContext.configure(connection, opts={"version_table": RUNNER.version_table})
-    return list(compare_metadata(context, RUNNER.metadata))
-
-
-def test_the_migrated_schema_is_the_one_the_models_describe(db_url: str) -> None:
-    """Nothing creates a table at runtime, so a model column without a migration reaches no database."""
+def _execute(db_url: str, statement: str) -> None:
     engine = create_engine(RUNNER.sync_url(db_url))
     try:
-        with engine.connect() as connection:
-            assert _drift(connection) == []
+        with engine.begin() as connection:
+            connection.execute(text(statement))
     finally:
         engine.dispose()
+
+
+def test_a_database_that_differs_from_the_models_fails_to_migrate(db_url: str) -> None:
+    """A database that applied a since-edited migration is stamped at head and still differs; the
+    init container has to stop the rollout instead of letting the app write to the wrong schema."""
+    _execute(db_url, 'ALTER TABLE thread_payload_chunk ALTER COLUMN "text" TYPE text USING "text"::text')
+    with pytest.raises(RuntimeError, match="thread_payload_chunk"):
+        RUNNER.apply(db_url)
+
+
+def test_an_index_only_the_database_has_is_drift_when_it_is_unique(db_url: str) -> None:
+    _execute(db_url, "CREATE UNIQUE INDEX unique_index_only_in_test_database ON thread_payload_chunk (chunk_index)")
+    with pytest.raises(RuntimeError, match="unique_index_only_in_test_database"):
+        RUNNER.apply(db_url)
+
+
+def test_an_index_only_the_database_has_is_not_drift_when_it_is_not_unique(db_url: str) -> None:
+    """The Action Service's migrations carry indexes its models do not declare, and they only change speed."""
+    _execute(db_url, "CREATE INDEX index_only_in_test_database ON thread_payload_chunk (chunk_index)")
+    RUNNER.apply(db_url)
 
 
 def test_a_second_run_over_a_migrated_database_changes_nothing(db_url: str) -> None:
     """Every replica's init container runs this against the same database, on every rollout."""
     RUNNER.apply(db_url)
-    engine = create_engine(RUNNER.sync_url(db_url))
-    try:
-        with engine.connect() as connection:
-            assert _drift(connection) == []
-    finally:
-        engine.dispose()
 
 
-def _migrate_from_0015(db_url: str, column_type: str, stored: list[str]) -> tuple[list[str], list[object]]:
+def test_tables_the_history_does_not_own_are_not_drift(db_url: str) -> None:
+    """Histories can share a database, each with a version table of its own."""
+    _execute(db_url, "CREATE TABLE another_history_test_table (id integer PRIMARY KEY)")
+    RUNNER.apply(db_url)
+
+
+def _migrate_from_0015(db_url: str, column_type: str, stored: list[str]) -> list[str]:
     """Carry a database stamped `0015`, its chunk column `column_type` and holding `stored` as written, to
-    head. Returns the chunks as a reader decodes them, and the drift left from the models."""
+    head. Returns the chunks as a reader decodes them."""
     engine = create_engine(RUNNER.sync_url(db_url))
     thread = uuid.uuid4()
     try:
@@ -76,15 +87,14 @@ def _migrate_from_0015(db_url: str, column_type: str, stored: list[str]) -> tupl
                 )
         RUNNER.apply(db_url)
         with engine.connect() as connection:
-            chunks = list(connection.scalars(text('SELECT "text" FROM thread_payload_chunk ORDER BY chunk_index')))
-            return chunks, _drift(connection)
+            return list(connection.scalars(text('SELECT "text" FROM thread_payload_chunk ORDER BY chunk_index')))
     finally:
         engine.dispose()
 
 
 def test_a_chunk_column_left_as_text_is_converted_to_json_strings(db_url: str) -> None:
     """A staging database applied `0005` while it created `text`, then ran the app that writes JSON strings."""
-    chunks, drift = _migrate_from_0015(
+    chunks = _migrate_from_0015(
         db_url,
         "text",
         [
@@ -95,14 +105,12 @@ def test_a_chunk_column_left_as_text_is_converted_to_json_strings(db_url: str) -
         ],
     )
     assert chunks == ["plain output", 'say "hi"\nthen', "123", 'written "by" the app — \x00']
-    assert drift == []
 
 
 def test_a_chunk_column_already_json_keeps_its_strings(db_url: str) -> None:
     """A database created while `0005` created `json` is stamped `0015` without ever holding `text`."""
-    chunks, drift = _migrate_from_0015(db_url, "json", [r'"plain output"', r'"written \"by\" the app — \u0000"'])
+    chunks = _migrate_from_0015(db_url, "json", [r'"plain output"', r'"written \"by\" the app — \u0000"'])
     assert chunks == ["plain output", 'written "by" the app — \x00']
-    assert drift == []
 
 
 def test_the_runner_registers_every_migrated_table(db_url: str) -> None:

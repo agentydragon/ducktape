@@ -87,8 +87,8 @@ bbr test //agentplane/app/...
   `main.py` builds the pool and hands it to each store and to the database update listener.
 - `database_migrate.py` and `migrations/`: the Alembic history covering the tables of
   `operator_sessions.py` and `agent_runtime/models.py`. Migrations run separately through
-  `:migrate`; the server itself never creates or checks tables at startup.
-  `:image` and `:migration_image` are separate OCI targets.
+  `:migrate`, which fails when the migrated schema differs from the models; the server itself
+  never creates or checks tables at startup. `:image` and `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
 
