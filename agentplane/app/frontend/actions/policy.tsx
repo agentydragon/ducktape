@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { Alert, Badge, Box, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
+import { Alert, Badge, Box, Code, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 
 import { CodeBlock } from "../code_block";
 import { expiry } from "../egress";
