@@ -1,0 +1,41 @@
+--- /tmp/claude-0/-home-user-ducktape/17570302-6f29-5e29-9145-7d878c0711db/scratchpad/sdk/system-images/android-34/google_apis/arm64-v8a/advancedFeatures.ini.orig	2026-09-17 20:13:08.311740891 +0000
++++ /tmp/claude-0/-home-user-ducktape/17570302-6f29-5e29-9145-7d878c0711db/scratchpad/sdk/system-images/android-34/google_apis/arm64-v8a/advancedFeatures.ini	2026-09-17 20:28:46.088896965 +0000
+@@ -1,25 +1,25 @@
+-BluetoothEmulation = on
++BluetoothEmulation = off
+ GrallocSync = on
+ GLDMA = on
+ LogcatPipe = on
+ GLAsyncSwap = on
+ GLESDynamicVersion = on
+ EncryptUserData = on
+-VirtioWifi = on
++VirtioWifi = off
+ HostComposition = on
+ RefCountPipe = on
+-VirtioInput = on
++VirtioInput = off
+ HardwareDecoder = on
+ DynamicPartition = on
+-ModemSimulator= on
++ModemSimulator = off
+ MultiDisplay = on
+ YUVCache = on
+ GLDirectMem = on
+ VulkanNullOptionalStrings = on
+ VulkanIgnoredHandles = on
+-Mac80211hwsimUserspaceManaged = on
+-VirtconsoleLogcat = on
+-VirtioVsockPipe = on
++Mac80211hwsimUserspaceManaged = off
++VirtconsoleLogcat = off
++VirtioVsockPipe = off
+ AndroidbootProps2 = on
+ DeviceSkinOverlay = on
+ SupportPixelFold = on
+@@ -27,4 +27,4 @@
+ VulkanBatchedDescriptorSetUpdate = on
+ DeviceStateOnBoot = on
+ HWCMultiConfigs = on
+-VirtioSndCard = on
++VirtioSndCard = off
