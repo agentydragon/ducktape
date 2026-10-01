@@ -59,9 +59,11 @@ export function Pairing({ paired, onPaired }: Props): JSX.Element {
                 ? "Replaces the grant this page holds. The sync switches to the new one straight away."
                 : "The sync has no credential yet. Pairing gives it its own grant, separate from any Claude Code login."}
             </Text>
-            <Button type="button" onClick={() => void start()} loading={busy}>
-              {paired ? "Pair again" : "Start pairing"}
-            </Button>
+            <Group>
+              <Button type="button" onClick={() => void start()} loading={busy}>
+                {paired ? "Pair again" : "Start pairing"}
+              </Button>
+            </Group>
           </>
         ) : (
           <List type="ordered" withPadding spacing="sm">

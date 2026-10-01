@@ -88,9 +88,11 @@ export function Overview({ status, now, onSyncNow }: Props): JSX.Element {
                   {plural(status.sessions_behind, "session")} (sessions with a live stream are not counted)
                 </StatusDetail>
               </SimpleGrid>
-              <Button type="button" onClick={onSyncNow} disabled={status.state === "syncing"}>
-                Poll now
-              </Button>
+              <Group>
+                <Button type="button" onClick={onSyncNow} disabled={status.state === "syncing"}>
+                  Poll now
+                </Button>
+              </Group>
             </Stack>
             <Stack gap="xs">
               <Title order={3}>Grant</Title>
