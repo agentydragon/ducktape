@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, cast
@@ -110,7 +110,7 @@ def create_app(settings: SpendSettings, *, service: SpendService | None = None) 
     return app
 
 
-async def _event_stream(request: Request, service: SpendService) -> AsyncIterator[str]:
+async def _event_stream(request: Request, service: SpendService) -> AsyncGenerator[str]:
     queue = service.subscribe()
     initial_sent = False
     try:
