@@ -235,9 +235,7 @@ def _rotation_client_credentials() -> tuple[_ClientCredentials, ...]:
     for rotation in ROTATIONS.rotations:
         credential = _CLIENT_CREDENTIALS_BY_DIRECTORY.get(rotation.credentials_dir)
         if credential is None:
-            raise ValueError(
-                f"no Kubernetes client-credential Secret is mapped for {rotation.credentials_dir}"
-            )
+            raise ValueError(f"no Kubernetes client-credential Secret is mapped for {rotation.credentials_dir}")
         credentials.setdefault(rotation.credentials_dir, credential)
     return tuple(credentials.values())
 
