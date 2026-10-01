@@ -219,11 +219,12 @@ describe("ActionHistory", () => {
     );
     // The request widget shows the command alone in its block, the response widget the exit code.
     const drawn = (): { request: boolean; response: boolean } => ({
-      request: [...container.querySelectorAll(".agentplane-code-block")].some((block) =>
-        [...block.querySelectorAll(".cm-line")]
-          .map((line) => line.textContent ?? "")
-          .join("\n")
-          .includes("echo test-output")
+      request: [...container.querySelectorAll(".agentplane-code-block")].some(
+        (block) =>
+          [...block.querySelectorAll(".cm-line")]
+            .map((line) => line.textContent ?? "")
+            .join("\n")
+            .trim() === "echo test-output"
       ),
       response: container.textContent?.includes("Exit 0") ?? false,
     });

@@ -1064,7 +1064,9 @@ describe("EntityCard", () => {
     expect(args?.textContent).toContain('"timeout": 30');
 
     const output = (await disclose(container, "Output")).querySelector(".agentplane-code-block");
-    expect(output?.textContent).toBe(PROSE);
+    expect([...(output?.querySelectorAll(".cm-line") ?? [])].map((line) => line.textContent ?? "").join("\n")).toBe(
+      PROSE
+    );
     expect(output?.querySelector("strong, li")).toBeNull();
   });
 
