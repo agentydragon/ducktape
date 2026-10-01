@@ -5,13 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ServiceAccount, k8s
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetDeletionPolicy,
+)
 
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.plaid_mcp import db
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from finance.plaid.spend.settings import SpendSettings
@@ -23,10 +29,15 @@ _NAME = "plaid-spend"
 _HOST = "plaid-spend.allegedly.works"
 _CONFIG_MAP = "plaid-spend-config"
 _CARD_CONFIG = SecretRef(namespace=NAMESPACE, name="plaid-spend-cards")
+_WEB_OIDC_CREDENTIALS_NAME = "plaid-spend-web-oidc-config"
+_WEB_OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name=_WEB_OIDC_CREDENTIALS_NAME)
+_WEB_OIDC_READER = "plaid-spend-web-oidc-reader"
 _DB = db.SPEND
 _CARD_CONFIG_PATH = SpendSettings.model_fields["cards_config_path"].default
 _DESKTOP_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-spend-desktop/"
 _DESKTOP_CLIENT_ID = "plaid-spend-desktop"
+_WEB_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-spend-web/"
+_WEB_PUBLIC_BASE_URL = "https://plaid-spend.allegedly.works"
 _WEB = ServiceRef(
     name=_NAME,
     port=Port(name="http", number=8080),
@@ -38,6 +49,8 @@ _CONFIG = {
     "PLAID_SPEND_API_OIDC_CLIENT_ID": _DESKTOP_CLIENT_ID,
     "PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER": _DESKTOP_OIDC_ISSUER,
     "PLAID_SPEND_API_OIDC_JWKS_URI": f"{_DESKTOP_OIDC_ISSUER}jwks/",
+    env_name(SpendSettings, "web_oidc_issuer"): _WEB_OIDC_ISSUER,
+    env_name(SpendSettings, "web_oidc_public_base_url"): _WEB_PUBLIC_BASE_URL,
 }
 
 
@@ -58,6 +71,33 @@ def _resources() -> k8s.ResourceRequirements:
     )
 
 
+def _web_oidc_credentials(chart: Chart) -> None:
+    reader = ServiceAccount(
+        chart,
+        "web-oidc-secret-reader",
+        metadata=ApiObjectMetadata(name=_WEB_OIDC_READER, namespace=NAMESPACE),
+        automount_token=False,
+    )
+    store = single_secret_store(
+        chart,
+        "plaid-spend-web-oidc",
+        reader=reader,
+        source_namespace="authentik",
+        source_secret=_WEB_OIDC_CREDENTIALS_NAME,
+        consumer_namespace=NAMESPACE,
+    )
+    ExternalSecret(
+        chart,
+        "web-oidc-external-secret",
+        metadata=ApiObjectMetadata(name=_WEB_OIDC_CREDENTIALS_NAME, namespace=NAMESPACE),
+        refresh_interval="10m",
+        secret_store_ref=SecretStoreRef.cluster(store),
+        data_from=[DataFrom.from_extract(_WEB_OIDC_CREDENTIALS_NAME)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
+    )
+
+
 def _deployment(chart: Chart) -> None:
     health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_WEB.pod_port))
     k8s.KubeServiceAccount(
@@ -75,8 +115,8 @@ def _deployment(chart: Chart) -> None:
             labels=_WEB.pods.selector,
             annotations={
                 "description": (
-                    "Separate Plaid spend API; reads one SOPS-managed shared card configuration and"
-                    " subscribes to committed plaid_spend_changed invalidations."
+                    "Plaid Spend serves its Authentik-protected browser UI and desktop API from the same"
+                    " configured card view and subscribes to committed plaid_spend_changed invalidations."
                 )
             },
         ),
@@ -108,6 +148,15 @@ def _deployment(chart: Chart) -> None:
                                     )
                                     for key in _CONFIG
                                 ),
+                                _WEB_OIDC_CREDENTIALS.key("client_id").env_var(
+                                    env_name(SpendSettings, "web_oidc_client_id")
+                                ),
+                                _WEB_OIDC_CREDENTIALS.key("client_secret").env_var(
+                                    env_name(SpendSettings, "web_oidc_client_secret")
+                                ),
+                                _WEB_OIDC_CREDENTIALS.key("session_secret").env_var(
+                                    env_name(SpendSettings, "web_oidc_session_secret")
+                                ),
                                 _DB.key("DATABASE_URL").env_var("DATABASE_URL"),
                             ],
                             volume_mounts=[
@@ -127,6 +176,7 @@ def _deployment(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     k8s.KubeConfigMap(chart, "config", metadata=k8s.ObjectMeta(name=_CONFIG_MAP, namespace=NAMESPACE), data=_CONFIG)
+    _web_oidc_credentials(chart)
     _deployment(chart)
     k8s.KubeService(
         chart,
@@ -140,7 +190,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(
             name=_NAME,
             namespace=NAMESPACE,
-            annotations={"description": "Public entry point for the Authentik-authenticated Plaid Spend API."},
+            annotations={"description": "Authentik-authenticated web view and desktop API for Plaid card spend."},
         ),
         hostnames=[_HOST],
         backend=_WEB,

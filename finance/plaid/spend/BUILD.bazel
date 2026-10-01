@@ -7,11 +7,17 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "app",
     srcs = ["app.py"],
+    data = [
+        "spend.css",
+        "spend.html",
+        "spend.js",
+    ],
     deps = [
         ":models",
         ":service",
         ":settings",
         "//mcp_infra:oidc_principal",
+        "//util:oidc_login",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//uvicorn",

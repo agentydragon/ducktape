@@ -4,7 +4,7 @@ Self-contained Plaid link management and synced Postgres read path.
 
 ## Architecture
 
-The deployment has three public surfaces:
+The deployment has four public surfaces:
 
 ```text
 Browser -> https://plaid-mcp.allegedly.works/link
@@ -22,6 +22,10 @@ GNOME panel app -> https://plaid-spend.allegedly.works/api/v1/view and `/api/v1/
     - validates Authentik public OIDC access tokens from the desktop PKCE client
     - computes one shared view from the SOPS-managed `plaid-spend-cards` Secret
     - LISTEN/NOTIFY invalidates views after synced source rows commit
+
+Browser -> https://plaid-spend.allegedly.works/
+  Gateway -> same plaid-spend Deployment -> Authentik confidential OIDC login
+    - serves the same cards and notification-backed updates as the GNOME panel app
 ```
 
 The synced database is available to agents through the separately authenticated pgweb SQL API
@@ -44,6 +48,10 @@ and read-only in-cluster PostgreSQL access; it is not exposed over MCP.
   `tf/gitops/sso-providers`; a get-only SecretStore and ExternalSecret copy it
   here for the web Deployment. Only the OIDC reader ServiceAccount can read that
   source Secret. The sync CronJob receives none of the OIDC values.
+- `plaid-spend-web-oidc-config` is minted in `authentik` by `tf/gitops/sso-providers`
+  and copied through a get-only SecretStore into the `plaid-mcp` namespace. The web
+  process uses the confidential `plaid-spend-web` OIDC client and a signed session
+  cookie; desktop API authentication remains on the separate public client.
 - `spend/cards.sops.yaml` stores the shared card selection, limits, and alert
   thresholds. The service mounts it as `/etc/plaid-spend/cards.json`; each device
   receives the same server-computed view. The desktop uses the public
@@ -117,4 +125,7 @@ Expected external behavior:
 
 - `plaid-mcp.allegedly.works` redirects unauthenticated browser requests to the app's Authentik OIDC login.
 - The UI and its `/api/*` endpoints require a valid signed app session; only `/healthz` and OIDC endpoints are public.
+- `plaid-spend.allegedly.works/` redirects to Authentik when the browser has no valid session. Its
+  view and event routes use that session; `/api/v1/view` and `/api/v1/events` independently require
+  a valid desktop Bearer token.
 - The Plaid database has no public MCP endpoint; SQL access stays on the configured pgweb and in-cluster paths.

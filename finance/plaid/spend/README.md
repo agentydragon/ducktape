@@ -1,8 +1,15 @@
 # Plaid Spend
 
-`//finance/plaid/spend:server_image` serves the same backend-computed statement-cycle view to every
-authenticated desktop client. The card selection, labels, limits, and alert thresholds live in the
-SOPS-managed `plaid-spend-cards` Secret under `cluster/k8s/agents/plaid-mcp/spend/`.
+`//finance/plaid/spend:server_image` serves the same backend-computed statement-cycle view to the
+Authentik-protected browser UI and desktop clients. The card selection, labels, limits, and alert
+thresholds live in the SOPS-managed `plaid-spend-cards` Secret under
+`cluster/k8s/agents/plaid-mcp/spend/`.
+
+The browser at `/` signs in through the confidential Authentik `plaid-spend-web` client. The server
+keeps OIDC tokens out of the browser and authenticates page, stylesheet, script, view, and event
+requests with a signed session cookie. The GNOME client continues to use the separate public
+`plaid-spend-desktop` client and Bearer-token API. Both clients read the same global card view and
+notification-backed event stream.
 
 ## API
 
@@ -13,6 +20,8 @@ SOPS-managed `plaid-spend-cards` Secret under `cluster/k8s/agents/plaid-mcp/spen
   streams send comments as heartbeats.
 - Both endpoints require a Bearer access token from the Authentik `plaid-spend-desktop` OIDC client.
   Configuration is global to the service, so every authorized identity sees the same view.
+- `GET /api/v1/web/view` and `GET /api/v1/web/events` are the browser UI's cookie-authenticated
+  counterparts. They return the same schema and use the same live event stream.
 
 The view shape is:
 
@@ -87,6 +96,10 @@ All service settings use the `PLAID_SPEND_` prefix except `DATABASE_URL`:
 - `PLAID_SPEND_API_OIDC_ISSUER`, `PLAID_SPEND_API_OIDC_CLIENT_ID`,
   `PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER`, `PLAID_SPEND_API_OIDC_JWKS_URI`, and optional
   comma-separated `PLAID_SPEND_API_OIDC_SIGNING_ALGORITHMS` (default `RS256`)
+- `PLAID_SPEND_WEB_OIDC_ISSUER`, `PLAID_SPEND_WEB_OIDC_PUBLIC_BASE_URL`,
+  `PLAID_SPEND_WEB_OIDC_CLIENT_ID`, `PLAID_SPEND_WEB_OIDC_CLIENT_SECRET`, and
+  `PLAID_SPEND_WEB_OIDC_SESSION_SECRET`; optional `PLAID_SPEND_WEB_OIDC_SESSION_SECONDS`
+  (default 28800)
 - optional `PLAID_SPEND_HOST` and `PLAID_SPEND_PORT`
 
 The API resolver verifies Authentik RS256 access tokens against pinned issuer/JWKS metadata and

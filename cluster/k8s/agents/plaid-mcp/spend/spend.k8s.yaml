@@ -9,6 +9,84 @@ data:
   PLAID_SPEND_API_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-desktop/
   PLAID_SPEND_API_OIDC_JWKS_URI: https://auth.allegedly.works/application/o/plaid-spend-desktop/jwks/
   PLAID_SPEND_CARDS_CONFIG_PATH: /etc/plaid-spend/cards.json
+  PLAID_SPEND_WEB_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-web/
+  PLAID_SPEND_WEB_OIDC_PUBLIC_BASE_URL: https://plaid-spend.allegedly.works
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plaid-spend-web-oidc-reader
+  namespace: plaid-mcp
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plaid-spend-web-oidc-reader
+  namespace: authentik
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-spend-web-oidc-config
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plaid-spend-web-oidc-reader
+  namespace: authentik
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plaid-spend-web-oidc-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: plaid-spend-web-oidc-reader
+    namespace: plaid-mcp
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-plaid-spend-web-oidc-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - plaid-mcp
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: plaid-spend-web-oidc-reader
+      remoteNamespace: authentik
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-spend-web-oidc-config
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - extract:
+        key: plaid-spend-web-oidc-config
+  refreshInterval: 10m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-plaid-spend-web-oidc-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Delete
+    name: plaid-spend-web-oidc-config
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -21,7 +99,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    description: Separate Plaid spend API; reads one SOPS-managed shared card configuration and subscribes to committed plaid_spend_changed invalidations.
+    description: Plaid Spend serves its Authentik-protected browser UI and desktop API from the same configured card view and subscribes to committed plaid_spend_changed invalidations.
   labels:
     app.kubernetes.io/name: plaid-spend
   name: plaid-spend
@@ -64,6 +142,31 @@ spec:
                 configMapKeyRef:
                   key: PLAID_SPEND_API_OIDC_JWKS_URI
                   name: plaid-spend-config
+            - name: PLAID_SPEND_WEB_OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_SPEND_WEB_OIDC_ISSUER
+                  name: plaid-spend-config
+            - name: PLAID_SPEND_WEB_OIDC_PUBLIC_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_SPEND_WEB_OIDC_PUBLIC_BASE_URL
+                  name: plaid-spend-config
+            - name: PLAID_SPEND_WEB_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: plaid-spend-web-oidc-config
+            - name: PLAID_SPEND_WEB_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: plaid-spend-web-oidc-config
+            - name: PLAID_SPEND_WEB_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: session_secret
+                  name: plaid-spend-web-oidc-config
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -139,7 +242,7 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   annotations:
-    description: Public entry point for the Authentik-authenticated Plaid Spend API.
+    description: Authentik-authenticated web view and desktop API for Plaid card spend.
   name: plaid-spend
   namespace: plaid-mcp
 spec:
