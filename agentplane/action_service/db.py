@@ -15,12 +15,14 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Text,
     UniqueConstraint,
     event,
     func,
     select,
+    text,
     tuple_,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert as pg_insert
@@ -126,7 +128,23 @@ class ConnectionGrantRow(Base):
 
 class ActionRequestRow(Base):
     __tablename__ = "action_request"
-    __table_args__ = (UniqueConstraint("caller_namespace", "caller_name", "idempotency_key"),)
+    __table_args__ = (
+        UniqueConstraint("caller_namespace", "caller_name", "idempotency_key"),
+        Index("ix_action_request_caller_created", "caller_namespace", "caller_name", "created_at"),
+        Index("ix_action_request_state_created", "state", "created_at"),
+        Index(
+            "action_request_history_page",
+            text("history_at DESC"),
+            text("id DESC"),
+            postgresql_where=text("history_at IS NOT NULL"),
+        ),
+        Index(
+            "action_request_pending_page",
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text("state = 'decision_pending'"),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     idempotency_key: Mapped[str] = mapped_column(Text)
@@ -203,7 +221,14 @@ class DecisionRow(Base):
 
 class ExecutionRow(Base):
     __tablename__ = "action_execution"
-    __table_args__ = (UniqueConstraint("request_id"),)
+    __table_args__ = (
+        UniqueConstraint("request_id"),
+        Index(
+            "ix_action_execution_lease_sweep",
+            "lease_expires_at",
+            postgresql_where=text("state IN ('dispatching', 'running')"),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     request_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("action_request.id", ondelete="CASCADE"))

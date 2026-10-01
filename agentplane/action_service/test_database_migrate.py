@@ -128,17 +128,7 @@ def _round_trip(connection: Connection) -> None:
     assert _linked_access_token(connection) == ACCESS_TOKEN
     command.upgrade(config, "head")
 
-    # Check the changed tables, not unrelated migration-only request/execution indexes.
-    changed = {"action_decision", "action_event", "action_request", "mcp_oauth_token_state", "mcp_server_linkage"}
-    context = MigrationContext.configure(
-        connection,
-        opts={
-            "include_object": lambda obj, name, type_, reflected, compare_to: (
-                type_ != "index" and (type_ != "table" or name in changed)
-            )
-        },
-    )
-    assert compare_metadata(context, Base.metadata) == []
+    assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
 
 
 async def test_migration_round_trip_preserves_carried_data_and_matches_metadata(engine: AsyncEngine) -> None:

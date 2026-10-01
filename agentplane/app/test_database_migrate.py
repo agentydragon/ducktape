@@ -33,16 +33,10 @@ def test_a_database_that_differs_from_the_models_fails_to_migrate(db_url: str) -
         RUNNER.apply(db_url)
 
 
-def test_an_index_only_the_database_has_is_drift_when_it_is_unique(db_url: str) -> None:
-    _execute(db_url, "CREATE UNIQUE INDEX unique_index_only_in_test_database ON thread_payload_chunk (chunk_index)")
-    with pytest.raises(RuntimeError, match="unique_index_only_in_test_database"):
-        RUNNER.apply(db_url)
-
-
-def test_an_index_only_the_database_has_is_not_drift_when_it_is_not_unique(db_url: str) -> None:
-    """The Action Service's migrations carry indexes its models do not declare, and they only change speed."""
+def test_an_index_only_the_database_has_is_drift(db_url: str) -> None:
     _execute(db_url, "CREATE INDEX index_only_in_test_database ON thread_payload_chunk (chunk_index)")
-    RUNNER.apply(db_url)
+    with pytest.raises(RuntimeError, match="index_only_in_test_database"):
+        RUNNER.apply(db_url)
 
 
 def test_a_second_run_over_a_migrated_database_changes_nothing(db_url: str) -> None:
