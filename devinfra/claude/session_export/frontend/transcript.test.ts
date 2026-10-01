@@ -151,6 +151,8 @@ describe("foldSessionEvents", () => {
         events: [{ event_id: "event-1" }, { event_id: "event-2" }, { event_id: "event-3" }],
       },
     ]);
+    expect(released[0]).not.toHaveProperty("handback");
+    expect(released[0]).not.toHaveProperty("handbackNote");
   });
 
   it("turns messages, tool results, task updates, and turn usage into ordered transcript items", () => {

@@ -382,8 +382,8 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
       messageUuid,
       from,
       ...(name === null ? {} : { name }),
-      ...(origin.handback === true || handbackNote !== undefined ? { handback: true } : {}),
-      ...(handbackNote === undefined ? {} : { handbackNote }),
+      ...(origin.handback === true || handbackNote !== null ? { handback: true } : {}),
+      ...(handbackNote === null ? {} : { handbackNote }),
       text,
       events: [event],
     };
