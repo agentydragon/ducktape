@@ -29,6 +29,7 @@ _NAMESPACE = "monitoring"
 _HELM_REPOSITORY = "prometheus-community"
 _PROMETHEUS_PORT = 9090
 
+
 def _flux_state_metrics(
     group: str, version: str, kind: str, prefix: str, *extra_metrics: dict[str, object]
 ) -> dict[str, object]:
@@ -350,10 +351,7 @@ def _values() -> dict[str, object]:
         # Prometheus disabled — Alloy scrapes metrics and pushes to Mimir.
         # Mimir Ruler evaluates alerting/recording rules.
         # Operator kept for CRD management (ServiceMonitor, PrometheusRule, etc.).
-        "prometheus": {
-            "enabled": False,
-            "serviceAccount": {"createTokenSecret": False},
-        },
+        "prometheus": {"enabled": False, "serviceAccount": {"createTokenSecret": False}},
         "prometheus-node-exporter": {
             "fullnameOverride": "prometheus-node-exporter",
             # Must match ducktape.raplMetrics.gid on Rugged. The host grants this
@@ -529,7 +527,7 @@ def monitoring_stack(
                 kind="HelmRelease",
                 name="kube-prometheus-stack",
                 namespace="monitoring",
-            ),
+            )
         ],
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
