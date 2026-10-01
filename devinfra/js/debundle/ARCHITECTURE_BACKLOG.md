@@ -67,12 +67,9 @@ as a deliberate wholesale rename.
 
 ## Vocabulary / naming debt
 
-- **`LogicalModule` means two different things.** `spec::LogicalModule` is
-  authored YAML; `ids.rs::LogicalModule` is the planned output module with
-  a target file, rename map and anonymous-statement ordinals. Name the latter
-  for its phase (e.g. `PlannedModule`) rather than renaming the spec and wire
-  schema. `ModuleId(pub LogicalModuleIndex)` also adds a wrapper around a
-  wrapper: clarify which indices are stable within a chunk before changing it.
+- **`ModuleId(pub LogicalModuleIndex)` wraps an index in another wrapper.**
+  Clarify which indices are stable within a chunk before changing this identity
+  model.
 - **`chunk` and `artifact` do not tell you which phase owns a value.**
   `ChunkBundle` / `ChunkArtifact` / `JsChunk` describe stored files;
   `ChunkAnalysisReport` is a manifest/report; `ChunkFactorization` is a
