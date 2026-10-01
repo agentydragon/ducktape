@@ -597,7 +597,7 @@ fn apply_rebind_folds_from_chunk_analysis(
     builder.apply_rebind_folds(folds);
 }
 
-/// Build the `FactorizationLogicalModule` list the factorizer
+/// Build the `PlannedModule` list the factorizer
 /// consumes from the per-chunk `ModulePlan`s, then append the
 /// "anon residual" sentinel that holds the partition's default
 /// destination.
@@ -621,10 +621,10 @@ fn project_factorization_modules_with_sentinel(
     target_dir: &str,
     target_file: &str,
     catchall_target_for_overflow: Option<&str>,
-) -> Result<(Vec<FactorizationLogicalModule>, ModuleId)> {
-    let mut logical_modules: Vec<FactorizationLogicalModule> = module_plans
+) -> Result<(Vec<PlannedModule>, ModuleId)> {
+    let mut logical_modules: Vec<PlannedModule> = module_plans
         .iter()
-        .map(|plan| FactorizationLogicalModule {
+        .map(|plan| PlannedModule {
             id: plan.id.clone(),
             target_file: plan.target_file.clone(),
             residual: !plan.explicit,
@@ -656,7 +656,7 @@ fn project_factorization_modules_with_sentinel(
         .transpose()?
         .unwrap_or_else(|| target_file.to_string());
     let sentinel_idx = logical_modules.len();
-    logical_modules.push(FactorizationLogicalModule {
+    logical_modules.push(PlannedModule {
         id: format!("{chunk_id}::anon_residual_sentinel"),
         target_file: sentinel_residual_target,
         residual: true,
