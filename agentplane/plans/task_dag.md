@@ -480,14 +480,22 @@ records the last run). Signed offline tests alone do not close this gate.
 passed five egress cases, both instruction cases, and the preset case. Claude's late-binding
 case failed before executing its GitHub probe: retained Events show command admission,
 input confirmation, and `TURN_STATUS_FAILED` with an HTTP 502 diagnostic. In the same
-08:01–08:03 UTC window on 2026-09-15, central egress logged three `ApiException` failures
-and `unavailable` refusals before identifying a Sandbox. Its per-Sandbox decision query
-therefore returned no rows. The model vendor is not established as the source of the 502.
+08:01–08:03 UTC window on 2026-09-15, central egress denied three POSTs to testing's LLM
+ingress with `reason=unavailable` and no Sandbox identity. These are consistent with
+the failed case being unable to reach its model endpoint, but cannot be correlated
+directly to its sandbox. Its GitHub decision history was empty. The retained `(504)`
+`ApiException` logs were from the staging app/actions Kubernetes watchers, not central
+egress. Kube-apiserver logs also showed handler and etcd timeouts in the window. This
+suggests control-plane degradation
+may have contributed to identity lookup failures, but there is no request-level evidence
+proving which Kubernetes call failed or linking a specific API-server timeout to egress.
+The model vendor is not established as the source of the 502. See the
+[investigation note](../debug/egress_identity_502_20260915.md).
 
-The shared workload resolver now logs the fixed Kubernetes operation and numeric API status
-without exception bodies, reasons, headers or tracebacks. The historical type-only logs cannot
-identify which operation failed. After this diagnostic reaches the proxy, retain new safe
-failure evidence and correlate it with Kubernetes health; this is not an incident repair.
+The shared workload resolver's fixed-operation/numeric-status diagnostic for TokenReview
+failures is now deployed in staging. The historical type-only logs cannot identify which
+operation failed. The new diagnostic improves future evidence but does not establish an
+incident repair.
 
 Correlate the path from runner/sidecar through central egress authentication, Kubernetes
 TokenReview, Agentplane LLM ingress, LiteLLM, and the model backend. Identify
