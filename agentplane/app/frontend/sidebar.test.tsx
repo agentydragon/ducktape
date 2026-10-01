@@ -43,6 +43,7 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
     kubernetes_grants: [],
     kubernetes_grants_ready: true,
     kubernetes_grant_error: null,
+    deleting: false,
     ...overrides,
   };
 }

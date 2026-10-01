@@ -74,6 +74,7 @@ const SANDBOXES: SandboxView[] = [
     ],
     kubernetes_grants_ready: true,
     kubernetes_grant_error: null,
+    deleting: false,
     node_name: "harness-node",
     pod: {
       phase: "Running",
@@ -99,6 +100,7 @@ const SANDBOXES: SandboxView[] = [
     kubernetes_grants: [],
     kubernetes_grants_ready: true,
     kubernetes_grant_error: null,
+    deleting: false,
     node_name: "harness-node",
     pod: {
       phase: "Pending",
@@ -130,6 +132,7 @@ const SANDBOXES: SandboxView[] = [
     kubernetes_grants: [],
     kubernetes_grants_ready: true,
     kubernetes_grant_error: null,
+    deleting: false,
     node_name: null,
     pod: null,
   },
@@ -154,6 +157,7 @@ if (scenario.threadlessSandbox) {
     kubernetes_grants: [],
     kubernetes_grants_ready: true,
     kubernetes_grant_error: null,
+    deleting: false,
     pod: null,
   });
 }

@@ -31,6 +31,7 @@ const live = vi.hoisted(
           kubernetes_grants: [],
           kubernetes_grants_ready: true,
           kubernetes_grant_error: null,
+          deleting: false,
         },
         threads: [] as ThreadView[],
         bindings: [],
