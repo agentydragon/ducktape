@@ -1799,7 +1799,7 @@ data:
           if [ ! -f "$marker" ]; then
             git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git /state/workspaces/haku-state
             git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git /state/workspaces/ducktape
-            printf '%s\n' 'haku workspace initialized' > "$marker"
+            printf '%s\n' 'haku workspace initialized' >"$marker"
           fi
       finance-agent:
         title: Finance agent
@@ -1820,7 +1820,7 @@ data:
           mkdir -p /state/workspaces
           if [ ! -f "$marker" ]; then
             git clone --branch main --single-branch http://finance-agent:agentplane-credential-forgejo-finance-agent@forgejo-http.forgejo.svc.cluster.local:3000/finance-agent/finance-agent.git /state/workspaces/finance-agent
-            printf '%s\n' 'finance-agent workspace initialized' > "$marker"
+            printf '%s\n' 'finance-agent workspace initialized' >"$marker"
           fi
     default_policies:
       - basic
