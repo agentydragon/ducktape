@@ -343,6 +343,7 @@ def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_acc
         )
     }
     rbac = SimpleNamespace(
+        read_namespaced_role=AsyncMock(),
         read_namespaced_role_binding=AsyncMock(side_effect=k8s_client.ApiException(status=404)),
         create_namespaced_role_binding=AsyncMock(),
     )
@@ -357,6 +358,7 @@ def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_acc
     assert response.status_code == 201, response.text
     row = response.json()
     assert row["kubernetes_grants_ready"] is True
+    rbac.read_namespaced_role.assert_awaited_once_with("config-reader", NAMESPACE)
     assert row["kubernetes_grants"][0]["grant"]["role_ref"] == {"kind": "Role", "name": "config-reader"}
     bound = rbac.create_namespaced_role_binding.await_args.args[1]
     assert bound.role_ref.name == "config-reader"
