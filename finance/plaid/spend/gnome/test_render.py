@@ -78,10 +78,7 @@ def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def render_session(
-    gnome_shell_test_image: str,
-    extension_dir: Path,
-    fixture_json_dir: Path,
-    tmp_path_factory: pytest.TempPathFactory,
+    gnome_shell_test_image: str, extension_dir: Path, fixture_json_dir: Path, tmp_path_factory: pytest.TempPathFactory
 ) -> Iterator[tuple[docker.models.containers.Container, Path]]:
     """Share one Xvfb, D-Bus bus, and GNOME Shell process across all fixtures."""
     output_dir = tmp_path_factory.mktemp("plaid-spend-renders")
@@ -102,7 +99,9 @@ def render_session(
             time.sleep(0.2)
         else:
             xvfb_log, _ = _exec_output(raw.exec_run(["cat", "/tmp/xvfb.log"], demux=True))
-            pytest.fail(f"container boot.sh never produced /tmp/boot.ready within 30s\nxvfb.log:\n{xvfb_log.decode(errors='replace')}")
+            pytest.fail(
+                f"container boot.sh never produced /tmp/boot.ready within 30s\nxvfb.log:\n{xvfb_log.decode(errors='replace')}"
+            )
 
         try:
             # Exercise the production D-Bus proxy path with no daemon present;
@@ -157,9 +156,7 @@ def _wait_for_shell_bus(container: docker.models.containers.Container, *, timeou
     raise TimeoutError(f"gnome-shell never owned the bus name within {timeout_s}s")
 
 
-def _wait_for_extension_enabled(
-    container: docker.models.containers.Container, *, timeout_s: float = 10
-) -> None:
+def _wait_for_extension_enabled(container: docker.models.containers.Container, *, timeout_s: float = 10) -> None:
     deadline = time.monotonic() + timeout_s
     last_response = b""
     while time.monotonic() < deadline:
@@ -202,9 +199,7 @@ def _test_dbus_call(
     )
 
 
-def _test_dbus_call_output(
-    container: docker.models.containers.Container, method: str, *args: str
-) -> bytes:
+def _test_dbus_call_output(container: docker.models.containers.Container, method: str, *args: str) -> bytes:
     result = _test_dbus_call(container, method, *args)
     stdout, stderr = _exec_output(result)
     if result.exit_code != 0:
@@ -278,11 +273,7 @@ def _crop_combined(full: Image.Image, menu_geometry: tuple[int, int, int, int]) 
 
 @pytest.mark.parametrize(
     ("fixture_name", "expected_label"),
-    [
-        ("ready_two_cards", "$149.45 !"),
-        ("authentication_required", "Sign in"),
-        ("offline", "Offline"),
-    ],
+    [("ready_two_cards", "$149.45 !"), ("authentication_required", "Sign in"), ("offline", "Offline")],
 )
 def test_render(
     render_session: tuple[docker.models.containers.Container, Path],
@@ -307,10 +298,7 @@ def test_render(
     actual_path = tmp_path / f"{fixture_name}.cropped.png"
     _crop_combined(Image.open(full_path), menu_geometry).save(actual_path)
     retain_review_asset(
-        actual_path,
-        title="Plaid Spend GNOME extension",
-        label=fixture_name.replace("_", " "),
-        name=image_name,
+        actual_path, title="Plaid Spend GNOME extension", label=fixture_name.replace("_", " "), name=image_name
     )
 
 
