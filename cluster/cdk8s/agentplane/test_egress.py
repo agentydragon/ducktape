@@ -184,11 +184,12 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
         "namespace": "haku-sandbox",
         "role_ref": {"kind": "Role", "name": "haku-sandbox-admin"},
     }
-    haku_role = _by_name(docs, "Role", "agentplane-staging-managed-bindings")
-    assert haku_role["metadata"]["namespace"] == "haku-sandbox"
-    assert {tuple(rule.get("resourceNames", [])) for rule in haku_role["rules"] if rule["verbs"] == ["bind"]} == {
-        ("haku-sandbox-admin",)
-    }
+    assert not any(
+        doc["kind"] in {"Role", "RoleBinding"}
+        and doc["metadata"].get("namespace") == "haku-sandbox"
+        and doc["metadata"]["name"] == "agentplane-staging-managed-bindings"
+        for doc in docs
+    ), "the app Kustomization must not own managed-binding delegation in external namespaces"
     app_cluster_role = _by_name(docs, "ClusterRole", "agentplane-staging-managed-cluster-bindings")
     assert {
         tuple(rule.get("resourceNames", [])) for rule in app_cluster_role["rules"] if rule["verbs"] == ["bind"]

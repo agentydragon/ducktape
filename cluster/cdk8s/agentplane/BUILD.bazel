@@ -236,6 +236,23 @@ py_library(
 )
 
 py_library(
+    name = "binding_delegation",
+    srcs = ["binding_delegation.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":app",
+        ":environment",
+        "//agentplane/app:kubernetes_grants",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "actions",
     srcs = ["actions.py"],
     deps = [
