@@ -227,7 +227,7 @@ def test_rotation_k8s_secret_defaults_none_and_parses():
     assert isinstance(r.k8s_secret, K8sSecretOutput)
     assert r.k8s_secret.token_key == "jwt"  # default
     assert r.k8s_secret.exp_key == "token-exp"  # default
-    assert r.k8s_secret.namespace == "flux-system"
+    assert r.k8s_secret.namespace == "haku-egress-proxy"
 
 
 def test_build_secret_manifest_carries_token_exp_under_configured_keys():
