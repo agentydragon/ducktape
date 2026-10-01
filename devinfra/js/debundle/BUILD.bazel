@@ -211,8 +211,8 @@ rust_library(
 
 rust_library(
     name = "spec",
-    srcs = ["spec.rs"],
-    crate_root = "spec.rs",
+    srcs = ["spec/spec.rs"],
+    crate_root = "spec/spec.rs",
     edition = "2024",
     deps = [
         "@crates//:serde",
@@ -528,8 +528,8 @@ rust_library(
 
 rust_library(
     name = "spec_modules",
-    srcs = ["spec_modules.rs"],
-    crate_root = "spec_modules.rs",
+    srcs = ["spec/spec_modules.rs"],
+    crate_root = "spec/spec_modules.rs",
     edition = "2024",
     deps = [
         ":spec",
@@ -548,8 +548,8 @@ rust_test(
 
 rust_library(
     name = "spec_stats",
-    srcs = ["spec_stats.rs"],
-    crate_root = "spec_stats.rs",
+    srcs = ["spec/spec_stats.rs"],
+    crate_root = "spec/spec_stats.rs",
     edition = "2024",
     deps = [
         ":spec",
@@ -597,8 +597,8 @@ rust_test(
 
 rust_library(
     name = "yaml_edit",
-    srcs = ["yaml_edit.rs"],
-    crate_root = "yaml_edit.rs",
+    srcs = ["spec/yaml_edit.rs"],
+    crate_root = "spec/yaml_edit.rs",
     edition = "2024",
     deps = [
         "@crates//:anyhow",
@@ -707,8 +707,8 @@ rust_test(
 
 rust_library(
     name = "spec_tree",
-    srcs = ["spec_tree.rs"],
-    crate_root = "spec_tree.rs",
+    srcs = ["spec/spec_tree.rs"],
+    crate_root = "spec/spec_tree.rs",
     edition = "2024",
     deps = [
         ":output_layout",

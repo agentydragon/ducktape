@@ -189,9 +189,9 @@ or disproved. Status says how far it was checked; "reported" means nobody has
 confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
 
 - **`UnassignedMode` ignores unknown fields.** Status: confirmed by reading.
-  `spec.rs` `UnassignedMode` (`tag = "kind"`) has no `deny_unknown_fields`, so a
+  `spec/spec.rs` `UnassignedMode` (`tag = "kind"`) has no `deny_unknown_fields`, so a
   misspelled `catchall_file` key such as `target_path` is ignored and the target
-  falls back to its default; a `spec_tree.rs` test carried exactly that typo and
+  falls back to its default; a `spec/spec_tree.rs` test carried exactly that typo and
   still passed. Adding `deny_unknown_fields` is a behaviour change: a spec with a
   typo then fails to load.
 - **`perf_wrapper.sh` always records `status=0` on failure.** Status: reproduced
@@ -242,7 +242,7 @@ _d.{name};` by string interpolation, so a string-literal export name in a vendor
   `swap_vendor_chunks` therefore differs from writing `{}`, though the field doc
   says they match. Small impact: both output paths are `None` when omitted.
 - **`chunk_renames_map` silently drops non-`binding` members.** Status: reported.
-  `spec_tree.rs` `chunk_renames_map` maps `binding_patches.yaml` members with
+  `spec/spec_tree.rs` `chunk_renames_map` maps `binding_patches.yaml` members with
   `m.selector.binding?`, so a member selecting by `cross_ref` or another kind is
   accepted by the parser and then skipped without a diagnostic (STYLE.md § General,
   strict data mapping).
