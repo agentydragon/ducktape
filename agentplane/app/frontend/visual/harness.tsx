@@ -850,6 +850,7 @@ function viewState(
     {
       controls: {
         applied_model: "harness-claude-model",
+        applied_reasoning_effort: null,
         active_turn_id: activeTurn,
         harness_state: activeTurn === null ? "stopped" : "running",
       },
