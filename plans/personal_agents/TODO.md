@@ -180,34 +180,6 @@ this file, because they rotate themselves.
 Strongest remaining move on the credential axis, and not started. Prefer this
 over adding request-level rules to the proxy.
 
-## Verify OpenClaw configs against the shipped schema **in CI**
-
-Two config values on `public-coder-agent` were accepted by the file and rejected
-at gateway startup, one deploy cycle each:
-
-- `bind: "all"` — not in `{auto, lan, loopback, custom, tailnet}`
-- `mode: off` unquoted in YAML — parsed as boolean `false`
-
-Both are schema-detectable. `openclaw config schema` emits the full JSON schema
-(~2.5 MB) and constrains exactly these fields; `openclaw config validate` checks
-the active config without starting the gateway. A hermetic test — commit the
-schema alongside the image tag it came from, validate both OpenClaw configs
-against it with `jsonschema` — kills the class. `kubeconform` cannot, because the
-config is opaque JSON inside a ConfigMap.
-
-Until this exists, shape verification is a manual step and therefore skippable --
-see the rough edge in <../../docs/personal_agents/findings/rough_edges.md>.
-The point of the TODO is to stop relying on remembering.
-
-Scope: `cluster/k8s/agents/public-coder-agent/app/openclaw.json5`. The retired
-operator-managed gateway also embedded config in a CRD field, but that second
-configuration no longer exists.
-
-Caveat to handle deliberately: a committed schema drifts from the image. Record the
-source image tag next to it and regenerate when the image pin moves. Prefer that
-over a `requires_docker` test that dumps the schema live -- correctness is the same
-and the hermetic version runs in ordinary CI.
-
 ## Cheaper test runs
 
 Context-window probes must hit the exact model whose limit is being declared, so
