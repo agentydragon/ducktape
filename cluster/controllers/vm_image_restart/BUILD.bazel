@@ -18,6 +18,7 @@ py_library(
     srcs = ["controller.py"],
     deps = [
         ":settings",
+        "//util:kubernetes_watch",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],

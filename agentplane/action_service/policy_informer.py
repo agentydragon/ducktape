@@ -35,9 +35,11 @@ from agentplane.action_service.policies.resources import (
     parse_policy_set,
 )
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.kubernetes_watch import Freshness, ListWatch, WatchedKind, apply_to
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
+from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
+
+from agentplane.kubernetes_watch import Freshness
 
 logger = logging.getLogger(__name__)
 

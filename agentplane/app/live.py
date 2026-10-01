@@ -67,9 +67,9 @@ from agentplane.app.inventory import (
     sandbox_views,
 )
 from agentplane.app.shutdown import Shutdown
-from agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
+from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
 PODS_PLURAL = "pods"
 
