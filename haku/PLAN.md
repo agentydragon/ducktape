@@ -38,7 +38,7 @@ history holds the original full design rationale. The **actionable build checkli
   package or a sync-checked artifact. (The remaining cleanup from the realized free-form
   UI design; see `console/docs/containment.md` → _The bridge protocol_.)
 - **An in-cluster runtime as the default instead of the web home.** Both candidates are
-  built — `runtime/agent` (Runtime C) and `runtime/managed_agent/self_hosted` (Runtime B) —
+  built — `runtime/agent` (Runtime C) and `runtime/x/managed_agent/self_hosted` (Runtime B) —
   so what is undecided is whether either replaces the web home rather than sitting beside
   it. Per-runtime state: `TODO.md` → _Later_.
 - **Capability registry** (a ConfigMap mapping `service → facade URL → secret name`) —

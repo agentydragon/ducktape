@@ -13,8 +13,8 @@ terraform {
       source  = "modus-agendi/anthropic-claude-managed-agents"
       version = "~> 1.1"
     }
-    # Reads the haku-cloud-kube-token Secret in-cluster for the static_bearer
-    # credential token. In-cluster auth via the tf-runner SA.
+    # Historical root reads a manually restored haku-cloud-kube-token Secret for
+    # the static_bearer credential. In-cluster auth uses the tf-runner SA.
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 2.38"

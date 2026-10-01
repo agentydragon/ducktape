@@ -593,7 +593,7 @@
           inherit system;
           specialArgs = { inherit (ducktapePkgs) fastmcp; };
           modules = [
-            ./haku/runtime/managed_agent/self_hosted/nixos.nix
+            ./haku/runtime/x/managed_agent/self_hosted/nixos.nix
           ];
         };
       };

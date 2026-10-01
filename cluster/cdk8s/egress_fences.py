@@ -105,7 +105,7 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     # Forgejo Actions: `uses:` actions from data.forgejo.org, act_runner + job-container images
     # from code.forgejo.org.
     ("code.forgejo.org", "data.forgejo.org"),
-    # Managed Agents self-hosted worker (haku/runtime/managed_agent/self_hosted) long-polls
+    # Managed Agents self-hosted worker (haku/runtime/x/managed_agent/self_hosted) long-polls
     # Anthropic's work queue via `ant beta:worker poll`.
     ("api.anthropic.com",),
     # AnkiWeb sync (haku-anki service, haku/plans in haku-state): sync.ankiweb.net plus the

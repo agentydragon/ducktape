@@ -146,7 +146,7 @@ ducktapePkgs
   # the component; automatic build/publish and Attic caching are disabled.
   # Build: nix build .#haku-managed-agent-image
   # Load:  docker import result/tarball/*.tar haku-managed-agent
-  haku-managed-agent-image = import ../../haku/runtime/managed_agent/self_hosted/image.nix {
+  haku-managed-agent-image = import ../../haku/runtime/x/managed_agent/self_hosted/image.nix {
     inherit self;
   };
   # Pre-built UEFI qcow2 VM images for Proxmox deployment.

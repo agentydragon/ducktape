@@ -35,7 +35,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on,
 )
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.rotators.authentik_jwt_rotation.config import Config, K8sSecretOutput, Probe, Rotation
@@ -101,24 +101,8 @@ ROTATIONS = Config(
             credentials_dir=_HAKU.directory,
             sops_file=Path("secrets/haku-k8s-jwt.yaml"),
             token_field="jwt",
-            # Also publish the token as an in-cluster k8s Secret so the haku-cloud-agent tofu
-            # root can read it (env var) and write it into Haku's Anthropic vault as a
-            # static_bearer credential. `token-exp` is the monotonic signal tofu uses for the
-            # write-only token_wo_version, so a rotation re-sends the new token.
-            # TODO: the token now lives SOPS-encrypted in two places -- secrets/haku-k8s-jwt.yaml
-            #   (bare, for the CLI/write_kubeconfig path) and this k8s Secret manifest (for Flux).
-            #   That duplication is annoying. Nicer would be a single SOPS file that Flux can turn
-            #   into a Secret directly (Flux only decrypts+applies files that are already k8s
-            #   manifests; it won't synthesize a Secret from a bare jwt: file). Revisit if
-            #   Flux/an operator grows a "SOPS data file -> Secret" path.
-            k8s_secret=K8sSecretOutput(
-                path=Path(f"{PARKED_ROOT}/cloud-agent-tf/haku-kube-token.sops.yaml"),
-                name="haku-cloud-kube-token",
-                namespace=_FLUX_SYSTEM,
-            ),
-            # /apis needs only system:discovery (bound to system:authenticated), so any valid
-            # token gets 200 and a dead one 401.
-            probe=Probe(url="https://kubeapi.allegedly.works/apis"),
+            # This JWT remains available to the CLI/write_kubeconfig path. The parked
+            # cloud-agent vault no longer has a consumer for a Flux-published copy.
         ),
         Rotation(
             # A SECOND, independent token for the same `haku` identity, minted for the

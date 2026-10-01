@@ -1,5 +1,5 @@
 # NixOS-closure container image for the Haku Managed Agents self-hosted worker
-# (Runtime B, haku/runtime/managed_agent). We build a full-NixOS rootfs (so the
+# (Runtime B, haku/runtime/x/managed_agent). We build a full-NixOS rootfs (so the
 # whole tool closure — bash/git/kubectl/psql/… — is consistent with the rest
 # of the fleet) but we do NOT boot it: the pod runs the worker process directly.
 #
