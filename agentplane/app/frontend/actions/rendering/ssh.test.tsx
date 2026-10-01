@@ -41,15 +41,11 @@ describe("ssh exec arguments", () => {
     expect(container.textContent).not.toContain("Timeout");
   });
 
-  it("highlights the command as shell", async () => {
-    // code_block.test.ts checks token mapping against the complete command; happy-dom drops leading
-    // text while parsing sanitized highlight markup, so this assertion focuses on nested tokens.
+  it("uses the CodeMirror shell language for the command", async () => {
     const command = 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"';
     const container = await drawn(renderPreview(execArgumentsPreview, { ...ARGUMENTS, command }));
-    expect(container.querySelector(".agentplane-code-block .hljs-string")?.textContent).toBe(
-      '"restarted at $(date -Is)"'
-    );
-    expect(container.querySelector(".agentplane-code-block .hljs-string .hljs-subst")?.textContent).toBe("$(date -Is)");
+    expect(container.querySelector(".agentplane-code-block .cm-editor")).not.toBeNull();
+    expect(streams(container)[0][1]).toBe(command);
   });
 
   it("shows the timeout when the call sets one", async () => {

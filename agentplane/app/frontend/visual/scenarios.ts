@@ -738,7 +738,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 1300 },
     outputName: "session-tool-payloads",
     openToolPayloads: true,
-    readySelectors: [".agentplane-code-block .hljs-attr", "details[open] + details[open] .agentplane-code-block"],
+    readySelectors: [".agentplane-code-block .cm-content", "details[open] + details[open] .agentplane-code-block"],
   },
   session_tool_payloads_phone: {
     element: "#app",
@@ -746,7 +746,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { ...PHONE, height: 1500 },
     outputName: "session-tool-payloads-phone",
     openToolPayloads: true,
-    readySelectors: [".agentplane-code-block .hljs-attr", "details[open] + details[open] .agentplane-code-block"],
+    readySelectors: [".agentplane-code-block .cm-content", "details[open] + details[open] .agentplane-code-block"],
   },
   // A row's evidence opened from its corner icon: on the user bubble, the one card with no header
   // row to hold the icon, and at phone width in the last reply's header row.

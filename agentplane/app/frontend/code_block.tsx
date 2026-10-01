@@ -1,48 +1,62 @@
 import CodeMirror from "@uiw/react-codemirror";
-import { type Extension, type Range } from "@codemirror/state";
+import { json } from "@codemirror/lang-json";
+import { yaml } from "@codemirror/lang-yaml";
+import { HighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
+import { go } from "@codemirror/legacy-modes/mode/go";
+import { javascript, typescript } from "@codemirror/legacy-modes/mode/javascript";
+import { protobuf } from "@codemirror/legacy-modes/mode/protobuf";
+import { python } from "@codemirror/legacy-modes/mode/python";
+import { rust } from "@codemirror/legacy-modes/mode/rust";
+import { shell } from "@codemirror/legacy-modes/mode/shell";
+import { nix } from "@replit/codemirror-lang-nix";
+import type { Extension } from "@codemirror/state";
 import { Decoration, EditorView, highlightSpecialChars, WidgetType } from "@codemirror/view";
-import hljs from "highlight.js/lib/core";
-import bash from "highlight.js/lib/languages/bash";
-import go from "highlight.js/lib/languages/go";
-import javascript from "highlight.js/lib/languages/javascript";
-import json from "highlight.js/lib/languages/json";
-import nix from "highlight.js/lib/languages/nix";
-import protobuf from "highlight.js/lib/languages/protobuf";
-import python from "highlight.js/lib/languages/python";
-import rust from "highlight.js/lib/languages/rust";
-import typescript from "highlight.js/lib/languages/typescript";
-import yaml from "highlight.js/lib/languages/yaml";
+import { tags } from "@lezer/highlight";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import "./code_block.css";
 
-// Keep syntax highlighting curated: highlight.js's default entry point registers every language it
-// ships, which is most of a megabyte. This list covers the code the agent commonly emits.
-hljs.registerLanguage("bash", bash);
-hljs.registerLanguage("go", go);
-hljs.registerLanguage("javascript", javascript);
-hljs.registerLanguage("json", json);
-hljs.registerLanguage("nix", nix);
-hljs.registerLanguage("protobuf", protobuf);
-hljs.registerLanguage("python", python);
-hljs.registerLanguage("rust", rust);
-hljs.registerLanguage("typescript", typescript);
-hljs.registerLanguage("yaml", yaml);
-
 export type Language =
   "bash" | "go" | "javascript" | "json" | "nix" | "protobuf" | "python" | "rust" | "typescript" | "yaml";
 
-const REGISTERED_LANGUAGES: ReadonlySet<string> = new Set<Language>([
-  "bash",
-  "go",
-  "javascript",
-  "json",
-  "nix",
-  "protobuf",
-  "python",
-  "rust",
-  "typescript",
-  "yaml",
+// Reuse CodeMirror language support instead of translating another highlighter's HTML into
+// decorations. JSON/YAML/Nix use language packages; the remaining curated grammars are the
+// CodeMirror legacy stream modes, as in Haku's shared read-only code viewer.
+const LEGACY_LANGUAGES = {
+  bash: StreamLanguage.define(shell),
+  go: StreamLanguage.define(go),
+  javascript: StreamLanguage.define(javascript),
+  protobuf: StreamLanguage.define(protobuf),
+  python: StreamLanguage.define(python),
+  rust: StreamLanguage.define(rust),
+  typescript: StreamLanguage.define(typescript),
+};
+
+const LANGUAGE_EXTENSIONS: Record<Language, () => Extension> = {
+  bash: () => LEGACY_LANGUAGES.bash,
+  go: () => LEGACY_LANGUAGES.go,
+  javascript: () => LEGACY_LANGUAGES.javascript,
+  json: () => json(),
+  nix: () => nix(),
+  protobuf: () => LEGACY_LANGUAGES.protobuf,
+  python: () => LEGACY_LANGUAGES.python,
+  rust: () => LEGACY_LANGUAGES.rust,
+  typescript: () => LEGACY_LANGUAGES.typescript,
+  yaml: () => yaml(),
+};
+
+const REGISTERED_LANGUAGES: ReadonlySet<string> = new Set(Object.keys(LANGUAGE_EXTENSIONS));
+
+const CODE_HIGHLIGHT = HighlightStyle.define([
+  { tag: tags.propertyName, color: "var(--agentplane-code-key)" },
+  { tag: tags.string, color: "var(--agentplane-code-string)" },
+  { tag: tags.number, color: "var(--agentplane-code-number)" },
+  { tag: [tags.bool, tags.atom, tags.literal], color: "var(--agentplane-code-literal)" },
+  { tag: [tags.keyword, tags.controlKeyword], color: "var(--agentplane-code-keyword)" },
+  { tag: tags.comment, color: "var(--agentplane-code-comment)", fontStyle: "italic" },
+  { tag: tags.meta, color: "var(--agentplane-code-meta)" },
+  { tag: tags.variableName, color: "var(--agentplane-code-variable)" },
+  { tag: [tags.function(tags.variableName), tags.className], color: "var(--agentplane-code-title)" },
 ]);
 
 /** Whether `language` names one of the grammars this widget can highlight. */
@@ -53,7 +67,7 @@ export function isRegisteredLanguage(language: string): language is Language {
 // Render Unicode bidi controls, default-ignorable code points (including zero-width characters),
 // and C0/C1 controls as widgets. Newlines and tabs remain normal layout characters. The document
 // itself is never rewritten, so copying from the read-only editor retains the original value.
-export const VISIBLE_SPECIAL_CHARS =
+export const VISIBLE_SPECIAL_CHARS: RegExp =
   /[\p{Bidi_Control}\p{Default_Ignorable_Code_Point}\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u2028\u2029\uFFF9-\uFFFC]/gu;
 const BIDI_CONTROLS = /\p{Bidi_Control}/u;
 const CONTROL_NAMES: ReadonlyMap<number, string> = new Map([
@@ -131,42 +145,6 @@ export function renderSpecialChar(code: number, description: string | null, _pla
   marker.title = `${kind}: ${label} (${codePoint})`;
   marker.textContent = `⟦${label}⟧`;
   return marker;
-}
-
-/** Token HTML generated by highlight.js. Its grammars escape source text, and this markup is only
- * parsed in a detached container so we can map token classes to CodeMirror decoration ranges. The
- * HTML itself is never inserted into the live document. */
-export function highlightedMarkup(text: string, language: Language): string {
-  return hljs.highlight(text, { language }).value;
-}
-
-function syntaxDecorations(text: string, language: Language): Extension {
-  const container = document.createElement("div");
-  container.innerHTML = highlightedMarkup(text, language);
-
-  const ranges: Range<Decoration>[] = [];
-  let position = 0;
-  const visit = (node: Node, inheritedTokens: readonly string[]): void => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const value = node.textContent ?? "";
-      const to = position + value.length;
-      if (value.length > 0 && inheritedTokens.length > 0) {
-        ranges.push(Decoration.mark({ class: inheritedTokens.join(" ") }).range(position, to));
-      }
-      position = to;
-      return;
-    }
-    if (node instanceof Element) {
-      const tokens = [...inheritedTokens, ...Array.from(node.classList).filter((name) => /^hljs-[\w-]+$/.test(name))];
-      for (const child of node.childNodes) visit(child, tokens);
-    }
-  };
-  for (const child of container.childNodes) visit(child, []);
-
-  // Some DOM implementations normalize parser fragments differently. Never apply misaligned
-  // ranges to a different character than the grammar tokenized.
-  if (position !== text.length || ranges.length === 0) return [];
-  return EditorView.decorations.of(Decoration.set(ranges, true));
 }
 
 class StreamingCursor extends WidgetType {
@@ -280,15 +258,16 @@ function MountedCodeBlock({
   presentation: "block" | "label" | "muted";
 }): JSX.Element {
   const extensions = useMemo(() => {
-    const result = [
+    const result: Extension[] = [
       EditorView.lineWrapping,
       highlightSpecialChars({ specialChars: VISIBLE_SPECIAL_CHARS, render: renderSpecialChar }),
+      syntaxHighlighting(CODE_HIGHLIGHT),
       presentation === "label" ? LABEL_CODE_THEME : presentation === "muted" ? MUTED_CODE_THEME : CODE_THEME,
     ];
-    if (language) result.push(syntaxDecorations(text, language));
+    if (language) result.unshift(LANGUAGE_EXTENSIONS[language]());
     if (streamingCursorOffset !== undefined) result.push(streamingCursorDecoration(streamingCursorOffset));
     return result;
-  }, [text, language, streamingCursorOffset, presentation]);
+  }, [language, streamingCursorOffset, presentation]);
 
   return (
     <CodeMirror

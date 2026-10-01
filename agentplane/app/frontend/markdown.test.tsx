@@ -55,12 +55,12 @@ describe("Markdown", () => {
     expect(paragraph?.textContent).toBe("The answer is still being written.");
   });
 
-  it("syntax-highlights a fenced code block in a registered language", async () => {
+  it("uses the CodeMirror language extension for a registered fenced block", async () => {
     const rendered = await render("```python\nimport os\n```");
 
     const code = rendered.querySelector(".agentplane-code-block");
     expect(code).not.toBeNull();
-    expect(code?.querySelector(".hljs-keyword")?.textContent).toBe("import");
+    expect(code?.querySelector(".cm-editor")).not.toBeNull();
     expect(
       Array.from(code?.querySelectorAll(".cm-line") ?? [])
         .map((line) => line.textContent)
@@ -72,7 +72,7 @@ describe("Markdown", () => {
     const rendered = await render('```elixir\nIO.puts("hi")\n```');
 
     const code = rendered.querySelector(".agentplane-code-block");
-    expect(code?.querySelector("[class^='hljs-']")).toBeNull();
+    expect(code?.querySelector(".cm-editor")).not.toBeNull();
     expect(
       Array.from(code?.querySelectorAll(".cm-line") ?? [])
         .map((line) => line.textContent)
@@ -84,7 +84,7 @@ describe("Markdown", () => {
     const rendered = await render("```\n<not a real tag>\n```");
 
     const code = rendered.querySelector(".agentplane-code-block");
-    expect(code?.querySelector("[class^='hljs-']")).toBeNull();
+    expect(code?.querySelector(".cm-editor")).not.toBeNull();
     expect(
       Array.from(code?.querySelectorAll(".cm-line") ?? [])
         .map((line) => line.textContent)

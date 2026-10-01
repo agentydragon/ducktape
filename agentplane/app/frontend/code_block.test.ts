@@ -1,29 +1,25 @@
 // @vitest-environment jsdom
-// jsdom is used for the detached syntax-token tree that CodeMirror decorations are derived from.
 import { describe, expect, it } from "vitest";
 
-import { highlightedMarkup, renderSpecialChar, VISIBLE_SPECIAL_CHARS } from "./code_block";
+import { isRegisteredLanguage, renderSpecialChar, VISIBLE_SPECIAL_CHARS } from "./code_block";
 
-function parsed(html: string): HTMLElement {
-  const element = document.createElement("div");
-  element.innerHTML = html;
-  return element;
-}
-
-describe("CodeBlock syntax tokens", () => {
-  it("keeps every character of a shell command, text ahead of the first token included", () => {
-    const command = 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"';
-    const element = parsed(highlightedMarkup(command, "bash"));
-    expect(element.textContent).toBe(command);
-    expect(element.querySelector(".hljs-built_in")?.textContent).toBe("echo");
-    expect(element.querySelector(".hljs-string .hljs-subst")?.textContent).toBe("$(date -Is)");
-  });
-
-  it("escapes markup in source text, producing only inert syntax spans", () => {
-    const command = 'echo "<img src=x onerror=alert(1)>" && cat /tmp/test-file';
-    const element = parsed(highlightedMarkup(command, "bash"));
-    expect(element.querySelector("img, [onerror]")).toBeNull();
-    expect(element.textContent).toBe(command);
+describe("CodeBlock language support", () => {
+  it("recognizes each CodeMirror language grammar used for fenced blocks", () => {
+    for (const language of [
+      "bash",
+      "go",
+      "javascript",
+      "json",
+      "nix",
+      "protobuf",
+      "python",
+      "rust",
+      "typescript",
+      "yaml",
+    ]) {
+      expect(isRegisteredLanguage(language)).toBe(true);
+    }
+    expect(isRegisteredLanguage("unknown")).toBe(false);
   });
 });
 

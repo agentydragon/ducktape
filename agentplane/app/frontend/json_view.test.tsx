@@ -25,18 +25,14 @@ async function render(element: JSX.Element): Promise<HTMLDivElement> {
 }
 
 describe("JsonView", () => {
-  it("renders a value as pretty-printed, syntax-highlighted JSON", async () => {
+  it("renders a value in the shared CodeMirror viewer", async () => {
     const container = await render(<JsonView value={{ repository: "test-owner/test-repository", count: 3 }} />);
     expect(container.textContent).toContain('"repository": "test-owner/test-repository"');
-    // highlight.js tokenizes JSON strings/numbers into their own spans; a plain <Code> dump
-    // (the pre-existing behavior this replaces) never produced any.
-    expect(container.querySelector(".hljs-string")).not.toBeNull();
-    expect(container.querySelector(".hljs-number")).not.toBeNull();
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
   });
 
-  it("sanitizes the highlighted markup: no live tag or attribute, only inert text", async () => {
-    // An untrusted value (agent/tool output) that would be a live element if rendered unescaped;
-    // highlight.js already HTML-escapes it, and DOMPurify is the belt behind that.
+  it("renders untrusted source as inert text", async () => {
+    // An untrusted value (agent/tool output) that must never become a live DOM element.
     const container = await render(<JsonView value={{ payload: '<img src=x onerror="alert(1)">' }} />);
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("[onerror]")).toBeNull();
@@ -45,15 +41,15 @@ describe("JsonView", () => {
 });
 
 describe("HighlightedText", () => {
-  it("highlights a string that looks like JSON", async () => {
+  it("uses the JSON CodeMirror language for text that looks like JSON", async () => {
     const container = await render(<HighlightedText text={'{"command": "ls"}'} />);
-    expect(container.querySelector(".hljs-string")).not.toBeNull();
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
     expect(container.textContent).toContain('{"command": "ls"}');
   });
 
-  it("renders plain, unhighlighted text unchanged rather than tokenizing prose as JSON", async () => {
+  it("renders plain text unchanged rather than tokenizing prose as JSON", async () => {
     const container = await render(<HighlightedText text={"README.md\nsrc\n"} />);
-    expect(container.querySelector(".hljs-string")).toBeNull();
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
     expect(container.textContent).toContain("README.md");
   });
 });

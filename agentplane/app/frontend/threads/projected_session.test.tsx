@@ -1059,13 +1059,13 @@ describe("EntityCard", () => {
     );
 
     const args = (await disclose(container, "Arguments")).querySelector(".agentplane-code-block");
-    expect(args?.querySelector(".hljs-attr")?.textContent).toBe('"command"');
-    expect(args?.querySelector(".hljs-string")?.textContent).toBe('"ls"');
-    expect(args?.querySelector(".hljs-number")?.textContent).toBe("30");
+    expect(args?.querySelector(".cm-editor")).not.toBeNull();
+    expect(args?.textContent).toContain('"command": "ls"');
+    expect(args?.textContent).toContain('"timeout": 30');
 
     const output = (await disclose(container, "Output")).querySelector(".agentplane-code-block");
     expect(output?.textContent).toBe(PROSE);
-    expect(output?.querySelector("[class^='hljs-'], strong, li")).toBeNull();
+    expect(output?.querySelector("strong, li")).toBeNull();
   });
 
   it("renders the assistant's text as Markdown", async () => {
