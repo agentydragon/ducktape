@@ -244,6 +244,24 @@ class ConsoleConfigFile(BaseModel):
     # Editing this keeps live claims usable; a claim whose recorded pod properties no longer match
     # is reported in its `warnings` rather than refused (see haku/sandbox/README.md).
     agent_sandbox: SandboxEnvironmentConfig | None = None
+    # The declared toggle for whether this deployment's catalog includes the `sandbox` in-process
+    # server and its auto-approval policy at all -- an unattended Agent holding a Kubernetes-backed
+    # sandbox and tap-free exec is an operational risk worth recording explicitly, separate from
+    # what a particular catalog happens to configure. This field is informational and derived-from,
+    # not a second thing the app checks independently of the catalog: `app.py` builds the sandbox
+    # server from `agent_sandbox` and membership in `mcp.servers` alone (see its comment on why a
+    # second, possibly-disagreeing boolean there would be worse), and the generator
+    # (`cluster/cdk8s/haku/console_config.py`) is what keeps this flag and those fields in sync by
+    # construction.
+    sandbox_tools_enabled: bool = Field(
+        default=True,
+        description=(
+            "Whether this deployment's catalog offers the `sandbox` in-process server at all. "
+            "Purely declarative: the generator derives agent_sandbox, mcp.servers['sandbox'], the "
+            "haku profile's in_process_server_ids, and the haku_sandbox_control auto-approval fold-in "
+            "from this one value, so the rendered catalog is self-consistent by construction."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod

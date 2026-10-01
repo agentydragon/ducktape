@@ -159,7 +159,12 @@ class Console(Construct):
             "config",
             metadata=ApiObjectMetadata(name="haku-console-config", namespace=NAMESPACE),
             model=ConsoleConfigFile,
-            content=console_config.config(),
+            # Operator directive: an unattended Agent given a Kubernetes-backed sandbox and
+            # tap-free exec is an operational risk, so this deployment keeps the `sandbox`
+            # in-process server off. `sandbox_tools_enabled` defaults True for a future second
+            # environment or test fixture that doesn't explicitly opt out; this is the one real
+            # deployment's explicit choice.
+            content=console_config.config(sandbox_tools_enabled=False),
             path="/etc/haku-console/config/config.yaml",
             supplied=[path for path in self._supplied if path[0] in ConsoleConfigFile.model_fields],
         )

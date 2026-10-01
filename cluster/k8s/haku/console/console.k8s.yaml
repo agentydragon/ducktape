@@ -436,19 +436,9 @@ data:
           - kubernetes_reads
           - grants_self_introspection
           - grants_own_revoke
-      - id: haku_sandbox_control
-        type: exact_tools
-        tools:
-          sandbox:
-            - provision_sandbox
-            - exec_sandbox
-            - get_sandbox_info
-            - list_sandboxes
-            - dispose_sandbox
       - id: haku_v1
         type: any_of
         policies:
-          - haku_sandbox_control
           - kubernetes_reads
           - grants_self_introspection
           - grants_own_revoke
@@ -459,7 +449,6 @@ data:
         auto_approval_policy: haku_v1
         in_process_server_ids:
           - grants
-          - sandbox
       - id: public-coder
         auto_approval_policy: public_coder_v1
         in_process_server_ids:
@@ -482,23 +471,7 @@ data:
             - haku:access-profile:public-coder
             - system:authenticated
     kubernetes_grant_max_lifetime_seconds: 3600
-    agent_sandbox:
-      sandbox:
-        namespace: haku-sandbox
-        warm_pool: haku
-        container: workspace
-        default_cwd: /workspace/haku-state
-        initial_ttl_seconds: 28800
-        exec_ttl_extension_seconds: 7200
-        provisioning_timeout_seconds: 600
-        max_exec_timeout_seconds: 300
-        max_output_bytes: 100000
-      bootstrap:
-        cwd: /workspace
-        timeout_seconds: 300
-        script: |
-          set -euo pipefail
-          /usr/local/bin/haku-sandbox-setup.sh
+    sandbox_tools_enabled: false
     static_agents:
       haku:
         agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
@@ -510,12 +483,6 @@ data:
         access_profile_id: public-coder
     mcp:
       servers:
-        sandbox:
-          id: sandbox
-          backend:
-            kind: in_process
-            credential:
-              kind: none
         grants:
           id: grants
           backend:

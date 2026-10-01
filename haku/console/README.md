@@ -147,6 +147,15 @@ remain available for a future re-enable, but the deployed catalog registers no `
 access profiles grant no Recall indexes, and no index-maintenance workers run. Connected MCP clients
 therefore do not discover or read the retained indexes.
 
+The `sandbox` server (`tools/sandbox.py`, five tools to provision/exec/inspect/list/dispose a
+Kubernetes-backed Agent sandbox) is likewise disabled in deployment by operator directive: an
+unattended Agent holding tap-free exec on its own sandbox pool is an operational risk not worth
+running unattended. `ConsoleConfigFile.sandbox_tools_enabled` (`mcp_config.py`) is the declared
+toggle the deploy generator derives the whole catalog from --
+`cluster/cdk8s/haku/console_config.py` passes `sandbox_tools_enabled=False` for this deployment, so
+`agent_sandbox`, `mcp.servers["sandbox"]`, the `haku` profile's grant, and the
+`haku_sandbox_control` auto-approval fold-in are all absent together.
+
 The trusted frontend resolves opaque IDs by composing ordinary read tools. There are no parallel
 preview-only MCP tools or HTTP routes.
 
