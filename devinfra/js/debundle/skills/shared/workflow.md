@@ -71,6 +71,29 @@ exception: they operate deliberately on the shared integration branch.
 - Environment failure: find one working command and broadcast it.
 - Stale graph: refresh evidence before reassigning blame.
 - Gate failure: read structured cycle/report output before bisection.
+- For a side-effect cycle, start with the exact cycle edge and initializer
+  evidence: identify the owner, source location, purity rule, and called
+  binding. Check whether the effect is in an eagerly evaluated initializer or
+  only in a lazily called function body, then inspect the called value's
+  definition and defining chunk. Unknown imported calls are conservatively
+  effectful; do not infer purity from a familiar name or annotate just to make
+  the cycle disappear.
+- Use a purity annotation only when source or API behavior establishes the
+  required contract. Choose the narrowest supported form: `purity: pure` for a
+  local bound function, `purity: pure_new` only for construction, or
+  `chunk_export_purity.<defining chunk>.pure_exports` for a named cross-chunk
+  export. Use `pure_members` for a specific static member call on an imported
+  namespace, and `fluent_exports` only when the whole transitive fluent
+  surface meets its broader contract. These are author-trusted assertions,
+  not body verification; argument expressions are still analyzed, and an
+  export's initializer is not declared pure by a call-purity annotation. See
+  `references/purity_annotations.md` for the cycle-recovery decision steps and
+  examples; the full contracts are in `devinfra/js/debundle/docs/design.md`
+  § A9 and `devinfra/js/debundle/docs/purity_soundness.md`.
+- After annotating, rerun the same gate and confirm the reported side-effect
+  edge is gone and the intended assignment becomes realizable. If the call
+  can have observable effects during module initialization, change the
+  assignment boundary instead of asserting purity.
 - Split atomic unit: expand one lane to cover the whole unit or redispatch as
   coordinated work.
 - Unclear destination: route to architect instead of creating a grab-bag.

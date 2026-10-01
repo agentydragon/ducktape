@@ -11,6 +11,7 @@ DEBUNDLE_REFERENCES = [
             "//devinfra/js/debundle:README.md",
             "//devinfra/js/debundle:SPEC.md",
             "//devinfra/js/debundle/skills/shared:module_shape.md",
+            "//devinfra/js/debundle/skills/shared:purity_annotations.md",
             "//devinfra/js/debundle/skills/shared:workflow.md",
         ],
         prefix = "references",

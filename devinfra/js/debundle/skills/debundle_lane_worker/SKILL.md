@@ -104,7 +104,9 @@ natural owner still belongs to a larger atomic unit that should move together.
   shared guide's atom-split workflow before changing the assignment shape.
 - If the gate rejects via `debundle run`, read the structured cycle/report
   output (`cycles.json`, `atomic_unit_conflicts.json`) first. Use the
-  cut/evidence if present.
+  cut/evidence if present. For an unknown-call side-effect cycle, follow the
+  shared workflow's purity-annotation guidance before changing the assignment;
+  keep the source evidence and the exact asserted contract in the review.
 - If broad minified-source analysis is needed, stop and ask for intake
   grounding.
 - If the destination is architecturally unclear, stop and route to the
