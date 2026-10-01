@@ -27,7 +27,6 @@ from cluster.cdk8s.agentplane.app_settings import (
     SSH_READS_SET,
     settings,
 )
-from cluster.cdk8s.agentplane.rbac import TESTING_OPERATOR_ROLE_NAME
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME
 from cluster.cdk8s.litellm.keys import ANTIGRAVITY_CLIENT_MODELS, CLAUDE_CLIENT_MODELS, GPT6_OAI_LANE_MODELS
 from cluster.cdk8s.model_rosters import ApiShape, Provider, codex_responses_name, exposed_name
@@ -83,7 +82,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
             "agentplane-testing-operator": RoleBindingGrant(
                 kind="RoleBinding",
                 namespace="agentplane-testing",
-                role_ref=RoleRef(kind="Role", name=TESTING_OPERATOR_ROLE_NAME),
+                role_ref=RoleRef(kind="Role", name="agentplane-testing-operator"),
             ),
             "agentplane-staging-metadata": RoleBindingGrant(
                 kind="RoleBinding",
@@ -95,6 +94,36 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
                 namespace=_NAMESPACE,
                 role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
             ),
+            "haku-console-metadata": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="haku-console",
+                role_ref=RoleRef(kind="Role", name="agent-haku-console-metadata-reader"),
+            ),
+            "clickhouse-diagnostics": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="clickhouse",
+                role_ref=RoleRef(kind="Role", name="agent-clickhouse-diagnostics-reader"),
+            ),
+            "ducktape-flux-read": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="ducktape-flux",
+                role_ref=RoleRef(kind="Role", name="ducktape-flux-reader"),
+            ),
+            "public-coder-volsync-status": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="agent-public-coder-extended-diagnostics-reader"),
+            ),
+            "public-coder-agent-reader": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="public-coder-agent-reader"),
+            ),
+            "public-coder-agent-devbox-vmi-restart": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="public-coder-agent-devbox-vmi-restart"),
+            ),
             "coinbase-credentials": RoleBindingGrant(
                 kind="RoleBinding",
                 namespace=_NAMESPACE,
@@ -103,8 +132,21 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         },
         # Retain cleanup authority when a catalog choice is disabled while its
         # existing Sandboxes still hold a binding in that scope.
-        kubernetes_binding_cleanup_namespaces=["agentplane-testing", "haku-sandbox"],
+        kubernetes_binding_cleanup_namespaces=[
+            "agentplane-testing",
+            "clickhouse",
+            "ducktape-flux",
+            "haku-console",
+            "haku-sandbox",
+            "public-coder-agent",
+        ],
         kubernetes_cluster_binding_cleanup=True,
+    )
+    cfg.sandbox_presets["haku"].kubernetes_grants.extend(
+        ["haku-console-metadata", "clickhouse-diagnostics", "ducktape-flux-read", "public-coder-volsync-status"]
+    )
+    cfg.sandbox_presets["haku"].kubernetes_grants.extend(
+        ["public-coder-agent-reader", "public-coder-agent-devbox-vmi-restart"]
     )
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
     # they name staging-only credentials (forgejo-finance-agent, plaid-pgweb) that

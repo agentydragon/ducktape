@@ -1,0 +1,43 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-external-bindings
+  namespace: haku-console
+rules:
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - rolebindings
+    verbs:
+      - create
+      - get
+      - list
+      - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+    verbs:
+      - get
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - agent-haku-console-metadata-reader
+    resources:
+      - roles
+    verbs:
+      - bind
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-external-bindings
+  namespace: haku-console
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-external-bindings
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-app
+    namespace: agentplane-staging

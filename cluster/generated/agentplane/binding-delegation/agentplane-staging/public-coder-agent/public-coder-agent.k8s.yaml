@@ -1,0 +1,59 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-external-bindings
+  namespace: public-coder-agent
+rules:
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - rolebindings
+    verbs:
+      - create
+      - get
+      - list
+      - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+    verbs:
+      - get
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - agent-public-coder-extended-diagnostics-reader
+    resources:
+      - roles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - public-coder-agent-devbox-vmi-restart
+    resources:
+      - roles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - public-coder-agent-reader
+    resources:
+      - roles
+    verbs:
+      - bind
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-external-bindings
+  namespace: public-coder-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-external-bindings
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-app
+    namespace: agentplane-staging
