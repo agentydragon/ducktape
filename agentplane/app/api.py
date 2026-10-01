@@ -994,7 +994,11 @@ def create_app(
     configured_grants = kubernetes_grants or {}
     grant_views(configured_grants)  # validate catalog keys before serving requests
     for name, grant in configured_grants.items():
-        if not isinstance(grant, RoleBindingGrant) or grant.namespace != inventory.namespace:
+        if (
+            not isinstance(grant, RoleBindingGrant)
+            or grant.namespace != inventory.namespace
+            or grant.role_ref.kind != "Role"
+        ):
             raise ValueError(f"Kubernetes grant {name!r} needs a binding scope not supported by this release")
     for name, preset in configured_presets.sandboxes.items():
         try:
