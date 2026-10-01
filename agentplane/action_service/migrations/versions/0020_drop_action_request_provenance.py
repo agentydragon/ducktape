@@ -4,7 +4,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0020_drop_action_request_provenance"
+revision = "0020_drop_request_provenance"
 down_revision = "0019_action_history_page"
 branch_labels = None
 depends_on = None
