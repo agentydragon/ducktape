@@ -4,12 +4,7 @@ from __future__ import annotations
 
 from cdk8s import Chart
 
-from cluster.cdk8s.flux import (
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 
 
 def nix_cache(

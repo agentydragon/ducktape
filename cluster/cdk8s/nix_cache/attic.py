@@ -126,11 +126,7 @@ ROTATOR_CONFIG = Config(
     ]
 )
 
-SERVER_CONFIG_MAP = ConfigMapArgs(
-    name=_SERVER_CONFIG_MAP,
-    namespace=NAMESPACE,
-    files=["server.toml"],
-)
+SERVER_CONFIG_MAP = ConfigMapArgs(name=_SERVER_CONFIG_MAP, namespace=NAMESPACE, files=["server.toml"])
 ROTATORS_CONFIG_MAP = ConfigMapArgs(
     name=_ROTATORS_CONFIG_MAP,
     namespace=NAMESPACE,
