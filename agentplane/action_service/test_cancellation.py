@@ -44,7 +44,6 @@ def envelope() -> ActionRequestInput:
         title="test title for test-cancellation",
         action=ActionIdentity(group="agentplane", name="echo"),
         arguments={},
-        origin={"thread_id": "untrusted-thread", "caller": OTHER_CALLER.account.name},
     )
 
 

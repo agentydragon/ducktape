@@ -43,8 +43,8 @@ in [`plans/task_dag.md`](../plans/task_dag.md).
 effective policy is the union of the unexpired bindings' sets. `expiresAt` makes an expired binding
 equivalent to an absent one. A subject is every caller proving that account, so bind only an
 account dedicated to one workload. No caller-controlled field selects a binding: subjects resolve
-from the authenticated workload principal or the Connection's ServiceAccount, never from `origin`,
-`correlation`, a Thread ID, or a claimed type.
+from the authenticated workload principal or the Connection's ServiceAccount, never from a claimed
+Thread ID or type.
 
 ## Ownership
 

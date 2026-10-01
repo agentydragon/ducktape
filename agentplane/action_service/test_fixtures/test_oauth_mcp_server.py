@@ -87,8 +87,6 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
                         request_id=uuid4(),
                         action=ActionIdentity(group="example", name="echo"),
                         arguments={"message": "hi"},
-                        origin={},
-                        correlation={},
                         caller=ServiceAccountRef(namespace="agentplane-test", name="test-caller"),
                     ),
                     execution_lease,

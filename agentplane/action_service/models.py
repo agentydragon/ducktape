@@ -213,8 +213,6 @@ class ActionRequestInput(BaseModel):
             "when deciding."
         ),
     )
-    origin: dict[str, JsonValue] = Field(default_factory=dict)
-    correlation: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class DecisionInput(BaseModel):
@@ -281,8 +279,6 @@ class ActionRequestView(BaseModel):
     description: str | None = Field(
         description="The caller-authored added detail, projected unchanged; absent when the caller supplied none."
     )
-    origin: dict[str, JsonValue]
-    correlation: dict[str, JsonValue]
     caller: ServiceAccountRef | None = Field(description="Who submitted it; operator-only.")
     external_grant: ExternalGrantProvenance | None = None
     state: ActionState
@@ -329,8 +325,6 @@ class ExecutionRequest(BaseModel):
     request_id: UUID
     action: ActionIdentity
     arguments: dict[str, JsonValue]
-    origin: dict[str, JsonValue]
-    correlation: dict[str, JsonValue]
     caller: ServiceAccountRef
     external_grant: ExternalGrantProvenance | None = None
 

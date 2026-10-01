@@ -157,17 +157,6 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "description": "test description the submit-1 title leaves out",
             "action": {"group": "agentplane", "name": "echo"},
             "arguments": {"text": "hello", "nested": {"api_key": "provider-material"}},
-            # Every identity-like value here is deliberately forged, accepted only as untrusted
-            # provenance, and must not affect the caller derived from the workload principal.
-            "origin": {
-                "owner": CALLER_B.account.name,
-                "sandbox_id": "forged-sandbox-uid",
-                "thread_id": "forged-thread",
-                "agent_id": "forged-agent",
-                "caller_role": "operator",
-                "authorization": "must-not-project",
-            },
-            "correlation": {"turn_ref": "turn-opaque"},
         }
         assert (await client.post("/v1/action-requests", json=envelope)).status_code == 401
         assert (
@@ -181,7 +170,15 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "operator auth is not consulted on the workload surface"
         )
 
-        for forged_top_level in ("owner", "sandbox_id", "thread_id", "agent_id", "caller_role"):
+        for forged_top_level in (
+            "owner",
+            "sandbox_id",
+            "thread_id",
+            "agent_id",
+            "caller_role",
+            "origin",
+            "correlation",
+        ):
             response = await client.post(
                 "/v1/action-requests", json={**envelope, forged_top_level: "forged"}, headers=_workload("workload-a")
             )
@@ -200,8 +197,8 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         assert pending["state"] == "decision_pending"
         assert pending["caller"] is None
         assert pending["arguments"]["nested"]["api_key"] == "[redacted]"
-        assert pending["origin"]["authorization"] == "[redacted]"
-        # The caller's own plaintext context is projected verbatim, unlike credential-shaped values.
+        assert "origin" not in pending and "correlation" not in pending
+        # The caller-authored operator summary is projected verbatim.
         assert pending["title"] == envelope["title"]
         assert pending["description"] == envelope["description"]
         # The key is spent whatever the envelope says; the request it named is read back by key.
@@ -238,7 +235,6 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         assert operator_detail.json()["title"] == envelope["title"]
         assert operator_detail.json()["description"] == envelope["description"]
         assert operator_list.json()[0]["caller"] == CALLER_A.account.model_dump()
-        assert operator_list.json()[0]["origin"]["owner"] == CALLER_B.account.name, "forgery remains inert provenance"
 
         stale = await client.post(
             _operator_path(request_id, "/decision"),
@@ -863,7 +859,6 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
                 title="test title for test-http-cancel",
                 action=ActionIdentity(group="agentplane", name="echo"),
                 arguments={"access_token": "must-redact"},
-                origin={"caller": CALLER_B.account.name, "thread_id": "untrusted-thread"},
             ).model_dump(mode="json"),
         )
         response.raise_for_status()
@@ -906,8 +901,6 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
                     "title": f"history {index}",
                     "action": {"group": "agentplane", "name": "echo"},
                     "arguments": {"text": "test"},
-                    "origin": {},
-                    "correlation": {},
                 },
             )
             assert submitted.status_code == 202

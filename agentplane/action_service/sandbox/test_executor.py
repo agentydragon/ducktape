@@ -96,8 +96,6 @@ def _request(action: str, arguments: dict[str, JsonValue], caller: ServiceAccoun
         request_id=uuid4(),
         action=ActionIdentity(group="sandbox", name=action),
         arguments=arguments,
-        origin={},
-        correlation={},
         caller=caller,
     )
 

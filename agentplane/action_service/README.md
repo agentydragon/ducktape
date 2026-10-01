@@ -56,7 +56,7 @@ The v0 executable seam is deliberately small:
 
 - one invariant request envelope, carrying a required caller-authored `title` (at most 60
   characters) and optional `description` (at most 250 characters) projected verbatim to the
-  deciding operator, plus optional `origin` and `correlation` stored only as untrusted provenance;
+  deciding operator;
 - caller-own and operator-all reads: operator arguments are exact, while caller arguments and all execution result/error views recursively redact credential-shaped fields;
 - a human operator Decision route, with expected-version and idempotency protection and one
   `decision_note` (optional, at most 2000 characters), shared unchanged with caller and operator;
@@ -245,8 +245,8 @@ default to `id`/`state`/`version`/
 `created_at`/`updated_at` on the receipt -- `state` alone already distinguishes
 pending/allowed/denied/dispatching/running/succeeded/failed/cancelled without naming `execution` --
 widened by naming `input` (the submitted `idempotency_key`/`action`/`arguments`/`title`/
-`description`, echoed back as one unit), `origin`, `correlation`, `caller`, `external_grant`,
-`decision`, or `execution`. Naming only the wide fields you want **replaces** the default rather
+`description`, echoed back as one unit), `caller`, `external_grant`, `decision`, or `execution`.
+Naming only the wide fields you want **replaces** the default rather
 than adding to it, so keeping the compact fields alongside a widened one means naming both.
 `cancel_action_request`'s nested `request` is gated the same way, under its own `include_fields`.
 An unrecognized name in any `include_fields` fails the call rather than being ignored, and so does
@@ -447,10 +447,9 @@ path, whose generic `authenticatedWorkloadToken` source substitutes the already-
 
 At the destination, `WorkloadPrincipalAuthenticator` and `WorkloadPrincipalResolver` from
 `//agentplane/workload_auth` perform the TokenReview. The caller is the
-ServiceAccount that Pod runs as, derived only from what the bearer proved. Identity headers and
-request `origin`/`correlation` fields are never authorization. Thread and Agent fields
-remain untrusted provenance until an authoritative binding exists; workload authentication performs
-no Thread or Agent lookup.
+ServiceAccount that Pod runs as, derived only from what the bearer proved. Identity headers are
+never authorization. Thread and Agent fields remain untrusted until an authoritative binding exists;
+workload authentication performs no Thread or Agent lookup.
 
 Operator/BFF calls use the separate `/v1/operator/...` surface and a separate replaceable
 `OperatorAuthenticator`. The production composition is fail-closed unless explicitly configured.

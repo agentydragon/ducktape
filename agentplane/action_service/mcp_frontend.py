@@ -78,8 +78,6 @@ class RequestField(StrEnum):
     CREATED_AT = "created_at"
     UPDATED_AT = "updated_at"
     INPUT = "input"
-    ORIGIN = "origin"
-    CORRELATION = "correlation"
     CALLER = "caller"
     EXTERNAL_GRANT = "external_grant"
     DECISION = "decision"
@@ -168,8 +166,6 @@ class Receipt(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     input: RequestInput | None = None
-    origin: dict[str, JsonValue] | None = None
-    correlation: dict[str, JsonValue] | None = None
     caller: ServiceAccountRef | None = None
     external_grant: ExternalGrantProvenance | None = None
     decision: DecisionView | None = None
@@ -305,10 +301,6 @@ def _receipt(view: ActionRequestView, fields: set[RequestField]) -> Receipt:
             title=view.title,
             description=view.description,
         )
-    if RequestField.ORIGIN in fields:
-        values["origin"] = view.origin
-    if RequestField.CORRELATION in fields:
-        values["correlation"] = view.correlation
     if RequestField.CALLER in fields:
         values["caller"] = view.caller
     if RequestField.EXTERNAL_GRANT in fields:
@@ -506,7 +498,7 @@ def create_server(
         """Submit one Action for policy evaluation, human decision if needed, and single-shot execution.
         Supply a stable idempotency_key with structured action group/name, validated arguments, and a title the deciding operator reads.
         Answers once wait ends as get_action_result would: a finished Action's own result exactly as its tool answered, otherwise what it waits on or why it has none. wait.wait_seconds (0 through this instance's configured maximum, default 0) optionally waits for wait.wait_until ("decision" or "terminal", default terminal).
-        respond_with="receipt" answers with a compact receipt (id, state, version, created_at, updated_at) instead. include_fields, for a receipt only, is a pure allowlist: input (the submitted idempotency_key/action/arguments/title/description as one unit), origin, correlation, caller, external_grant, decision, and execution (state, error and timing, never the result) widen it.
+        respond_with="receipt" answers with a compact receipt (id, state, version, created_at, updated_at) instead. include_fields, for a receipt only, is a pure allowlist: input (the submitted idempotency_key/action/arguments/title/description as one unit), caller, external_grant, decision, and execution (state, error and timing, never the result) widen it.
         Pending is not success. A key this caller already used is refused; after response loss read the request with get_action_request or get_action_result(idempotency_key=...), never submit a new key.
         """
         waiter.validate(wait)

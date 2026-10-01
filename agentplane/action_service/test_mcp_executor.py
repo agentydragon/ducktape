@@ -64,7 +64,7 @@ def _group() -> ActionGroup:
 
 def _request(*, action: ActionIdentity, arguments: dict[str, Any]) -> ExecutionRequest:
     return ExecutionRequest(
-        request_id=uuid4(), action=action, arguments=arguments, origin={}, correlation={}, caller=CALLER.account
+        request_id=uuid4(), action=action, arguments=arguments, caller=CALLER.account
     )
 
 

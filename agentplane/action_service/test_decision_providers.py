@@ -302,8 +302,6 @@ async def test_decision_context_carries_only_the_authenticated_caller(
             title="test title for identity-context",
             action=ECHO,
             arguments={"n": 1},
-            origin={"agent_id": "forged-agent", "owner": "forged-owner", "sandbox_uid": "forged-uid"},
-            correlation={"turn_ref": "forged-turn", "binding": "forged-binding"},
         )
         await service.submit(forged, CALLER)
         (context,) = provider.contexts
@@ -551,7 +549,6 @@ async def test_nothing_grants_without_a_matching_valid_unexpired_binding(
                 title="test title for unbound",
                 action=ECHO,
                 arguments={"n": 1},
-                origin={"binding": "coder", "caller": SUBJECT.name, "policy_set": "bounded-echo"},
             ),
             CALLER,
         )

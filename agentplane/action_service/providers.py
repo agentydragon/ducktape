@@ -25,9 +25,8 @@ class ResolvedBinding(BaseModel):
 class DecisionContext(BaseModel):
     """Trusted evaluation input for a DecisionProvider.
 
-    Deliberately excludes `origin`/`correlation`: the caller is the authenticated Sandbox or the
-    Connection's ServiceAccount, and the bindings are the ones the policy informer held for it at
-    admission — never anything the request claimed.
+    The caller is the authenticated Sandbox or the Connection's ServiceAccount, and the bindings
+    are the ones the policy informer held for it at admission — never anything the request claimed.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

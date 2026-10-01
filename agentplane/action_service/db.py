@@ -152,8 +152,6 @@ class ActionRequestRow(Base):
     arguments: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     title: Mapped[str] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
-    origin: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
-    correlation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     caller_namespace: Mapped[str] = mapped_column(Text)
     caller_name: Mapped[str] = mapped_column(Text)
     external_grant: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
@@ -465,8 +463,6 @@ class ActionStore:
                     arguments=body.arguments,
                     title=body.title,
                     description=body.description,
-                    origin=body.origin,
-                    correlation=body.correlation,
                     caller_namespace=principal.account.namespace,
                     caller_name=principal.account.name,
                     external_grant=external_grant.model_dump(mode="json") if external_grant is not None else None,
@@ -758,8 +754,6 @@ class ActionStore:
                 request_id=row.id,
                 action=ActionIdentity.model_validate(row.action),
                 arguments=row.arguments,
-                origin=row.origin,
-                correlation=row.correlation,
                 caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name),
                 external_grant=ExternalGrantProvenance.model_validate(row.external_grant)
                 if row.external_grant is not None
@@ -902,8 +896,6 @@ class ActionStore:
             arguments=row.arguments if operator else _redact(row.arguments),
             title=row.title,
             description=row.description,
-            origin=_redact(row.origin),
-            correlation=_redact(row.correlation),
             caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name) if operator else None,
             external_grant=ExternalGrantProvenance.model_validate(row.external_grant)
             if row.external_grant is not None

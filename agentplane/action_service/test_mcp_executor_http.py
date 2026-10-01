@@ -218,8 +218,6 @@ def execution_request() -> ExecutionRequest:
         request_id=uuid4(),
         action=ActionIdentity(group="remote", name="echo"),
         arguments={"text": "hi"},
-        origin={},
-        correlation={},
         caller=ServiceAccountRef(namespace="agentplane-test", name="test-http-caller"),
     )
 

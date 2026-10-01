@@ -160,12 +160,11 @@ script again.
 **An MCP backend carrying the caller in per-call metadata.** The pinned FastMCP has the seam —
 `Client.call_tool(meta=...)` and server-side `Context.request_context.meta` — and it is the only
 per-call one. What killed it is cost, not mechanism: it introduces a caller assertion on the shared
-authorization path, which then has to be defended permanently — a tool argument named `caller` must
-not forge it, envelope `origin`/`correlation` must never become it, and groups that did not ask for
-it must not receive it. `request.caller` needs none of that. Such a backend would also not have
-avoided the privilege: it cannot authenticate the caller itself, so it can only trust the Action
-Service's static bearer, and the bearer is then the capability one hop away. The split buys process
-isolation, not privilege isolation.
+authorization path, which then has to be defended permanently: a tool argument named `caller` must
+not forge it, and groups that did not ask for it must not receive it. `request.caller` needs none of
+that. Such a backend would also not avoid the privilege: it cannot authenticate the caller itself,
+so it can only trust the Action Service's static bearer, and the bearer is then the capability one
+hop away. The split buys process isolation, not privilege isolation.
 
 **Forwarding the caller's own credential.** There is no caller credential at dispatch. Submission
 and dispatch are separated by a human Decision, a possible restart, and a possibly different

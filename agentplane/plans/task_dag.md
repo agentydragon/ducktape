@@ -88,7 +88,6 @@ flowchart TB
     CROSS_IDENTITY_READ_POLICY["Deferred decision<br/>explicit policy for reading across Identities<br/>what cross-Identity delivery waits on"]:::decision
     AG["Capstone<br/>hosted Agent and Thread model<br/>lifecycle, surfaces and read policy together"]:::milestone
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
-    ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_RBAC["Managed Kubernetes access<br/>catalog choices and SA bindings<br/>live acceptance pending; see #8596"]:::active
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
@@ -223,18 +222,6 @@ The request may become a policy-gated Action with operator approval, or use anot
 configuration path. Keep the authority, approval, persistence, and rollback model open until a
 concrete caller and policy owner are chosen. This does not grant agents a direct policy mutation
 path and does not block current credential-placeholder egress.
-
-### `ACTION_PROVENANCE_PRUNE` — prune `ActionRequestInput.origin`/`correlation`
-
-**Deferred idea:** `origin` and `correlation` on `ActionRequestInput` are two open-ended
-`dict[str, JsonValue]` bags with no consumer: nothing in the Action Service parses or acts on
-their contents; they are stored, returned in `ActionRequestView` (redacted for non-operators),
-and otherwise inert. Consider collapsing both down to one client-authored identifier field, or
-confirm no simplification is warranted.
-
-It changes a Pydantic model, DB columns, tests and documented invariants (`action_service/SPEC.md`,
-`action_service/README.md`), so it is its own change, not a rider on an unrelated addition of
-caller-facing fields to the same model. No dependency on anything else; nothing waits on this.
 
 ### `CONNECTION_SA_REBIND` — rebind a Connection's ServiceAccount in place
 

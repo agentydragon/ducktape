@@ -95,7 +95,6 @@ def envelope() -> ActionRequestInput:
         title="test title for key",
         action=ActionIdentity(group="agentplane", name="echo"),
         arguments={},
-        origin={"client_id": "forged", "grant_id": "forged", "issuer": "forged"},
     )
 
 
@@ -129,7 +128,6 @@ async def test_shared_service_account_repeat_refused_and_lookup_keeps_first_snap
     assert duplicate.id == first.id
     assert duplicate.external_grant == grant.provenance()
     assert (await restarted.get(first.id, OPERATOR)).external_grant == grant.provenance()
-    assert duplicate.origin["client_id"] == "forged"
     assert len(await restarted.events(first.id, sibling.principal())) == 1
 
 

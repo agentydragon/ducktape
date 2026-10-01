@@ -119,8 +119,6 @@ class RecordingActionService:
             arguments=body.arguments,
             title=body.title,
             description=body.description,
-            origin=body.origin,
-            correlation=body.correlation,
             caller=None,
             state=ActionState.DECISION_PENDING,
             version=1,
@@ -181,7 +179,6 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
         title="test title for central-replay",
         action=ActionIdentity(group="agentplane", name="echo"),
         arguments={"text": "hello"},
-        origin={"sandbox_id": "forged-sandbox-uid", "thread_id": "untrusted"},
     )
 
     proxy = FakeCentralProxy(app, TOKEN_A)

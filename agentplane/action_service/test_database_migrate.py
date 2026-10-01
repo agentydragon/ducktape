@@ -30,6 +30,7 @@ def _seed_at_0005(connection: Connection) -> None:
     connection.execute(
         text(
             """
+            -- These provenance columns belong to the frozen 0005 schema and are dropped by 0020.
             INSERT INTO action_request
                 (id, idempotency_key, action, arguments, origin, correlation,
                  caller_principal, state, version, created_at, updated_at)

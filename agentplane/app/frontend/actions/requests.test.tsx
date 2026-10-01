@@ -39,8 +39,6 @@ describe("ActionRequests", () => {
       ...request("decision_pending", 1),
       caller: { namespace: "agentplane-test", name: "test-caller" },
       external_grant: grant,
-      origin: { identity_id: "forged-origin-identity", client_id: "forged-origin-client" },
-      correlation: { connection_id: "forged-correlation-connection", display_name: "mutable-connection-name" },
     };
     const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
 
@@ -49,8 +47,6 @@ describe("ActionRequests", () => {
     for (const value of [grant.issuer, grant.client_id, grant.connection_id]) {
       expect(container.textContent).toContain(value);
     }
-    expect(container.textContent).not.toContain("forged-");
-    expect(container.textContent).not.toContain("mutable-connection-name");
     const details = container.querySelector("details");
     const summary = details?.querySelector("summary");
     if (!details || !summary) throw new Error("missing grant audit disclosure");
@@ -68,12 +64,10 @@ describe("ActionRequests", () => {
       const row = {
         ...request("decision_pending", 1),
         external_grant,
-        origin: { identity_id: "forged-origin-identity" },
       };
       const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
       expect(container.textContent).toContain(`requested by ${row.caller!.namespace}/${row.caller!.name}`);
       expect(container.textContent).not.toContain("Authenticated external caller");
-      expect(container.textContent).not.toContain("forged-origin-identity");
       // The request-id disclosure exists regardless of external_grant, but carries only the id --
       // no grant provenance to fold in without one.
       const details = container.querySelector("details");
