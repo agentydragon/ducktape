@@ -65,8 +65,8 @@ py_wheel(
     version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [
-        ":credentials",
         ":cli",
+        ":credentials",
         ":daemon",
         ":oauth",
         ":package_init",
