@@ -1,8 +1,9 @@
 const SYNC_READY = ["#overview-heading", "#pairing-heading"];
-const VIEWER_READY = ["#session-viewer-title", "article"];
+const VIEWER_READY = ["#session-viewer-title", '[data-fold-kind="tool"]', '[data-fold-kind="activity"]'];
 
 export const SCENARIOS = {
   SessionViewer: { element: "#app", readySelectors: VIEWER_READY },
+  SessionViewer_dark: { element: "#app", readySelectors: VIEWER_READY, colorScheme: "dark" },
   SessionViewer_mobile: {
     element: "#app",
     readySelectors: VIEWER_READY,

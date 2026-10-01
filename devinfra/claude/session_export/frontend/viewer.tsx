@@ -27,6 +27,7 @@ import {
   type SessionEvent,
   type SessionSummary,
 } from "./api";
+import { foldSessionEvents, transcriptEventTime, type TranscriptItem } from "./transcript";
 
 type StatusFilter = "all" | "active" | "paused" | "archived";
 type WatchStatus = "connecting" | "connected" | "reconnecting";
@@ -47,32 +48,6 @@ function sessionSubtitle(session: SessionSummary): string {
         ? fields.repo_path
         : null;
   return [repository, branch].filter((value): value is string => value !== null).join(" · ") || session.id;
-}
-
-function readableText(value: unknown, depth = 0): string | null {
-  if (typeof value === "string") return value.trim() === "" ? null : value;
-  if (depth >= 4) return null;
-  if (Array.isArray(value)) {
-    const parts = value.map((part) => readableText(part, depth + 1)).filter((part): part is string => part !== null);
-    return parts.length === 0 ? null : parts.join("\n");
-  }
-  if (typeof value === "object" && value !== null) {
-    const record = value as Record<string, unknown>;
-    if (typeof record.text === "string") return readableText(record.text, depth + 1);
-    if (record.content !== undefined) return readableText(record.content, depth + 1);
-    if (record.message !== undefined) return readableText(record.message, depth + 1);
-  }
-  return null;
-}
-
-function eventText(event: SessionEvent): string | null {
-  const payload = event.payload as Record<string, unknown>;
-  return readableText(payload.text) ?? readableText(payload.content) ?? readableText(payload.message);
-}
-
-function eventTime(event: SessionEvent): string {
-  const date = new Date(event.created_at);
-  return Number.isNaN(date.getTime()) ? event.created_at : date.toLocaleString();
 }
 
 function statusColor(status: string): "green" | "yellow" | "gray" {
@@ -121,35 +96,131 @@ function SessionRow({
   );
 }
 
-function EventCard({ event }: { event: SessionEvent }): JSX.Element {
-  const text = eventText(event);
+function toolInputSummary(input: unknown): string | null {
+  if (typeof input === "string") return input;
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return null;
+  const record = input as Record<string, unknown>;
+  for (const key of ["file_path", "path", "command", "query", "pattern", "url"]) {
+    if (typeof record[key] === "string") return record[key] as string;
+  }
+  return Object.keys(record).length === 0 ? null : JSON.stringify(record, null, 2);
+}
+
+function rawEvents(item: TranscriptItem): string {
+  return JSON.stringify(
+    item.events.map(({ event_type, sequence_num, created_at, payload }) => ({
+      event_type,
+      sequence_num,
+      created_at,
+      payload,
+    })),
+    null,
+    2
+  );
+}
+
+function TranscriptCard({ item }: { item: TranscriptItem }): JSX.Element {
+  const time = transcriptEventTime(item);
+  const title =
+    item.kind === "message"
+      ? item.role === "user"
+        ? "You"
+        : "Claude"
+      : item.kind === "tool"
+        ? item.name
+        : item.kind === "activity"
+          ? item.title
+          : item.kind === "thinking"
+            ? "Thinking"
+            : item.title;
+  const color =
+    item.kind === "message" ? (item.role === "user" ? "blue" : "violet") : item.kind === "tool" ? "cyan" : "gray";
   return (
-    <Paper component="article" withBorder radius="sm" p="md">
+    <Paper component="article" aria-label={title} data-fold-kind={item.kind} withBorder radius="sm" p="md">
       <Stack gap="sm">
         <Group justify="space-between" align="center" gap="xs">
           <Group gap="xs">
-            <Badge variant="light" color="gray">
-              {event.event_type.replaceAll("_", " ")}
+            <Badge variant="light" color={color}>
+              {title}
             </Badge>
-            <Text size="xs" c="dimmed">
-              #{event.sequence_num}
-            </Text>
+            {item.kind === "tool" && (
+              <Badge
+                variant="dot"
+                color={item.status === "error" ? "red" : item.status === "complete" ? "green" : "yellow"}
+              >
+                {item.status}
+              </Badge>
+            )}
+            {item.kind === "activity" && (
+              <Badge
+                variant="dot"
+                color={item.status === "completed" ? "green" : item.status === "failed" ? "red" : "yellow"}
+              >
+                {item.status}
+              </Badge>
+            )}
           </Group>
-          <Text component="time" size="xs" c="dimmed" dateTime={event.created_at}>
-            {eventTime(event)}
-          </Text>
+          {time !== null && (
+            <Text component="time" size="xs" c="dimmed" dateTime={item.events.at(-1)?.created_at}>
+              {time}
+            </Text>
+          )}
         </Group>
-        {text !== null && (
+        {item.kind === "message" && (
           <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {text}
+            {item.text}
+          </Text>
+        )}
+        {item.kind === "tool" && (
+          <Stack gap="xs">
+            {toolInputSummary(item.input) !== null && <Code block>{toolInputSummary(item.input)}</Code>}
+            {item.result !== undefined && (
+              <Text size="sm" lineClamp={8} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                {item.result}
+              </Text>
+            )}
+          </Stack>
+        )}
+        {item.kind === "activity" && item.detail !== undefined && (
+          <Text size="sm" c="dimmed">
+            {item.detail}
+          </Text>
+        )}
+        {item.kind === "thinking" && (
+          <Accordion variant="default" radius="sm">
+            <Accordion.Item value="thinking">
+              <Accordion.Control>Show thinking</Accordion.Control>
+              <Accordion.Panel>
+                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                  {item.text}
+                </Text>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
+        )}
+        {item.kind === "summary" &&
+          (item.details.length === 0 ? (
+            <Text size="sm">Turn complete</Text>
+          ) : (
+            <Group gap="xs">
+              {item.details.map((detail) => (
+                <Badge key={detail} variant="light" color="gray">
+                  {detail}
+                </Badge>
+              ))}
+            </Group>
+          ))}
+        {item.kind === "notice" && item.detail !== undefined && (
+          <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {item.detail}
           </Text>
         )}
         <Accordion variant="contained" radius="sm">
-          <Accordion.Item value="payload">
-            <Accordion.Control>{text === null ? "Event payload" : "Raw event payload"}</Accordion.Control>
+          <Accordion.Item value="raw-events">
+            <Accordion.Control>Original event data</Accordion.Control>
             <Accordion.Panel>
               <ScrollArea type="auto" mah={384}>
-                <Code block>{JSON.stringify(event.payload, null, 2)}</Code>
+                <Code block>{rawEvents(item)}</Code>
               </ScrollArea>
             </Accordion.Panel>
           </Accordion.Item>
@@ -257,6 +328,7 @@ export function SessionViewer(): JSX.Element {
   }, [search, sessions]);
 
   const selectedSession = sessions.find((session) => session.id === selectedId) ?? null;
+  const transcript = useMemo(() => foldSessionEvents(events), [events]);
   const watchLabel =
     watchStatus === "connected" ? "Live updates on" : watchStatus === "connecting" ? "Connecting…" : "Reconnecting…";
 
@@ -416,7 +488,7 @@ export function SessionViewer(): JSX.Element {
                   <Center h={180}>
                     <Loader size="sm" aria-label="Loading transcript" />
                   </Center>
-                ) : events.length === 0 ? (
+                ) : transcript.length === 0 ? (
                   <Center h={180}>
                     <Text c="dimmed" ta="center">
                       No events are stored for this session yet.
@@ -425,8 +497,8 @@ export function SessionViewer(): JSX.Element {
                 ) : (
                   <ScrollArea h="min(32rem, 60vh)" type="auto">
                     <Stack gap="sm" pr="sm">
-                      {events.map((event) => (
-                        <EventCard key={`${event.sequence_num}-${event.event_id}`} event={event} />
+                      {transcript.map((item) => (
+                        <TranscriptCard key={`${item.kind}-${item.id}`} item={item} />
                       ))}
                       {hasMoreEvents && (
                         <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>

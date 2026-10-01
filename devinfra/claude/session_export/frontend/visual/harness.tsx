@@ -75,69 +75,92 @@ const sessions: Array<SessionSummary & { git_branch: string; repo_path: string }
 ];
 
 const sessionPage: SessionListPage = { data: sessions, next_cursor: null, resume_token: null };
+function fixtureEvent(
+  sequence: number,
+  event_type: string,
+  payload: Record<string, unknown>
+): SessionEventPage["data"][number] {
+  return {
+    event_id: `d4c8b29a-4f1d-4a22-8b3c-73f621e9a50${sequence}`,
+    sequence_num: String(sequence),
+    event_type,
+    source: event_type === "user" ? "client" : "server",
+    created_at: `2026-09-30T18:4${sequence}:00Z`,
+    received_at: null,
+    processing_at: null,
+    processed_at: null,
+    device_attestation_status: "DEVICE_ATTESTATION_STATUS_UNSPECIFIED",
+    sent_by_account_id: null,
+    payload,
+  };
+}
+
 const eventPage: SessionEventPage = {
   data: [
-    {
-      event_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
-      sequence_num: "1",
-      event_type: "user_message",
-      source: "client",
-      created_at: "2026-09-30T18:40:00Z",
-      received_at: null,
-      processing_at: null,
-      processed_at: null,
-      device_attestation_status: "DEVICE_ATTESTATION_STATUS_UNSPECIFIED",
-      sent_by_account_id: null,
-      payload: {
+    fixtureEvent(1, "user", {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "Why is the viewer test failing?" }] },
+    }),
+    fixtureEvent(2, "assistant", {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "I should inspect the failing test and its fixture." },
+          { type: "text", text: "I’ll read the test file and follow the fixture." },
+          { type: "tool_use", id: "tool-read", name: "Read", input: { file_path: "tests/test_viewer.py" } },
+        ],
+      },
+    }),
+    fixtureEvent(3, "user", {
+      type: "user",
+      message: {
+        role: "user",
         content: [
           {
-            type: "text",
-            text: "Can you make the session browser easier to scan and keep the selected transcript readable?",
+            type: "tool_result",
+            tool_use_id: "tool-read",
+            content: [{ type: "text", text: "The fixture marks the session paused, but the test expected active." }],
           },
         ],
       },
-    },
-    {
-      event_id: "e5d9c30b-5a2e-4b33-9c4d-84a732fab612",
-      sequence_num: "2",
-      event_type: "assistant_message",
-      source: "server",
-      created_at: "2026-09-30T18:42:00Z",
-      received_at: "2026-09-30T18:42:00Z",
-      processing_at: null,
-      processed_at: null,
-      device_attestation_status: "DEVICE_ATTESTATION_STATUS_UNSPECIFIED",
-      sent_by_account_id: null,
-      payload: {
+    }),
+    fixtureEvent(4, "system", {
+      type: "system",
+      subtype: "task_started",
+      task_id: "task-tests",
+      task_type: "agent",
+      description: "Check the session status fixture",
+    }),
+    fixtureEvent(5, "system", {
+      type: "system",
+      subtype: "task_notification",
+      task_id: "task-tests",
+      status: "completed",
+      summary: "The fixture uses paused; the assertion expected active.",
+    }),
+    fixtureEvent(6, "assistant", {
+      type: "assistant",
+      message: {
+        role: "assistant",
         content: [
           {
             type: "text",
-            text: "I’ll keep the session list compact, make the active selection clear, and give each transcript event enough room to read.",
+            text: "The fixture and assertion disagree. I’ll update the expectation to match the intended paused state.",
           },
         ],
       },
-    },
-    {
-      event_id: "f6ea041c-6b3f-4c44-ad5e-95b8430bc723",
-      sequence_num: "3",
-      event_type: "tool_result",
-      source: "server",
-      created_at: "2026-09-30T18:42:30Z",
-      received_at: "2026-09-30T18:42:30Z",
-      processing_at: null,
-      processed_at: null,
-      device_attestation_status: "DEVICE_ATTESTATION_STATUS_UNSPECIFIED",
-      sent_by_account_id: null,
-      payload: {
-        tool_name: "Read",
-        content: [{ type: "text", text: "The session sync is current." }],
-        file_path: "devinfra/claude/session_export/frontend/app.tsx",
-      },
-    },
+    }),
+    fixtureEvent(7, "result", {
+      type: "result",
+      usage: { total_tokens: 2315 },
+      total_cost_usd: 0.0123,
+      duration_ms: 2000,
+    }),
   ],
   has_more: false,
   first_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
-  last_id: "f6ea041c-6b3f-4c44-ad5e-95b8430bc723",
+  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a507",
 };
 
 function mockFetch(input: RequestInfo | URL): Promise<Response> {

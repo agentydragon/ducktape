@@ -83,12 +83,21 @@ ts_library(
 )
 
 ts_library(
+    name = "transcript",
+    srcs = ["transcript.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":api"],
+)
+
+ts_library(
     name = "viewer",
     srcs = ["viewer.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":transcript",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -134,6 +143,19 @@ ts_library(
 )
 
 ts_library(
+    name = "transcript_test",
+    testonly = True,
+    srcs = ["transcript.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":transcript",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "api_test",
     testonly = True,
     srcs = ["api.test.ts"],
@@ -153,6 +175,7 @@ vitest_bin.vitest_test(
         "vitest.config.mts",
         ":api_test",
         ":status_test",
+        ":transcript_test",
         "//:node_modules/vitest",
     ],
 )
