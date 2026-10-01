@@ -19,6 +19,14 @@ rules:
       - roles
     verbs:
       - get
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - agentplane-testing-operator
+    resources:
+      - roles
+    verbs:
+      - bind
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

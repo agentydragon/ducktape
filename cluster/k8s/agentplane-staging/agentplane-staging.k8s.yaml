@@ -1918,6 +1918,7 @@ data:
         kubernetes_grants:
           - cluster-diagnostics
           - haku-sandbox-write
+          - agentplane-testing-operator
           - agentplane-staging-metadata
           - agentplane-staging-logs
           - activitywatch-metadata
@@ -2035,6 +2036,12 @@ data:
         role_ref:
           kind: Role
           name: haku-sandbox-admin
+      agentplane-testing-operator:
+        kind: RoleBinding
+        namespace: agentplane-testing
+        role_ref:
+          kind: Role
+          name: agentplane-testing-operator
       agentplane-staging-metadata:
         kind: RoleBinding
         namespace: agentplane-staging

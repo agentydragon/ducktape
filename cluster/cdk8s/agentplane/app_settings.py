@@ -191,6 +191,7 @@ def settings(
                         kubernetes_grants=[
                             "cluster-diagnostics",
                             "haku-sandbox-write",
+                            "agentplane-testing-operator",
                             "agentplane-staging-metadata",
                             "agentplane-staging-logs",
                             *(haku_extra_kubernetes_grants or []),
