@@ -1913,6 +1913,8 @@ data:
           - clickhouse-diagnostics
           - ducktape-flux-read
           - public-coder-volsync-status
+          - public-coder-agent-reader
+          - public-coder-agent-devbox-vmi-restart
         thread_preset: haku-claude
         bootstrap: |
           #!/bin/sh
@@ -2007,6 +2009,18 @@ data:
         role_ref:
           kind: Role
           name: agent-public-coder-extended-diagnostics-reader
+      public-coder-agent-reader:
+        kind: RoleBinding
+        namespace: public-coder-agent
+        role_ref:
+          kind: Role
+          name: public-coder-agent-reader
+      public-coder-agent-devbox-vmi-restart:
+        kind: RoleBinding
+        namespace: public-coder-agent
+        role_ref:
+          kind: Role
+          name: public-coder-agent-devbox-vmi-restart
       coinbase-credentials:
         kind: RoleBinding
         namespace: agentplane-staging

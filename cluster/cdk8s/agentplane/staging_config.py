@@ -109,6 +109,16 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
                 namespace="public-coder-agent",
                 role_ref=RoleRef(kind="Role", name="agent-public-coder-extended-diagnostics-reader"),
             ),
+            "public-coder-agent-reader": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="public-coder-agent-reader"),
+            ),
+            "public-coder-agent-devbox-vmi-restart": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="public-coder-agent-devbox-vmi-restart"),
+            ),
             "coinbase-credentials": RoleBindingGrant(
                 kind="RoleBinding",
                 namespace=_NAMESPACE,
@@ -128,6 +138,9 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
     )
     cfg.sandbox_presets["haku"].kubernetes_grants.extend(
         ["haku-console-metadata", "clickhouse-diagnostics", "ducktape-flux-read", "public-coder-volsync-status"]
+    )
+    cfg.sandbox_presets["haku"].kubernetes_grants.extend(
+        ["public-coder-agent-reader", "public-coder-agent-devbox-vmi-restart"]
     )
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
     # they name staging-only credentials (forgejo-finance-agent, plaid-pgweb) that
