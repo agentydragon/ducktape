@@ -162,19 +162,19 @@ def test_coinbase_static_grant_is_preserved_and_managed_haku_picks_scoped_grant(
     }
 
 
-def test_haku_grant_catalog_generates_scoped_app_delegation(
+def test_haku_grant_catalog_keeps_external_delegation_out_of_app(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
     haku = config["sandbox_presets"]["haku"]
-    assert haku["kubernetes_grants"] == [
+    assert haku["kubernetes_grants"][:4] == [
         "cluster-diagnostics",
         "haku-sandbox-write",
         "agentplane-staging-metadata",
         "agentplane-staging-logs",
-        "coinbase-credentials",
     ]
+    assert haku["kubernetes_grants"][-1] == "coinbase-credentials"
     assert config["kubernetes_grants"]["cluster-diagnostics"] == {
         "kind": "ClusterRoleBinding",
         "role_ref": {"kind": "ClusterRole", "name": "cluster-diagnostics-reader"},
@@ -187,14 +187,14 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
         and doc["metadata"].get("namespace") == "haku-sandbox"
-        and doc["metadata"]["name"] == "agentplane-staging-managed-bindings"
+        and doc["metadata"]["name"] == "agentplane-staging-external-bindings"
         for doc in docs
     ), "the app Kustomization must not own managed-binding delegation in external namespaces"
     app_cluster_role = _by_name(docs, "ClusterRole", "agentplane-staging-managed-cluster-bindings")
     assert {
         tuple(rule.get("resourceNames", [])) for rule in app_cluster_role["rules"] if rule["verbs"] == ["bind"]
     } == {("agent-readable-namespace-logs",), ("agent-readable-namespace-metadata",), ("cluster-diagnostics-reader",)}
-    assert config["kubernetes_binding_cleanup_namespaces"] == ["haku-sandbox"]
+    assert {"haku-sandbox", staging.ENV.namespace} <= set(config["kubernetes_binding_cleanup_namespaces"])
     assert config["kubernetes_cluster_binding_cleanup"] is True
 
 

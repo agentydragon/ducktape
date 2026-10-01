@@ -8,7 +8,7 @@ from pathlib import Path
 import networkx as nx
 import pygit2
 
-from cluster.cdk8s.manifest_roots import manifest_files
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT, manifest_files
 from cluster.validation.flux import (
     EXTERNAL_ARTIFACT_KIND,
     FLUX_SOURCE_KINDS,
@@ -118,13 +118,16 @@ def parse_cluster(repo_root: Path) -> ParsedCluster:
     source_resources: dict[Path, list[K8sResource]] = {}
     flux_sources: set[tuple[str, str, str]] = set()
     repo = _open_repo(repo_root)
+    flux_bootstrap_dir = repo_root / HAND_WRITTEN_ROOT / "flux" / "flux-system"
 
     for yaml_file in manifest_files(repo_root):
-        # flux-system is auto-generated controllers plus the bootstrap source.
-        # Skip it for app-manifest processing (orphan detection, resource graph)
-        # but still index its source CRs — the bootstrap GitRepository/flux-system
-        # lives here and is a valid sourceRef target for Kustomizations elsewhere.
-        if "flux-system" in yaml_file.parts:
+        # The bootstrap Kustomization is auto-generated controllers plus the
+        # source. Skip only that subtree for app-manifest processing (orphan
+        # detection, resource graph), but still index its source CRs — the
+        # bootstrap GitRepository/flux-system is a valid sourceRef target for
+        # Kustomizations elsewhere. Other generated paths may target the
+        # flux-system namespace and must still be built and validated.
+        if yaml_file.is_relative_to(flux_bootstrap_dir):
             for r in parse_k8s_resource_file(yaml_file):
                 _index_source(r, flux_sources)
             continue

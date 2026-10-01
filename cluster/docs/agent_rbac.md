@@ -185,9 +185,16 @@ within `agentplane-staging`, and `get` on exactly
 `claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its
 rules are shared while its static `claude-ai` RoleBinding remains Flux-owned.
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
-read selection. Other Kyverno `agent-readable-*` namespaces still grant the static
-Haku identities; managed Haku SAs require explicit catalog entries before they receive
-those namespaced readers. No namespace label silently widens them.
+read selection. The Haku preset also names explicit metadata and pod-log catalog
+entries for every active cluster-managed `agent-readable-*` namespace, matching the
+static Haku subjects' label-generated readers. Parked namespaces and the separate
+Props Git source are excluded. The `flux-system` delegation Kustomization has no
+`dependsOn` because that namespace is the bootstrap root and has no generated
+dependency construct. The catalog fixes each namespace and Role reference at
+Sandbox creation; a later namespace label change does not silently widen existing
+Sandboxes. The cluster integration test derives active opt-ins, checks each
+target-owned delegation and dependency, and requires a new label opt-in to add an
+explicit managed grant and Haku preset default.
 
 ### Staging acceptance for managed Haku grants
 
@@ -206,6 +213,7 @@ for box in "$HAKU_A" "$HAKU_B"; do
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl get nodes -o name
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging get pods -o name
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging auth can-i get pods/log
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n monitoring auth can-i get pods/log
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n haku-sandbox auth can-i create jobs
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging auth can-i create jobs
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging get secret coinbase-api-credentials -o 'jsonpath={.metadata.name}'
@@ -216,8 +224,8 @@ kubectl -n agentplane-staging exec "$OTHER" -c runner -- kubectl -n agentplane-s
 
 The three `whoami` results must name three distinct
 `system:serviceaccount:agentplane-staging:<sandbox-name>` principals. Both Haku boxes
-must read Nodes and staging Pod metadata, answer `yes` for staging `pods/log`
-reads and `haku-sandbox` Job creation, answer `no` for staging Job creation,
+must read Nodes and staging Pod metadata, answer `yes` for staging and
+monitoring `pods/log` reads and `haku-sandbox` Job creation, answer `no` for staging Job creation,
 and return only `coinbase-api-credentials` from the Secret read. The last two
 commands must return `Forbidden`. Never use `-o yaml`, `-o json`, `describe`, shell
 tracing, or an agent transcript for the Secret: those can expose the key. The
