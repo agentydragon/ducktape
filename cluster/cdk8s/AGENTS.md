@@ -285,9 +285,12 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
   in a patch. Pod-level seccomp is a patch (`PodSecurityContextProps` has no field);
   container-level is typed.
 - `cdk8s_plus_34` defaults: `automount_token=False` on a ServiceAccount and
-  `automount_service_account_token=False` on a workload, both to set for a TokenReview
-  caller; `readOnlyRootFilesystem`/`runAsNonRoot` hardened (a container whose writes
-  are unaudited states `read_only_root_filesystem=False`);
+  `automount_service_account_token=False` on a workload. Every pod spec states the
+  latter, `false` unless the Pod calls the API, and a Pod that states `true` runs as a
+  ServiceAccount of its own, never `default` (`fleet_rules.pod_hardening`); the Pod's
+  value overrides the ServiceAccount's. `readOnlyRootFilesystem`/`runAsNonRoot`
+  hardened (a container whose writes are unaudited states
+  `read_only_root_filesystem=False`);
   `allowPrivilegeEscalation: false` and `privileged: false` always emitted, capabilities
   never (`pod_policy.harden` drops ALL where unset); the
   Deployment selector is `cdk8s.io/metadata.addr`, not `app.kubernetes.io/name`
