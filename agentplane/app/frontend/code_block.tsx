@@ -56,7 +56,7 @@ export function isRegisteredLanguage(language: string): language is Language {
 export const VISIBLE_SPECIAL_CHARS =
   /[\p{Bidi_Control}\p{Default_Ignorable_Code_Point}\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u2028\u2029\uFFF9-\uFFFC]/gu;
 const BIDI_CONTROLS = /\p{Bidi_Control}/u;
-const CONTROL_NAMES = new Map<number, string>([
+const CONTROL_NAMES: ReadonlyMap<number, string> = new Map([
   [0x0000, "NUL"],
   [0x0001, "SOH"],
   [0x0002, "STX"],
