@@ -1918,6 +1918,7 @@ data:
         kubernetes_grants:
           - cluster-diagnostics
           - haku-sandbox-write
+          - agentplane-testing-operator
           - agentplane-staging-metadata
           - agentplane-staging-logs
           - coinbase-credentials
@@ -1979,6 +1980,12 @@ data:
         role_ref:
           kind: Role
           name: haku-sandbox-admin
+      agentplane-testing-operator:
+        kind: RoleBinding
+        namespace: agentplane-testing
+        role_ref:
+          kind: Role
+          name: agentplane-testing-operator
       agentplane-staging-metadata:
         kind: RoleBinding
         namespace: agentplane-staging
@@ -1998,6 +2005,7 @@ data:
           kind: Role
           name: claude-ai-coinbase-reader
     kubernetes_binding_cleanup_namespaces:
+      - agentplane-testing
       - haku-sandbox
     kubernetes_cluster_binding_cleanup: true
     default_policies:

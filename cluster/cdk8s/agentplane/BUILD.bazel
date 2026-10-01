@@ -392,6 +392,7 @@ py_library(
     ],
     deps = [
         ":app_settings",
+        ":rbac",
         ":sandbox_pod",
         "//agentplane/app:action_federation",
         "//agentplane/app:kubernetes_grants",
@@ -557,11 +558,13 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":app_settings",
+        ":binding_delegation",
         ":conftest",
         ":egress",
         ":staging",
         ":testing",
         "//:conftest",
+        "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
