@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import timedelta
@@ -9,15 +10,16 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from devinfra.claude.session_export import store
+from devinfra.claude.session_export import store as store_module
 from devinfra.claude.session_export.conftest import (
     SESSION_STATUS_ACTIVE,
     SESSION_STATUS_PAUSED,
     TEST_EPOCH,
+    make_event,
     make_session,
 )
-from devinfra.claude.session_export.models import SESSION_STATUS_ARCHIVED
-from devinfra.claude.session_export.store import Base, SessionStore, StoreCounts, dumps_jsonb
+from devinfra.claude.session_export.models import SESSION_STATUS_ARCHIVED, Event
+from devinfra.claude.session_export.store import Base, SessionStore, StoreCounts, dumps_jsonb, make_engine
 
 
 @pytest.mark.parametrize(
@@ -36,7 +38,7 @@ def test_dumps_jsonb_rewrites_only_nul_characters(document: dict[str, Any], stor
 
 
 def test_dumps_jsonb_logs_how_many_characters_it_rewrote(caplog: pytest.LogCaptureFixture) -> None:
-    with caplog.at_level(logging.WARNING, logger=store.logger.name):
+    with caplog.at_level(logging.WARNING, logger=store_module.logger.name):
         dumps_jsonb({"a": "\x00\x00", "b": "\x00"})
     assert [record.getMessage() for record in caplog.records] == [
         "replaced 3 NUL character(s) with U+2400 in one JSON document"
@@ -81,6 +83,57 @@ async def test_migration_matches_the_orm_metadata(engine: AsyncEngine) -> None:
             lambda sync: compare_metadata(MigrationContext.configure(sync), Base.metadata)
         )
     assert drift == []
+
+
+async def test_session_change_journal_is_idempotent_and_covers_events(store: SessionStore) -> None:
+    session = make_session("session_change0001")
+    assert await store.current_change_revision() == 0
+
+    await store.upsert_sessions([session])
+    first = await store.changes_after(0)
+    assert first.current_revision == 1
+    assert first.changes[0].session_ids == (session.id,)
+
+    await store.upsert_sessions([session])
+    assert await store.current_change_revision() == 1
+
+    event = Event.model_validate(make_event(1))
+    await store.append_events(session.id, [event])
+    second = await store.changes_after(1)
+    assert second.current_revision == 2
+    assert second.changes[0].session_ids == (session.id,)
+
+    await store.append_events(session.id, [event])
+    assert await store.current_change_revision() == 2
+
+
+async def test_listener_on_another_engine_wakes_for_durable_changes(database_url: str, store: SessionStore) -> None:
+    replica_engine = make_engine(database_url)
+    replica = SessionStore(replica_engine)
+    try:
+        before = await replica.current_change_revision()
+        async with replica.listen_for_changes() as notified:
+            session = make_session("session_replica0001")
+            await store.upsert_sessions([session])
+            await asyncio.wait_for(notified.wait(), timeout=3)
+
+        replay = await replica.changes_after(before)
+        assert replay.changes[0].session_ids == (session.id,)
+    finally:
+        await replica_engine.dispose()
+
+
+async def test_change_journal_reports_when_a_resume_token_has_expired(
+    store: SessionStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(store_module, "CHANGE_RETENTION_REVISIONS", 2)
+    for index in range(4):
+        await store.upsert_sessions([make_session(f"session_retained{index:04d}")])
+
+    expired = await store.changes_after(0)
+    assert expired.current_revision == 4
+    assert expired.oldest_retained == 2
+    assert [change.revision for change in expired.changes] == [3, 4]
 
 
 if __name__ == "__main__":
