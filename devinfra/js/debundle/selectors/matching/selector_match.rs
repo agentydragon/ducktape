@@ -6,7 +6,7 @@
 //! Faithful subset: exact- and alpha-identifier structure with
 //! **expression-position single-node holes** (`ANYTHING` / `EXPR` / `STMT`
 //! matching any one subtree) and **variable-length run holes** (`STMT_LIST` /
-//! `ARGS` / `ARRAY_ELEMENTS` / `CASE_REST` / `DECLARATORS`) matched
+//! `ARGS` / `ARRAY_ELEMENTS` / `CASE_REST` / `DECLARATORS` / `SEQ_EXPRS`) matched
 //! as an ordered subsequence with gaps. Run-hole placement partitions the needle
 //! list into maximal fixed segments at the carriers, placed greedy-leftmost with
 //! `Bindings` snapshot/restore. The
@@ -28,8 +28,8 @@ use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use regex::Regex;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
-    DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
-    STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
+    DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
+    STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
 };
 
 /// A needle construct whose faithful encoding this matcher has not implemented.
@@ -626,12 +626,13 @@ fn is_single_node_hole(index: &Index, node: NodeId) -> bool {
     }
 }
 
-const RUN_HOLE_KEYWORDS: [&str; 5] = [
+const RUN_HOLE_KEYWORDS: [&str; 6] = [
     STMT_LIST_HOLE_KEYWORD,
     ARGS_HOLE_KEYWORD,
     ARRAY_ELEMENTS_HOLE_KEYWORD,
     CASE_REST_HOLE_KEYWORD,
     DECLARATORS_HOLE_KEYWORD,
+    SEQ_EXPRS_HOLE_KEYWORD,
 ];
 
 /// A run-hole keyword in any (bare/named) form. Used only as a fail-closed net:
@@ -659,6 +660,7 @@ pub fn is_hole_keyword(name: &str) -> bool {
         ARRAY_ELEMENTS_HOLE_KEYWORD,
         DECLARATORS_HOLE_KEYWORD,
         CASE_REST_HOLE_KEYWORD,
+        SEQ_EXPRS_HOLE_KEYWORD,
     ]
     .iter()
     .any(|kw| labeled_hole_name_for(name, kw).is_some())
@@ -709,6 +711,15 @@ fn is_run_hole_carrier(index: &Index, parent_kind: NodeKind, child: NodeId) -> b
         // single-element `EXPR`, not a run.
         NodeKind::Array => {
             ck == NodeKind::Ident && node_ident_hole(index, child, ARRAY_ELEMENTS_HOLE_KEYWORD)
+        }
+        // `SEQ_EXPRS` — a bare identifier element of a comma-sequence
+        // expression. SWC parses `a, b, c` as one `Seq` of three elements and
+        // never builds a `Seq` with fewer than two, so the keyword in element
+        // position is unambiguously the run hole; a needle whose only sequence
+        // element is the hole pins nothing (it matches any sequence). No
+        // `ANYTHING` form: `ANYTHING` in a sequence element is one `EXPR`.
+        NodeKind::Seq => {
+            ck == NodeKind::Ident && node_ident_hole(index, child, SEQ_EXPRS_HOLE_KEYWORD)
         }
         // `ANYTHING;` — a class field, no initializer, whose key is the keyword.
         NodeKind::Class => {

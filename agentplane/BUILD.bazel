@@ -1,17 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-# Scoped to the callers under this tree: the egress proxy's informer, the Action Service's policy
-# informer, and the app's live index.
-# Shared by callers in this package; not repo-wide infrastructure.
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
     name = "kubernetes_watch",
     srcs = ["kubernetes_watch.py"],
-    deps = [
-        "@pypi//kubernetes_asyncio",
-        "@pypi//tenacity",
-    ],
 )
 
 py_library(

@@ -4,4 +4,8 @@ resources:
   - plaid-mcp.k8s.yaml
   - db
   - app
+  - spend/spend.k8s.yaml
+  - spend/cards.sops.yaml
   - pgweb
+components:
+  - ./spend/image-pins

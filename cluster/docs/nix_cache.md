@@ -38,11 +38,12 @@ cache signs with the same key as before.
 
 Tokens (admin, per-host readers, CI writers) are HS256 JWTs signed with the
 `attic-jwt-token` secret. Reader/writer tokens are auto-rotated by the
-`attic-jwt-rotation` CronJob (`cluster/cdk8s/nix_cache/attic.py`, driven by
-`rotators.yaml` — merged into this Kustomization so its `attic-jwt-rotator`
-ServiceAccount and the bootstrap Job that reuses it apply in one ordered pass,
-rather than deadlocking across two Kustomizations depending on each other);
-admin tokens are minted ad hoc via `kubectl exec`.
+`attic-jwt-rotation` CronJob (`cluster/cdk8s/nix_cache/attic.py`; its
+`ROTATOR_CONFIG` is serialized as the `rotators.yaml` key in the
+`attic-rotators-config` ConfigMap). The generated config, its
+`attic-jwt-rotator` ServiceAccount, and the bootstrap Job that reuses it apply
+in one ordered pass, rather than deadlocking across two Kustomizations depending
+on each other. Admin tokens are minted ad hoc via `kubectl exec`.
 
 Cache **signing** keypairs — distinct from the JWT signing secret — are sourced
 from `attic-cache-keys` (mounted into the bootstrap Job at
@@ -115,18 +116,21 @@ downgrade of either.
 
 **Rollout after adding a cache:** (1) follow "Adding a new cache" above
 (generate + SOPS-seal a keypair, regenerate `nix/attic-pubkeys.json`, let Flux
-create it); (2) scope changes in `rotators.yaml` (e.g. a writer JWT gaining
-`push: [main, public]`) propagate on the next hourly `attic-jwt-rotation` run
-by themselves — `rotate_one` re-mints when the stamped `pull_unencrypted` /
-`push_unencrypted` scope diverges from the configured one, not just on
-staleness; (3) run `nix-attic-push.yml` (push to `devel` or
+create it); (2) update token scopes in `ROTATOR_CONFIG` in
+`cluster/cdk8s/nix_cache/attic.py` (e.g. give a writer JWT `push: [main,
+public]`) and run `bb run //cluster/cdk8s:generate_manifests`. After Flux applies
+the generated config, the next hourly `attic-jwt-rotation` run re-mints tokens
+whose stamped `pull_unencrypted` / `push_unencrypted` scope differs from the
+configured scope; it does not wait for token staleness; (3) run
+`nix-attic-push.yml` (push to `devel` or
 `workflow_dispatch`) so CI pushes the new cache's closures for the first time.
 
 ## CI Push
 
 Both ducktape and gaffer-private CI push to their respective caches. Writer
 JWTs auto-rotated by the cluster (1-year validity; re-mint on <24h remaining
-or on pull/push scope drift vs. `rotators.yaml`):
+or on pull/push scope drift vs. `ROTATOR_CONFIG` in
+`cluster/cdk8s/nix_cache/attic.py`):
 
 | Repo           | Workflow                               | Cache            | Reads token from                                                         |
 | -------------- | -------------------------------------- | ---------------- | ------------------------------------------------------------------------ |

@@ -286,6 +286,21 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
+  # Shared Plaid Spend display settings: Flux applies them, and the user's
+  # workstations can decrypt them to edit the card selection and limits.
+  - path_regex: cluster/k8s/agents/plaid-mcp/spend/cards\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *ci
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+
   # Cluster (active and parked), Props, Wayback, and Haku managed-agent deployment secrets (Flux + admin can decrypt).
   - path_regex: (cluster/k8s|cluster/parked|props/deploy|loom/wayback/deploy|haku/runtime/x/managed_agent/self_hosted/deploy)/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$

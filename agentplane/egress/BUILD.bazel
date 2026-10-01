@@ -66,8 +66,8 @@ py_library(
         ":policy",
         ":resources",
         "//agentplane:crd_group",
-        "//agentplane:kubernetes_watch",
         "//util:kubernetes",
+        "//util:kubernetes_watch",
         "@pypi//kubernetes_asyncio",
     ],
 )

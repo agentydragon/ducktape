@@ -30,6 +30,10 @@
 //! - `DECLARATORS` / `DECLARATORS_name = null` in a variable declaration
 //!   absorbs a run of declarators — e.g. match a few stable entries in a
 //!   wider `const` list without spelling unrelated siblings.
+//! - `SEQ_EXPRS` / `SEQ_EXPRS_name` as an element of a comma-sequence
+//!   expression absorbs a run of sequence elements — e.g. pin a memoized hook
+//!   on its callback without spelling the cache writes a rebuild adds to the
+//!   tail of its `return (test ? (memo = …, write, write) : memo = …), memo;`.
 //!
 //! List-hole suffixes are labels for readability; they do not bind the
 //! absorbed run for equality.
@@ -453,6 +457,212 @@ export { palette };
             r#""white""#,
         ],
         &["ARRAY_ELEMENTS", "readable"],
+    );
+}
+
+// A React Compiler memoized hook keeps its cache writes in one comma sequence
+// after the memo assignment: one write per dependency plus the memo write.
+// `SEQ_EXPRS` absorbs that tail, so the selector pins the hook by its memoized
+// callback and survives a rebuild that changes the dependency count. Here: two
+// writes.
+#[test]
+fn member_source_match_seq_exprs_hole_anchors_a_memoized_hook() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const slots = [];
+function loadLabel(cache, label) {
+  let memo;
+  return (cache[0] !== label
+    ? (memo = async (id) => {
+        const base = `load:${label}`;
+        return `${base}:${id}`;
+      }, cache[0] = label, cache[1] = memo)
+    : (memo = cache[1])),
+    memo;
+}
+loadLabel(slots, "first")("a").then((value) => console.log(value));
+export { loadLabel };
+"#,
+        vec![logical_module(
+            "resource",
+            &[Member::source_alpha_target(
+                "label_resource",
+                "readable",
+                r#"function readable(cache, label) {
+  let memo;
+  return (EXPR ? (memo = async (id) => {
+    const base = `load:${label}`;
+    return `${base}:${id}`;
+  }, SEQ_EXPRS) : memo = EXPR), memo;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "load:first:a\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/resource.js",
+        &["label_resource"],
+        &["loadLabel"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/resource.js",
+        // the whole hook, cache writes and all; the hole absorbed them in the
+        // selector only.
+        &["function label_resource", "load:", "cache[0]"],
+        &["SEQ_EXPRS", "readable"],
+    );
+}
+
+// The same selector against a hook whose dependency count grew: five writes
+// instead of two. The selector names no cache slot, so it still resolves
+// uniquely — the reason `SEQ_EXPRS` exists.
+#[test]
+fn member_source_match_seq_exprs_hole_survives_a_dependency_count_change() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const slots = [];
+function loadLabel(cache, label) {
+  let memo;
+  return (cache[0] !== label || cache[1] !== label || cache[2] !== label
+    ? (memo = async (id) => {
+        const base = `load:${label}`;
+        return `${base}:${id}`;
+      }, cache[0] = label, cache[1] = label, cache[2] = label, cache[3] = label,
+      cache[4] = memo)
+    : (memo = cache[4])),
+    memo;
+}
+loadLabel(slots, "first")("a").then((value) => console.log(value));
+export { loadLabel };
+"#,
+        vec![logical_module(
+            "resource",
+            &[Member::source_alpha_target(
+                "label_resource",
+                "readable",
+                r#"function readable(cache, label) {
+  let memo;
+  return (EXPR ? (memo = async (id) => {
+    const base = `load:${label}`;
+    return `${base}:${id}`;
+  }, SEQ_EXPRS) : memo = EXPR), memo;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "load:first:a\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/resource.js",
+        &["label_resource"],
+        &["loadLabel"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/resource.js",
+        &["function label_resource", "load:", "cache[4]"],
+        &["SEQ_EXPRS", "readable"],
+    );
+}
+
+// Two `SEQ_EXPRS` holes in one sequence: the element pinned between them is
+// matched in order and each hole absorbs the run on its side (including none),
+// so the sibling sequence without that literal is not claimed.
+#[test]
+fn member_source_match_two_seq_exprs_holes_bracket_a_pinned_element() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function runPipeline(flags) {
+  return (flags.on, "marker", 1, 2, flags.off);
+}
+function otherPipeline(flags) {
+  return (flags.on, 1, 2, flags.off);
+}
+console.log(runPipeline({ on: "left", off: "right" }));
+console.log(otherPipeline({ on: "left", off: "other" }));
+export { runPipeline };
+"#,
+        vec![logical_module(
+            "pipeline",
+            &[Member::source_alpha_target(
+                "marked_pipeline",
+                "readable",
+                r#"function readable(flags) {
+  return (SEQ_EXPRS, "marker", SEQ_EXPRS);
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "right\nother\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/pipeline.js",
+        &["marked_pipeline"],
+        &["runPipeline", "otherPipeline"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/pipeline.js",
+        &["function marked_pipeline", r#""marker""#, "flags.off"],
+        &["SEQ_EXPRS", "readable"],
+    );
+}
+
+// `SEQ_EXPRS` outside a comma sequence is a misplaced run hole: it reaches the
+// node matcher instead of being consumed as a list carrier, so resolution fails
+// closed rather than matching whatever expression sits there.
+#[test]
+fn source_match_seq_exprs_outside_a_sequence_reports_the_misplaced_hole() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"function actual(value) {
+  return value.trim();
+}
+console.log(actual(" ok "));
+export { actual };
+"#,
+            vec![logical_module(
+                "hooks/misplaced",
+                &[Member::source_alpha_target(
+                    "misplaced",
+                    "readable",
+                    r#"function readable(value) {
+  return SEQ_EXPRS;
+}"#,
+                )],
+            )],
+        ),
+        &["SEQ_EXPRS", "run-hole keyword outside a list position"],
+    );
+}
+
+// A lone `(SEQ_EXPRS)` is not a sequence — a comma sequence needs at least two
+// syntactic elements — so the keyword sits in an ordinary expression position
+// and the selector is rejected the same way, not read as "any expression".
+#[test]
+fn source_match_lone_seq_exprs_in_parens_reports_the_misplaced_hole() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"function actual(value) {
+  return value.trim();
+}
+console.log(actual(" ok "));
+export { actual };
+"#,
+            vec![logical_module(
+                "hooks/lone_hole",
+                &[Member::source_alpha_target(
+                    "lone_hole",
+                    "readable",
+                    r#"function readable(value) {
+  return (SEQ_EXPRS);
+}"#,
+                )],
+            )],
+        ),
+        &["SEQ_EXPRS", "run-hole keyword outside a list position"],
     );
 }
 

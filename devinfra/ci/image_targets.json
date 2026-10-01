@@ -115,6 +115,10 @@
       "test": "//finance/plaid/...",
       "registry": "forgejo"
     },
+    "plaid-spend": {
+      "target": "//finance/plaid/spend:server_image",
+      "registry": "forgejo"
+    },
     "study-casino": {
       "target": "//study_casino:image",
       "test": "//study_casino/...",
@@ -188,6 +192,10 @@
     },
     "cpap-sync": {
       "target": "//cpap:image",
+      "registry": "forgejo"
+    },
+    "vm-image-restart": {
+      "target": "//cluster/controllers/vm_image_restart:image",
       "registry": "forgejo"
     },
     "claude-session-sync": {

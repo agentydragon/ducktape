@@ -40,6 +40,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Ne
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vm_image_restart import OPT_IN_ANNOTATION, VmImageRestartController
 
 NAME = "cpap-sync"
 NAMESPACE = "cpap-sync"
@@ -70,11 +71,12 @@ def _gateway_vm(chart: Chart) -> VirtualMachine:
         name=_GATEWAY,
         namespace=NAMESPACE,
         annotations={
+            OPT_IN_ANNOTATION: "true",
             "description": (
                 "Always-on KubeVirt gateway for the CPAP ez Share WiFi card. The USB adapter stays physically "
                 "attached to OptiPlex and is passed through to this VM; the VM exposes only the card's HTTP API "
                 "to the sync Service."
-            )
+            ),
         },
         # A stateless VM disk.
         image=_GATEWAY_IMAGE,
@@ -205,6 +207,7 @@ def chart(app: App) -> Chart:
             ),
         ),
     )
+
     k8s.KubeService(
         chart,
         "card-service",
@@ -231,7 +234,8 @@ def chart(app: App) -> Chart:
             ],
         ),
     )
-    _gateway_vm(chart)
+    gateway = _gateway_vm(chart)
+    VmImageRestartController(chart, "vm-image-restart-controller", target_vm=gateway)
     NetworkPolicy(
         chart,
         "egress",

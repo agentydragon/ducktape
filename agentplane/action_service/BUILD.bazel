@@ -1003,6 +1003,7 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
         "//util:kubernetes",
+        "//util:kubernetes_watch",
         "@pypi//kubernetes_asyncio",
     ],
 )

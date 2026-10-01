@@ -34,6 +34,42 @@ spec:
         port: "5432"
         username: plaid_ro
 ---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: plaid-mcp-db-spend-generator
+  namespace: plaid-mcp
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-mcp-db-spend
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: plaid-mcp-db-spend-generator
+  refreshInterval: 8760h
+  target:
+    name: plaid-mcp-db-spend
+    template:
+      data:
+        DATABASE_URL: postgresql://plaid_spend:{{ .password }}@plaid-mcp-db-rw.plaid-mcp.svc:5432/plaidmcp
+        dbname: plaidmcp
+        host: plaid-mcp-db-rw.plaid-mcp.svc
+        password: "{{ .password }}"
+        port: "5432"
+        username: plaid_spend
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -137,6 +173,12 @@ spec:
         name: plaid_ro
         passwordSecret:
           name: plaid-mcp-db-readonly
+      - comment: Read-only runtime role for plaid-spend's four Plaid source tables.
+        ensure: present
+        login: true
+        name: plaid_spend
+        passwordSecret:
+          name: plaid-mcp-db-spend
   monitoring:
     enablePodMonitor: true
   probes:
@@ -181,7 +223,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   annotations:
-    description: Applies read-only object GRANTs for plaid_ro after the CNPG cluster creates the role.
+    description: Grants the minimal Plaid source reads needed by plaid_ro and plaid_spend.
     kustomize.toolkit.fluxcd.io/force: enabled
   name: plaid-mcp-db-readonly-provisioner
   namespace: plaid-mcp
@@ -195,10 +237,14 @@ spec:
       containers:
         - args:
             - |
-              set -x
-              exec psql \
-                --set=ON_ERROR_STOP=1 \
-                -f /sql/readonly-role.sql
+              set -euo pipefail
+              for attempt in $(seq 1 60); do
+                role_count=$(psql --tuples-only --no-align --quiet -c "SELECT count(*) FROM pg_roles WHERE rolname IN ('plaid_ro', 'plaid_spend')" 2>/dev/null || true)
+                if [[ "$role_count" == 2 ]]; then break; fi
+                if [[ "$attempt" == 60 ]]; then echo 'CNPG did not create Plaid read roles' >&2; exit 1; fi
+                sleep 2
+              done
+              exec psql --set=ON_ERROR_STOP=1 -f /sql/readonly-role.sql
           command:
             - /bin/bash
             - -c

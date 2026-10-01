@@ -34,7 +34,7 @@ Default to this ladder when writing or repairing selectors:
    semantically stable.
 2. Add anonymous `ANYTHING` holes where the hole name would not carry useful
    signal. Use typed holes (`EXPR`, `STMT`, `ARGS`, `STMT_LIST`,
-   `ARRAY_ELEMENTS`, `CASE_REST`, or `DECLARATORS`) when the
+   `ARRAY_ELEMENTS`, `CASE_REST`, `DECLARATORS`, or `SEQ_EXPRS`) when the
    syntactic role, typed list behavior, or a readability label makes the
    selector easier to read or diagnose. Hole suffixes are cosmetic labels, not
    equality constraints.
@@ -42,7 +42,7 @@ Default to this ladder when writing or repairing selectors:
    when they carry the stable signal.
 4. Avoid exact long bodies/subexpressions unless they are the stable signal
    needed to disambiguate. If `ANYTHING`, `EXPR`, `ARGS`,
-   `CASE_REST`, `STMT_LIST`, or declarator gaps keep the selector
+   `CASE_REST`, `STMT_LIST`, `SEQ_EXPRS`, or declarator gaps keep the selector
    unique, use the hole form.
 5. When the entity has no distinctive shape of its own — a bare delegator, one
    of several byte-identical helper copies, an empty subclass, a re-export
@@ -126,6 +126,11 @@ selector-language work.
   expression, value, statement, pattern, declarator-run, and class-rest positions.
 - **A single-statement `else`/`if`/`for`/while body takes `STMT`, not `STMT_LIST`**;
   `STMT_LIST` is for a block body.
+- **`SEQ_EXPRS` is a sequence element, not an expression hole.** A comma
+  sequence has two or more elements, so `return (SEQ_EXPRS);` is a misplaced
+  run hole (`invalid`, `run-hole keyword outside a list position`) and
+  `return (EXPR, SEQ_EXPRS);` is the spelling of "a sequence whose tail does
+  not matter".
 - **The declaration keyword must match the source** (`var`/`let`/`const`).
 - **A free chunk spelling can collide with an export name.** A template that
   keeps a minified name (`cx()`) references whichever entity is exported as
@@ -592,9 +597,9 @@ const config = {
 ```
 
 Keep the typed spelling when the role is not obvious from nearby syntax, or
-when you need typed list-hole forms such as `ARGS`, `STMT_LIST`, or
-`ARRAY_ELEMENTS`. Use labels only to make a selector easier to read;
-they do not impose equality.
+when you need typed list-hole forms such as `ARGS`, `STMT_LIST`,
+`ARRAY_ELEMENTS`, or `SEQ_EXPRS`. Use labels only to make a selector easier to
+read; they do not impose equality.
 `{ key: ANYTHING }` wildcards the value expression; `{ ANYTHING: value }` is
 rejected because object property keys are exact anchors, not wildcard
 positions.
@@ -664,6 +669,36 @@ absorbed sequence for cross-occurrence equality.
 
 - `DECLARATORS` (or `DECLARATORS_name = null`) inside one variable declaration
   matches a run of declarators.
+- `SEQ_EXPRS` (or `SEQ_EXPRS_name`) as an element of a comma-sequence
+  expression matches a run of sequence elements — "this sequence by these
+  elements, ignore the rest".
+
+  ```yaml
+  source_matches:
+    - match: |
+        function readable(cache, label) {
+          let memo;
+          return (EXPR ? (memo = async (id) => {
+            const base = `load:${label}`;
+            return `${base}:${id}`;
+          }, SEQ_EXPRS) : memo = EXPR), memo;
+        }
+      bindings:
+        - local: readable
+          name: ResourceHook
+  ```
+
+  That is a React Compiler memoized hook. Every element after the memo
+  assignment is a cache write — one per dependency, plus the write of the
+  memo itself — so a rebuild that adds a dependency appends elements no
+  selector named. The memoized callback and the `: memo = EXPR` fallback
+  carry the shape.
+
+  A comma sequence has two or more syntactic elements, so a lone
+  `(SEQ_EXPRS)` names no sequence and the hole has no list to sit in: like any
+  other misplaced run hole it is rejected with the
+  `run-hole keyword outside a list position` error rather than matching an
+  arbitrary expression.
 
 ```yaml
 source_matches:

@@ -102,6 +102,7 @@
 
   ducktape.aiquota.enable = true;
   ducktape.aiquota.remoteApi.enable = true;
+  ducktape.plaidSpend.enable = true;
 
   home.packages = [
     ducktapePackages.bebas-neue-font
