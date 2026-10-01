@@ -125,7 +125,7 @@ Claude web or Haku: it is co-subjected only onto the secret-free
 `cluster-diagnostics-reader` binding. It does not receive a writable sandbox
 namespace or the separate `logs-configmaps-reader` class.
 
-### 6. claude-ai (agentplane-staging) — diagnostics, agent-readable namespaces, Coinbase key, testing app token
+### 6. Agentplane staging — claude-ai diagnostics and Action Service credential grants
 
 The `claude-ai` ServiceAccount in `agentplane-staging` is the principal for Connections
 enrolled from the Claude.ai MCP connector (`cluster/cdk8s/agentplane/actions_staging_policies.py`);
@@ -141,6 +141,12 @@ and nothing else, for the acceptance suite's harness scenarios
 `logs-configmaps-reader` class. Distinct from Haku's own identities (`oidc-ksbx-groups:haku` et
 al.) even though a claude-ai sandbox may separately carry Haku's own Forgejo credential via
 `EgressBinding` — that authority is unrelated to this Kubernetes RBAC grant.
+
+The static `haku-agent` ServiceAccount is also bound to the Coinbase Secret reader Role in
+`agentplane-staging` and may create the same acceptance-suite token in `agentplane-testing`.
+It is a separate identity from Haku's login identities in section 4. The Integration App creates
+a ServiceAccount per runner Sandbox; those per-Sandbox identities do not inherit these static
+ServiceAccount bindings.
 
 ### Grant inventory
 
