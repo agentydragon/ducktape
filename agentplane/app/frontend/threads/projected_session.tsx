@@ -704,9 +704,9 @@ function ProjectedSessionBody({
     harness: controls?.harness_state ?? null,
     activeTurn: Boolean(running && activeTurn),
   });
-  const pulseEpoch = useRef<number | null>(null);
-  if (status.pulse) pulseEpoch.current ??= Date.now();
-  else pulseEpoch.current = null;
+  const pulseEpoch = useRef<ThreadFaviconPulseEpoch>({ current: null });
+  if (status.pulse) pulseEpoch.current.current ??= Date.now();
+  else pulseEpoch.current.current = null;
   useEffect(() => onStatusLabelChange(status.tabLabel), [onStatusLabelChange, status.tabLabel]);
   useEffect(() => installThreadFavicon(status, pulseEpoch.current), [status.color, status.pulse]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
