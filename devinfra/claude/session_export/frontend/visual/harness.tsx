@@ -108,7 +108,31 @@ const eventPage: SessionEventPage = {
         content: [
           { type: "thinking", thinking: "I should inspect the failing test and its fixture." },
           { type: "text", text: "I’ll read the test file and follow the fixture." },
+          {
+            type: "tool_use",
+            id: "tool-bash",
+            name: "Bash",
+            input: { command: "rg -n 'foldSessionEvents' devinfra/claude/session_export/frontend" },
+          },
+          {
+            type: "tool_use",
+            id: "tool-grep",
+            name: "Grep",
+            input: { pattern: "foldSessionEvents", path: "devinfra/claude" },
+          },
+          {
+            type: "tool_use",
+            id: "tool-glob",
+            name: "Glob",
+            input: { pattern: "**/*.test.ts", path: "devinfra/claude" },
+          },
           { type: "tool_use", id: "tool-read", name: "Read", input: { file_path: "tests/test_viewer.py" } },
+          {
+            type: "tool_use",
+            id: "tool-agent",
+            name: "Task",
+            input: { description: "Check the session status fixture" },
+          },
         ],
       },
     }),
@@ -119,8 +143,28 @@ const eventPage: SessionEventPage = {
         content: [
           {
             type: "tool_result",
+            tool_use_id: "tool-bash",
+            content: [{ type: "text", text: "Found the event fold and its tests." }],
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "tool-grep",
+            content: [{ type: "text", text: "3 matches in the session viewer." }],
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "tool-glob",
+            content: [{ type: "text", text: "Found 6 frontend test files." }],
+          },
+          {
+            type: "tool_result",
             tool_use_id: "tool-read",
             content: [{ type: "text", text: "The fixture marks the session paused, but the test expected active." }],
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "tool-agent",
+            content: [{ type: "text", text: "The assertion should expect paused." }],
           },
         ],
       },
@@ -129,6 +173,7 @@ const eventPage: SessionEventPage = {
       type: "system",
       subtype: "task_started",
       task_id: "task-tests",
+      parent_tool_use_id: "tool-agent",
       task_type: "agent",
       description: "Check the session status fixture",
     }),
@@ -136,6 +181,7 @@ const eventPage: SessionEventPage = {
       type: "system",
       subtype: "task_notification",
       task_id: "task-tests",
+      parent_tool_use_id: "tool-agent",
       status: "completed",
       summary: "The fixture uses paused; the assertion expected active.",
     }),

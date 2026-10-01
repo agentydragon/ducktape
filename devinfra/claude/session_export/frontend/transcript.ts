@@ -11,16 +11,31 @@ export type TranscriptMessage = TranscriptBase & {
   kind: "message";
   role: "user" | "assistant";
   text: string;
+  originToolUseId?: string;
 };
 
-export type TranscriptTool = TranscriptBase & {
-  kind: "tool";
+export type TranscriptToolStatus = "running" | "complete" | "error" | "denied" | "interrupted";
+
+export type TranscriptToolCall = {
+  id: string;
   toolUseId: string;
   name: string;
   input: unknown;
   result?: string;
+  progress?: string;
+  summary?: string;
   failed?: boolean;
-  status: "running" | "complete" | "error";
+  policyDenied?: boolean;
+  status: TranscriptToolStatus;
+  tasks: TranscriptActivity[];
+  events: SessionEvent[];
+};
+
+export type TranscriptToolRun = TranscriptBase & {
+  kind: "tool-run";
+  tools: TranscriptToolCall[];
+  status: TranscriptToolStatus;
+  standalone: boolean;
 };
 
 export type TranscriptActivity = TranscriptBase & {
@@ -49,7 +64,26 @@ export type TranscriptNotice = TranscriptBase & {
 };
 
 export type TranscriptItem =
-  TranscriptMessage | TranscriptTool | TranscriptActivity | TranscriptThinking | TranscriptSummary | TranscriptNotice;
+  | TranscriptMessage
+  | TranscriptToolRun
+  | TranscriptActivity
+  | TranscriptThinking
+  | TranscriptSummary
+  | TranscriptNotice;
+
+/** Claude Web consumes message-shaped records; Ducktape persists an API envelope. */
+export type AdaptedSessionEvent = {
+  sourceEvent: SessionEvent;
+  type: string;
+  payload: JsonObject;
+};
+
+export function adaptSessionEvent(event: SessionEvent): AdaptedSessionEvent {
+  const payload = object(event.payload) ?? {};
+  const sourceType = string(payload.type) ?? event.event_type;
+  const type = sourceType === "user_message" ? "user" : sourceType === "assistant_message" ? "assistant" : sourceType;
+  return { sourceEvent: event, type, payload };
+}
 
 function object(value: unknown): JsonObject | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as JsonObject) : null;
@@ -77,15 +111,15 @@ function textFrom(value: unknown, depth = 0): string | null {
   return null;
 }
 
-function payloadOf(event: SessionEvent): JsonObject {
-  return object(event.payload) ?? {};
-}
-
-function eventKind(event: SessionEvent, payload: JsonObject): string {
-  const type = string(payload.type) ?? event.event_type;
-  if (type === "user_message") return "user";
-  if (type === "assistant_message") return "assistant";
-  return type;
+function toolResultText(value: unknown): string | null {
+  const record = object(value);
+  if (record === null) return textFrom(value);
+  const output: string[] = [];
+  for (const key of ["stdout", "stderr", "output", "content", "message", "result", "summary"]) {
+    const text = textFrom(record[key]);
+    if (text !== null && !output.includes(text)) output.push(text);
+  }
+  return output.length === 0 ? textFrom(value) : output.join("\n");
 }
 
 function eventId(event: SessionEvent): string {
@@ -127,26 +161,79 @@ function usageDetails(payload: JsonObject): string[] {
   return details;
 }
 
+const STANDALONE_TOOLS = new Set([
+  "AskUserQuestion",
+  "ExitPlanMode",
+  "Workflow",
+  "Artifact",
+  "ReportFindings",
+  "ClaudeDesign",
+  "SendUserMessage",
+  "SendUserFile",
+]);
+
+function addEvent(events: SessionEvent[], event: SessionEvent): void {
+  if (!events.some((previous) => previous.event_id === event.event_id)) events.push(event);
+}
+
+function aggregateStatus(tools: TranscriptToolCall[]): TranscriptToolStatus {
+  if (tools.some((tool) => tool.status === "running")) return "running";
+  if (tools.some((tool) => tool.status === "error")) return "error";
+  if (tools.some((tool) => tool.status === "denied")) return "denied";
+  if (tools.some((tool) => tool.status === "interrupted")) return "interrupted";
+  return "complete";
+}
+
+function sendToolMessage(tool: TranscriptToolCall): string | null {
+  if ((tool.name !== "SendUserMessage" && tool.name !== "SendUserFile") || tool.status !== "complete") return null;
+  if (tool.failed || tool.policyDenied) return null;
+  const input = object(tool.input) ?? {};
+  return string(input.message) ?? string(input.caption) ?? null;
+}
+
 /**
- * Turns the lossless event log into a compact conversation view. Message text is
- * emitted as message rows; tool results update the matching tool call; task lifecycle
- * events update one activity row. Unknown event kinds remain visible as notices,
- * with their original payload available from the item for an expandable detail.
+ * Adapt Ducktape's lossless event envelope into transcript rows. Tool calls are
+ * grouped when adjacent in one assistant content list; results, progress, task
+ * updates and policy denials are correlated back to those calls. This follows
+ * the extracted Claude Web fold boundary while keeping Ducktape's original
+ * events attached for inspection.
  */
 export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
-  const ordered = [...events].sort(sequenceOrder);
+  const ordered = [...events].sort(sequenceOrder).map(adaptSessionEvent);
   const items: TranscriptItem[] = [];
-  const toolIndex = new Map<string, number>();
-  const taskIndex = new Map<string, number>();
+  const toolsById = new Map<string, { call: TranscriptToolCall; run: TranscriptToolRun }>();
+  const tasksById = new Map<
+    string,
+    { activity: TranscriptActivity; tool?: TranscriptToolCall; run?: TranscriptToolRun }
+  >();
+  const deniedTools = new Map<string, SessionEvent[]>();
 
-  const addMessage = (role: "user" | "assistant", text: string, event: SessionEvent): void => {
+  const addMessage = (
+    role: "user" | "assistant",
+    text: string,
+    event: SessionEvent,
+    originToolUseId?: string
+  ): void => {
     const previous = items.at(-1);
-    if (previous?.kind === "message" && previous.role === role && previous.events.at(-1)?.event_id === event.event_id) {
+    if (
+      originToolUseId === undefined &&
+      previous?.kind === "message" &&
+      previous.role === role &&
+      previous.originToolUseId === undefined &&
+      previous.events.at(-1)?.event_id === event.event_id
+    ) {
       previous.text = `${previous.text}\n${text}`;
-      previous.events.push(event);
+      addEvent(previous.events, event);
       return;
     }
-    items.push({ kind: "message", id: `${eventId(event)}-${items.length}`, role, text, events: [event] });
+    items.push({
+      kind: "message",
+      id: originToolUseId === undefined ? `${eventId(event)}-${items.length}` : `tool-message-${originToolUseId}`,
+      role,
+      text,
+      ...(originToolUseId === undefined ? {} : { originToolUseId }),
+      events: [event],
+    });
   };
 
   const addToolResult = (
@@ -155,43 +242,58 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     failed: boolean,
     event: SessionEvent
   ): void => {
-    const index = toolUseId === null ? undefined : toolIndex.get(toolUseId);
-    const previous = index === undefined ? undefined : items[index];
-    if (previous?.kind === "tool") {
-      previous.result = result ?? previous.result;
-      previous.failed = failed;
-      previous.status = failed ? "error" : "complete";
-      previous.events.push(event);
+    const match = toolUseId === null ? undefined : toolsById.get(toolUseId);
+    if (match !== undefined) {
+      match.call.result = result ?? match.call.result;
+      match.call.failed = failed;
+      match.call.status = failed ? "error" : match.call.policyDenied ? "denied" : "complete";
+      addEvent(match.call.events, event);
+      addEvent(match.run.events, event);
+      match.run.status = aggregateStatus(match.run.tools);
       return;
     }
-    items.push({
-      kind: "tool",
-      id: `${eventId(event)}-${items.length}`,
-      toolUseId: toolUseId ?? eventId(event),
+    const callId = toolUseId ?? eventId(event);
+    const call: TranscriptToolCall = {
+      id: callId,
+      toolUseId: callId,
       name: "Tool result",
       input: null,
       result: result ?? undefined,
       failed,
       status: failed ? "error" : "complete",
+      tasks: [],
       events: [event],
-    });
+    };
+    const run: TranscriptToolRun = {
+      kind: "tool-run",
+      id: `tool-run-result-${callId}`,
+      tools: [call],
+      status: call.status,
+      standalone: true,
+      events: [event],
+    };
+    items.push(run);
+    if (toolUseId !== null) toolsById.set(toolUseId, { call, run });
   };
 
   const addActivity = (event: SessionEvent, payload: JsonObject, subtype: string): void => {
     const taskId = string(payload.task_id) ?? eventId(event);
+    const parentToolUseId = string(payload.parent_tool_use_id);
+    const parentMatch = parentToolUseId === null ? undefined : toolsById.get(parentToolUseId);
+    const parentTool = parentMatch?.call;
     const status = statusText(payload.status, subtype === "task_started" ? "running" : subtype.replace("task_", ""));
     const title = string(payload.description) ?? string(payload.task_type) ?? "Background task";
     const detail = textFrom(payload.summary) ?? textFrom(payload.message) ?? textFrom(payload.progress);
-    const index = taskIndex.get(taskId);
-    const previous = index === undefined ? undefined : items[index];
-    if (previous?.kind === "activity") {
-      previous.status = status;
-      previous.detail = detail ?? previous.detail;
-      previous.events.push(event);
+    const previous = tasksById.get(taskId);
+    if (previous !== undefined) {
+      previous.activity.status = status;
+      previous.activity.detail = detail ?? previous.activity.detail;
+      addEvent(previous.activity.events, event);
+      if (previous.tool !== undefined) addEvent(previous.tool.events, event);
+      if (previous.run !== undefined) addEvent(previous.run.events, event);
       return;
     }
-    taskIndex.set(taskId, items.length);
-    items.push({
+    const activity: TranscriptActivity = {
       kind: "activity",
       id: `task-${taskId}`,
       taskId,
@@ -199,26 +301,79 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
       detail: detail ?? undefined,
       status,
       events: [event],
-    });
+    };
+    tasksById.set(taskId, { activity, tool: parentTool, run: parentMatch?.run });
+    if (parentTool !== undefined) {
+      parentTool.tasks.push(activity);
+      addEvent(parentTool.events, event);
+      if (parentMatch !== undefined) addEvent(parentMatch.run.events, event);
+    } else {
+      items.push(activity);
+    }
   };
 
-  for (const event of ordered) {
-    const payload = payloadOf(event);
-    const type = eventKind(event, payload);
+  for (const adapted of ordered) {
+    const { sourceEvent: event, payload, type } = adapted;
 
     if (type === "user" || type === "assistant") {
       const role = type;
       let text = "";
+      let currentRun: TranscriptToolRun | null = null;
       const flushText = (): void => {
         if (text !== "") {
           addMessage(role, text, event);
           text = "";
         }
       };
+      const flushRun = (): void => {
+        currentRun = null;
+      };
       for (const value of contentBlocks(payload)) {
         const block = object(value);
-        if (block === null) continue;
+        if (block === null) {
+          flushRun();
+          continue;
+        }
         const blockType = string(block.type) ?? "";
+        if (blockType === "tool_use") {
+          flushText();
+          const id = string(block.id) ?? `${eventId(event)}-tool-${items.length}`;
+          const name = string(block.name) ?? "Tool";
+          const standalone = STANDALONE_TOOLS.has(name);
+          const previous = currentRun;
+          if (standalone || previous === null || previous.standalone) {
+            currentRun = {
+              kind: "tool-run",
+              id: `tool-run-${eventId(event)}-${id}`,
+              tools: [],
+              status: "running",
+              standalone,
+              events: [...(deniedTools.get(id) ?? []), event],
+            };
+            items.push(currentRun);
+          }
+          const run = currentRun;
+          if (run === null) continue;
+          const deniedEvents = deniedTools.get(id) ?? [];
+          const call: TranscriptToolCall = {
+            id,
+            toolUseId: id,
+            name,
+            input: block.input ?? null,
+            status: deniedEvents.length > 0 ? "denied" : "running",
+            policyDenied: deniedEvents.length > 0,
+            tasks: [],
+            events: [...deniedEvents, event],
+          };
+          deniedTools.delete(id);
+          run.tools.push(call);
+          run.status = aggregateStatus(run.tools);
+          for (const deniedEvent of deniedEvents) addEvent(run.events, deniedEvent);
+          toolsById.set(id, { call, run });
+          continue;
+        }
+
+        flushRun();
         if (blockType === "text") {
           const blockText = textFrom(block.text);
           if (blockText !== null) text = text === "" ? blockText : `${text}\n${blockText}`;
@@ -232,23 +387,9 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
               text: thinking,
               events: [event],
             });
-        } else if (blockType === "tool_use") {
-          flushText();
-          const id = string(block.id) ?? `${eventId(event)}-tool-${items.length}`;
-          const tool: TranscriptTool = {
-            kind: "tool",
-            id,
-            toolUseId: id,
-            name: string(block.name) ?? "Tool",
-            input: block.input ?? null,
-            status: "running",
-            events: [event],
-          };
-          toolIndex.set(id, items.length);
-          items.push(tool);
         } else if (blockType === "tool_result") {
           flushText();
-          addToolResult(string(block.tool_use_id), textFrom(block.content), block.is_error === true, event);
+          addToolResult(string(block.tool_use_id), toolResultText(block.content), block.is_error === true, event);
         } else {
           flushText();
           const description = textFrom(block);
@@ -266,7 +407,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
       const toolResult = object(payload.tool_use_result);
       if (toolResult !== null) {
         const linkedId = string(payload.tool_use_id) ?? string(toolResult.tool_use_id);
-        if (linkedId !== null) addToolResult(linkedId, textFrom(toolResult), toolResult.is_error === true, event);
+        if (linkedId !== null) addToolResult(linkedId, toolResultText(toolResult), toolResult.is_error === true, event);
       }
       continue;
     }
@@ -275,6 +416,20 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
       const subtype = string(payload.subtype) ?? "system event";
       if (subtype.startsWith("task_")) {
         addActivity(event, payload, subtype);
+      } else if (subtype === "permission_denied") {
+        const toolUseId = string(payload.tool_use_id) ?? string(object(payload.tool_use)?.id);
+        if (toolUseId !== null) {
+          const match = toolsById.get(toolUseId);
+          if (match !== undefined) {
+            match.call.policyDenied = true;
+            match.call.status = "denied";
+            addEvent(match.call.events, event);
+            addEvent(match.run.events, event);
+            match.run.status = aggregateStatus(match.run.tools);
+          } else {
+            deniedTools.set(toolUseId, [...(deniedTools.get(toolUseId) ?? []), event]);
+          }
+        }
       } else if (subtype === "init" || subtype === "thinking_tokens") {
         continue;
       } else {
@@ -292,23 +447,39 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     }
 
     if (type === "tool_progress" || type === "tool_use_summary") {
-      const name = string(payload.tool_name) ?? string(payload.name) ?? "Tool activity";
-      const id = string(payload.tool_use_id) ?? eventId(event);
+      const id = string(payload.tool_use_id);
+      const match = id === null ? undefined : toolsById.get(id);
       const detail = textFrom(payload.message) ?? textFrom(payload.summary) ?? textFrom(payload.content);
-      const status = type === "tool_progress" ? "running" : statusText(payload.status, "complete");
-      items.push({
-        kind: "activity",
-        id: `tool-activity-${id}`,
-        taskId: id,
-        title: name,
-        detail: detail ?? undefined,
-        status,
-        events: [event],
-      });
+      if (match !== undefined) {
+        if (type === "tool_progress") match.call.progress = detail ?? match.call.progress;
+        else match.call.summary = detail ?? match.call.summary;
+        addEvent(match.call.events, event);
+        addEvent(match.run.events, event);
+      } else {
+        const name = string(payload.tool_name) ?? string(payload.name) ?? "Tool activity";
+        const activityId = id ?? eventId(event);
+        items.push({
+          kind: "activity",
+          id: `tool-activity-${activityId}`,
+          taskId: activityId,
+          title: name,
+          detail: detail ?? undefined,
+          status: type === "tool_progress" ? "running" : statusText(payload.status, "complete"),
+          events: [event],
+        });
+      }
       continue;
     }
 
     if (type === "result") {
+      for (const { call, run } of toolsById.values()) {
+        if (call.status === "running") {
+          call.status = "interrupted";
+          addEvent(call.events, event);
+          addEvent(run.events, event);
+          run.status = aggregateStatus(run.tools);
+        }
+      }
       const details = usageDetails(payload);
       const resultText = textFrom(payload.result);
       if (resultText !== null) details.unshift(resultText);
@@ -325,7 +496,24 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     items.push({ kind: "notice", id: eventId(event), title, detail: detail ?? undefined, events: [event] });
   }
 
-  return items;
+  return items.flatMap((item): TranscriptItem[] => {
+    if (item.kind !== "tool-run" || !item.standalone || item.tools.length !== 1) return [item];
+    const [tool] = item.tools;
+    if (tool === undefined) return [item];
+    const text = sendToolMessage(tool);
+    return text === null
+      ? [item]
+      : [
+          {
+            kind: "message",
+            id: `tool-message-${tool.toolUseId}`,
+            role: "assistant",
+            text,
+            originToolUseId: tool.toolUseId,
+            events: item.events,
+          },
+        ];
+  });
 }
 
 export function transcriptEventTime(item: TranscriptItem): string | null {
