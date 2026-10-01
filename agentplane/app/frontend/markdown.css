@@ -40,10 +40,13 @@
 }
 
 /* A reasoning preview keeps Markdown's inline formatting while treating its block structure as
-   one continuous line. The parent clips this inline flow and supplies the ellipsis. */
+   one continuous line. Its fixed-width block clips overflowing inline content and supplies the ellipsis. */
 .agentplane-markdown--single-line {
-  display: inline;
-  white-space: inherit;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agentplane-markdown--single-line

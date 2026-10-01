@@ -395,7 +395,8 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
     reasoning = source.append(
         event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="reasoning", kind=event_pb2.ITEM_KIND_REASONING))
     )
-    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="reasoning", text="On-demand reasoning")))
+    reasoning_body = "On-demand reasoning **reaches** past one line. " * 12
+    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="reasoning", text=reasoning_body)))
     tool = source.append(
         event_pb2.Event(
             item_started=event_pb2.ItemStarted(
@@ -432,7 +433,9 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await page.goto(f"{ingress.url}/#/threads/{thread}")
                 await expect(page.get_by_text("Projected browser prefix", exact=True)).to_be_visible()
                 await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
-                await expect(page.get_by_text("On-demand reasoning", exact=True)).to_have_count(0)
+                await expect(
+                    page.locator(f'[data-thread-anchor="{reasoning.cursor}"] .agentplane-reasoning-details')
+                ).to_have_count(0)
                 await expect(page.get_by_text("On-demand tool output", exact=True)).to_have_count(0)
                 # Closed disclosures read no bodies: no body subset names their owners.
                 assert body_reads
@@ -488,10 +491,12 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 )
                 await run.locator("summary", has_text="Output").click()
                 await expect(run.get_by_text("On-demand tool output", exact=True)).to_be_visible()
-                await run.get_by_text("Reasoning", exact=True).click()
-                await expect(
-                    run.locator("details.agentplane-reasoning-details > .agentplane-markdown")
-                ).to_contain_text("On-demand reasoning")
+                reasoning_details = run.locator("details.agentplane-reasoning-details")
+                await expect(reasoning_details).to_be_visible()
+                await reasoning_details.locator("summary").click()
+                expanded_reasoning = reasoning_details.locator(":scope > .agentplane-markdown")
+                await expect(expanded_reasoning).to_contain_text("On-demand reasoning reaches past one line.")
+                await expect(expanded_reasoning.locator("strong")).to_have_text("reaches")
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-expanded.png")
 
                 await page.reload()

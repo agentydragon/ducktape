@@ -110,16 +110,18 @@ function ReasoningPreview({
 
   useLayoutEffect(() => {
     const element = preview.current;
-    if (body === null || !element) {
+    const content = element?.querySelector<HTMLElement>(".agentplane-markdown--single-line");
+    if (body === null || !element || !content) {
       onOverflowChange(false);
       return;
     }
     const measure = () => {
-      onOverflowChange(element.scrollWidth > element.clientWidth + 1);
+      onOverflowChange(content.scrollWidth > content.clientWidth + 1);
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
+    observer.observe(content);
     return () => observer.disconnect();
   }, [body, onOverflowChange]);
 
