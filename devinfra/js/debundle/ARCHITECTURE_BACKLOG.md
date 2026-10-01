@@ -104,10 +104,10 @@ Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
    each needs substantial captured state from `LowerChunkInputs` (15–20
    fields). Related: `lowering/mod.rs` carries a ~95-line import block from
    wildcard `use super::*` in every sub-module.
-4. `output_layout.rs` — replace the 10 identical `self.root.join(CONSTANT)`
+4. `artifacts/output_layout.rs` — replace the 10 identical `self.root.join(CONSTANT)`
    accessors with a data-driven `report_path(name)` plus constants.
 5. Encapsulation/type design: BTree collections in hot-path graph structures
-   (`counted_digraph.rs`, `artifact.rs`, `realizability/`) where hash-based
+   (`counted_digraph.rs`, `artifacts/artifact.rs`, `realizability/`) where hash-based
    would be measurably faster — document determinism where it is required;
    make `DepKind`'s constraining vs non-constraining axis
    (`constrains_init_order()`) a first-class type distinction; the three-layer

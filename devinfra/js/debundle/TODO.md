@@ -82,7 +82,7 @@ Proposer-gate, `debundle run` (report opt-out, chunk-level incremental
 rebuilds, codegen cache), and materialize-stage performance work lives in
 <perf/proposer.md>.
 
-1. `JsChunk::{get_file,remove_file}` (`artifact.rs`) are linear
+1. `JsChunk::{get_file,remove_file}` (`artifacts/artifact.rs`) are linear
    scans over `files`, so passes that touch every file go O(n²) per chunk.
    Replace them with a path-keyed index if fresh profiles show chunk file
    lookup hot.

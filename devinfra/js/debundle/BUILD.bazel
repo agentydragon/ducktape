@@ -155,8 +155,8 @@ rust_library(
 
 rust_library(
     name = "output_layout",
-    srcs = ["output_layout.rs"],
-    crate_root = "output_layout.rs",
+    srcs = ["artifacts/output_layout.rs"],
+    crate_root = "artifacts/output_layout.rs",
     edition = "2024",
     deps = ["@crates//:anyhow"],
 )
@@ -173,8 +173,8 @@ rust_library(
 
 rust_library(
     name = "artifact",
-    srcs = ["artifact.rs"],
-    crate_root = "artifact.rs",
+    srcs = ["artifacts/artifact.rs"],
+    crate_root = "artifacts/artifact.rs",
     edition = "2024",
     deps = [
         ":analysis",
@@ -198,8 +198,8 @@ rust_test(
 
 rust_library(
     name = "write_tree",
-    srcs = ["write_tree.rs"],
-    crate_root = "write_tree.rs",
+    srcs = ["artifacts/write_tree.rs"],
+    crate_root = "artifacts/write_tree.rs",
     edition = "2024",
     deps = [
         ":artifact",
@@ -332,9 +332,9 @@ rust_test(
 
 rust_library(
     name = "emit_harness",
-    srcs = ["emit_harness.rs"],
+    srcs = ["artifacts/emit_harness.rs"],
     compile_data = ["//devinfra/js/debundle/live_proxy:harness_monitor.html"],
-    crate_root = "emit_harness.rs",
+    crate_root = "artifacts/emit_harness.rs",
     edition = "2024",
     deps = [
         ":artifact",
