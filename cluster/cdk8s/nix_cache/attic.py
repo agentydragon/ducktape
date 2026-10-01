@@ -9,6 +9,8 @@ image-pins).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
@@ -51,56 +53,56 @@ ROTATOR_CONFIG = Config(
     tokens=[
         Token(
             name="wyrm2 attic reader",
-            sops_file="secrets/hosts/wyrm2-attic.yaml",
+            sops_file=Path("secrets/hosts/wyrm2-attic.yaml"),
             sub="wyrm2",
             validity="1 year",
             pull=["main", "gaffer"],
         ),
         Token(
             name="rugged attic reader",
-            sops_file="secrets/hosts/rugged-attic.yaml",
+            sops_file=Path("secrets/hosts/rugged-attic.yaml"),
             sub="rugged",
             validity="1 year",
             pull=["main", "gaffer"],
         ),
         Token(
             name="iguana attic reader",
-            sops_file="secrets/hosts/iguana-attic.yaml",
+            sops_file=Path("secrets/hosts/iguana-attic.yaml"),
             sub="iguana",
             validity="1 year",
             pull=["main", "gaffer"],
         ),
         Token(
             name="atlas attic reader",
-            sops_file="secrets/hosts/atlas-attic.yaml",
+            sops_file=Path("secrets/hosts/atlas-attic.yaml"),
             sub="atlas",
             validity="1 year",
             pull=["main", "gaffer"],
         ),
         Token(
             name="gecko attic reader",
-            sops_file="secrets/hosts/gecko-attic.yaml",
+            sops_file=Path("secrets/hosts/gecko-attic.yaml"),
             sub="gecko",
             validity="1 year",
             pull=["main", "gaffer"],
         ),
         Token(
             name="agent-box attic reader",
-            sops_file="secrets/hosts/agent-box-attic.yaml",
+            sops_file=Path("secrets/hosts/agent-box-attic.yaml"),
             sub="agent-box",
             validity="1 year",
             pull=["main", "gaffer"],
         ),
         Token(
             name="claude-web attic reader",
-            sops_file="secrets/claude-web-attic.yaml",
+            sops_file=Path("secrets/claude-web-attic.yaml"),
             sub="claude-web",
             validity="1 year",
             pull=["main", "gaffer"],
         ),
         Token(
             name="haku attic reader",
-            sops_file="secrets/haku-attic.yaml",
+            sops_file=Path("secrets/haku-attic.yaml"),
             sub="haku",
             validity="1 year",
             pull=["main", "gaffer"],
@@ -109,7 +111,7 @@ ROTATOR_CONFIG = Config(
         # anonymous-readable bootstrap cache required before CI credentials exist.
         Token(
             name="ducktape CI attic writer (main)",
-            sops_file="secrets/ci/attic-main-writer.sops.yaml",
+            sops_file=Path("secrets/ci/attic-main-writer.sops.yaml"),
             sub="ducktape-ci",
             validity="1 year",
             pull=["main", "gaffer"],
@@ -117,7 +119,7 @@ ROTATOR_CONFIG = Config(
         ),
         Token(
             name="gaffer CI attic writer",
-            sops_file="secrets/ci/attic-gaffer-writer.sops.yaml",
+            sops_file=Path("secrets/ci/attic-gaffer-writer.sops.yaml"),
             sub="gaffer-ci",
             validity="1 year",
             pull=["gaffer"],
