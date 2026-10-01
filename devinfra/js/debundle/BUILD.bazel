@@ -442,11 +442,11 @@ rust_library(
     srcs = [
         "analysis_tests/factorization_validation.rs",
         "analysis_tests/mod.rs",
-        "chunk_analysis.rs",
         "chunk_factorization.rs",
         "counted_digraph.rs",
         "esm_import_order.rs",
         "gate.rs",
+        "gate_chunk_analysis.rs",
         "realizability/condensation_order.rs",
         "realizability/condensation_order_proptest.rs",
         "realizability/esm_simulator.rs",

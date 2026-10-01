@@ -9,19 +9,17 @@
 //! both the gate's simulator and the emitter lives in
 //! `esm_import_order`.
 
-// The standalone composer crate has a same-named directory beside this crate root.
-#[path = "chunk_analysis.rs"]
-mod chunk_analysis;
 mod chunk_factorization;
 mod counted_digraph;
 mod esm_import_order;
+mod gate_chunk_analysis;
 mod realizability;
 mod report_builders;
 mod validation;
 
-pub use chunk_analysis::ChunkAnalysis;
 pub use chunk_factorization::ChunkFactorization;
 pub use esm_import_order::EsmImportOrder;
+pub use gate_chunk_analysis::ChunkAnalysis;
 pub use realizability::{
     LadderDecision, PartitionDelta, RealizabilityIndex, RealizabilityVerdict, SccDiagnosis,
     SccRejection, check_realizability, check_realizability_touching,
