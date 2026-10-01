@@ -159,6 +159,7 @@ class SandboxView(BaseModel):
     kubernetes_grants: list[ResolvedGrant]
     kubernetes_grants_ready: bool
     kubernetes_grant_error: str | None
+    deleting: bool = False
     pod: PodStatus | None = None
 
 
@@ -174,6 +175,8 @@ class _ObjectMeta(BaseModel):
     labels: dict[str, str] = Field(default_factory=dict)
     annotations: dict[str, str] = Field(default_factory=dict)
     creation_timestamp: datetime = Field(alias="creationTimestamp")
+    deletion_timestamp: datetime | None = Field(alias="deletionTimestamp", default=None)
+    finalizers: list[str] = Field(default_factory=list)
 
 
 class _PodSpec(BaseModel):
@@ -277,7 +280,9 @@ class SandboxInventory:
         sandbox = await self._sandbox(name)
         return _view(sandbox, await self._pod(name))
 
-    async def create(self, spec: NewSandbox, *, annotations: dict[str, str] | None = None) -> SandboxView:
+    async def create(
+        self, spec: NewSandbox, *, annotations: dict[str, str] | None = None, finalizers: list[str] | None = None
+    ) -> SandboxView:
         template = _Template.model_validate(
             await self._custom_objects.get_namespaced_custom_object(
                 *EXTENSIONS_API, self._namespace, TEMPLATES_PLURAL, spec.template
@@ -308,6 +313,7 @@ class SandboxInventory:
                 "name": name,
                 "labels": {MANAGED_LABEL: "true"},
                 **({"annotations": annotations} if annotations else {}),
+                **({"finalizers": finalizers} if finalizers else {}),
             },
             # No shutdownTime and Retain: the app owns deletion, nothing expires a sandbox behind it.
             "spec": {
@@ -363,6 +369,13 @@ class SandboxInventory:
                 }
             },
         )
+
+    async def remove_finalizer(self, name: str, finalizer: str) -> None:
+        sandbox = await self._sandbox(name)
+        if finalizer in sandbox.metadata.finalizers:
+            await self._patch(
+                name, {"metadata": {"finalizers": [item for item in sandbox.metadata.finalizers if item != finalizer]}}
+            )
 
     async def suspend(self, name: str) -> None:
         await self._set_operating_mode(name, OperatingMode.SUSPENDED)
@@ -462,6 +475,7 @@ def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
         kubernetes_grants_ready=not grants
         or sandbox.metadata.annotations.get(KUBERNETES_GRANTS_READY_ANNOTATION) == "true",
         kubernetes_grant_error=sandbox.metadata.annotations.get(KUBERNETES_GRANTS_ERROR_ANNOTATION),
+        deleting=sandbox.metadata.deletion_timestamp is not None,
         pod=_pod_status(pod) if pod is not None else None,
     )
 

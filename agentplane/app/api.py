@@ -83,12 +83,12 @@ from agentplane.app.inventory import (
     SandboxRunningError,
     SandboxView,
 )
-from agentplane.app.kubernetes_bindings import KubernetesBindings
+from agentplane.app.kubernetes_bindings import KUBERNETES_BINDINGS_FINALIZER, KubernetesBindings
 from agentplane.app.kubernetes_grants import (
+    ClusterRoleBindingGrant,
     DuplicateKubernetesGrantError,
     KubernetesGrant,
     KubernetesGrantView,
-    RoleBindingGrant,
     UnknownKubernetesGrantError,
     grant_views,
     resolve_grants,
@@ -273,7 +273,16 @@ async def create_sandbox(
         annotations[SANDBOX_BINDING_ANNOTATION] = binding.model_dump_json(exclude_none=True)
     if grants:
         annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([grant.model_dump(mode="json") for grant in grants])
-    view = await inventory.create(spec, annotations=annotations or None)
+    view = await inventory.create(
+        spec,
+        annotations=annotations or None,
+        finalizers=[KUBERNETES_BINDINGS_FINALIZER]
+        if any(
+            isinstance(grant.grant, ClusterRoleBindingGrant) or grant.grant.namespace != inventory.namespace
+            for grant in grants
+        )
+        else None,
+    )
     if policies:
         await egress.grant(view, policies)
     if spec.action_policy_sets:
@@ -993,13 +1002,6 @@ def create_app(
     configured_presets = presets or PresetCatalog()
     configured_grants = kubernetes_grants or {}
     grant_views(configured_grants)  # validate catalog keys before serving requests
-    for name, grant in configured_grants.items():
-        if (
-            not isinstance(grant, RoleBindingGrant)
-            or grant.namespace != inventory.namespace
-            or grant.role_ref.kind != "Role"
-        ):
-            raise ValueError(f"Kubernetes grant {name!r} needs a binding scope not supported by this release")
     for name, preset in configured_presets.sandboxes.items():
         try:
             resolve_grants(preset.kubernetes_grants, configured_grants)

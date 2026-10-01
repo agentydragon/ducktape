@@ -49,12 +49,13 @@ from cdk8s_plus_34 import (
     RolePolicyRule,
     Service,
     ServiceAccount,
+    k8s,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
-from agentplane.app.kubernetes_grants import RoleBindingGrant
+from agentplane.app.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
@@ -174,10 +175,17 @@ class App(Construct):
 
     def _add_rbac(self, app_service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
+        grants = tuple(self.env.app_config.kubernetes_grants.values())
+        # Retain management of scopes with live bindings even if an operator removes a
+        # catalog entry. Removing an enabled choice must not strand its old bindings.
+        cleanup_namespaces = set(self.env.app_config.kubernetes_binding_cleanup_namespaces)
+        role_binding_namespaces = {
+            grant.namespace for grant in grants if isinstance(grant, RoleBindingGrant)
+        } | cleanup_namespaces
         role_binding_grant_names = sorted(
             {
                 grant.role_ref.name
-                for grant in self.env.app_config.kubernetes_grants.values()
+                for grant in grants
                 if (
                     isinstance(grant, RoleBindingGrant)
                     and grant.namespace == namespace
@@ -186,16 +194,92 @@ class App(Construct):
             }
         )
         role_binding_rules: list[RolePolicyRule] = []
-        if role_binding_grant_names:
+        if namespace in role_binding_namespaces:
             role_binding_rules.append(
                 RolePolicyRule(
                     resources=[custom_resource("rbac.authorization.k8s.io", "rolebindings")],
                     verbs=["create", "get", "list", "delete"],
                 )
             )
+        if role_binding_grant_names:
             role_binding_rules.extend(
                 RolePolicyRule(resources=[named_resource("rbac.authorization.k8s.io", "roles", name)], verbs=["bind"])
                 for name in role_binding_grant_names
+            )
+        for target_namespace in sorted(role_binding_namespaces - {namespace}):
+            role = Role(
+                self,
+                f"managed-bindings-role-{target_namespace}",
+                metadata=ApiObjectMetadata(name=f"{namespace}-managed-bindings", namespace=target_namespace),
+                rules=[
+                    RolePolicyRule(
+                        resources=[custom_resource("rbac.authorization.k8s.io", "rolebindings")],
+                        verbs=["create", "get", "list", "delete"],
+                    ),
+                    *[
+                        RolePolicyRule(
+                            resources=[named_resource("rbac.authorization.k8s.io", "roles", name)], verbs=["bind"]
+                        )
+                        for name in sorted(
+                            {
+                                grant.role_ref.name
+                                for grant in grants
+                                if isinstance(grant, RoleBindingGrant)
+                                and grant.namespace == target_namespace
+                                and grant.role_ref.kind == "Role"
+                            }
+                        )
+                    ],
+                ],
+            )
+            RoleBinding(
+                self,
+                f"managed-bindings-binding-{target_namespace}",
+                metadata=ApiObjectMetadata(name=f"{namespace}-managed-bindings", namespace=target_namespace),
+                role=role,
+            ).add_subjects(app_service_account)
+        bind_cluster_roles = sorted({grant.role_ref.name for grant in grants if grant.role_ref.kind == "ClusterRole"})
+        uses_cluster_binding = self.env.app_config.kubernetes_cluster_binding_cleanup or any(
+            isinstance(grant, ClusterRoleBindingGrant) for grant in grants
+        )
+        if bind_cluster_roles or uses_cluster_binding:
+            k8s.KubeClusterRole(
+                self,
+                "managed-cluster-bindings-role",
+                metadata=k8s.ObjectMeta(name=f"{namespace}-managed-cluster-bindings"),
+                rules=[
+                    *(
+                        [
+                            k8s.PolicyRule(
+                                api_groups=["rbac.authorization.k8s.io"],
+                                resources=["clusterrolebindings"],
+                                verbs=["create", "get", "list", "delete"],
+                            )
+                        ]
+                        if uses_cluster_binding
+                        else []
+                    ),
+                    *[
+                        k8s.PolicyRule(
+                            api_groups=["rbac.authorization.k8s.io"],
+                            resources=["clusterroles"],
+                            resource_names=[name],
+                            verbs=["bind"],
+                        )
+                        for name in bind_cluster_roles
+                    ],
+                ],
+            )
+            k8s.KubeClusterRoleBinding(
+                self,
+                "managed-cluster-bindings-binding",
+                metadata=k8s.ObjectMeta(name=f"{namespace}-managed-cluster-bindings"),
+                role_ref=k8s.RoleRef(
+                    api_group="rbac.authorization.k8s.io",
+                    kind="ClusterRole",
+                    name=f"{namespace}-managed-cluster-bindings",
+                ),
+                subjects=[k8s.Subject(kind="ServiceAccount", name=NAME, namespace=namespace)],
             )
         # TokenReview proves a Bearer token the app itself was handed. Creating a
         # review grants none of the reviewed identity's authority.

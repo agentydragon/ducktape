@@ -50,7 +50,7 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.inventory import SandboxInventory
 from agentplane.app.kubernetes_bindings import KubernetesBindings
-from agentplane.app.kubernetes_grants import KubernetesGrant
+from agentplane.app.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, RoleBindingGrant
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -146,6 +146,12 @@ class AppSettingsConfig(BaseSettings):
     )
     kubernetes_grants: dict[str, KubernetesGrant] = Field(
         default_factory=dict, description="Enabled Kubernetes binding templates; launch requests select names only."
+    )
+    kubernetes_binding_cleanup_namespaces: list[str] = Field(
+        default_factory=list, description="Past namespaced binding scopes retained for cleanup after catalog removal."
+    )
+    kubernetes_cluster_binding_cleanup: bool = Field(
+        default=False, description="Retain cluster binding cleanup after a cluster grant is removed from the catalog."
     )
     agent_instructions: str | None = Field(
         default=None,
@@ -295,7 +301,21 @@ async def async_main(settings: Settings) -> None:
         inventory = SandboxInventory(
             namespace=settings.sandbox_namespace, custom_objects=custom_objects, core_v1=CoreV1Api(api)
         )
-        kubernetes_bindings = KubernetesBindings(inventory, RbacAuthorizationV1Api(api))
+        kubernetes_bindings = KubernetesBindings(
+            inventory,
+            RbacAuthorizationV1Api(api),
+            cleanup_namespaces={
+                *settings.kubernetes_binding_cleanup_namespaces,
+                *(
+                    grant.namespace
+                    for grant in settings.kubernetes_grants.values()
+                    if isinstance(grant, RoleBindingGrant)
+                ),
+            }
+            - {settings.sandbox_namespace},
+            cleanup_cluster_bindings=settings.kubernetes_cluster_binding_cleanup
+            or any(isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()),
+        )
         egress = EgressInventory(
             namespace=settings.namespace, custom_objects=custom_objects, default_policies=settings.default_policies
         )

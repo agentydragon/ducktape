@@ -122,6 +122,8 @@ class FakeCustomObjectsApi:
         assert isinstance(body, dict)
         target = await self.get_namespaced_custom_object("", "", namespace, plural, name)
         merge_patch(target, body)
+        if target["metadata"].get("deletionTimestamp") and not target["metadata"].get("finalizers"):
+            del self.objects[(plural, name)]
         self.patches.append((plural, name, body))
         return target
 
@@ -131,7 +133,11 @@ class FakeCustomObjectsApi:
         del group, version, body
         assert namespace == NAMESPACE
         await self.get_namespaced_custom_object("", "", namespace, plural, name)
-        del self.objects[(plural, name)]
+        target = self.objects[(plural, name)]
+        if target["metadata"].get("finalizers"):
+            target["metadata"]["deletionTimestamp"] = "2026-09-02T10:01:00Z"
+        else:
+            del self.objects[(plural, name)]
         self.deleted.append((plural, name))
         return {}
 
