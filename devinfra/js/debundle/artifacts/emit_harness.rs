@@ -508,7 +508,7 @@ fn make_owner_writable(path: &Path) -> Result<()> {
 }
 
 fn harness_monitor_script() -> &'static str {
-    include_str!("live_proxy/harness_monitor.html")
+    include_str!("../live_proxy/harness_monitor.html")
 }
 
 #[cfg(test)]

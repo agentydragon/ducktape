@@ -6,7 +6,7 @@ kube-apiserver instead of exchanging it for cluster credentials, so the
 caller's own RBAC group (not this server) determines what it can do.
 
 Exposed at `https://kubectl-machine-mcp.allegedly.works` so Anthropic-hosted
-managed agents (e.g. Haku's cloud agent, `cluster/k8s/haku/cloud-agent-tf`)
+managed agents (e.g. Haku's cloud agent, `cluster/parked/cloud-agent-tf`)
 can reach the cluster with a vault-injected `static_bearer` token — that
 bearer token is the only secret involved; the pod itself holds no cluster
 credentials (its ServiceAccount has no RBAC bindings).
@@ -46,7 +46,7 @@ validates tokens against).
 
 ## Consumers
 
-- `cluster/k8s/haku/cloud-agent-tf` — Haku's Anthropic-hosted managed agent
+- `cluster/parked/cloud-agent-tf` — Haku's Anthropic-hosted managed agent
   (parked; see that directory's README).
-- `haku/runtime/managed_agent/anthropic_hosted/` — the design docs for the
+- `haku/runtime/x/managed_agent/anthropic_hosted/` — the design docs for the
   managed-agent path that uses this MCP as its cluster-access tool.

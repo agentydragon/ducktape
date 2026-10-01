@@ -1435,7 +1435,7 @@ def generate_manifests(root: Path) -> None:
         kyverno_policies_kustomization,
         external_secrets_operator_kustomization,
     )
-    haku_managed_agent_artifact = artifact("haku-managed-agent", "haku/runtime/managed_agent/self_hosted/deploy")
+    haku_managed_agent_artifact = artifact("haku-managed-agent", "haku/runtime/x/managed_agent/self_hosted/deploy")
     parked_flux_kustomizations.haku_managed_agent(
         flux_chart,
         haku_managed_agent_artifact,

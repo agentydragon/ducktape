@@ -75,7 +75,7 @@ Owner:
 
 Recreation:
 
-- Runtime B clone/pull in `haku/runtime/managed_agent/self_hosted/entrypoint.sh:17-34`, followed by a long-lived poller at `:41-45`
+- Runtime B clone/pull in `haku/runtime/x/managed_agent/self_hosted/entrypoint.sh:17-34`, followed by a long-lived poller at `:41-45`
 - Runtime C bootstrap in FastAPI lifespan at `haku/runtime/agent/supervisor.py:51-64`, while `wake()` at `:42-48` only calls the already-created agent
 
 The canonical procedure requires fresh operator state, intake, and ducktape base before orientation. Both long-lived runtimes instead synchronize once per process. A scheduled fresh session does not rerun the pod entrypoint or lifespan.
@@ -291,7 +291,7 @@ During an in-process-to-remote migration, adding `server_url` can leave the old 
 
 ### S. Managed-agent parity tests normalize away real fields
 
-`haku/base/agent_shared.yaml` claims full toolset identity across cloud and self-hosted surfaces, but `haku/base/test_agent_config_ssot.py:28-40` discards `default_config.enabled`. Self-hosted MCP toolsets explicitly enable it while cloud Terraform omits it. The cloud runtime is parked, so this is dormant. Compare the complete normalized tool/default configuration or generate both surfaces from the shared model.
+`haku/runtime/x/managed_agent/agent_shared.yaml` claims full toolset identity across cloud and self-hosted surfaces, but `haku/runtime/x/managed_agent/test_agent_config_ssot.py:28-40` discards `default_config.enabled`. Self-hosted MCP toolsets explicitly enable it while cloud Terraform omits it. The cloud runtime is parked, so this is dormant. Compare the complete normalized tool/default configuration or generate both surfaces from the shared model.
 
 ### T. Bridge runtime validation is manually synchronized with the TypeScript union
 

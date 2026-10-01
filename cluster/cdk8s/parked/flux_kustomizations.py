@@ -68,7 +68,7 @@ def haku_cloud_agent(
     return flux_kustomization(
         chart,
         name,
-        # Decrypt the SOPS Secrets in this dir (anthropic-api-key, haku-kube-token);
+        # Decrypt the SOPS workspace API key in this dir;
         # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
         # bogus key/token (401).
         artifact,

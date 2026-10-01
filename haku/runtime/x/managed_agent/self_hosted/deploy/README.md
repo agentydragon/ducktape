@@ -21,8 +21,10 @@ plan:
    `.#haku-managed-agent-image` output and recipe remain available for manual builds.
    The Haku NixOS system is excluded from routine Attic targets; flake-specific image
    outputs are not part of that target set.
-2. Confirm the environment key, environment ID, Forgejo clone credentials, image-pull
-   credentials, and the upstream/shared MCP dependencies are valid.
+2. Create a fresh Anthropic vault with the required MCP credentials and supply its ID
+   as `HAKU_MANAGED_AGENT_VAULT_ID`; the old shared vault and its credentials were
+   deleted. Confirm the environment key, Forgejo clone credentials, and image-pull
+   credentials are also valid.
 3. Remove the parked annotation, set `suspend: false`, and verify the Flux path,
    decryption key, dependencies, and selected image before allowing reconciliation.
 4. Run a deployment smoke test and confirm the worker can execute and report a tool
@@ -35,8 +37,9 @@ The path is covered by the repository's SOPS rule for cluster deployment secrets
 
 The worker clones the ducktape mirror at `git.allegedly.works/agentydragon/ducktape`,
 not GitHub, because the haku-sandbox egress proxy blocks GitHub. That mirror is bumped
-manually. Confirm it contains the intended `haku/base` and `haku/run.md` before any
-reactivated run.
+manually; confirm it contains the intended recent ducktape history because Haku reads
+it as a source. The operating manual and run procedure come from the separate
+`haku-state` clone; the old `haku/base` and `haku/run.md` manual paths are retired.
 
 The `haku` Forgejo user's read grants on `agentydragon/ducktape` and
 `agentydragon/gaffer-private` are Terraform-managed alongside those adopted Forgejo

@@ -113,7 +113,7 @@ from the proposer. Current unmeasured opportunities:
 ducktape_version)` per chunk and skip lowering, codegen, and reports
   for unchanged chunks.
 - **Opt-in heavy reports**: add `--reports=<list>` so consumers can skip the
-  per-chunk reports they do not need (`output_layout.rs` lists them).
+  per-chunk reports they do not need (`artifacts/output_layout.rs` lists them).
 
 ### Materialize-stage hot-loop optimizations
 

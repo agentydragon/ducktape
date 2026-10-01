@@ -50,7 +50,7 @@ let
   # Packages only needed by local development or cluster operations.
   localOnlyPackages = [
     # Anthropic CLI (`ant`): Claude API / Managed Agents control plane, for
-    # running `ant beta:*` (haku/runtime/managed_agent/self_hosted). Not included in the BuildBuddy Remote Runner toolset.
+    # running `ant beta:*` (haku/runtime/x/managed_agent/self_hosted). Not included in the BuildBuddy Remote Runner toolset.
     ducktapePkgs.anthropic-cli
   ]
   ++ [

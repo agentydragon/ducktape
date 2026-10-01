@@ -178,20 +178,20 @@ has shipped on the capability tier — see the README.)
 
 Runtime-specific TODOs live with each runtime (the agent loop runs at Anthropic;
 the runtimes differ in where the sandbox runs — see
-<runtime/managed_agent/README.md>):
+<runtime/x/managed_agent/README.md>):
 
 - **Self-hosted worker (Runtime B)** — operator activation to go live:
-  <runtime/managed_agent/self_hosted/README.md> and its bring-up RCA.
+  <runtime/x/managed_agent/self_hosted/README.md> and its bring-up RCA.
 - **Anthropic-hosted cloud** — **PARKED (2026-07-04)**: the cloud control-plane
   objects were deleted at Anthropic and `cluster/parked/cloud-agent-tf` is
-  suspended; see <runtime/managed_agent/anthropic_hosted/README.md> for the reason
+  suspended; see <runtime/x/managed_agent/anthropic_hosted/README.md> for the reason
   and the resume decision. Per-runtime TODO (mostly moot until resumed):
-  <runtime/managed_agent/anthropic_hosted/TODO.md>.
+  <runtime/x/managed_agent/anthropic_hosted/TODO.md>.
 
 ## Later (post-v0)
 
 - **In-cluster runtime** — realized as `runtime/agent` (Runtime C, MAF
-  self-hosted loop) and `runtime/managed_agent/self_hosted` (Runtime B, Managed
+  self-hosted loop) and `runtime/x/managed_agent/self_hosted` (Runtime B, Managed
   Agents self-hosted worker; remaining wiring in its per-runtime TODO above). The
   old `haku-scanner` image + CronJob idea is superseded.
 - **haku-traces** — push Claude Code transcripts to a store separate from

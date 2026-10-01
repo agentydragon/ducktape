@@ -12,7 +12,8 @@ releases — pin a version and check.
 procedure out of ducktape (`COPY haku/base`, `COPY haku/run.md`, and the system prompt pointing at
 `/opt/haku/base/instructions.md`). #3951 deleted both: the manual lives in the `haku-state` repo
 now, which this runtime already clones to `/workspace/haku-state`, so the image bakes nothing and
-the prompt points there instead. `haku/base/` still exists but holds only `agent_shared.yaml`.
+the prompt points there instead. The remaining Managed Agents SSOT moved with that parked
+component to `haku/runtime/x/managed_agent/agent_shared.yaml`.
 
 **Shape vs Runtime B:** there is no Anthropic-run loop and no separate worker —
 the agent loop runs in **your** process, so B's "worker + supervisor + session"

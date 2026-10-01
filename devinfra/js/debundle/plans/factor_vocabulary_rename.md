@@ -74,13 +74,13 @@ Plus one mapping and one heuristic:
 ## External Contract: `unassigned_mode: mini_factors`
 
 `UnassignedMode::MiniFactors` is the spec value `unassigned_mode: { kind:
-mini_factors }` (`spec.rs`, `e2e/mini_factors_test.rs`). Spec authors and
+mini_factors }` (`spec/spec.rs`, `e2e/mini_factors_test.rs`). Spec authors and
 downstream specs write it, so renaming it (proposed: `PerAtomicUnit`,
 `per_atomic_unit`: one synthetic module per unclaimed atomic unit) is a
 spec-format change and takes the same atomic cutover as the JSON keys below.
 
 The phrase "atomic factor unit" in comments and diagnostics
-(`factor_assembly.rs`, `atomic_units.rs`, `spec.rs`,
+(`factor_assembly.rs`, `atomic_units.rs`, `spec/spec.rs`,
 `lowering/materialize/plan_builder.rs`, `lowering/materialize/mod.rs`,
 `validation.rs`) becomes "atomic unit", the name `AtomicUnit` already has.
 

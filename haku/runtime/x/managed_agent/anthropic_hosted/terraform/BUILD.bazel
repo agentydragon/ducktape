@@ -1,6 +1,6 @@
 load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 
-# Read by //haku/base:test_agent_config_ssot (SSOT drift guard).
+# Read by //haku/runtime/x/managed_agent:test_agent_config_ssot (SSOT drift guard).
 exports_files(["main.tf"])
 
 # The Terraform CR is suspended and this root is parked. Keep the Bazel targets

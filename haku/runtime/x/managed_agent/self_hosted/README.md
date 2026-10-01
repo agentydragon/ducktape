@@ -6,20 +6,19 @@
 > remove any lingering cluster resources. See [`deploy/README.md`](deploy/README.md)
 > for the archived manifests and the conditions for reactivation.
 
-Runtime B from <../../../plans/runtime_options.md>: Anthropic runs the agent loop;
+Runtime B from <../../../../plans/runtime_options.md>: Anthropic runs the agent loop;
 tool execution runs in a worker **you** run in `haku-sandbox` (self-hosted
 sandbox, `config.type: self_hosted`). The Anthropic-hosted-sandbox alternative is
 the sibling <../anthropic_hosted/README.md>. Full design + tradeoffs:
-<../../../plans/managed_agents.md> (+ <../../../plans/managed_agents_artifacts.md>).
+<../../../../plans/managed_agents.md> (+ <../../../../plans/managed_agents_artifacts.md>).
 
 The bring-up RCA — the fix chain, diagnostics, and open issues — is in
 <debug/self_hosted_worker_bringup.md>.
 
 ## Why this is provisioned imperatively, not Terraform
 
-Unlike the sibling **anthropic-hosted** agent — which is managed declaratively by
-the `claude-managed-agents` OpenTofu provider in
-<../../../../tf/gitops/haku-cloud-agent/> — this self-hosted agent is provisioned
+Unlike the sibling **anthropic-hosted** agent — whose historical Terraform root is
+<../anthropic_hosted/terraform/> — this self-hosted agent is provisioned
 **imperatively** with `ant` (`provision.sh`, `haku.{environment,agent,deployment}.yaml`).
 
 The reason is a provider gap: `modus-agendi/anthropic-claude-managed-agents`
@@ -42,17 +41,17 @@ sends exactly that, so the imperative path works (it created the live env,
 migrated this to TF (`tf/gitops/haku-self-hosted-agent`, PR #2673) and it never
 applied for this reason, so it was reverted. Revisit only if the provider gains
 `self_hosted` (make `networking` optional / discriminated by `type`); an upstream
-issue is the path there. The **cloud** agent stays on TF — the provider handles
-`type = "cloud"` fine.
+issue is the path there. The provider can represent `type = "cloud"`, but the
+cloud agent's Anthropic resources are deleted and its Flux resource is suspended.
 
-Only the **environment / agent / deployment** are imperative. The **vault + all MCP
-credentials are declarative and shared**: the cloud agent module
-(`tf/gitops/haku-cloud-agent`) owns one vault used by both agents, publishing its ID
-to the `haku-cloud-agent-ids` Secret; `provision.sh` reads that ID instead of creating
-its own vault, so haku-console/kubectl-machine tokens get TF drift-detection +
-rotation for the self-hosted agent too. The agent's toolset is
-identical to the cloud agent's — kept in step by
-`//haku/base:test_agent_config_ssot`.
+Only the **environment / agent / deployment** are provisioned by `ant`. The
+formerly shared Anthropic vault and its MCP credentials were deleted on
+2026-09-30. The old `haku-cloud-agent-ids` output Secret may remain in the cluster,
+but its vault ID is invalid. Before reactivation, create a fresh vault and the
+required MCP credentials, then pass that vault ID as
+`HAKU_MANAGED_AGENT_VAULT_ID` to `provision.sh`. The agent's toolset is kept in
+parity with the historical cloud agent by
+`//haku/runtime/x/managed_agent:test_agent_config_ssot`.
 
 ## The worker is `worker.py` on the anthropic Python SDK (not `ant`)
 
@@ -84,16 +83,16 @@ durable memory, so a cold session just re-orients.
 
 ## Pieces
 
-| File                    | Role                                                                                 | Runs on              |
-| ----------------------- | ------------------------------------------------------------------------------------ | -------------------- |
-| `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)                             | control plane        |
-| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + 2 MCP `mcp_toolset`s (= cloud agent)   | control plane        |
-| `haku.deployment.yaml`  | scheduled-deployment wake trigger                                                    | control plane        |
-| `provision.sh`          | one-shot: create environment/agent/deployment via `ant` (vault is the shared TF one) | operator / CI        |
-| `entrypoint.sh`         | clone ducktape + haku-state, then exec `haku-managed-agent`                          | `haku-managed-agent` |
-| `worker.py`             | the poll loop (anthropic Python SDK environment worker)                              | `haku-managed-agent` |
-| `nixos.nix`             | full-NixOS worker system                                                             | manual image build   |
-| `image.nix`             | uncompressed rootfs tarball recipe for `.#haku-managed-agent-image`                  | manual image build   |
+| File                    | Role                                                                                | Runs on              |
+| ----------------------- | ----------------------------------------------------------------------------------- | -------------------- |
+| `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)                            | control plane        |
+| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + 2 MCP `mcp_toolset`s (= cloud agent)  | control plane        |
+| `haku.deployment.yaml`  | scheduled-deployment wake trigger                                                   | control plane        |
+| `provision.sh`          | one-shot: create environment/agent/deployment via `ant` (requires a fresh vault ID) | operator / CI        |
+| `entrypoint.sh`         | clone ducktape + haku-state, then exec `haku-managed-agent`                         | `haku-managed-agent` |
+| `worker.py`             | the poll loop (anthropic Python SDK environment worker)                             | `haku-managed-agent` |
+| `nixos.nix`             | full-NixOS worker system                                                            | manual image build   |
+| `image.nix`             | uncompressed rootfs tarball recipe for `.#haku-managed-agent-image`                 | manual image build   |
 
 ## Trust split — keep the org key off the worker
 
@@ -128,7 +127,7 @@ check it in a worker session with `tea whoami`.
 The fixed toolset is `agent_toolset_20260401` (`bash/read/write/edit/glob/grep`);
 Haku reaches Plaid (`psql`), Google (`curl`), and the cluster (`kubectl`,
 in-cluster `haku` SA) through `bash`. On top of that it has two native
-`mcp_toolset`s (Anthropic-side, shared-vault auth), identical to the cloud agent:
+`mcp_toolset`s (Anthropic-side vault auth), matching the historical cloud agent:
 `haku-console` (the console's aggregated MCP catalog, with approval-gated
 writes) and `kubectl-machine` (a machine-JWT cluster
 path — redundant here with in-pod `kubectl`, kept for parity).
@@ -144,7 +143,8 @@ ResourceQuota); none of it relies on agent restraint.
 ## Bring-up (only after explicit reactivation)
 
 ```sh
-./provision.sh                                   # org ANTHROPIC_API_KEY, outside the worker
+# First create a fresh vault and its MCP credentials; never use the stale output Secret.
+HAKU_MANAGED_AGENT_VAULT_ID="$VAULT_ID" ./provision.sh  # org API key, outside the worker
 # generate the environment key in the Console -> ANTHROPIC_ENVIRONMENT_KEY secret
 # deploy haku-managed-agent (env key + the HAKU_* clone/git env) in haku-sandbox
 ant beta:deployments run --deployment-id "$DEPL_ID"   # test one run, watch in Console
@@ -161,12 +161,14 @@ CI + Flux while this experiment is parked. The recorded control-plane IDs are ag
 `depl_011DSrUoXuhoDWJoPyDuePqR` (haku-scan), environment
 `env_015uqL9WAMSDytQEWWmLG9zF`.
 
-The MCP **credentials** live in the shared TF vault (`tf/gitops/haku-cloud-agent`),
-so enabling a new MCP on the live agent no longer means creating a credential here —
-Flux applies it on the shared vault. You only push the new agent version (below) so
-the `mcp_toolset` takes effect, and re-point the deployment at the shared vault once
-(`ant beta:deployments update --deployment-id <id> --vault-id <shared-vault-id>`,
-from the `haku-cloud-agent-ids` Secret).
+This self-hosted agent is distinct from the Anthropic-hosted cloud agent and was
+left in place. Its old shared-vault credentials were deleted, so treat it as
+inactive until a fresh vault is assigned to the deployment.
+
+The former shared vault and MCP credentials were deleted. On reactivation, first
+create a fresh vault with credentials for the configured MCP servers, set
+`HAKU_MANAGED_AGENT_VAULT_ID` for `provision.sh`, and point the deployment at that
+vault. Do not use an ID read from the possibly stale `haku-cloud-agent-ids` Secret.
 
 After editing `haku.agent.yaml`, apply it and re-pin in **both** steps:
 

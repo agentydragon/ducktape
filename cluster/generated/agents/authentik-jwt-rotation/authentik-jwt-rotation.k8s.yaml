@@ -75,7 +75,6 @@ rules:
   - apiGroups:
       - ""
     resourceNames:
-      - haku-cloud-kube-token
       - haku-mail-token
       - alloy-otlp-bearer
     resources:

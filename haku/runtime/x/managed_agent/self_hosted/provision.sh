@@ -13,6 +13,12 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# The former shared vault was deleted at Anthropic on 2026-09-30. Do not read the
+# stale haku-cloud-agent-ids Secret: supply the ID of a newly provisioned vault
+# that already contains the required MCP credentials before creating any objects.
+: "${HAKU_MANAGED_AGENT_VAULT_ID:?Set this to a freshly provisioned Anthropic vault ID with the required MCP credentials}"
+VAULT_ID="$HAKU_MANAGED_AGENT_VAULT_ID"
+
 ENV_ID=$(ant beta:environments create --transform id -r <"$here/haku.environment.yaml")
 echo "environment: $ENV_ID"
 echo "  -> generate its environment key in the Console (Environments -> haku-selfhosted"
@@ -22,14 +28,7 @@ echo "     secret on the haku-managed-agent Deployment (it is never created via 
 AGENT_ID=$(ant beta:agents create --transform id -r <"$here/haku.agent.yaml")
 echo "agent: $AGENT_ID"
 
-# Shared vault: the vault + ALL MCP credentials (kubectl-machine, grocy-sf, tana-ro,
-# native MCP credentials are TF-managed by the cloud agent module (tf/gitops/haku-cloud-agent)
-# and published to the haku-cloud-agent-ids Secret. Both agents reference the same
-# vault, so this agent no longer creates its own — read the shared ID. (The vault +
-# creds are the one part of the self-hosted agent that IS declarative; only the
-# environment/agent/deployment stay imperative, since the provider can't do self_hosted.)
-VAULT_ID=$(kubectl -n flux-system get secret haku-cloud-agent-ids -o jsonpath='{.data.vault_id}' | base64 -d)
-echo "shared vault: $VAULT_ID"
+echo "vault: $VAULT_ID"
 
 # Scheduled deployment = the wake trigger (one fresh session per fire).
 DEPL_ID=$(ant beta:deployments create \

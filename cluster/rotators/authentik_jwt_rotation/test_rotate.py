@@ -78,9 +78,9 @@ def test_rotate_one_formats_raw_sops_file_after_encrypt(monkeypatch, tmp_path: P
 
 def test_write_k8s_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
     out = K8sSecretOutput(
-        path=tmp_path / "cluster/k8s/haku/cloud-agent-tf/haku-kube-token.sops.yaml",
-        name="haku-kube-token",
-        namespace="flux-system",
+        path=tmp_path / "cluster/k8s/agents/haku-egress-proxy/openclaw-spike-kube-token.sops.yaml",
+        name="haku-openclaw-spike-kube-token",
+        namespace="haku-egress-proxy",
     )
     calls: list[tuple[str, object]] = []
 
@@ -218,16 +218,16 @@ def test_rotation_k8s_secret_defaults_none_and_parses():
         base
         | {
             "k8s_secret": {
-                "path": "cluster/k8s/haku/cloud-agent-tf/haku-kube-token.sops.yaml",
-                "name": "haku-cloud-kube-token",
-                "namespace": "flux-system",
+                "path": "cluster/k8s/agents/haku-egress-proxy/openclaw-spike-kube-token.sops.yaml",
+                "name": "haku-openclaw-spike-kube-token",
+                "namespace": "haku-egress-proxy",
             }
         }
     )
     assert isinstance(r.k8s_secret, K8sSecretOutput)
     assert r.k8s_secret.token_key == "jwt"  # default
     assert r.k8s_secret.exp_key == "token-exp"  # default
-    assert r.k8s_secret.namespace == "flux-system"
+    assert r.k8s_secret.namespace == "haku-egress-proxy"
 
 
 def test_build_secret_manifest_carries_token_exp_under_configured_keys():

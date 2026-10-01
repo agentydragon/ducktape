@@ -2,7 +2,7 @@
 
 Self-hosted mail for `allegedly.works`, existing so the operator can email
 Haku (`haku@allegedly.works`) over an authenticated channel — contract in
-<SPEC.md>, Haku-side usage in `haku/base/sources/mailbox.md`.
+<SPEC.md>, Haku-side usage in the `haku-state` repo's `sources/mailbox.md`.
 
 ## Layout
 
@@ -122,7 +122,7 @@ placeholder, on JMAP paths only
   (whose egress CCNP already allows cluster-internal traffic) with SASL
   OAUTHBEARER; the OIDC directory structurally rejects password (PLAIN)
   auth, so bearer tokens remain the only way in. Client setup:
-  `haku/base/sources/mailbox.md`.
+  `haku-state/sources/mailbox.md`.
 
 ## Post-deploy verification
 

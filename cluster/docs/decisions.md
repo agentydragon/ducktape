@@ -359,12 +359,12 @@ manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
   with the managed-agent consumers that used it. Its Flux Kustomization is removed
   from the active bundle; manifests remain for manual revival.
 - **Haku cloud agent**: `cluster/parked/cloud-agent-tf/` — Anthropic-hosted Managed
-  Agent; already effectively dead (the cloud objects were deleted at Anthropic), now
-  formally parked. HCL root (`tf/gitops/haku-cloud-agent/`) and design docs
-  (`haku/runtime/managed_agent/anthropic_hosted/`) are ducktape-owned and untouched.
-- **Haku managed agent**: `haku/runtime/managed_agent/self_hosted/deploy/` — the
-  self-hosted in-cluster worker (Runtime B), parked by operator request despite
-  being live at the time. Its Flux Kustomization remains suspended; automatic image
+  Agent; its control-plane objects were deleted at Anthropic on 2026-09-30 and the
+  cluster Kustomization remains suspended. The HCL root and design docs live under
+  `haku/runtime/x/managed_agent/` with the parked runtime component.
+- **Haku managed agent**: `haku/runtime/x/managed_agent/self_hosted/deploy/` — the
+  self-hosted in-cluster worker (Runtime B), parked by operator request. Its Flux
+  Kustomization remains suspended; automatic image
   build/publish is removed and its NixOS system is omitted from Attic targets, while
   the flake output stays available for deliberate manual builds. Suspension does not
   delete resources applied earlier.

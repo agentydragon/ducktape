@@ -27,12 +27,6 @@ configMapGenerator:
             expected_group: haku
             expected_audiences:
               - kubectl-sandbox-client-credentials
-            k8s_secret:
-              path: cluster/parked/cloud-agent-tf/haku-kube-token.sops.yaml
-              name: haku-cloud-kube-token
-              namespace: flux-system
-            probe:
-              url: https://kubeapi.allegedly.works/apis
           - name: haku-k8s-openclaw
             provider_slug: kubectl-sandbox-client-credentials
             scopes: openid profile email groups

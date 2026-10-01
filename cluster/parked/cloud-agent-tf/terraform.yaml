@@ -5,13 +5,11 @@ metadata:
   namespace: flux-system
 spec:
   # SUSPENDED 2026-07-04: the operator deleted the cloud managed-agent objects
-  # (agent/env/vault/deployment) directly at Anthropic. The claude-managed-agents
-  # provider's Read doesn't detect the 404s, so tofu-controller would keep reporting
-  # "no changes" against a phantom state (and the haku-cloud-agent-ids Secret still
-  # points at the deleted vault). Pause reconciliation until we decide to recreate the
-  # cloud agent (unsuspend) or retire it. NOTE: the self-hosted agent's shared-vault
-  # wiring (PR #2788) reads vault_id from this module's output Secret, so it can't be
-  # cut over until this is unsuspended and re-applied to a live vault.
+  # (agent/env/vault/deployment and four credentials) directly at Anthropic on
+  # 2026-09-30. The provider's Read doesn't detect the 404s, so tofu-controller
+  # can report "no changes" against phantom state. The haku-cloud-agent-ids Secret
+  # may still exist but contains a deleted vault ID; do not consume it. Before
+  # resuming, repair/replace the provider path and recreate every required object.
   #
   # CI note: the matching Bazel tf_module is tagged manual and the provider is
   # omitted from the global rules_tf mirror because
@@ -21,7 +19,7 @@ spec:
   suspend: true
   interval: 15m
   refreshBeforeApply: true
-  path: ./tf/gitops/haku-cloud-agent
+  path: ./haku/runtime/x/managed_agent/anthropic_hosted/terraform
   sourceRef:
     kind: GitRepository
     name: ducktape
@@ -30,20 +28,15 @@ spec:
   serviceAccountName: tf-runner
   approvePlan: "auto"
 
-  # Publish the provisioned resource IDs (agent_id, deployment_id, environment_id,
-  # vault_id — see tf/gitops/haku-cloud-agent/outputs.tf) into an in-cluster Secret
-  # so they have one canonical, machine-readable source instead of being copy-pasted
-  # literals that drift. The IDs are identifiers, not credentials; the Secret is
-  # gated by flux-system RBAC. Consumers: the cloud-agent runbook reads deployment_id
-  # from here for `ant beta:deployments run` (a future in-cluster runner would read it
-  # the same way). Empty `outputs` => all four outputs are written.
+  # A future successful apply publishes fresh IDs (agent_id, deployment_id,
+  # environment_id, vault_id; see the historical HCL outputs) here. The current
+  # Secret may still contain the deleted vault ID and must not be consumed.
   writeOutputsToSecret:
     name: haku-cloud-agent-ids
 
-  # The static_bearer credential's haku-k8s JWT is read in-cluster by the tofu
-  # root itself (kubernetes_secret_v1 data source from the haku-cloud-kube-token
-  # Secret; see tf/gitops/haku-cloud-agent/main.tf) — not via spec.vars, whose
-  # valueFrom the tf-controller doesn't resolve here.
+  # The historical root reads a static_bearer JWT from haku-cloud-kube-token.
+  # That Secret publication was removed when the Anthropic vault was deleted;
+  # restore and seed this input deliberately before any future apply.
 
   backendConfig:
     customConfiguration: |

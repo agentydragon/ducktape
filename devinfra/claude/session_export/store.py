@@ -1,19 +1,36 @@
 """PostgreSQL mirror of the synced sessions and their events (design: docs/sync.md)."""
 
+import asyncio
 import json
 import logging
 import re
-from collections.abc import Collection, Sequence
+from collections.abc import AsyncIterator, Collection, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from itertools import batched
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Text, func, or_, select, update
+import asyncpg
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    SmallInteger,
+    Text,
+    and_,
+    delete,
+    func,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from devinfra.claude.session_export.models import (
@@ -32,6 +49,8 @@ logger = logging.getLogger(__name__)
 # One statement binds at most 32767 parameters.
 SESSIONS_PER_STATEMENT = 500
 EVENTS_PER_STATEMENT = 500
+CHANGE_RETENTION_REVISIONS = 10_000
+SESSION_CHANGE_CHANNEL = "session_change"
 
 # jsonb cannot hold U+0000. The escape is live only after an even run of backslashes: `\\u0000` is a backslash
 # followed by the text "u0000".
@@ -77,6 +96,35 @@ class EventRow(Base):
     # TODO: json or jsonb? jsonb rejects NUL, so `dumps_jsonb` rewrites it (151 of 5.2M events); json keeps every
     # byte but errors at query time on those rows and has no containment or GIN. See TODO.md.
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+
+
+class SessionChangeStateRow(Base):
+    __tablename__ = "session_change_state"
+    __table_args__ = (CheckConstraint("singleton = 1", name="session_change_state_singleton"),)
+
+    singleton: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    oldest_retained: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class SessionChangeRow(Base):
+    __tablename__ = "session_changes"
+
+    revision: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    session_id: Mapped[str] = mapped_column(Text, primary_key=True)
+
+
+@dataclass(frozen=True)
+class ChangedSessions:
+    revision: int
+    session_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SessionChangeBatch:
+    current_revision: int
+    oldest_retained: int
+    changes: tuple[ChangedSessions, ...]
 
 
 def dumps_jsonb(document: Any) -> str:
@@ -150,17 +198,112 @@ class SessionStore:
     async def upsert_sessions(self, sessions: Sequence[SessionSummary]) -> None:
         """Refresh the listed metadata; `synced_last_event_at` is left alone."""
         async with self._engine.begin() as connection:
+            changed_session_ids: list[str] = []
             for batch in batched((session_values(s) for s in sessions), SESSIONS_PER_STATEMENT, strict=False):
                 statement = insert(SessionRow).values(batch)
-                await connection.execute(
+                changed = await connection.execute(
                     statement.on_conflict_do_update(
                         index_elements=[SessionRow.session_id],
                         set_={
                             column: statement.excluded[column]
                             for column in ("title", "status", "created_at", "updated_at", "last_event_at", "raw")
                         },
-                    )
+                        where=or_(
+                            SessionRow.title.is_distinct_from(statement.excluded.title),
+                            SessionRow.status.is_distinct_from(statement.excluded.status),
+                            SessionRow.created_at.is_distinct_from(statement.excluded.created_at),
+                            SessionRow.updated_at.is_distinct_from(statement.excluded.updated_at),
+                            SessionRow.last_event_at.is_distinct_from(statement.excluded.last_event_at),
+                            SessionRow.raw.is_distinct_from(statement.excluded.raw),
+                        ),
+                    ).returning(SessionRow.session_id)
                 )
+                changed_session_ids.extend(changed.scalars().all())
+            await self._record_changes(connection, changed_session_ids)
+
+    async def current_change_revision(self) -> int:
+        async with self._engine.connect() as connection:
+            return (
+                await connection.execute(
+                    select(SessionChangeStateRow.revision).where(SessionChangeStateRow.singleton == 1)
+                )
+            ).scalar_one()
+
+    async def changes_after(self, revision: int) -> SessionChangeBatch:
+        async with self._engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    select(
+                        SessionChangeStateRow.revision,
+                        SessionChangeStateRow.oldest_retained,
+                        SessionChangeRow.revision,
+                        SessionChangeRow.session_id,
+                    )
+                    .select_from(SessionChangeStateRow)
+                    .outerjoin(SessionChangeRow, SessionChangeRow.revision > revision)
+                    .where(SessionChangeStateRow.singleton == 1)
+                    .order_by(SessionChangeRow.revision, SessionChangeRow.session_id)
+                )
+            ).all()
+
+        grouped: dict[int, list[str]] = {}
+        for _, _, changed_revision, session_id in rows:
+            if changed_revision is not None and session_id is not None:
+                grouped.setdefault(changed_revision, []).append(session_id)
+        return SessionChangeBatch(
+            current_revision=rows[0][0],
+            oldest_retained=rows[0][1],
+            changes=tuple(ChangedSessions(key, tuple(ids)) for key, ids in grouped.items()),
+        )
+
+    @asynccontextmanager
+    async def listen_for_changes(self) -> AsyncIterator[asyncio.Event]:
+        """Listen for durable DB changes; notifications only wake readers to replay the journal."""
+        connection = await asyncpg.connect(
+            self._engine.url.set(drivername="postgresql").render_as_string(hide_password=False)
+        )
+        notified = asyncio.Event()
+
+        async def on_notification(_connection: object, _pid: int, _channel: str, _payload: object, /) -> None:
+            notified.set()
+
+        listener_added = False
+        try:
+            await connection.add_listener(SESSION_CHANGE_CHANNEL, on_notification)
+            listener_added = True
+            yield notified
+        finally:
+            try:
+                if listener_added:
+                    await connection.remove_listener(SESSION_CHANGE_CHANNEL, on_notification)
+            finally:
+                await connection.close()
+
+    async def _record_changes(self, connection: AsyncConnection, session_ids: Collection[str]) -> None:
+        unique_ids = sorted(set(session_ids))
+        if not unique_ids:
+            return
+
+        revision = (
+            await connection.execute(
+                update(SessionChangeStateRow)
+                .where(SessionChangeStateRow.singleton == 1)
+                .values(revision=SessionChangeStateRow.revision + 1)
+                .returning(SessionChangeStateRow.revision)
+            )
+        ).scalar_one()
+        await connection.execute(
+            insert(SessionChangeRow), [{"revision": revision, "session_id": session_id} for session_id in unique_ids]
+        )
+        oldest_retained = max(0, revision - CHANGE_RETENTION_REVISIONS)
+        if oldest_retained > 0:
+            await connection.execute(delete(SessionChangeRow).where(SessionChangeRow.revision <= oldest_retained))
+            await connection.execute(
+                update(SessionChangeStateRow)
+                .where(SessionChangeStateRow.singleton == 1)
+                .values(oldest_retained=oldest_retained)
+            )
+        await connection.execute(select(func.pg_notify(SESSION_CHANGE_CHANNEL, str(revision))))
 
     async def synced_last_event_at(self) -> dict[str, datetime | None]:
         async with self._engine.connect() as connection:
@@ -189,6 +332,70 @@ class SessionStore:
             ).one()
         return StoreCounts(sessions=sessions, behind=lagging)
 
+    async def session_page(
+        self, *, limit: int, statuses: Collection[str] | None, before: tuple[datetime, str] | None
+    ) -> tuple[list[SessionSummary], bool, tuple[datetime, str] | None]:
+        """Read sessions newest-first, with a stable cursor over `(last_event_at, session_id)`."""
+        query = select(SessionRow.last_event_at, SessionRow.session_id, SessionRow.raw)
+        if statuses is not None:
+            query = query.where(SessionRow.status.in_(statuses))
+        if before is not None:
+            timestamp, session_id = before
+            query = query.where(
+                or_(
+                    SessionRow.last_event_at < timestamp,
+                    and_(SessionRow.last_event_at == timestamp, SessionRow.session_id < session_id),
+                )
+            )
+        query = query.order_by(SessionRow.last_event_at.desc(), SessionRow.session_id.desc()).limit(limit + 1)
+        async with self._engine.connect() as connection:
+            rows = list((await connection.execute(query)).mappings())
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = (rows[-1]["last_event_at"], rows[-1]["session_id"]) if has_more and rows else None
+        return [SessionSummary.model_validate(row["raw"]) for row in rows], has_more, next_cursor
+
+    async def session(self, session_id: str) -> SessionSummary | None:
+        async with self._engine.connect() as connection:
+            raw = await connection.scalar(select(SessionRow.raw).where(SessionRow.session_id == session_id))
+        return SessionSummary.model_validate(raw) if raw is not None else None
+
+    async def event_page(
+        self, session_id: str, *, limit: int, sort_order: str, after: int | None, before: int | None
+    ) -> tuple[list[Event], bool]:
+        """Read events in sequence order; `after` and `before` make cursors stable across concurrent writes."""
+        query = select(EventRow.__table__).where(EventRow.session_id == session_id)
+        if sort_order == "asc":
+            if after is not None:
+                query = query.where(EventRow.sequence_num > after)
+            query = query.order_by(EventRow.sequence_num.asc())
+        else:
+            if before is not None:
+                query = query.where(EventRow.sequence_num < before)
+            query = query.order_by(EventRow.sequence_num.desc())
+        async with self._engine.connect() as connection:
+            rows = list((await connection.execute(query.limit(limit + 1))).mappings())
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        return [
+            Event.model_validate(
+                {
+                    "event_id": str(row["event_id"]),
+                    "sequence_num": str(row["sequence_num"]),
+                    "event_type": row["event_type"],
+                    "source": row["source"],
+                    "created_at": row["created_at"].isoformat(),
+                    "received_at": row["received_at"].isoformat() if row["received_at"] else None,
+                    "processing_at": row["processing_at"].isoformat() if row["processing_at"] else None,
+                    "processed_at": row["processed_at"].isoformat() if row["processed_at"] else None,
+                    "device_attestation_status": DEFAULT_ATTESTATION_STATUS,
+                    "sent_by_account_id": None,
+                    "payload": row["payload"],
+                }
+            )
+            for row in rows
+        ], has_more
+
     async def resume_after(self, session_id: str) -> int:
         """The `sequence_num` to read after: the newest stored, or just before the earliest event the worker had
         not finished when it was stored (its stamps may have moved on since)."""
@@ -213,16 +420,20 @@ class SessionStore:
     async def append_events(self, session_id: str, events: Sequence[Event]) -> None:
         """Insert new events; one already stored only has its worker stamps refreshed."""
         async with self._engine.begin() as connection:
+            changed = False
             for batch in batched((event_values(session_id, e) for e in events), EVENTS_PER_STATEMENT, strict=False):
                 statement = insert(EventRow).values(batch)
                 stamps = (EventRow.received_at, EventRow.processing_at, EventRow.processed_at)
-                await connection.execute(
+                rows = await connection.execute(
                     statement.on_conflict_do_update(
                         index_elements=[EventRow.session_id, EventRow.sequence_num],
                         set_={stamp.key: statement.excluded[stamp.key] for stamp in stamps},
                         where=or_(*(stamp.is_distinct_from(statement.excluded[stamp.key]) for stamp in stamps)),
-                    )
+                    ).returning(EventRow.sequence_num)
                 )
+                changed = rows.scalars().first() is not None or changed
+            if changed:
+                await self._record_changes(connection, [session_id])
 
     async def mark_synced(self, session_id: str, last_event_at: datetime) -> None:
         """Record that every event up to the session's `last_event_at`, as listed before the pass, is stored."""
