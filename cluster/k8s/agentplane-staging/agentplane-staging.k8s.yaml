@@ -1911,6 +1911,8 @@ data:
           - coinbase-credentials
           - haku-console-metadata
           - clickhouse-diagnostics
+          - ducktape-flux-read
+          - public-coder-volsync-status
         thread_preset: haku-claude
         bootstrap: |
           #!/bin/sh
@@ -1993,6 +1995,18 @@ data:
         role_ref:
           kind: Role
           name: agent-clickhouse-diagnostics-reader
+      ducktape-flux-read:
+        kind: RoleBinding
+        namespace: ducktape-flux
+        role_ref:
+          kind: Role
+          name: ducktape-flux-reader
+      public-coder-volsync-status:
+        kind: RoleBinding
+        namespace: public-coder-agent
+        role_ref:
+          kind: Role
+          name: agent-public-coder-extended-diagnostics-reader
       coinbase-credentials:
         kind: RoleBinding
         namespace: agentplane-staging
@@ -2001,8 +2015,10 @@ data:
           name: claude-ai-coinbase-reader
     kubernetes_binding_cleanup_namespaces:
       - clickhouse
+      - ducktape-flux
       - haku-console
       - haku-sandbox
+      - public-coder-agent
     kubernetes_cluster_binding_cleanup: true
     default_policies:
       - basic

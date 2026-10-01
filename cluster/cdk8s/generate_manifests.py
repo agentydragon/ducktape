@@ -1499,7 +1499,7 @@ def generate_manifests(root: Path) -> None:
         public_coder_proxy.OUTPUT_DIR,
         public_coder_sshpiper.OUTPUT_DIR,
     )
-    agents_flux_kustomizations.public_coder_agent_app(
+    public_coder_agent_app_kustomization = agents_flux_kustomizations.public_coder_agent_app(
         flux_chart,
         public_coder_agent_app_artifact,
         cert_manager_kustomization,
@@ -1529,6 +1529,9 @@ def generate_manifests(root: Path) -> None:
             "haku-sandbox": haku_rbac_kustomization,
             "haku-console": haku_console_kustomization,
             "clickhouse": clickhouse_kustomization,
+            # This namespace and its reader Role are in the bootstrap ducktape Flux source.
+            "ducktape-flux": None,
+            "public-coder-agent": public_coder_agent_app_kustomization,
         },
     )
     # Every artifact built above except the parked nodes': those Kustomizations are suspended.

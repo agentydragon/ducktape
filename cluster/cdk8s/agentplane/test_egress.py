@@ -176,6 +176,8 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
         "coinbase-credentials",
         "haku-console-metadata",
         "clickhouse-diagnostics",
+        "ducktape-flux-read",
+        "public-coder-volsync-status",
     ]
     assert config["kubernetes_grants"]["cluster-diagnostics"] == {
         "kind": "ClusterRoleBinding",
@@ -196,6 +198,16 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
         "namespace": "clickhouse",
         "role_ref": {"kind": "Role", "name": "agent-clickhouse-diagnostics-reader"},
     }
+    assert config["kubernetes_grants"]["ducktape-flux-read"] == {
+        "kind": "RoleBinding",
+        "namespace": "ducktape-flux",
+        "role_ref": {"kind": "Role", "name": "ducktape-flux-reader"},
+    }
+    assert config["kubernetes_grants"]["public-coder-volsync-status"] == {
+        "kind": "RoleBinding",
+        "namespace": "public-coder-agent",
+        "role_ref": {"kind": "Role", "name": "agent-public-coder-extended-diagnostics-reader"},
+    }
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
         and doc["metadata"].get("namespace") == "haku-sandbox"
@@ -206,7 +218,13 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
     assert {
         tuple(rule.get("resourceNames", [])) for rule in app_cluster_role["rules"] if rule["verbs"] == ["bind"]
     } == {("agent-readable-namespace-logs",), ("agent-readable-namespace-metadata",), ("cluster-diagnostics-reader",)}
-    assert config["kubernetes_binding_cleanup_namespaces"] == ["clickhouse", "haku-console", "haku-sandbox"]
+    assert config["kubernetes_binding_cleanup_namespaces"] == [
+        "clickhouse",
+        "ducktape-flux",
+        "haku-console",
+        "haku-sandbox",
+        "public-coder-agent",
+    ]
     assert config["kubernetes_cluster_binding_cleanup"] is True
 
 

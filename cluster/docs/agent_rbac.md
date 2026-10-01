@@ -187,6 +187,11 @@ rules are shared while its static `claude-ai` RoleBinding remains Flux-owned.
 The preset also selects the existing Haku Console metadata and ClickHouse
 diagnostics Roles in their respective namespaces. Their managed binding
 delegation lives in separate Flux Kustomizations dependent on those services.
+It also selects the `ducktape-flux` reader Role and the public-coder VolSync
+status Role. The former namespace and Role are owned by the bootstrap Flux
+source, so its independent delegation Kustomization has no generated predecessor;
+the latter depends on the public-coder app Kustomization. Public-coder's wider
+reader and named VMI restart grants remain separate follow-ups.
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
 read selection. Other Kyverno `agent-readable-*` namespaces still grant the static
 Haku identities; managed Haku SAs require explicit catalog entries before they receive
