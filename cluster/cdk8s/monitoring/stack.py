@@ -266,7 +266,6 @@ def _values() -> dict[str, object]:
                 "KubeControllerManagerInstanceUnreachable": True,
                 "KubeSchedulerDown": True,
                 "KubeSchedulerInstanceUnreachable": True,
-
                 # Existing node, pod, kubelet, and target exclusions.
                 "KubeNodeNotReady": True,
                 "KubeNodeUnreachable": True,
