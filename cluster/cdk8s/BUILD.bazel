@@ -1467,6 +1467,21 @@ py_library(
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_headlamp",
+    srcs = ["test_headlamp.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":headlamp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

@@ -3,9 +3,11 @@ the operator's OIDC identity it logs in as."""
 
 from __future__ import annotations
 
+import yaml
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmReleaseSpecUpgradeRemediation
+from pydantic import BaseModel, ConfigDict, Field
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
@@ -18,27 +20,67 @@ NAMESPACE = "headlamp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/headlamp"
 # The chart's Service.
 URL = f"http://{NAME}.{NAMESPACE}.svc.cluster.local:80"
-_PLUGINS_CONFIG = """\
-plugins:
-  - name: headlamp_flux
-    source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_flux
-    version: "0.7.0"
-  - name: headlamp_cert-manager
-    source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_cert-manager
-    version: "0.1.1"
-  - name: headlamp_kyverno
-    source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_kyverno
-    version: "0.1.0"
-  - name: headlamp_keda
-    source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_keda
-    version: "0.1.2"
-  - name: headlamp_kubevirt
-    source: https://artifacthub.io/packages/headlamp/headlamp-kubevirt/headlamp_kubevirt
-    version: "0.3.1"
-installOptions:
-  parallel: true
-  maxConcurrent: 2
-"""
+
+
+class _HeadlampPlugin(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    source: str
+    version: str
+    dependencies: list[str] | None = None
+
+
+class _PluginInstallOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    parallel: bool = False
+    max_concurrent: int | None = Field(default=None, serialization_alias="maxConcurrent")
+
+
+class _PluginsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plugins: list[_HeadlampPlugin]
+    install_options: _PluginInstallOptions = Field(
+        default_factory=_PluginInstallOptions, serialization_alias="installOptions"
+    )
+
+
+# The plugin manager accepts its configuration as YAML inside the Helm values.
+_PLUGINS_CONFIG = yaml.safe_dump(
+    _PluginsConfig(
+        plugins=[
+            _HeadlampPlugin(
+                name="headlamp_flux",
+                source="https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_flux",
+                version="0.7.0",
+            ),
+            _HeadlampPlugin(
+                name="headlamp_cert-manager",
+                source="https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_cert-manager",
+                version="0.1.1",
+            ),
+            _HeadlampPlugin(
+                name="headlamp_kyverno",
+                source="https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_kyverno",
+                version="0.1.0",
+            ),
+            _HeadlampPlugin(
+                name="headlamp_keda",
+                source="https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_keda",
+                version="0.1.2",
+            ),
+            _HeadlampPlugin(
+                name="headlamp_kubevirt",
+                source="https://artifacthub.io/packages/headlamp/headlamp-kubevirt/headlamp_kubevirt",
+                version="0.3.1",
+            ),
+        ],
+        install_options=_PluginInstallOptions(parallel=True, max_concurrent=2),
+    ).model_dump(by_alias=True, exclude_none=True),
+    sort_keys=False,
+)
 
 
 def chart(app: App) -> Chart:

@@ -53,11 +53,10 @@ structures justify generation. Examples remain under `activitywatch`, `monitorin
 `haku/mailbox`, `nix-cache`, `oci-cache` and `seaweedfs/cluster`.
 `home-assistant/app/configuration.yaml.conf` is YAML despite its suffix.
 
-Similarly, `headlamp.py:_PLUGINS_CONFIG` is still YAML embedded in a Python string,
-and Helm `values` dictionaries are only partially typed. Use existing consumer
-models or pinned chart schemas/templates where useful. Typing the HelmRelease envelope
-does not validate the chart's arbitrary values. Do not hand-maintain full vendor schemas
-just to eliminate dictionaries.
+Helm `values` dictionaries are only partially typed. Use existing consumer models or
+pinned chart schemas/templates where useful. Typing the HelmRelease envelope does not
+validate the chart's arbitrary values. Do not hand-maintain full vendor schemas just to
+eliminate dictionaries.
 
 Generated Kustomize wrappers can package these files without converting their contents.
 Extend the small Kustomize model for an actually used field only where it removes a
