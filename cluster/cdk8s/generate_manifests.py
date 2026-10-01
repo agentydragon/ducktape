@@ -338,9 +338,7 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, flux_image_automation_ghcr_artifact, flux_image_automation_ghcr.automation_chart),
     )
     haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
-    haku_namespace_kustomization = haku_namespace.haku_namespace(
-        flux_chart, write_directory(root, haku_namespace_artifact, haku_namespace.chart)
-    )
+    haku_namespace.haku_namespace(flux_chart, write_directory(root, haku_namespace_artifact, haku_namespace.chart))
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
     kube_api_proxy.kube_api_proxy(flux_chart, write_directory(root, kube_api_proxy_artifact, kube_api_proxy.chart))
     kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", kubevirt_operators.CDI_OPERATOR_DIR)
@@ -380,7 +378,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, grafana_helmrepository_artifact, grafana_helmrepository.chart)
     )
     monitoring_namespace_artifact = artifact("monitoring-namespace", monitoring_namespace.OUTPUT_DIR)
-    monitoring_namespace_kustomization = monitoring_namespace.monitoring_namespace(
+    monitoring_namespace.monitoring_namespace(
         flux_chart, write_directory(root, monitoring_namespace_artifact, monitoring_namespace.chart)
     )
     node_feature_discovery_artifact = artifact("node-feature-discovery", node_feature_discovery.OUTPUT_DIR)
@@ -393,7 +391,7 @@ def generate_manifests(root: Path) -> None:
     )
     parked_flux_kustomizations.buildbuddy_executor(flux_chart)
     gecko_namespace_artifact = artifact("gecko-namespace", f"{PARKED_ROOT}/gecko/namespace")
-    gecko_namespace_kustomization = parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
+    parked_flux_kustomizations.gecko_namespace(flux_chart, gecko_namespace_artifact)
     reflector_artifact = artifact("reflector", reflector.OUTPUT_DIR)
     reflector.reflector(flux_chart, write_directory(root, reflector_artifact, reflector.chart))
     snapshot_controller_crds_kustomization = snapshot_controller_flux_kustomizations.snapshot_controller_crds(
@@ -419,7 +417,7 @@ def generate_manifests(root: Path) -> None:
         ),
     )
     user_agentydragon_artifact = artifact("user-agentydragon", user_agentydragon.OUTPUT_DIR)
-    user_agentydragon_kustomization = user_agentydragon.user_agentydragon(
+    user_agentydragon.user_agentydragon(
         flux_chart,
         # The SOPS sibling turns on Flux decryption.
         write_directory(
@@ -439,9 +437,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, kubevirt_artifact, kubevirt_app.chart), kubevirt_operator_kustomization
     )
     haku_rbac_artifact = artifact(haku_rbac.NAME, haku_rbac.OUTPUT_DIR)
-    haku_rbac_kustomization = haku_rbac.haku_rbac(
-        flux_chart, write_directory(root, haku_rbac_artifact, haku_rbac.chart), haku_namespace_kustomization
-    )
+    haku_rbac.haku_rbac(flux_chart, write_directory(root, haku_rbac_artifact, haku_rbac.chart))
     descheduler_artifact = artifact("descheduler", descheduler.OUTPUT_DIR)
     descheduler.descheduler(
         flux_chart,
@@ -502,9 +498,7 @@ def generate_manifests(root: Path) -> None:
     )
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
     grafana_operator_kustomization = grafana_operator.grafana_operator(
-        flux_chart,
-        write_directory(root, grafana_operator_artifact, grafana_operator.chart),
-        monitoring_namespace_kustomization,
+        flux_chart, write_directory(root, grafana_operator_artifact, grafana_operator.chart)
     )
     nvidia_device_plugin_artifact = artifact("nvidia-device-plugin", nvidia_device_plugin.OUTPUT_DIR)
     nvidia_device_plugin.nvidia_device_plugin(
@@ -522,12 +516,10 @@ def generate_manifests(root: Path) -> None:
     snapshot_controller_flux_kustomizations.snapshot_controller(flux_chart)
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
     haku_forgejo_tea.haku_forgejo_tea(
-        flux_chart,
-        write_directory(root, haku_forgejo_tea_artifact, siblings=["haku-forgejo-tea.sops.yaml"]),
-        haku_rbac_kustomization,
+        flux_chart, write_directory(root, haku_forgejo_tea_artifact, siblings=["haku-forgejo-tea.sops.yaml"])
     )
     claude_rbac_artifact = artifact("claude-rbac", agent_rbac_base.OUTPUT_DIR)
-    claude_rbac_kustomization = agent_rbac_base.claude_rbac(
+    agent_rbac_base.claude_rbac(
         flux_chart, write_directory(root, claude_rbac_artifact, agent_rbac_base.chart), kyverno_policies_kustomization
     )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
@@ -601,15 +593,11 @@ def generate_manifests(root: Path) -> None:
     )
     agent_shared_rbac_artifact = artifact("agent-shared-rbac", agent_shared_rbac.OUTPUT_DIR)
     agent_shared_rbac.agent_shared_rbac(
-        flux_chart,
-        write_directory(root, agent_shared_rbac_artifact, agent_shared_rbac.chart),
-        claude_rbac_kustomization,
+        flux_chart, write_directory(root, agent_shared_rbac_artifact, agent_shared_rbac.chart)
     )
     agent_shared_secrets_artifact = artifact("agent-shared-secrets", f"{HAND_WRITTEN_ROOT}/agents/shared-secrets")
     agents_flux_kustomizations.agent_shared_secrets(
-        flux_chart,
-        write_directory(root, agent_shared_secrets_artifact, siblings=["attic-push-token.sops.yaml"]),
-        claude_rbac_kustomization,
+        flux_chart, write_directory(root, agent_shared_secrets_artifact, siblings=["attic-push-token.sops.yaml"])
     )
     external_creds_artifact = artifact("external-creds", external_creds.OUTPUT_DIR)
     external_creds.external_creds(
@@ -693,7 +681,7 @@ def generate_manifests(root: Path) -> None:
     )
     docker_ci_artifact = artifact("docker-ci", f"{PARKED_ROOT}/docker-ci")
     parked_flux_kustomizations.docker_ci(
-        flux_chart, docker_ci_artifact, claude_rbac_kustomization, cert_manager_kustomization, kyverno_kustomization
+        flux_chart, docker_ci_artifact, cert_manager_kustomization, kyverno_kustomization
     )
     atuin_artifact = artifact("atuin", atuin_server.OUTPUT_DIR)
     atuin_kustomization = atuin_server.atuin(
@@ -770,7 +758,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, atuin_user_provisioner_artifact, atuin_user_provisioner.chart),
         atuin_kustomization,
-        user_agentydragon_kustomization,
     )
     authentik_tf_artifact = artifact(authentik_tf.NAME, authentik_tf.OUTPUT_DIR)
     authentik_tf_kustomization = authentik_tf.authentik_tf(
@@ -810,7 +797,6 @@ def generate_manifests(root: Path) -> None:
         write_directory(
             root, monitoring_stack_artifact, monitoring_stack.chart, siblings=["grafana-admin-password.sops.yaml"]
         ),
-        monitoring_namespace_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
     )
@@ -823,7 +809,6 @@ def generate_manifests(root: Path) -> None:
             claude_sandbox_secrets.chart,
             siblings=claude_sandbox_secrets.SOPS_FILES,
         ),
-        claude_rbac_kustomization,
         external_secrets_operator_kustomization,
     )
     haku_openclaw_spike_backup_artifact = artifact("haku-openclaw-spike-backup", haku_openclaw_spike_backup.OUTPUT_DIR)
@@ -1065,11 +1050,7 @@ def generate_manifests(root: Path) -> None:
     )
     gecko_artifact = artifact("gecko", f"{PARKED_ROOT}/gecko/app")
     parked_flux_kustomizations.gecko(
-        flux_chart,
-        gecko_artifact,
-        gecko_namespace_kustomization,
-        kubevirt_kustomization,
-        external_secrets_operator_kustomization,
+        flux_chart, gecko_artifact, kubevirt_kustomization, external_secrets_operator_kustomization
     )
     activitywatch_artifact = artifact("activitywatch", activitywatch_app.OUTPUT_DIR)
     activitywatch_flux_kustomizations.activitywatch(
@@ -1213,7 +1194,6 @@ def generate_manifests(root: Path) -> None:
             ),
             configurations=[grafana_dashboards.write_kustomize_config(root, github_exporter_app.OUTPUT_DIR)],
         ),
-        monitoring_namespace_kustomization,
         monitoring_crds_kustomization,
         external_secrets_operator_kustomization,
         grafana_operator_kustomization,
@@ -1443,7 +1423,6 @@ def generate_manifests(root: Path) -> None:
             components=[posixpath.relpath(haku_workspaces.PINS_DIR, haku_workspaces.OUTPUT_DIR)],
         ),
         agent_sandbox_controller_kustomization,
-        haku_rbac_kustomization,
         haku_egress_proxy_kustomization,
         kyverno_policies_kustomization,
         external_secrets_operator_kustomization,
@@ -1453,8 +1432,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         haku_managed_agent_artifact,
         external_secrets_operator_kustomization,
-        haku_namespace_kustomization,
-        haku_rbac_kustomization,
         haku_egress_proxy_kustomization,
     )
     agentplane_testing_artifact = artifact("agentplane-testing", testing.ENV.output_dir, testing.ENV.image_pins)

@@ -126,17 +126,9 @@ def public_coder_agent_app(
     )
 
 
-def agent_shared_secrets(chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization) -> Kustomization:
+def agent_shared_secrets(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     name = "agent-shared-secrets"
-    return flux_kustomization(
-        chart,
-        name,
-        directory,
-        retry_interval=None,
-        wait=None,
-        timeout="5m",
-        depends_on=[flux_kustomization_depends_on(claude_rbac)],
-    )
+    return flux_kustomization(chart, name, directory, retry_interval=None, wait=None, timeout="5m")
 
 
 def tana_mcp(

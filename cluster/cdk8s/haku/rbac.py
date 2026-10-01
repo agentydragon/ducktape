@@ -8,7 +8,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -167,13 +167,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def haku_rbac(flux_chart: Chart, directory: RenderedDirectory, haku_namespace: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        directory,
-        retry_interval=None,
-        wait=None,
-        timeout="2m",
-        depends_on=[flux_kustomization_depends_on(haku_namespace)],
-    )
+def haku_rbac(flux_chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(flux_chart, NAME, directory, retry_interval=None, wait=None, timeout="2m")

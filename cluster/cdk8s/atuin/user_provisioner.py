@@ -144,14 +144,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def atuin_user_provisioner(
-    chart: Chart, directory: RenderedDirectory, atuin: Kustomization, user_agentydragon: Kustomization
-) -> Kustomization:
+def atuin_user_provisioner(chart: Chart, directory: RenderedDirectory, atuin: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        retry_interval=None,
-        wait=None,
-        depends_on=flux_kustomization_depends_on_many(atuin, user_agentydragon),
+        chart, NAME, directory, retry_interval=None, wait=None, depends_on=flux_kustomization_depends_on_many(atuin)
     )

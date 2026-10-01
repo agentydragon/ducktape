@@ -297,7 +297,6 @@ def chart(app: App) -> Chart:
 def github_exporter(
     flux_chart: Chart,
     directory: RenderedDirectory,
-    monitoring_namespace: Kustomization,
     monitoring_crds: Kustomization,
     external_secrets_operator: Kustomization,
     grafana_operator: Kustomization,
@@ -308,7 +307,6 @@ def github_exporter(
         directory,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            monitoring_namespace,
             # ServiceMonitor
             monitoring_crds,
             external_secrets_operator,

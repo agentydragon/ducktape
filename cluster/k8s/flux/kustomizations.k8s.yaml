@@ -502,9 +502,6 @@ metadata:
   name: haku-rbac
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: haku-namespace
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/haku/rbac
   prune: true
@@ -709,9 +706,6 @@ metadata:
   name: grafana-operator
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: monitoring-namespace
-      namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -824,9 +818,6 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  dependsOn:
-    - name: haku-rbac
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/forgejo-tea
   prune: true
@@ -1111,9 +1102,6 @@ metadata:
   name: agent-shared-rbac
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: claude-rbac
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/shared-rbac
   prune: true
@@ -1133,9 +1121,6 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  dependsOn:
-    - name: claude-rbac
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/shared-secrets
   prune: true
@@ -1377,8 +1362,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: claude-rbac
-      namespace: ducktape-flux
     - name: cert-manager
       namespace: ducktape-flux
     - name: kyverno
@@ -1664,8 +1647,6 @@ spec:
   dependsOn:
     - name: atuin
       namespace: ducktape-flux
-    - name: user-agentydragon
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/atuin-user-provisioner
   prune: true
@@ -1761,8 +1742,6 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: monitoring-namespace
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
     - name: kyverno
@@ -1801,8 +1780,6 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: claude-rbac
-      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
@@ -2594,8 +2571,6 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: gecko-namespace
-      namespace: ducktape-flux
     - name: kubevirt
       namespace: ducktape-flux
     - name: external-secrets-operator
@@ -2940,8 +2915,6 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: monitoring-namespace
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
     - name: external-secrets-operator
@@ -3484,8 +3457,6 @@ spec:
   dependsOn:
     - name: agent-sandbox-controller
       namespace: ducktape-flux
-    - name: haku-rbac
-      namespace: ducktape-flux
     - name: haku-egress-proxy
       namespace: ducktape-flux
     - name: kyverno-policies
@@ -3517,10 +3488,6 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: haku-namespace
-      namespace: ducktape-flux
-    - name: haku-rbac
       namespace: ducktape-flux
     - name: haku-egress-proxy
       namespace: ducktape-flux

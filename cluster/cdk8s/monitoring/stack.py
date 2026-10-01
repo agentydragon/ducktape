@@ -527,11 +527,7 @@ def chart(app: App) -> Chart:
 
 
 def monitoring_stack(
-    chart: Chart,
-    directory: RenderedDirectory,
-    monitoring_namespace: Kustomization,
-    monitoring_crds: Kustomization,
-    kyverno: Kustomization,
+    chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -558,7 +554,6 @@ def monitoring_stack(
         ],
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
-            monitoring_namespace,
             # The chart's Prometheus/Alertmanager CRs are rejected at admission until
             # the CRDs exist, and the chart no longer installs them itself.
             monitoring_crds,

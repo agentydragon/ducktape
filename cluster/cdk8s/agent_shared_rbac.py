@@ -9,7 +9,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "agent-shared-rbac"
@@ -50,7 +50,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def agent_shared_rbac(chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization) -> Kustomization:
+def agent_shared_rbac(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
@@ -58,7 +58,6 @@ def agent_shared_rbac(chart: Chart, directory: RenderedDirectory, claude_rbac: K
         retry_interval=None,
         wait=None,
         timeout="2m",
-        depends_on=flux_kustomization_depends_on_many(claude_rbac),
         description=(
             "Cluster-scoped agent RBAC (ClusterRoleBindings) + flux-system "
             "RoleBindings only. Namespace-scoped RoleBindings live in per-service "

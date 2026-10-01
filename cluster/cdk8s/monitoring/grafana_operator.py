@@ -7,7 +7,7 @@ from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecDriftDetection, HelmReleaseSpecDriftDetectionMode
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -36,7 +36,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def grafana_operator(chart: Chart, directory: RenderedDirectory, monitoring_namespace: Kustomization) -> Kustomization:
+def grafana_operator(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     return flux_kustomization(
         chart,
         "grafana-operator",
@@ -51,5 +51,4 @@ def grafana_operator(chart: Chart, directory: RenderedDirectory, monitoring_name
             )
         ],
         timeout="5m",
-        depends_on=[flux_kustomization_depends_on(monitoring_namespace)],
     )

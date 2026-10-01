@@ -63,12 +63,8 @@ def chart(app: App) -> Chart:
 
 
 def claude_sandbox_secrets(
-    chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization, external_secrets_operator: Kustomization
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(claude_rbac, external_secrets_operator),
+        chart, NAME, directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(external_secrets_operator)
     )

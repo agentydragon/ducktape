@@ -81,11 +81,7 @@ def haku_cloud_agent(
 
 
 def docker_ci(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    claude_rbac: Kustomization,
-    cert_manager: Kustomization,
-    kyverno: Kustomization,
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cert_manager: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
     name = "docker-ci"
     return flux_kustomization(
@@ -96,7 +92,6 @@ def docker_ci(
         suspend=True,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            claude_rbac,
             # The Certificate CRD and cert-manager's failurePolicy: Fail webhook.
             cert_manager,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment and Namespace.
@@ -108,7 +103,6 @@ def docker_ci(
 def gecko(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
-    gecko_namespace: Kustomization,
     kubevirt: Kustomization,
     external_secrets_operator: Kustomization,
 ) -> Kustomization:
@@ -123,7 +117,7 @@ def gecko(
         suspend=True,
         timeout="30m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(gecko_namespace, kubevirt, external_secrets_operator),
+        depends_on=flux_kustomization_depends_on_many(kubevirt, external_secrets_operator),
     )
 
 
@@ -164,8 +158,6 @@ def haku_managed_agent(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     external_secrets_operator: Kustomization,
-    haku_namespace: Kustomization,
-    haku_rbac: Kustomization,
     haku_egress_proxy: Kustomization,
 ) -> Kustomization:
     name = "haku-managed-agent"
@@ -180,8 +172,6 @@ def haku_managed_agent(
         depends_on=flux_kustomization_depends_on_many(
             # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
             external_secrets_operator,
-            haku_namespace,
-            haku_rbac,
             # destructive-if-out-of-order: the haku-sandbox egress fence must precede sandbox pods.
             haku_egress_proxy,
         ),
