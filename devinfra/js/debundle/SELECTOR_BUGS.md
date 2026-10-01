@@ -20,20 +20,6 @@ falls inside and that real chunk identifiers do not (an all-caps rule would
 catch globals such as `JSON` and `URL`). A reserved name the binary does not
 implement is then `invalid` with "unsupported selector hole", on every command.
 
-## Regex Predicate Prefix Pruning Can Drop Matches
-
-Status: unreproduced (code review 2026-09-30; the function was read, no selector
-was run). `selectors/matching/selector_match.rs` `regex_required_literal_prefix` pushes each literal
-character of a `^literal...` pattern up to the first metacharacter, so a
-quantifier that binds the last pushed character is ignored: `^foo*` yields the
-prefix `foo` but matches `fo` and `fox`; `^ab?` yields `ab` but matches `ac`.
-`chunk_resolver` range-scans the predicate postings by that prefix, so values the
-regex matches are pruned before matching, and a selector can resolve to one place
-when the regex matches two. No unit test covers the function.
-
-Fix: drop the last literal character when the next one is `*`, `?` or `{`, and
-test each quantifier form.
-
 ## Invalid Regex Predicate Matches Nothing
 
 Status: unreproduced (code review 2026-09-30, not verified).

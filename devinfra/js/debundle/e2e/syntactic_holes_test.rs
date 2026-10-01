@@ -914,6 +914,58 @@ export { runtimeStyle };
 }
 
 #[test]
+fn member_source_match_regex_quantifier_matches_shorter_value() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const decoyStyle = "f";
+const runtimeStyle = "fo";
+console.log(runtimeStyle);
+export { runtimeStyle };
+"#,
+        vec![logical_module(
+            "styles/shell",
+            &[Member::source_alpha(
+                "shellStyle",
+                r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "fo\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/styles/shell.js",
+        &[r#"const shellStyle = "fo""#],
+        &["STR_LITERAL_MATCHING_RE"],
+    );
+}
+
+#[test]
+fn member_source_match_regex_quantifier_does_not_hide_ambiguity() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"const decoyStyle = "foo";
+const runtimeStyle = "fo";
+console.log(runtimeStyle);
+export { decoyStyle, runtimeStyle };
+"#,
+            vec![logical_module(
+                "styles/shell",
+                &[Member::source_alpha(
+                    "shellStyle",
+                    r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
+                )],
+            )],
+        ),
+        &[
+            "styles/shell",
+            "ambiguous",
+            "STR_LITERAL_MATCHING_RE",
+            "foo",
+        ],
+    );
+}
+
+#[test]
 fn member_source_match_string_literal_regex_predicate_rejects_non_matching_literal() {
     expect_rejection_containing_all(
         FixtureOpts::new(

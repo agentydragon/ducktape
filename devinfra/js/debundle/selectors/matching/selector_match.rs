@@ -330,35 +330,6 @@ pub struct Index {
     roots: Vec<NodeId>,
 }
 
-/// A string-literal regex predicate the needle requires a matching subject to
-/// satisfy. Private fields keep `regex::Regex` out of downstream crates' direct
-/// API surface; callers can ask only the two facts useful for safe pruning.
-pub struct StringLiteralPredicate<'a> {
-    regex: Option<&'a Regex>,
-    literal_prefix: Option<Box<str>>,
-}
-
-impl StringLiteralPredicate<'_> {
-    /// A leading literal prefix every matching string value must start with, when
-    /// the pattern has a conservatively recognized anchored prefix. `None` means
-    /// no prefix-based pruning is safe for this predicate.
-    pub fn literal_prefix(&self) -> Option<&str> {
-        self.literal_prefix.as_deref()
-    }
-
-    /// True iff `value` satisfies the compiled predicate. An invalid regex pattern
-    /// has no compiled regex and therefore matches nothing, exactly as `homo` does.
-    pub fn is_match(&self, value: &str) -> bool {
-        self.regex.is_some_and(|regex| regex.is_match(value))
-    }
-
-    /// Whether the predicate pattern compiled successfully. Invalid patterns
-    /// match no subject, so a prefilter may soundly return no candidates.
-    pub fn is_valid(&self) -> bool {
-        self.regex.is_some()
-    }
-}
-
 impl Index {
     pub fn build(facts: &ChunkFacts) -> Self {
         let n = facts.node_kind.len();
@@ -812,74 +783,6 @@ fn regex_predicate_pattern(index: &Index, node: NodeId) -> Option<&str> {
     (is_predicate && index.kind_of(*arg) == NodeKind::StrLit)
         .then(|| index.str_lit_of(*arg))
         .flatten()
-}
-
-/// A conservative required-prefix extractor for regex predicates. It recognizes
-/// only `^literal...` forms where every emitted prefix byte is guaranteed to be
-/// the start of every matched value. Unsupported escapes/metacharacters stop the
-/// prefix rather than guessing; no prefix means "do not prune by this predicate".
-fn regex_required_literal_prefix(pattern: &str) -> Option<Box<str>> {
-    let rest = pattern.strip_prefix('^')?;
-    if regex_contains_unescaped_alternation(rest) {
-        return None;
-    }
-    let mut prefix = String::new();
-    let mut chars = rest.chars();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\\' => {
-                let Some(escaped) = chars.next() else {
-                    break;
-                };
-                if regex_escape_is_literal_char(escaped) {
-                    prefix.push(escaped);
-                } else {
-                    break;
-                }
-            }
-            '[' | '(' | ')' | '.' | '*' | '+' | '?' | '|' | '{' | '}' | '$' | '^' => break,
-            literal => prefix.push(literal),
-        }
-    }
-    (!prefix.is_empty()).then(|| prefix.into_boxed_str())
-}
-
-fn regex_contains_unescaped_alternation(pattern: &str) -> bool {
-    let mut chars = pattern.chars();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\\' => {
-                chars.next();
-            }
-            '|' => return true,
-            _ => {}
-        }
-    }
-    false
-}
-
-fn regex_escape_is_literal_char(ch: char) -> bool {
-    matches!(
-        ch,
-        '\\' | '.'
-            | '+'
-            | '*'
-            | '?'
-            | '('
-            | ')'
-            | '|'
-            | '['
-            | ']'
-            | '{'
-            | '}'
-            | '^'
-            | '$'
-            | '#'
-            | '&'
-            | '-'
-            | '~'
-            | '/'
-    )
 }
 
 /// The normalized view of a same-name object/destructure property — a property
@@ -1724,43 +1627,6 @@ pub fn invariant_tokens(index: &Index) -> Vec<Token> {
         }
     }
     tokens.into_iter().collect()
-}
-
-/// String-literal values carried by a subject index, deduplicated. Used by
-/// resolver-side predicate postings: a `STR_LITERAL_MATCHING_RE(...)` needle can
-/// only match a subject that carries at least one string literal satisfying that
-/// predicate, and the full matcher still verifies the aligned position.
-pub fn subject_string_literals(index: &Index) -> Vec<&str> {
-    let mut values = Vec::new();
-    let mut seen: HashSet<&str> = HashSet::new();
-    for node in 0..index.kind.len() as NodeId {
-        if let Some(value) = index.str_lit_of(node)
-            && seen.insert(value)
-        {
-            values.push(value);
-        }
-    }
-    values
-}
-
-/// The non-consumed `STR_LITERAL_MATCHING_RE(...)` predicates a needle requires.
-/// Predicates inside run-hole carrier subtrees are excluded because the matcher
-/// absorbs those subtrees rather than aligning them to subject string literals.
-pub fn needle_required_string_literal_predicates(index: &Index) -> Vec<StringLiteralPredicate<'_>> {
-    let consumed = consumed_nodes(index);
-    let mut predicates = Vec::new();
-    for node in 0..index.kind.len() as NodeId {
-        if consumed.contains(&node) {
-            continue;
-        }
-        if let Some(pattern) = regex_predicate_pattern(index, node) {
-            predicates.push(StringLiteralPredicate {
-                regex: index.predicate_regex.get(&node),
-                literal_prefix: regex_required_literal_prefix(pattern),
-            });
-        }
-    }
-    predicates
 }
 
 /// The tokens to index a **subject** (chunk body item / declarator) under: every
