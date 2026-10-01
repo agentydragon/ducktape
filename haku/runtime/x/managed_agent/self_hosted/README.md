@@ -83,16 +83,16 @@ durable memory, so a cold session just re-orients.
 
 ## Pieces
 
-| File                    | Role                                                                                 | Runs on              |
-| ----------------------- | ------------------------------------------------------------------------------------ | -------------------- |
-| `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)                             | control plane        |
-| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + 2 MCP `mcp_toolset`s (= cloud agent)   | control plane        |
-| `haku.deployment.yaml`  | scheduled-deployment wake trigger                                                    | control plane        |
+| File                    | Role                                                                                | Runs on              |
+| ----------------------- | ----------------------------------------------------------------------------------- | -------------------- |
+| `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)                            | control plane        |
+| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + 2 MCP `mcp_toolset`s (= cloud agent)  | control plane        |
+| `haku.deployment.yaml`  | scheduled-deployment wake trigger                                                   | control plane        |
 | `provision.sh`          | one-shot: create environment/agent/deployment via `ant` (requires a fresh vault ID) | operator / CI        |
-| `entrypoint.sh`         | clone ducktape + haku-state, then exec `haku-managed-agent`                          | `haku-managed-agent` |
-| `worker.py`             | the poll loop (anthropic Python SDK environment worker)                              | `haku-managed-agent` |
-| `nixos.nix`             | full-NixOS worker system                                                             | manual image build   |
-| `image.nix`             | uncompressed rootfs tarball recipe for `.#haku-managed-agent-image`                  | manual image build   |
+| `entrypoint.sh`         | clone ducktape + haku-state, then exec `haku-managed-agent`                         | `haku-managed-agent` |
+| `worker.py`             | the poll loop (anthropic Python SDK environment worker)                             | `haku-managed-agent` |
+| `nixos.nix`             | full-NixOS worker system                                                            | manual image build   |
+| `image.nix`             | uncompressed rootfs tarball recipe for `.#haku-managed-agent-image`                 | manual image build   |
 
 ## Trust split — keep the org key off the worker
 

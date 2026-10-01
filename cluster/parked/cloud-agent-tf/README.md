@@ -15,15 +15,15 @@ reactivation.
 ## Parked cluster resources
 
 - `terraform.yaml` — suspended tofu-controller resource. Its source path points to
-the historical HCL root. The `haku-cloud-agent-ids` Secret may still exist in the
-cluster, but its vault ID refers to the deleted vault; do not use those values.
+  the historical HCL root. The `haku-cloud-agent-ids` Secret may still exist in the
+  cluster, but its vault ID refers to the deleted vault; do not use those values.
 - `anthropic-api-key-eso.yaml` — the ExternalSecret wiring for the dedicated,
-spend-capped Anthropic workspace key. The source credential remains shared with
-LiteLLM; this parked consumer does not own or revoke it.
+  spend-capped Anthropic workspace key. The source credential remains shared with
+  LiteLLM; this parked consumer does not own or revoke it.
 - `external-creds-reader.yaml` — read access required by the parked ExternalSecret.
 - The old `haku-cloud-kube-token` Secret seed was removed. The Authentik `haku-k8s`
-rotation still writes its source JWT for CLI use, but no longer publishes a copy for
-this parked agent. A future Terraform apply must deliberately restore that input.
+  rotation still writes its source JWT for CLI use, but no longer publishes a copy for
+  this parked agent. A future Terraform apply must deliberately restore that input.
 
 ## Reactivation requirements
 
