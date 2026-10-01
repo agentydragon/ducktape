@@ -1,0 +1,157 @@
+/* CodeMirror is the single code-shaped viewer across arguments, results, thread payloads, and
+   Markdown fences. Preserve the app's compact monospace blocks while allowing long lines to wrap. */
+.agentplane-code-block {
+  display: block;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agentplane-code-block-label,
+.agentplane-code-block-muted {
+  border: 0;
+  background: transparent;
+}
+
+.agentplane-code-block .cm-scroller {
+  overflow-wrap: anywhere;
+}
+
+.agentplane-code-block .cm-content {
+  white-space: pre-wrap;
+}
+
+.agentplane-code-block .hljs-attr {
+  color: var(--mantine-color-blue-8);
+}
+
+.agentplane-code-block .hljs-string {
+  color: var(--mantine-color-green-9);
+}
+
+.agentplane-code-block .hljs-number {
+  color: var(--mantine-color-orange-9);
+}
+
+.agentplane-code-block .hljs-literal {
+  color: var(--mantine-color-grape-8);
+}
+
+.agentplane-code-block .hljs-keyword {
+  color: var(--mantine-color-red-8);
+}
+
+.agentplane-code-block .hljs-built_in {
+  color: var(--mantine-color-cyan-9);
+}
+
+.agentplane-code-block .hljs-variable {
+  color: var(--mantine-color-indigo-7);
+}
+
+.agentplane-code-block .hljs-subst {
+  color: var(--mantine-color-violet-8);
+}
+
+.agentplane-code-block .hljs-comment {
+  color: var(--mantine-color-gray-6);
+  font-style: italic;
+}
+
+.agentplane-code-block .hljs-meta {
+  color: var(--mantine-color-gray-7);
+}
+
+.agentplane-code-block .hljs-title {
+  color: var(--mantine-color-pink-8);
+}
+
+.cm-agentplane-special-char {
+  border: 1px solid currentColor;
+  border-radius: 0.2em;
+  cursor: help;
+  display: inline-block;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.78em;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-inline: 0.08em;
+  padding-inline: 0.16em;
+  white-space: nowrap;
+}
+
+.cm-agentplane-special-char-bidi,
+.cm-agentplane-special-char-control {
+  background-color: var(--mantine-color-red-light);
+  color: var(--mantine-color-red-8);
+}
+
+.cm-agentplane-special-char-ignorable {
+  background-color: var(--mantine-color-orange-light);
+  color: var(--mantine-color-orange-8);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block .hljs-attr {
+  color: var(--mantine-color-blue-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block .hljs-string {
+  color: var(--mantine-color-green-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block .hljs-number {
+  color: var(--mantine-color-orange-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block .hljs-literal {
+  color: var(--mantine-color-grape-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block .hljs-keyword {
+  color: var(--mantine-color-red-4);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block .hljs-built_in {
+  color: var(--mantine-color-cyan-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block .hljs-variable {
+  color: var(--mantine-color-indigo-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block .hljs-subst {
+  color: var(--mantine-color-violet-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block .hljs-comment {
+  color: var(--mantine-color-dark-2);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block .hljs-meta {
+  color: var(--mantine-color-gray-5);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-code-block .hljs-title {
+  color: var(--mantine-color-pink-3);
+}
+
+[data-mantine-color-scheme="dark"] .cm-agentplane-special-char-bidi,
+[data-mantine-color-scheme="dark"] .cm-agentplane-special-char-control {
+  color: var(--mantine-color-red-3);
+}
+
+[data-mantine-color-scheme="dark"] .cm-agentplane-special-char-ignorable {
+  color: var(--mantine-color-orange-3);
+}
+
+.agentplane-code-block-placeholder {
+  background-color: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+}
+
+.agentplane-code-block-placeholder-label,
+.agentplane-code-block-placeholder-muted {
+  border: 0;
+  background: transparent;
+}

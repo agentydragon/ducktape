@@ -512,15 +512,21 @@ const SSH_EXEC_RESULT = {
   user: "test-user",
   exit_code: 2,
   stdout: [
-    "/home/test-user/test-archive:",
-    "total 1536",
-    ...Array.from({ length: 30 }, (_, index) => {
-      const day = index + 1;
-      return `-rw-r--r-- 1 test-user test-user 51200 Sep ${String(day).padStart(2)} 03:00 test-backup-2026-09-${String(day).padStart(2, "0")}.tar.zst`;
-    }),
-    "",
+    ...(scenario.hiddenCodepoints
+      ? ["review result: visible start \u202Ereversed\u202C, joined\u200Bword, and control\u001Bmarker"]
+      : [
+          "/home/test-user/test-archive:",
+          "total 1536",
+          ...Array.from({ length: 30 }, (_, index) => {
+            const day = index + 1;
+            return `-rw-r--r-- 1 test-user test-user 51200 Sep ${String(day).padStart(2)} 03:00 test-backup-2026-09-${String(day).padStart(2, "0")}.tar.zst`;
+          }),
+          "",
+        ]),
   ].join("\n"),
-  stderr: "ls: cannot access '/home/test-user/test-archive/test-missing': No such file or directory\n",
+  stderr: scenario.hiddenCodepoints
+    ? "stderr contains a zero-width\u200B separator and U+202E bidi override\u202C\n"
+    : "ls: cannot access '/home/test-user/test-archive/test-missing': No such file or directory\n",
   stdout_truncated: false,
   stderr_truncated: false,
 };
@@ -558,7 +564,9 @@ const ACTIONS: ActionRequestView[] = [
     arguments: {
       host: "test-archive-host",
       user: "test-user",
-      command: 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
+      command: scenario.hiddenCodepoints
+        ? 'printf "review \u202Ereversed\u202C zero\u200Bwidth control\u001B"'
+        : 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
       timeout_seconds: 60,
     },
     title: "restart the test backup service",
