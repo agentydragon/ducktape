@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agentplane.app.action_federation import ActionFederationSettings
-from agentplane.app.kubernetes_grants import RoleBindingGrant, RoleRef
+from agentplane.app.kubernetes_grants import ClusterRoleBindingGrant, ClusterRoleRef, RoleBindingGrant, RoleRef
 from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import Harness, SandboxPreset, ThreadPreset
 from cluster.cdk8s.agentplane.app_settings import (
@@ -71,8 +71,34 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
                 kind="RoleBinding",
                 namespace=_NAMESPACE,
                 role_ref=RoleRef(kind="Role", name=TOOL_CONFIG_READER_ROLE_NAME),
-            )
+            ),
+            "cluster-diagnostics": ClusterRoleBindingGrant(
+                kind="ClusterRoleBinding",
+                role_ref=ClusterRoleRef(kind="ClusterRole", name="cluster-diagnostics-reader"),
+            ),
+            "haku-sandbox-write": RoleBindingGrant(
+                kind="RoleBinding", namespace="haku-sandbox", role_ref=RoleRef(kind="Role", name="haku-sandbox-admin")
+            ),
+            "agentplane-staging-metadata": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace=_NAMESPACE,
+                role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-metadata"),
+            ),
+            "agentplane-staging-logs": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace=_NAMESPACE,
+                role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
+            ),
+            "coinbase-credentials": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace=_NAMESPACE,
+                role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
+            ),
         },
+        # Retain cleanup authority when a catalog choice is disabled while its
+        # existing Sandboxes still hold a binding in that scope.
+        kubernetes_binding_cleanup_namespaces=["haku-sandbox"],
+        kubernetes_cluster_binding_cleanup=True,
     )
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
     # they name staging-only credentials (forgejo-finance-agent, plaid-pgweb) that

@@ -53,56 +53,24 @@ The common case is a mix, split by operation class rather than by system:
 
 ## Kubernetes Sandbox access decisions
 
-`ACCESS` owns the external-system permission model; `SANDBOX_RBAC` owns its Sandbox lifecycle
-and UI integration, including individually editable fields that presets may prefill. These are
-related tasks, not separate permission systems. The following choices remain open:
+[#8596](https://github.com/agentydragon/ducktape/issues/8596) selected one ServiceAccount
+per managed Sandbox. Its egress sidecar holds a projected Kubernetes-audience token and
+substitutes that Sandbox SA's identity for `kubectl` requests. The workload receives a
+placeholder kubeconfig, not the token. Kubernetes enforces the resulting SA's RBAC.
 
-- **Credential custody and request path:** does the Sandbox hold a Kubernetes API token and
-  call the apiserver directly, or does a proxy substitute a credential that stays outside the
-  Sandbox? Specify the token audience, rotation, expiry, exposure, and revocation behavior.
-- **Permission authority and enforcement:** manage Kubernetes Roles/ClusterRoles and bindings
-  directly; reconcile them from app-owned grant records; or authorize operations in a broker
-  using the broker's own Kubernetes principal. In the first two cases Kubernetes enforces the
-  Sandbox principal's RBAC; in the third it enforces the broker's authority, so caller-level
-  authorization is also the broker's responsibility. Decide whether there is any app-owned
-  grant model rather than assuming one, and identify a single desired-state owner for each
-  managed object, respecting existing GitOps ownership.
+Flux owns shared Role rules and the catalog of explicitly enabled role/scope choices.
+The operator may replace a preset's launch defaults with any catalog choice. Agentplane
+resolves choices before creation, supplies the created SA as subject, persists the
+concrete templates, and reconciles its owned bindings through deletion. Editing a Role
+affects all already-bound Sandboxes; editing a preset or catalog entry does not retarget
+them. Runtime additions/removals of a Sandbox SA's grants remain future work.
 
-Using a proxy does **not** imply replacing native Kubernetes RBAC: it can substitute a token for
-the Sandbox's own principal while the apiserver remains the per-request authorization authority.
-Conversely, using Kubernetes RBAC objects does not decide whether desired grants live only in
-Kubernetes or are reconciled from an app ledger.
-
-The app currently creates a ServiceAccount per Sandbox at launch and owns it by
-`ownerReference`; whether Agentplane should keep per-Sandbox identities, share a Haku identity
-across Haku-mode managed Sandboxes, or offer a launch-time choice remains open. Managed runner
-Pods currently use their per-Sandbox account, while OAuth-connected Connections already have
-static caller ServiceAccounts. The Coinbase credential/identity decision for managed runners is
-tracked in [#8596](https://github.com/agentydragon/ducktape/issues/8596).
-For Haku-mode managed Sandboxes, the concrete candidates are:
-
-- **Per-Sandbox identity:** keep one ServiceAccount per Sandbox and let its preset select the
-  default RoleBindings to materialize for that account (a proposed extension to today's
-  prefill-only preset behavior); add temporary permissions as grants scoped to that Sandbox.
-- **Shared Haku identity:** run Haku-mode managed Sandboxes under one Haku-specific ServiceAccount
-  with a shared standing permission set.
-- **Launch-time hybrid:** let each Sandbox choose between a new per-Sandbox ServiceAccount and the
-  shared Haku ServiceAccount.
-
-No candidate is selected. This leaves a real tension: per-Sandbox identities let a RoleBinding
-target one Sandbox, while a shared identity makes the default Haku permission set straightforward
-but a RoleBinding added to it reaches every runner using that identity. Any shared-identity design
-must explain what separate enforcement or identity boundary keeps Sandbox-only temporary grants
-isolated. OAuth-connected Connections' existing static caller ServiceAccounts remain a separate
-path. Full-Haku migration is gated on resolving this design, not on porting Haku's warm-pool
-feature.
-Keep the existing [workload authentication](../docs/workload_authentication.md) boundary
-distinct from credentials authorizing Kubernetes API calls; authenticating a Sandbox to
-Agentplane does not itself grant Kubernetes access. Any design must explain effective-access
-inspection, who can grant or widen permissions, target audit attribution, failure behavior
-during reconciliation, and how revocation affects already-issued credentials and requests
-already in flight. The proposal below is one candidate, not a settled requirement for
-`SANDBOX_RBAC`.
+External OAuth Haku continues to use its static `claude-ai` caller through MCP-created
+sandboxes. It runs `kubectl` from that sandbox; no OAuth-to-Kubernetes gateway is part
+of this design. Its existing static permissions and view-only Coinbase Secret grant
+remain separate from the managed Haku preset. See
+[agent RBAC](../../cluster/docs/agent_rbac.md) for the configured managed grants and
+[the Sandbox task](task_dag.md#sandbox_rbac) for live acceptance still required.
 
 ## Candidate revocation gate for minted grants
 

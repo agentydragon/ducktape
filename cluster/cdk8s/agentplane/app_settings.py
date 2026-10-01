@@ -76,6 +76,8 @@ def settings(
     action_policy_sets: list[str] | None = None,
     haku_preset_model: str | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
+    kubernetes_binding_cleanup_namespaces: list[str] | None = None,
+    kubernetes_cluster_binding_cleanup: bool = False,
 ) -> AppSettingsConfig:
     # A model both harnesses accept (e.g. a local Ollama route) names its display name once,
     # regardless of how many harness lists reference it. dict.fromkeys dedupes while keeping
@@ -94,6 +96,12 @@ def settings(
         agent_egress_api_url=f"http://agentplane-egress.{namespace}.svc.cluster.local",
         agent_actions_service_url=f"http://agentplane-actions.{namespace}.svc.cluster.local:8080",
         kubernetes_grants=kubernetes_grants if kubernetes_grants is not None else {},
+        **(
+            {"kubernetes_binding_cleanup_namespaces": kubernetes_binding_cleanup_namespaces}
+            if kubernetes_binding_cleanup_namespaces
+            else {}
+        ),
+        **({"kubernetes_cluster_binding_cleanup": True} if kubernetes_cluster_binding_cleanup else {}),
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a
         # runner receives a preset name.
@@ -162,13 +170,6 @@ def settings(
                         template="agentplane-runner",
                         # These policies are what a *launch* is granted, independent of
                         # which caller/ServiceAccount stamps it.
-                        #
-                        # TODO(#8596): once Agentplane has a deliberate identity and credential
-                        # path for managed sandboxes (they currently get one ServiceAccount
-                        # per Sandbox, and whether to keep that is open), plumb the view-only
-                        # Coinbase key into these runners and grant only the chosen identity
-                        # the required Secret read and Coinbase egress. OAuth-connected
-                        # Connections retain their separate static claude-ai grant.
                         policies=[
                             BASIC_POLICY,
                             FORGEJO_HAKU_POLICY,
@@ -178,6 +179,7 @@ def settings(
                             HOME_ASSISTANT_READONLY_POLICY,
                             ACTIVITYWATCH_READ_POLICY,
                             AIQUOTA_READ_POLICY,
+                            COINBASE_POLICY,
                             HAKU_MAILBOX_POLICY,
                             PLAID_PGWEB_POLICY,
                             GITHUB_CLONE_POLICY,
@@ -185,6 +187,13 @@ def settings(
                             GITHUB_ACTIONS_LOGS_POLICY,
                         ],
                         action_policy_sets=[GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
+                        kubernetes_grants=[
+                            "cluster-diagnostics",
+                            "haku-sandbox-write",
+                            "agentplane-staging-metadata",
+                            "agentplane-staging-logs",
+                            "coinbase-credentials",
+                        ],
                         thread_preset=_THREAD_PRESET_HAKU_CLAUDE,
                         # Shallow clone of haku-state over the in-cluster Forgejo, matching the
                         # retired Console sandbox bootstrap's --depth 1 clone policy
