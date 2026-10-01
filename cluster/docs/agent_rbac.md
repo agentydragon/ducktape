@@ -167,7 +167,9 @@ The app's own Flux Kustomization owns delegation in `agentplane-staging` and at
 cluster scope. Each external target namespace has a separate, GitRepository-sourced
 Flux Kustomization for the app ServiceAccount's RoleBinding management Role and
 RoleBinding. The `haku-sandbox` delegation depends on `haku-rbac`, which depends
-on the namespace owner. A failure in this delegation Kustomization does not
+on the namespace owner. The `agentplane-testing` delegation depends on the
+testing environment's Kustomization, which creates its namespace and Role.
+A failure in either delegation Kustomization does not
 block the Agentplane app Kustomization. Keep an external delegation while its namespace
 is in the retained cleanup scopes, even if its catalog entry is removed.
 
@@ -184,6 +186,16 @@ within `agentplane-staging`, and `get` on exactly
 `agentplane-staging/coinbase-api-credentials` via the existing
 `claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its
 rules are shared while its static `claude-ai` RoleBinding remains Flux-owned.
+The preset also selects the existing `agentplane-testing-operator` Role in
+`agentplane-testing`; its static Haku RoleBinding remains Flux-owned. This is a
+**testing-only write grant**: it can create, patch, and delete Sandboxes, create
+Pod exec and port-forward sessions, create/patch/delete ActionPolicySets and
+ActionPolicyBindings, and mint the `agentplane-agent` ServiceAccount token used
+by the testing app. It also reads testing SandboxTemplates, Pods, and Pod logs.
+It grants no write access in `agentplane-staging` and no direct Kubernetes
+Secret read. Pod exec can expose data mounted in testing Pods, and a holder can
+operate every Sandbox in the testing namespace and use that environment's
+credentialless MCP fixtures. Treat it as operator authority, not a diagnostics reader.
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
 read selection. Other Kyverno `agent-readable-*` namespaces still grant the static
 Haku identities; managed Haku SAs require explicit catalog entries before they receive
@@ -207,10 +219,12 @@ for box in "$HAKU_A" "$HAKU_B"; do
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging get pods -o name
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging auth can-i get pods/log
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n haku-sandbox auth can-i create jobs
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-testing auth can-i create sandboxes.agents.x-k8s.io
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging auth can-i create jobs
   kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging get secret coinbase-api-credentials -o 'jsonpath={.metadata.name}'
 done
 kubectl -n agentplane-staging exec "$OTHER" -c runner -- kubectl get nodes -o name
+kubectl -n agentplane-staging exec "$OTHER" -c runner -- kubectl -n agentplane-testing auth can-i create sandboxes.agents.x-k8s.io
 kubectl -n agentplane-staging exec "$OTHER" -c runner -- kubectl -n agentplane-staging get secret coinbase-api-credentials -o name
 ```
 
@@ -218,8 +232,10 @@ The three `whoami` results must name three distinct
 `system:serviceaccount:agentplane-staging:<sandbox-name>` principals. Both Haku boxes
 must read Nodes and staging Pod metadata, answer `yes` for staging `pods/log`
 reads and `haku-sandbox` Job creation, answer `no` for staging Job creation,
-and return only `coinbase-api-credentials` from the Secret read. The last two
-commands must return `Forbidden`. Never use `-o yaml`, `-o json`, `describe`, shell
+answer `yes` for testing Sandbox creation (while `OTHER` answers `no`),
+and return only `coinbase-api-credentials` from the Secret read. `OTHER` must
+answer `no` for testing Sandbox creation; its Node and Secret reads must return
+`Forbidden`. Never use `-o yaml`, `-o json`, `describe`, shell
 tracing, or an agent transcript for the Secret: those can expose the key. The
 metadata-only output above still performs a real Secret `get` without printing
 its data.

@@ -3896,6 +3896,27 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Delegates managed Sandbox RoleBinding reconciliation in agentplane-testing.
+  name: agentplane-staging-binding-delegation-agentplane-testing
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: agentplane-testing
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/agentplane-testing
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Delegates managed Sandbox RoleBinding reconciliation in haku-sandbox.
   name: agentplane-staging-binding-delegation-haku-sandbox
   namespace: ducktape-flux

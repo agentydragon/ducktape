@@ -1452,7 +1452,7 @@ def generate_manifests(root: Path) -> None:
         haku_egress_proxy_kustomization,
     )
     agentplane_testing_artifact = artifact("agentplane-testing", testing.ENV.output_dir, testing.ENV.image_pins)
-    testing.agentplane_testing(
+    agentplane_testing_kustomization = testing.agentplane_testing(
         flux_chart,
         agentplane_testing_artifact,
         agentplane_testing_health_checks,
@@ -1522,7 +1522,11 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
     )
-    binding_delegation.add_flux_kustomizations(flux_chart, staging.ENV, {"haku-sandbox": haku_rbac_kustomization})
+    binding_delegation.add_flux_kustomizations(
+        flux_chart,
+        staging.ENV,
+        {"agentplane-testing": agentplane_testing_kustomization, "haku-sandbox": haku_rbac_kustomization},
+    )
     # Every artifact built above except the parked nodes': those Kustomizations are suspended.
     write_artifact_generators(
         root,

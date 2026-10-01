@@ -27,6 +27,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     SSH_READS_SET,
     settings,
 )
+from cluster.cdk8s.agentplane.rbac import TESTING_OPERATOR_ROLE_NAME
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME
 from cluster.cdk8s.litellm.keys import ANTIGRAVITY_CLIENT_MODELS, CLAUDE_CLIENT_MODELS, GPT6_OAI_LANE_MODELS
 from cluster.cdk8s.model_rosters import ApiShape, Provider, codex_responses_name, exposed_name
@@ -79,6 +80,11 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
             "haku-sandbox-write": RoleBindingGrant(
                 kind="RoleBinding", namespace="haku-sandbox", role_ref=RoleRef(kind="Role", name="haku-sandbox-admin")
             ),
+            "agentplane-testing-operator": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="agentplane-testing",
+                role_ref=RoleRef(kind="Role", name=TESTING_OPERATOR_ROLE_NAME),
+            ),
             "agentplane-staging-metadata": RoleBindingGrant(
                 kind="RoleBinding",
                 namespace=_NAMESPACE,
@@ -97,7 +103,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         },
         # Retain cleanup authority when a catalog choice is disabled while its
         # existing Sandboxes still hold a binding in that scope.
-        kubernetes_binding_cleanup_namespaces=["haku-sandbox"],
+        kubernetes_binding_cleanup_namespaces=["agentplane-testing", "haku-sandbox"],
         kubernetes_cluster_binding_cleanup=True,
     )
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
