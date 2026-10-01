@@ -106,7 +106,7 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     # from code.forgejo.org.
     ("code.forgejo.org", "data.forgejo.org"),
     # Managed Agents self-hosted worker (haku/runtime/x/managed_agent/self_hosted) long-polls
-    # Anthropic's work queue via `ant beta:worker poll`.
+    # Anthropic's work queue via the Python SDK worker.
     ("api.anthropic.com",),
     # AnkiWeb sync (haku-anki service, haku/plans in haku-state): sync.ankiweb.net plus the
     # shard hosts it 308-redirects to -- Anki's own firewall guidance is to allow *.ankiweb.net
