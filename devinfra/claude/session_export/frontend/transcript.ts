@@ -187,9 +187,13 @@ function hookFailed(payload: JsonObject): boolean {
   const status = string(response.status)?.toLowerCase();
   return (
     response.is_error === true ||
+    response.success === false ||
     (response.error !== undefined && response.error !== null && response.error !== "") ||
     (typeof response.exit_code === "number" && response.exit_code !== 0) ||
+    (typeof response.exitCode === "number" && response.exitCode !== 0) ||
+    string(response.stderr) !== null ||
     status === "error" ||
+    status === "failure" ||
     status === "failed"
   );
 }
@@ -549,7 +553,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
         id: eventId(event),
         title: `Runner log · ${level}`,
         detail: textFrom(data.message) ?? undefined,
-        routine: level !== "warn" && level !== "warning" && level !== "error" && level !== "fatal",
+        routine: level === "trace" || level === "debug" || level === "info",
         events: [event],
       });
       continue;
