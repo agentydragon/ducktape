@@ -181,7 +181,14 @@ function ToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
         const action = toolAction(tool);
         const args = toolArguments(tool);
         return (
-          <Paper key={tool.toolUseId} withBorder radius="sm" p="sm" data-tool-name={tool.name}>
+          <Paper
+            key={tool.toolUseId}
+            withBorder
+            radius="sm"
+            p="sm"
+            data-tool-name={tool.name}
+            data-parent-tool-use-id={tool.parentToolUseId}
+          >
             <Stack gap="xs">
               <Group justify="space-between" align="center" gap="xs">
                 <Group gap="xs">
@@ -221,6 +228,39 @@ function ToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
                 </Text>
               )}
               {tool.summary !== undefined && <Text size="sm">{tool.summary}</Text>}
+              {(tool.name === "Task" || tool.name === "Agent") &&
+                tool.status === "running" &&
+                tool.subagentActivity !== undefined && (
+                  <Paper
+                    withBorder
+                    radius="xs"
+                    p="xs"
+                    data-subagent-activity
+                    data-subagent-tool-count={tool.subagentActivity.toolCallCount}
+                  >
+                    <Group gap="xs">
+                      <Text size="xs" fw={500}>
+                        Agent activity
+                      </Text>
+                      <Badge
+                        size="xs"
+                        variant="light"
+                        color="blue"
+                        data-subagent-latest-tool={tool.subagentActivity.latestToolName}
+                      >
+                        {tool.subagentActivity.latestToolName}
+                      </Badge>
+                      <Badge size="xs" variant="light" color="gray">
+                        {tool.subagentActivity.toolCallCount} calls
+                      </Badge>
+                    </Group>
+                    {tool.subagentActivity.model !== undefined && (
+                      <Text size="xs" c="dimmed" mt={4}>
+                        {tool.subagentActivity.model}
+                      </Text>
+                    )}
+                  </Paper>
+                )}
               {(tool.result !== undefined || (tool.outputImages?.length ?? 0) > 0) && (
                 <Stack gap={4}>
                   <Text size="xs" c="dimmed">
@@ -319,6 +359,7 @@ function TranscriptCard({ item }: { item: TranscriptItem }): JSX.Element {
       aria-label={title}
       data-fold-kind={item.kind}
       data-tool-count={item.kind === "tool-run" ? item.tools.length : undefined}
+      data-parent-tool-use-id={item.kind === "message" || item.kind === "tool-run" ? item.parentToolUseId : undefined}
       withBorder
       radius="sm"
       p="md"
@@ -338,6 +379,11 @@ function TranscriptCard({ item }: { item: TranscriptItem }): JSX.Element {
                   {item.status}
                 </Badge>
               </>
+            )}
+            {(item.kind === "message" || item.kind === "tool-run") && item.parentToolUseId !== undefined && (
+              <Badge size="xs" variant="light" color="blue">
+                Subagent
+              </Badge>
             )}
             {item.kind === "activity" && (
               <Badge variant="dot" color={toolStatusColor(item.status)}>

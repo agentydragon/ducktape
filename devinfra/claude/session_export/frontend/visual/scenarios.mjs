@@ -10,6 +10,12 @@ const VIEWER_READY = [
   "[data-tool-output-image]",
 ];
 const TOOL_RESULT_READY = ["#session-viewer-title", '[data-tool-name="Read"]', "[data-tool-output-image]"];
+const SUBAGENT_READY = [
+  "#session-viewer-title",
+  '[data-subagent-activity][data-subagent-tool-count="2"]',
+  '[data-subagent-latest-tool="Grep"]',
+  '[data-parent-tool-use-id="agent-17"] [data-tool-name="Grep"]',
+];
 
 export const SCENARIOS = {
   SessionViewer: { element: "#app", readySelectors: VIEWER_READY },
@@ -23,6 +29,12 @@ export const SCENARIOS = {
   SessionToolResult_mobile: {
     element: "#app",
     readySelectors: TOOL_RESULT_READY,
+    viewport: { width: 420, height: 900 },
+  },
+  SessionSubagent: { element: "#app", readySelectors: SUBAGENT_READY },
+  SessionSubagent_mobile: {
+    element: "#app",
+    readySelectors: SUBAGENT_READY,
     viewport: { width: 420, height: 900 },
   },
   SessionSync: { element: "#app", readySelectors: SYNC_READY },
