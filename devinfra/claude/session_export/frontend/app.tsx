@@ -13,7 +13,7 @@ const TICK_MS = 1_000;
 
 export function App(): JSX.Element {
   const [status, setStatus] = useState<SyncStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; message: string } | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -21,7 +21,10 @@ export function App(): JSX.Element {
       setStatus(await getStatus());
       setError(null);
     } catch (reason) {
-      setError(reason instanceof ApiError || reason instanceof Error ? reason.message : "Could not load the status.");
+      setError({
+        title: "Sync status unavailable",
+        message: reason instanceof ApiError || reason instanceof Error ? reason.message : "Could not load the status.",
+      });
     }
   }, []);
 
@@ -41,7 +44,10 @@ export function App(): JSX.Element {
       await syncNow();
       await refresh();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not start a sync.");
+      setError({
+        title: "Sync could not start",
+        message: reason instanceof Error ? reason.message : "Could not start a sync.",
+      });
     }
   }, [refresh]);
 
@@ -50,8 +56,8 @@ export function App(): JSX.Element {
       <Stack gap="md">
         <Title order={1}>Claude session sync</Title>
         {error !== null && (
-          <Alert color="red" role="alert" title="Sync status unavailable">
-            {error}
+          <Alert color="red" role="alert" title={error.title}>
+            {error.message}
           </Alert>
         )}
         {status === null ? (

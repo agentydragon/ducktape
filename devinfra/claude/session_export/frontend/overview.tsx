@@ -12,11 +12,11 @@ type Props = {
 
 function StatusDetail({ label, children }: { label: string; children: ReactNode }): JSX.Element {
   return (
-    <Stack gap={2} style={{ minWidth: 0 }}>
-      <Text size="xs" c="dimmed">
+    <Stack component="div" gap={2} style={{ minWidth: 0 }}>
+      <Text component="dt" size="xs" c="dimmed">
         {label}
       </Text>
-      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+      <Text component="dd" size="sm" style={{ margin: 0, overflowWrap: "anywhere" }}>
         {children}
       </Text>
     </Stack>
@@ -55,7 +55,7 @@ export function Overview({ status, now, onSyncNow }: Props): JSX.Element {
                   : "Off: only polling runs."}
               </Text>
               {live.following && (
-                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                <SimpleGrid component="dl" cols={{ base: 1, sm: 2 }} spacing="sm">
                   <StatusDetail label="Streaming">{plural(live.streams, "session")}</StatusDetail>
                   <StatusDetail label="Session watch">
                     {live.watching
@@ -72,7 +72,7 @@ export function Overview({ status, now, onSyncNow }: Props): JSX.Element {
                 Every {every(status.poll_interval_seconds)} it lists every session and reads the events of any that
                 moved on. It needs no live following, and catches whatever that missed.
               </Text>
-              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <SimpleGrid component="dl" cols={{ base: 1, sm: 2 }} spacing="sm">
                 <StatusDetail label="State">{status.state === "syncing" ? "Running now" : "Idle"}</StatusDetail>
                 <StatusDetail label="Last poll">
                   {cycle === null
@@ -96,7 +96,7 @@ export function Overview({ status, now, onSyncNow }: Props): JSX.Element {
             </Stack>
             <Stack gap="xs">
               <Title order={3}>Grant</Title>
-              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <SimpleGrid component="dl" cols={{ base: 1, sm: 2 }} spacing="sm">
                 <StatusDetail label="Organization">
                   <Code>{credential.organization_uuid}</Code>
                 </StatusDetail>
