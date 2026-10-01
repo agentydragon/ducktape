@@ -87,9 +87,9 @@ exception: they operate deliberately on the shared integration branch.
   surface meets its broader contract. These are author-trusted assertions,
   not body verification; argument expressions are still analyzed, and an
   export's initializer is not declared pure by a call-purity annotation. See
-  `references/docs/design.md` § A9 and
-  `references/docs/purity_soundness.md` § Declared purity for the exact
-  contracts.
+  `references/purity_annotations.md` for the cycle-recovery decision steps and
+  examples; the full contracts are in `devinfra/js/debundle/docs/design.md`
+  § A9 and `devinfra/js/debundle/docs/purity_soundness.md`.
 - After annotating, rerun the same gate and confirm the reported side-effect
   edge is gone and the intended assignment becomes realizable. If the call
   can have observable effects during module initialization, change the

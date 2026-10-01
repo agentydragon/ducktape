@@ -11,6 +11,7 @@ DEBUNDLE_REFERENCES = [
             "//devinfra/js/debundle:README.md",
             "//devinfra/js/debundle:SPEC.md",
             "//devinfra/js/debundle/skills/shared:module_shape.md",
+            "//devinfra/js/debundle/skills/shared:purity_annotations.md",
             "//devinfra/js/debundle/skills/shared:workflow.md",
         ],
         prefix = "references",
@@ -19,8 +20,6 @@ DEBUNDLE_REFERENCES = [
         srcs = [
             "//devinfra/js/debundle/docs:bazel_integration.md",
             "//devinfra/js/debundle/docs:cli.md",
-            "//devinfra/js/debundle/docs:design.md",
-            "//devinfra/js/debundle/docs:purity_soundness.md",
             "//devinfra/js/debundle/docs:selectors.md",
             "//devinfra/js/debundle/docs:spec_editing.md",
         ],
