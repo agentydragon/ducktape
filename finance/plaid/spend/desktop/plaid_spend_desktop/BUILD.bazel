@@ -1,6 +1,8 @@
 # gazelle:ignore
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
+package(default_visibility = ["//finance/plaid/spend/desktop:__pkg__"])
+
 py_library(
     name = "credentials",
     srcs = ["credentials.py"],
@@ -38,6 +40,7 @@ py_library(
 py_binary(
     name = "plaid_spend_cli",
     main_module = "finance.plaid.spend.desktop.plaid_spend_desktop.cli",
+    visibility = ["//visibility:public"],
     deps = [":cli"],
 )
 
