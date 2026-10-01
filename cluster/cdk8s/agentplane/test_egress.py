@@ -130,8 +130,10 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
     )
 
 
-def test_coinbase_access_is_limited_to_the_oauth_caller(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
-    """Keep Coinbase access on claude-ai while managed Haku identity is unresolved."""
+def test_coinbase_static_grant_is_preserved_and_managed_haku_picks_scoped_grant(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    """The static OAuth account keeps its grant; managed Haku picks a separate SA binding."""
     docs = agentplane_manifests[staging.ENV.namespace]
 
     role_binding = _by_name(docs, "RoleBinding", "claude-ai-coinbase-reader")
@@ -143,9 +145,61 @@ def test_coinbase_access_is_limited_to_the_oauth_caller(agentplane_manifests: di
     assert COINBASE_POLICY in egress_bindings["claude-ai"]["spec"]["policies"]
     assert COINBASE_POLICY not in egress_bindings["haku-agent"]["spec"]["policies"]
 
+    role = _by_name(docs, "Role", "claude-ai-coinbase-reader")
+    assert role["rules"] == [
+        {"apiGroups": [""], "resourceNames": ["coinbase-api-credentials"], "resources": ["secrets"], "verbs": ["get"]}
+    ]
+
     app_config = _by_name(docs, "ConfigMap", "agentplane-app-config")
-    haku_preset = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]["haku"]
-    assert COINBASE_POLICY not in haku_preset["policies"], haku_preset
+    config = yaml.safe_load(app_config["data"]["config.yaml"])
+    haku_preset = config["sandbox_presets"]["haku"]
+    assert COINBASE_POLICY in haku_preset["policies"], haku_preset
+    assert "coinbase-credentials" in haku_preset["kubernetes_grants"]
+    assert config["kubernetes_grants"]["coinbase-credentials"] == {
+        "kind": "RoleBinding",
+        "namespace": staging.ENV.namespace,
+        "role_ref": {"kind": "Role", "name": "claude-ai-coinbase-reader"},
+    }
+
+
+def test_haku_grant_catalog_generates_scoped_app_delegation(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    haku = config["sandbox_presets"]["haku"]
+    assert haku["kubernetes_grants"] == [
+        "cluster-diagnostics",
+        "haku-sandbox-write",
+        "agentplane-staging-metadata",
+        "agentplane-staging-logs",
+        "coinbase-credentials",
+    ]
+    assert config["kubernetes_grants"]["cluster-diagnostics"] == {
+        "kind": "ClusterRoleBinding",
+        "role_ref": {"kind": "ClusterRole", "name": "cluster-diagnostics-reader"},
+    }
+    assert config["kubernetes_grants"]["haku-sandbox-write"] == {
+        "kind": "RoleBinding",
+        "namespace": "haku-sandbox",
+        "role_ref": {"kind": "Role", "name": "haku-sandbox-admin"},
+    }
+    assert not any(
+        doc["kind"] in {"Role", "RoleBinding"}
+        and doc["metadata"].get("namespace") == "haku-sandbox"
+        and doc["metadata"]["name"] == "agentplane-staging-managed-bindings"
+        for doc in docs
+    ), "the app Kustomization must not own managed-binding delegation in external namespaces"
+    app_cluster_role = _by_name(docs, "ClusterRole", "agentplane-staging-managed-cluster-bindings")
+    assert {
+        tuple(rule.get("resourceNames", [])) for rule in app_cluster_role["rules"] if rule["verbs"] == ["bind"]
+    } == {("agent-readable-namespace-logs",), ("agent-readable-namespace-metadata",), ("cluster-diagnostics-reader",)}
+    assert any(
+        rule["resources"] == ["clusterroles"] and rule["verbs"] == ["get"] and not rule.get("resourceNames")
+        for rule in app_cluster_role["rules"]
+    )
+    assert config["kubernetes_binding_cleanup_namespaces"] == ["haku-sandbox"]
+    assert config["kubernetes_cluster_binding_cleanup"] is True
 
 
 def test_upstream_bundles_have_independent_environment_ownership(

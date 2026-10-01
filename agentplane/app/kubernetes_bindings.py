@@ -150,6 +150,15 @@ class KubernetesBindings:
 
     async def _ensure_one(self, sandbox: SandboxView, grant: ResolvedGrant) -> None:
         expected = _binding(sandbox, grant)
+        # Kubernetes accepts a binding whose roleRef does not exist. Check the
+        # referenced Role on every pass so a missing grant cannot become Ready.
+        if expected.role_ref.kind == "Role":
+            assert isinstance(expected, k8s_client.V1RoleBinding)
+            assert expected.metadata is not None
+            assert expected.metadata.namespace is not None
+            await self._rbac.read_namespaced_role(expected.role_ref.name, expected.metadata.namespace)
+        else:
+            await self._rbac.read_cluster_role(expected.role_ref.name)
         try:
             actual = await self._read(expected)
         except k8s_client.ApiException as error:
@@ -215,7 +224,12 @@ class KubernetesBindings:
     async def _sweep_orphans(self, live_uids: set[str]) -> None:
         selector = f"{MANAGED_BY_LABEL}={MANAGED_BY_APP}"
         for namespace in sorted(self._cleanup_namespaces):
-            bindings = await self._rbac.list_namespaced_role_binding(namespace, label_selector=selector)
+            try:
+                bindings = await self._rbac.list_namespaced_role_binding(namespace, label_selector=selector)
+            except k8s_client.ApiException as error:
+                if error.status == 404:
+                    continue  # The namespace and its RoleBindings are already gone.
+                raise
             for binding in bindings.items:
                 if await self._is_confirmed_orphan(binding, live_uids):
                     assert binding.metadata is not None

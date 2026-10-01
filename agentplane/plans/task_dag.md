@@ -93,7 +93,7 @@ flowchart TB
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
     ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
-    SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>identity choice open; see #8596"]:::future
+    SANDBOX_RBAC["Managed Kubernetes access<br/>catalog choices and SA bindings<br/>live acceptance pending; see #8596"]:::active
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
@@ -269,44 +269,28 @@ ServiceAccount column becomes a real dropdown instead of static text.
 
 ### `SANDBOX_RBAC` — manage Sandbox Kubernetes access, optionally through presets
 
-**Planned, not in the current Thread correctness batch:** support explicit Kubernetes
-role selections and namespace/cluster scope for a Sandbox, for example “public-coder
-Sandboxes receive these Kubernetes roles.” Add the same individually editable fields
-to Sandbox creation and optional preset defaults. Presets only prefill values; neither
-the apiserver nor credential handling interprets preset names as authority. This does
-not require the broad `PROFILES` design.
+[#8596](https://github.com/agentydragon/ducktape/issues/8596) selected a distinct
+ServiceAccount per managed Sandbox, a Flux-owned named grant catalog, and app-owned
+RoleBindings/ClusterRoleBindings. Presets only prefill launch names; the operator may
+replace them or choose none. The API validates names and stores resolved binding
+templates, while shared Role definitions hold ongoing permissions. The egress sidecar
+substitutes the Sandbox SA's projected Kubernetes token. External OAuth Haku uses its
+existing static caller through an MCP-created sandbox, not a new Kubernetes gateway.
 
-Resolve the credential path for those principals with `ACCESS`. Current implementation
-creates and owns a ServiceAccount per Sandbox at launch. That is current behavior, not a
-settled identity choice. The open models are per-Sandbox ServiceAccounts with preset-selected
-default RoleBindings (a proposed extension to presets), one shared Haku-specific ServiceAccount
-for Haku-mode managed runners, or a launch-time choice between those identities. Resolve how
-Sandbox-only temporary grants remain isolated and revocable alongside shared/default Haku
-permissions; no model is selected. OAuth-connected Connections already have static caller
-ServiceAccounts and remain a separate path. Managed-runner Coinbase key delivery is tracked in
-[#8596](https://github.com/agentydragon/ducktape/issues/8596).
-
-Preserve live Sandbox UID/Pod attribution in workload authentication. Distinct ServiceAccounts
-in accepted namespaces are already supported by that authenticator. The credential path and
-whether/how Kubernetes RBAC objects represent grants remain open under `ACCESS`; their
-canonical design questions are in
-[external-system permissions](external_access.md#kubernetes-sandbox-access-decisions).
-This task integrates the chosen model into Sandbox creation, access inspection/change,
-and lifecycle cleanup, including cross-namespace resources where applicable. Respect
-existing GitOps ownership. Merely creating a RoleBinding does not provide a usable or
-safely revocable API access path.
-Current `ELEVATE` grants Action policy bindings, not Kubernetes roles; any Kubernetes
-elevation workflow must authorize the grant itself.
+The implementation binds only the created SA and reconciles the persisted selection.
+Same-namespace RoleBindings use an owner reference; external binding scopes use a
+finalizer and orphan sweep. Grant status prevents session start while provisioning is
+incomplete. Current `ELEVATE` grants Action policy bindings only; runtime Kubernetes
+grant editing would need its own authorization and revocation contract.
 `MANAGED_SA_RBAC` carries the same grant for an account with no Sandbox to own it.
 
-**Acceptance:** launch with a public-coder-style preset and without a preset using the
-same explicit fields; prove equivalent effective access, including overrides and an empty
-selection. Real API requests succeed only for intended operations/scopes; unauthorized
-role selection, another Sandbox's identity, and privilege-escalating grants are refused.
-Cover independent grants for two Sandboxes, inspection of effective access, revocation
-and reconciliation failure, suspend/resume, deletion/name reuse, and orphan-grant
-cleanup. Preset edits must not silently widen existing Sandboxes' grants. Verify the
-chosen credential boundary without exposing privileged credentials in evidence.
+**Remaining acceptance:** after the stacked PRs deploy, exercise two managed Haku
+Sandboxes and an unrelated one through real `kubectl`/sidecar requests; verify Role
+rule edits affect both existing bindings, external OAuth Haku's MCP sandbox reports its
+actual static SA, and only intended runners can read the Coinbase Secret. Verify
+deletion cleanup and credential use without recording the key. The exact sequence is
+in [agent RBAC](../../cluster/docs/agent_rbac.md). Runtime grant editing and revocation
+remain later work.
 
 ### `CLAUDE_AI_SA` — the claude.ai account's deliberate permissions and egress
 

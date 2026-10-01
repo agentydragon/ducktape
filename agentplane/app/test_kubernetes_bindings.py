@@ -37,10 +37,22 @@ class FakeRbac:
     def __init__(self) -> None:
         self.bindings: dict[tuple[str, str], k8s_client.V1RoleBinding] = {}
         self.cluster_bindings: dict[str, k8s_client.V1ClusterRoleBinding] = {}
+        self.missing_roles: set[tuple[str, str]] = set()
+        self.missing_cluster_roles: set[str] = set()
         self.creates = 0
         self.fail_on_create: int | None = None
         self.fail_on_delete: int | None = None
         self.deletes = 0
+
+    async def read_namespaced_role(self, name: str, namespace: str) -> k8s_client.V1Role:
+        if (namespace, name) in self.missing_roles:
+            raise k8s_client.ApiException(status=404)
+        return k8s_client.V1Role(metadata=k8s_client.V1ObjectMeta(name=name, namespace=namespace))
+
+    async def read_cluster_role(self, name: str) -> k8s_client.V1ClusterRole:
+        if name in self.missing_cluster_roles:
+            raise k8s_client.ApiException(status=404)
+        return k8s_client.V1ClusterRole(metadata=k8s_client.V1ObjectMeta(name=name))
 
     async def read_namespaced_role_binding(self, name: str, namespace: str) -> k8s_client.V1RoleBinding:
         try:
@@ -167,6 +179,39 @@ async def test_distinct_sandboxes_bind_only_their_own_service_accounts() -> None
         assert role_binding.metadata.owner_references[0].uid == str(view.uid)
     await bindings.reconcile_once()
     assert rbac.creates == 2
+
+
+async def test_missing_role_ref_never_reports_grants_ready() -> None:
+    custom, core, rbac = FakeCustomObjectsApi(), FakeCoreV1Api(), FakeRbac()
+    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
+    catalog: dict[str, KubernetesGrant] = {
+        "local": _grant("config-reader"),
+        "cluster": ClusterRoleBindingGrant(
+            kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="diagnostics")
+        ),
+    }
+    name, _ = await _sandbox(inventory, core, ["local", "cluster"], catalog)
+    bindings = KubernetesBindings(inventory, cast(Any, rbac))
+    rbac.missing_roles.add((NAMESPACE, "config-reader"))
+    await bindings.ensure(await inventory.get(name))
+    assert (await inventory.get(name)).state is ProvisioningState.WAITING_FOR_GRANTS
+    assert (await inventory.get(name)).kubernetes_grant_error == "ApiException (404)"
+    assert rbac.creates == 0
+
+    rbac.missing_roles.clear()
+    await bindings.ensure(await inventory.get(name))
+    assert (await inventory.get(name)).state is ProvisioningState.RUNNING
+    assert rbac.creates == 2
+
+    rbac.missing_cluster_roles.add("diagnostics")
+    await bindings.ensure(await inventory.get(name))
+    assert (await inventory.get(name)).state is ProvisioningState.WAITING_FOR_GRANTS
+    assert (await inventory.get(name)).kubernetes_grant_error == "ApiException (404)"
+    assert rbac.creates == 2
+
+    rbac.missing_cluster_roles.clear()
+    await bindings.ensure(await inventory.get(name))
+    assert (await inventory.get(name)).state is ProvisioningState.RUNNING
 
 
 async def test_partial_creation_recovers_from_persisted_selection_after_catalog_removal() -> None:
@@ -353,6 +398,36 @@ async def test_orphan_sweep_checks_sandbox_created_after_list_snapshot() -> None
     await KubernetesBindings(inventory, cast(Any, rbac), cleanup_cluster_bindings=True).reconcile_once()
     assert len(rbac.cluster_bindings) == 1
     assert rbac.deletes == 0
+
+
+@pytest.mark.parametrize("status", [404, 403])
+async def test_orphan_sweep_skips_only_missing_namespaces(status: int) -> None:
+    custom, core = FakeCustomObjectsApi(), FakeCoreV1Api()
+    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
+
+    class MissingNamespaceRbac(FakeRbac):
+        def __init__(self) -> None:
+            super().__init__()
+            self.listed: list[str] = []
+
+        async def list_namespaced_role_binding(
+            self, namespace: str, *, label_selector: str
+        ) -> k8s_client.V1RoleBindingList:
+            self.listed.append(namespace)
+            if namespace == "a-missing":
+                raise k8s_client.ApiException(status=status)
+            return await super().list_namespaced_role_binding(namespace, label_selector=label_selector)
+
+    rbac = MissingNamespaceRbac()
+    bindings = KubernetesBindings(inventory, cast(Any, rbac), cleanup_namespaces={"a-missing", "z-present"})
+    if status == 403:
+        with pytest.raises(k8s_client.ApiException) as error:
+            await bindings.reconcile_once()
+        assert error.value.status == 403
+        assert rbac.listed == ["a-missing"]
+    else:
+        await bindings.reconcile_once()
+        assert rbac.listed == ["a-missing", "z-present"]
 
 
 if __name__ == "__main__":

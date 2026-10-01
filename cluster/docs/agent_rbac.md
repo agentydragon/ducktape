@@ -135,9 +135,9 @@ every sandbox it stamps through the sandbox Action group runs as it
 `agent-readable-*` namespaces (section 4), and `get` on exactly one Secret,
 `agentplane-staging/coinbase-api-credentials`: the view-only Coinbase CDP key, which its
 OAuth-connected sandboxes sign Coinbase requests with because the egress proxy cannot.
-Agentplane-managed Haku runner Pods use per-Sandbox ServiceAccounts and do not receive this key
-or Coinbase egress yet; #8596 tracks choosing and implementing their scoped identity and
-credential path. The static OAuth grant remains separate. This account may also `create` the
+Agentplane-managed Haku runner Pods use per-Sandbox ServiceAccounts. Their Haku preset
+now selects the same single-Secret reader Role plus Coinbase egress; an operator may
+replace the preset selection. The static OAuth grant remains separate. This account may also `create` the
 `agentplane-testing/agentplane-agent` token, which identifies its sandboxes to the testing app
 and nothing else, for the acceptance suite's harness scenarios
 (`cluster/cdk8s/agentplane/rbac.py`'s `AcceptanceToken`). No writable namespace, no
@@ -155,11 +155,93 @@ and stores the concrete binding target on the Sandbox. Later preset or catalog e
 not retarget existing bindings. Role rule changes affect every already-bound Sandbox.
 
 Agentplane supplies the binding subject from the created Sandbox ServiceAccount. It
-reconciles its own bindings and reports incomplete provisioning before a runner starts.
-The first enabled grant binds the `agentplane-sandbox-tool-config-reader` Role in
-`agentplane-staging`, allowing `get` only on the `agentplane-sandbox-tool-config`
-ConfigMap. The app's `bind` permission is limited to that Role. This checks the
-mechanism; Haku's diagnostics, write, and credential grants remain in #8596.
+reconciles its own bindings and reports incomplete provisioning before a session starts.
+Same-namespace RoleBindings carry a Sandbox owner reference. Cross-namespace
+RoleBindings and ClusterRoleBindings use a Sandbox finalizer for deletion cleanup;
+the app also sweeps orphaned bindings after an interrupted create/delete race. Catalog
+removal prevents new selection, while retained cleanup scopes let old bindings be
+deleted when their Sandboxes are deleted. The app may `bind` only the catalog's named
+Roles/ClusterRoles and cannot edit their rules.
+
+The app's own Flux Kustomization owns delegation in `agentplane-staging` and at
+cluster scope. Each external target namespace has a separate, GitRepository-sourced
+Flux Kustomization for the app ServiceAccount's RoleBinding management Role and
+RoleBinding. The `haku-sandbox` delegation depends on `haku-rbac`, which depends
+on the namespace owner. A failure in this delegation Kustomization does not
+block the Agentplane app Kustomization. Keep an external delegation while its namespace
+is in the retained cleanup scopes, even if its catalog entry is removed.
+
+Kubernetes RBAC does not constrain a ClusterRole's `bind` permission to
+namespaced RoleBindings. Because the app can create ClusterRoleBindings for the
+catalog's cluster grant, a compromised app identity could bind the named
+metadata and logs ClusterRoles cluster-wide too. The catalog and reconciler
+enforce the configured binding kind during ordinary operation; this remains a
+delegation limit of the app ServiceAccount's Kubernetes permissions.
+
+The Haku preset currently selects `cluster-diagnostics-reader` cluster-wide,
+`haku-sandbox-admin` within `haku-sandbox`, the common metadata and pod-log readers
+within `agentplane-staging`, and `get` on exactly
+`agentplane-staging/coinbase-api-credentials` via the existing
+`claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its
+rules are shared while its static `claude-ai` RoleBinding remains Flux-owned.
+The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
+read selection. Other Kyverno `agent-readable-*` namespaces still grant the static
+Haku identities; managed Haku SAs require explicit catalog entries before they receive
+those namespaced readers. No namespace label silently widens them.
+
+### Staging acceptance for managed Haku grants
+
+After the stacked grant PRs deploy, use the staging operator UI to create two Sandboxes
+from the Haku preset and one from public-coder with an explicitly empty Kubernetes
+grant list. Record their Sandbox names as `HAKU_A`,
+`HAKU_B`, and `OTHER`; wait for `kubernetes_grants_ready: true` before opening sessions.
+Run these commands with the operator kubeconfig. Each inner `kubectl` runs **inside**
+the Sandbox workload and uses its sidecar's substituted token:
+
+```sh
+for box in "$HAKU_A" "$HAKU_B" "$OTHER"; do
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl auth whoami
+done
+for box in "$HAKU_A" "$HAKU_B"; do
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl get nodes -o name
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging get pods -o name
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging auth can-i get pods/log
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n haku-sandbox auth can-i create jobs
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging auth can-i create jobs
+  kubectl -n agentplane-staging exec "$box" -c runner -- kubectl -n agentplane-staging get secret coinbase-api-credentials -o 'jsonpath={.metadata.name}'
+done
+kubectl -n agentplane-staging exec "$OTHER" -c runner -- kubectl get nodes -o name
+kubectl -n agentplane-staging exec "$OTHER" -c runner -- kubectl -n agentplane-staging get secret coinbase-api-credentials -o name
+```
+
+The three `whoami` results must name three distinct
+`system:serviceaccount:agentplane-staging:<sandbox-name>` principals. Both Haku boxes
+must read Nodes and staging Pod metadata, answer `yes` for staging `pods/log`
+reads and `haku-sandbox` Job creation, answer `no` for staging Job creation,
+and return only `coinbase-api-credentials` from the Secret read. The last two
+commands must return `Forbidden`. Never use `-o yaml`, `-o json`, `describe`, shell
+tracing, or an agent transcript for the Secret: those can expose the key. The
+metadata-only output above still performs a real Secret `get` without printing
+its data.
+
+For shared Role propagation, create a dummy `agentplane-grant-probe` Secret in
+staging with a harmless literal value, then verify both Haku boxes are denied `get`
+on it (`kubectl get secret agentplane-grant-probe -o name` prints only its name).
+In a small Flux change to <../cdk8s/agentplane/actions_staging_policies.py>, add
+the dummy Secret name to the existing `claude-ai-coinbase-reader` Role's `get`
+resource names. After Flux applies the Role change, repeat the metadata-only `get`
+from both **existing** boxes and verify both succeed without changing their binding
+UIDs; `OTHER` remains denied. Revert the Flux change and delete the dummy Secret.
+This tests shared Role updates, not preset re-resolution; the static `claude-ai`
+identity temporarily gains access to only the dummy value too.
+
+Finally, through the external Haku OAuth MCP connection, call `sandbox.create`, poll
+`sandbox.get` until Ready, then `sandbox.exec` with `kubectl auth whoami` and the same
+metadata-only Coinbase read. The expected principal is the MCP sandbox's static
+`system:serviceaccount:agentplane-staging:claude-ai`, not either managed Sandbox SA.
+Dispose of the MCP sandbox with `sandbox.dispose`. Check that deleting the suspended
+managed Sandboxes removes their cross-namespace RoleBindings and ClusterRoleBindings;
+verify by the Sandbox UID annotation, without dumping Secret contents.
 
 ### Grant inventory
 

@@ -1408,6 +1408,64 @@ automountServiceAccountToken: false
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
+  name: agentplane-staging-managed-cluster-bindings
+rules:
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterrolebindings
+    verbs:
+      - create
+      - get
+      - list
+      - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - agent-readable-namespace-logs
+    resources:
+      - clusterroles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - agent-readable-namespace-metadata
+    resources:
+      - clusterroles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - cluster-diagnostics-reader
+    resources:
+      - clusterroles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterroles
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-managed-cluster-bindings
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-managed-cluster-bindings
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-app
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
   name: agentplane-staging-app-token-reviewer
 rules:
   - apiGroups:
@@ -1536,8 +1594,22 @@ rules:
       - delete
   - apiGroups:
       - rbac.authorization.k8s.io
+    resources:
+      - roles
+    verbs:
+      - get
+  - apiGroups:
+      - rbac.authorization.k8s.io
     resourceNames:
       - agentplane-sandbox-tool-config-reader
+    resources:
+      - roles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - claude-ai-coinbase-reader
     resources:
       - roles
     verbs:
@@ -1834,6 +1906,7 @@ data:
           - home-assistant-readonly
           - activitywatch-read
           - aiquota-read
+          - coinbase
           - haku-mailbox
           - plaid-pgweb
           - github-clone
@@ -1842,6 +1915,12 @@ data:
         action_policy_sets:
           - github-identity-reads
           - ssh-reads
+        kubernetes_grants:
+          - cluster-diagnostics
+          - haku-sandbox-write
+          - agentplane-staging-metadata
+          - agentplane-staging-logs
+          - coinbase-credentials
         thread_preset: haku-claude
         bootstrap: |
           #!/bin/sh
@@ -1889,6 +1968,38 @@ data:
         role_ref:
           kind: Role
           name: agentplane-sandbox-tool-config-reader
+      cluster-diagnostics:
+        kind: ClusterRoleBinding
+        role_ref:
+          kind: ClusterRole
+          name: cluster-diagnostics-reader
+      haku-sandbox-write:
+        kind: RoleBinding
+        namespace: haku-sandbox
+        role_ref:
+          kind: Role
+          name: haku-sandbox-admin
+      agentplane-staging-metadata:
+        kind: RoleBinding
+        namespace: agentplane-staging
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      agentplane-staging-logs:
+        kind: RoleBinding
+        namespace: agentplane-staging
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      coinbase-credentials:
+        kind: RoleBinding
+        namespace: agentplane-staging
+        role_ref:
+          kind: Role
+          name: claude-ai-coinbase-reader
+    kubernetes_binding_cleanup_namespaces:
+      - haku-sandbox
+    kubernetes_cluster_binding_cleanup: true
     default_policies:
       - basic
     egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081
