@@ -55,7 +55,9 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
     async def serving(*, subject: str = OWNER, token_status: int = 200) -> AsyncIterator[str]:
         frontend_dir = tmp_path / "frontend"
         frontend_dir.mkdir()
-        (frontend_dir / "index.html").write_text("<!doctype html><title>session sync test shell</title>", encoding="utf-8")
+        (frontend_dir / "index.html").write_text(
+            "<!doctype html><title>session sync test shell</title>", encoding="utf-8"
+        )
         private_key, public_key = generate_rsa_keypair()
         idp_sock, app_sock = bind_free_port(), bind_free_port()
         idp_url, app_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, app_sock))
