@@ -17,3 +17,38 @@ if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
     removeEventListener: () => {},
   })) as unknown as typeof window.matchMedia;
 }
+
+// happy-dom exposes IntersectionObserver but does not calculate visibility or call observers.
+// Treat observed nodes as visible so tests exercise the mounted CodeMirror view instead of its
+// near-viewport placeholder.
+if (typeof window !== "undefined") {
+  class VisibleIntersectionObserver implements IntersectionObserver {
+    constructor(private readonly callback: IntersectionObserverCallback) {}
+
+    observe(target: Element): void {
+      const bounds = target.getBoundingClientRect();
+      this.callback(
+        [
+          {
+            boundingClientRect: bounds,
+            intersectionRatio: 1,
+            intersectionRect: bounds,
+            isIntersecting: true,
+            rootBounds: null,
+            target,
+            time: performance.now(),
+          },
+        ],
+        this
+      );
+    }
+
+    disconnect(): void {}
+    unobserve(_target: Element): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  }
+
+  globalThis.IntersectionObserver = VisibleIntersectionObserver;
+}
