@@ -15,6 +15,7 @@ from http import HTTPStatus
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
+
 from .credentials import SecretServiceTokenStore
 
 logger = logging.getLogger(__name__)

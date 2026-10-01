@@ -13,6 +13,7 @@ import httpx
 from dbus_next.aio import MessageBus
 from dbus_next.constants import PropertyAccess
 from dbus_next.service import ServiceInterface, dbus_property, method, signal as dbus_signal
+
 from .credentials import SecretServiceTokenStore
 from .oauth import AuthenticationRequiredError, Authenticator, OAuthConfig
 
