@@ -151,7 +151,8 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
         // place rather than kept verbatim; keeping it verbatim leaves raw sibling
         // subtrees the matcher rejects, forcing the read-off all the way to
         // enclosing-context anchoring. Arity-exact (no run hole), mirroring the array
-        // path.
+        // path — the matcher's `SEQ_EXPRS` sequence run hole absorbs a variable-length
+        // element run, and emitting it here instead is a separate step.
         Expr::Seq(seq) => {
             let mut holed = seq.clone();
             holed.exprs = seq

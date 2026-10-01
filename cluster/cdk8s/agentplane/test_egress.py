@@ -12,11 +12,12 @@ import yaml
 from more_itertools import one
 
 from agentplane.egress import sidecar
-from cluster.cdk8s.agentplane import testing
+from cluster.cdk8s.agentplane import staging, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
     BASIC_POLICY,
+    COINBASE_POLICY,
     FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -127,6 +128,24 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
         }
         for doc in manifests
     )
+
+
+def test_coinbase_access_is_limited_to_the_oauth_caller(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
+    """Keep Coinbase access on claude-ai while managed Haku identity is unresolved."""
+    docs = agentplane_manifests[staging.ENV.namespace]
+
+    role_binding = _by_name(docs, "RoleBinding", "claude-ai-coinbase-reader")
+    assert role_binding["subjects"] == [
+        {"apiGroup": "", "kind": "ServiceAccount", "name": "claude-ai", "namespace": staging.ENV.namespace}
+    ]
+
+    egress_bindings = {doc["metadata"]["name"]: doc for doc in docs if doc["kind"] == "EgressBinding"}
+    assert COINBASE_POLICY in egress_bindings["claude-ai"]["spec"]["policies"]
+    assert COINBASE_POLICY not in egress_bindings["haku-agent"]["spec"]["policies"]
+
+    app_config = _by_name(docs, "ConfigMap", "agentplane-app-config")
+    haku_preset = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]["haku"]
+    assert COINBASE_POLICY not in haku_preset["policies"], haku_preset
 
 
 def test_upstream_bundles_have_independent_environment_ownership(

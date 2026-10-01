@@ -115,6 +115,10 @@
       "test": "//finance/plaid/...",
       "registry": "forgejo"
     },
+    "plaid-spend": {
+      "target": "//finance/plaid/spend:server_image",
+      "registry": "forgejo"
+    },
     "study-casino": {
       "target": "//study_casino:image",
       "test": "//study_casino/...",

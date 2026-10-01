@@ -73,14 +73,19 @@ the Sandbox's own principal while the apiserver remains the per-request authoriz
 Conversely, using Kubernetes RBAC objects does not decide whether desired grants live only in
 Kubernetes or are reconciled from an app ledger.
 
-The principal is settled: each Sandbox runs as a ServiceAccount the app creates at launch and
-owns by `ownerReference`, so what remains here is the credential path, not the identity. Keep
-the existing [workload authentication](../docs/workload_authentication.md) boundary distinct from
-credentials authorizing Kubernetes API calls; authenticating a Sandbox to Agentplane does not
-itself grant Kubernetes access. Any design must explain effective-access inspection, who can
-grant or widen permissions, target audit attribution, failure behavior during reconciliation,
-and how revocation affects already-issued credentials and requests already in flight. The
-proposal below is one candidate, not a settled requirement for `SANDBOX_RBAC`.
+The app currently creates a ServiceAccount per Sandbox at launch and owns it by
+`ownerReference`; whether Agentplane should keep per-Sandbox identities, use a stable
+per-Agent ServiceAccount, or choose another scoped mechanism remains open. In particular,
+managed runner Pods currently use their per-Sandbox account, while OAuth-connected Connections
+already have static caller ServiceAccounts. The Coinbase credential/identity decision for
+managed runners is tracked in [#8596](https://github.com/agentydragon/ducktape/issues/8596).
+Keep the existing [workload authentication](../docs/workload_authentication.md) boundary
+distinct from credentials authorizing Kubernetes API calls; authenticating a Sandbox to
+Agentplane does not itself grant Kubernetes access. Any design must explain effective-access
+inspection, who can grant or widen permissions, target audit attribution, failure behavior
+during reconciliation, and how revocation affects already-issued credentials and requests
+already in flight. The proposal below is one candidate, not a settled requirement for
+`SANDBOX_RBAC`.
 
 ## Candidate revocation gate for minted grants
 

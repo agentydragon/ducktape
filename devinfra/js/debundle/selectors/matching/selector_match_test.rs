@@ -965,6 +965,209 @@ fn fail_closed_on_misplaced_array_elements_hole() {
     });
 }
 
+// `SEQ_EXPRS` is the comma-sequence run hole: a bare identifier element of a
+// sequence expression, absorbing a run of the candidate's sequence elements. A
+// React Compiler memo tail is one cache write per hook dependency plus one, so
+// pinning the memoized callback must not require spelling the tail. Ordered
+// subsequence with gaps, exactly like the other run holes: the carriers
+// partition the sequence into fixed segments, a missing leading hole anchors
+// the first segment at the sequence's start, a missing trailing hole anchors
+// the last at its end.
+#[test]
+fn seq_exprs_run_hole_absorbs_a_comma_sequence_run() {
+    js_ast::with_swc_globals(|| {
+        let cases = [
+            // anchor first; the run absorbs the rest of the tail, any length.
+            Case {
+                selector: "function f() { return (first, SEQ_EXPRS); }",
+                subject: "function f() { return (first, 1, 2, 3); }",
+                alpha: false,
+                expected: true,
+            },
+            // the anchored element must still match.
+            Case {
+                selector: "function f() { return (first, SEQ_EXPRS); }",
+                subject: "function f() { return (other, 1); }",
+                alpha: false,
+                expected: false,
+            },
+            // an anchored element with no run beside it: the subject has to be a
+            // sequence at all — the hole never matches a non-sequence.
+            Case {
+                selector: "function f() { return (first, SEQ_EXPRS); }",
+                subject: "function f() { return (first); }",
+                alpha: false,
+                expected: false,
+            },
+            // run then an anchored last element.
+            Case {
+                selector: "function f() { return (SEQ_EXPRS, last); }",
+                subject: "function f() { return (1, 2, last); }",
+                alpha: false,
+                expected: true,
+            },
+            Case {
+                selector: "function f() { return (SEQ_EXPRS, last); }",
+                subject: "function f() { return (1, 2, nope); }",
+                alpha: false,
+                expected: false,
+            },
+            // a sequence needs two syntactic elements, so this is the shortest
+            // candidate for a hole absorbing nothing between two anchors.
+            Case {
+                selector: "function f() { return (a, SEQ_EXPRS, b); }",
+                subject: "function f() { return (a, b); }",
+                alpha: false,
+                expected: true,
+            },
+            // two holes bracket the pinned elements between them.
+            Case {
+                selector: "function f() { return (first, SEQ_EXPRS, \"mid\", SEQ_EXPRS, last); }",
+                subject: "function f() { return (first, 1, \"mid\", 2, last); }",
+                alpha: false,
+                expected: true,
+            },
+            Case {
+                selector: "function f() { return (first, SEQ_EXPRS, \"mid\", SEQ_EXPRS, last); }",
+                subject: "function f() { return (first, 1, 2, last); }",
+                alpha: false,
+                expected: false,
+            },
+            // alpha: a pinned identifier still binds one subject name across the
+            // run, so two pins of the same name reject a candidate that renames
+            // one of them.
+            Case {
+                selector: "function f() { return (a, SEQ_EXPRS, a); }",
+                subject: "function f() { return (c, 1, 2, c); }",
+                alpha: true,
+                expected: true,
+            },
+            Case {
+                selector: "function f() { return (a, SEQ_EXPRS, a); }",
+                subject: "function f() { return (c, 1, b); }",
+                alpha: true,
+                expected: false,
+            },
+            // A parenthesized inner sequence is one element, not a flattened
+            // continuation of the outer run: the hole absorbs later elements of
+            // the sequence it sits in.
+            Case {
+                selector: "function f() { return (a, SEQ_EXPRS); }",
+                subject: "function f() { return (a, (b, c)); }",
+                alpha: false,
+                expected: true,
+            },
+            Case {
+                selector: "function f() { return (a, SEQ_EXPRS); }",
+                subject: "function f() { return ((a, b), c); }",
+                alpha: false,
+                expected: false,
+            },
+            // `EXPR` in a sequence element stays the arity-exact one-element hole.
+            Case {
+                selector: "function f() { return (EXPR, last); }",
+                subject: "function f() { return (a, b, last); }",
+                alpha: false,
+                expected: false,
+            },
+        ];
+        for case in cases {
+            let mode = if case.alpha {
+                Mode::AlphaAll
+            } else {
+                Mode::Exact
+            };
+            let got = selector_match::matches(
+                &facts(case.selector),
+                &facts(case.subject),
+                mode,
+                &free(case.selector),
+            )
+            .expect("SEQ_EXPRS is within the faithful subset");
+            assert_eq!(
+                got, case.expected,
+                "seq-exprs-run-hole: {:?} vs {:?} (alpha={})",
+                case.selector, case.subject, case.alpha,
+            );
+        }
+    });
+}
+
+// One React Compiler hook, one selector: the memoized callback is the stable
+// anchor, and the cache-write tail — one write per dependency plus the memo
+// write — is `SEQ_EXPRS`. The same selector resolves the hook at two dependency
+// counts without naming a single cache slot.
+#[test]
+fn seq_exprs_run_hole_pins_a_memoized_hook_regardless_of_dependency_count() {
+    js_ast::with_swc_globals(|| {
+        let selector = "function useResource(cache, scale, prefix) { \
+             let memo; \
+             return (EXPR ? (memo = async (id) => { \
+               const total = id * scale; \
+               return `${prefix}:${total}`; \
+             }, SEQ_EXPRS) : memo = EXPR), memo; }";
+        let two_writes = "function readResource(cache, scale, prefix) { \
+             let memo; \
+             return (cache[0] !== scale ? (memo = async (id) => { \
+               const total = id * scale; \
+               return `${prefix}:${total}`; \
+             }, cache[0] = scale, cache[1] = memo) : memo = cache[1]), memo; }";
+        let five_writes = "function readResource(cache, scale, prefix) { \
+             let memo; \
+             return (cache[0] !== scale || cache[1] !== prefix \
+               ? (memo = async (id) => { \
+                   const total = id * scale; \
+                   return `${prefix}:${total}`; \
+                 }, cache[0] = scale, cache[1] = prefix, cache[2] = scale, \
+                   cache[3] = prefix, cache[4] = memo) \
+               : memo = cache[4]), memo; }";
+        // The memoized callback is absent, so the shape is a different hook.
+        let no_memo = "function readResource(cache, scale, prefix) { \
+             let memo; \
+             return (cache[0] !== scale ? (async (id) => id * scale, \
+               cache[0] = scale, cache[1] = memo) : memo = cache[1]), memo; }";
+        for (subject, expected) in [(two_writes, true), (five_writes, true), (no_memo, false)] {
+            let got = selector_match::matches(
+                &facts(selector),
+                &facts(subject),
+                Mode::AlphaAll,
+                &free(selector),
+            )
+            .expect("the memoized-hook selector is within the faithful subset");
+            assert_eq!(got, expected, "memoized-hook: {subject}");
+        }
+    });
+}
+
+// A misplaced `SEQ_EXPRS` — anywhere the keyword is not an element of a sequence
+// expression — reaches the node matcher instead of being consumed as a list
+// carrier, so the match fails closed with `Unsupported` rather than treating the
+// keyword as an ordinary identifier. A lone `(SEQ_EXPRS)` is the instructive
+// case: a comma sequence needs at least two elements, so the keyword there is
+// not a hole at all.
+#[test]
+fn fail_closed_on_misplaced_seq_exprs_hole() {
+    js_ast::with_swc_globals(|| {
+        for selector in [
+            "const c = SEQ_EXPRS;",
+            "function f() { return (SEQ_EXPRS); }",
+            "function f() { call(SEQ_EXPRS); }",
+            "const c = [SEQ_EXPRS, 1];",
+        ] {
+            let result = selector_match::matches(
+                &facts(selector),
+                &facts("const c = x;"),
+                Mode::Exact,
+                &free(selector),
+            );
+            assert!(
+                matches!(result, Err(selector_match::Unsupported { .. })),
+                "misplaced SEQ_EXPRS must be fail-closed, got {result:?}",
+            );
+        }
+    });
+}
+
 // Same-arity declarators in one `const a = …, b = …` comma-list that differ only
 // in a deeply-nested value are disambiguated by a single-declarator selector that
 // asserts that nested anchor. The resolver matches a single-declarator needle

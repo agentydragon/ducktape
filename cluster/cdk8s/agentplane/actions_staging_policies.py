@@ -47,6 +47,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     HOME_ASSISTANT_READONLY_POLICY,
     PACKAGES_POLICY,
     PLAID_PGWEB_POLICY,
+    SSH_READS_SET,
 )
 from cluster.cdk8s.agentplane.staging_config import (
     PUBLIC_DUCKTAPE_FORK_READS_SET,
@@ -68,7 +69,6 @@ _GMAIL_READS_SET = "gmail-reads"
 _GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
 _TANA_READS_SET = "tana-reads"
 _GROCY_SF_READS_SET = "grocy-sf-reads"
-_SSH_READS_SET = "ssh-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
@@ -341,8 +341,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     # Haku's own credentials (forgejo-haku, haku-mailbox) are bound to claude-ai today only
     # because claude-ai happens to be "the connection Haku runs through" (see the
     # EgressBinding comment below) -- a historical accident, not a reason to keep growing
-    # that account's authority. Granted at least claude-ai's own permissions (egress,
-    # Action Service reads, the Coinbase Role, and the acceptance-suite token) below.
+    # that account's authority. haku-agent is a static caller identity, not the per-Sandbox
+    # ServiceAccount on managed runner Pods; Coinbase key delivery to those runners is tracked
+    # in #8596.
     haku_agent = ServiceAccount(
         scope,
         "serviceaccount-haku-agent",
@@ -465,7 +466,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         "rolebinding-claude-ai-coinbase",
         metadata=ApiObjectMetadata(name="claude-ai-coinbase-reader", namespace=_NAMESPACE),
         role=coinbase_reader,
-    ).add_subjects(claude_ai, haku_agent)
+    ).add_subjects(claude_ai)
     EgressPolicy(
         scope,
         "egresspolicy-coinbase",
@@ -588,10 +589,8 @@ def add_staging_action_policies(scope: Construct) -> None:
         ],
     )
 
-    # What a sandbox of haku-agent's may reach: at least everything claude-ai's sandboxes may
-    # reach (see the comment above), so the "haku" preset (app_settings.py) -- which clones
-    # haku-state over `forgejo-haku` and works from it -- has no less reach than claude-ai's
-    # Haku-flavored sandboxes already have.
+    # Haku-like managed sandboxes keep their Haku-specific access, but do not get Coinbase
+    # egress or the key until a supported managed-runner identity/credential path exists (#8596).
     _sandbox_egress_binding(
         scope,
         haku_agent,
@@ -605,7 +604,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
-            COINBASE_POLICY,
             PLAID_PGWEB_POLICY,
             _AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
@@ -711,7 +709,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "actionpolicyset-ssh-reads",
         metadata=ApiObjectMetadata(
-            name=_SSH_READS_SET,
+            name=SSH_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path."
@@ -745,7 +743,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             _GOOGLE_CALENDAR_READS_SET,
             _TANA_READS_SET,
             _GROCY_SF_READS_SET,
-            _SSH_READS_SET,
+            SSH_READS_SET,
         ],
     )
 
@@ -758,7 +756,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             name="haku-agent-reads",
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF reads and sandbox use for the haku-agent ServiceAccount."
+                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for the haku-agent ServiceAccount."
             },
         ),
         subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="haku-agent"),
@@ -771,5 +769,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             _GOOGLE_CALENDAR_READS_SET,
             _TANA_READS_SET,
             _GROCY_SF_READS_SET,
+            SSH_READS_SET,
         ],
     )

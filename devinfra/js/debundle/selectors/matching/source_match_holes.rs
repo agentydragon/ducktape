@@ -11,20 +11,29 @@
 //! the same suffix still match independently.
 //!
 //! `EXPR` matches one arbitrary expression and `STMT` one arbitrary
-//! statement. `ARGS`, `STMT_LIST`, `ARRAY_ELEMENTS`, `CASE_REST`, and
-//! `DECLARATORS` are variable-length list holes: `ARGS` absorbs a run of
-//! call/new arguments, `STMT_LIST` absorbs a run of block statements (or
-//! top-level anonymous selector statements), `ARRAY_ELEMENTS` absorbs a run of
-//! array-literal elements (including spreads/elisions), `CASE_REST` absorbs a
-//! run of `case`/`default` clauses inside one `switch` statement, and
-//! `DECLARATORS` absorbs a run of variable declarators inside one
-//! `var`/`let`/`const` declaration.
+//! statement. `ARGS`, `STMT_LIST`, `ARRAY_ELEMENTS`, `CASE_REST`,
+//! `DECLARATORS`, and `SEQ_EXPRS` are variable-length list holes: `ARGS`
+//! absorbs a run of call/new arguments, `STMT_LIST` absorbs a run of block
+//! statements (or top-level anonymous selector statements), `ARRAY_ELEMENTS`
+//! absorbs a run of array-literal elements (including spreads/elisions),
+//! `CASE_REST` absorbs a run of `case`/`default` clauses inside one `switch`
+//! statement, `DECLARATORS` absorbs a run of variable declarators inside one
+//! `var`/`let`/`const` declaration, and `SEQ_EXPRS` absorbs a run of the
+//! elements of one comma-sequence expression.
 //!
 //! `ARRAY_ELEMENTS` is spelled as a bare identifier element
 //! (`[firstStable, ARRAY_ELEMENTS, lastStable]`): an array has no
 //! shorthand-property form, and `ANYTHING` in array-element position is one
 //! `EXPR` (a single element), not a run — so the array-run hole has only its
 //! typed `ARRAY_ELEMENTS` spelling, no `ANYTHING` sugar.
+//!
+//! `SEQ_EXPRS` is spelled the same way — a bare identifier element of a
+//! comma-sequence (`(keepFirst, SEQ_EXPRS, keepLast)`) — and likewise has no
+//! `ANYTHING` sugar: `ANYTHING` and `EXPR` in a sequence-element position stay
+//! one-element holes. A comma sequence needs at least two syntactic elements,
+//! so `(SEQ_EXPRS)` is not a sequence at all: the keyword reaches the matcher
+//! with no sequence to be an element of, and the match fails closed as a
+//! misplaced run hole rather than matching a single expression.
 //!
 //! Labels exist for readability and for parse positions where duplicate bare
 //! identifiers would be invalid JavaScript.
@@ -56,6 +65,7 @@ pub const CASE_REST_HOLE_KEYWORD: &str = "CASE_REST";
 pub const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
 pub const ARGS_HOLE_KEYWORD: &str = "ARGS";
 pub const ARRAY_ELEMENTS_HOLE_KEYWORD: &str = "ARRAY_ELEMENTS";
+pub const SEQ_EXPRS_HOLE_KEYWORD: &str = "SEQ_EXPRS";
 
 /// Callee name of the string-literal regex predicate sugar
 /// `STR_LITERAL_MATCHING_RE("<pattern>")`, which matches a string literal

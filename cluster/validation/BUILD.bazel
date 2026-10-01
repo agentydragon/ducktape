@@ -302,6 +302,7 @@ py_test(
 
 py_test(
     name = "test_cluster_integration",
+    size = "medium",
     srcs = ["test_cluster_integration.py"],
     data = [
         "//cluster:generated_manifests",

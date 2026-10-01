@@ -208,7 +208,12 @@ from cluster.cdk8s.parked import (
     augur_evidence as parked_augur_evidence,
     flux_kustomizations as parked_flux_kustomizations,
 )
-from cluster.cdk8s.plaid_mcp import app as plaid_mcp_app, db as plaid_mcp_db, pgweb as plaid_mcp_pgweb
+from cluster.cdk8s.plaid_mcp import (
+    app as plaid_mcp_app,
+    db as plaid_mcp_db,
+    pgweb as plaid_mcp_pgweb,
+    spend as plaid_mcp_spend,
+)
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
@@ -286,7 +291,6 @@ def generate_manifests(root: Path) -> None:
     forgejo_db.write_manifests(root)
     forgejo_cache.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
-    nix_cache_attic.write_manifests(root)
     vm_images_publisher_publisher.write_manifests(root)
     forgejo_app.write_manifests(root)
     home_assistant_app.write_manifests(root)
@@ -299,6 +303,7 @@ def generate_manifests(root: Path) -> None:
     plaid_mcp_app.write_manifests(root)
     plaid_mcp_db.write_manifests(root)
     plaid_mcp_pgweb.write_manifests(root)
+    plaid_mcp_spend.write_manifests(root)
     tana_mcp.write_manifests(root)
     haku_egress_proxy.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
@@ -1274,9 +1279,17 @@ def generate_manifests(root: Path) -> None:
         matrix_kustomization,
     )
     nix_cache_artifact = artifact("nix-cache", nix_cache_attic.OUTPUT_DIR)
+    nix_cache_directory = write_directory(
+        root,
+        nix_cache_artifact,
+        nix_cache_attic.chart,
+        siblings=["jwt-token.sops.yaml", "cache-keys.sops.yaml"],
+        components=["./image-pins"],
+        config_map_generator=[nix_cache_attic.SERVER_CONFIG_MAP, nix_cache_attic.ROTATORS_CONFIG_MAP],
+    )
     nix_cache_flux_kustomizations.nix_cache(
         flux_chart,
-        nix_cache_artifact,
+        nix_cache_directory,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,

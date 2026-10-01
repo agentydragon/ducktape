@@ -37,7 +37,7 @@ because those are cheap and unique _today_. Your job is to override those with a
 anchor tied to what the code **does** — something a behavior-preserving refactor
 would keep and a human wouldn't rename.
 
-The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CASE_REST`, …), `source_matches[]`, regex anchors, context windows — live in `selectors.md`, transcluded below. This skill does not restate them; it adds the judgment they can't encode: _which_ anchor to choose.
+The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CASE_REST`, `SEQ_EXPRS`, …), `source_matches[]`, regex anchors, context windows — live in `selectors.md`, transcluded below. This skill does not restate them; it adds the judgment they can't encode: _which_ anchor to choose.
 
 ## The toolkit
 

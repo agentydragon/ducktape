@@ -21,26 +21,29 @@ configuration typed.
 
 ## Convert: configuration with an existing application contract
 
-### Authentik, Forgejo and Attic rotator rosters
+### Authentik and Forgejo rotator wiring
 
-Inputs: `nix-cache/rotators.yaml`. `cluster/rotators/attic_jwt_rotation/rotate.py` already
-defines its own Config and entry model. Authentik's and Forgejo's rosters are the converted
-instances: `cluster/cdk8s/{authentik_jwt_rotation,forgejo_token_rotation}.py` build `ROTATIONS`
-from their rotator's `config.py`.
+Attic's typed roster now lives in `cluster/cdk8s/nix_cache/attic.py` and uses the schema
+shared with its runtime rotator at `cluster/rotators/attic_jwt_rotation/config.py`. cdk8s
+serializes it under the runtime ConfigMap key `rotators.yaml`; the hand-written source file
+is removed. SOPS outputs, native `server.toml`, and the image-pins Component keep their
+existing owners.
 
-Proposed: move these schemas out of runtime modules and build each roster as typed
-application configuration. Derive credential mounts and output Secret names from those
-entries wherever the generator currently repeats them. Keep audiences, scopes and
-consumer grants explicit. These are separate reviewable changes, not a generic rotator
-framework.
+Authentik and Forgejo already keep their Pydantic schemas in each rotator's `config.py`;
+their cdk8s modules build `ROTATIONS` from those models.
+
+Remaining: derive credential mounts and output Secret names from those entries wherever
+the generator currently repeats them. Keep audiences, scopes and consumer grants explicit.
+Treat each remaining improvement as a separate reviewable change; do not add a generic
+rotator framework.
 
 The rotators write SOPS ciphertext and sometimes publish more than one output. cdk8s
 must not become a second writer of those bytes. Consolidating those outputs, or
 replacing token-minting API calls with a provider, changes lifecycle ownership and needs
 its own investigation.
 
-Done: config and mounts share inputs, runtime rotation semantics and output owners are
-unchanged, and generated ConfigMaps contain no credentials.
+Done per remaining slice: config and mounts share inputs, runtime rotation semantics and
+output owners are unchanged, and generated ConfigMaps contain no credentials.
 
 ## Model selectively: third-party configuration
 

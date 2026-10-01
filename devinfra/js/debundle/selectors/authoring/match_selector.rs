@@ -18,11 +18,11 @@
 //! Slack tries one relaxation at a time, of these kinds: hole a value expression
 //! (literal / argument / property value) to `ANYTHING`; drop an object-literal
 //! property, an object-pattern (destructure) property, a class member, a block
-//! statement, or a call/`new` argument via the matching run-hole; or remove a
-//! top-level context statement outright (a module-level `STMT_LIST` is not
-//! honored on the member-binding resolution path). A relaxation that would delete
-//! the `target_binding`'s own declaration is never tried — the matcher rejects a
-//! selector that no longer declares its target.
+//! statement, a call/`new` argument, or a comma-sequence element via the matching
+//! run-hole; or remove a top-level context statement outright (a module-level
+//! `STMT_LIST` is not honored on the member-binding resolution path). A
+//! relaxation that would delete the `target_binding`'s own declaration is never
+//! tried — the matcher rejects a selector that no longer declares its target.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -35,8 +35,8 @@ use serde::Serialize;
 use source_match::ParsedSourceMatchSelector;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
-    EXPR_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, hole_name_for,
-    labeled_hole_name_for,
+    EXPR_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    hole_name_for, labeled_hole_name_for,
 };
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
@@ -44,7 +44,7 @@ use swc_ecma_ast::{
     ArrowExpr, ArrowFunctionBody, AssignPatProp, BindingIdent, BlockStmt, CallExpr, Class,
     ClassMember, ClassProp, Constructor, Expr, ExprOrSpread, ExprStmt, Function, IdentName, Module,
     ModuleItem, NewExpr, ObjectLit, ObjectPat, ObjectPatProp, Pat, Prop, PropName, PropOrSpread,
-    Stmt,
+    SeqExpr, Stmt,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -219,9 +219,11 @@ enum Relaxation {
     DropContextStatement,
     /// Drop a call/`new` argument (absorbed by `ARGS`).
     DropCallArg,
+    /// Drop one element of a comma-sequence expression (absorbed by `SEQ_EXPRS`).
+    DropSequenceElement,
 }
 
-const RELAXATIONS: [Relaxation; 7] = [
+const RELAXATIONS: [Relaxation; 8] = [
     Relaxation::HoleExpr,
     Relaxation::DropObjectProp,
     Relaxation::DropPatternProp,
@@ -229,6 +231,7 @@ const RELAXATIONS: [Relaxation; 7] = [
     Relaxation::DropStatement,
     Relaxation::DropContextStatement,
     Relaxation::DropCallArg,
+    Relaxation::DropSequenceElement,
 ];
 
 /// Produce every selector with exactly one element holed, across all relaxation
@@ -433,6 +436,18 @@ impl VisitMut for Relaxer<'_> {
         }
         new_expr.visit_mut_children_with(self);
     }
+
+    fn visit_mut_seq_expr(&mut self, seq: &mut SeqExpr) {
+        if self.kind == Relaxation::DropSequenceElement {
+            for element in seq.exprs.iter_mut() {
+                if self.take(is_droppable_seq_element(element)) {
+                    **element = seq_exprs_hole();
+                    break;
+                }
+            }
+        }
+        seq.visit_mut_children_with(self);
+    }
 }
 
 /// A value expression worth holing. Bare identifiers are excluded: under
@@ -460,6 +475,12 @@ fn is_droppable_stmt(stmt: &Stmt) -> bool {
 
 fn is_droppable_arg(arg: &ExprOrSpread) -> bool {
     !matches!(arg.expr.as_ref(), Expr::Ident(ident) if is_hole_keyword(&ident.sym))
+}
+
+/// A comma-sequence element droppable by `DropSequenceElement`: not already a
+/// hole, so the relaxed selector is strictly looser instead of unchanged.
+fn is_droppable_seq_element(element: &Expr) -> bool {
+    !matches!(element, Expr::Ident(ident) if is_hole_keyword(&ident.sym))
 }
 
 /// A top-level module item droppable by `DropContextStatement`: a statement
@@ -519,6 +540,7 @@ fn is_hole_keyword(name: &str) -> bool {
             ARGS_HOLE_KEYWORD,
             CASE_REST_HOLE_KEYWORD,
             DECLARATORS_HOLE_KEYWORD,
+            SEQ_EXPRS_HOLE_KEYWORD,
         ]
         .iter()
         .any(|keyword| labeled_hole_name_for(name, keyword).is_some())
@@ -546,6 +568,12 @@ fn args_hole() -> ExprOrSpread {
         spread: None,
         expr: Box::new(Expr::Ident(ident_node(ARGS_HOLE_KEYWORD))),
     }
+}
+
+/// The comma-sequence run hole, emitted as a bare identifier element — the only
+/// spelling the matcher accepts in sequence-element position.
+fn seq_exprs_hole() -> Expr {
+    Expr::Ident(ident_node(SEQ_EXPRS_HOLE_KEYWORD))
 }
 
 fn stmt_list_hole() -> Stmt {

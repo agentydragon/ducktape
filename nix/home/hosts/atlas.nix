@@ -40,6 +40,7 @@ in
 
   ducktape.aiquota.enable = true;
   ducktape.aiquota.remoteApi.enable = true;
+  ducktape.plaidSpend.enable = true;
 
   # ActivityWatch capture + import into the central server. The importer folds this
   # host's buckets into atlas::<bucket> over the bearer-gated write route, using the

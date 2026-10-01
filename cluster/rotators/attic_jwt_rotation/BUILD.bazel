@@ -5,12 +5,22 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/nix_cache:__pkg__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "rotate",
     srcs = ["rotate.py"],
     deps = [
+        ":config",
         "//devinfra:prettier_cli",
         "@pypi//httpx",
-        "@pypi//pydantic",
         "@pypi//pygit2",
         "@pypi//pyyaml",
         "@pypi//typer",
@@ -21,6 +31,7 @@ py_test(
     name = "test_rotate",
     srcs = ["test_rotate.py"],
     deps = [
+        ":config",
         ":rotate",
         "//:conftest",
         "@pypi//certifi",

@@ -39,6 +39,8 @@ POSTGRES = cnpg.PostgresRef.generated(name="plaid-mcp-db", namespace=NAMESPACE)
 _DATABASE = "plaidmcp"
 _READONLY_ROLE = "plaid_ro"
 READONLY = SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-readonly")
+_SPEND_ROLE = "plaid_spend"
+SPEND = SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-spend")
 # The namespace holding a copy of the read-only credentials, for Haku's ad-hoc queries, and the
 # identity that copy is read with.
 _READONLY_CONSUMER = "haku-sandbox"
@@ -73,7 +75,14 @@ def _cluster(chart: Chart) -> None:
                         "Read-only SQL access to the Plaid mirror; ESO copies the secret into the"
                         " haku-sandbox namespace."
                     ),
-                )
+                ),
+                ClusterSpecManagedRoles(
+                    name=_SPEND_ROLE,
+                    ensure=ClusterSpecManagedRolesEnsure.PRESENT,
+                    login=True,
+                    password_secret=ClusterSpecManagedRolesPasswordSecret(name=SPEND.name),
+                    comment="Read-only runtime role for plaid-spend's four Plaid source tables.",
+                ),
             ]
         ),
         initdb=cnpg.same_owner_initdb(_DATABASE),
@@ -90,6 +99,21 @@ def _readonly_credentials(chart: Chart) -> None:
         name=READONLY.name,
         namespace=NAMESPACE,
         role=_READONLY_ROLE,
+        host=POSTGRES.rw.host,
+        port=POSTGRES.rw.port.number,
+        database=_DATABASE,
+        secret_type=None,
+    )
+
+
+def _spend_credentials(chart: Chart) -> None:
+    """Mint the spend service's table-scoped read-only database credential."""
+    mint_db_role_secret(
+        chart,
+        "spend-external-secret",
+        name=SPEND.name,
+        namespace=NAMESPACE,
+        role=_SPEND_ROLE,
         host=POSTGRES.rw.host,
         port=POSTGRES.rw.port.number,
         database=_DATABASE,
@@ -151,7 +175,7 @@ def _readonly_provisioner(chart: Chart) -> None:
             name=_PROVISIONER,
             namespace=NAMESPACE,
             annotations={
-                "description": "Applies read-only object GRANTs for plaid_ro after the CNPG cluster creates the role.",
+                "description": "Grants the minimal Plaid source reads needed by plaid_ro and plaid_spend.",
                 "kustomize.toolkit.fluxcd.io/force": "enabled",
             },
         ),
@@ -173,7 +197,18 @@ def _readonly_provisioner(chart: Chart) -> None:
                             name="psql",
                             image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
                             command=["/bin/bash", "-c"],
-                            args=[f"set -x\nexec psql \\\n  --set=ON_ERROR_STOP=1 \\\n  -f /sql/{_SQL_FILE}\n"],
+                            args=[
+                                "set -euo pipefail\n"
+                                "for attempt in $(seq 1 60); do\n"
+                                '  role_count=$(psql --tuples-only --no-align --quiet -c "SELECT count(*) FROM pg_roles'
+                                " WHERE rolname IN ('plaid_ro', 'plaid_spend')\" 2>/dev/null || true)\n"
+                                '  if [[ "$role_count" == 2 ]]; then break; fi\n'
+                                "  if [[ \"$attempt\" == 60 ]]; then echo 'CNPG did not create Plaid read roles' >&2;"
+                                " exit 1; fi\n"
+                                "  sleep 2\n"
+                                "done\n"
+                                f"exec psql --set=ON_ERROR_STOP=1 -f /sql/{_SQL_FILE}\n"
+                            ],
                             termination_message_policy="FallbackToLogsOnError",
                             env=[
                                 POSTGRES.app_secret.key("username").env_var("PGUSER"),
@@ -194,6 +229,7 @@ def _readonly_provisioner(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, POSTGRES.name, disable_resource_name_hashes=True)
     _readonly_credentials(chart)
+    _spend_credentials(chart)
     _readonly_copy(chart)
     _cluster(chart)
     _readonly_provisioner(chart)

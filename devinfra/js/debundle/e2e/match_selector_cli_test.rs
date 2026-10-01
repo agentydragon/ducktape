@@ -273,3 +273,89 @@ fn slack_drops_a_top_level_context_statement() {
         "expected a top-level context-statement drop: {report}"
     );
 }
+
+#[test]
+fn seq_exprs_selector_resolves_a_memoized_hook() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("app.js");
+    // One memoized hook and one sibling that never assigns a memo, so the
+    // memoized-callback anchor is the only thing the probe needs.
+    write_text_file(
+        &source,
+        "const slots = [];\n\
+         function loadLabel(cache, label) {\n\
+           let memo;\n\
+           return (cache[0] !== label\n\
+             ? (memo = async (id) => {\n\
+                 const base = `load:${label}`;\n\
+                 return `${base}:${id}`;\n\
+               }, cache[0] = label, cache[1] = memo)\n\
+             : (memo = cache[1])),\n\
+             memo;\n\
+         }\n\
+         function plainLabel(label) {\n\
+           return `load:${label}`;\n\
+         }\n",
+    );
+    let report = run_match_selector(
+        &source,
+        "function readable(cache, label) {\n\
+           let memo;\n\
+           return (EXPR ? (memo = async (id) => {\n\
+             const base = `load:${label}`;\n\
+             return `${base}:${id}`;\n\
+           }, SEQ_EXPRS) : memo = EXPR), memo;\n\
+         }",
+        &["--target-binding", "readable"],
+    );
+    assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
+    assert_eq!(outcome(&report)["binding"], "loadLabel");
+}
+
+#[test]
+fn slack_holes_a_comma_sequence_element() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("app.js");
+    // The one sequence-valued declaration: any element of it already pins it,
+    // so the siblings are droppable — the sequence analogue of dropping an
+    // object property.
+    write_text_file(
+        &source,
+        "const leftFlag = readLeft();\n\
+         const rightFlag = readRight();\n\
+         const sequenced = (leftFlag, \"marker\", rightFlag);\n",
+    );
+    let report = run_match_selector(
+        &source,
+        "const sequenced = (leftFlag, \"marker\", rightFlag);",
+        &["--target-binding", "sequenced"],
+    );
+    assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
+    assert_eq!(outcome(&report)["binding"], "sequenced");
+    let slack = report["slack"].as_array().unwrap();
+    assert!(
+        slack.iter().any(|relaxation| relaxation["relaxed_match"]
+            .as_str()
+            .unwrap()
+            .contains("SEQ_EXPRS")),
+        "expected a relaxation that absorbs a sequence element: {report}"
+    );
+}
+
+#[test]
+fn seq_exprs_outside_a_sequence_is_an_invalid_probe() {
+    let (_dir, source) = fixture();
+    let report = run_match_selector(
+        &source,
+        "const w = (SEQ_EXPRS);",
+        &["--target-binding", "w", "--no-slack"],
+    );
+    assert_eq!(outcome(&report)["kind"], "invalid", "{report:#}");
+    assert!(
+        outcome(&report)["error"]
+            .as_str()
+            .unwrap()
+            .contains("run-hole keyword outside a list position"),
+        "{report:#}"
+    );
+}

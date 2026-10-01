@@ -311,6 +311,92 @@ fn validate_source_only_clean_modules_report_no_problems() {
 }
 
 #[test]
+fn validate_source_only_accepts_a_seq_exprs_selector() {
+    let dir = tempfile::tempdir().unwrap();
+    let source_file = dir.path().join("chunk.js");
+    // One memoized hook, claimed by a selector whose cache-write tail is a
+    // `SEQ_EXPRS` run hole: validate reports nothing, i.e. it resolved.
+    write_text_file(
+        &source_file,
+        r#"const slots = [];
+function loadLabel(cache, label) {
+  let memo;
+  return (cache[0] !== label
+    ? (memo = async (id) => {
+        const base = `load:${label}`;
+        return `${base}:${id}`;
+      }, cache[0] = label, cache[1] = memo)
+    : (memo = cache[1])),
+    memo;
+}
+loadLabel(slots, "first")("a").then((value) => console.log(value));
+"#,
+    );
+    let modules_root = dir.path().join("modules");
+    write_text_file(
+        &modules_root.join("resource/label.yaml"),
+        r#"source_matches:
+  - match: |
+      function readable(cache, label) {
+        let memo;
+        return (EXPR ? (memo = async (id) => {
+          const base = `load:${label}`;
+          return `${base}:${id}`;
+        }, SEQ_EXPRS) : memo = EXPR), memo;
+      }
+    bindings:
+      - local: readable
+        name: LabelResource
+"#,
+    );
+
+    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert!(outcomes(&report).is_empty(), "{report:#}");
+}
+
+#[test]
+fn validate_source_only_reports_a_misplaced_seq_exprs_hole() {
+    let dir = tempfile::tempdir().unwrap();
+    let source_file = dir.path().join("chunk.js");
+    write_text_file(
+        &source_file,
+        r#"function actual(value) {
+  return value.trim();
+}
+console.log(actual(" ok "));
+"#,
+    );
+    let modules_root = dir.path().join("modules");
+    write_text_file(
+        &modules_root.join("hooks/lone_hole.yaml"),
+        r#"source_matches:
+  - match: |
+      function readable(value) {
+        return (SEQ_EXPRS);
+      }
+    bindings:
+      - local: readable
+        name: LoneHole
+"#,
+    );
+
+    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let record = find_module_outcome(outcomes(&report), "hooks/lone_hole");
+    assert_eq!(record["outcome"]["kind"], "invalid", "{record:#}");
+    assert!(
+        record["outcome"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("run-hole keyword outside a list position"),
+        "{record:#}"
+    );
+}
+
+#[test]
 fn validate_source_only_reports_stale_annotations() {
     let dir = tempfile::tempdir().unwrap();
     let source_file = dir.path().join("chunk.js");

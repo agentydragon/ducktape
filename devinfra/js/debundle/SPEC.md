@@ -21,8 +21,8 @@ it as if authored in one tree.
 Only the shape matcher decides where a `source_match` template matches. A
 template matches a place when their syntax trees are equal up to:
 
-- **holes** — `ANYTHING`, `EXPR`, `STMT`, `STMT_LIST`, `DECLARATORS` and the other
-  hole keywords of <docs/selectors.md> match any subtree of their kind;
+- **holes** — `ANYTHING`, `EXPR`, `STMT`, `STMT_LIST`, `DECLARATORS`, `SEQ_EXPRS` and
+  the other hole keywords of <docs/selectors.md> match any subtree of their kind;
 - **alpha-renaming** — binding and value identifiers match any identifier,
   consistently within their lexical scope.
 
