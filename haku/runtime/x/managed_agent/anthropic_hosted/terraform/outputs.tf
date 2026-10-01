@@ -1,6 +1,6 @@
-# These outputs are published to the haku-cloud-agent-ids Secret (flux-system) by
-# the Terraform CR's writeOutputsToSecret — the canonical source consumers read
-# from. See cluster/k8s/haku/cloud-agent-tf/README.md.
+# A resumed Terraform CR publishes these outputs to haku-cloud-agent-ids. The
+# cluster Secret may currently retain the deleted vault ID; see the parked
+# resource notes in cluster/parked/cloud-agent-tf/README.md.
 output "vault_id" {
   description = "Vault ID (vlt_*) holding the haku-k8s static_bearer credential."
   value       = claude-managed-agents_vault.haku_cloud.id

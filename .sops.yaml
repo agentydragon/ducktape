@@ -287,7 +287,7 @@ creation_rules:
           - *cluster-secrets
 
   # Cluster (active and parked), Props, Wayback, and Haku managed-agent deployment secrets (Flux + admin can decrypt).
-  - path_regex: (cluster/k8s|cluster/parked|props/deploy|loom/wayback/deploy|haku/runtime/managed_agent/self_hosted/deploy)/.*\.sops\.yaml$
+  - path_regex: (cluster/k8s|cluster/parked|props/deploy|loom/wayback/deploy|haku/runtime/x/managed_agent/self_hosted/deploy)/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:

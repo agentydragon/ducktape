@@ -10,7 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette import status
 
+from devinfra.claude.session_export.read_api import create_read_api
 from devinfra.claude.session_export.settings import OIDCSettings, ServeSettings, WebSettings
+from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.supervisor import SyncStatus, SyncSupervisor
 from util.bazel.runfiles import find_path
 from util.oidc_login import LoginConfig, install_login
@@ -155,24 +157,28 @@ def create_control_app(*, supervisor: SyncSupervisor) -> FastAPI:
 
 
 def create_web_app(
-    *, settings: WebSettings, control_client: httpx.AsyncClient, frontend_dir: Path | None = None
+    *, settings: WebSettings, control_client: httpx.AsyncClient, store: SessionStore, frontend_dir: Path | None = None
 ) -> FastAPI:
     """Stateless, owner-authenticated web tier; control state and the credential stay in the control process."""
     app = FastAPI(title="claude-session-sync", version="1")
     app.state.control_client = control_client
     _health_route(app)
     app.include_router(_proxy_api(), dependencies=[Depends(_no_store)])
+    app.include_router(create_read_api(store))
     install_login(app, _login_config(settings))
     _frontend(app, frontend_dir)
     return app
 
 
-def create_app(*, supervisor: SyncSupervisor, settings: ServeSettings, frontend_dir: Path | None = None) -> FastAPI:
+def create_app(
+    *, supervisor: SyncSupervisor, settings: ServeSettings, store: SessionStore, frontend_dir: Path | None = None
+) -> FastAPI:
     """Local all-in-one app, retained for development and the OpenAPI type exporter."""
     app = FastAPI(title="claude-session-sync", version="1")
     _health_route(app)
 
     app.include_router(_api(supervisor))
+    app.include_router(create_read_api(store))
     install_login(app, _login_config(settings))
     _frontend(app, frontend_dir)
     return app

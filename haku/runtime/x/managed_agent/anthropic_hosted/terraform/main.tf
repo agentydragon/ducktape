@@ -7,16 +7,13 @@
 # gets full CRUD in haku-sandbox plus cluster-wide diagnostics read.
 #
 # Supersedes the retired imperative bring-up (Path B, bash+curl+env-var
-# KUBE_TOKEN); see haku/runtime/managed_agent/anthropic_hosted/README.md.
+# KUBE_TOKEN); see ../README.md.
 #
-# CREDENTIAL ROTATION: the static_bearer credential carries the haku-k8s Authentik
-# JWT, which rotates ~every 44 days. The chain is fully automatic and the rotator
-# stays dumb (it only mints + commits): authentik-jwt-rotation writes the token as
-# the haku-cloud-kube-token k8s Secret -> Flux applies it -> tofu reads it
-# in-cluster (kubernetes_secret_v1 data source, below) -> tofu re-sends it into
-# the Anthropic vault. The token is a TF 1.11 write-only attribute, so it only
-# re-sends when token_wo_version changes; we set that to the JWT's exp epoch
-# (monotonic, bumps on every mint).
+# HISTORICAL CREDENTIAL ROTATION: the static_bearer credential used the haku-k8s
+# Authentik JWT, which rotates ~every 44 days. The old rotator-published
+# haku-cloud-kube-token Secret was removed when the Anthropic vault was deleted.
+# Recreate and seed that input deliberately before any future apply. The token's
+# TF 1.11 write-only attribute used its exp epoch as token_wo_version.
 
 # api_key is read from the ANTHROPIC_API_KEY env var, injected into the
 # tofu-controller runner from the haku-cloud-anthropic-api-key Secret (a
@@ -39,10 +36,10 @@ resource "claude-managed-agents_environment" "haku_cloud" {
 }
 
 # SYNC: `model` + full toolset are identical to the self-hosted agent
-# (<../../../haku/runtime/managed_agent/self_hosted/haku.agent.yaml>). SSOT
-# haku/base/agent_shared.yaml, parity enforced by //haku/base:test_agent_config_ssot
-# — a red run shows any drift. The vault + both credentials below are shared:
-# self-hosted references this vault via the haku-cloud-agent-ids output Secret.
+# (../../self_hosted/haku.agent.yaml). SSOT
+# ../agent_shared.yaml, parity enforced by //haku/runtime/x/managed_agent:test_agent_config_ssot
+# — a red run shows any drift. This root historically created the shared vault;
+# its old output Secret can contain an ID for a vault deleted at Anthropic.
 resource "claude-managed-agents_agent" "haku_cloud" {
   name  = "haku-cloud"
   model = "claude-sonnet-5" # TEMP(bring-up): revisit (opus) once the cloud runtime is proven.
@@ -119,11 +116,10 @@ resource "claude-managed-agents_vault" "haku_cloud" {
   display_name = "haku-cloud"
 }
 
-# Read the rotator-published token in-cluster (tf-runner SA; kubernetes provider
-# auto-configures in-cluster, as in tf/gitops/cpap-data). The tofu-controller's
-# spec.vars don't resolve secretKeyRef, so we read the Secret here instead. The
-# JWT lands in tfstate (sensitive) — same as cpap-data's data.kubernetes_secret;
-# the credential's `token` is still write-only so it isn't re-emitted on read.
+# Historical input: this data source needs a deliberately restored
+# haku-cloud-kube-token Secret before the parked root can apply. The provider
+# auto-configures in-cluster through the tf-runner SA. The JWT lands in tfstate
+# (sensitive); the credential's `token` stays write-only.
 data "kubernetes_secret_v1" "kube_token" {
   metadata {
     name      = "haku-cloud-kube-token"

@@ -17,14 +17,15 @@ Current work is iterating that method until what it surfaces is genuinely good.
 
 - What Haku is, its objective, how it reasons, and its working method: **not in ducktape.** They
   live in the `haku-state` repo's root cards (`AGENTS.md`, `SOUL.md`, `MEMORY.md`) and the hubs
-  they point at, which Haku owns and writes. ducktape holds the runtime entrypoints and the deploy
-  config — <base/README.md> says what is left here and why it stays.
+  they point at, which Haku owns and writes. ducktape holds the runtime entrypoints and deploy
+  config; the parked Managed Agents tree at <runtime/x/managed_agent/README.md> contains only
+  runtime code, deployment artifacts, and its parity-checked configuration.
 - **Threat model, enforcement inventory, and the invariants edits must preserve:**
   <docs/security.md> — the durable doctrine's canonical home; start a security review there.
 - The web runtime and its run procedure: `runtime/claude_web_env/` (+ its `run.md`).
 - The trusted console (capability tier + iframe shell): `console/README.md`;
   containment contract: `console/docs/containment.md`. Alternative runtimes
-  (Managed Agents): `runtime/managed_agent/` + `plans/`.
+  (Managed Agents): `runtime/x/managed_agent/` + `plans/`.
 - Cluster wiring (RBAC, egress proxy, secrets): `cluster/k8s/haku/` and
   `cluster/k8s/agents/haku-egress-proxy/`.
 - The **actionable build checklist is `TODO.md`.**

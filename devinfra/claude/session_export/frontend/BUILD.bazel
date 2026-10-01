@@ -1,9 +1,11 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 package(default_visibility = ["//devinfra/claude/session_export:__pkg__"])
 
@@ -71,6 +73,20 @@ ts_library(
         ":api",
         ":overview",
         ":pairing",
+        ":viewer",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "viewer",
+    srcs = ["viewer.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -89,6 +105,7 @@ ts_library(
     deps = [
         ":app",
         ":page_css",
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
@@ -142,4 +159,70 @@ vitest_bin.vitest_test(
         ":status_test",
         "//:node_modules/vitest",
     ],
+)
+
+# The screenshot harness mounts the real viewer with a deterministic API fixture. CI publishes
+# the desktop, dark, and narrow captures on the PR visual-review page.
+js_library(
+    name = "visual_scenarios",
+    testonly = True,
+    srcs = ["visual/scenarios.mjs"],
+)
+
+ts_library(
+    name = "visual_harness_lib",
+    testonly = True,
+    srcs = ["visual/harness.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":page_css",
+        ":viewer",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+esbuild(
+    name = "visual_harness_bundle",
+    testonly = True,
+    config = {"jsx": "automatic"},
+    entry_point = "visual/harness.tsx",
+    format = "iife",
+    minify = False,
+    output = "visual/dist/harness.js",
+    output_css = "visual/dist/harness.css",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":visual_harness_lib"],
+)
+
+filegroup(
+    name = "visual_harness_js",
+    testonly = True,
+    srcs = ["visual/dist/harness.js"],
+)
+
+filegroup(
+    name = "visual_harness_css",
+    testonly = True,
+    srcs = ["visual/dist/harness.css"],
+)
+
+visual_test(
+    name = "visual",
+    size = "small",
+    assets = [
+        "visual/index.html",
+        ":visual_harness_css",
+    ],
+    entry_point = "visual/runner.mjs",
+    env = {"TZ": "UTC"},
+    harness = ":visual_harness_js",
+    scenarios = ":visual_scenarios",
 )

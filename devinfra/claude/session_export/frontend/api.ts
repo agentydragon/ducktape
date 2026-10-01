@@ -8,6 +8,10 @@ import type { components } from "./api/schema";
 
 export type SyncStatus = components["schemas"]["SyncStatus"];
 export type PairingStart = components["schemas"]["PairingStart"];
+export type SessionSummary = components["schemas"]["SessionSummary"];
+export type SessionEvent = components["schemas"]["Event"];
+export type SessionListPage = components["schemas"]["SessionListPage"];
+export type SessionEventPage = components["schemas"]["SessionEventPage"];
 
 export class ApiError extends Error {
   readonly status: number;
@@ -59,4 +63,22 @@ export function finishPairing(redirectUrl: string): Promise<SyncStatus> {
 
 export function syncNow(): Promise<void> {
   return call("POST", "/api/sync");
+}
+
+export function listSessions(statuses: string[], cursor?: string): Promise<SessionListPage> {
+  const query = new URLSearchParams({ limit: "100" });
+  for (const status of statuses) query.append("statuses", status);
+  if (cursor !== undefined) query.set("cursor", cursor);
+  return call("GET", `/v1/code/sessions?${query}`);
+}
+
+export function listSessionEvents(sessionId: string, cursor?: string): Promise<SessionEventPage> {
+  const query = new URLSearchParams({ limit: "100", sort_order: "asc" });
+  if (cursor !== undefined) query.set("cursor", cursor);
+  return call("GET", `/v1/code/sessions/${encodeURIComponent(sessionId)}/events?${query}`);
+}
+
+export function watchSessions(resumeToken: string): EventSource {
+  const query = new URLSearchParams({ resume_token: resumeToken });
+  return new EventSource(`/v1/code/sessions/watch?${query}`);
 }

@@ -1,4 +1,4 @@
-# The pairing page
+# The session sync page
 
 `export_sessions_bin serve` runs the [sync](sync.md) loop and the page in one process for local use. In the cluster,
 `web` serves the owner-authenticated page and `control` owns the sync loop and OAuth credential. The web Deployment
@@ -6,6 +6,10 @@ can have several replicas; all control actions are forwarded to the one control 
 token and pairing attempt single-owned.
 
 ## What the page shows
+
+The page includes a read-only session browser: filter by status, search the loaded session summaries, select a
+session, and read its events in chronological order. The browser reads the local PostgreSQL mirror through the
+Claude Code-shaped routes below.
 
 Two mechanisms keep the database current, and the page reports each on its own ([sync.md](sync.md) has the design):
 
@@ -44,6 +48,22 @@ cookie with identity and expiry, and a write to the API from another origin is r
 Environment variables are prefixed `SESSION_SYNC_` (`settings.py`). `web` uses the database URL, OIDC fields,
 `PUBLIC_BASE_URL`, and `CONTROL_BASE_URL`; `control` uses the database URL, `CREDENTIALS_FILE`, and sync settings.
 `serve` combines both settings for local use.
+
+## Session read API
+
+The authenticated web tier exposes a read-only Claude Code-shaped subset:
+`GET /v1/code/sessions?limit=&cursor=&statuses=`, `GET /v1/code/sessions/{id}`, and
+`GET /v1/code/sessions/{id}/events?limit=&sort_order=&cursor=`. List pages return `data`, `next_cursor`, and
+`resume_token`; event pages return `data`, `has_more`, `first_id`, and `last_id`. IDs using either `session_` or
+`cse_` are accepted. By default the list includes active and paused sessions; repeat `statuses=` to select states,
+including archived sessions. Cursors are opaque to clients. The routes read the mirror and do not expose Claude's
+session mutation endpoints.
+
+`GET /v1/code/sessions/watch?resume_token=` streams `changed` events with the changed session IDs. EventSource
+reconnects can send their latest event ID in `Last-Event-ID`; it takes precedence over the original query token. If a
+resume token is older than the retained journal, the stream sends a `reset` event and a fresh revision so the client
+can reload its page. Each web replica listens for PostgreSQL `NOTIFY` wakeups and replays the committed journal from
+the shared database, so a reconnect can land on any replica. The journal retains the latest 10,000 revisions.
 
 | Variable                                              | Meaning                                                                               |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------- |

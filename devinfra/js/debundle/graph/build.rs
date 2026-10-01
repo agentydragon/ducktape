@@ -8,7 +8,7 @@ use swc_ecma_ast::Id;
 use crate::facts::EffectCell;
 use crate::{StatementFacts, StatementKind, StatementOrdinal};
 
-// `OwnerGraphOptions` lives in `spec.rs` — both the spec YAML surface
+// `OwnerGraphOptions` lives in `spec/spec.rs` — both the spec YAML surface
 // and the graph-build API consume the same type. Re-exported from
 // crate root via `lib.rs` so `analysis::OwnerGraphOptions` continues
 // to be the canonical path for external callers.

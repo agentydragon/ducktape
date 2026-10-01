@@ -154,7 +154,7 @@ rewriters drop `#` comments (<README.md> → "Comments").
 
 The flat transform spec carries declarative top-level data maps (`inputs`,
 `vendor`, `logical_modules`, `unassigned_mode`, `chunk_renames`), read via typed
-serde structs in <spec.rs>; transforms run in a fixed canonical order. Field
+serde structs in <spec/spec.rs>; transforms run in a fixed canonical order. Field
 semantics and authoring workflow: <docs/spec_editing.md>. The CLI accepts relative
 or absolute paths for `--spec` / package roots; for module-specifier path math use
 the path crates and helpers (`relative-path`, artifact path helpers), never

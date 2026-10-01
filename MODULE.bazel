@@ -163,7 +163,8 @@ tf.download(
         "authentik": "goauthentik/authentik:2026.8.0",
         "aws": "hashicorp/aws:6.64.0",
         # Intentionally omitted from the global provider mirror while
-        # tf/gitops/haku-cloud-agent is parked. The community provider is
+        # haku/runtime/x/managed_agent/anthropic_hosted/terraform is parked.
+        # The community provider is
         # published, but mirroring it here would make unrelated Terraform and
         # image jobs depend on a parked module's provider.
         "external": "hashicorp/external:2.4.2",

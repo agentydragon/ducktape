@@ -323,4 +323,4 @@ bulk channels.
   `cluster/k8s/TODO.md`.
 - **Tool inputs/outputs flow to the model provider's control plane** regardless of sandbox
   location — inherent to using hosted models; acknowledged in
-  <../runtime/managed_agent/anthropic_hosted/README.md>.
+  <../runtime/x/managed_agent/anthropic_hosted/README.md>.

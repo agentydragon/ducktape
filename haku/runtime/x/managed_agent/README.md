@@ -1,4 +1,10 @@
-# Managed Agents runtimes (loop at Anthropic)
+# Managed Agents runtimes (parked experiments)
+
+This whole component lives under `runtime/x/` because neither runtime is active.
+The self-hosted worker's Flux Kustomization is suspended; the Anthropic-hosted
+agent, vault, and credentials were deleted on 2026-09-30, and its Terraform
+Kustomization remains suspended. Treat both subtrees as parked reference material
+until a reviewed reactivation decision.
 
 Haku on Anthropic **Managed Agents**: the agent loop runs server-side at
 Anthropic; what differs is **where the sandbox (tool execution) runs**. Two
@@ -6,7 +12,7 @@ variants, by sandbox location (Anthropic's own vocabulary):
 
 | Dir                                               | Sandbox         | Status                  |
 | ------------------------------------------------- | --------------- | ----------------------- |
-| [`self_hosted/`](self_hosted/README.md)           | your cluster    | built (Runtime B)       |
+| [`self_hosted/`](self_hosted/README.md)           | your cluster    | **PARKED** (2026-07-04) |
 | [`anthropic_hosted/`](anthropic_hosted/README.md) | Anthropic cloud | **PARKED** (2026-07-04) |
 
 - **`self_hosted/`** — `worker.py` (anthropic Python SDK) polls the work queue from
@@ -22,4 +28,4 @@ variants, by sandbox location (Anthropic's own vocabulary):
   deleted at Anthropic and `cluster/parked/cloud-agent-tf` is suspended; see
   <anthropic_hosted/README.md> for the reason and the resume decision.
 
-The "which runtime" comparison (A / B / C) is <../../plans/runtime_options.md>.
+The "which runtime" comparison (A / B / C) is <../../../plans/runtime_options.md>.

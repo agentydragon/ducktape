@@ -27,12 +27,15 @@ let
     applyNixStorePluginOwnershipPatch = false;
   };
 
+  # Require the reviewed local patch to match nix-openclaw's OpenClaw release.
+  distPatch = ./patches + "/openclaw-${sourceInfo.releaseVersion}-dist.patch";
+
   # Keep nix-openclaw's pinned npm wrapper and lockfile intact. Add only this
   # repo's release-specific dist patch, applying it fail-closed.
   patchedNixOpenclaw = ocPkgs.runCommand "nix-openclaw-openclaw-dist-patch" { } ''
     cp -r ${nix-openclaw} "$out"
     chmod -R u+w "$out"
-    cp ${./patches/openclaw-2026.9.5-dist.patch} "$out/nix/scripts/openclaw-npm-dist.patch"
+    cp ${distPatch} "$out/nix/scripts/openclaw-npm-dist.patch"
     substituteInPlace "$out/nix/packages/openclaw-gateway-npm.nix" \
       --replace-fail 'patch-openclaw-npm-dist.mjs' 'openclaw-npm-dist.patch'
     # Apply the release-specific repairs as a conventional, fail-closed patch.

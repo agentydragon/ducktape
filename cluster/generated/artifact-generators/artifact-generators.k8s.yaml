@@ -326,8 +326,8 @@ spec:
       name: haku-openclaw-spike-backup
       originRevision: "@repo"
     - copy:
-        - from: "@repo/haku/runtime/managed_agent/self_hosted/deploy/**"
-          to: "@artifact/haku/runtime/managed_agent/self_hosted/deploy/"
+        - from: "@repo/haku/runtime/x/managed_agent/self_hosted/deploy/**"
+          to: "@artifact/haku/runtime/x/managed_agent/self_hosted/deploy/"
       name: haku-managed-agent
       originRevision: "@repo"
     - copy:

@@ -1,5 +1,5 @@
-"""SSOT guard: both Haku managed-agent surfaces — cloud (TF/HCL) and self-hosted
-(`ant` YAML) — must match haku/base/agent_shared.yaml on model + full toolset.
+"""SSOT guard: both parked Haku managed-agent surfaces — cloud (TF/HCL) and self-hosted
+(`ant` YAML) — must match agent_shared.yaml on model + full toolset.
 Matching a shared SSOT is what keeps the two identical ("one brain, two substrates").
 
 Both surfaces are parsed structurally — the self-hosted YAML with PyYAML, the
@@ -14,13 +14,13 @@ import yaml
 
 from util.bazel.runfiles import get_required_path
 
-_SHARED = yaml.safe_load(get_required_path("_main/haku/base/agent_shared.yaml").read_text())
+_SHARED = yaml.safe_load(get_required_path("_main/haku/runtime/x/managed_agent/agent_shared.yaml").read_text())
 _SELF_HOSTED = yaml.safe_load(
-    get_required_path("_main/haku/runtime/managed_agent/self_hosted/haku.agent.yaml").read_text()
+    get_required_path("_main/haku/runtime/x/managed_agent/self_hosted/haku.agent.yaml").read_text()
 )
-_CLOUD = pygohcl.loads(get_required_path("_main/tf/gitops/haku-cloud-agent/main.tf").read_text())["resource"][
-    "claude-managed-agents_agent"
-]["haku_cloud"]
+_CLOUD = pygohcl.loads(
+    get_required_path("_main/haku/runtime/x/managed_agent/anthropic_hosted/terraform/main.tf").read_text()
+)["resource"]["claude-managed-agents_agent"]["haku_cloud"]
 
 _SURFACES = {"self_hosted": _SELF_HOSTED, "cloud": _CLOUD}
 

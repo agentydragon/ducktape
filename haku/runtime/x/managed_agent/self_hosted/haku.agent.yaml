@@ -3,8 +3,8 @@
 # which the worker clones into the agent workdir at startup (see entrypoint.sh).
 #
 # SYNC: `model` + full toolset are identical to the cloud agent
-# (<../../../../tf/gitops/haku-cloud-agent/main.tf>). SSOT haku/base/agent_shared.yaml, parity
-# enforced by //haku/base:test_agent_config_ssot.
+# (../anthropic_hosted/terraform/main.tf). SSOT ../agent_shared.yaml, parity
+# enforced by //haku/runtime/x/managed_agent:test_agent_config_ssot.
 #
 # `name` is the control-plane object name, matching the `haku-selfhosted` environment; the persona
 # stays "Haku" (see `system`).
@@ -26,9 +26,10 @@ system: |
 
   Read those, then execute the run procedure end to end. Each user message is a wake: do one scan pass, commit and push haku-state,
   then stop and wait for the next wake.
-# The MCP-credential auth for every mcp_toolset below is injected at Anthropic's egress from the
-# SHARED, TF-managed vault (tf/gitops/haku-cloud-agent; both agents reference it) — the pod never
-# sees a token. Keep the toolset identical to the cloud agent (test_agent_config_ssot).
+# MCP credentials are injected at Anthropic's egress from the vault selected when
+# provision.sh creates the deployment; the pod never sees a token. The former shared
+# vault was deleted in 2026-09, so reactivation must create a fresh vault and credentials.
+# Keep the toolset identical to the cloud agent (test_agent_config_ssot).
 tools:
   # Fixed built-in toolset, supplied by `worker.py` in the pod. The Pod is the trust boundary, so
   # everything is auto-allowed.

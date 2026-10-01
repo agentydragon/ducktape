@@ -2,18 +2,18 @@
 
 Status: **PARKED (2026-07-04).** The cloud control-plane objects
 (environment/agent/vault/static_bearer credential/deployment) were deleted at
-Anthropic by the operator, and `cluster/parked/cloud-agent-tf` is suspended
+Anthropic by the operator on 2026-09-30, and `cluster/parked/cloud-agent-tf` is suspended
 (`suspend: true`). Resuming starts with the decision in
 [Resuming](#resuming-recreate-via-the-provider-vs-retire-it) below. What follows
 describes the **v0 architecture as it was built**, before parking — historical
 until resumed:
 
-- **Terraform root:** <../../../../tf/gitops/haku-cloud-agent> — the
+- **Terraform root:** <terraform/> — the
   `claude-managed-agents` provider, pinned + hash-locked.
-- **Deployed by:** <../../../../cluster/parked/cloud-agent-tf> (tofu-controller
+- **Deployed by:** <../../../../../cluster/parked/cloud-agent-tf> (tofu-controller
   `Terraform` CR; runbook + provisioned IDs there).
 - **Cluster access path:** the public, Authentik-authed `kubectl-machine-mcp`
-  passthrough MCP (<../../../../cluster/parked/kubectl-machine-mcp/README.md>).
+  passthrough MCP (<../../../../../cluster/parked/kubectl-machine-mcp/README.md>).
 
 > **Retired (2026-06-26):** the imperative bring-up — `provision.sh` plus
 > `haku.{agent,environment,deployment}.yaml` — and **Path B** (the cloud agent
@@ -42,7 +42,8 @@ OpenTofu provider at all. It has bitten in three distinct ways:
 
 **Option A — `state rm` + unsuspend + recreate via the provider.** Lowest
 immediate effort; fresh IDs refresh the `haku-cloud-agent-ids` output Secret and
-unblock the parked shared-vault cutover (PR #2788). Keeps GitOps declarative
+provision a new vault. The existing output Secret, if still present, contains a
+vault ID deleted at Anthropic and must not be reused. Keeps GitOps declarative
 reconciliation for the cloud agent — and all three liabilities, drift-blindness
 included.
 
@@ -52,7 +53,7 @@ supply-chain surface, and the repin-review burden. Cost: the cloud agent loses
 declarative reconciliation. Coupling: PR #2788's shared vault lives _in the TF
 module_ and self-hosted reads its ID from the TF output Secret, so retiring the
 provider also unwinds vault-in-TF — the shared vault moves to imperative
-provisioning too. The SSOT/parity test (`//haku/base:test_agent_config_ssot`)
+provisioning too. The SSOT/parity test (`//haku/runtime/x/managed_agent:test_agent_config_ssot`)
 stays valid either way.
 
 **Lean: B** — the provider has produced two silent-failure bugs and the

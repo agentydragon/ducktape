@@ -192,7 +192,7 @@ rules, not enforced code):
 
 **Prerequisites for Haku's ducktape PRs**: the cluster-Forgejo ducktape mirror must become
 an automated mirror (today bumped manually — see
-`haku/runtime/managed_agent/self_hosted/README.md`), and the `haku` Forgejo user needs
+`haku/runtime/x/managed_agent/self_hosted/README.md`), and the `haku` Forgejo user needs
 fork/branch/PR rights. A PII/classifier check can run as a required status check on
 worker- and Haku-authored PRs, as belt to the dispatch gate's suspenders.
 

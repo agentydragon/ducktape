@@ -58,8 +58,8 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         action_federation=action_federation,
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET],
         # The "haku" sandbox preset (app_settings.py) exists only here, not in
-        # agentplane-testing. claude-sonnet-5 to match what Haku's own managed agents run
-        # today (haku/runtime/managed_agent/self_hosted/haku.agent.yaml).
+        # agentplane-testing. `claude-sonnet-5` matches the model in the parked self-hosted
+        # configuration at haku/runtime/x/managed_agent/self_hosted/haku.agent.yaml.
         haku_preset_model=exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, "claude-sonnet-5"),
     )
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
