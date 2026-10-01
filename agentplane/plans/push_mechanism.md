@@ -1,8 +1,11 @@
-# A shared push mechanism for `UISHELL_DRAWER` and `NO_MANUAL_REFRESH`
+# Push updates for Agentplane Settings
 
-Status: **captured, not yet confirmed.** Both `UISHELL_DRAWER` (task DAG) and `NO_MANUAL_REFRESH`
-need a push/subscription mechanism, and both were flagged as "not decided here" pending this design.
-Read this before starting either.
+Status: **remaining design for `NO_MANUAL_REFRESH` only.** The Actions attention drawer and shared
+pending-request subscription shipped in [PR #8618](https://github.com/agentydragon/ducktape/pull/8618).
+Pending requests and history were combined in [PR #8456](https://github.com/agentydragon/ducktape/pull/8456),
+and the live stream was narrowed to pending requests with paginated history in
+[PR #8431](https://github.com/agentydragon/ducktape/pull/8431). This plan now covers push updates
+for the Settings tabs only.
 
 ## What exists today: two independent implementations, one of them not generic
 
@@ -39,13 +42,13 @@ idea, not built on the above:
 - `agentplane/app/api.py`'s `/actions/stream` doesn't generate frames at all; it proxies the
   Action Service's raw SSE bytes through (`_action_chunks`), re-checking the operator session on
   each chunk.
-- The frontend side (`actions.tsx`'s `useActionRequests`) is its own third EventSource client: no
-  `health`/staleness reporting, no `connecting` state, errors folded into the existing `error`
-  string instead of `LiveStatus`.
+- The frontend's `ActionAffordance` calls `useActionRequests` once at the app shell and shares its
+  state with the Actions views through `ActionRequestsContext`. `useActionRequests` uses
+  `followStream` and reports connection state through `useStreamStatus`; this is a single
+  route-wide Actions subscription, though it remains separate from the generic `useLive` client.
 
-**Everything `UISHELL_DRAWER` and `NO_MANUAL_REFRESH` need lives behind the Action Service**, not
-`LiveIndex`: pending Actions (already streamed), and three resources with _no_ change notification
-today — Connections (`external_connection`/`external_connection_grant` tables), MCP-server linkage
+**The remaining `NO_MANUAL_REFRESH` resources live behind the Action Service**, not `LiveIndex`:
+Connections (`external_connection`/`external_connection_grant` tables), MCP-server linkage
 (`mcp_server_linkage`/`mcp_oauth_token_state`), and push subscriptions (`action_push_subscription`).
 Each has its own canonical table, the same shape `ActionEventRow` is for Actions.
 
@@ -73,14 +76,13 @@ enables but does not itself require doing first.
 each proxied through a matching `agentplane/app/api.py` route the way `/actions/stream` proxies
 `operator_stream` today.
 
-**4. One shared Actions subscription, not one per consumer.** `UISHELL_DRAWER`'s badge needs the
-same pending-Actions data `actions.tsx`'s `useActionRequests` already streams — it does not need a
-new backend mechanism, only to stop being read exclusively by route-scoped page components. Lift the
-`/actions/stream` subscription into a provider mounted once in `app.tsx` (a context, not a hook each
-consumer calls independently), so there is exactly one `EventSource` per tab regardless of how many
-of {the badge, `/actions`, `/actions/history`} are mounted. `actions.tsx`'s existing hand-rolled
-EventSource client should migrate onto `live.tsx`'s `useLive`/`LiveStatus` in the same pass — one
-frontend implementation of "subscribe to a snapshot stream," not two.
+**4. Shipped: one shared Actions subscription and attention drawer.** PR #8618 mounted an
+`ActionAffordance` around the route tree in `app.tsx`. It owns the shared pending-request
+subscription, opens a non-modal drawer when a new request arrives off the Actions page, and keeps a
+floating Actions count button available across routes and phone widths. See
+[`actions/affordance.tsx`](../app/frontend/actions/affordance.tsx) and
+[`actions/requests.tsx`](../app/frontend/actions/requests.tsx). The badge payload question is
+settled by reusing the pending request data.
 
 **5. `NO_MANUAL_REFRESH`'s three Settings tabs** each call `useLive` once against their new stream
 route, replacing today's fetch-once-plus-Refresh-button. No shared subscription needed between them
@@ -95,13 +97,8 @@ app (e.g. moving from `/sandboxes` to a sandbox page).
   an MCP-linkage change to waking the Connections tab's reader too, and complicates the payload
   shape (three independently-typed lists rather than one). Leaning separate, matching each tab's own
   lifecycle, but not decided.
-- **Badge payload shape.** Whether `UISHELL_DRAWER` reads the exact same `ActionRequestView[]`
-  `/actions/stream` already carries (simplest, reuses the shared subscription verbatim) or a lighter
-  count-plus-summary projection (less bandwidth/parse cost per frame, but a second Action Service
-  endpoint and a second frontend shape to keep in sync with the full list). Leaning reuse-as-is
-  first, add a lighter projection only if the full payload proves too heavy in practice.
 - **Where `PgNotifyFanout` and the moved `frames()` helper live.** Both the app and the Action
   Service need them; whether that's a new shared module both import, or the Action Service keeps its
   own copy synchronized by convention, is a build-graph question this doc doesn't resolve.
 - **Migrating `operator_stream` onto the shared `frames()` helper** is enabled by this design but is
-  its own follow-up, not a prerequisite for `UISHELL_DRAWER`/`NO_MANUAL_REFRESH` to ship.
+  its own follow-up, not a prerequisite for `NO_MANUAL_REFRESH` to ship.

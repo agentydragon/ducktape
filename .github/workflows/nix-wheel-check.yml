@@ -147,8 +147,8 @@ jobs:
       # overrides" below exits 1 on a missing file — this gate fails closed. It
       # relies on `bb remote build`'s post-run download, which returns an
       # arbitrary subset for a large enough request: measured on devel, 50 targets
-      # yielded 12 files while these 8 yielded 8. So it is sound at this size and
-      # degrades as more releases gain `nixPackage`. If it starts flaking on
+      # yielded 12 files. A previous 8-output set yielded all 8; this change brings
+      # the current set to 11. If it starts flaking on
       # "missing artifact for pin", read the outputs from the build event stream
       # instead (devinfra/ci/bes.py) rather than raising a retry count.
       #

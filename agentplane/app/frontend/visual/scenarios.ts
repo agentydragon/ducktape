@@ -24,8 +24,10 @@ export interface Scenario extends ScenarioOptions {
   openSettings?: boolean;
   /** Flip every Raw switch as it mounts: no URL param toggles one. */
   openRaw?: boolean;
-  /** Show live pending Actions over a non-Actions page. */
-  actionsPopup?: boolean;
+  /** Show live pending Actions in the shell and thread composer. */
+  pendingActions?: boolean;
+  /** Click the inline approval prompt's Review button once it mounts. */
+  openActionReview?: boolean;
   /** Render a bounded first history page with a Load more control. */
   historyPaged?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
@@ -340,21 +342,39 @@ export const SCENARIOS: Record<string, Scenario> = {
     openActionPolicySets: true,
   },
 
-  actions_popup_desktop: {
+  actions_attention_composer_desktop: {
     element: "#app",
-    route: "/sandboxes",
+    route: SESSION_ROUTE,
     viewport: { width: 1200, height: 1000 },
-    actionsPopup: true,
+    pendingActions: true,
     captureViewport: true,
-    readySelectors: [".mantine-Drawer-content", ".mantine-Drawer-content details"],
+    readySelectors: ['button[aria-label="Actions, 2 pending"]', ".action-affordance-notice"],
   },
-  actions_popup_phone: {
+  actions_attention_composer_phone: {
     element: "#app",
-    route: "/sandboxes",
-    viewport: { width: 390, height: 915 },
-    actionsPopup: true,
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    pendingActions: true,
     captureViewport: true,
-    readySelectors: [".mantine-Drawer-content", ".mantine-Drawer-content details"],
+    readySelectors: ['button[aria-label="Actions, 2 pending"]', ".action-affordance-notice"],
+  },
+  actions_attention_composer_open_desktop: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 1000 },
+    pendingActions: true,
+    openActionReview: true,
+    captureViewport: true,
+    readySelectors: ['button[aria-label="Hide pending action details"]', ".action-affordance-notice pre"],
+  },
+  actions_attention_composer_open_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    pendingActions: true,
+    openActionReview: true,
+    captureViewport: true,
+    readySelectors: ['button[aria-label="Hide pending action details"]', ".action-affordance-notice pre"],
   },
   actions: { element: "#app", route: "/actions", viewport: { width: 1200, height: 1100 }, readySelectors: ["details"] },
   actions_phone: {

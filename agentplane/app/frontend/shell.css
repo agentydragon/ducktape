@@ -71,16 +71,7 @@
   flex: 0 0 auto;
 }
 
-.action-affordance-trigger {
-  position: fixed;
-  right: 1.25rem;
-  bottom: 1.25rem;
-  z-index: 200;
-  box-shadow: var(--mantine-shadow-lg);
-}
-@media (max-width: 560px) {
-  .action-affordance-trigger {
-    right: 1rem;
-    bottom: 1rem;
-  }
+.action-affordance-notice {
+  flex: 0 0 auto;
+  border-color: var(--mantine-color-yellow-5);
 }

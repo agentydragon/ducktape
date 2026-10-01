@@ -96,12 +96,14 @@
       rawArtifactOverrides = builtins.getEnv "DUCKTAPE_ARTIFACT_OVERRIDES";
       artifactOverrides =
         if rawArtifactOverrides == "" then { } else builtins.fromJSON rawArtifactOverrides;
-      # Keep archive names as evaluation-time metadata. Deriving them from
-      # artifact store paths later would include Nix's hash prefix.
-      artifactFilenames = builtins.mapAttrs (
-        name: spec:
-        if artifactOverrides ? ${name} then baseNameOf artifactOverrides.${name} else baseNameOf spec.url
-      ) artifactData.pins;
+      # PR overrides may include new artifacts that have not been published and
+      # pinned yet. Keep their original filename from the local build output; for
+      # published artifacts, use the pin URL's basename as usual.
+      artifactSpecs =
+        artifactData.pins
+        // builtins.mapAttrs (
+          name: path: (artifactData.pins.${name} or { }) // { overridePath = path; }
+        ) artifactOverrides;
 
       # Keep the developer Ruff binary aligned with the repository's pinned
       # Python and Bazel toolchains while nixpkgs catches up.
@@ -126,33 +128,31 @@
       # restricted egress can substitute these fixed-output paths from Attic
       # instead of doing evaluator-time downloads from GitHub Releases.
       #
-      # PR-time override: DUCKTAPE_ARTIFACT_OVERRIDES (JSON object of pin
-      # name -> absolute file path) swaps the fetched wheel for a local one.
-      # Set by .github/workflows/nix-wheel-check.yml so the imports check runs
-      # against the PR's freshly-built wheel instead of the last released pin —
-      # that is what catches "wheel forgot a package" regressions like the
-      # gmail_api / ducktape_pkg drift in #2669. Requires --impure (getEnv).
+      # PR-time overrides may replace published artifacts or supply new ones
+      # before release.yml publishes them and sync-pins.yml creates their pins.
+      # nix-wheel-check.yml supplies artifacts built from this PR. Requires
+      # --impure (getEnv).
       # Empty in normal use; behaviour is identical to the pre-override flake.
       artifacts = builtins.mapAttrs (
         name: spec:
-        if artifactOverrides ? ${name} then
+        if spec ? overridePath then
           # Preserve the local artifact's basename. Wheel installers validate
           # the archive filename against its embedded .dist-info directory.
           builtins.path {
-            path = /. + artifactOverrides.${name};
-            name = artifactFilenames.${name};
+            path = /. + spec.overridePath;
+            name = baseNameOf spec.overridePath;
           }
         else
           pkgs.fetchurl {
             inherit (spec) url;
             name =
               let
-                asset = artifactFilenames.${name};
+                asset = baseNameOf spec.url;
               in
               if pkgs.lib.hasSuffix ".whl" asset || pkgs.lib.hasSuffix ".zip" asset then asset else "source";
             hash = "sha256-${spec.sha256}";
           }
-      ) artifactData.pins;
+      ) artifactSpecs;
 
       # Each skill ships as its own `skill-<name>` release artifact. Assemble the
       # per-skill `.skill` zips (each already rooted under `<name>/`) into one flat

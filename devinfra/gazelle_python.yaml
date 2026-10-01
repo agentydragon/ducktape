@@ -91,6 +91,7 @@ manifest:
     cyclopts: cyclopts
     dateutil: python_dateutil
     dbus_fast: dbus_fast
+    dbus_next: dbus_next
     debugpy: debugpy
     defusedxml: defusedxml
     dev.make-release-notes: vulture
@@ -559,4 +560,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 94ec9423e90934a203ae9113058bfc5e1d46aa6cf35396de1984ac7aef34e410
+integrity: fc8188f68a6d9bd77c4bc61d1f570f64a90e552f410adfe35525e485a308ba2c

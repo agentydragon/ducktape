@@ -37,7 +37,7 @@ class PlaidSpendBusInterface(ServiceInterface):
     # dbus-next uses these string annotations as the wire signatures. They must
     # stay quoted and this file intentionally avoids postponed annotations.
     @method()
-    def GetView(self) -> "s":  # noqa: N802, F821, UP037
+    def GetView(self) -> "s":  # type: ignore[name-defined]  # noqa: N802, F821, UP037
         return json.dumps(self.owner.view, separators=(",", ":"))
 
     @method()
@@ -45,15 +45,15 @@ class PlaidSpendBusInterface(ServiceInterface):
         self.owner.start_login()
 
     @dbus_property(access=PropertyAccess.READ)
-    def Status(self) -> "s":  # noqa: N802, F821, UP037
+    def Status(self) -> "s":  # type: ignore[name-defined]  # noqa: N802, F821, UP037
         return self.owner.status
 
     @dbus_property(access=PropertyAccess.READ)
-    def LastError(self) -> "s":  # noqa: N802, F821, UP037
+    def LastError(self) -> "s":  # type: ignore[name-defined]  # noqa: N802, F821, UP037
         return self.owner.error or ""
 
     @dbus_signal()
-    def ViewChanged(self, view: "s") -> "s":  # noqa: N802, F821, UP037
+    def ViewChanged(self, view: "s") -> "s":  # type: ignore[name-defined]  # noqa: N802, F821, UP037
         return view
 
     def update_properties(self, status: str | None = None, error: str | None = None) -> None:

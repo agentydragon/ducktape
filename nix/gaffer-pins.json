@@ -6,9 +6,9 @@
       "rev": "cabc3d3d1bff3995f0bca59ea28aaa34b9bc8f67"
     },
     "drivectl": {
-      "store_path": "/nix/store/ajfacfp8hda4606z0nawhlg05a662079-drivectl-unstable-a0f0e69-dirty",
-      "version": "unstable-a0f0e69-dirty",
-      "rev": "a0f0e69d0550dbe53441176dfbd39975c3bed4a4"
+      "store_path": "/nix/store/gqdx8v2ny85yjmap85535nblvfmlvd26-drivectl-unstable-4278357-dirty",
+      "version": "unstable-4278357-dirty",
+      "rev": "4278357c5edb4208937b9762d7c442ad309838d1"
     }
   }
 }

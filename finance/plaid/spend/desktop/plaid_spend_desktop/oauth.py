@@ -235,8 +235,11 @@ class Authenticator:
         access_token = token_response.get("access_token")
         if not isinstance(access_token, str) or not access_token:
             raise RuntimeError("Authentik token response did not contain an access token")
+        raw_expires_in = token_response.get("expires_in", 300)
         try:
-            expires_in = max(0, int(token_response.get("expires_in", 300)))
+            if not isinstance(raw_expires_in, (int, str)):
+                raise TypeError("expires_in must be an integer or string")
+            expires_in = max(0, int(raw_expires_in))
         except TypeError, ValueError:
             expires_in = 300
         self.access_token = access_token

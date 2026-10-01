@@ -34,6 +34,7 @@ import {
   type SandboxView,
   type ThreadView,
 } from "../client";
+import { ComposerPendingActions } from "../actions/affordance";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadState, type ThreadWindow } from "./thread_sync";
 import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun, type HistoryRow } from "./history_rows";
 import { liveSandboxesUrl, LiveStatus, useLive, useRequiredThreadsLive, type SandboxesSnapshot } from "../live";
@@ -773,6 +774,7 @@ function ProjectedSessionBody({
             Could not resume harness: {resumeError}
           </Text>
         )}
+        <ComposerPendingActions />
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}

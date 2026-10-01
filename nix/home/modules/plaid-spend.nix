@@ -6,7 +6,7 @@
 }:
 let
   cfg = config.ducktape.plaidSpend;
-  package = ducktapePackages.plaidSpendDesktop;
+  package = ducktapePackages."plaid-spend-desktop";
 in
 {
   options.ducktape.plaidSpend = {

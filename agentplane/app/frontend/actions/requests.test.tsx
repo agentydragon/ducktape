@@ -1,14 +1,20 @@
 // @vitest-environment happy-dom
 
-import { act } from "react";
-import { MemoryRouter } from "react-router";
+import { act, type JSX } from "react";
+import { MemoryRouter, useLocation } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { STALE_AFTER_MS } from "../stream_status";
+import { TopbarContext } from "../topbar";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
 import { ActionRequests, stateLabel } from "./requests";
-import { ActionAffordance } from "./affordance";
+import { ActionAffordance, ComposerPendingActions } from "./affordance";
 import { button, mount, render, request, SSH_EXEC_ARGUMENTS, sshExec, unmountLast } from "./testing";
+
+function CurrentRoute(): JSX.Element {
+  const location = useLocation();
+  return <div data-current-path={location.pathname} />;
+}
 
 describe("ActionRequests", () => {
   it("shows structured list errors without an empty-state claim", async () => {
@@ -237,7 +243,7 @@ describe("ActionRequests", () => {
 });
 
 describe("global Action affordance", () => {
-  it("opens on new SSE requests, shares cards with the page, respects dismissal, and closes on the last decision", async () => {
+  it("keeps incoming approvals modeless and collapsed, and shares decisions with the top bar", async () => {
     let stream: EventTarget | undefined;
     const close = vi.fn();
     class Stream extends EventTarget {
@@ -257,37 +263,56 @@ describe("global Action affordance", () => {
     const send = async (rows: ActionRequestView[]): Promise<void> => {
       await act(async () => stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) })));
     };
+    const topbar = document.createElement("div");
+    document.body.append(topbar);
     try {
       const container = await mount(
-        <MemoryRouter>
-          <ActionAffordance>
-            <ActionRequests embedded />
-          </ActionAffordance>
+        <MemoryRouter initialEntries={["/threads/test-thread"]}>
+          <TopbarContext.Provider value={{ title: null, actions: topbar }}>
+            <ActionAffordance>
+              <CurrentRoute />
+              <textarea aria-label="Composer" />
+              <ComposerPendingActions />
+            </ActionAffordance>
+          </TopbarContext.Provider>
         </MemoryRouter>
       );
       const first = request("decision_pending", 1);
       const second = request("decision_pending", 2);
+      const composer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Composer"]');
+      if (!composer) throw new Error("missing composer");
+      composer.focus();
       await send([first]);
-      expect(document.querySelector(".mantine-Drawer-content")?.textContent).toContain(first.title);
-      expect(document.querySelector(".mantine-Drawer-content")?.textContent).toContain("Exact arguments (unredacted)");
-      expect(container.textContent).toContain("Pending (1)");
-      expect(close).not.toHaveBeenCalled(); // the page uses the shell's single stream
-      const dismiss = document.querySelector<HTMLButtonElement>(".mantine-Drawer-close");
-      await act(async () => dismiss?.click());
-      expect(document.querySelector(".mantine-Drawer-content")).toBeNull();
-      await send([first]); // identical reconnect does not reopen
-      expect(document.querySelector(".mantine-Drawer-content")).toBeNull();
+      expect(document.activeElement).toBe(composer);
+      expect(container.querySelector(".action-affordance-notice")?.textContent).toContain(
+        "1 action waiting for review"
+      );
+      expect(container.querySelector('.action-affordance-notice button[aria-expanded="false"]')).not.toBeNull();
+      expect(container.querySelector(".action-affordance-notice pre")).toBeNull();
+      expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+      expect(document.querySelector(".mantine-Drawer-root")).toBeNull();
+      expect(close).not.toHaveBeenCalled();
+
+      const topbarButton = topbar.querySelector<HTMLButtonElement>('button[aria-label="Actions, 1 pending"]');
+      if (!topbarButton) throw new Error("missing top bar Actions count");
+      await act(async () => topbarButton.click());
+      expect(container.querySelector("[data-current-path]")?.getAttribute("data-current-path")).toBe("/actions");
+
+      await act(async () => button(container, "Review").click());
+      expect(container.querySelector(".action-affordance-notice pre")).not.toBeNull();
+      expect(container.textContent).toContain("Exact arguments (unredacted)");
       await send([first, second]);
-      expect(document.querySelector(".mantine-Drawer-content")?.textContent).toContain(second.title);
-      await act(async () => button(document.querySelector(".mantine-Drawer-content")!, "Deny").click());
+      expect(container.querySelector(".action-affordance-notice")?.textContent).toContain(second.title);
+      await act(async () => button(container, "Deny").click());
       expect(decide).toHaveBeenCalledWith(first, "deny");
       await send([second]);
-      expect(document.querySelector(".mantine-Drawer-content")?.textContent).toContain(second.title);
-      await act(async () => button(document.querySelector(".mantine-Drawer-content")!, "Allow").click());
-      expect(document.querySelector(".mantine-Drawer-content")).toBeNull();
+      expect(container.querySelector(".action-affordance-notice")?.textContent).toContain(second.title);
+      await act(async () => button(container, "Allow").click());
+      expect(container.querySelector(".action-affordance-notice")).toBeNull();
       await unmountLast();
       expect(close).toHaveBeenCalledOnce();
     } finally {
+      topbar.remove();
       decide.mockRestore();
       vi.unstubAllGlobals();
     }
