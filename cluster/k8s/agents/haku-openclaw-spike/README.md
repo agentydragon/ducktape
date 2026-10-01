@@ -12,8 +12,7 @@ tools.
 same `dockerTools.buildLayeredImage` approach as public-coder. The gateway is
 packaged through nix-openclaw's tested npm-package path using its pinned
 OpenClaw wrapper and lockfile. Claude Code and the spike's tools are layered
-from the locked Nix package set, so the image has one controlled runtime
-closure and one Node executable.
+from the locked Nix package set.
 
 The current branch targets stable OpenClaw `2026.9.5`. Deployment image tags
 remain Flux-managed: they advance only after the corresponding image-publish
