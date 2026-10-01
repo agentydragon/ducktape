@@ -21,7 +21,7 @@ configuration typed.
 
 ## Convert: configuration with an existing application contract
 
-### Authentik and Forgejo rotator wiring
+### Authentik rotator wiring
 
 Attic's typed roster now lives in `cluster/cdk8s/nix_cache/attic.py` and uses the schema
 shared with its runtime rotator at `cluster/rotators/attic_jwt_rotation/config.py`. cdk8s
@@ -29,13 +29,17 @@ serializes it under the runtime ConfigMap key `rotators.yaml`; the hand-written 
 is removed. SOPS outputs, native `server.toml`, and the image-pins Component keep their
 existing owners.
 
-Authentik and Forgejo already keep their Pydantic schemas in each rotator's `config.py`;
-their cdk8s modules build `ROTATIONS` from those models.
+Authentik keeps its Pydantic schema in the rotator's `config.py`; cdk8s builds
+`ROTATIONS` from that model. Forgejo's cdk8s module already builds its `ROTATIONS`
+from the runtime model, and its CronJob now derives mounted credential volumes and
+their Secret names from those entries. The two credentials sourced in the `forgejo`
+namespace are still identified explicitly because source namespace is deployment wiring,
+not part of the rotator's runtime configuration.
 
-Remaining: derive credential mounts and output Secret names from those entries wherever
-the generator currently repeats them. Keep audiences, scopes and consumer grants explicit.
-Treat each remaining improvement as a separate reviewable change; do not add a generic
-rotator framework.
+Remaining: derive Authentik's credential mounts and output Secret names from its entries
+wherever the generator currently repeats them. Keep audiences, scopes and consumer grants
+explicit. Treat each remaining improvement as a separate reviewable change; do not add a
+generic rotator framework.
 
 The rotators write SOPS ciphertext and sometimes publish more than one output. cdk8s
 must not become a second writer of those bytes. Consolidating those outputs, or
