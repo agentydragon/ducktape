@@ -1,73 +1,37 @@
 # The stable OpenClaw gateway package, shared by the public-coder image
 # (openclaw/) and Haku's spike image (haku/openclaw_spike/).
 #
-# Both images consume nix-openclaw's npm-package gateway build, spliced with
-# this directory's npm wrapper and release-specific dist patch. That splice,
-# source pin, and patch are identical for both consumers, so they live here once
-# rather than being mirrored between two image definitions and drifting apart.
+# Both images consume nix-openclaw's pinned npm-package gateway and source
+# metadata, with this directory's release-specific dist patch. The source pin
+# and patch are shared here rather than mirrored between image definitions.
 #
-# Gotcha: use the npm-package path, not a from-source `sourceInfo` override.
-# nix-openclaw's own stable is npm-package too, so its from-source pnpm build is
-# unexercised and is missing fetcherVersion-4 store steps (index.db
-# reconstruction), which makes the gateway's offline install fail.
+# Gotcha: use the npm-package path. nix-openclaw's own stable uses it too; its
+# from-source pnpm build is unexercised and lacks fetcherVersion-4 store steps
+# (index.db reconstruction), which makes the gateway's offline install fail.
 {
   pkgs,
   nix-openclaw,
 }:
 
 let
-  # Keep the tested npm-package build path and explicitly align its wrapper and
-  # source metadata with the 2026.9.5 release used by both images.
   ocPkgs = import nix-openclaw.inputs.nixpkgs {
     inherit (pkgs.stdenv.hostPlatform) system;
     overlays = [ nix-openclaw.overlays.default ];
   };
 
-  # Mirrors nix/sources/openclaw-source.nix but pinned to 2026.9.5. Setting
-  # `gatewayNpmDepsHash` (not `pnpmDepsHash`) selects the prebuilt-npm gateway
-  # path -- the one stable uses. `runtimePluginVersion` tracks nix-openclaw's
-  # generated acpx runtime plugin (2026.9.5), which requires the matching
-  # OpenClaw host version.
-  stableSourceInfo = {
-    owner = "openclaw";
-    repo = "openclaw";
-    pnpmMajor = "12";
-    applyPublicSurfaceHardlinksPatch = false;
-    applySkipPluginAutoEnableNixModePatch = false;
-    # 2026.9.4 changed the hardlink-policy source shape, so the old
-    # nix-openclaw ownership patch no longer applies. Runtime plugins are
-    # copied into the gateway's bundled extension tree by the consumer instead.
+  # Keep the OpenClaw release, runtime-plugin version, source revision, and npm
+  # dependency hash in lockstep with the nix-openclaw revision in flake.lock.
+  # This image uses its npm-package path, so the source-build ownership patch
+  # is unnecessary; the runtime plugins are bundled by the image consumer.
+  sourceInfo = (import "${nix-openclaw}/nix/sources/openclaw-source.nix") // {
     applyNixStorePluginOwnershipPatch = false;
-    releaseTag = "v2026.9.5";
-    releaseVersion = "2026.9.5";
-    runtimePluginVersion = "2026.9.5";
-    # The npm path does not fetch the git source, but these mirror the stable
-    # sourceInfo shape for checks and future source builds.
-    rev = "ec9c1a13db8938e5a3eaa51fca2e981cde2395a9";
-    hash = "sha256-M0nfeZDy6MafWCfqefwDRdL1MFLs8l1YZJmB6sV9IyU=";
-    # Filled from the Nix build's fixed-output error after the wrapper lock is
-    # regenerated.
-    gatewayNpmDepsHash = "sha256-a2pQm6DKRqLO3yesRxQZT0QNi2TqVVfF4hDyQJ6Geic=";
   };
 
-  # nix-openclaw's npm wrapper (nix/npm/openclaw/) pins openclaw to an older
-  # stable release, and openclaw-gateway-npm.nix asserts the lock version equals
-  # `sourceInfo.releaseVersion`. Splice this directory's wrapper over it.
-  #
-  # Regenerate npm_wrapper/ with:
-  #   npm install openclaw@<ver> --package-lock-only --omit=dev --install-strategy=nested
-  # `--install-strategy=nested` is load-bearing: this release ships no
-  # npm-shrinkwrap.json, so a default (hoisted) install lifts all of openclaw's
-  # runtime deps to the wrapper's top-level node_modules -- but nix-openclaw's
-  # install script copies only node_modules/openclaw/., so the gateway would ship
-  # with ZERO runtime deps and crash at its first import (tslog / undici).
-  # Nesting mirrors what stable's shrinkwrap does, so the deps sit under
-  # node_modules/openclaw and get copied into the gateway.
-  patchedNixOpenclaw = ocPkgs.runCommand "nix-openclaw-openclaw-stable-wrapper" { } ''
+  # Keep nix-openclaw's pinned npm wrapper and lockfile intact. Add only this
+  # repo's release-specific dist patch, applying it fail-closed.
+  patchedNixOpenclaw = ocPkgs.runCommand "nix-openclaw-openclaw-dist-patch" { } ''
     cp -r ${nix-openclaw} "$out"
     chmod -R u+w "$out"
-    cp ${./npm_wrapper/package.json} "$out/nix/npm/openclaw/package.json"
-    cp ${./npm_wrapper/package-lock.json} "$out/nix/npm/openclaw/package-lock.json"
     cp ${./patches/openclaw-2026.9.5-dist.patch} "$out/nix/scripts/openclaw-npm-dist.patch"
     substituteInPlace "$out/nix/packages/openclaw-gateway-npm.nix" \
       --replace-fail 'patch-openclaw-npm-dist.mjs' 'openclaw-npm-dist.patch'
@@ -82,7 +46,7 @@ let
 
   openclawPackages = import "${patchedNixOpenclaw}/nix/packages" {
     pkgs = ocPkgs;
-    sourceInfo = stableSourceInfo;
+    inherit sourceInfo;
   };
 in
 {

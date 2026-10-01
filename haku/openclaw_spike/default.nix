@@ -1,9 +1,10 @@
 # Nix-built OCI image for Haku's isolated OpenClaw + Claude Code spike.
 #
-# The gateway package itself is shared with the public-coder image; the source
-# pin, npm-wrapper splice, and dist repairs live in openclaw/gateway.nix, so a
-# version bump moves both images at once -- what that costs, and how to recover an
-# instance a bump has bricked, is in openclaw/AGENTS.md. This file adds the spike's
+# The gateway package itself is shared with the public-coder image; nix-openclaw
+# provides its pinned package/source metadata and local dist repairs live in
+# openclaw/gateway.nix, so a version bump moves both images at once -- what that
+# costs, and how to recover an instance a bump has bricked, is in
+# openclaw/AGENTS.md. This file adds the spike's
 # own proxy preload and command-line tooling -- everything a Nix package in one
 # reviewable closure, no second Node.
 #

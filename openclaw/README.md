@@ -1,7 +1,8 @@
 # OpenClaw images
 
-`gateway.nix` builds the stable OpenClaw gateway — nix-openclaw's npm-package
-build, spliced with `npm_wrapper/` and repaired by the fixups described there.
+`gateway.nix` builds the stable OpenClaw gateway from nix-openclaw's pinned
+npm-package and source metadata, then applies the downstream dist patch and
+install fixups described there.
 **It is the single gateway derivation for both images**, so a change here lands in
 both:
 
@@ -21,10 +22,6 @@ nix build .#openclaw-image
 nix build .#haku-openclaw-spike-image
 ```
 
-Regenerate `npm_wrapper/` when moving to a new release:
-
-```bash
-npm install openclaw@<ver> --package-lock-only --omit=dev --install-strategy=nested
-```
-
-`--install-strategy=nested` is load-bearing; `gateway.nix` explains why.
+The OpenClaw release and npm dependency lock follow the pinned nix-openclaw
+revision. Review the release-specific dist patch and build both images for each
+gateway update.

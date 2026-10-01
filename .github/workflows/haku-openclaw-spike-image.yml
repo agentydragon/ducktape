@@ -13,8 +13,7 @@ on:
       # file rather than openclaw/** on purpose: the rest of that directory is
       # public-coder's image and does not belong in this trigger.
       - "openclaw/gateway.nix"
-      - "openclaw/npm_wrapper/**"
-      - "openclaw/patch-openclaw-npm-dist.mjs"
+      - "openclaw/patches/**"
       - "openclaw/proxy-setup.mjs"
       - "flake.nix"
       - "flake.lock"
@@ -32,8 +31,7 @@ on:
       # file rather than openclaw/** on purpose: the rest of that directory is
       # public-coder's image and does not belong in this trigger.
       - "openclaw/gateway.nix"
-      - "openclaw/npm_wrapper/**"
-      - "openclaw/patch-openclaw-npm-dist.mjs"
+      - "openclaw/patches/**"
       - "openclaw/proxy-setup.mjs"
       - "flake.nix"
       - "flake.lock"

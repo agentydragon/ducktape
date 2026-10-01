@@ -6,8 +6,8 @@
 }:
 
 let
-  # The gateway package, its source pin, and the npm-wrapper splice are shared
-  # with haku/openclaw_spike; see ./gateway.nix.
+  # The gateway package and its release-specific dist patch are shared with
+  # haku/openclaw_spike; see ./gateway.nix.
   openclawGateway = import ./gateway.nix { inherit pkgs nix-openclaw; };
   inherit (openclawGateway) openclawPackages gateway;
   matrixPlugin = openclawPackages.openclawRuntimePlugins.matrix;
