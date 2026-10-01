@@ -17,6 +17,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
+    GITHUB_IDENTITY_READS_SET,
     OLLAMA_MODELS,
     PACKAGES_POLICY,
     PLAID_PGWEB_POLICY,
@@ -55,7 +56,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         harness_codex=[*GPT6_OAI_LANE_MODELS, *OLLAMA_MODELS],
         thread_preset_codex_model=codex_responses_name("gpt-6-luna"),
         action_federation=action_federation,
-        action_policy_sets=list(PUBLIC_CODER_ACTION_POLICY_SETS),
+        action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET],
         # The "haku" sandbox preset (app_settings.py) exists only here, not in
         # agentplane-testing. claude-sonnet-5 to match what Haku's own managed agents run
         # today (haku/runtime/managed_agent/self_hosted/haku.agent.yaml).
@@ -87,6 +88,9 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
             GITHUB_ACTIONS_LOGS_POLICY,
             BUILDBUDDY_POLICY,
         ],
+        # Same GitHub read sets as public-coder: finance-agent forks/pushes/PRs ducktape
+        # through the same agentydragon-agent account, for the same generic-tooling role.
+        action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET],
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
         # Placeholder password: the `forgejo-finance-agent` EgressPolicy's credentialRef
         # substitutes it for the `finance-agent` Forgejo account's real password on the

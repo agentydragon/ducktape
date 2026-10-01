@@ -42,6 +42,10 @@ HAKU_MAILBOX_POLICY = "haku-mailbox"
 COINBASE_POLICY = "coinbase"
 BUILDBUDDY_POLICY = "buildbuddy"
 PLAID_PGWEB_POLICY = "plaid-pgweb"
+# The ActionPolicySet actions_staging_policies creates for the caller's own GitHub identity
+# (`get_me`, no repository or mutation surface) -- every preset binds it by default, named
+# here (not alongside the EgressPolicy names above) because it is a different CRD kind.
+GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 
 
 _PUBLIC_CODER_INSTRUCTIONS = (
@@ -173,6 +177,7 @@ def settings(
                             GITHUB_AGENTYDRAGON_AGENT_POLICY,
                             GITHUB_ACTIONS_LOGS_POLICY,
                         ],
+                        action_policy_sets=[GITHUB_IDENTITY_READS_SET],
                         thread_preset=_THREAD_PRESET_HAKU_CLAUDE,
                         # Shallow clone of haku-state over the in-cluster Forgejo, the way
                         # haku-sandbox-setup.sh clones it for Haku's own sandboxes

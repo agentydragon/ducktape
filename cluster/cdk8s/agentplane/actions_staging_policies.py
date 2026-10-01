@@ -40,6 +40,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
+    GITHUB_IDENTITY_READS_SET,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
@@ -62,7 +63,6 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"
 _SANDBOX_SET = "sandbox-self"
-_GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 _HOME_ASSISTANT_READS_SET = "home-assistant-reads"
 _GMAIL_READS_SET = "gmail-reads"
 _GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
@@ -376,7 +376,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "actionpolicyset-github-identity-reads",
         metadata=ApiObjectMetadata(
-            name=_GITHUB_IDENTITY_READS_SET,
+            name=GITHUB_IDENTITY_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "The caller's own GitHub identity read, with no repository or mutation surface."
@@ -738,7 +738,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
         policy_sets=[
             _GITHUB_READS_SET,
-            _GITHUB_IDENTITY_READS_SET,
+            GITHUB_IDENTITY_READS_SET,
             _SANDBOX_SET,
             _HOME_ASSISTANT_READS_SET,
             _GMAIL_READS_SET,
@@ -764,7 +764,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="haku-agent"),
         policy_sets=[
             _GITHUB_READS_SET,
-            _GITHUB_IDENTITY_READS_SET,
+            GITHUB_IDENTITY_READS_SET,
             _SANDBOX_SET,
             _HOME_ASSISTANT_READS_SET,
             _GMAIL_READS_SET,
