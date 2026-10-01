@@ -1,5 +1,9 @@
 # Plaid Spend
 
+The per-user CLI, daemon, and GNOME extension live in the sibling `spend_desktop/` package.
+Their usage and wire contract are documented in
+[`spend_desktop/README.md`](../spend_desktop/README.md).
+
 `//finance/plaid/spend:server_image` serves the same backend-computed statement-cycle view to the
 Authentik-protected browser UI and desktop clients. The card selection, labels, limits, and alert
 thresholds live in the SOPS-managed `plaid-spend-cards` Secret at
