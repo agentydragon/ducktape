@@ -273,6 +273,52 @@ describe("foldSessionEvents", () => {
     });
   });
 
+  it("keeps result text, images, and tool-use metadata as separate fields", () => {
+    const toolUseResult = {
+      tool_use_id: "read-image",
+      structuredContent: { contentType: "screenshot", secretMetadata: "not transcript output" },
+    };
+    const folded = foldSessionEvents([
+      event(1, "assistant", {
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", id: "read-image", name: "Read", input: { file_path: "diagram.png" } }],
+        },
+      }),
+      event(2, "user", {
+        type: "user",
+        tool_use_result: toolUseResult,
+        message: {
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "read-image",
+              content: [
+                { type: "text", text: "A diagram is attached." },
+                { type: "image", source: { type: "base64", media_type: "image/png", data: "c3ludGhldGlj" } },
+              ],
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(folded[0]).toMatchObject({
+      kind: "tool-run",
+      tools: [
+        {
+          name: "Read",
+          result: "A diagram is attached.",
+          outputImages: [{ data: "c3ludGhldGlj", mimeType: "image/png" }],
+          toolUseResult,
+          status: "complete",
+        },
+      ],
+    });
+    if (folded[0]?.kind !== "tool-run") throw new Error("Expected a tool run");
+    expect(folded[0].tools[0]?.result).not.toContain("not transcript output");
+  });
+
   it("keeps unknown event types readable and preserves their source event", () => {
     const [notice] = foldSessionEvents([event(1, "rate_limit_event", { message: "Try again in a moment." })]);
     expect(notice).toMatchObject({ kind: "notice", title: "rate limit event", detail: "Try again in a moment." });

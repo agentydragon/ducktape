@@ -7,6 +7,7 @@ const VIEWER_READY = [
   '[data-tool-name="Glob"]',
   '[data-tool-name="Read"]',
   '[data-tool-name="Task"]',
+  "[data-tool-output-image]",
 ];
 
 export const SCENARIOS = {

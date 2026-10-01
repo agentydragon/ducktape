@@ -194,10 +194,42 @@ const eventPage: SessionEventPage = {
             type: "text",
             text: "The fixture and assertion disagree. I’ll update the expectation to match the intended paused state.",
           },
+          {
+            type: "tool_use",
+            id: "tool-image",
+            name: "Read",
+            input: { file_path: "docs/session-sync-flow.png" },
+          },
         ],
       },
     }),
-    fixtureEvent(7, "result", {
+    fixtureEvent(7, "user", {
+      type: "user",
+      tool_use_result: {
+        tool_use_id: "tool-image",
+        structuredContent: { kind: "synthetic-image-fixture" },
+      },
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tool-image",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/png",
+                  data: "iVBORw0KGgoAAAANSUhEUgAAAHgAAAA8CAYAAACtrX6oAAAAt0lEQVR4nO3RoRECAQADwa8LWkPRL/Kx0AFI5sKKcxGZ2eM8z5d2O359QIAFWID/NMDjAR4P8HhfgW+Xx1TX+3MqwIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMMGHA5wIABlwMM+PNA7QCPB3g8wOMBHg/weIDHAzzeGwqER1q6RCsJAAAAAElFTkSuQmCC",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }),
+    fixtureEvent(8, "result", {
       type: "result",
       usage: { total_tokens: 2315 },
       total_cost_usd: 0.0123,
@@ -206,7 +238,7 @@ const eventPage: SessionEventPage = {
   ],
   has_more: false,
   first_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
-  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a507",
+  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a508",
 };
 
 function mockFetch(input: RequestInfo | URL): Promise<Response> {
