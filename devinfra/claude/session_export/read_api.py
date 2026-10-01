@@ -117,11 +117,7 @@ def create_read_api(store: SessionStore) -> APIRouter:
             limit=limit, statuses=effective_statuses, before=before
         )
         next_cursor = _encode_session_cursor(*next_position) if has_more and next_position is not None else None
-        return SessionListPage(
-            data=data,
-            next_cursor=next_cursor,
-            resume_token=resume_token,
-        )
+        return SessionListPage(data=data, next_cursor=next_cursor, resume_token=resume_token)
 
     @router.get("/sessions/watch")
     async def watch_sessions(
