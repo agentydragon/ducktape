@@ -556,7 +556,7 @@ function FoldableDetail({ label, detail }: { label: string; detail: string }): J
           size="xs"
           aria-label={expanded ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
           aria-expanded={expanded}
-          onClick={() => disclosures.toggleTool(item.id)}
+          onClick={() => setExpanded((value) => !value)}
         >
           <Text size="xs" fw={600}>
             {expanded ? "−" : "+"}
@@ -644,7 +644,7 @@ function CompactToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
           aria-label={expanded ? "Hide tool details" : "Show tool details"}
           aria-expanded={expanded}
           data-tool-run-toggle
-          onClick={() => disclosures.toggleGroup(runIds, expanded)}
+          onClick={() => disclosures.toggleTool(item.id)}
         >
           <Text size="xs" fw={600}>
             {expanded ? "−" : "+"}
@@ -692,7 +692,7 @@ function ToolActivityGroup({ item, session }: { item: ToolGroup; session: Sessio
           aria-label={expanded ? "Hide activity group" : "Show activity group"}
           aria-expanded={expanded}
           data-tool-group-toggle
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => disclosures.toggleGroup(runIds, expanded)}
           styles={{ root: { minWidth: 0 }, label: { display: "block", overflow: "hidden", textOverflow: "ellipsis" } }}
           title={toolGroupSummary(item)}
         >
