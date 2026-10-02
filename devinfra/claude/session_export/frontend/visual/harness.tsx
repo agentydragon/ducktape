@@ -767,7 +767,11 @@ if (scenario.startsWith("SessionLatestFirst")) {
     }
     const viewportRect = viewport.getBoundingClientRect();
     const latestRect = latestCard.getBoundingClientRect();
-    if (Math.abs(latestRect.bottom - viewportRect.bottom) > 3) {
+    // The latest message can have bottom spacing or an event strip after it.
+    // Assert the scroll position and message visibility, not a card-edge coincidence.
+    const atTail = Math.abs(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight) <= 1;
+    const latestVisible = latestRect.bottom > viewportRect.top && latestRect.top < viewportRect.bottom;
+    if (!atTail || !latestVisible) {
       attempts += 1;
       if (attempts >= 300) {
         if (scenario === "SessionLatestFirstAnchor") failAnchorScenario("The newest event is not at the initial tail");
