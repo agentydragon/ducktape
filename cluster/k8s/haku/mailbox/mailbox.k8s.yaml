@@ -228,8 +228,8 @@ apiVersion: v1
 kind: Service
 metadata:
   annotations:
-    description: Cluster-internal SMTP backend for the per-node haku-mailbox-smtp-ingress proxies. The proxies carry the sending MTA address in PROXY protocol so Stalwart can evaluate SPF against the real peer.
-  name: haku-mailbox-smtp
+    description: Cluster-internal SMTP backend for the per-node smtp-ingress proxies. The proxies carry the sending MTA address in PROXY protocol so Stalwart can evaluate SPF against the real peer.
+  name: smtp
   namespace: haku-mailbox
 spec:
   ports:
@@ -265,7 +265,7 @@ kind: DaemonSet
 metadata:
   annotations:
     description: Per-public-node port-25 TCP ingress. Preserves the sending MTA address through PROXY protocol so Stalwart's SPF gate remains meaningful.
-  name: haku-mailbox-smtp-ingress
+  name: smtp-ingress
   namespace: haku-mailbox
 spec:
   selector:
@@ -339,7 +339,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: haku-mailbox-smtp-ingress
+  name: smtp-ingress
   namespace: haku-mailbox
 spec:
   egress:

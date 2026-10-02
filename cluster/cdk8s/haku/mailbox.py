@@ -39,8 +39,9 @@ NAME = "haku-mailbox"
 NAMESPACE = "haku-mailbox"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/mailbox"
 
-_INGRESS_NAME = "haku-mailbox-smtp-ingress"
+_INGRESS_NAME = "haku-mailbox-smtp-ingress"  # the ingress pods' label value and nginx ConfigMap name
 _INGRESS_LABELS = {"app.kubernetes.io/name": _INGRESS_NAME}
+_INGRESS_OBJECT_NAME = "smtp-ingress"  # the DaemonSet and its CiliumNetworkPolicy
 _TLS_SECRET = "mx-allegedly-works-tls"
 DATABASE = cnpg.PostgresRef.generated(name="haku-mailbox-db", namespace=NAMESPACE)
 _DB_PASSWORD = DATABASE.app_secret.key("password")
@@ -59,7 +60,7 @@ _HTTP = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
 _IMAP = ServiceRef(name=_HTTP.name, port=Port(name="imap", number=1143), pods=_HTTP.pods)
-_SMTP = ServiceRef(name="haku-mailbox-smtp", port=Port(name="smtp", number=_SMTP_PORT), pods=_HTTP.pods)
+_SMTP = ServiceRef(name="smtp", port=Port(name="smtp", number=_SMTP_PORT), pods=_HTTP.pods)
 _CONFIG_DIR = "/etc/stalwart"  # where CONFIG_MAP is mounted
 _INITIALIZE = "initialize.sh"
 _SERVER_CONFIG = "config.json"
@@ -224,7 +225,7 @@ def _add_services(chart: Chart) -> None:
             namespace=NAMESPACE,
             annotations={
                 "description": (
-                    "Cluster-internal SMTP backend for the per-node haku-mailbox-smtp-ingress proxies. "
+                    "Cluster-internal SMTP backend for the per-node smtp-ingress proxies. "
                     "The proxies carry the sending MTA address in PROXY protocol so Stalwart can "
                     "evaluate SPF against the real peer."
                 )
@@ -262,7 +263,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
         chart,
         "smtp-ingress",
         metadata=k8s.ObjectMeta(
-            name=_INGRESS_NAME,
+            name=_INGRESS_OBJECT_NAME,
             namespace=NAMESPACE,
             annotations={
                 "description": (
@@ -347,7 +348,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "smtp-ingress-policy",
-        metadata=ApiObjectMetadata(name=_INGRESS_NAME, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=_INGRESS_OBJECT_NAME, namespace=NAMESPACE),
         endpoint_selector=_INGRESS_LABELS,
         ingress=[
             CiliumNetworkPolicySpecIngress(

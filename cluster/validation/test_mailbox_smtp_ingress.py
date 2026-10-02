@@ -13,7 +13,7 @@ def test_ingress_proxy_forwards_to_the_smtp_service_with_proxy_protocol() -> Non
     smtp_service = one(
         doc
         for doc in yaml.safe_load_all(mailbox_yaml.read_text())
-        if doc and doc["kind"] == "Service" and doc["metadata"]["name"] == "haku-mailbox-smtp"
+        if doc and doc["kind"] == "Service" and doc["metadata"]["name"] == "smtp"
     )
     smtp_service_port = one(smtp_service["spec"]["ports"])
 

@@ -71,7 +71,7 @@ resource "aws_route53_record" "apex" {
 #
 # mx.allegedly.works is already covered by the wildcard, but MX targets should
 # not depend on wildcard semantics — keep an explicit A record on the same
-# public-gateway roster. A haku-mailbox-smtp-ingress DaemonSet binds port 25 on
+# public-gateway roster. The haku-mailbox `smtp-ingress` DaemonSet binds port 25 on
 # every node and forwards the sending MTA's address to Stalwart with PROXY
 # protocol (cluster/cdk8s/haku/mailbox.py).
 resource "aws_route53_record" "mx_host" {

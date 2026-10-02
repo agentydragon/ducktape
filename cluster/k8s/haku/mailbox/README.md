@@ -101,8 +101,8 @@ placeholder, on JMAP paths only
 
 - **Port 25**: `MX allegedly.works → mx.allegedly.works` (A records on the
   public OVH gateway roster, `tf/gitops/dns-records/`) → one
-  `haku-mailbox-smtp-ingress` nginx pod per public node (`hostPort: 25`) →
-  the cluster-internal `haku-mailbox-smtp:2525` Service → Stalwart's :2525
+  `smtp-ingress` nginx pod per public node (`hostPort: 25`) →
+  the cluster-internal `smtp:2525` Service → Stalwart's :2525
   listener (STARTTLS with the cert-manager certificate). This mirrors the
   per-node hostNetwork Envoy tier used for HTTP, but remains a raw TCP
   passthrough so Stalwart terminates SMTP STARTTLS. The proxy emits PROXY
