@@ -24,12 +24,9 @@ def _pull(*, mergeable: bool | None, head: str = "head", base: str = "base", mer
 
 
 class FakeApi:
-    def __init__(
-        self, pulls: list[dict[str, Any]], commits: dict[str, dict[str, Any]], *, live_base: str = "base"
-    ) -> None:
+    def __init__(self, pulls: list[dict[str, Any]], commits: dict[str, dict[str, Any]]) -> None:
         self.pulls = pulls
         self.commits = commits
-        self.live_base = live_base
         self.pull_calls = 0
         self.check_runs: list[dict[str, Any]] = []
         self.created: list[dict[str, Any]] = []
@@ -42,10 +39,6 @@ class FakeApi:
 
     def get_git_commit(self, sha: str) -> dict[str, Any]:
         return self.commits[sha]
-
-    def get_git_ref(self, ref: str) -> dict[str, Any]:
-        assert ref == "devel"
-        return {"object": {"sha": self.live_base}}
 
     def get_check_runs(self, _sha: str) -> list[dict[str, Any]]:
         return self.check_runs
@@ -71,41 +64,38 @@ def test_conflicted_pull_request_is_classified_as_source_failure() -> None:
     assert not delays
 
 
-def test_clean_synthetic_merge_requires_current_base_and_head_parents() -> None:
+def test_clean_synthetic_merge_is_mergeable_when_the_pr_head_is_its_second_parent() -> None:
     api = FakeApi([_pull(mergeable=True)], {"merge": {"parents": [{"sha": "base"}, {"sha": "head"}]}})
 
     result = inspect_pull_request(api, number=12)
 
     assert result.conclusion == "success"
     assert result.mergeable
-    assert "expected parents" in result.summary
+    assert "merges the PR head" in result.summary
 
 
-def test_live_base_ref_accepts_current_merge_when_pr_base_metadata_lags() -> None:
+def test_merge_built_on_an_older_base_is_mergeable() -> None:
+    # The first parent matches neither the PR's base metadata nor (in production) the live base tip.
     api = FakeApi(
-        [_pull(mergeable=True, base="old-base")],
-        {"merge": {"parents": [{"sha": "live-base"}, {"sha": "head"}]}},
-        live_base="live-base",
-    )
-
-    result = inspect_pull_request(api, number=12)
-
-    assert result.conclusion == "success"
-    assert "Current base: `live-base`" in result.summary
-    assert "PR base metadata: `old-base`" in result.summary
-
-
-def test_lagged_pr_base_metadata_does_not_accept_a_stale_merge() -> None:
-    api = FakeApi(
-        [_pull(mergeable=True, base="old-base")],
-        {"merge": {"parents": [{"sha": "old-base"}, {"sha": "head"}]}},
-        live_base="live-base",
+        [_pull(mergeable=True, base="metadata-base")], {"merge": {"parents": [{"sha": "older-base"}, {"sha": "head"}]}}
     )
 
     result = inspect_pull_request(api, number=12, attempts=1)
 
+    assert result.conclusion == "success"
+    assert "`older-base` + `head`" in result.summary
+
+
+def test_merge_of_a_different_head_is_never_accepted() -> None:
+    api = FakeApi([_pull(mergeable=True)], {"merge": {"parents": [{"sha": "base"}, {"sha": "old-head"}]}})
+    delays: list[float] = []
+
+    result = inspect_pull_request(api, number=12, attempts=2, sleep=delays.append)
+
     assert result.conclusion == "failure"
-    assert "expected live `devel` ref `live-base`" in result.summary
+    assert result.title == "GitHub synthetic merge is stale or unavailable"
+    assert "expected PR head `head` as the second parent" in result.summary
+    assert delays == [1]
 
 
 def test_stale_merge_commit_is_retried_after_github_reports_mergeable() -> None:
