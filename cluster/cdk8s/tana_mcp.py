@@ -56,7 +56,7 @@ MCP_PROXY = ServiceRef(
 )
 _NOVNC = ServiceRef(name=MCP_PROXY.name, port=Port(name="novnc", number=6080), pods=MCP_PROXY.pods)
 _FACADE_HTTP = ServiceRef(
-    name=_FACADE,
+    name="facade",
     port=Port(name="http", number=8765),
     pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _FACADE),)),
 )
@@ -255,7 +255,7 @@ def _facade(chart: Chart) -> None:
         chart,
         "facade-deployment",
         metadata=k8s.ObjectMeta(
-            name=_FACADE,
+            name=_FACADE_HTTP.name,
             namespace=_NAMESPACE,
             labels=_FACADE_HTTP.pods.selector,
             annotations={
@@ -342,7 +342,7 @@ def _facade(chart: Chart) -> None:
     https_route(
         chart,
         "facade-httproute",
-        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_FACADE_HTTP.name, namespace=_NAMESPACE),
         hostnames=["tana-mcp-facade.allegedly.works"],
         backend=_FACADE_HTTP,
         timeout="60s",
@@ -362,14 +362,14 @@ def _facade(chart: Chart) -> None:
     ServiceMonitor(
         chart,
         "facade-servicemonitor",
-        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_FACADE_HTTP.name, namespace=_NAMESPACE),
         selector=ServiceMonitorSpecSelector(match_labels=_FACADE_HTTP.labels),
         endpoints=[Endpoint.plain(port=_FACADE_METRICS.port.name, scrape_timeout="10s")],
     )
     PrometheusRule(
         chart,
         "facade-prometheusrule",
-        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_FACADE_HTTP.name, namespace=_NAMESPACE),
         groups=[
             group(
                 _FACADE,

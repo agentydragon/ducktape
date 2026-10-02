@@ -225,7 +225,7 @@ readiness + Prometheus metrics (see <../../../../mcp_infra/oauth_facade/README.m
 Its `readinessProbe` is `/readyz`, so the pod goes NotReady (and the public
 route stops serving) when Tana rejects the PAT instead of silently advertising
 zero tools. A `ServiceMonitor` scrapes `:9090/metrics` and a `PrometheusRule`
-(`tana-mcp-facade/monitoring/`) alerts on `mcp_facade_upstream_up == 0` /
+(`facade`) alerts on `mcp_facade_upstream_up == 0` /
 `mcp_facade_upstream_tools == 0`. Combined with the resigner's PAT check above,
 a PAT-rejection now both self-heals (re-sign) and pages if it persists.
 
