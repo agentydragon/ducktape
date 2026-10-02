@@ -1202,6 +1202,49 @@ if (scenario.startsWith("SessionNoisySidebar")) {
   sidebarObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
 }
 
+if (scenario.startsWith("SessionNoisyTimeline")) {
+  let opened = false;
+  let expanded = false;
+  const observer = new MutationObserver(() => {
+    const strips = [...document.querySelectorAll<HTMLElement>("[data-event-strip]")];
+    if (strips.length === 0) return;
+    const sequences = strips.flatMap((strip) => strip.dataset.historySequences!.split(" "));
+    if (sequences.length !== noisySessionEvents.length || new Set(sequences).size !== sequences.length) {
+      throw new Error("Timeline must represent every loaded event exactly once");
+    }
+    const strip = strips[0]!;
+    if (!opened) {
+      for (const item of strips) {
+        if (item.getBoundingClientRect().height > 28) throw new Error("Collapsed event strip exceeds 28px");
+        if (item.querySelectorAll("[data-event-dot]").length > 12) throw new Error("Unbounded timeline dot count");
+        if (item.scrollWidth > item.clientWidth + 1) throw new Error("Event strip overflows the transcript");
+      }
+      if (document.querySelector("[data-event-json]")) throw new Error("Timeline expanded JSON by default");
+      if (document.querySelectorAll('[data-fold-kind="tool-run"]').length > 3)
+        throw new Error("Adjacent tool work was not grouped");
+      if (scenario.includes("Expanded")) {
+        opened = true;
+        strip.querySelector<HTMLButtonElement>("[data-event-dot]")!.click();
+        return;
+      }
+    }
+    if (scenario.includes("Expanded")) {
+      const detail = strip.querySelector<HTMLDetailsElement>("[data-raw-event]");
+      if (detail === null) return;
+      if (!expanded) {
+        expanded = true;
+        detail.querySelector("summary")!.click();
+        return;
+      }
+      if (!strip.querySelector("[data-event-json]")) return;
+    }
+    scrollTranscriptElementIntoView(strip);
+    root.dataset.timelineReady = "true";
+    observer.disconnect();
+  });
+  observer.observe(root, { childList: true, subtree: true, attributes: true });
+}
+
 if (scenario.startsWith("SessionNoisyActivity")) {
   let stage = 0;
   const observer = new MutationObserver(() => {

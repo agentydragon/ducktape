@@ -47,6 +47,7 @@ import {
 } from "./api";
 import { EventInspector } from "./event-inspector";
 import { groupToolActivity, toolGroupSummary, type ToolGroup } from "./tool-groups";
+import { buildEventTimeline, EventTimelineStrip } from "./event-timeline";
 import {
   foldSessionEvents,
   transcriptEventTime,
@@ -1711,7 +1712,7 @@ export function SessionViewer(): JSX.Element {
   const selectedSession =
     sessions.find((session) => session.id === selectedId && sessionMatchesFilter(session, filter)) ?? null;
   const transcript = useMemo(() => foldSessionEvents(events), [events]);
-  const rows = useMemo(() => groupToolActivity(transcript), [transcript]);
+  const rows = useMemo(() => buildEventTimeline(groupToolActivity(transcript), events), [transcript, events]);
   const watchLabel =
     watchStatus === "connected" ? "Live updates on" : watchStatus === "connecting" ? "Connecting…" : "Reconnecting…";
 
@@ -1989,14 +1990,12 @@ export function SessionViewer(): JSX.Element {
                         )}
                         {showRawEvents ? (
                           <EventInspector key={selectedId} events={events} />
-                        ) : transcript.length === 0 ? (
-                          <Text size="sm" c="dimmed" role="status">
-                            No loaded events appear in the folded transcript.
-                          </Text>
                         ) : (
                           <ToolDisclosureProvider key={selectedId}>
                             {rows.map((row) =>
-                              row.kind === "tool-group" ? (
+                              row.kind === "event-strip" ? (
+                                <EventTimelineStrip key={row.id} events={row.events} />
+                              ) : row.kind === "tool-group" ? (
                                 <ToolActivityGroup key={row.id} item={row} session={selectedSession} />
                               ) : (
                                 <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />

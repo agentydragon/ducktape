@@ -94,10 +94,10 @@ later ones read what changed. It needs an OAuth credential from `pair` and the c
 `serve` adds a login-protected UI with separate `/sessions` and `/sync` pages for browsing synced sessions and
 managing pairing/status, for a deployment where nothing can listen on the loopback port ([docs/serve.md](docs/serve.md)).
 The session transcript groups adjacent tool work behind short disclosures, keeps messages visible, and collapses
-thinking and successful turn metadata. Routine runner/hook traffic is omitted from the conversation. The **Events**
-button opens all loaded events, including those omitted from the transcript, as collapsed rows. Filter by kind/subtype
-or search complete event data, then expand a row for its full JSON envelope and payload. Load older events to inspect
-additional history.
+thinking and successful turn metadata. Small chronological event strips between transcript rows provide every loaded
+record, including runner/hook traffic: click a dot for an event or a short batch, or the event count for the whole strip.
+The **Events** button opens all loaded events together. Both inspectors filter by kind/subtype or search complete
+event data; expand a row for its full JSON envelope and payload. Load older events to inspect additional history.
 The sync follows recently active sessions over the server's event streams between cycles ([docs/sync.md](docs/sync.md)
 § Live following). The browser follows committed mirror changes across web replicas. In the cluster:
 [docs/deploy.md](docs/deploy.md).

@@ -3,7 +3,7 @@ import { Box, Code, Group, NativeSelect, Stack, Text, TextInput } from "@mantine
 
 import type { SessionEvent } from "./api";
 
-function eventKind(event: SessionEvent): string {
+export function eventKind(event: SessionEvent): string {
   const subtype = event.payload.subtype;
   return typeof subtype === "string" ? `${event.event_type} · ${subtype}` : event.event_type;
 }

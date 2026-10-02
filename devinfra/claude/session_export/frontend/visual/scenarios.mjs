@@ -74,6 +74,18 @@ export const SCENARIOS = {
     readySelectors: ['#app[data-activity-ready="true"]'],
     viewport: { width: 420, height: 900 },
   },
+  SessionNoisyTimeline: { element: "#app", readySelectors: ['#app[data-timeline-ready="true"]'] },
+  SessionNoisyTimeline_mobile: {
+    element: "#app",
+    readySelectors: ['#app[data-timeline-ready="true"]'],
+    viewport: { width: 420, height: 900 },
+  },
+  SessionNoisyTimelineExpanded: { element: "#app", readySelectors: ['#app[data-timeline-ready="true"]'] },
+  SessionNoisyTimelineExpanded_mobile: {
+    element: "#app",
+    readySelectors: ['#app[data-timeline-ready="true"]'],
+    viewport: { width: 420, height: 900 },
+  },
   SessionNoisySidebar: { element: "#app", readySelectors: SIDEBAR_EXPANDED_READY },
   SessionNoisySidebarCollapsed: {
     element: "#app",

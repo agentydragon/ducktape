@@ -125,6 +125,20 @@ ts_library(
 )
 
 ts_library(
+    name = "event_timeline",
+    srcs = ["event-timeline.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":event_inspector",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "viewer",
     srcs = ["viewer.tsx"],
     isolated_typecheck = True,
@@ -132,6 +146,7 @@ ts_library(
     deps = [
         ":api",
         ":event_inspector",
+        ":event_timeline",
         ":tool_groups",
         ":transcript",
         "//:node_modules/@mantine/core",
@@ -258,6 +273,24 @@ ts_library(
     ],
 )
 
+ts_library(
+    name = "event_timeline_test",
+    testonly = True,
+    srcs = ["event-timeline.test.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":event_timeline",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
 vitest_bin.vitest_test(
     name = "vitest_test",
     args = ["run"],
@@ -265,6 +298,7 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.mts",
         ":api_test",
+        ":event_timeline_test",
         ":narration_test",
         ":status_test",
         ":tool_groups_test",

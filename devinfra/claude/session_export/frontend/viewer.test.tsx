@@ -834,7 +834,9 @@ it("keeps older-page pagination available when the newest loaded page contains o
       </MantineProvider>
     )
   );
-  await vi.waitFor(() => expect(container?.textContent).toContain("No loaded events appear in the folded transcript."));
+  await vi.waitFor(() => expect(container?.querySelectorAll("[data-event-strip]")).toHaveLength(1));
+  expect(container.querySelectorAll("[data-event-dot]")).toHaveLength(1);
+  expect(container.querySelector("[data-event-json]")).toBeNull();
   const loadOlder = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Load older events")
   );
