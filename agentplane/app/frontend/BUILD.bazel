@@ -158,7 +158,11 @@ ts_library(
 
 ts_library(
     name = "actions_requests",
-    srcs = ["actions/requests.tsx"],
+    srcs = [
+        "actions/requests.tsx",
+        # Ambient types for the per-icon Tabler subpaths imported by requests.tsx.
+        "tabler_icons.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":actions_call",
@@ -167,6 +171,7 @@ ts_library(
         ":live_stream",
         ":stream_status",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
