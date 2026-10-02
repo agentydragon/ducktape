@@ -14,13 +14,17 @@ export const noisySession: SessionSummary = {
 
 function makeEvents(): SessionEvent[] {
   const events: SessionEvent[] = [];
-  function add(event_type: string, payload: Record<string, unknown>): void {
+  function add(
+    event_type: string,
+    payload: Record<string, unknown>,
+    source = event_type === "control_request" ? "client" : "worker"
+  ): void {
     const sequence = events.length + 1;
     events.push({
       event_id: `00000000-0000-4000-8000-${String(sequence).padStart(12, "0")}`,
       sequence_num: String(sequence),
       event_type,
-      source: event_type === "user" ? "client" : "worker",
+      source,
       created_at: new Date(Date.parse(noisySession.created_at) + sequence * 1000).toISOString(),
       received_at: null,
       processing_at: null,
@@ -44,7 +48,11 @@ function makeEvents(): SessionEvent[] {
     });
   }
   function message(role: "user" | "assistant", content: Record<string, unknown>[], extra = {}): void {
-    add(role, { message: { role, content }, ...extra });
+    add(
+      role,
+      { message: { role, content }, ...extra },
+      role === "user" && content.some((block) => block.type === "text") ? "client" : "worker"
+    );
   }
 
   add("system", { subtype: "init", session_id: noisySession.id, cwd: "/workspace/sample-meter" });
