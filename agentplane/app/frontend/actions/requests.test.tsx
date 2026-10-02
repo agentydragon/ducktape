@@ -75,14 +75,18 @@ describe("ActionRequests", () => {
       expect(details?.querySelector("summary")?.textContent).toBe("Request audit details");
       expect(details?.open).toBe(false);
       expect(details?.textContent).toContain(row.id);
-      expect(button(container, "Allow").disabled).toBe(false);
+      expect(button(container, "Approve").disabled).toBe(false);
     }
   );
 
   it("renders every pending request with its unredacted arguments", async () => {
     const service: ActionService = { list: vi.fn(async () => [request("decision_pending", 1)]), decide: vi.fn() };
     const container = await render(service, ActionRequests);
-    expect(container.textContent).toContain(stateLabel("decision_pending"));
+    expect(container.textContent).not.toContain(stateLabel("decision_pending"));
+    const approveIndex = container.textContent?.indexOf("Approve") ?? -1;
+    const argumentsIndex = container.textContent?.indexOf("Exact arguments (unredacted)") ?? -1;
+    expect(approveIndex).toBeGreaterThanOrEqual(0);
+    expect(approveIndex).toBeLessThan(argumentsIndex);
     expect(container.textContent).toContain("Exact arguments (unredacted)");
     expect(container.textContent).toContain("test-exact-token");
     expect(container.textContent).toContain("test-exact-password");
@@ -138,7 +142,7 @@ describe("ActionRequests", () => {
   });
 
   it.each([
-    ["Allow", "allow", "allowed"],
+    ["Approve", "allow", "allowed"],
     ["Deny", "deny", "denied"],
   ] as const)("sends a human %s decision and replaces the pending receipt", async (label, verdict, state) => {
     let rows = [request("decision_pending", 1)];
@@ -301,7 +305,7 @@ describe("global Action affordance", () => {
       expect(decide).toHaveBeenCalledWith(first, "deny");
       await send([second]);
       expect(container.querySelector(".action-affordance-notice")?.textContent).toContain(second.title);
-      await act(async () => button(container, "Allow").click());
+      await act(async () => button(container, "Approve").click());
       expect(container.querySelector(".action-affordance-notice")).toBeNull();
       await unmountLast();
       expect(close).toHaveBeenCalledOnce();

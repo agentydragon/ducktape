@@ -1,4 +1,4 @@
-import { Badge, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { createContext, type JSX, useCallback, useContext, useEffect, useState } from "react";
 
 import { displayableError } from "../client";
@@ -6,18 +6,6 @@ import { followStream, type StreamConnection } from "../live_stream";
 import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
 import { ActionCall } from "./call";
 import { actionService, type ActionRequestView, type ActionService, type ActionState, type Verdict } from "./client";
-
-const STATE_COLORS: Partial<Record<ActionState, string>> = {
-  decision_pending: "yellow",
-  allowed: "blue",
-  denied: "red",
-  dispatching: "cyan",
-  running: "cyan",
-  succeeded: "green",
-  failed: "red",
-  cancelled: "gray",
-  execution_unknown: "orange",
-};
 
 export function stateLabel(state: ActionState): string {
   return state.replaceAll("_", " ");
@@ -124,19 +112,20 @@ export function PendingActionCard({
       <Stack gap="sm">
         <ActionCall
           request={request}
-          status={<Badge color={STATE_COLORS[request.state] ?? "gray"}>{stateLabel(request.state)}</Badge>}
+          headerActions={
+            <Group gap="xs" wrap="nowrap">
+              <Button color="red" variant="light" loading={deciding} onClick={() => onDecide(request, "deny")}>
+                Deny
+              </Button>
+              <Button loading={deciding} onClick={() => onDecide(request, "allow")}>
+                Approve
+              </Button>
+            </Group>
+          }
           raw={raw}
           onRawChange={setRaw}
           prettyResult={false}
         />
-        <Group justify="flex-end">
-          <Button color="red" variant="light" loading={deciding} onClick={() => onDecide(request, "deny")}>
-            Deny
-          </Button>
-          <Button loading={deciding} onClick={() => onDecide(request, "allow")}>
-            Allow
-          </Button>
-        </Group>
       </Stack>
     </Paper>
   );

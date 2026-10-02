@@ -55,20 +55,22 @@ function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.E
 /** Everything describing the call itself -- which Action, who asked for it and in what words, and
  * its exact arguments -- drawn the same on the pending card, where the operator decides it, and on
  * the history card, where it is audited. What the card adds about the decision or the outcome goes
- * in `status`, beside the Action's identity, or after this.
+ * in `status` or `headerActions` beside the Action's identity, or after this.
  *
- * The card's one Raw switch sits beside `status`, at the top of the card so it stays under the
- * pointer while switching changes the height of what follows. It governs the whole card, and shows
- * only when something on the card renders other than as its stored JSON. */
+ * The card's one Raw switch sits beside its status or decision controls, at the top of the card so
+ * it stays under the pointer while switching changes the height of what follows. It governs the
+ * whole card, and shows only when something on the card renders other than as its stored JSON. */
 export function ActionCall({
   request,
   status,
+  headerActions,
   raw,
   onRawChange,
   prettyResult,
 }: {
   request: ActionRequestView;
-  status: ReactNode;
+  status?: ReactNode;
+  headerActions?: ReactNode;
   raw: boolean;
   onRawChange: (raw: boolean) => void;
   /** Whether the card's result renders other than as its stored JSON. */
@@ -82,8 +84,9 @@ export function ActionCall({
           <Text fw={600} ff="monospace" style={{ overflowWrap: "anywhere" }}>
             {request.action.group} / {request.action.name}
           </Text>
-          <Group gap="xs">
+          <Group gap="xs" justify="flex-end" wrap="wrap">
             {status}
+            {headerActions}
             {(prettyArguments !== null || prettyResult) && <RawSwitch raw={raw} onChange={onRawChange} />}
           </Group>
         </Group>
