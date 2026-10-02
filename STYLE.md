@@ -131,11 +131,13 @@ bug.
 - **Directory-as-namespace, no redundant prefix**: inside a domain package the package
   name is the namespace — drop it from both filenames and the entities they define
   (`grants/kubernetes/models.py` defines `Grant`, not `kubernetes_grant_models.py` /
-  `KubernetesGrant`). Three seams keep meaningful names, never by rebaking the prefix: at a
-  cross-package collision, module-qualify (`kubernetes.Grant` vs `http.Grant`) or
-  alias-with-comment; cross-cutting primitives (`HttpMethod`, `RequestAttributes`) live in
-  a shared home, they are not domain-specific entities; and a class name that is a
-  published schema-component key renames only as a coordinated wire change, never as a
+  `KubernetesGrant`). The module's own name is not a package prefix: the one class a
+  module exists for takes it (`whatever_client.py` defines `WhateverClient`). Three
+  seams keep meaningful names, never by rebaking the prefix: at a cross-package
+  collision, module-qualify (`kubernetes.Grant` vs `http.Grant`) or alias-with-comment;
+  cross-cutting primitives (`HttpMethod`, `RequestAttributes`) live in a shared home,
+  they are not domain-specific entities; and a class name that is a published
+  schema-component key renames only as a coordinated wire change, never as a
   package-move rider.
 - **Identifiers carry their type**: a UUID travels as `UUID` end to end, the
   conversions absorbed by boundary adapters (Pydantic validators, ORM column types) —
