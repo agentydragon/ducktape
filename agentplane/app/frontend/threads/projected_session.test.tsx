@@ -210,7 +210,10 @@ function threadState({
   };
 }
 
-async function render(state: ThreadState = threadState()): Promise<HTMLDivElement> {
+async function render(
+  state: ThreadState = threadState(),
+  bodies: Record<string, string> = {}
+): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   // The real shell topbar (app.tsx) isn't mounted here, so ProjectedSession's title/menu need
@@ -221,19 +224,28 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
   const root = createRoot(container);
   mounted.push({ root, container, topbarTitle, topbarActions });
   await act(async () => {
-    const content = page(state, topbarTitle, topbarActions);
+    const content = page(state, topbarTitle, topbarActions, bodies);
     root.render(<ThreadsLiveProvider>{content}</ThreadsLiveProvider>);
   });
   container.append(topbarTitle, topbarActions);
   return container;
 }
 
-function page(state: ThreadState, topbarTitle: HTMLDivElement, topbarActions: HTMLDivElement): JSX.Element {
+function page(
+  state: ThreadState,
+  topbarTitle: HTMLDivElement,
+  topbarActions: HTMLDivElement,
+  bodies: Record<string, string> = {}
+): JSX.Element {
   const sync: ThreadSync = {
     Thread: ({ children }) => <>{children}</>,
     useThread: () => state,
     useCommandRows: () => [],
-    usePayload: () => ({ body: null, error: null, retry: () => {} }),
+    usePayload: ({ owner_id, field }) => ({
+      body: bodies[`${owner_id}:${field}`] ?? null,
+      error: null,
+      retry: () => {},
+    }),
   };
   return (
     <MantineProvider env="test">

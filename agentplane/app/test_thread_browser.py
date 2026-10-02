@@ -13,6 +13,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import cast
 from urllib.parse import parse_qs, urlsplit
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -1016,7 +1017,7 @@ async def expect_projected_cursor(page: Page, cursor: int) -> None:
 
 
 async def expect_archived_events(
-    event_logs: EventLogStore, thread_id: str, expected: list[event_log_pb2.EventEntry]
+    event_logs: EventLogStore, thread_id: UUID, expected: list[event_log_pb2.EventEntry]
 ) -> list[event_log_pb2.EventEntry]:
     async with asyncio.timeout(15):
         while True:
@@ -1102,6 +1103,8 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
     await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
     if raw:
+        (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+        await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
         lifecycle = page.locator(f'[data-thread-anchor="{failed.cursor}"]')
         await lifecycle.get_by_role("button", name="Evidence", exact=True).click()
         raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
