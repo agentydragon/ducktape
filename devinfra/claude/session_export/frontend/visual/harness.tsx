@@ -76,6 +76,39 @@ const sessions: Array<SessionSummary & { git_branch: string; repo_path: string }
 ];
 
 const sessionPage: SessionListPage = { data: sessions, next_cursor: null, resume_token: null };
+const sidebarSessions: Array<SessionSummary & { git_branch: string; repo_path: string }> = [
+  { ...noisySession, git_branch: "worktree/session-sidebar", repo_path: "~/code/sample-meter" },
+  {
+    ...noisySession,
+    id: "session_fixture_sidebar_2",
+    title: "Compare the session list against the transcript",
+    status: "active",
+    updated_at: "2026-09-29T18:32:00Z",
+    last_event_at: "2026-09-29T18:32:00Z",
+    git_branch: "feature/session-browser",
+    repo_path: "~/code/ducktape",
+  },
+  {
+    ...noisySession,
+    id: "session_fixture_sidebar_3",
+    title: "Keep a longer session title readable while resizing the sidebar",
+    status: "paused",
+    updated_at: "2026-09-28T08:12:00Z",
+    last_event_at: "2026-09-28T08:12:00Z",
+    git_branch: "debug/layout-review",
+    repo_path: "~/code/session-tools",
+  },
+  {
+    ...noisySession,
+    id: "session_fixture_sidebar_4",
+    title: "Check event filtering behavior",
+    status: "active",
+    updated_at: "2026-09-27T14:04:00Z",
+    last_event_at: "2026-09-27T14:04:00Z",
+    git_branch: "test/event-filtering",
+    repo_path: "~/code/sample-meter",
+  },
+];
 function fixtureEvent(
   sequence: number,
   event_type: string,
@@ -535,9 +568,11 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
   if (url.pathname === "/v1/code/sessions") {
     return Promise.resolve(
       json(
-        scenario.startsWith("SessionNoisy")
-          ? { data: [noisySession], next_cursor: null, resume_token: null }
-          : sessionPage
+        scenario.startsWith("SessionNoisySidebar")
+          ? { data: sidebarSessions, next_cursor: null, resume_token: null }
+          : scenario.startsWith("SessionNoisy")
+            ? { data: [noisySession], next_cursor: null, resume_token: null }
+            : sessionPage
       )
     );
   }
@@ -577,6 +612,12 @@ window.fetch = mockFetch;
 const root = document.getElementById("app");
 if (!root) throw new Error("Visual test harness is missing #app");
 const scenario = new URLSearchParams(window.location.search).get("page") ?? "";
+try {
+  window.localStorage.removeItem("claude-session-sidebar-visible");
+  window.localStorage.removeItem("claude-session-sidebar-width");
+} catch {
+  // The visual harness starts with its default sidebar state when storage is unavailable.
+}
 const pathname = scenario.startsWith("SessionSync") ? "/sync" : "/sessions";
 
 createRoot(root).render(
@@ -676,4 +717,46 @@ if (scenario.startsWith("SessionNoisy")) {
     observer.disconnect();
   });
   observer.observe(root, { childList: true, subtree: true, attributes: true });
+}
+
+if (scenario.startsWith("SessionNoisySidebar")) {
+  const sidebarObserver = new MutationObserver(() => {
+    if (root.dataset.noisyReady !== "true") return;
+
+    if (scenario.endsWith("_mobile")) {
+      const toggle = document.querySelector<HTMLButtonElement>('button[aria-controls="session-sidebar-mobile"]');
+      if (toggle?.getAttribute("aria-expanded") !== "true") {
+        toggle?.click();
+        return;
+      }
+      if (document.body.querySelector("#session-sidebar-mobile") === null) return;
+      root.dataset.sidebarReady = "mobile-open";
+      sidebarObserver.disconnect();
+      return;
+    }
+
+    if (scenario.includes("Collapsed")) {
+      const toggle = document.querySelector<HTMLButtonElement>('button[aria-controls="session-sidebar"]');
+      if (toggle?.getAttribute("aria-expanded") !== "false") {
+        toggle?.click();
+        return;
+      }
+      root.dataset.sidebarReady = "collapsed";
+      sidebarObserver.disconnect();
+      return;
+    }
+
+    if (scenario.includes("Wide")) {
+      const separator = document.querySelector<HTMLElement>("[data-session-sidebar-resizer]");
+      if (separator === null) return;
+      separator.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+      root.dataset.sidebarReady = "wide";
+      sidebarObserver.disconnect();
+      return;
+    }
+
+    root.dataset.sidebarReady = "expanded";
+    sidebarObserver.disconnect();
+  });
+  sidebarObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
 }

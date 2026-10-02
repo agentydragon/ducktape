@@ -113,6 +113,7 @@ ts_library(
         ":event_inspector",
         ":transcript",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/hooks",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],

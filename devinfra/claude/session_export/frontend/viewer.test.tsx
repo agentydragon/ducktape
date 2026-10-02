@@ -24,6 +24,12 @@ const session = {
   updated_at: "2026-01-01T00:00:00Z",
   last_event_at: "2026-01-01T00:00:00Z",
 };
+const secondSession = {
+  ...session,
+  id: "session-2",
+  title: "Selected after toggling",
+  updated_at: "2026-01-02T00:00:00Z",
+};
 const first = {
   event_id: "event-1",
   sequence_num: "1",
@@ -58,12 +64,173 @@ const toolCall = {
 
 let root: ReturnType<typeof createRoot> | null = null;
 let container: HTMLDivElement | null = null;
+const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
 afterEach(async () => {
   if (root) await act(async () => root?.unmount());
   container?.remove();
   root = null;
   container = null;
+  window.localStorage.removeItem("claude-session-sidebar-visible");
+  window.localStorage.removeItem("claude-session-sidebar-width");
+  if (originalMatchMedia === undefined)
+    delete (window as unknown as { matchMedia?: typeof window.matchMedia }).matchMedia;
+  else Object.defineProperty(window, "matchMedia", originalMatchMedia);
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
+});
+
+it("keeps the selected session when the session list is hidden and shown", async () => {
+  vi.mocked(listSessions).mockResolvedValue({
+    data: [session, secondSession],
+    next_cursor: null,
+    resume_token: null,
+  });
+  vi.mocked(listSessionEvents).mockResolvedValue({
+    data: [],
+    has_more: false,
+    first_id: null,
+    last_id: null,
+  });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await vi.waitFor(() => expect(container?.querySelector("#session-sidebar")).not.toBeNull());
+
+  const secondRow = container.querySelector<HTMLButtonElement>('#session-sidebar button[aria-pressed="false"]')!;
+  await act(async () => secondRow.click());
+  await vi.waitFor(() => expect(container?.textContent).toContain("Selected after toggling"));
+
+  await act(async () => container?.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')?.click());
+  expect(container.querySelector("#session-sidebar")).toBeNull();
+  expect(container.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
+    "Selected after toggling"
+  );
+  const showButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Show session list")
+  );
+  expect(showButton).toBeDefined();
+  await act(async () => showButton?.click());
+  expect(container.querySelector('#session-sidebar button[aria-pressed="true"]')?.textContent).toContain(
+    "Selected after toggling"
+  );
+});
+
+it("clamps pointer and keyboard resizing and restores the width after collapsing", async () => {
+  vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
+  vi.mocked(listSessionEvents).mockResolvedValue({
+    data: [],
+    has_more: false,
+    first_id: null,
+    last_id: null,
+  });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await vi.waitFor(() => expect(container?.querySelector('[role="separator"]')).not.toBeNull());
+
+  const layout = container.querySelector<HTMLElement>("[data-session-viewer-layout]")!;
+  Object.defineProperty(layout, "clientWidth", { configurable: true, value: 700 });
+  vi.spyOn(layout, "getBoundingClientRect").mockReturnValue({
+    x: 100,
+    y: 0,
+    left: 100,
+    top: 0,
+    right: 800,
+    bottom: 700,
+    width: 700,
+    height: 700,
+    toJSON: () => ({}),
+  } as DOMRect);
+  await act(async () => window.dispatchEvent(new Event("resize")));
+
+  const separator = container.querySelector<HTMLElement>('[role="separator"]')!;
+  expect(separator.getAttribute("aria-valuemax")).toBe("272");
+  await act(async () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
+  expect(separator.getAttribute("aria-valuenow")).toBe("220");
+  await act(async () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
+  expect(separator.getAttribute("aria-valuenow")).toBe("220");
+  await act(async () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
+  expect(separator.getAttribute("aria-valuenow")).toBe("272");
+  await act(async () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+  expect(separator.getAttribute("aria-valuenow")).toBe("272");
+
+  await act(async () => separator.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientX: 372 })));
+  await act(async () => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 1_000 })));
+  expect(separator.getAttribute("aria-valuenow")).toBe("272");
+  await act(async () => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 0 })));
+  expect(separator.getAttribute("aria-valuenow")).toBe("220");
+  await act(async () => window.dispatchEvent(new MouseEvent("pointerup")));
+
+  await act(async () => container?.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')?.click());
+  await act(async () => container?.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click());
+  expect(container.querySelector('[role="separator"]')?.getAttribute("aria-valuenow")).toBe("220");
+});
+
+it("opens the mobile session drawer and keeps the chosen session after it closes", async () => {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn((media: string) => ({
+      matches: true,
+      media,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+  vi.mocked(listSessions).mockResolvedValue({
+    data: [session, secondSession],
+    next_cursor: null,
+    resume_token: null,
+  });
+  vi.mocked(listSessionEvents).mockResolvedValue({
+    data: [],
+    has_more: false,
+    first_id: null,
+    last_id: null,
+  });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await vi.waitFor(() =>
+    expect(container?.querySelector('button[aria-controls="session-sidebar-mobile"]')).not.toBeNull()
+  );
+  const toggle = container.querySelector<HTMLButtonElement>('button[aria-controls="session-sidebar-mobile"]')!;
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => toggle.click());
+  await vi.waitFor(() => expect(document.body.querySelector("#session-sidebar-mobile")).not.toBeNull());
+
+  const secondRow = document.body.querySelector<HTMLButtonElement>(
+    '#session-sidebar-mobile button[aria-pressed="false"]'
+  )!;
+  await act(async () => secondRow.click());
+  await vi.waitFor(() => expect(container?.textContent).toContain("Selected after toggling"));
+  expect(container.querySelector('button[aria-controls="session-sidebar-mobile"]')?.getAttribute("aria-expanded")).toBe(
+    "false"
+  );
 });
 
 it("retains session and transcript DOM, scroll and disclosure across watch refreshes", async () => {
