@@ -227,7 +227,7 @@ kind: Job
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
-  name: home-assistant-onboarding
+  name: onboarding
   namespace: home-assistant
 spec:
   backoffLimit: 3
@@ -286,13 +286,13 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: home-assistant-token-provisioner
+  name: token-provisioner
   namespace: home-assistant
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: home-assistant-token-provisioner
+  name: token-provisioner
   namespace: home-assistant
 rules:
   - apiGroups:
@@ -316,7 +316,7 @@ rules:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: home-assistant-token-provisioner
+  name: token-provisioner
   namespace: home-assistant
 data:
   settings.yaml: |
@@ -339,15 +339,15 @@ data:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: home-assistant-token-provisioner
+  name: token-provisioner
   namespace: home-assistant
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: home-assistant-token-provisioner
+  name: token-provisioner
 subjects:
   - kind: ServiceAccount
-    name: home-assistant-token-provisioner
+    name: token-provisioner
     namespace: home-assistant
 ---
 apiVersion: batch/v1
@@ -355,7 +355,7 @@ kind: CronJob
 metadata:
   labels:
     app.kubernetes.io/name: home-assistant-token-provisioner
-  name: home-assistant-token-provisioner
+  name: token-provisioner
   namespace: home-assistant
 spec:
   concurrencyPolicy: Forbid
@@ -405,10 +405,10 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
-          serviceAccountName: home-assistant-token-provisioner
+          serviceAccountName: token-provisioner
           volumes:
             - configMap:
-                name: home-assistant-token-provisioner
+                name: token-provisioner
               name: settings
   schedule: "*/15 * * * *"
 ---
