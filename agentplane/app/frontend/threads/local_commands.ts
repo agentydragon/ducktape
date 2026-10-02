@@ -129,6 +129,7 @@ export class LocalCommands {
         commands: this.snapshot.commands.map((value) =>
           value.command.commandId === command.commandId ? { ...value, admission } : value
         ),
+        dismissedCommandIds: this.snapshot.dismissedCommandIds,
         error: String(error),
       };
       for (const listener of this.listeners) listener();
