@@ -146,4 +146,4 @@ function makeEvents(): SessionEvent[] {
   return events;
 }
 
-export const noisySessionEvents = makeEvents();
+export const noisySessionEvents: SessionEvent[] = makeEvents();
