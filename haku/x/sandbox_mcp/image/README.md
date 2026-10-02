@@ -23,7 +23,7 @@ shallow-cloned `haku-state` and `ducktape`.
 
 The old Nix cutover checklist and probe procedure are superseded. The Haku-specific template, warm
 pool, image pin, and ImagePolicy are no longer active. Agentplane-managed Haku sandboxes use their
-own runner image and inline bootstrap from `cluster/cdk8s/agentplane/haku_bootstrap.sh`.
+own runner image and per-Thread setup from `cluster/cdk8s/agentplane/haku_thread_setup.sh`.
 
 Do not revive this image as part of the Agentplane migration. Any future use needs a deliberate
 sandbox identity and access design plus a fresh deployment review.

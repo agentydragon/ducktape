@@ -83,6 +83,29 @@ async def _exited(pid: int) -> None:
         os.close(fd)
 
 
+async def test_runner_shutdown_interrupts_setup_without_rerunning_it(
+    spec: protocol_pb2.SessionSpec, start_runner: Callable[..., Awaitable[RunnerProcess]]
+) -> None:
+    first_runner = await start_runner()
+    first_client = RunnerClient(first_runner.target, capture_history=True)
+    first = await first_client.attach(
+        "setup-interrupted", spec=spec, setup_script='printf "started\\n"; while :; do sleep 1; done'
+    )
+    await first.until(events.is_kind("setup_output"))
+    await first_runner.stop()
+    await first_client.close()
+
+    second_runner = await start_runner()
+    second_client = RunnerClient(second_runner.target, capture_history=True)
+    second = await second_client.attach("setup-interrupted", spec=spec)
+    assert second.attached.setup_state == protocol_pb2.SETUP_STATE_INTERRUPTED
+    await second.drain_until_end()
+    assert len(events.of_kind(second.seen, "setup_started")) == 1
+    assert len(events.of_kind(second.seen, "setup_interrupted")) == 1
+    assert not events.of_kind(second.seen, "harness_started")
+    await second_client.close()
+
+
 def _runner_environment(tmp_path: Path) -> dict[str, str]:
     return {
         **launches.environment(tmp_path / "home"),

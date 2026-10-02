@@ -40,9 +40,31 @@ message HarnessExited {
 
 message HarnessLost {}
 
+message HarnessLaunchFailed {
+  string reason = 1;
+}
+
 message HarnessStderr {
   string text = 1;
 }
+
+// A session's one-time workspace setup, before its first harness starts. Output remains in the
+// same durable Thread history as the conversation, without pretending to be harness content.
+message SetupStarted {}
+
+message SetupOutput {
+  oneof stream {
+    bytes stdout = 1;
+    bytes stderr = 2;
+  }
+}
+
+message SetupFinished {
+  int32 exit_code = 1;
+}
+
+// The runner stopped before it observed a terminal exit. Reopening cannot rerun the script.
+message SetupInterrupted {}
 
 // The emitting source has fsynced this exact Command and owns trying to process it. It does not
 // promise native delivery, model selection, interruption, or a timing category.
@@ -203,5 +225,10 @@ message Event {
     DebugCheckpoint debug_checkpoint = 22;
     ConversationReconciled conversation_reconciled = 23;
     ReasoningEffortChanged reasoning_effort_changed = 24;
+    SetupStarted setup_started = 25;
+    SetupOutput setup_output = 26;
+    SetupFinished setup_finished = 27;
+    SetupInterrupted setup_interrupted = 28;
+    HarnessLaunchFailed harness_launch_failed = 29;
   }
 }

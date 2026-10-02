@@ -422,6 +422,12 @@ explicitly empty value. The shared block teaches agents the platform's egress an
 protocol and how to query their effective Kubernetes permissions; a preset and the per-turn task
 remain the place for workload-specific constraints and the requested outcome.
 
+Thread defaults may also include a one-time setup script. A new Thread sends its resolved cwd and
+setup source on the runner's first `Open`; the runner records setup stdout, stderr, and completion in
+the Thread event stream and starts the harness only after setup succeeds. A failure leaves a
+readable Thread and workspace but cannot rerun setup under the same session id. The Sandbox page
+uses the configured cwd template instead of replacing it with a hardcoded workspace path.
+
 ## Action policy
 
 The Sandbox page's "Action policy" tab, carried in the live snapshot frame, shows the Action

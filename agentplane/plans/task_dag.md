@@ -25,9 +25,9 @@ Proposed execution order for the Thread correctness/UI track:
 - **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Compact activity
   mocks (`THREAD_ACTIVITY_MOCKS`) and native resume/recovery remain on the board but are excluded
   from this dispatch batch.
-- **P0, hosted Haku blocker:** reconcile once-per-Sandbox bootstrap and per-Thread working
-  directories (`THREAD_WORKSPACE_BOOTSTRAP`, [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
-  Finance-agent's separate private memory repository has the same mismatch.
+- **P0, hosted Haku blocker, pending deployment acceptance:** verify per-Thread setup and
+  working directories for Haku and Finance (`THREAD_WORKSPACE_BOOTSTRAP`,
+  [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Low priority / deferred:** bounded browser cache state (`THREAD_LAZY_HISTORY`, desire D6),
@@ -111,7 +111,7 @@ flowchart TB
     LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
     THREAD_ACTIVITY_MOCKS["P1 UI design<br/>mock compact tool/reasoning activity<br/>one-line calls with individual expansion"]:::future
     THREAD_ACTIVITY_DENSITY["Planned UI after mock review<br/>compact activity with per-item disclosure<br/>preserve status, ordering, and Raw evidence"]:::future
-    THREAD_WORKSPACE_BOOTSTRAP["P0 hosted Haku blocker<br/>Sandbox and Thread bootstrap scopes<br/>Haku and finance-agent repos; #8695"]:::active
+    THREAD_WORKSPACE_BOOTSTRAP["P0 deployment acceptance<br/>per-Thread setup in cwd<br/>Haku and Finance repos; #8695"]:::active
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
@@ -467,31 +467,20 @@ streaming, empty, and unavailable details.
 
 ### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
 
-**P0 for hosted Haku:** [#8695](https://github.com/agentydragon/ducktape/issues/8695)
-tracks the source-backed mismatch. Sandbox initialization runs one script per Sandbox, while Haku's
-bootstrap clones `haku-state` and `ducktape` into shared paths. Finance-agent's bootstrap clones
-its own private `finance-agent` repo there for work and memory commits. Both Thread presets name
-`/state/workspaces/{session_id}` as cwd. `ThreadDefaults.proto_json()` expands that placeholder;
-the later-Thread UI supplies a concrete session path; the runner creates and uses the resulting
-`SessionSpec.cwd`. The bootstrap script has no per-Thread expansion or execution. This path has
-not been verified in a live hosted Haku session, but the source mismatch blocks the intended
-hosted Haku workspace and affects finance-agent too.
+**Chosen design, pending deployment verification:** [#8695](https://github.com/agentydragon/ducktape/issues/8695)
+tracks this hosted Haku blocker. Sandbox bootstrap remains once per Sandbox. Each Thread may select
+a one-time setup script, run in its resolved `SessionSpec.cwd` before the harness starts. The runner
+records setup output and terminal status in that Thread's event stream. Failure or runner
+interruption is terminal for that Thread; the operator creates a new Thread to try again. Haku gets
+per-Thread `haku-state` and `ducktape` checkouts. Finance gets a per-Thread `finance-agent`
+checkout as its cwd for its private memory commits. The Sandbox page uses the bound cwd template
+instead of overriding it. Existing Sandboxes keep their saved binding and need recreation to take
+new defaults.
 
-**Design decision:** define Sandbox-shared setup and Thread-local setup as distinct scopes. One
-possible contract retains once-per-Sandbox initialization for a shared base clone/cache and adds
-per-Thread bootstrap to prepare each cwd. Compare that with a shared checkout cwd, independent
-per-Thread clones, and per-Thread worktrees from a shared base. Resolve concurrent writes,
-repository freshness, credential placeholders in Git remotes, retry/replay/failure and cleanup at
-both scopes, explicit cwd overrides, and existing Sandboxes whose bootstrap hash cannot change.
-Haku and finance-agent have different base repositories; finance-agent's private memory commits
-must stay in its own repo, separate from public `ducktape` work.
-
-**Acceptance:** a hosted Haku Thread starts in its intended checkout without a manual `cd`; a
-finance-agent Thread can work and commit memory in its own checkout. A second Thread has the
-deliberately chosen sharing/isolation behavior. Check first and later Thread launches,
-overrides, reload, and each setup phase's replay and failure behavior. Record the selected
-contract in [launch presets](../docs/launch_presets.md) and exercise hosted Haku before calling
-the blocker resolved.
+**Remaining acceptance:** after deployment, create Haku and Finance Sandboxes from their new
+presets; verify both their first and later Threads report the intended cwd and can operate in the
+checked-out repositories. Verify setup output, failure, and new-Thread recovery through the UI,
+and confirm separate Threads use separate directories.
 
 ### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
 

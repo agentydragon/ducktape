@@ -2,7 +2,7 @@ import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
 import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
-import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun } from "./history_rows";
+import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun, summarizeSetup } from "./history_rows";
 import { testEntity, testItem } from "./thread_entity_fixture";
 import type { ThreadEntity } from "./thread_sync";
 
@@ -80,6 +80,22 @@ describe("historyRows", () => {
   it("does not group a turn's failed completion, which carries its own diagnostic", () => {
     const segments = [HARNESS_STARTED(1), TURN_COMPLETED(2, TurnStatus.FAILED)];
     expect(historyRows(segments).map((row) => row.kind)).toEqual(["lifecycle_group", "entity"]);
+  });
+
+  it("folds setup output into one readable row while retaining every event", () => {
+    const segments = [
+      lifecycleItem(1, "setup_started", { case: "setupStarted", value: {} }),
+      lifecycleItem(2, "setup_output", {
+        case: "setupOutput",
+        value: { stream: { case: "stdout", value: new Uint8Array([111, 107]) } },
+      }),
+      lifecycleItem(3, "setup_finished", { case: "setupFinished", value: { exitCode: 7 } }),
+      HARNESS_STARTED(4),
+    ];
+    expect(historyRows(segments).map((row) => row.kind)).toEqual(["setup", "lifecycle_group"]);
+    expect(historyRows(segments)[0]?.entities).toEqual(segments.slice(0, 3));
+    expect(summarizeSetup(segments.slice(0, 2))).toBe("Thread setup running");
+    expect(summarizeSetup(segments.slice(0, 3))).toBe("Thread setup failed (exit 7)");
   });
 });
 

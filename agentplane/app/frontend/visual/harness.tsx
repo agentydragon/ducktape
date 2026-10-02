@@ -1216,6 +1216,26 @@ function lifecycleGroupRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+function setupRows(threadId: string): Record<string, unknown>[] {
+  const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
+    toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
+  return [
+    { ...viewState(4, null), thread_id: threadId },
+    lifecycle(1, "setup_started", event({ case: "setupStarted", value: {} }), threadId),
+    lifecycle(
+      2,
+      "setup_output",
+      event({
+        case: "setupOutput",
+        value: { stream: { case: "stdout", value: new TextEncoder().encode("Workspace ready\n") } },
+      }),
+      threadId
+    ),
+    lifecycle(3, "setup_finished", event({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
+    lifecycle(4, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+  ];
+}
+
 /** One user turn answered with a fenced Python code block, so Markdown's syntax highlighting of a
  * registered language renders the way tool-call Arguments/Output already do. */
 function codeFenceRows(threadId: string): Record<string, unknown>[] {
@@ -1346,6 +1366,7 @@ function threadEntityRows(threadId: string): Record<string, unknown>[] {
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
   if (scenario.lifecycleGroup) return lifecycleGroupRows(threadId);
+  if (scenario.threadSetup) return setupRows(threadId);
   if (scenario.markdownCodeFence) return codeFenceRows(threadId);
   if (scenario.streamingInterleaved) return streamingInterleavedRows(threadId);
   if (scenario.standaloneReasoning) return standaloneReasoningRows(threadId, scenario.longReasoningPreview ?? false);
@@ -2089,6 +2110,18 @@ if (scenario.openReasoning) {
     step.click();
   });
   openReasoning.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openSetup) {
+  const openSetup = new MutationObserver(() => {
+    const summary = [...document.querySelectorAll("summary")].find((candidate) =>
+      candidate.textContent?.includes("Thread setup complete")
+    );
+    if (!summary) return;
+    openSetup.disconnect();
+    summary.click();
+  });
+  openSetup.observe(document, { childList: true, subtree: true });
 }
 
 if (scenario.openToolPayloads) {

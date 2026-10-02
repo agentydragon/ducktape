@@ -1825,6 +1825,10 @@ data:
         cwd: /state/workspaces/{session_id}
         reasoning_effort: medium
         instructions: "You are Haku, the operator's tireless background executive assistant. Your haku-state checkout -- your memory, your method, and your only write surface -- is at haku-state, with git auth already in place. It also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end. Commit and push haku-state as you go."
+        setup_script: |
+          #!/bin/sh
+          git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git haku-state
+          git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git ducktape
       finance-agent-codex:
         title: Finance agent / Codex
         harness: HARNESS_CODEX
@@ -1838,7 +1842,7 @@ data:
 
           Two repos, two roles -- keep them separate:
 
-          - **finance-agent** (this sandbox's own workspace, already cloned to `/state/workspaces/finance-agent`)
+          - **finance-agent** (your current working directory, cloned for this Thread)
             is your private memory: your own notes, scratch analysis, work in progress, and anything tied to
             Rai's actual numbers, account structure, or budget figures. Nothing here is meant to be public.
           - **ducktape** (`github.com/agentydragon/ducktape`, public) is where generic, reusable tooling goes
@@ -1869,6 +1873,9 @@ data:
 
           This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
           action against a real financial account.
+        setup_script: |
+          #!/bin/sh
+          git clone --branch main --single-branch http://finance-agent:agentplane-credential-forgejo-finance-agent@forgejo-http.forgejo.svc.cluster.local:3000/finance-agent/finance-agent.git .
     sandbox_presets:
       public-coder:
         title: Public coder
@@ -1985,15 +1992,6 @@ data:
           - public-coder-agent-reader
           - public-coder-agent-devbox-vmi-restart
         thread_preset: haku-claude
-        bootstrap: |
-          #!/bin/sh
-          marker=/state/workspaces/.agentplane-haku-ready
-          mkdir -p /state/workspaces
-          if [ ! -f "$marker" ]; then
-            git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git /state/workspaces/haku-state
-            git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git /state/workspaces/ducktape
-            printf '%s\n' 'haku workspace initialized' >"$marker"
-          fi
       finance-agent:
         title: Finance agent
         template: agentplane-runner
@@ -2016,14 +2014,6 @@ data:
           - github-identity-reads
           - ssh-reads
         thread_preset: finance-agent-codex
-        bootstrap: |
-          #!/bin/sh
-          marker=/state/workspaces/.agentplane-finance-agent-ready
-          mkdir -p /state/workspaces
-          if [ ! -f "$marker" ]; then
-            git clone --branch main --single-branch http://finance-agent:agentplane-credential-forgejo-finance-agent@forgejo-http.forgejo.svc.cluster.local:3000/finance-agent/finance-agent.git /state/workspaces/finance-agent
-            printf '%s\n' 'finance-agent workspace initialized' >"$marker"
-          fi
     kubernetes_grants:
       sandbox-tool-config:
         kind: RoleBinding

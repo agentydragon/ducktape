@@ -35,6 +35,12 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   resuming the native conversation when the session has one, and creates `spec.cwd`, which must
   be absolute, when it does not exist yet. A harness that does not survive its launch and
   handshake ends the stream with an error naming its exit status and the end of its stderr.
+- An unknown session may select one setup script on `Open`. The runner creates `spec.cwd`, executes
+  the script with `/bin/sh -eu` from that directory, and records started, stdout/stderr, and terminal
+  events in the session's durable Event log. `Open` does not wait for setup to complete. The harness
+  starts only after setup exits successfully. A failed or interrupted setup is terminal for that
+  session: later `Open` calls replay its history without rerunning the script or starting the
+  harness. A different setup source is refused. Start a new session to try again.
 - `Open` without a spec observes an existing session without starting its harness. A stopped
   session replays its log and ends the stream; resuming requires an explicit spec.
 - `spec.instructions` are the session's standing instructions: what the session is for, and the
@@ -49,12 +55,12 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - A session survives the runner process. A runner that starts on a state directory loads every
   session in it; what the previous runner had running is reported as lost (below).
 - `ListSessions` returns every session in the state directory with its spec, harness state,
-  active turn, and last cursor, so a client that keeps no record of its own finds them again.
+  setup state, active turn, and last cursor, so a client that keeps no record of its own finds them again.
 
 ## Attachments
 
 - One `Attach` stream is one attachment. The first client message is `Open`; the first server
-  message is `Attached`, carrying the spec, the harness state, `last_cursor`, the log position at
+  message is `Attached`, carrying the spec, setup and harness states, `last_cursor`, the log position at
   attach time, and the active turn id as of that position.
 - The runner then replays every `EventEntry` with a cursor greater than `Open.follow.after_cursor`,
   in order, and continues with live entries. A client that passes the last cursor it processed sees
@@ -158,6 +164,9 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   `PROCESS_LOST` if a turn was active. It replays committed Events unchanged and
   reconciles the remaining commands after the next explicit `Open` starts the
   harness. There is no indeterminate command outcome.
+- A runner that finds a session whose setup had started without a terminal event records
+  `SetupInterrupted`. It never executes that script again. The inherited state-owner descriptor
+  keeps a replacement runner out until a surviving setup child exits.
 - A harness that exits on its own is reported the same way, as `HarnessExited` with the exit code
   instead of `HarnessLost`.
 - A runner that receives SIGTERM stops every running harness through the stop ladder (stdin

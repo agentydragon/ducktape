@@ -494,5 +494,23 @@ def test_recovered_tool_content_does_not_fabricate_an_execution_result() -> None
     assert recovered.recovery == event_pb2.RECOVERY_DISPOSITION_REVISED
 
 
+def test_setup_output_and_failure_remain_visible_lifecycle_evidence() -> None:
+    store = Store()
+    result = store.apply(
+        [
+            entry(1, event_pb2.Event(setup_started=event_pb2.SetupStarted())),
+            entry(2, event_pb2.Event(setup_output=event_pb2.SetupOutput(stdout=b"setup output\n"))),
+            entry(3, event_pb2.Event(setup_finished=event_pb2.SetupFinished(exit_code=7))),
+        ]
+    )
+    assert [segment.observation for segment in result.lifecycle_upserts] == [
+        "setup_started",
+        "setup_output",
+        "setup_finished",
+    ]
+    assert result.lifecycle_upserts[1].event.setup_output.stdout == b"setup output\n"
+    assert store.state.position.through_cursor == 3
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

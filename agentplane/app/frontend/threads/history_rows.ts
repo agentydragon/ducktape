@@ -15,7 +15,36 @@ import type { ThreadEntity } from "./thread_sync";
 export type HistoryRow =
   | { kind: "entity"; entities: [ThreadEntity] }
   | { kind: "run"; entities: [ThreadEntity, ...ThreadEntity[]] }
+  | { kind: "setup"; entities: [ThreadEntity, ...ThreadEntity[]] }
   | { kind: "lifecycle_group"; entities: [ThreadEntity, ...ThreadEntity[]] };
+
+const SETUP_OBSERVATIONS = new Set(["setup_started", "setup_output", "setup_finished", "setup_interrupted"]);
+
+function setupStep(entity: ThreadEntity): boolean {
+  return (
+    entity.entityKind === "lifecycle" &&
+    "observation" in entity.state &&
+    SETUP_OBSERVATIONS.has(entity.state.observation)
+  );
+}
+
+export function summarizeSetup(entities: readonly ThreadEntity[]): string {
+  const terminal = [...entities]
+    .reverse()
+    .find((entity) =>
+      entity.entityKind === "lifecycle" && "observation" in entity.state
+        ? entity.state.observation === "setup_finished" || entity.state.observation === "setup_interrupted"
+        : false
+    );
+  if (!terminal || !("event" in terminal.state)) return "Thread setup running";
+  const parsed = fromJson(EventSchema, terminal.state.event as JsonValue).observation;
+  if (parsed.case === "setupInterrupted") return "Thread setup interrupted";
+  if (parsed.case === "setupFinished")
+    return parsed.value.exitCode === 0
+      ? "Thread setup complete"
+      : `Thread setup failed (exit ${parsed.value.exitCode})`;
+  return "Thread setup running";
+}
 
 function itemKind(entity: ThreadEntity): ItemKind | null {
   return entity.entityKind === "item" && "kind" in entity.state ? entity.state.kind : null;
@@ -67,6 +96,26 @@ export function lifecyclePresentation(observation: string, event: unknown): Life
       };
     case "harnessLost":
       return { label: "Harness lost", prominent: true, diagnostic: null };
+    case "harnessLaunchFailed":
+      return { label: "Harness launch failed", prominent: true, diagnostic: parsed.value.reason };
+    case "setupStarted":
+      return { label: "Setup started", prominent: false, diagnostic: null };
+    case "setupOutput": {
+      const stream = parsed.value.stream;
+      return {
+        label: stream.case === "stderr" ? "Setup stderr" : "Setup stdout",
+        prominent: false,
+        diagnostic: stream.value ? new TextDecoder().decode(stream.value) : null,
+      };
+    }
+    case "setupFinished":
+      return {
+        label: parsed.value.exitCode === 0 ? "Setup completed" : `Setup failed (exit ${parsed.value.exitCode})`,
+        prominent: parsed.value.exitCode !== 0,
+        diagnostic: null,
+      };
+    case "setupInterrupted":
+      return { label: "Setup interrupted", prominent: true, diagnostic: null };
     default:
       return { label: observation.replaceAll("_", " "), prominent: false, diagnostic: null };
   }
@@ -85,7 +134,10 @@ export function historyRows(segments: readonly ThreadEntity[]): HistoryRow[] {
   const rows: HistoryRow[] = [];
   for (const entity of segments) {
     const last = rows.at(-1);
-    if (runStep(entity)) {
+    if (setupStep(entity)) {
+      if (last?.kind === "setup") last.entities.push(entity);
+      else rows.push({ kind: "setup", entities: [entity] });
+    } else if (runStep(entity)) {
       if (last?.kind === "run") last.entities.push(entity);
       else rows.push({ kind: "run", entities: [entity] });
     } else if (groupableLifecycle(entity)) {

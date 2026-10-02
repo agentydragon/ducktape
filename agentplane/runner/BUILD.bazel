@@ -206,6 +206,7 @@ py_library(
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
     ],

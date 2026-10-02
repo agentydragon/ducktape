@@ -173,6 +173,7 @@ class ThreadView(BaseModel):
         description="The protocol's HarnessState enum member, by name: HARNESS_STATE_RUNNING, "
         "HARNESS_STATE_STOPPED, or HARNESS_STATE_UNSPECIFIED while no feed has ever attached to this thread."
     )
+    setup_state: str | None = Field(default=None, description="One-shot Thread setup state, once attached.")
     active_turn_id: str | None = Field(
         default=None, description="The runner's currently active turn, or None when it is idle."
     )

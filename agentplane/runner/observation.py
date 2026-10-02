@@ -9,6 +9,11 @@ Observation = (
     | event_pb2.HarnessExited
     | event_pb2.HarnessLost
     | event_pb2.HarnessStderr
+    | event_pb2.HarnessLaunchFailed
+    | event_pb2.SetupStarted
+    | event_pb2.SetupOutput
+    | event_pb2.SetupFinished
+    | event_pb2.SetupInterrupted
     | event_pb2.CommandAdmitted
     | event_pb2.CommandFailed
     | event_pb2.CommandNoop
@@ -33,6 +38,11 @@ _FIELDS: dict[type[Message], str] = {
     event_pb2.HarnessExited: "harness_exited",
     event_pb2.HarnessLost: "harness_lost",
     event_pb2.HarnessStderr: "harness_stderr",
+    event_pb2.HarnessLaunchFailed: "harness_launch_failed",
+    event_pb2.SetupStarted: "setup_started",
+    event_pb2.SetupOutput: "setup_output",
+    event_pb2.SetupFinished: "setup_finished",
+    event_pb2.SetupInterrupted: "setup_interrupted",
     event_pb2.CommandAdmitted: "command_admitted",
     event_pb2.CommandFailed: "command_failed",
     event_pb2.CommandNoop: "command_noop",
