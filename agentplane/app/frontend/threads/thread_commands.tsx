@@ -101,7 +101,7 @@ export function SelectedCommandOutcomes({
   store: LocalCommands;
   errors: ReadonlyMap<string, string>;
   deliver: (value: LocalCommand) => Promise<void>;
-}): JSX.Element {
+}): JSX.Element | null {
   const controls = commands.filter((value) => value.command.operation.case !== "submitInput");
   const rows = useThreadSync().useCommandRows(controls.slice(0, 128).map((value) => value.command.commandId));
   if (controls.length === 0) return null;
@@ -231,9 +231,6 @@ function SelectedCommandRows({
             ) : (
               <>
                 <Text size="sm">{admitted ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
-                {value.command.operation.case === "submitInput" && (
-                  <VerbatimText text={value.command.operation.value.text} />
-                )}
                 {value.command.operation.case === "changeModel" && (
                   <Text>Change model to {value.command.operation.value.model}</Text>
                 )}
