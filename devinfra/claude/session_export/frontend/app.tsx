@@ -76,10 +76,13 @@ export function App({ pathname = window.location.pathname }: AppProps = {}): JSX
   const page = pathname === "/sync" ? "sync" : "sessions";
   const header = (
     <Group component="header" justify="space-between" align="center" gap="md" wrap="wrap">
-      <Title order={1}>Claude session sync</Title>
+      <Title order={1} size={page === "sessions" ? "h4" : "h1"}>
+        Claude session sync
+      </Title>
       <Group component="nav" aria-label="Pages" gap="xs">
         <Button
           component="a"
+          size={page === "sessions" ? "compact-xs" : "sm"}
           href="/sessions"
           variant={page === "sessions" ? "light" : "subtle"}
           aria-current={page === "sessions" ? "page" : undefined}
@@ -88,6 +91,7 @@ export function App({ pathname = window.location.pathname }: AppProps = {}): JSX
         </Button>
         <Button
           component="a"
+          size={page === "sessions" ? "compact-xs" : "sm"}
           href="/sync"
           variant={page === "sync" ? "light" : "subtle"}
           aria-current={page === "sync" ? "page" : undefined}
@@ -115,7 +119,7 @@ export function App({ pathname = window.location.pathname }: AppProps = {}): JSX
     <Container
       fluid
       px="md"
-      py="md"
+      py="xs"
       style={{ boxSizing: "border-box", display: "flex", flexDirection: "column", height: "100dvh" }}
     >
       <Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>

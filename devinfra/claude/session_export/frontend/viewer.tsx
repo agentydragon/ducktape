@@ -696,7 +696,7 @@ function ToolActivityGroup({ item, session }: { item: ToolGroup; session: Sessio
           styles={{ root: { minWidth: 0 }, label: { display: "block", overflow: "hidden", textOverflow: "ellipsis" } }}
           title={toolGroupSummary(item)}
         >
-          {expanded ? "▾" : "▸"} {toolGroupSummary(item)}
+          {expanded ? "−" : "+"} {toolGroupSummary(item)}
         </Button>
         {statuses.map((status) => (
           <Badge key={status} size="xs" variant="dot" color={toolStatusColor(status)}>
@@ -742,6 +742,26 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
           {item.text}
         </Text>
       </Paper>
+    );
+  }
+  if (item.kind === "activity" && (item.status === "complete" || item.status === "completed")) {
+    return (
+      <Box
+        component="details"
+        data-fold-kind="activity"
+        data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
+        title={time ?? undefined}
+        py={2}
+      >
+        <Box component="summary" fz="xs" c="dimmed" style={{ cursor: "pointer" }}>
+          {item.title} · completed
+        </Box>
+        {item.detail !== undefined && (
+          <Text size="sm" py="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {item.detail}
+          </Text>
+        )}
+      </Box>
     );
   }
   if (
@@ -1449,7 +1469,7 @@ export function SessionViewer(): JSX.Element {
         aria-label="Session history"
         withBorder
         radius="md"
-        p="md"
+        p="sm"
         style={{ display: "flex", flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden" }}
       >
         <Stack gap="sm" style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
@@ -1462,13 +1482,14 @@ export function SessionViewer(): JSX.Element {
               )}
               <Button
                 variant="default"
+                size="compact-xs"
                 aria-controls={isMobile ? "session-sidebar-mobile" : "session-sidebar"}
                 aria-expanded={isMobile ? mobileDrawerOpen : sidebarVisible}
                 onClick={toggleSidebar}
               >
                 {isMobile ? "Session list" : sidebarVisible ? "Hide session list" : "Show session list"}
               </Button>
-              <Button variant="default" onClick={() => setRefreshCount((count) => count + 1)}>
+              <Button variant="default" size="compact-xs" onClick={() => setRefreshCount((count) => count + 1)}>
                 Refresh
               </Button>
             </Group>
@@ -1559,7 +1580,7 @@ export function SessionViewer(): JSX.Element {
               aria-label="Session transcript"
               withBorder
               radius="sm"
-              p="md"
+              p="sm"
               style={{ flex: 1, height: "100%", minHeight: 0, minWidth: 0, overflow: "hidden" }}
             >
               {selectedSession === null ? (
