@@ -588,3 +588,51 @@ it("keeps suppressed events inspectable without expanding JSON or hook noise by 
   expect(container.querySelector('[data-message-role="assistant"]')).not.toBeNull();
   expect(container.querySelector("[data-raw-event]")).toBeNull();
 });
+
+it("keeps an open tool disclosure when older history extends its activity group", async () => {
+  const olderTool = {
+    ...toolCall,
+    event_id: "older-tool",
+    sequence_num: "1",
+    payload: {
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "older-read", name: "Read", input: { file_path: "older.md" } }] },
+    },
+  };
+  vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
+  vi.mocked(listSessionEvents)
+    .mockResolvedValueOnce({
+      data: [toolCall],
+      has_more: true,
+      first_id: toolCall.event_id,
+      last_id: toolCall.event_id,
+    })
+    .mockResolvedValueOnce({
+      data: [olderTool],
+      has_more: false,
+      first_id: olderTool.event_id,
+      last_id: olderTool.event_id,
+    });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await vi.waitFor(() => expect(container?.querySelector("[data-tool-run-toggle]")).not.toBeNull());
+  await act(async () => container?.querySelector<HTMLButtonElement>("[data-tool-run-toggle]")!.click());
+  const loadOlder = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Load older events")
+  )!;
+  await act(async () => loadOlder.click());
+  await vi.waitFor(() =>
+    expect(container?.querySelector('[data-tool-group-toggle][aria-expanded="true"]')).not.toBeNull()
+  );
+  const retained = container.querySelector<HTMLElement>('[data-fold-kind="tool-run"][data-history-sequences="2"]')!;
+  expect(retained.querySelector('[data-tool-run-toggle][aria-expanded="true"]')).not.toBeNull();
+  expect(retained.textContent).toContain("README.md");
+});

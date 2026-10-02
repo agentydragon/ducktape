@@ -45,6 +45,13 @@ const LATEST_TAIL_READY = ['#app[data-latest-tail-ready="true"]'];
 const HISTORY_ANCHOR_READY = ['#app[data-history-anchor-ready="true"]'];
 
 export const SCENARIOS = {
+  SessionNoisyActivity: { element: "#app", readySelectors: ['#app[data-activity-ready="true"]'] },
+  SessionNoisyActivityExpanded: { element: "#app", readySelectors: ['#app[data-activity-ready="true"]'] },
+  SessionNoisyActivityExpanded_mobile: {
+    element: "#app",
+    readySelectors: ['#app[data-activity-ready="true"]'],
+    viewport: { width: 420, height: 900 },
+  },
   SessionNoisySidebar: { element: "#app", readySelectors: SIDEBAR_EXPANDED_READY },
   SessionNoisySidebarCollapsed: {
     element: "#app",

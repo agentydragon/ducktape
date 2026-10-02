@@ -91,6 +91,14 @@ ts_library(
 )
 
 ts_library(
+    name = "tool_groups",
+    srcs = ["tool-groups.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":api", ":transcript"],
+)
+
+ts_library(
     name = "event_inspector",
     srcs = ["event-inspector.tsx"],
     isolated_typecheck = True,
@@ -111,6 +119,7 @@ ts_library(
     deps = [
         ":api",
         ":event_inspector",
+        ":tool_groups",
         ":transcript",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/hooks",
@@ -210,6 +219,20 @@ ts_library(
     ],
 )
 
+ts_library(
+    name = "tool_groups_test",
+    testonly = True,
+    srcs = ["tool-groups.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":noisy_session_fixture",
+        ":tool_groups",
+        ":transcript",
+        "//:node_modules/vitest",
+    ],
+)
+
 vitest_bin.vitest_test(
     name = "vitest_test",
     args = ["run"],
@@ -219,6 +242,7 @@ vitest_bin.vitest_test(
         ":api_test",
         ":status_test",
         ":transcript_test",
+        ":tool_groups_test",
         ":viewer_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",

@@ -860,7 +860,10 @@ if (scenario.startsWith("SessionNoisy")) {
       if (document.querySelector('[data-fold-kind="notice"]')) throw new Error("Hook noise leaked into the transcript");
       if (scenario.includes("Thinking")) {
         const thinking = document.querySelector<HTMLDetailsElement>('[data-fold-kind="thinking"]');
-        if (thinking === null) return;
+        if (thinking === null) {
+          document.querySelector<HTMLButtonElement>('[data-tool-group-toggle][aria-expanded="false"]')?.click();
+          return;
+        }
         thinking.open = true;
         scrollTranscriptElementIntoView(thinking);
       }
@@ -948,4 +951,35 @@ if (scenario.startsWith("SessionNoisySidebar")) {
     sidebarObserver.disconnect();
   });
   sidebarObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+}
+
+if (scenario.startsWith("SessionNoisyActivity")) {
+  let stage = 0;
+  const observer = new MutationObserver(() => {
+    const group = document.querySelector<HTMLElement>('[data-fold-kind="tool-group"]');
+    if (group === null) return;
+    if (stage === 0) {
+      if (group.getBoundingClientRect().height > 28) throw new Error("Collapsed tool group exceeds 28px");
+      if (group.querySelector('[data-fold-kind="tool-run"]')) throw new Error("Tool group expanded by default");
+      if (scenario.includes("Expanded")) {
+        stage = 1;
+        group.querySelector<HTMLButtonElement>("[data-tool-group-toggle]")!.click();
+        return;
+      }
+    }
+    if (scenario.includes("Expanded")) {
+      const tool = group.querySelector<HTMLButtonElement>("[data-tool-run-toggle]");
+      if (tool === null) return;
+      if (stage === 1) {
+        stage = 2;
+        tool.click();
+        return;
+      }
+      if (!group.querySelector("[data-tool-file-preview]")) return;
+    }
+    scrollTranscriptElementIntoView(group);
+    root.dataset.activityReady = "true";
+    observer.disconnect();
+  });
+  observer.observe(root, { childList: true, subtree: true, attributes: true });
 }

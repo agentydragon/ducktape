@@ -1,4 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from "react";
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+} from "react";
 import {
   ActionIcon,
   Accordion,
@@ -34,6 +45,7 @@ import {
   type SessionSummary,
 } from "./api";
 import { EventInspector } from "./event-inspector";
+import { groupToolActivity, toolGroupSummary, type ToolGroup } from "./tool-groups";
 import {
   foldSessionEvents,
   transcriptEventTime,
@@ -544,7 +556,7 @@ function FoldableDetail({ label, detail }: { label: string; detail: string }): J
           size="xs"
           aria-label={expanded ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
           aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => disclosures.toggleTool(item.id)}
         >
           <Text size="xs" fw={600}>
             {expanded ? "−" : "+"}
@@ -563,20 +575,67 @@ function FoldableDetail({ label, detail }: { label: string; detail: string }): J
   );
 }
 
+type ToolDisclosures = {
+  tools: Set<string>;
+  groups: Set<string>;
+  toggleTool: (id: string) => void;
+  toggleGroup: (ids: string[], expanded: boolean) => void;
+};
+const ToolDisclosureContext = createContext<ToolDisclosures | null>(null);
+
+function ToolDisclosureProvider({ children }: { children: ReactNode }): JSX.Element {
+  const [tools, setTools] = useState(new Set<string>());
+  const [groups, setGroups] = useState(new Set<string>());
+  return (
+    <ToolDisclosureContext.Provider
+      value={{
+        tools,
+        groups,
+        toggleTool: (id) =>
+          setTools((previous) => {
+            const next = new Set(previous);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+          }),
+        toggleGroup: (ids, expanded) => {
+          setGroups((previous) => {
+            const next = new Set(previous);
+            for (const id of ids) {
+              if (expanded) next.delete(id);
+              else next.add(id);
+            }
+            return next;
+          });
+          if (expanded) setTools((previous) => new Set([...previous].filter((id) => !ids.includes(id))));
+        },
+      }}
+    >
+      {children}
+    </ToolDisclosureContext.Provider>
+  );
+}
+
+function useToolDisclosures(): ToolDisclosures {
+  const state = useContext(ToolDisclosureContext);
+  if (state === null) throw new Error("Tool disclosures require a provider");
+  return state;
+}
+
 function CompactToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
-  const [expanded, setExpanded] = useState(false);
-  const time = transcriptEventTime(item);
+  const disclosures = useToolDisclosures();
+  const expanded = disclosures.tools.has(item.id);
   return (
     <Paper
       component="article"
+      title={transcriptEventTime(item) ?? undefined}
       aria-label={item.tools.length === 1 ? `${item.tools[0]?.name ?? "Tool"} activity` : "Tool activity"}
       data-fold-kind="tool-run"
       data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
       data-tool-count={item.tools.length}
       data-parent-tool-use-id={item.parentToolUseId}
-      withBorder
       radius="sm"
-      p="xs"
+      py={2}
     >
       <Group gap={4} wrap="nowrap">
         <ActionIcon
@@ -585,7 +644,7 @@ function CompactToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
           aria-label={expanded ? "Hide tool details" : "Show tool details"}
           aria-expanded={expanded}
           data-tool-run-toggle
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => disclosures.toggleGroup(runIds, expanded)}
         >
           <Text size="xs" fw={600}>
             {expanded ? "−" : "+"}
@@ -597,13 +656,10 @@ function CompactToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
         <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>
           {toolRunPreview(item)}
         </Text>
-        <Badge size="xs" variant="dot" color={toolStatusColor(item.status)}>
-          {item.status}
-        </Badge>
-        {time !== null && (
-          <Text component="time" size="xs" c="dimmed" dateTime={item.events.at(-1)?.created_at}>
-            {time}
-          </Text>
+        {item.status !== "complete" && (
+          <Badge size="xs" variant="dot" color={toolStatusColor(item.status)}>
+            {item.status}
+          </Badge>
         )}
       </Group>
       {expanded && (
@@ -615,9 +671,104 @@ function CompactToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
   );
 }
 
+function ToolActivityGroup({ item, session }: { item: ToolGroup; session: SessionSummary }): JSX.Element {
+  const disclosures = useToolDisclosures();
+  const runIds = item.items.filter((row) => row.kind === "tool-run").map((row) => row.id);
+  const expanded = runIds.some((id) => disclosures.groups.has(id) || disclosures.tools.has(id));
+  const tools = item.items.flatMap((row) => (row.kind === "tool-run" ? row.tools : []));
+  const statuses = [...new Set(tools.map((tool) => tool.status))].filter((status) => status !== "complete");
+  return (
+    <Box
+      data-fold-kind="tool-group"
+      data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
+      data-tool-count={tools.length}
+    >
+      <Group gap={4} wrap="nowrap" py={2}>
+        <Button
+          variant="subtle"
+          color="gray"
+          size="compact-xs"
+          fw={400}
+          aria-label={expanded ? "Hide activity group" : "Show activity group"}
+          aria-expanded={expanded}
+          data-tool-group-toggle
+          onClick={() => setExpanded((value) => !value)}
+          styles={{ root: { minWidth: 0 }, label: { display: "block", overflow: "hidden", textOverflow: "ellipsis" } }}
+          title={toolGroupSummary(item)}
+        >
+          {expanded ? "▾" : "▸"} {toolGroupSummary(item)}
+        </Button>
+        {statuses.map((status) => (
+          <Badge key={status} size="xs" variant="dot" color={toolStatusColor(status)}>
+            {status}
+          </Badge>
+        ))}
+      </Group>
+      {expanded && (
+        <Stack gap={4} pl="xs" style={{ borderLeft: "1px solid var(--mantine-color-default-border)" }}>
+          {item.items.map((row) => (
+            <TranscriptCard key={row.id} item={row} session={session} />
+          ))}
+        </Stack>
+      )}
+    </Box>
+  );
+}
+
 function TranscriptCard({ item, session }: { item: TranscriptItem; session: SessionSummary }): JSX.Element {
   if (item.kind === "tool-run") return <CompactToolRun item={item} />;
   const time = transcriptEventTime(item);
+  if (item.kind === "message") {
+    return (
+      <Paper
+        component="article"
+        aria-label={item.role === "user" ? "You" : "Claude"}
+        title={time ?? undefined}
+        data-fold-kind="message"
+        data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
+        data-message-role={item.role}
+        data-parent-tool-use-id={item.parentToolUseId}
+        radius="sm"
+        bg={item.role === "user" ? "var(--mantine-color-default-hover)" : undefined}
+        p={item.role === "user" ? "xs" : 0}
+        my={4}
+      >
+        {item.parentToolUseId !== undefined && (
+          <Badge size="xs" variant="light">
+            Subagent
+          </Badge>
+        )}
+        <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          {item.text}
+        </Text>
+      </Paper>
+    );
+  }
+  if (
+    item.kind === "summary" &&
+    item.events.every((event) => event.payload.subtype === "success" && event.payload.is_error !== true)
+  ) {
+    return (
+      <Box
+        component="details"
+        data-fold-kind="summary"
+        data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
+        title={time ?? undefined}
+        py={2}
+      >
+        <Box component="summary" fz="xs" c="dimmed" style={{ cursor: "pointer" }}>
+          {item.title}
+        </Box>
+        <Stack gap={4} py="xs">
+          {item.details.map((detail, index) => (
+            <Text key={index} size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {detail}
+            </Text>
+          ))}
+        </Stack>
+      </Box>
+    );
+  }
   if (item.kind === "thinking") {
     return (
       <Paper
@@ -625,25 +776,14 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
         aria-label="Thinking"
         data-fold-kind="thinking"
         data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
-        withBorder
         radius="sm"
-        p="xs"
+        py={2}
+        title={time ?? undefined}
       >
-        <Box component="summary" fz="xs" style={{ cursor: "pointer" }}>
+        <Box component="summary" fz="xs" c="dimmed" style={{ cursor: "pointer" }}>
           <Text component="span" size="xs" fw={500}>
             Thinking
           </Text>
-          {time !== null && (
-            <Text
-              component="time"
-              size="xs"
-              c="dimmed"
-              dateTime={item.events.at(-1)?.created_at}
-              style={{ float: "right" }}
-            >
-              {time}
-            </Text>
-          )}
         </Box>
         <Text size="sm" mt="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
           {item.text}
@@ -652,34 +792,28 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
     );
   }
   const title =
-    item.kind === "message"
-      ? item.role === "user"
-        ? "You"
-        : "Claude"
-      : item.kind === "peer-message"
-        ? `Message from ${item.name ?? item.from}`
-        : item.kind === "peer-hold"
-          ? item.state === "held"
-            ? "Peer message held"
-            : "Peer message dropped"
-          : item.kind === "activity"
-            ? item.title
-            : item.kind === "context"
-              ? "Context usage"
-              : item.kind === "stats"
-                ? "Code statistics"
-                : item.kind === "usage"
-                  ? "Plan usage"
-                  : item.kind === "status"
-                    ? "Session status"
-                    : item.kind === "summary" || item.kind === "notice"
-                      ? item.title
-                      : "Transcript item";
+    item.kind === "peer-message"
+      ? `Message from ${item.name ?? item.from}`
+      : item.kind === "peer-hold"
+        ? item.state === "held"
+          ? "Peer message held"
+          : "Peer message dropped"
+        : item.kind === "activity"
+          ? item.title
+          : item.kind === "context"
+            ? "Context usage"
+            : item.kind === "stats"
+              ? "Code statistics"
+              : item.kind === "usage"
+                ? "Plan usage"
+                : item.kind === "status"
+                  ? "Session status"
+                  : item.kind === "summary" || item.kind === "notice"
+                    ? item.title
+                    : "Transcript item";
   const color =
-    item.kind === "message" || item.kind === "peer-message"
-      ? item.kind === "message" && item.role === "assistant"
-        ? "violet"
-        : "blue"
+    item.kind === "peer-message"
+      ? "blue"
       : item.kind === "peer-hold"
         ? item.state === "held"
           ? "yellow"
@@ -691,8 +825,6 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
       aria-label={title}
       data-fold-kind={item.kind}
       data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
-      data-message-role={item.kind === "message" ? item.role : undefined}
-      data-parent-tool-use-id={item.kind === "message" ? item.parentToolUseId : undefined}
       data-peer-from={item.kind === "peer-message" || item.kind === "peer-hold" ? item.from : undefined}
       data-peer-handback={item.kind === "peer-message" && item.handback ? "true" : undefined}
       data-peer-state={item.kind === "peer-hold" ? item.state : undefined}
@@ -708,11 +840,6 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
             <Badge variant="light" color={color}>
               {title}
             </Badge>
-            {item.kind === "message" && item.parentToolUseId !== undefined && (
-              <Badge size="xs" variant="light" color="blue">
-                Subagent
-              </Badge>
-            )}
             {item.kind === "activity" && (
               <Badge variant="dot" color={toolStatusColor(item.status)}>
                 {item.status}
@@ -730,11 +857,6 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
             </Text>
           )}
         </Group>
-        {item.kind === "message" && (
-          <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {item.text}
-          </Text>
-        )}
         {item.kind === "peer-message" && (
           <Stack gap="xs">
             {item.handbackNote !== undefined && (
@@ -1239,7 +1361,7 @@ export function SessionViewer(): JSX.Element {
 
   const selectedSession = sessions.find((session) => session.id === selectedId) ?? null;
   const transcript = useMemo(() => foldSessionEvents(events), [events]);
-  const rows = transcript;
+  const rows = useMemo(() => groupToolActivity(transcript), [transcript]);
   const watchLabel =
     watchStatus === "connected" ? "Live updates on" : watchStatus === "connecting" ? "Connecting…" : "Reconnecting…";
 
@@ -1489,7 +1611,7 @@ export function SessionViewer(): JSX.Element {
                     </Center>
                   ) : (
                     <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" viewportRef={setEventViewport}>
-                      <Stack gap="sm" pr="sm">
+                      <Stack gap={4} pr="sm">
                         {hasMoreEvents && (
                           <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
                             Load older events
@@ -1502,9 +1624,15 @@ export function SessionViewer(): JSX.Element {
                             No loaded events appear in the folded transcript.
                           </Text>
                         ) : (
-                          rows.map((row) => (
-                            <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />
-                          ))
+                          <ToolDisclosureProvider key={selectedId}>
+                            {rows.map((row) =>
+                              row.kind === "tool-group" ? (
+                                <ToolActivityGroup key={row.id} item={row} session={selectedSession} />
+                              ) : (
+                                <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />
+                              )
+                            )}
+                          </ToolDisclosureProvider>
                         )}
                       </Stack>
                     </ScrollArea>
