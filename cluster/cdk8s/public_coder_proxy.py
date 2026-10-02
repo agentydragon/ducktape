@@ -247,7 +247,7 @@ def _config_map(scope: Construct) -> k8s.KubeConfigMap:
     return k8s.KubeConfigMap(
         scope,
         "config",
-        metadata=k8s.ObjectMeta(name="public-coder-agent-proxy-config", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="proxy-config", namespace=NAMESPACE),
         data={_CONFIG_FILE: yaml_config(_iron_config())},
     )
 

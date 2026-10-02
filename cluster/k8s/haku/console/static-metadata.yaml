@@ -6,7 +6,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: haku-console-static-metadata
+  name: static-metadata
   namespace: haku-console
 data:
   image-tag: devel-20261001081931-fcb462c # {"$imagepolicy": "flux-system:haku-console-static:tag"}

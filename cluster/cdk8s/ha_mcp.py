@@ -66,7 +66,7 @@ _PLACEHOLDER_TAG = "unset"
 
 _APP_NAME = "ha-mcp"
 _APP_FACADE_IMAGE_NAME = "git.allegedly.works/ducktape-ci/mcp-oauth-facade"
-_APP_CONFIG_MAP_NAME = "ha-mcp-config"
+_APP_CONFIG_MAP_NAME = "config"
 # The ha-mcp server, which the facade reaches over the Pod's loopback.
 _UPSTREAM = Port(name="upstream", number=8086)
 # The facade clients call, and its metrics port on the same Service and Pods.

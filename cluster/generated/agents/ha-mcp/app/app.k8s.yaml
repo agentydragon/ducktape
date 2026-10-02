@@ -139,7 +139,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ha-mcp-config
+  name: config
   namespace: ha-mcp
 data:
   BACKUP_HINT: normal
@@ -206,7 +206,7 @@ spec:
                   name: ha-mcp-home-assistant-token
           envFrom:
             - configMapRef:
-                name: ha-mcp-config
+                name: config
           image: ghcr.io/homeassistant-ai/ha-mcp:8.4.3@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -260,7 +260,7 @@ spec:
                   name: ha-mcp-bearer
           envFrom:
             - configMapRef:
-                name: ha-mcp-config
+                name: config
           image: git.allegedly.works/ducktape-ci/mcp-oauth-facade:unset
           imagePullPolicy: Always
           livenessProbe:

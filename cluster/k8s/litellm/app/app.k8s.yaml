@@ -7,7 +7,7 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: cdk8s
     app.kubernetes.io/part-of: litellm
-  name: litellm-config
+  name: config
   namespace: litellm
 data:
   config.yaml: |
@@ -958,7 +958,7 @@ spec:
             timeoutSeconds: 5
           volumeMounts:
             - mountPath: /etc/litellm
-              name: configmap-litellm-config
+              name: configmap-config
               readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
@@ -990,8 +990,8 @@ spec:
             items:
               - key: config.yaml
                 path: config.yaml
-            name: litellm-config
-          name: configmap-litellm-config
+            name: config
+          name: configmap-config
 ---
 apiVersion: v1
 kind: Service

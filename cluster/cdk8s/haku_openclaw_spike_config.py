@@ -58,7 +58,7 @@ _GATEWAY = ServiceRef(
     port=Port(name="gateway", number=18789),
     pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
-_CONFIG_MAP_NAME = "haku-openclaw-spike-config"
+_CONFIG_MAP_NAME = "config"
 _KUBECONFIG_CONFIG_MAP_NAME = "haku-openclaw-spike-kubeconfig"
 _KUBECONFIG_KEY = "config"
 _GATEWAY_PASSWORD = SecretRef(namespace=_NAMESPACE, name="haku-openclaw-spike-gateway-password").key("password")

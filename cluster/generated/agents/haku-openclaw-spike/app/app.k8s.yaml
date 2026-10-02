@@ -12,7 +12,7 @@ spec: {}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: haku-openclaw-spike-config
+  name: config
   namespace: haku-openclaw-spike
 data:
   claude.json: |
@@ -488,7 +488,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: haku-openclaw-spike-config
+            name: config
           name: config
         - configMap:
             name: haku-openclaw-spike-kubeconfig

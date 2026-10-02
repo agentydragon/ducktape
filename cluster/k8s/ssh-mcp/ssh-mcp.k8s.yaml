@@ -45,7 +45,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ssh-mcp-config
+  name: config
   namespace: ssh-mcp
 data:
   known_hosts: |
@@ -168,7 +168,7 @@ spec:
             runAsUser: 1000
           volumeMounts:
             - mountPath: /etc/ssh-mcp
-              name: configmap-ssh-mcp-config
+              name: configmap-config
               readOnly: true
             - mountPath: /etc/ssh-mcp/keys
               name: keys
@@ -207,8 +207,8 @@ spec:
       terminationGracePeriodSeconds: 30
       volumes:
         - configMap:
-            name: ssh-mcp-config
-          name: configmap-ssh-mcp-config
+            name: config
+          name: configmap-config
         - name: keys
           secret:
             optional: true

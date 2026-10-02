@@ -96,7 +96,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: public-coder-agent-proxy-config
+  name: proxy-config
   namespace: public-coder-agent
 data:
   iron.yaml: |
@@ -275,7 +275,7 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: public-coder-agent-proxy-config
+            name: proxy-config
           name: config
         - name: ca
           secret:

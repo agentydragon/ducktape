@@ -62,7 +62,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: home-assistant-component-installer
+  name: component-installer
   namespace: home-assistant
 data:
   settings.yaml: |
@@ -200,7 +200,7 @@ spec:
             name: home-assistant-configuration
           name: configuration
         - configMap:
-            name: home-assistant-component-installer
+            name: component-installer
           name: installer-settings
         - configMap:
             name: home-assistant-caddy

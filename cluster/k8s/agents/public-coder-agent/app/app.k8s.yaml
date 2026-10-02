@@ -21,7 +21,7 @@ imagePullSecrets:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: public-coder-agent-config
+  name: config
   namespace: public-coder-agent
 data:
   openclaw.json5: |
@@ -411,7 +411,7 @@ immutable: false
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: public-coder-agent-kubeconfig
+  name: kubeconfig
   namespace: public-coder-agent
 data:
   config: |
@@ -674,10 +674,10 @@ spec:
           persistentVolumeClaim:
             claimName: public-coder-agent-state-v2
         - configMap:
-            name: public-coder-agent-kubeconfig
+            name: kubeconfig
           name: kubeconfig
         - configMap:
-            name: public-coder-agent-config
+            name: config
           name: cfg
         - configMap:
             name: public-coder-agent-proxy-ca-cert

@@ -71,7 +71,7 @@ jobs:
             config_map = next(
                 doc
                 for doc in yaml.safe_load_all(f)
-                if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "public-coder-agent-config"
+                if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "config"
             )
         with open("/tmp/public-coder-agent-openclaw.json5", "w") as out:
             out.write(config_map["data"]["openclaw.json5"])

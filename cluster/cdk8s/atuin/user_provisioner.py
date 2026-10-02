@@ -17,7 +17,7 @@ NAME = "atuin-user-provisioner"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 # Reflector's copy of user-agentydragon's SOPS-managed Secret.
 _USER_PASSWORD = SecretRef(namespace=NAMESPACE, name="atuin-user-password").key("user_password")
-_SCRIPT_CONFIG_MAP = f"{NAME}-script"
+_SCRIPT_CONFIG_MAP = "user-provisioner-script"
 _SCRIPT_DIR = "/scripts"
 _SCRIPT = textwrap.dedent(
     '''\

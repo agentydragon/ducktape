@@ -39,7 +39,7 @@ class ConfigMapSpec:
 
     @property
     def config_map_name(self) -> str:
-        return f"{self.name}-config"
+        return "config"
 
 
 def _model_entry(

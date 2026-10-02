@@ -22,7 +22,7 @@ SERVICE = ServiceRef(
     port=Port(name="http", number=8080),
     pods=Pods(namespace=NAME, labels=(("app.kubernetes.io/name", NAME),)),
 )
-_CONFIG_MAP = "kubectl-passthrough-mcp-public"
+_CONFIG_MAP = "public"
 _CONFIG_FILE = "00-public.toml"
 _CONFIG_DIR = "/etc/kubectl-passthrough-mcp"
 _PUBLIC_CONFIG = f"""\

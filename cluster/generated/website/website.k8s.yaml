@@ -9,7 +9,7 @@ spec: {}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: website-content
+  name: content
   namespace: website
 data:
   index.html: |
@@ -179,7 +179,7 @@ spec:
               name: html
       volumes:
         - configMap:
-            name: website-content
+            name: content
           name: html
 ---
 apiVersion: v1

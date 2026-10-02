@@ -20,7 +20,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: plaid-mcp-config
+  name: config
   namespace: plaid-mcp
 data:
   PLAID_MCP_INVESTMENT_TRANSACTION_DAYS: "730"
@@ -171,27 +171,27 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   key: PLAID_MCP_PLAID_ENV
-                  name: plaid-mcp-config
+                  name: config
             - name: PLAID_MCP_PUBLIC_BASE_URL
               valueFrom:
                 configMapKeyRef:
                   key: PLAID_MCP_PUBLIC_BASE_URL
-                  name: plaid-mcp-config
+                  name: config
             - name: PLAID_MCP_WEBHOOK_URL
               valueFrom:
                 configMapKeyRef:
                   key: PLAID_MCP_WEBHOOK_URL
-                  name: plaid-mcp-config
+                  name: config
             - name: PLAID_MCP_TRANSACTION_DAYS
               valueFrom:
                 configMapKeyRef:
                   key: PLAID_MCP_TRANSACTION_DAYS
-                  name: plaid-mcp-config
+                  name: config
             - name: PLAID_MCP_INVESTMENT_TRANSACTION_DAYS
               valueFrom:
                 configMapKeyRef:
                   key: PLAID_MCP_INVESTMENT_TRANSACTION_DAYS
-                  name: plaid-mcp-config
+                  name: config
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -290,27 +290,27 @@ spec:
                   valueFrom:
                     configMapKeyRef:
                       key: PLAID_MCP_PLAID_ENV
-                      name: plaid-mcp-config
+                      name: config
                 - name: PLAID_MCP_PUBLIC_BASE_URL
                   valueFrom:
                     configMapKeyRef:
                       key: PLAID_MCP_PUBLIC_BASE_URL
-                      name: plaid-mcp-config
+                      name: config
                 - name: PLAID_MCP_WEBHOOK_URL
                   valueFrom:
                     configMapKeyRef:
                       key: PLAID_MCP_WEBHOOK_URL
-                      name: plaid-mcp-config
+                      name: config
                 - name: PLAID_MCP_TRANSACTION_DAYS
                   valueFrom:
                     configMapKeyRef:
                       key: PLAID_MCP_TRANSACTION_DAYS
-                      name: plaid-mcp-config
+                      name: config
                 - name: PLAID_MCP_INVESTMENT_TRANSACTION_DAYS
                   valueFrom:
                     configMapKeyRef:
                       key: PLAID_MCP_INVESTMENT_TRANSACTION_DAYS
-                      name: plaid-mcp-config
+                      name: config
                 - name: DATABASE_URL
                   valueFrom:
                     secretKeyRef:

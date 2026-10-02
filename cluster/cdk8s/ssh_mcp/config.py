@@ -28,7 +28,7 @@ SERVICE = ServiceRef(
 MCP_URL = f"{SERVICE.url}/mcp"
 BEARER_SECRET_NAME = "ssh-mcp-bearer"
 BEARER_SECRET_KEY = "bearer-token"
-CONFIG_MAP_NAME = "ssh-mcp-config"
+CONFIG_MAP_NAME = "config"
 CONFIG_DIR = "/etc/ssh-mcp"
 
 DEVBOX_HOST_KEY = "ssh_keys/public-coder-devbox-host.pub"

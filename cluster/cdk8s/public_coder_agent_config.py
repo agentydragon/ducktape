@@ -64,7 +64,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 _CODEX_BY_ID = {model.id: model for model in GPT6_CODEX_MODELS}
 _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
 _TPM_CODEX_MODEL = _CODEX_BY_ID["gpt-6-astra"]
-_CONFIG_MAP_NAME = "public-coder-agent-config"
+_CONFIG_MAP_NAME = "config"
 _NAME = "public-coder-agent"
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": _NAME}
@@ -87,7 +87,7 @@ _GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gate
 # Also the Matrix channel's `proxy` in config(): the same proxy performs Matrix login-password
 # substitution.
 _EGRESS_PROXY = public_coder_proxy.PROXY.url
-_KUBECONFIG_CONFIG_MAP_NAME = "public-coder-agent-kubeconfig"
+_KUBECONFIG_CONFIG_MAP_NAME = "kubeconfig"
 # Rendered by the kustomization.yaml's configMapGenerator.
 _SSH_CONFIG_MAP_NAME = "public-coder-agent-ssh"
 _RBAC_GROUP = "rbac.authorization.k8s.io"

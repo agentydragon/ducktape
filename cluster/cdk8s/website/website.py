@@ -17,7 +17,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 OUTPUT_DIR = f"{GENERATED_ROOT}/website"
 _NAME = "website"
 _NAMESPACE = "website"
-_CONTENT_CONFIG_MAP = "website-content"
+_CONTENT_CONFIG_MAP = "content"
 HOSTNAME = "www.allegedly.works"
 # nginx-unprivileged listens on 8080.
 _SERVICE = ServiceRef(

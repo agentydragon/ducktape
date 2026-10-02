@@ -1,5 +1,5 @@
 """The console's non-secret deploy catalog (`haku.console.mcp_config.ConsoleConfigFile`),
-rendered into the `haku-console-config` ConfigMap. Secret leaves stay out of it: the
+rendered into the `config` ConfigMap. Secret leaves stay out of it: the
 Deployment overlays them from Secrets through `HAKU_CONSOLE__*` environment variables
 (`console.py` names each one).
 """

@@ -203,7 +203,7 @@ def _backend_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Pr
 def _deployment(scope: Construct) -> None:
     installer_settings = _settings_config_map(
         scope,
-        "home-assistant-component-installer",
+        "component-installer",
         components.Settings,
         {
             "config_dir": _CONFIG_DIR,

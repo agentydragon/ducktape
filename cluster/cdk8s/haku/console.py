@@ -98,8 +98,8 @@ _STATIC = service_ref.ServiceRef(
 # Hand-written siblings carrying Flux image-automation markers: the static image's tag,
 # projected as a file so /api/deployment reports the frontend revision without a
 # frontend-only release rolling the API, and the API image's own tag as an env var.
-STATIC_METADATA_CONFIG_MAP = "haku-console-static-metadata"
-IMAGE_METADATA_CONFIG_MAP = "haku-console-image-metadata"
+STATIC_METADATA_CONFIG_MAP = "static-metadata"
+IMAGE_METADATA_CONFIG_MAP = "image-metadata"
 _IMAGE_TAG_KEY = "image-tag"
 _STATIC_METADATA_DIR = "/etc/haku-console/static-metadata"
 # kustomize builds it from indexer-role.sql; a changed script re-hashes the name, and the
@@ -156,7 +156,7 @@ class Console(Construct):
         config = SettingsFile(
             self,
             "config",
-            metadata=ApiObjectMetadata(name="haku-console-config", namespace=NAMESPACE),
+            metadata=ApiObjectMetadata(name="config", namespace=NAMESPACE),
             model=ConsoleConfigFile,
             content=console_config.config(),
             path="/etc/haku-console/config/config.yaml",

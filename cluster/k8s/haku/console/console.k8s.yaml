@@ -401,7 +401,7 @@ automountServiceAccountToken: false
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: haku-console-config
+  name: config
   namespace: haku-console
 data:
   config.yaml: |
@@ -495,7 +495,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    configmap.reloader.stakater.com/reload: haku-console-config
+    configmap.reloader.stakater.com/reload: config
     secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,haku-console-agent-api,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token
   labels:
     app.kubernetes.io/name: haku-console
@@ -527,7 +527,7 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   key: image-tag
-                  name: haku-console-image-metadata
+                  name: image-metadata
             - name: HAKU_CONSOLE__AIQUOTA_URL
               value: http://aiquota-api.cli-proxy-api.svc.cluster.local:8080
             - name: HAKU_CONSOLE__AIQUOTA_BEARER_TOKEN
@@ -702,10 +702,10 @@ spec:
             - mountPath: /tmp
               name: tmp
             - mountPath: /etc/haku-console/config
-              name: configmap-haku-console-config
+              name: configmap-config
               readOnly: true
             - mountPath: /etc/haku-console/static-metadata
-              name: configmap-haku-console-static-metadata
+              name: configmap-static-metadata
               readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
@@ -730,11 +730,11 @@ spec:
         - emptyDir: {}
           name: tmp
         - configMap:
-            name: haku-console-config
-          name: configmap-haku-console-config
+            name: config
+          name: configmap-config
         - configMap:
-            name: haku-console-static-metadata
-          name: configmap-haku-console-static-metadata
+            name: static-metadata
+          name: configmap-static-metadata
 ---
 apiVersion: v1
 kind: Service

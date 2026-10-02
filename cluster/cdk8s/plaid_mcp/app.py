@@ -31,7 +31,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp"
 _NAME = "plaid-mcp"
-_CONFIG_MAP = "plaid-mcp-config"
+_CONFIG_MAP = "config"
 _SECRET_MANAGER = "plaid-mcp-secret-manager"
 _CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-client-credentials")
 _OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-link-oidc-config")

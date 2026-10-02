@@ -64,7 +64,7 @@ jobs:
             config_map = next(
                 doc
                 for doc in yaml.safe_load_all(f)
-                if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "haku-openclaw-spike-config"
+                if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "config"
             )
         with open("/tmp/haku-openclaw-spike-openclaw.json", "w") as out:
             out.write(config_map["data"]["openclaw.json"])

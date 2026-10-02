@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: atuin-user-provisioner-script
+  name: user-provisioner-script
   namespace: atuin
 data:
   provision.py: |
@@ -118,6 +118,6 @@ spec:
       restartPolicy: OnFailure
       volumes:
         - configMap:
-            name: atuin-user-provisioner-script
+            name: user-provisioner-script
           name: script
   ttlSecondsAfterFinished: 3600

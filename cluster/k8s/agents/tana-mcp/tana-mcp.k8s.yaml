@@ -281,7 +281,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: tana-mcp-facade-config
+  name: facade-config
   namespace: tana-mcp
 data:
   FASTMCP_ENABLE_RICH_LOGGING: "false"
@@ -343,7 +343,7 @@ spec:
                   name: mcp-oauth-db-credentials
           envFrom:
             - configMapRef:
-                name: tana-mcp-facade-config
+                name: facade-config
           image: git.allegedly.works/ducktape-ci/mcp-oauth-facade:unset
           imagePullPolicy: Always
           livenessProbe:
