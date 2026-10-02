@@ -727,9 +727,13 @@ function useWindow(): EpochWindow {
   return shown;
 }
 
-/** Settled commands are the command list's to show, by id, not the thread's. */
+/** Keep settled input outcomes in the session projection; other settled commands are selected by id. */
 function threadRow(row: ThreadEntity): boolean {
-  return row.entityKind !== "command" || row.pending;
+  return (
+    row.entityKind !== "command" ||
+    row.pending ||
+    ("outcome" in row.state && row.state.operation === "submit_input" && row.state.outcome !== "pending")
+  );
 }
 
 function Thread({ threadId, children }: { threadId: string; children: ReactNode }): JSX.Element {

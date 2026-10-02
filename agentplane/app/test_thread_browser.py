@@ -1477,7 +1477,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
     await expect(pending).to_have_count(0)
     assert source.commands.empty()
-    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
+    await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
 
 
 @pytest.mark.parametrize("replay_after", [4])
