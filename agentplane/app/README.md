@@ -418,9 +418,9 @@ available when no preset is selected. Every launch prepends the image's `agent_i
 the task or preset instructions, including direct `SessionSpec` API launches. The app renders its
 service URLs from `agent_egress_api_url` and `agent_actions_service_url` in deployment
 configuration. A configured `agent_instructions` key replaces that image default, including an
-explicitly empty value. The
-shared block teaches agents the platform's egress and Actions Service protocol; a preset and the
-per-turn task remain the place for workload-specific constraints and the requested outcome.
+explicitly empty value. The shared block teaches agents the platform's egress and Actions Service
+protocol and how to query their effective Kubernetes permissions; a preset and the per-turn task
+remain the place for workload-specific constraints and the requested outcome.
 
 ## Action policy
 
