@@ -107,6 +107,7 @@ in
     ./modules/sops-env.nix
     ./services/activitywatch.nix
     ./opencode
+    ./opencode/litellm.nix
     ./modules/gnome-shell-keybindings.nix
     ./modules/flameshot-screenshots.nix
     ./modules/aiquota.nix
@@ -397,7 +398,6 @@ in
       direnv
       devenv
       rclone
-      pkgsUnstable.opencode
 
       stylua
 

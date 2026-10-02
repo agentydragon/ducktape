@@ -77,6 +77,16 @@ let
             type = lib.types.str;
             description = "OpenAI-compatible base URL for this provider's server.";
           };
+          options.apiKey = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = ''
+              Bearer credential for this provider's server, e.g. OpenCode's own
+              `{env:VAR}` templating (resolved from the process environment
+              `opencode` itself starts with -- never a literal secret value).
+              `null` for a local server that needs none.
+            '';
+          };
         };
         description = "Provider-level options passed to the AI SDK adapter.";
       };
