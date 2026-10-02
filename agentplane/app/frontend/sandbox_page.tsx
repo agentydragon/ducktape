@@ -52,6 +52,7 @@ const HARNESSES: { value: Harness; label: string }[] = [
 
 function setupLabel(state: SetupState): string {
   switch (state) {
+    case SetupState.UNSPECIFIED:
     case SetupState.NOT_REQUIRED:
       return "—";
     case SetupState.RUNNING:

@@ -178,6 +178,21 @@ it("uses the bound working directory template and setup script for later Threads
   expect(body.setup_script).toBe("printf 'ready\\n'");
 });
 
+it("shows an unspecified legacy setup as absent and a completed setup as complete", async () => {
+  const spec = { harness: "HARNESS_CLAUDE", cwd: "/work", model: "test-model" };
+  await render(async () =>
+    Response.json([
+      { sessionId: "legacy", spec, harnessState: "HARNESS_STATE_STOPPED" },
+      { sessionId: "prepared", spec, harnessState: "HARNESS_STATE_RUNNING", setupState: "SETUP_STATE_SUCCEEDED" },
+    ])
+  );
+  await vi.waitFor(() => {
+    const rows = [...container.querySelectorAll("tbody tr")];
+    expect(rows.find((row) => row.textContent?.includes("legacy"))?.children[2]?.textContent).toBe("—");
+    expect(rows.find((row) => row.textContent?.includes("prepared"))?.children[2]?.textContent).toBe("Complete");
+  });
+});
+
 it("lets a later Thread override the Sandbox reasoning default locally", async () => {
   (live.snapshot.sandbox as SandboxView).binding = {
     bootstrap: "",
