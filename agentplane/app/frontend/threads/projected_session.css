@@ -98,6 +98,10 @@
   white-space: nowrap;
 }
 
+.agentplane-reasoning-details[open] > summary .agentplane-reasoning-preview {
+  display: none;
+}
+
 .agentplane-reasoning-preview .agentplane-markdown--single-line {
   white-space: inherit;
 }
