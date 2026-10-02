@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { listSessionEvents, listSessions, watchSessions } from "./api";
 import { SessionViewer } from "./viewer";
+import { noisySession, noisySessionEvents } from "./fixtures/noisy-session";
 
 vi.mock("./api", () => ({
   ApiError: class extends Error {},
@@ -123,4 +124,62 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
   expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(2);
   expect(viewport.scrollTop).toBe(100);
   expect(control.getAttribute("aria-expanded")).toBe("true");
+});
+
+it("keeps suppressed events inspectable without expanding JSON or hook noise by default", async () => {
+  vi.mocked(listSessions).mockResolvedValue({ data: [noisySession], next_cursor: null, resume_token: null });
+  vi.mocked(listSessionEvents).mockResolvedValue({
+    data: noisySessionEvents,
+    has_more: false,
+    first_id: noisySessionEvents[0]!.event_id,
+    last_id: noisySessionEvents.at(-1)!.event_id,
+  });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await vi.waitFor(() => expect(container?.querySelector('[data-message-role="assistant"]')).not.toBeNull());
+  expect(container.querySelector("[data-event-json]")).toBeNull();
+  expect(container.textContent).not.toContain("fixture-check: verified sample rule");
+  expect(container.querySelector('[data-fold-kind="notice"]')).toBeNull();
+
+  await act(async () => container?.querySelector<HTMLButtonElement>('[aria-label="Show raw event stream"]')!.click());
+  expect(container.querySelectorAll("[data-raw-event]")).toHaveLength(noisySessionEvents.length);
+  expect(container.querySelectorAll("[data-event-json]")).toHaveLength(0);
+  const kinds = container.querySelector<HTMLSelectElement>('[aria-label="Event kind"]')!;
+  await act(async () => {
+    kinds.value = "system · hook_response";
+    kinds.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const hooks = noisySessionEvents.filter((e) => e.payload.subtype === "hook_response");
+  expect(container.querySelectorAll("[data-raw-event]")).toHaveLength(hooks.length);
+  const detail = container.querySelector<HTMLDetailsElement>("[data-raw-event]")!;
+  await act(async () => {
+    detail.open = true;
+    detail.dispatchEvent(new Event("toggle"));
+  });
+  expect(JSON.parse(container.querySelector("[data-event-json]")!.textContent!)).toEqual(hooks[0]);
+  expect(container.querySelectorAll("[data-event-json]")).toHaveLength(1);
+
+  // Search within a payload field, including records omitted from the folded view.
+  const search = container.querySelector<HTMLInputElement>('[aria-label="Search event data"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "fixture-pre-0");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(container.querySelectorAll("[data-raw-event]")).toHaveLength(1);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "not-in-this-fixture");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(container.textContent).toContain("No loaded events match these filters.");
+  await act(async () => container?.querySelector<HTMLButtonElement>('[aria-label="Show folded transcript"]')!.click());
+  expect(container.querySelector('[data-message-role="assistant"]')).not.toBeNull();
+  expect(container.querySelector("[data-raw-event]")).toBeNull();
 });

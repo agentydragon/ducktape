@@ -39,7 +39,14 @@ const LOCAL_COMMAND_READY = [
   '[data-fold-kind="status"]',
 ];
 
+const NOISY_READY = ['#app[data-noisy-ready="true"]'];
+
 export const SCENARIOS = {
+  SessionNoisy: { element: "#app", readySelectors: NOISY_READY },
+  SessionNoisy_mobile: { element: "#app", readySelectors: NOISY_READY, viewport: { width: 420, height: 900 } },
+  SessionNoisyRaw: { element: "#app", readySelectors: NOISY_READY },
+  SessionNoisyHook: { element: "#app", readySelectors: NOISY_READY },
+  SessionNoisyHook_mobile: { element: "#app", readySelectors: NOISY_READY, viewport: { width: 420, height: 900 } },
   SessionViewer: { element: "#app", readySelectors: VIEWER_READY },
   SessionViewer_dark: { element: "#app", readySelectors: VIEWER_READY, colorScheme: "dark" },
   SessionViewer_mobile: {

@@ -30,6 +30,7 @@ import {
   type SessionEvent,
   type SessionSummary,
 } from "./api";
+import { EventInspector } from "./event-inspector";
 import {
   foldSessionEvents,
   transcriptEventTime,
@@ -963,23 +964,20 @@ export function SessionViewer(): JSX.Element {
                       {sessionSubtitle(selectedSession)}
                     </Text>
                   </Stack>
-                  <Badge variant="light" color={statusColor(selectedSession.status)}>
-                    {selectedSession.status}
-                  </Badge>
-                </Group>
-
-                <Group gap={4} justify="flex-end">
-                  <ActionIcon
-                    variant={showRawEvents ? "light" : "subtle"}
-                    size="sm"
-                    aria-label={showRawEvents ? "Show folded transcript" : "Show raw event stream"}
-                    title={showRawEvents ? "Show folded transcript" : "Show raw event stream"}
-                    onClick={() => setShowRawEvents((value) => !value)}
-                  >
-                    <Text size="xs" fw={600}>
-                      {showRawEvents ? "↩" : "≡"}
-                    </Text>
-                  </ActionIcon>
+                  <Group gap={4}>
+                    <Badge variant="light" color={statusColor(selectedSession.status)}>
+                      {selectedSession.status}
+                    </Badge>
+                    <Button
+                      variant={showRawEvents ? "light" : "subtle"}
+                      size="compact-xs"
+                      aria-label={showRawEvents ? "Show folded transcript" : "Show raw event stream"}
+                      aria-pressed={showRawEvents}
+                      onClick={() => setShowRawEvents((value) => !value)}
+                    >
+                      {showRawEvents ? "Transcript" : "Events"}
+                    </Button>
+                  </Group>
                 </Group>
 
                 {eventError !== null && (
@@ -1001,28 +999,13 @@ export function SessionViewer(): JSX.Element {
                 ) : (
                   <ScrollArea h="min(32rem, 60vh)" type="auto">
                     <Stack gap="sm" pr="sm">
-                      {showRawEvents
-                        ? events.map((event) => (
-                            <Paper
-                              key={event.event_id}
-                              component="article"
-                              aria-label={`Raw event ${event.sequence_num}`}
-                              data-raw-event
-                              withBorder
-                              radius="sm"
-                              p="sm"
-                            >
-                              <Text size="xs" c="dimmed" mb="xs">
-                                {event.sequence_num} · {event.event_type}
-                              </Text>
-                              <Code block style={{ maxHeight: 384, overflow: "auto", whiteSpace: "pre-wrap" }}>
-                                {JSON.stringify(event, null, 2)}
-                              </Code>
-                            </Paper>
-                          ))
-                        : rows.map((row) => (
-                            <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />
-                          ))}
+                      {showRawEvents ? (
+                        <EventInspector key={selectedId} events={events} />
+                      ) : (
+                        rows.map((row) => (
+                          <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />
+                        ))
+                      )}
                       {hasMoreEvents && (
                         <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
                           Load more events

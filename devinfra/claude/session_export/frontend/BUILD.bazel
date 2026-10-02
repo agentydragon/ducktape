@@ -91,12 +91,26 @@ ts_library(
 )
 
 ts_library(
+    name = "event_inspector",
+    srcs = ["event-inspector.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "viewer",
     srcs = ["viewer.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":event_inspector",
         ":transcript",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -168,6 +182,15 @@ ts_library(
 )
 
 ts_library(
+    name = "noisy_session_fixture",
+    testonly = True,
+    srcs = ["fixtures/noisy-session.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":api"],
+)
+
+ts_library(
     name = "viewer_test",
     testonly = True,
     srcs = ["viewer.test.tsx"],
@@ -175,6 +198,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":noisy_session_fixture",
         ":viewer",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -217,6 +241,7 @@ ts_library(
     deps = [
         ":api",
         ":app",
+        ":noisy_session_fixture",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

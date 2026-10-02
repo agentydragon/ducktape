@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 
 import type { SessionEventPage, SessionListPage, SessionSummary, SyncStatus } from "../api";
 import { App } from "../app";
+import { noisySession, noisySessionEvents } from "../fixtures/noisy-session";
 
 const FIXED_NOW = Date.parse("2026-09-30T18:45:00Z");
 Date.now = () => FIXED_NOW;
@@ -531,9 +532,26 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
   if (url.pathname === "/api/pairing") return Promise.resolve(json({ authorization_url: "https://claude.ai/code" }));
   if (url.pathname === "/api/pairing/complete") return Promise.resolve(json(pairedStatus));
   if (url.pathname === "/api/sync") return Promise.resolve(new Response(null, { status: 202 }));
-  if (url.pathname === "/v1/code/sessions") return Promise.resolve(json(sessionPage));
+  if (url.pathname === "/v1/code/sessions") {
+    return Promise.resolve(
+      json(
+        scenario.startsWith("SessionNoisy")
+          ? { data: [noisySession], next_cursor: null, resume_token: null }
+          : sessionPage
+      )
+    );
+  }
   if (/^\/v1\/code\/sessions\/[^/]+\/events$/.test(url.pathname)) {
     const page = new URLSearchParams(window.location.search).get("page") ?? "";
+    if (page.startsWith("SessionNoisy"))
+      return Promise.resolve(
+        json({
+          data: noisySessionEvents,
+          has_more: false,
+          first_id: noisySessionEvents[0]?.event_id,
+          last_id: noisySessionEvents.at(-1)?.event_id,
+        })
+      );
     const events = page.startsWith("SessionReadFileResult")
       ? readFileEventPage
       : page.startsWith("SessionEventVisibility")
@@ -610,4 +628,47 @@ if (scenario.startsWith("SessionEventVisibility")) {
     window.setTimeout(assertSuppressedEventContent, 20);
   };
   window.setTimeout(assertSuppressedEventContent, 0);
+}
+
+if (scenario.startsWith("SessionNoisy")) {
+  let openedInspector = false;
+  let filtered = false;
+  let expanded = false;
+  const observer = new MutationObserver(() => {
+    if (!document.querySelector('[data-message-role="assistant"]') && !openedInspector) return;
+    if (!scenario.includes("Raw") && !scenario.includes("Hook")) {
+      if (document.querySelector('[data-fold-kind="notice"]')) throw new Error("Hook noise leaked into the transcript");
+      root.dataset.noisyReady = "true";
+      observer.disconnect();
+      return;
+    }
+    if (!openedInspector) {
+      openedInspector = true;
+      document.querySelector<HTMLButtonElement>('[aria-label="Show raw event stream"]')?.click();
+      return;
+    }
+    const rawRows = document.querySelectorAll<HTMLDetailsElement>("[data-raw-event]");
+    if (rawRows.length === 0) return;
+    if (scenario.includes("Hook")) {
+      if (!filtered) {
+        filtered = true;
+        const select = document.querySelector<HTMLSelectElement>('[aria-label="Event kind"]')!;
+        select.value = "system · hook_response";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        return;
+      }
+      if ([...rawRows].some((row) => !row.querySelector("summary")?.textContent?.includes("hook_response"))) return;
+      if (!expanded) {
+        expanded = true;
+        rawRows[0]?.querySelector("summary")?.click();
+        return;
+      }
+      if (!document.querySelector("[data-event-json]")) return;
+    } else if (rawRows.length !== noisySessionEvents.length) {
+      throw new Error("The event inspector omitted stored events");
+    }
+    root.dataset.noisyReady = "true";
+    observer.disconnect();
+  });
+  observer.observe(root, { childList: true, subtree: true, attributes: true });
 }
