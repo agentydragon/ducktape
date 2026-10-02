@@ -236,7 +236,7 @@ def _synapse_routes(scope: Construct) -> None:
     https_route(
         scope,
         "synapse-route",
-        metadata=ApiObjectMetadata(name=SYNAPSE, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="synapse", namespace=NAMESPACE),
         hostnames=[HOSTNAME],
         backend=SYNAPSE_HTTP,
         hsts=False,
@@ -249,7 +249,7 @@ def _synapse_routes(scope: Construct) -> None:
     HttpRoute(
         scope,
         "federation-route",
-        metadata=ApiObjectMetadata(name="matrix-federation", namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="federation", namespace=NAMESPACE),
         parent_refs=[cluster_gateway_parent_ref()],
         hostnames=["allegedly.works"],
         rules=[
