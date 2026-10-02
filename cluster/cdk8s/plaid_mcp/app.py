@@ -200,7 +200,7 @@ def _sync_cronjob(chart: Chart) -> None:
         chart,
         "sync",
         metadata=k8s.ObjectMeta(
-            name="plaid-mcp-sync",
+            name="sync",
             namespace=NAMESPACE,
             annotations={
                 "description": (

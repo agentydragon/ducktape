@@ -44,8 +44,7 @@ SPEND = SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-spend")
 # identity that copy is read with.
 _READONLY_CONSUMER = "haku-sandbox"
 _READONLY_READER = "plaid-mcp-db-readonly-reader"
-_PROVISIONER = "plaid-mcp-db-readonly-provisioner"
-_PROVISIONER_LABELS = {"app": _PROVISIONER}
+_PROVISIONER_LABELS = {"app": "plaid-mcp-db-readonly-provisioner"}
 _SQL_CONFIG_MAP = "plaid-mcp-db-readonly-sql"
 _SQL_FILE = "readonly-role.sql"
 
@@ -171,7 +170,7 @@ def _readonly_provisioner(chart: Chart) -> None:
         chart,
         "provisioner",
         metadata=k8s.ObjectMeta(
-            name=_PROVISIONER,
+            name="db-readonly-provisioner",
             namespace=NAMESPACE,
             annotations={
                 "description": "Grants the minimal Plaid source reads needed by plaid_ro and plaid_spend.",

@@ -225,7 +225,7 @@ metadata:
   annotations:
     description: Grants the minimal Plaid source reads needed by plaid_ro and plaid_spend.
     kustomize.toolkit.fluxcd.io/force: enabled
-  name: plaid-mcp-db-readonly-provisioner
+  name: db-readonly-provisioner
   namespace: plaid-mcp
 spec:
   backoffLimit: 0

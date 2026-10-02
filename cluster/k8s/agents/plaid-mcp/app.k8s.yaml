@@ -270,7 +270,7 @@ kind: CronJob
 metadata:
   annotations:
     description: Daily catch-up sync for transactions, accounts, holdings and liabilities. Transaction history uses Plaid cursors; no real-time balance endpoint calls.
-  name: plaid-mcp-sync
+  name: sync
   namespace: plaid-mcp
 spec:
   concurrencyPolicy: Forbid

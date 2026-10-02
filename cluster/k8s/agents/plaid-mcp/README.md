@@ -101,7 +101,7 @@ and request-body hash, durably queues
 delta and cursor in the background. New Items receive the webhook URL through
 Link token creation; the next daily/manual sync updates existing Items.
 
-`plaid-mcp-sync` runs daily as a missed-webhook catch-up and refreshes every
+The `sync` CronJob runs daily as a missed-webhook catch-up and refreshes every
 active Item. It uses `/transactions/sync` for transaction deltas and retains
 date-window `/investments/transactions/get` for investment history. It does not
 call real-time balance endpoints; cached balances from product responses are
@@ -117,7 +117,7 @@ no global dashboard webhook URL to configure.
 ```bash
 kubectl -n plaid-mcp get cluster plaid-mcp-db
 kubectl -n plaid-mcp get deploy plaid-mcp plaid-pgweb
-kubectl -n plaid-mcp get cronjob plaid-mcp-sync
+kubectl -n plaid-mcp get cronjob sync
 curl -i https://plaid-mcp.allegedly.works/link
 ```
 
