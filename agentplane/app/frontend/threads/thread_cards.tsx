@@ -1,4 +1,4 @@
-import { Alert, Badge, Box, Group, Paper, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, type MantineColor } from "@mantine/core";
 import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
 import { type JSX, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
@@ -76,6 +76,75 @@ export function VerbatimText({ text }: { text: string }): JSX.Element {
     <Text className="agentplane-verbatim" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
       {text}
     </Text>
+  );
+}
+
+/** The operator's input, including provisional sends. Actions sit in the gutter before the bubble;
+ * local text uses no event evidence until runner admission gives it an ordered Event. */
+export function UserInputBubble({
+  threadId,
+  entity,
+  commandId,
+  text,
+  status,
+  statusColor = "dimmed",
+  error,
+  pending = false,
+  phase,
+  action,
+}: {
+  threadId?: string;
+  entity?: ThreadEntity;
+  commandId?: string;
+  text?: string;
+  status?: string;
+  statusColor?: MantineColor;
+  error?: string;
+  pending?: boolean;
+  phase?: "local" | "pending" | "failed" | "noop" | "confirmed";
+  action?: { label: string; onClick: () => void };
+}): JSX.Element {
+  return (
+    <Group
+      className="agentplane-user-message-row"
+      justify="flex-end"
+      align="flex-start"
+      gap="xs"
+      wrap="nowrap"
+      style={{ width: "100%" }}
+      data-command-id={commandId ?? entity?.entityId}
+    >
+      {action && (
+        <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
+          {action.label}
+        </Button>
+      )}
+      {entity && <EvidenceToggle entity={entity} />}
+      <Paper
+        className="agentplane-user-bubble"
+        data-message-phase={phase}
+        data-has-action={action ? "true" : undefined}
+        p="sm"
+        style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
+      >
+        {status && (
+          <Text size="xs" c={statusColor} mb="xs" role="status">
+            {status}
+          </Text>
+        )}
+        {error && (
+          <Text size="xs" c="red" mb="xs" role="alert">
+            {error}
+          </Text>
+        )}
+        {entity ? (
+          <Body reference={entity.inputRef} format="text" />
+        ) : text !== undefined ? (
+          <VerbatimText text={text} />
+        ) : null}
+        {entity && threadId && <EvidencePanel threadId={threadId} entity={entity} />}
+      </Paper>
+    </Group>
   );
 }
 
@@ -226,22 +295,12 @@ export function EntityCard({
       ? `${entity.projectionEpoch}:${entity.entityId}:discarded`
       : null;
   const [discardedOpen] = useRetainedDisclosure(discardedId);
-  if (entity.entityKind === "confirmed_input" || pendingSentMessage(entity)) {
-    const pending = entity.entityKind !== "confirmed_input";
+  if (entity.entityKind === "confirmed_input") {
+    return <UserInputBubble threadId={threadId} entity={entity} phase="confirmed" />;
+  }
+  if (pendingSentMessage(entity)) {
     return (
-      <Group justify="flex-end" align="flex-start" gap="xs" wrap="nowrap">
-        {/* The bubble has no header row: beside its top corner, in the width it leaves free, the
-            icon neither grows the bubble nor covers its text. */}
-        <EvidenceToggle entity={entity} />
-        <Paper
-          className="agentplane-user-bubble"
-          p="sm"
-          style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
-        >
-          <Body reference={entity.inputRef} format="text" />
-          <EvidencePanel threadId={threadId} entity={entity} />
-        </Paper>
-      </Group>
+      <UserInputBubble threadId={threadId} entity={entity} phase="pending" pending status="Saved · awaiting effect" />
     );
   }
   if (entity.entityKind === "lifecycle" && "observation" in entity.state) {

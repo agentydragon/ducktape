@@ -857,7 +857,12 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 900 },
     outputName: "session-states",
-    readySelectors: ['[data-thread-anchor="16"]', ".agentplane-thread-status-dot-pulsing"],
+    readySelectors: [
+      '[data-thread-anchor="16"]',
+      '.agentplane-user-bubble[data-message-phase="failed"]',
+      '.agentplane-user-bubble[data-message-phase="noop"]',
+      ".agentplane-thread-status-dot-pulsing",
+    ],
     captureViewport: true,
   },
   session_streaming_interleaved: {
@@ -883,7 +888,11 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="16"]'],
+    readySelectors: [
+      '[aria-label="Pending commands"]',
+      '[data-thread-anchor="16"]',
+      '.agentplane-user-bubble[data-message-phase="local"]',
+    ],
     captureViewport: true,
   },
   session_pending_phone: {
@@ -891,7 +900,11 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     pendingCommands: "mixed",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="16"]'],
+    readySelectors: [
+      '[aria-label="Pending commands"]',
+      '[data-thread-anchor="16"]',
+      '.agentplane-user-bubble[data-message-phase="local"]',
+    ],
     captureViewport: true,
   },
   session_pending_raw: {
@@ -900,7 +913,11 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
     openDebug: "latest",
-    readySelectors: ['[aria-label="Chronological observations"]', '[data-thread-anchor="16"]'],
+    readySelectors: [
+      '[aria-label="Chronological observations"]',
+      '[data-thread-anchor="16"]',
+      '.agentplane-user-bubble[data-message-phase="local"]',
+    ],
     captureViewport: true,
   },
   session_pending_failed: {
@@ -909,7 +926,11 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 1100 },
     pendingCommands: "mixed",
     commandAdmissionTimedOut: true,
-    readySelectors: ["::-p-text(runner did not admit the command)", '[data-thread-anchor="16"]'],
+    readySelectors: [
+      "::-p-text(runner did not admit the command)",
+      '[data-thread-anchor="16"]',
+      '.agentplane-user-bubble[data-message-phase="local"]',
+    ],
     captureViewport: true,
   },
   session_pending_controls: {
@@ -925,7 +946,12 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
     pendingCommands: "outcomes",
-    readySelectors: ['[aria-label="Pending commands"]', '[data-thread-anchor="16"]'],
+    readySelectors: [
+      '[aria-label="Pending commands"]',
+      '[data-thread-anchor="16"]',
+      '.agentplane-user-bubble[data-message-phase="failed"]',
+      '.agentplane-user-bubble[data-message-phase="noop"]',
+    ],
     captureViewport: true,
   },
   session_catching_up: {

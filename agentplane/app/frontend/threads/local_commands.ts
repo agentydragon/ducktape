@@ -12,10 +12,13 @@ export interface LocalCommand {
 
 export interface LocalCommandSnapshot {
   commands: LocalCommand[];
+  /** Locally dismissed terminal outcomes stay hidden in this browser across reloads. */
+  dismissedCommandIds: string[];
   error: string | null;
 }
 
 export const MAX_RETAINED_COMMANDS = 128;
+const MAX_DISMISSED_COMMANDS = 256;
 
 function decode(text: string): LocalCommand {
   const value = JSON.parse(text) as Record<string, unknown>;
@@ -56,11 +59,13 @@ export function checkAdmission(command: Command, admission: EventEntry): void {
  * The immutable Thread scope is also the HTTP submission target. */
 export class LocalCommands {
   private readonly prefix: string;
-  private snapshot: LocalCommandSnapshot = { commands: [], error: null };
+  private readonly dismissedKey: string;
+  private snapshot: LocalCommandSnapshot = { commands: [], dismissedCommandIds: [], error: null };
   private readonly listeners = new Set<() => void>();
 
   constructor(readonly threadId: string) {
     this.prefix = `agentplane.pending:${encodeURIComponent(threadId)}:`;
+    this.dismissedKey = `agentplane.dismissed:${encodeURIComponent(threadId)}`;
     this.reload();
   }
 
@@ -93,6 +98,9 @@ export class LocalCommands {
       throw new Error(
         `Dismiss or finish a retained command before submitting another (maximum ${MAX_RETAINED_COMMANDS})`
       );
+    }
+    if (this.snapshot.dismissedCommandIds.includes(command.commandId)) {
+      this.writeDismissed(this.snapshot.dismissedCommandIds.filter((id) => id !== command.commandId));
     }
     const value: LocalCommand = { command, submittedAt: Date.now(), admission: null };
     localStorage.setItem(this.key(command.commandId), encode(value));
@@ -163,8 +171,15 @@ export class LocalCommands {
   }
 
   dismiss(id: string): void {
+    if (!this.snapshot.dismissedCommandIds.includes(id)) {
+      this.writeDismissed([...this.snapshot.dismissedCommandIds, id].slice(-MAX_DISMISSED_COMMANDS));
+    }
     localStorage.removeItem(this.key(id));
     this.reload();
+  }
+
+  isDismissed(id: string): boolean {
+    return this.snapshot.dismissedCommandIds.includes(id);
   }
 
   private key(id: string): string {
@@ -179,12 +194,22 @@ export class LocalCommands {
   }
 
   private onStorage = (event: StorageEvent): void => {
-    if (event.key === null || event.key.startsWith(this.prefix)) this.reload();
+    if (event.key === null || event.key.startsWith(this.prefix) || event.key === this.dismissedKey) this.reload();
   };
+
+  private writeDismissed(ids: string[]): void {
+    localStorage.setItem(this.dismissedKey, JSON.stringify(ids));
+  }
 
   private reload(): void {
     try {
       const commands: LocalCommand[] = [];
+      const dismissedRaw = localStorage.getItem(this.dismissedKey);
+      const dismissedValue: unknown = dismissedRaw === null ? [] : JSON.parse(dismissedRaw);
+      if (!Array.isArray(dismissedValue) || dismissedValue.some((id) => typeof id !== "string")) {
+        throw new Error("Invalid locally dismissed command ids");
+      }
+      const dismissedCommandIds = [...new Set(dismissedValue as string[])].slice(-MAX_DISMISSED_COMMANDS);
       const known = new Map(this.snapshot.commands.map((value) => [value.command.commandId, value]));
       for (let index = 0; index < localStorage.length; index++) {
         const key = localStorage.key(index);
@@ -207,7 +232,7 @@ export class LocalCommands {
         (left, right) =>
           left.submittedAt - right.submittedAt || left.command.commandId.localeCompare(right.command.commandId)
       );
-      this.snapshot = { commands, error: null };
+      this.snapshot = { commands, dismissedCommandIds, error: null };
     } catch (error) {
       // Leave both the stored bytes and the last readable view intact; do not silently discard
       // input because storage is unavailable or a local record cannot be decoded.

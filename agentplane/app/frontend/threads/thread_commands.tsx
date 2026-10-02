@@ -3,12 +3,12 @@ import { type Command } from "../../../protocol/command_pb";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { command, displayableError } from "../client";
-import { Body, VerbatimText, pendingSentMessage } from "./thread_cards";
+import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { useThreadSync, type ThreadEntity } from "./thread_sync";
 
-const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
+const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], dismissedCommandIds: [], error: null };
 
 export function pruneCommandErrors(errors: Map<string, string>, commandIds: ReadonlySet<string>): Map<string, string> {
   if (Array.from(errors.keys()).every((id) => commandIds.has(id))) return errors;
@@ -102,8 +102,88 @@ export function SelectedCommandOutcomes({
   errors: ReadonlyMap<string, string>;
   deliver: (value: LocalCommand) => Promise<void>;
 }): JSX.Element {
-  const rows = useThreadSync().useCommandRows(commands.slice(0, 128).map((value) => value.command.commandId));
-  return <SelectedCommandRows rows={rows} commands={commands} store={store} errors={errors} deliver={deliver} />;
+  const controls = commands.filter((value) => value.command.operation.case !== "submitInput");
+  const rows = useThreadSync().useCommandRows(controls.slice(0, 128).map((value) => value.command.commandId));
+  if (controls.length === 0) return null;
+  return <SelectedCommandRows rows={rows} commands={controls} store={store} errors={errors} deliver={deliver} />;
+}
+
+/** Locally retained user input has no history cursor until runner admission. Keep it at the tail as
+ * a provisional right-side message, and leave non-message commands in their separate command list. */
+export function PendingInputMessages({
+  commands,
+  entities,
+  errors,
+  store,
+  deliver,
+}: {
+  commands: LocalCommand[];
+  entities: ThreadEntity[];
+  errors: ReadonlyMap<string, string>;
+  store: LocalCommands;
+  deliver: (value: LocalCommand) => Promise<void>;
+}): JSX.Element | null {
+  const inputCommands = commands.slice(0, 128).filter((value) => value.command.operation.case === "submitInput");
+  const rows = useThreadSync().useCommandRows(inputCommands.map((value) => value.command.commandId));
+  const byId = new Map(rows.map((row) => [row.entityId, row]));
+  const historyMessageIds = new Set(entities.filter(pendingSentMessage).map((row) => row.entityId));
+  const confirmedCommandIds = new Set(
+    entities.flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : []))
+  );
+  const pending = inputCommands.filter(
+    (value) => !historyMessageIds.has(value.command.commandId) && !confirmedCommandIds.has(value.command.commandId)
+  );
+  if (pending.length === 0) return null;
+  return (
+    <Stack
+      className="agentplane-local-input-messages"
+      role="region"
+      aria-label="Pending input messages"
+      gap="xs"
+      pt="xs"
+    >
+      {pending.map((value) => {
+        if (value.command.operation.case !== "submitInput") return null;
+        const id = value.command.commandId;
+        const row = byId.get(id);
+        const outcome = row && "outcome" in row.state ? row.state.outcome : null;
+        const admitted = row !== undefined || value.admission !== null;
+        const failed = outcome === "failed";
+        const noop = outcome === "noop";
+        const effected = outcome === "effected";
+        const outcomeReason = row && "outcome" in row.state ? row.state.outcome_reason : null;
+        return (
+          <UserInputBubble
+            key={id}
+            commandId={id}
+            text={value.command.operation.value.text}
+            phase={failed ? "failed" : noop ? "noop" : effected ? "confirmed" : admitted ? "pending" : "local"}
+            pending={outcome === null}
+            status={
+              failed
+                ? `Input failed${outcomeReason ? `: ${outcomeReason}` : ""}`
+                : noop
+                  ? `Input not applied${outcomeReason ? `: ${outcomeReason}` : ""}`
+                  : effected
+                    ? undefined
+                    : admitted
+                      ? "Saved · awaiting effect"
+                      : "Saved locally · awaiting admission"
+            }
+            statusColor={failed ? "red" : "dimmed"}
+            error={errors.get(id)}
+            action={
+              failed || noop
+                ? { label: "Dismiss", onClick: () => store.dismiss(id) }
+                : !admitted
+                  ? { label: "Retry", onClick: () => void deliver(value) }
+                  : undefined
+            }
+          />
+        );
+      })}
+    </Stack>
+  );
 }
 
 function SelectedCommandRows({
@@ -192,35 +272,72 @@ export function ProjectedCommandRows({
   threadId,
   entities,
   localCommands,
+  store,
+  dismissedCommandIds,
 }: {
   threadId: string;
   entities: ThreadEntity[];
   localCommands: LocalCommand[];
+  store: LocalCommands;
+  dismissedCommandIds: string[];
 }): JSX.Element | null {
   const localCommandIds = new Set(localCommands.map((value) => value.command.commandId));
+  const dismissedIds = new Set(dismissedCommandIds);
+  const confirmedCommandIds = new Set(
+    entities
+      .filter((row) => row.entityKind === "confirmed_input")
+      .flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : []))
+  );
   const projectedCommands = entities.filter(
     (row): row is ThreadEntity & { state: Extract<ThreadEntity["state"], { outcome: string }> } =>
       row.entityKind === "command" &&
       "outcome" in row.state &&
       !localCommandIds.has(row.entityId) &&
+      !dismissedIds.has(row.entityId) &&
+      !confirmedCommandIds.has(row.entityId) &&
       !pendingSentMessage(row)
   );
-  if (projectedCommands.length === 0) return null;
+  const inputMessages = projectedCommands.filter((row) => row.state.operation === "submit_input");
+  const otherCommands = projectedCommands.filter((row) => row.state.operation !== "submit_input");
+  if (inputMessages.length === 0 && otherCommands.length === 0) return null;
   return (
-    <Stack role="region" aria-label="Pending commands" gap="xs">
-      {projectedCommands.map((row) => (
-        <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder style={{ position: "relative" }}>
-          <EvidenceToggle entity={row} style={{ position: "absolute", top: 4, right: 4 }} />
-          <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
-            {row.state.outcome === "pending"
-              ? "Saved · awaiting effect"
-              : commandOutcomeLabel(row.state.operation, row.state.outcome)}
-            {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
-          </Text>
-          {row.inputRef && <Body reference={row.inputRef} format="text" />}
-          <EvidencePanel threadId={threadId} entity={row} />
-        </Paper>
-      ))}
-    </Stack>
+    <>
+      {inputMessages.length > 0 && (
+        <Stack className="agentplane-local-input-messages" role="region" aria-label="Input outcomes" gap="xs">
+          {inputMessages.map((row) => {
+            const failed = row.state.outcome === "failed";
+            const noop = row.state.outcome === "noop";
+            return (
+              <UserInputBubble
+                key={row.entityId}
+                threadId={threadId}
+                entity={row}
+                phase={failed ? "failed" : noop ? "noop" : "confirmed"}
+                status={`${failed ? "Input failed" : noop ? "Input not applied" : "Input applied"}${row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}`}
+                statusColor={failed ? "red" : "dimmed"}
+                action={{ label: "Dismiss", onClick: () => store.dismiss(row.entityId) }}
+              />
+            );
+          })}
+        </Stack>
+      )}
+      {otherCommands.length > 0 && (
+        <Stack role="region" aria-label="Pending commands" gap="xs">
+          {otherCommands.map((row) => (
+            <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder style={{ position: "relative" }}>
+              <EvidenceToggle entity={row} style={{ position: "absolute", top: 4, right: 4 }} />
+              <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
+                {row.state.outcome === "pending"
+                  ? "Saved · awaiting effect"
+                  : commandOutcomeLabel(row.state.operation, row.state.outcome)}
+                {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
+              </Text>
+              {row.inputRef && <Body reference={row.inputRef} format="text" />}
+              <EvidencePanel threadId={threadId} entity={row} />
+            </Paper>
+          ))}
+        </Stack>
+      )}
+    </>
   );
 }

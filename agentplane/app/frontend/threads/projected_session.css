@@ -37,6 +37,15 @@
   max-width: min(34rem, 80%);
 }
 
+.agentplane-user-message-row {
+  min-width: 0;
+}
+
+/* Keep room for the Retry affordance in the gutter before an unadmitted local message. */
+.agentplane-user-bubble[data-has-action="true"] {
+  max-width: min(34rem, calc(100% - 4.5rem));
+}
+
 .agentplane-reasoning-row {
   display: flex;
   min-width: 0;

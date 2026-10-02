@@ -1081,7 +1081,7 @@ function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
 
 function statesRows(threadId: string): Record<string, unknown>[] {
   const rows = [
-    viewState(23, "t2"),
+    viewState(28, "t2"),
     item(7, "tool-0", ItemKind.TOOL_CALL, null, {
       threadId,
       tool: "Bash",
@@ -1119,6 +1119,22 @@ function statesRows(threadId: string): Record<string, unknown>[] {
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
     // the pending-commands box below -- see projected_session.tsx's pendingSentMessage.
     command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
+    command(
+      27,
+      "failed-submit",
+      "submit_input",
+      "failed",
+      "Runner could not start this turn.",
+      "Run the rejected input."
+    ),
+    command(
+      28,
+      "noop-submit",
+      "submit_input",
+      "noop",
+      "The harness was already stopping.",
+      "Run the input that was not applied."
+    ),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }

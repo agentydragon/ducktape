@@ -321,11 +321,19 @@ it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }, { shiftKey: tr
 );
 
 it("sends the draft on Enter and clears it", async () => {
-  const field = composer(await render());
+  const container = await render();
+  const field = composer(container);
   await type(field, "hello");
   await press(field, {});
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
   expect(field.value).toBe("");
+  const bubble = container.querySelector<HTMLElement>('.agentplane-user-bubble[data-message-phase="local"]');
+  expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe("hello");
+  expect(bubble?.textContent).toContain("Saved locally · awaiting admission");
+  const messageRow = bubble?.parentElement;
+  expect(messageRow?.firstElementChild?.textContent).toBe("Retry");
+  expect(messageRow?.lastElementChild).toBe(bubble);
+  expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
 });
 
 it("submits once for two Enters before the cleared draft renders, then takes the next draft", async () => {
@@ -732,6 +740,38 @@ it("shows the failure and reason for a server-only command", async () => {
   expect(pending?.textContent).toContain("Model change failed: model unavailable");
 });
 
+it.each([
+  ["failed", "failed", "Input failed: runner unavailable"],
+  ["noop", "noop", "Input not applied: harness was stopping"],
+  ["effected", "confirmed", "Input applied"],
+] as const)("shows a server-only %s input as a dismissible right-side message", async (outcome, phase, status) => {
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          {
+            operation: "submit_input",
+            outcome,
+            outcome_cursor: "2",
+            outcome_reason: outcome === "effected" ? null : status.split(": ")[1],
+          },
+          { inputRef: reference("failed-input", "command_input") }
+        ),
+      ],
+    })
+  );
+  const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
+  expect(bubble?.textContent).toContain(status);
+  const messageRow = bubble?.parentElement;
+  expect(messageRow?.firstElementChild?.textContent).toBe("Dismiss");
+  expect(messageRow?.lastElementChild).toBe(bubble);
+  await act(async () => (messageRow?.firstElementChild as HTMLButtonElement).click());
+  expect(container.querySelector(`.agentplane-user-bubble[data-message-phase="${phase}"]`)).toBeNull();
+  expect(new LocalCommands(THREAD.id).isDismissed("test-entity")).toBe(true);
+});
+
 it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {
   const container = await render(
     threadState({
@@ -1125,6 +1165,7 @@ describe("EntityCard", () => {
     const bubble = container.querySelector<HTMLElement>(".agentplane-user-bubble");
     expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe(PROSE);
     expect(bubble?.style.fontStyle).toBe("italic");
+    expect(bubble?.textContent).toContain("Saved · awaiting effect");
   });
 
   it.each<[string, Observation, string]>([

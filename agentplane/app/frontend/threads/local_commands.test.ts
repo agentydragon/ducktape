@@ -103,6 +103,17 @@ it("does not overwrite another tab's distinct pending commands", () => {
   unsubscribe();
 });
 
+it("keeps dismissed terminal outcomes hidden after a reload", () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  store.dismiss(COMMAND.commandId);
+
+  const restored = new LocalCommands("thread");
+  expect(restored.getSnapshot().commands).toEqual([]);
+  expect(restored.isDismissed(COMMAND.commandId)).toBe(true);
+  expect(new LocalCommands("other-thread").isDismissed(COMMAND.commandId)).toBe(false);
+});
+
 it("refuses payload changes under an existing local command id", () => {
   const store = new LocalCommands("thread");
   const existing = store.remember(COMMAND);

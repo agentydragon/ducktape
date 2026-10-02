@@ -48,7 +48,12 @@ import { liveSandboxesUrl, LiveStatus, useLive, useRequiredThreadsLive, type San
 import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./thread_cards";
-import { ProjectedCommandRows, SelectedCommandOutcomes, useProjectedCommands } from "./thread_commands";
+import {
+  PendingInputMessages,
+  ProjectedCommandRows,
+  SelectedCommandOutcomes,
+  useProjectedCommands,
+} from "./thread_commands";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusDot } from "../thread_status_dot";
@@ -219,18 +224,22 @@ function scrollDebug(...args: unknown[]): void {
 function VirtualizedHistory({
   threadId,
   rows,
+  tail,
   running,
   activeTurn,
   history,
 }: {
   threadId: string;
   rows: HistoryRow[];
+  /** Local input without an admission cursor yet: shown provisionally after ordered history. */
+  tail?: ReactNode;
   running: boolean;
   activeTurn: string | null;
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
 }): JSX.Element {
   const viewport = useRef<HTMLDivElement>(null);
   const contents = useRef<HTMLDivElement>(null);
+  const tailContent = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const previousScrollTop = useRef(0);
   // Every bottom the viewport has had since the last scroll event or content resize was handled.
@@ -459,16 +468,19 @@ function VirtualizedHistory({
       recentBottoms.current = [element.scrollHeight - element.clientHeight];
     });
     observer.observe(content);
+    if (tailContent.current) observer.observe(tailContent.current);
     // A body arriving for a remounted or streaming card is a DOM mutation, and the scroll event
     // of a return to the bottom that follows it in the same frame precedes the ResizeObserver
     // delivery for it. The mutation callback runs before any later task, so record its bottom.
     const mutations = new MutationObserver(() => recordBottom(element));
     mutations.observe(content, { subtree: true, childList: true, characterData: true, attributes: true });
+    if (tailContent.current)
+      mutations.observe(tailContent.current, { subtree: true, childList: true, characterData: true, attributes: true });
     return () => {
       observer.disconnect();
       mutations.disconnect();
     };
-  }, [rows, virtualizer]);
+  }, [rows, tail, virtualizer]);
   // The observers above re-subscribe on every render's rows; a restoration in flight outlives that.
   useLayoutEffect(() => cancelRestoration, []);
   useLayoutEffect(() => {
@@ -638,6 +650,7 @@ function VirtualizedHistory({
           ) : null;
         })}
       </div>
+      {tail && <div ref={tailContent}>{tail}</div>}
     </div>
   );
 }
@@ -718,6 +731,15 @@ function ProjectedSessionBody({
       )
   );
   const selectedCommandIds = commands.local.commands.slice(0, 128);
+  const pendingInputMessages = (
+    <PendingInputMessages
+      commands={selectedCommandIds}
+      entities={entities}
+      errors={commands.errors}
+      store={commands.store}
+      deliver={commands.deliver}
+    />
+  );
 
   // Two Enters before the cleared draft renders would otherwise submit the same text twice, under
   // two command ids. Guards one render, not the lifetime of any HTTP request or command.
@@ -775,11 +797,18 @@ function ProjectedSessionBody({
         <VirtualizedHistory
           threadId={threadId}
           rows={rows}
+          tail={pendingInputMessages}
           running={running}
           activeTurn={activeTurn}
           history={history}
         />
-        <ProjectedCommandRows threadId={threadId} entities={entities} localCommands={commands.local.commands} />
+        <ProjectedCommandRows
+          threadId={threadId}
+          entities={entities}
+          localCommands={commands.local.commands}
+          store={commands.store}
+          dismissedCommandIds={commands.local.dismissedCommandIds}
+        />
         {selectedCommandIds.length > 0 && (
           <SelectedCommandOutcomes
             commands={selectedCommandIds}
