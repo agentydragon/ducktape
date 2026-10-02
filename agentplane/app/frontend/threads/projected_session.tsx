@@ -36,7 +36,14 @@ import {
 } from "../client";
 import { ComposerPendingActions } from "../actions/affordance";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadState, type ThreadWindow } from "./thread_sync";
-import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun, type HistoryRow } from "./history_rows";
+import {
+  historyRows,
+  rowKey,
+  summarizeLifecycleGroup,
+  summarizeRun,
+  summarizeSetup,
+  type HistoryRow,
+} from "./history_rows";
 import { liveSandboxesUrl, LiveStatus, useLive, useRequiredThreadsLive, type SandboxesSnapshot } from "../live";
 import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
@@ -137,6 +144,31 @@ function LifecycleGroupView({
   );
 }
 
+function SetupView({
+  threadId,
+  entities,
+  live,
+}: {
+  threadId: string;
+  entities: ThreadEntity[];
+  live: (entity: ThreadEntity) => boolean;
+}): JSX.Element {
+  const first = entities[0];
+  return (
+    <CollapsibleRows
+      id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:setup`}
+      summary={
+        <Text span size="xs" c="dimmed">
+          {summarizeSetup(entities)}
+        </Text>
+      }
+      threadId={threadId}
+      entities={entities}
+      live={live}
+    />
+  );
+}
+
 export function HistoryRowView({
   threadId,
   row,
@@ -147,6 +179,7 @@ export function HistoryRowView({
   live: (entity: ThreadEntity) => boolean;
 }): JSX.Element {
   const [first] = row.entities;
+  if (row.kind === "setup") return <SetupView threadId={threadId} entities={row.entities} live={live} />;
   // A lone reasoning step is already a folded block of its own; a lone tool call keeps its run's
   // summary, so every tool call reads the same. A lone lifecycle observation has nothing to
   // group with, so it reads exactly as it always has.
@@ -638,6 +671,7 @@ function ProjectedSessionBody({
   const canResume =
     available &&
     !thread.archived &&
+    !["SETUP_STATE_RUNNING", "SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"].includes(thread.setup_state ?? "") &&
     operational?.status !== "failed" &&
     (operational?.status !== "active" || controls?.harness_state !== "running");
   const [resuming, setResuming] = useState(false);

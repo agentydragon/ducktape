@@ -48,6 +48,7 @@ def test_sandbox_preset_expands_to_fields_the_operator_can_set_individually(pres
             "cwd": "/state/workspaces/{session_id}",
             "reasoning_effort": "medium",
             "instructions": "preset instructions",
+            "setup_script": "",
         },
         "bootstrap": "mkdir -p /state/workspaces",
     }
@@ -69,6 +70,7 @@ def test_sandbox_binding_keeps_the_selected_values_when_the_catalog_changes(pres
         "cwd": "/state/workspaces/{session_id}",
         "reasoning_effort": "medium",
         "instructions": "",
+        "setup_script": "",
     }
     assert binding.thread_defaults.proto_json("thread-7") == {
         "harness": "HARNESS_CODEX",

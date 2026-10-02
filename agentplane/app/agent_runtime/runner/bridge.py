@@ -62,6 +62,7 @@ class NewSession(BaseModel):
     spec: dict[str, object] = Field(
         description="Explicit proto-JSON SessionSpec fields; Sandbox-bound defaults fill omitted fields."
     )
+    setup_script: str | None = Field(default=None, max_length=65_536)
 
 
 class RunnerBridge:
@@ -98,14 +99,14 @@ class RunnerBridge:
         return result
 
     async def open_session(
-        self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec
+        self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         existing = await self._event_logs.find(sandbox, session_id)
         if existing is not None:
             snapshot = await self._event_logs.feed_state(existing)
             if snapshot is not None and isinstance(snapshot.end, FeedError):
                 raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
-        attachment = await self._runners.client(sandbox).attach(session_id, spec=spec)
+        attachment = await self._runners.client(sandbox).attach(session_id, spec=spec, setup_script=setup_script)
         try:
             attached = attachment.attached
         finally:
@@ -138,6 +139,8 @@ class RunnerBridge:
             raise RunnerError(
                 f"runner has no retained session {runner_session.session_id!r}; this Thread cannot be resumed"
             )
+        if summary.setup_state in (protocol_pb2.SETUP_STATE_FAILED, protocol_pb2.SETUP_STATE_INTERRUPTED):
+            raise RunnerError("Thread setup failed or was interrupted; create a new Thread to try again")
         if (
             summary.spec.harness not in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX)
             or not summary.spec.cwd
@@ -259,5 +262,8 @@ async def open_session(bridge: Bridge, name: str, body: NewSession, request: Req
         await bridge.initialize(name, binding.bootstrap)
     spec = _parse(protocol_pb2.SessionSpec(), resolved)
     spec.instructions = presets.instructions_for(spec.instructions)
-    attached = await bridge.open_session(name, body.session_id, spec)
+    setup_script = body.setup_script
+    if setup_script is None and binding is not None and binding.thread_defaults is not None:
+        setup_script = binding.thread_defaults.setup_script
+    attached = await bridge.open_session(name, body.session_id, spec, setup_script)
     return MessageToDict(attached)

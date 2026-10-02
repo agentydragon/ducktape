@@ -20,7 +20,7 @@ class Harness(StrEnum):
 
 
 class ThreadDefaults(BaseModel):
-    """Editable SessionSpec launch fields; null means the caller deliberately left that field unspecified."""
+    """Editable Thread launch fields; null means the caller deliberately left that field unspecified."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -29,13 +29,14 @@ class ThreadDefaults(BaseModel):
     cwd: str | None = None
     reasoning_effort: str | None = None
     instructions: str | None = None
+    setup_script: str | None = Field(default=None, max_length=65_536)
 
     def over(self, base: ThreadDefaults) -> ThreadDefaults:
         """Replace only fields explicitly present in this object, including an explicit empty string."""
         return base.model_copy(update=self.model_dump(exclude_none=True))
 
     def proto_json(self, session_id: str) -> dict[str, object]:
-        values = self.model_dump(exclude_none=True)
+        values = self.model_dump(exclude_none=True, exclude={"setup_script"})
         if cwd := values.get("cwd"):
             values["cwd"] = str(cwd).replace("{session_id}", session_id)
         if harness := values.pop("harness", None):
@@ -54,6 +55,7 @@ class ThreadPreset(BaseModel):
     cwd: str = "/state/workspaces/{session_id}"
     reasoning_effort: str | None = None
     instructions: str = ""
+    setup_script: str = Field(default="", max_length=65_536)
 
     def defaults(self) -> ThreadDefaults:
         return ThreadDefaults.model_validate(self.model_dump(exclude={"title"}))

@@ -77,6 +77,8 @@ message Open {
   string session_id = 1;
   SessionSpec spec = 2;
   ducktape.agentplane.protocol.v1.Follow follow = 3;
+  // Only selected at creation. Reattaching never executes setup again.
+  optional string setup_script = 4;
 }
 
 // Ends the stream; the harness keeps running.
@@ -96,6 +98,15 @@ enum HarnessState {
   HARNESS_STATE_STOPPED = 2;
 }
 
+enum SetupState {
+  SETUP_STATE_UNSPECIFIED = 0;
+  SETUP_STATE_NOT_REQUIRED = 1;
+  SETUP_STATE_RUNNING = 2;
+  SETUP_STATE_SUCCEEDED = 3;
+  SETUP_STATE_FAILED = 4;
+  SETUP_STATE_INTERRUPTED = 5;
+}
+
 message Attached {
   string session_id = 1;
   SessionSpec spec = 2;
@@ -104,6 +115,7 @@ message Attached {
   HarnessState harness_state = 4;
   // Empty when no turn is active.
   string active_turn_id = 5;
+  SetupState setup_state = 6;
 }
 
 message ListSessionsRequest {}
@@ -115,6 +127,7 @@ message SessionSummary {
   HarnessState harness_state = 4;
   // Empty when no turn is active.
   string active_turn_id = 5;
+  SetupState setup_state = 6;
 }
 
 message ListSessionsResponse {

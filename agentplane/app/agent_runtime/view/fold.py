@@ -226,6 +226,11 @@ _LIFECYCLE = frozenset(
         "harness_started",
         "harness_exited",
         "harness_lost",
+        "harness_launch_failed",
+        "setup_started",
+        "setup_output",
+        "setup_finished",
+        "setup_interrupted",
     }
 )
 

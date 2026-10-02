@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -82,6 +83,9 @@ class SessionRecord(BaseModel):
     model: str
     reasoning_effort: str
     instructions: str = Field(default="", description="SessionSpec.instructions; empty for a session without any")
+    setup_script_sha256: str | None = Field(
+        default=None, description="Creation-time setup identity; the source is never echoed in SessionSpec."
+    )
     event_source_id: UUID = Field(
         default_factory=uuid4, description="The runner session's stable EventOrigin.source_id across runner restarts."
     )
@@ -90,13 +94,14 @@ class SessionRecord(BaseModel):
     )
 
     @classmethod
-    def from_spec(cls, spec: protocol_pb2.SessionSpec) -> SessionRecord:
+    def from_spec(cls, spec: protocol_pb2.SessionSpec, *, setup_script: str = "") -> SessionRecord:
         return cls(
             harness=protocol_pb2.Harness.Name(spec.harness),
             cwd=spec.cwd,
             model=spec.model,
             reasoning_effort=spec.reasoning_effort,
             instructions=spec.instructions,
+            setup_script_sha256=hashlib.sha256(setup_script.encode()).hexdigest() if setup_script else None,
         )
 
     def spec(self) -> protocol_pb2.SessionSpec:

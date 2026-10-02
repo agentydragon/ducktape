@@ -264,6 +264,7 @@ def test_create_records_the_concrete_thread_defaults_and_bootstrap(
             "cwd": "/state/workspaces/{session_id}",
             "reasoning_effort": "medium",
             "instructions": "extra instructions",
+            "setup_script": None,
         },
         "bootstrap": "mkdir -p /state/workspaces",
     }
@@ -517,18 +518,23 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
                 "cwd": "/state/workspaces/{session_id}",
                 "reasoning_effort": "medium",
                 "instructions": "preset instructions",
+                "setup_script": "printf 'preset setup\\n'",
             },
             "bootstrap": "mkdir -p /state/workspaces",
         },
     ).json()
     calls: list[tuple[str, object]] = []
+    setup_scripts: list[str | None] = []
 
     async def initialize(name: str, script: str) -> protocol_pb2.InitializeResult:
         calls.append(("initialize", script))
         return protocol_pb2.InitializeResult(executed=True)
 
-    async def open_session(name: str, session_id: str, spec: protocol_pb2.SessionSpec) -> protocol_pb2.Attached:
+    async def open_session(
+        name: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
+    ) -> protocol_pb2.Attached:
         calls.append(("open", spec))
+        setup_scripts.append(setup_script)
         return protocol_pb2.Attached(session_id=session_id, spec=spec)
 
     monkeypatch.setattr(bridge, "initialize", initialize)
@@ -542,6 +548,7 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
     assert response.status_code == 201, response.text
     assert calls[0] == ("initialize", "mkdir -p /state/workspaces")
     assert calls[1][0] == "open"
+    assert setup_scripts == ["printf 'preset setup\\n'"]
     spec = calls[1][1]
     assert isinstance(spec, protocol_pb2.SessionSpec)
     assert (spec.harness, spec.cwd, spec.model, spec.reasoning_effort, spec.instructions) == (
@@ -551,6 +558,11 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
         "medium",
         "shared agent instructions\n\nthread instructions",
     )
+    cleared = client.post(
+        f"/sandboxes/{created['name']}/sessions", json={"session_id": "thread-2", "spec": {}, "setup_script": ""}
+    )
+    assert cleared.status_code == 201, cleared.text
+    assert setup_scripts == ["printf 'preset setup\\n'", ""]
 
 
 def _select_unready_kubernetes_grant(custom_objects: FakeCustomObjectsApi, sandbox_name: str = "live") -> None:
@@ -578,7 +590,9 @@ def test_session_creation_waits_for_selected_kubernetes_grants(
         calls.append(("initialize", name))
         return protocol_pb2.InitializeResult(executed=True)
 
-    async def open_session(name: str, session_id: str, spec: protocol_pb2.SessionSpec) -> protocol_pb2.Attached:
+    async def open_session(
+        name: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
+    ) -> protocol_pb2.Attached:
         calls.append(("open", name))
         return protocol_pb2.Attached(session_id=session_id, spec=spec)
 
@@ -649,7 +663,9 @@ def test_shared_instructions_are_also_added_to_direct_session_launches(
 ) -> None:
     captured: list[protocol_pb2.SessionSpec] = []
 
-    async def open_session(name: str, session_id: str, spec: protocol_pb2.SessionSpec) -> protocol_pb2.Attached:
+    async def open_session(
+        name: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
+    ) -> protocol_pb2.Attached:
         captured.append(spec)
         return protocol_pb2.Attached(session_id=session_id, spec=spec)
 
@@ -928,6 +944,7 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
                 "cwd": "/state/workspaces/{session_id}",
                 "reasoning_effort": "medium",
                 "instructions": "preset instructions",
+                "setup_script": "",
             },
             "bootstrap": "mkdir -p /state/workspaces",
         }

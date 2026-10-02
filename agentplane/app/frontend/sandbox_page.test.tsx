@@ -157,6 +157,27 @@ it("preserves a Sandbox reasoning default through model loading and submits it o
   expect((await sent?.json()).spec.reasoningEffort).toBe("high");
 });
 
+it("uses the bound working directory template and setup script for later Threads", async () => {
+  (live.snapshot.sandbox as SandboxView).binding = {
+    bootstrap: "",
+    thread_defaults: {
+      harness: "HARNESS_CLAUDE",
+      model: "test-model",
+      cwd: "/state/custom/{session_id}/work",
+      setup_script: "printf 'ready\\n'",
+    },
+  };
+  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
+    Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
+  );
+  await render(sessions);
+  await act(async () => newSession().click());
+  const sent = sessions.mock.calls.find(([request]) => request.method === "POST")?.[0];
+  const body = await sent?.json();
+  expect(body.spec.cwd).toMatch(/^\/state\/custom\/s-[^/]+\/work$/);
+  expect(body.setup_script).toBe("printf 'ready\\n'");
+});
+
 it("lets a later Thread override the Sandbox reasoning default locally", async () => {
   (live.snapshot.sandbox as SandboxView).binding = {
     bootstrap: "",

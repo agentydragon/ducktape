@@ -169,6 +169,7 @@ class Runner:
                     state_owner_descriptor=self._state_owner.descriptor,
                     make_adapter=make_adapter,
                 )
+                await self.sessions[session_id].load_setup_state()
             return self.sessions[session_id]
 
     async def open(self, request: protocol_pb2.Open) -> Session:
@@ -180,6 +181,13 @@ class Runner:
             session = await self._load(session_id)
             if request.HasField("spec") and request.spec != session.record.spec():
                 raise OpenError(f"session {session_id} exists with a different spec")
+            if request.HasField("setup_script"):
+                source = request.setup_script.encode()
+                if len(source) > _MAX_BOOTSTRAP_BYTES:
+                    raise OpenError(f"setup_script exceeds {_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
+                selected = hashlib.sha256(source).hexdigest() if source else None
+                if selected != session.record.setup_script_sha256:
+                    raise OpenError(f"session {session_id} exists with a different setup script")
         else:
             if not request.HasField("spec"):
                 raise OpenError(f"session {session_id} does not exist and Open carries no spec")
@@ -189,10 +197,18 @@ class Runner:
                 raise OpenError("spec.cwd and spec.model are required")
             if not PurePosixPath(request.spec.cwd).is_absolute():
                 raise OpenError(f"spec.cwd must be an absolute path, not {request.spec.cwd!r}")
-            record = SessionRecord.from_spec(request.spec)
+            source = request.setup_script.encode()
+            if len(source) > _MAX_BOOTSTRAP_BYTES:
+                raise OpenError(f"setup_script exceeds {_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
+            record = SessionRecord.from_spec(request.spec, setup_script=request.setup_script)
             self.store.write(session_id, record)
             session = await self._load(session_id)
-        if request.HasField("spec"):
+            if record.setup_script_sha256 is not None:
+                session.start_setup(request.setup_script)
+        if request.HasField("spec") and session.setup_state in (
+            protocol_pb2.SETUP_STATE_NOT_REQUIRED,
+            protocol_pb2.SETUP_STATE_SUCCEEDED,
+        ):
             await session.ensure_running()
         return session
 
@@ -237,6 +253,7 @@ class Runner:
                 if session.running
                 else protocol_pb2.HARNESS_STATE_STOPPED,
                 active_turn_id=session.journal.recovery_state.active_turn_id,
+                setup_state=session.setup_state,
             )
             for session in sorted(self.sessions.values(), key=lambda session: session.session_id)
         ]
@@ -310,7 +327,7 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
         # The published log, not the stdout reader's batch in progress, which is not durable yet.
         published = session.journal.recovery_state
         opened_cursor = published.through_cursor
-        ended = not published.harness_running
+        ended = not published.harness_running and not session.setup_active
         yield protocol_pb2.ServerMessage(
             attached=protocol_pb2.Attached(
                 session_id=session.session_id,
@@ -320,6 +337,7 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
                 if session.running
                 else protocol_pb2.HARNESS_STATE_STOPPED,
                 active_turn_id=published.active_turn_id,
+                setup_state=session.setup_state,
             )
         )
         closing = asyncio.Event()
@@ -336,6 +354,12 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
                     yield protocol_pb2.ServerMessage(event_entry=entry)
                     cursor = entry.cursor
                     if entry.cursor > opened_cursor and entry.event.HasField("harness_exited"):
+                        ended = True
+                    if entry.event.HasField("setup_finished"):
+                        ended = entry.event.setup_finished.exit_code != 0
+                    if entry.event.HasField("setup_interrupted"):
+                        ended = True
+                    if entry.event.HasField("harness_launch_failed"):
                         ended = True
                 if cursor < session.journal.last_cursor:
                     continue

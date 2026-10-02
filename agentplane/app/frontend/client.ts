@@ -266,10 +266,15 @@ export async function listSessions(sandbox: string): Promise<SessionSummary[]> {
   return data.map((row) => fromJson(SessionSummarySchema, row as JsonValue));
 }
 
-export async function openSession(sandbox: string, sessionId: string, spec: SessionSpec): Promise<Attached> {
+export async function openSession(
+  sandbox: string,
+  sessionId: string,
+  spec: SessionSpec,
+  setupScript?: string
+): Promise<Attached> {
   const { data, error } = await api.POST("/sandboxes/{name}/sessions", {
     params: { path: { name: sandbox } },
-    body: { session_id: sessionId, spec: toJson(SessionSpecSchema, spec) as JsonObject },
+    body: { session_id: sessionId, spec: toJson(SessionSpecSchema, spec) as JsonObject, setup_script: setupScript },
   });
   if (error) throw new Error(displayableError(error));
   return fromJson(AttachedSchema, data as JsonValue);

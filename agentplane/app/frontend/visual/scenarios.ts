@@ -60,6 +60,8 @@ export interface Scenario extends ScenarioOptions {
   /** Mundane lifecycle observations collapse into one comma-joined row; a prominent one (harness
    * lost) still stands alone and breaks the group around it. */
   lifecycleGroup?: boolean;
+  threadSetup?: boolean;
+  openSetup?: boolean;
   /** Open the chronological archive drawer, the native-frame inspection surface. */
   openDebug?: "latest" | "stderr";
   /** Open the composer's overflow "More" menu and leave it open, showing the thread id label
@@ -239,6 +241,23 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     lifecycleGroup: true,
     readySelectors: ['[data-thread-anchor="50"]'],
+    captureViewport: true,
+  },
+  session_thread_setup: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    threadSetup: true,
+    readySelectors: ["::-p-text(Thread setup complete)"],
+    captureViewport: true,
+  },
+  session_thread_setup_open: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    threadSetup: true,
+    openSetup: true,
+    readySelectors: ["::-p-text(Setup stdout)"],
     captureViewport: true,
   },
   session_interleaved_native_details: {

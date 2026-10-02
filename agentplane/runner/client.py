@@ -102,6 +102,9 @@ class Attachment:
         """Ask the runner to end this attachment, at most once."""
         if self._detach_sent:
             return
+        if self._call.done():
+            self._detach_sent = True
+            return
         await self._call.write(protocol_pb2.ClientMessage(detach=protocol_pb2.Detach()))
         self._detach_sent = True
 
@@ -150,7 +153,12 @@ class RunnerClient:
         self._stub = protocol_pb2_grpc.RunnerStub(self._channel)
 
     async def attach(
-        self, session_id: str, *, spec: protocol_pb2.SessionSpec | None = None, after_cursor: int = 0
+        self,
+        session_id: str,
+        *,
+        spec: protocol_pb2.SessionSpec | None = None,
+        setup_script: str | None = None,
+        after_cursor: int = 0,
     ) -> Attachment:
         call = self._stub.Attach()
         # Only the handshake is bounded: the same stream then follows the session for as long as
@@ -161,7 +169,10 @@ class RunnerClient:
                 await call.write(
                     protocol_pb2.ClientMessage(
                         open=protocol_pb2.Open(
-                            session_id=session_id, spec=spec, follow=event_log_pb2.Follow(after_cursor=after_cursor)
+                            session_id=session_id,
+                            spec=spec,
+                            follow=event_log_pb2.Follow(after_cursor=after_cursor),
+                            **({"setup_script": setup_script} if setup_script is not None else {}),
                         )
                     )
                 )

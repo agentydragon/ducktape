@@ -144,6 +144,7 @@ def _view(
         last_cursor=last_cursor or 0,
         last_event_at=last_at,
         harness_state=protocol_pb2.HarnessState.Name(harness_state),
+        setup_state=protocol_pb2.SetupState.Name(attachment.setup_state) if attachment is not None else None,
         active_turn_id=(attachment.active_turn_id or None) if attachment is not None else None,
         feed_status=(None if attachment is None else "active" if end is None else "failed" if end else "ended"),
         reasoning_effort=attachment.spec.reasoning_effort if attachment is not None else None,

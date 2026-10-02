@@ -393,6 +393,14 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           onChange={(event) => setThread({ ...thread, cwd: event.currentTarget.value })}
         />
         <Textarea
+          label="Thread setup script"
+          description="Runs once in each new Thread's working directory, before its harness starts"
+          autosize
+          minRows={2}
+          value={thread.setup_script ?? ""}
+          onChange={(event) => setThread({ ...thread, setup_script: event.currentTarget.value })}
+        />
+        <Textarea
           label="Standing instructions"
           description="Edits apply to future threads in this sandbox"
           autosize

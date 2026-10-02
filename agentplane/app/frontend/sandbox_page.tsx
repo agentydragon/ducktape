@@ -10,6 +10,7 @@ import {
   Table,
   Tabs,
   Text,
+  TextInput,
   Textarea,
   Title,
 } from "@mantine/core";
@@ -42,12 +43,29 @@ import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./liv
 import { RawSwitch } from "./raw_switch";
 import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
-import { HarnessState, SessionSpecSchema, type SessionSummary } from "../../runner/protocol_pb";
+import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../runner/protocol_pb";
 
 const HARNESSES: { value: Harness; label: string }[] = [
   { value: "HARNESS_CLAUDE", label: "Claude" },
   { value: "HARNESS_CODEX", label: "Codex" },
 ];
+
+function setupLabel(state: SetupState): string {
+  switch (state) {
+    case SetupState.SETUP_STATE_NOT_REQUIRED:
+      return "—";
+    case SetupState.SETUP_STATE_RUNNING:
+      return "Running";
+    case SetupState.SETUP_STATE_SUCCEEDED:
+      return "Complete";
+    case SetupState.SETUP_STATE_FAILED:
+      return "Failed";
+    case SetupState.SETUP_STATE_INTERRUPTED:
+      return "Interrupted";
+    default:
+      return "Unknown";
+  }
+}
 
 // The page's tabs, named in the URL (`?tab=`) so a tab can be linked to and survives a reload.
 const TABS = ["sessions", "egress", "policy", "status"] as const;
@@ -199,6 +217,8 @@ export function SandboxPage({
   const [creatingSession, setCreatingSession] = useState(false);
   const [effort, setEffort] = useState("low");
   const [instructions, setInstructions] = useState("");
+  const [cwdTemplate, setCwdTemplate] = useState("/state/workspaces/{session_id}");
+  const [setupScript, setSetupScript] = useState("");
   const [defaultsLabel, setDefaultsLabel] = useState<string | null>(null);
   // The app's catalog of what this sandbox's Harness may run; the thread carries the choice.
   const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
@@ -287,15 +307,23 @@ export function SandboxPage({
     const binding = sandbox?.binding;
     if (!binding) {
       setDefaultsLabel(null);
+      setCwdTemplate("/state/workspaces/{session_id}");
+      setSetupScript("");
       return;
     }
     const defaults = binding.thread_defaults;
     setDefaultsLabel(defaults ? "Sandbox defaults" : null);
-    if (!defaults) return;
+    if (!defaults) {
+      setCwdTemplate("/state/workspaces/{session_id}");
+      setSetupScript("");
+      return;
+    }
     if (defaults.harness) setHarness(defaults.harness);
     if (defaults.model) setModel(defaults.model);
     if (defaults.reasoning_effort) setEffort(defaults.reasoning_effort);
     setInstructions(defaults.instructions ?? "");
+    setCwdTemplate(defaults.cwd ?? "/state/workspaces/{session_id}");
+    setSetupScript(defaults.setup_script ?? "");
   }, [bindingKey]);
 
   // No re-read after an action: the change reaches the API server, and the watch behind the
@@ -336,11 +364,12 @@ export function SandboxPage({
         sessionId,
         fromJson(SessionSpecSchema, {
           harness,
-          cwd: `/state/workspaces/${sessionId}`,
+          cwd: cwdTemplate.replaceAll("{session_id}", sessionId),
           model,
           reasoningEffort: effort,
           instructions,
-        } as JsonValue)
+        } as JsonValue),
+        setupScript
       );
       await openThread(sessionId);
     } catch (reason: unknown) {
@@ -483,11 +512,26 @@ export function SandboxPage({
               value={instructions}
               onChange={(event) => setInstructions(event.currentTarget.value)}
             />
+            <TextInput
+              label="Working directory"
+              description="{session_id} is replaced with this Thread's ID"
+              value={cwdTemplate}
+              onChange={(event) => setCwdTemplate(event.currentTarget.value)}
+            />
+            <Textarea
+              label="Thread setup script"
+              description="Runs once in the resolved working directory before the harness starts"
+              autosize
+              minRows={2}
+              value={setupScript}
+              onChange={(event) => setSetupScript(event.currentTarget.value)}
+            />
             <Table>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Session</Table.Th>
                   <Table.Th>Harness state</Table.Th>
+                  <Table.Th>Setup</Table.Th>
                   <Table.Th>Active turn</Table.Th>
                   <Table.Th>Events</Table.Th>
                   <Table.Th />
@@ -506,6 +550,7 @@ export function SandboxPage({
                         </Button>
                       </Table.Td>
                       <Table.Td>{HarnessState[session.harnessState]}</Table.Td>
+                      <Table.Td>{setupLabel(session.setupState)}</Table.Td>
                       <Table.Td>{session.activeTurnId || "—"}</Table.Td>
                       <Table.Td>{String(session.lastCursor)}</Table.Td>
                       <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>

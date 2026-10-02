@@ -5,8 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import signal
 from collections import deque
 from collections.abc import Callable, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +17,7 @@ from pydantic import BaseModel
 
 from agentplane.native.transport import Frame, FrameMatcher, NativeReceipt
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.runner import protocol_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess
@@ -85,6 +89,120 @@ class Session:
         self._stopping = False
         self._lock = asyncio.Lock()
         self._shutdown_lock = asyncio.Lock()
+        self.setup_state = (
+            protocol_pb2.SETUP_STATE_RUNNING
+            if record.setup_script_sha256 is not None
+            else protocol_pb2.SETUP_STATE_NOT_REQUIRED
+        )
+        self._setup_task: asyncio.Task[None] | None = None
+
+    async def load_setup_state(self) -> None:
+        """Recover the one-shot setup result from the durable prefix, not process memory."""
+        if self.record.setup_script_sha256 is None:
+            return
+        cursor = 0
+        while True:
+            entries = await self.journal.since(cursor, limit=128)
+            if not entries:
+                return
+            for entry in entries:
+                cursor = entry.cursor
+                kind = entry.event.WhichOneof("observation")
+                if kind == "setup_finished":
+                    self.setup_state = (
+                        protocol_pb2.SETUP_STATE_SUCCEEDED
+                        if entry.event.setup_finished.exit_code == 0
+                        else protocol_pb2.SETUP_STATE_FAILED
+                    )
+                    return
+                if kind == "setup_interrupted":
+                    self.setup_state = protocol_pb2.SETUP_STATE_INTERRUPTED
+                    return
+
+    def start_setup(self, script: str) -> None:
+        if self.setup_state != protocol_pb2.SETUP_STATE_RUNNING or self._setup_task is not None:
+            raise RuntimeError("session setup was already started or completed")
+        self._setup_task = asyncio.create_task(self._run_setup(script), name=f"{self.session_id}-setup")
+
+    async def _run_setup(self, script: str) -> None:
+        process: asyncio.subprocess.Process | None = None
+        readers: list[asyncio.Task[None]] = []
+        try:
+            await self.emit(event_pb2.SetupStarted(), sources=[])
+            cwd = Path(self.record.cwd)
+            await asyncio.to_thread(cwd.mkdir, parents=True, exist_ok=True)
+            process = await asyncio.create_subprocess_exec(
+                "/bin/sh",
+                "-eu",
+                cwd=cwd,
+                env={**os.environ, **self.config.environment},
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+                pass_fds=(self.state_owner_descriptor,),
+            )
+            assert process.stdin is not None
+            assert process.stdout is not None
+            assert process.stderr is not None
+            stdout = asyncio.create_task(self._record_setup_output(process.stdout, stdout=True))
+            stderr = asyncio.create_task(self._record_setup_output(process.stderr, stdout=False))
+            readers = [stdout, stderr]
+            process.stdin.write(script.encode())
+            try:
+                await process.stdin.drain()
+            except BrokenPipeError, ConnectionResetError:
+                # A script may exit before consuming the rest of its stdin.
+                pass
+            finally:
+                process.stdin.close()
+                with suppress(BrokenPipeError, ConnectionResetError):
+                    await process.stdin.wait_closed()
+            exit_code = await process.wait()
+            await asyncio.gather(stdout, stderr)
+            await self.emit(event_pb2.SetupFinished(exit_code=exit_code), sources=[])
+            if exit_code == 0:
+                try:
+                    await self.ensure_running()
+                except Exception as error:
+                    await self.emit(event_pb2.HarnessLaunchFailed(reason=str(error)), sources=[])
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("session %s: setup interrupted", self.session_id)
+            if process is not None and process.returncode is None:
+                await self._stop_setup_process(process)
+            for reader in readers:
+                if not reader.done():
+                    reader.cancel()
+            await asyncio.gather(*readers, return_exceptions=True)
+            if self.setup_state == protocol_pb2.SETUP_STATE_RUNNING:
+                await self.emit(event_pb2.SetupInterrupted(), sources=[])
+        finally:
+            if process is not None and process.returncode is None:
+                await self._stop_setup_process(process)
+            for reader in readers:
+                if not reader.done():
+                    reader.cancel()
+            await asyncio.gather(*readers, return_exceptions=True)
+
+    async def _record_setup_output(self, stream: asyncio.StreamReader, *, stdout: bool) -> None:
+        while data := await stream.read(4096):
+            output = event_pb2.SetupOutput(stdout=data) if stdout else event_pb2.SetupOutput(stderr=data)
+            await self.emit(output, sources=[])
+
+    @staticmethod
+    async def _stop_setup_process(process: asyncio.subprocess.Process) -> None:
+        if process.returncode is not None:
+            return
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGTERM)
+        try:
+            await asyncio.wait_for(process.wait(), timeout=5)
+        except TimeoutError:
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            await process.wait()
 
     async def emit(
         self,
@@ -103,6 +221,14 @@ class Session:
             native_correlation=native_correlation,
         )
         match entry.event.WhichOneof("observation"):
+            case "setup_finished":
+                self.setup_state = (
+                    protocol_pb2.SETUP_STATE_SUCCEEDED
+                    if entry.event.setup_finished.exit_code == 0
+                    else protocol_pb2.SETUP_STATE_FAILED
+                )
+            case "setup_interrupted":
+                self.setup_state = protocol_pb2.SETUP_STATE_INTERRUPTED
             case "harness_started":
                 self.harness_running = True
             case "harness_lost" | "harness_exited":
@@ -117,6 +243,8 @@ class Session:
 
     async def recover_after_restart(self) -> None:
         """The runner that wrote the log is gone, and so is any harness it was running."""
+        if self.setup_state == protocol_pb2.SETUP_STATE_RUNNING:
+            await self.emit(event_pb2.SetupInterrupted(), sources=[])
         if not self.harness_running:
             return
         await self.emit(event_pb2.HarnessLost(), sources=[])
@@ -131,6 +259,10 @@ class Session:
     @property
     def running(self) -> bool:
         return self.process is not None and self.process.running
+
+    @property
+    def setup_active(self) -> bool:
+        return self._setup_task is not None and not self._setup_task.done()
 
     async def ensure_running(self) -> None:
         async with self._lock:
@@ -585,6 +717,11 @@ class Session:
 
     async def stop(self) -> None:
         """Runner shutdown: stop the harness without interrupting; the log records the exit."""
+        if self._setup_task is not None and not self._setup_task.done():
+            self._setup_task.cancel()
+            await asyncio.gather(self._setup_task, return_exceptions=True)
+            if self.setup_state == protocol_pb2.SETUP_STATE_RUNNING:
+                await self.emit(event_pb2.SetupInterrupted(), sources=[])
         async with self._shutdown_lock:
             if self.process is not None and self.running:
                 self._stopping = True

@@ -191,6 +191,14 @@ def _project_attached(attached: protocol_pb2.Attached, entry: event_log_pb2.Even
     attached.last_cursor = entry.cursor
     event = entry.event
     match event.WhichOneof("observation"):
+        case "setup_finished":
+            attached.setup_state = (
+                protocol_pb2.SETUP_STATE_SUCCEEDED
+                if event.setup_finished.exit_code == 0
+                else protocol_pb2.SETUP_STATE_FAILED
+            )
+        case "setup_interrupted":
+            attached.setup_state = protocol_pb2.SETUP_STATE_INTERRUPTED
         case "harness_started":
             attached.harness_state = protocol_pb2.HARNESS_STATE_RUNNING
         case "harness_exited" | "harness_lost":
