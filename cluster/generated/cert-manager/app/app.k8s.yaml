@@ -109,7 +109,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: cert-manager-webhook
+  name: webhook
   namespace: cert-manager
 spec:
   endpoints:

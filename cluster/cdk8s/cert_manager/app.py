@@ -101,11 +101,11 @@ def _values() -> dict[str, object]:
     }
 
 
-def _service_monitor(chart: Chart, service: ServiceRef) -> None:
+def _service_monitor(chart: Chart, name: str, service: ServiceRef) -> None:
     ServiceMonitor(
         chart,
-        service.name,
-        metadata=ApiObjectMetadata(name=service.name, namespace=NAMESPACE),
+        name,
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         selector=ServiceMonitorSpecSelector(match_labels=service.labels),
         endpoints=[Endpoint.plain(port=service.port.name)],
     )
@@ -128,8 +128,8 @@ def chart(app: App) -> Chart:
         install=RETRY_FAILED_INSTALL,
         values=_values(),
     )
-    _service_monitor(chart, _CONTROLLER_METRICS)
-    _service_monitor(chart, _WEBHOOK_METRICS)
+    _service_monitor(chart, NAME, _CONTROLLER_METRICS)
+    _service_monitor(chart, "webhook", _WEBHOOK_METRICS)
     return chart
 
 
