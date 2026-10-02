@@ -46,7 +46,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-NAME = "public-coder-agent-proxy"
+NAME = "public-coder-agent-proxy"  # the chart's id and the Pods' `app.kubernetes.io/name` value
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/proxy"
 NAMESPACE = "public-coder-agent"
 _CONFIG_DIR = "/etc/iron-proxy"
@@ -56,9 +56,9 @@ _CA_DIR = "/ca"
 LABELS = {"app.kubernetes.io/name": NAME}
 # The forward proxy the Agent's HTTP(S)_PROXY names, and iron-proxy's metrics on the same Service.
 PROXY = ServiceRef(
-    name=NAME, port=Port(name="proxy", number=8080), pods=Pods(namespace=NAMESPACE, labels=tuple(LABELS.items()))
+    name="proxy", port=Port(name="proxy", number=8080), pods=Pods(namespace=NAMESPACE, labels=tuple(LABELS.items()))
 )
-_METRICS = ServiceRef(name=NAME, port=Port(name="metrics", number=9090), pods=PROXY.pods)
+_METRICS = ServiceRef(name=PROXY.name, port=Port(name="metrics", number=9090), pods=PROXY.pods)
 _IMAGE = "git.allegedly.works/ducktape-ci/iron-proxy:unset"
 # public_coder_agent_config's ExternalSecret writes it; here, because that module imports this one.
 GITHUB_TOKEN = SecretRef(namespace=NAMESPACE, name="public-coder-agent-github-token").key("GITHUB_TOKEN")
@@ -311,7 +311,7 @@ def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=PROXY.pods.selector),
+        metadata=k8s.ObjectMeta(name=PROXY.name, namespace=NAMESPACE, labels=PROXY.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=PROXY.pods.selector),
@@ -348,21 +348,26 @@ def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer:
     )
 
 
+def _service_spec() -> k8s.ServiceSpec:
+    return k8s.ServiceSpec(
+        selector=PROXY.pods.selector,
+        ports=[
+            PROXY.port.k8s_service_port(),
+            # iron-proxy's Prometheus metrics. mitmproxy's `mitmweb` UI on 8081 goes with it
+            # -- it was never routed, and a browsable log of the agent's intercepted traffic
+            # is not a thing to leave reachable in-cluster.
+            _METRICS.port.k8s_service_port(),
+        ],
+    )
+
+
 def _service(scope: Construct) -> None:
     k8s.KubeService(
-        scope,
-        "service",
-        metadata=k8s.ObjectMeta(name=PROXY.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=PROXY.pods.selector,
-            ports=[
-                PROXY.port.k8s_service_port(),
-                # iron-proxy's Prometheus metrics. mitmproxy's `mitmweb` UI on 8081 goes with it
-                # -- it was never routed, and a browsable log of the agent's intercepted traffic
-                # is not a thing to leave reachable in-cluster.
-                _METRICS.port.k8s_service_port(),
-            ],
-        ),
+        scope, "service", metadata=k8s.ObjectMeta(name=PROXY.name, namespace=NAMESPACE), spec=_service_spec()
+    )
+    # CLEANUP(added 2026-10-02): Remove once nothing resolves public-coder-agent-proxy.public-coder-agent.svc (consumers: the devbox VM image built from openclaw/public_coder_agent/devbox/nixos.nix).
+    k8s.KubeService(
+        scope, "legacy-service", metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE), spec=_service_spec()
     )
 
 

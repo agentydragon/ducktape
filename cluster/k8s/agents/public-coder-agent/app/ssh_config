@@ -3,7 +3,7 @@
 # (../sshpiper/pipe-devbox.k8s.yaml), not the account the command runs as. That account is `coder`,
 # chosen upstream where the Agent cannot influence it.
 Host devbox
-  HostName public-coder-agent-sshpiper.public-coder-agent.svc.cluster.local
+  HostName sshpiper.public-coder-agent.svc.cluster.local
   Port 2222
   User devbox
   IdentityFile /home/openclaw/.ssh/id_ed25519

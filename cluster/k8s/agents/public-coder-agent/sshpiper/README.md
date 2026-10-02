@@ -49,7 +49,7 @@ negotiates and fails with a bare `Permission denied (publickey)` when that type 
 `SSHPIPERD_SCREEN_RECORDING_*` writes asciicast files to the PVC, one directory per connection:
 
 ```bash
-kubectl exec -n public-coder-agent deploy/public-coder-agent-sshpiper -- ls /recordings
+kubectl exec -n public-coder-agent deploy/sshpiper -- ls /recordings
 asciinema play /recordings/<conn_guid>/shell-channel-0.cast
 ```
 

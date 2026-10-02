@@ -95,16 +95,10 @@ def public_coder_agent_app(
                 api_version="apps/v1", kind="Deployment", name="public-coder-agent", namespace="public-coder-agent"
             ),
             KustomizationSpecHealthChecks(
-                api_version="apps/v1",
-                kind="Deployment",
-                name="public-coder-agent-proxy",
-                namespace="public-coder-agent",
+                api_version="apps/v1", kind="Deployment", name="proxy", namespace="public-coder-agent"
             ),
             KustomizationSpecHealthChecks(
-                api_version="apps/v1",
-                kind="Deployment",
-                name="public-coder-agent-sshpiper",
-                namespace="public-coder-agent",
+                api_version="apps/v1", kind="Deployment", name="sshpiper", namespace="public-coder-agent"
             ),
             KustomizationSpecHealthChecks(
                 api_version="cert-manager.io/v1",

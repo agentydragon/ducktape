@@ -3741,11 +3741,11 @@ spec:
       namespace: public-coder-agent
     - apiVersion: apps/v1
       kind: Deployment
-      name: public-coder-agent-proxy
+      name: proxy
       namespace: public-coder-agent
     - apiVersion: apps/v1
       kind: Deployment
-      name: public-coder-agent-sshpiper
+      name: sshpiper
       namespace: public-coder-agent
     - apiVersion: cert-manager.io/v1
       kind: Certificate

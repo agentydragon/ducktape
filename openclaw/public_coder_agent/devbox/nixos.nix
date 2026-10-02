@@ -23,7 +23,7 @@
 }:
 let
   keys = import ../../../nix/ssh-keys.nix;
-  proxyHost = "public-coder-agent-proxy.public-coder-agent.svc.cluster.local";
+  proxyHost = "proxy.public-coder-agent.svc.cluster.local";
   proxyUrl = "http://${proxyHost}:8080";
   buildbuddyKeyDevice = "/dev/disk/by-id/virtio-pcbuildbuddy";
   bazelCacheDevice = "/dev/disk/by-id/virtio-pcbazelcache";

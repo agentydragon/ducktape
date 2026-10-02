@@ -27,12 +27,13 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-NAME = "public-coder-agent-sshpiper"
+NAME = "public-coder-agent-sshpiper"  # the chart's id and the Pods' `app.kubernetes.io/name` value
+_OBJECT_NAME = "sshpiper"  # the Deployment, its Service and its RBAC identity
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/sshpiper"
 _NAMESPACE = "public-coder-agent"
 # The Agent's route to the devbox; its hand-written app/ssh_config dials this Service.
 SERVICE = ServiceRef(
-    name=NAME,
+    name=_OBJECT_NAME,
     port=Port(name="ssh", number=2222),
     pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
@@ -58,11 +59,11 @@ def _rbac(scope: Construct) -> None:
     which pipes into a Pod without sshd. Our upstream is a KubeVirt VM running real sshd, so that
     mode is unused and granting exec would hand this ServiceAccount a shell in every Pod here.
     """
-    k8s.KubeServiceAccount(scope, "service-account", metadata=k8s.ObjectMeta(name=NAME, namespace=_NAMESPACE))
+    k8s.KubeServiceAccount(scope, "service-account", metadata=k8s.ObjectMeta(name=_OBJECT_NAME, namespace=_NAMESPACE))
     k8s.KubeRole(
         scope,
         "role",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_OBJECT_NAME, namespace=_NAMESPACE),
         rules=[
             k8s.PolicyRule(api_groups=["sshpiper.com"], resources=["pipes"], verbs=["get", "list", "watch"]),
             k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["get"]),
@@ -71,9 +72,9 @@ def _rbac(scope: Construct) -> None:
     k8s.KubeRoleBinding(
         scope,
         "role-binding",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=_NAMESPACE),
-        subjects=[k8s.Subject(kind="ServiceAccount", name=NAME, namespace=_NAMESPACE)],
-        role_ref=k8s.RoleRef(kind="Role", name=NAME, api_group="rbac.authorization.k8s.io"),
+        metadata=k8s.ObjectMeta(name=_OBJECT_NAME, namespace=_NAMESPACE),
+        subjects=[k8s.Subject(kind="ServiceAccount", name=_OBJECT_NAME, namespace=_NAMESPACE)],
+        role_ref=k8s.RoleRef(kind="Role", name=_OBJECT_NAME, api_group="rbac.authorization.k8s.io"),
     )
 
 
@@ -162,7 +163,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=_NAMESPACE, labels=SERVICE.pods.selector),
+        metadata=k8s.ObjectMeta(name=_OBJECT_NAME, namespace=_NAMESPACE, labels=SERVICE.pods.selector),
         spec=k8s.DeploymentSpec(
             # One replica, and not only because the recordings PVC is RWO: two pipers would each
             # need the host key, and a client reconnecting to the other one is indistinguishable
@@ -173,7 +174,7 @@ def _deployment(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
-                    service_account_name=NAME,
+                    service_account_name=_OBJECT_NAME,
                     # Unlike the proxy, this Pod does need its API token: the kubernetes plugin
                     # reads Pipes and resolves the upstream key Secret through the API server.
                     automount_service_account_token=True,
