@@ -33,7 +33,7 @@ the grocy/tana MCP facades. Deviation from those facades: the operator browser l
 own app-native OIDC (not an outpost and not a separate SPA), so a 401 from `/api/*` bounces the
 browser to `/auth/login`.
 
-**nginx ↔ app routing invariant.** The standalone `haku-console-static` nginx Deployment serves
+**nginx ↔ app routing invariant.** The standalone `static` nginx Deployment serves
 the SPA and proxies the app's top-level backend prefixes (`/api`, `/healthz`, `/mcp`, `/auth`, and
 the `/.well-known/oauth-*` discovery docs) to the `haku-console` API Service; everything else is
 the SPA catch-all. So a **new top-level backend prefix needs a matching `location` in
@@ -46,7 +46,7 @@ no Console secrets, ServiceAccount token, or database access.
 
 ## Schema migrations are release work
 
-`haku-console-migration` is a fixed-name Job using the same Flux-selected `haku-console` image
+`migration` is a fixed-name Job using the same Flux-selected `haku-console` image
 as the API, running `server_bin migrate`; the command consumes only the database URL. The API
 performs a zero-row ORM compatibility check at startup but never applies DDL.
 

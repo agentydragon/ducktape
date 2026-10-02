@@ -197,7 +197,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: haku-console-migration
+  name: migration
   namespace: haku-console
 automountServiceAccountToken: false
 ---
@@ -206,7 +206,7 @@ kind: Job
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
-  name: haku-console-migration
+  name: migration
   namespace: haku-console
 spec:
   activeDeadlineSeconds: 1200
@@ -282,7 +282,7 @@ spec:
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: haku-console-migration
+      serviceAccountName: migration
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
@@ -776,7 +776,7 @@ kind: Deployment
 metadata:
   labels:
     app.kubernetes.io/name: haku-console-static
-  name: haku-console-static
+  name: static
   namespace: haku-console
 spec:
   minReadySeconds: 0
@@ -872,7 +872,7 @@ kind: Service
 metadata:
   labels:
     app.kubernetes.io/name: haku-console-static
-  name: haku-console-static
+  name: static
   namespace: haku-console
 spec:
   externalIPs: []
@@ -899,7 +899,7 @@ spec:
       sectionName: https-wildcard
   rules:
     - backendRefs:
-        - name: haku-console-static
+        - name: static
           port: 8080
       filters:
         - responseHeaderModifier:
@@ -917,7 +917,7 @@ metadata:
   annotations:
     description: Applies the object GRANTs for haku_indexer (indexer-role.sql). The role itself is managed declaratively by CNPG (haku-console-db managed.roles); this runs in the app layer because the recall_index schema exists only after the migration Job.
     kustomize.toolkit.fluxcd.io/force: enabled
-  name: haku-console-db-indexer-provisioner
+  name: db-indexer-provisioner
   namespace: haku-console
 spec:
   activeDeadlineSeconds: 1200

@@ -35,7 +35,8 @@ from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.haku import console
 
-NAME = "haku-console-migration"
+NAME = "migration"
+_POD_LABEL = "haku-console-migration"
 
 
 class Migration(Construct):
@@ -55,7 +56,7 @@ class Migration(Construct):
             metadata=ApiObjectMetadata(
                 name=NAME, namespace=namespace, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}
             ),
-            pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": NAME}),
+            pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": _POD_LABEL}),
             select=False,
             # Retries are how this waits for the database, since nothing sequences the two
             # inside one Kustomization. Kubernetes backs off exponentially to a 6m ceiling,

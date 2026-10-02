@@ -1,6 +1,6 @@
 """The Haku Console API and its public shell: the API Deployment (reviewed FastAPI code) with
 its ServiceAccount, RBAC, config ConfigMap, Service and ServiceMonitor; the separate
-`haku-console-static` nginx Deployment/Service the public HTTPRoute reaches, which proxies
+`static` nginx Deployment/Service the public HTTPRoute reaches, which proxies
 backend paths to the API; and the Job granting the indexer role its object privileges.
 
 Trust boundary: the console runs in its OWN `haku-console` namespace, not haku-sandbox. As
@@ -88,11 +88,10 @@ _API = service_ref.ServiceRef(
 _METRICS = service_ref.ServiceRef(
     name=_API.name, port=service_ref.Port(name="metrics", number=9090), pods=_API.pods, target_port=_API.pod_port
 )
-STATIC_NAME = "haku-console-static"
 _STATIC = service_ref.ServiceRef(
-    name=STATIC_NAME,
+    name="static",
     port=service_ref.Port(name="http", number=8080),
-    pods=service_ref.Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", STATIC_NAME),)),
+    pods=service_ref.Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", "haku-console-static"),)),
     target_port=8081,
 )
 # Hand-written siblings carrying Flux image-automation markers: the static image's tag,
@@ -106,7 +105,8 @@ _STATIC_METADATA_DIR = "/etc/haku-console/static-metadata"
 # Job's `force` annotation recreates it.
 INDEXER_SQL_CONFIG_MAP = "haku-console-db-indexer-sql"
 _INDEXER_SQL_DIR = "/sql"
-_INDEXER_PROVISIONER_NAME = "haku-console-db-indexer-provisioner"
+_INDEXER_PROVISIONER_NAME = "db-indexer-provisioner"
+_INDEXER_PROVISIONER_LABEL = "haku-console-db-indexer-provisioner"
 _AUTHENTIK = "https://auth.allegedly.works"
 
 _DB_ENV = {
@@ -465,7 +465,7 @@ class Console(Construct):
         deployment = Deployment(
             self,
             "static-deployment",
-            metadata=ApiObjectMetadata(name=STATIC_NAME, namespace=NAMESPACE, labels=_STATIC.pods.selector),
+            metadata=ApiObjectMetadata(name=_STATIC.name, namespace=NAMESPACE, labels=_STATIC.pods.selector),
             pod_metadata=ApiObjectMetadata(labels=_STATIC.pods.selector),
             select=False,
             replicas=2,
@@ -553,7 +553,7 @@ class Console(Construct):
                     "kustomize.toolkit.fluxcd.io/force": "enabled",
                 },
             ),
-            pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": _INDEXER_PROVISIONER_NAME}),
+            pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": _INDEXER_PROVISIONER_LABEL}),
             select=False,
             backoff_limit=10,
             active_deadline=Duration.minutes(20),
