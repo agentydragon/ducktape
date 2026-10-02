@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
@@ -637,6 +636,7 @@ def test_refresh_stale_pull_request_comment(
 
 
 HEAD_SHA = "0123456789abcdef0123456789abcdef01234567"
+PR_HEAD_REF = "pr-owner:topic"
 
 
 def _publisher_argv(work_dir: Path, *options: str) -> list[str]:
@@ -686,7 +686,13 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     left alone because they are mutable and unordered across concurrent publishes."""
     checks: list[dict[str, object]] = []
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
-    _forbid(monkeypatch, "upsert_pull_request_comment", "refresh_stale_pull_request_comment", "write_baseline_pointers")
+    _forbid(
+        monkeypatch,
+        "find_open_pull_request",
+        "upsert_pull_request_comment",
+        "refresh_stale_pull_request_comment",
+        "write_baseline_pointers",
+    )
     downloaded: list[list[str]] = []
 
     def record(invocations: list[str], _destination: Path, *, api_key: str) -> list[object]:
@@ -700,7 +706,8 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     monkeypatch.setenv("GITHUB_TOKEN", "token")
     monkeypatch.setenv("BUILDBUDDY_API_KEY", "key")
     monkeypatch.setattr(
-        "sys.argv", _publisher_argv(tmp_path / "work", "--ci-conclusion", "cancelled", "--pull-request", "4858")
+        "sys.argv",
+        _publisher_argv(tmp_path / "work", "--ci-conclusion", "cancelled", "--pull-request-head", PR_HEAD_REF),
     )
 
     main()
@@ -717,22 +724,23 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     assert "uperseded" in str(checks[0]["summary"])
 
 
-FORK_CHECK_ID = "pr-visual-review:33060467222"
+PR_CHECK_ID = "pr-visual-review:33060467222"
 
 
 @dataclass
-class ForkRun:
+class PublisherRun:
     checks: list[dict[str, object]] = field(default_factory=list)
     comments: list[dict[str, object]] = field(default_factory=list)
 
 
 @pytest.fixture
-def fork_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ForkRun:
-    """`main()` as the publish workflow starts it for a fork PR's CI run, recording its GitHub writes.
+def publisher_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PublisherRun:
+    """`main()` as the publish workflow starts it for a PR's CI run, recording its GitHub writes.
 
-    A fork's `workflow_run` event lists no pull request, so the publisher is handed the PR's head ref instead.
+    The run's event is not trusted to name its pull request, so the publisher is handed the run's head ref
+    instead. A test of another kind of run replaces `sys.argv`.
     """
-    run = ForkRun()
+    run = PublisherRun()
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: run.checks.append(kwargs))
     monkeypatch.setattr(
         "devinfra.pr_visuals.publisher.upsert_pull_request_comment", lambda **kwargs: run.comments.append(kwargs)
@@ -744,9 +752,7 @@ def fork_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ForkRun:
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
     monkeypatch.setattr(
         "sys.argv",
-        _publisher_argv(
-            tmp_path / "work", "--pull-request-head", "fork-owner:topic", "--check-external-id", FORK_CHECK_ID
-        ),
+        _publisher_argv(tmp_path / "work", "--pull-request-head", PR_HEAD_REF, "--check-external-id", PR_CHECK_ID),
     )
     return run
 
@@ -762,12 +768,23 @@ class EmptyBucket:
         raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
 
 
-def test_a_fork_run_publishes_to_the_pr_its_head_ref_finds(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fork_run: ForkRun
+def _publish_one_visual_target(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> tuple[DownloadedVisualTest, EmptyBucket]:
+    """The run's Bazel invocation holds one visual target, and the bucket holds nothing yet."""
+    candidate = _single_asset_test(tmp_path / "candidate")
+    bucket = EmptyBucket()
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", lambda *_args, **_kwargs: [candidate])
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.boto3.client", lambda *_args, **_kwargs: bucket)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upload_bundle", lambda *_args, **_kwargs: None)
+    return candidate, bucket
+
+
+def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
 ) -> None:
-    """The PR number and base commit a same-repo run reads off its event come from the lookup instead,
-    and everything after is the same-repo path: comment on that PR, compare against that base, and —
-    this being a PR run — leave the devel baseline pointers alone."""
+    """The PR and its base commit come from the lookup, never from the run's event. The run then comments
+    on that PR, compares against that base and — being a PR run — leaves the devel baseline pointers alone."""
     base_sha = "c" * 40
     lookups: list[dict[str, str]] = []
 
@@ -775,37 +792,51 @@ def test_a_fork_run_publishes_to_the_pr_its_head_ref_finds(
         lookups.append(kwargs)
         return PullRequestRef(number=8733, base_sha=base_sha)
 
-    candidate = _single_asset_test(tmp_path / "candidate")
-    bucket = EmptyBucket()
+    candidate, bucket = _publish_one_visual_target(monkeypatch, tmp_path)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.find_open_pull_request", find)
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", lambda *_args, **_kwargs: [candidate])
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.boto3.client", lambda *_args, **_kwargs: bucket)
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.upload_bundle", lambda *_args, **_kwargs: None)
     _forbid(monkeypatch, "write_baseline_pointers")
 
     main()
 
-    assert [(lookup["head"], lookup["head_sha"]) for lookup in lookups] == [("fork-owner:topic", HEAD_SHA)]
-    assert [comment["pull_request"] for comment in fork_run.comments] == [8733]
+    assert [(lookup["head"], lookup["head_sha"]) for lookup in lookups] == [(PR_HEAD_REF, HEAD_SHA)]
+    assert [comment["pull_request"] for comment in publisher_run.comments] == [8733]
     assert bucket.requested[0] == f"commits/{base_sha}/tests/{candidate.slug}/metadata.json"
-    assert [check["conclusion"] for check in fork_run.checks] == ["success", "success"]
+    assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
 
-def test_a_fork_run_whose_commit_is_no_longer_a_pr_head_only_closes_its_check(
-    monkeypatch: pytest.MonkeyPatch, fork_run: ForkRun
+def test_a_devel_push_run_advances_the_baseline_pointers_and_looks_up_no_pr(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
+) -> None:
+    candidate, _ = _publish_one_visual_target(monkeypatch, tmp_path)
+    pointers: list[list[str]] = []
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.write_baseline_pointers", lambda slugs, **_kwargs: pointers.append(slugs)
+    )
+    _forbid(monkeypatch, "find_open_pull_request")
+    monkeypatch.setattr("sys.argv", _publisher_argv(tmp_path / "work"))
+
+    main()
+
+    assert pointers == [[candidate.slug]]
+    assert publisher_run.comments == []
+    assert [check["conclusion"] for check in publisher_run.checks] == ["success"]
+
+
+def test_a_pr_run_whose_commit_is_no_longer_a_pr_head_only_closes_its_check(
+    monkeypatch: pytest.MonkeyPatch, publisher_run: PublisherRun
 ) -> None:
     monkeypatch.setattr("devinfra.pr_visuals.publisher.find_open_pull_request", lambda **_kwargs: None)
     _forbid(monkeypatch, "download_visual_tests", "refresh_stale_pull_request_comment", "write_baseline_pointers")
 
     main()
 
-    assert [(check["conclusion"], check["external_id"]) for check in fork_run.checks] == [("neutral", FORK_CHECK_ID)]
-    assert "no longer the head of an open pull request" in str(fork_run.checks[0]["summary"])
-    assert fork_run.comments == []
+    assert [(check["conclusion"], check["external_id"]) for check in publisher_run.checks] == [("neutral", PR_CHECK_ID)]
+    assert "no longer the head of an open pull request" in str(publisher_run.checks[0]["summary"])
+    assert publisher_run.comments == []
 
 
 def test_a_failed_pr_lookup_fails_the_check_instead_of_leaving_it_in_progress(
-    monkeypatch: pytest.MonkeyPatch, fork_run: ForkRun
+    monkeypatch: pytest.MonkeyPatch, publisher_run: PublisherRun
 ) -> None:
     def ambiguous(**_kwargs: str) -> NoReturn:
         raise ValueError("Expected exactly one item in iterable, but got two")
@@ -816,20 +847,8 @@ def test_a_failed_pr_lookup_fails_the_check_instead_of_leaving_it_in_progress(
     with pytest.raises(ValueError, match="Expected exactly one"):
         main()
 
-    assert [(check["conclusion"], check["external_id"]) for check in fork_run.checks] == [("failure", FORK_CHECK_ID)]
-    assert fork_run.comments == [], "with no PR identified there is nowhere to comment"
-
-
-@pytest.mark.parametrize("hand_given", [["--pull-request", "8733"], ["--base-sha", "c" * 40]], ids=["pr", "base"])
-def test_a_head_ref_lookup_refuses_a_hand_given_pr_or_base(
-    monkeypatch: pytest.MonkeyPatch, fork_run: ForkRun, hand_given: list[str]
-) -> None:
-    monkeypatch.setattr("sys.argv", [*sys.argv, *hand_given])
-
-    with pytest.raises(ValueError, match="do not also pass them"):
-        main()
-
-    assert fork_run.checks == []
+    assert [(check["conclusion"], check["external_id"]) for check in publisher_run.checks] == [("failure", PR_CHECK_ID)]
+    assert publisher_run.comments == [], "with no PR identified there is nowhere to comment"
 
 
 def test_upload_publishes_all_indexes_last(tmp_path: Path) -> None:

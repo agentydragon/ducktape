@@ -916,8 +916,8 @@ def refresh_stale_pull_request_comment(
 def diff_check(review_tests: list[ReviewTest]) -> tuple[Literal["success", "neutral"], str] | None:
     """Conclusion and summary for the `PR visual diffs` check-run.
 
-    ``None`` when no target was compared against a baseline (devel pushes, or
-    a run without ``--base-sha``) — the check-run is simply absent then.
+    ``None`` when no target was compared against a baseline (devel pushes) —
+    the check-run is simply absent then.
     Visual changes conclude ``neutral``, never ``failure``: the check is a
     review pointer, not a merge gate.
     """
@@ -947,16 +947,14 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--ci-run-attempt", required=True)
     result.add_argument("--work-dir", type=Path, required=True)
     result.add_argument("--sha", required=True)
-    result.add_argument("--base-sha")
     result.add_argument("--repository", required=True)
     result.add_argument("--endpoint", required=True)
     result.add_argument("--bucket", required=True)
     result.add_argument("--public-base-url", required=True)
-    result.add_argument("--pull-request", type=int)
     result.add_argument(
         "--pull-request-head",
-        help="OWNER:BRANCH of a fork PR, whose number and base commit the publisher looks up "
-        "(a fork's workflow_run event lists no pull_requests); exclusive with --pull-request and --base-sha",
+        help="OWNER:BRANCH of the PR this run was built for, whose number and base commit are looked up; "
+        "absent for a devel push",
     )
     result.add_argument("--check-external-id")
     result.add_argument("--ci-conclusion", default="success")
@@ -1015,8 +1013,6 @@ def publish_only(args: argparse.Namespace, *, github_token: str, api_key: str, d
 
 def main() -> None:
     args = parser().parse_args()
-    if args.pull_request_head and (args.pull_request is not None or args.base_sha):
-        raise ValueError("--pull-request-head looks up the pull request and its base itself; do not also pass them")
     github_token = os.environ.get("GITHUB_TOKEN")
     if not github_token:
         raise ValueError("GITHUB_TOKEN is required to publish the visual-review check run")
@@ -1045,8 +1041,8 @@ def main() -> None:
         publish_only(args, github_token=github_token, api_key=api_key, details_url=details_url)
         return
 
-    pull_request = args.pull_request
-    base_sha = args.base_sha or None
+    pull_request: int | None = None
+    base_sha: str | None = None
     try:
         if args.pull_request_head:
             found = find_open_pull_request(
@@ -1084,8 +1080,6 @@ def main() -> None:
         s3 = boto3.client("s3", endpoint_url=args.endpoint)
         baseline_source: BaselineSource | None = None
         if base_sha:
-            if not FULL_SHA.fullmatch(base_sha):
-                raise ValueError("--base-sha must be the full 40-character lowercase SHA-1")
             baseline_source = S3BaselineSource(client=s3, bucket=args.bucket)
         bundle = build_bundle(
             tests,

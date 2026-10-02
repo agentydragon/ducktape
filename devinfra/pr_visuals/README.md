@@ -76,21 +76,22 @@ pushes) and puts more `baseline_fallback` warnings on PR comments. The first
 uncancelled run heals it. Deferred fix: <devinfra/ci/TODO.md> § Visual publishing
 races the invocation it reads.
 
-## Fork PRs
+## Which PR a run is for
 
-**Deviation:** an agent-fork PR's Bazel run is `Trusted fork PR CI`
-(`pull_request_target`), not `CI`, and its `workflow_run` event lists no pull
-request. The workflow passes the fork's `OWNER:BRANCH` as `--pull-request-head`,
-and <pull_request.py> finds the open PR whose head is the run's commit, taking its
-number and base commit from it. From there the run is a same-repo PR run.
+The publisher never takes a PR from the run's event: `pull_requests` is empty for a
+fork, and for any run it is resolved when the event is delivered, not for the run's
+commit. The workflow passes a PR run's `OWNER:BRANCH` as `--pull-request-head`, and
+<pull_request.py> finds the open PR whose head is the run's commit, taking its number
+and base commit from it. A devel push passes none, which is also what lets it
+advance the baseline pointers.
 
-- A completed run whose commit is no longer an open PR's head (pushed over, or
-  the PR closed, before publication) gets a `neutral` check and no comment or
-  bundle; a newer head's own run publishes. Two such PRs fail the run rather than
-  guess.
-- Only the agent fork is followed. Another fork's CI run is authorised by a
-  reviewer, which does not extend to hosting its output in our bucket and PR
-  comments.
+- A completed run whose commit is no longer an open PR's head (pushed over, or the PR
+  closed, before publication) gets a `neutral` check and no comment or bundle; a newer
+  head's own run publishes. Two such PRs fail the run rather than guess.
+- **Deviation:** an agent-fork PR's Bazel run is `Trusted fork PR CI`
+  (`pull_request_target`), not `CI`. Only the agent fork is followed: another fork's CI
+  run is authorised by a reviewer, which does not extend to hosting its output in our
+  bucket and PR comments.
 
 ## Baseline resolution
 

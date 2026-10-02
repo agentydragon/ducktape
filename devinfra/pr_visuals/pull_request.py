@@ -1,7 +1,7 @@
-"""Find the open pull request a fork's CI run was built for.
+"""Find the open pull request a CI run was built for.
 
-A `workflow_run` event lists the PR in `pull_requests` only for same-repository PRs; a fork PR's run
-leaves it empty, so the PR is found by the ref the run was triggered on.
+A `workflow_run` event's `pull_requests` is empty for a fork's run, and for any run it is resolved when
+the event is delivered, not for the run's commit; so the PR is found from the run's head ref and commit.
 """
 
 from __future__ import annotations

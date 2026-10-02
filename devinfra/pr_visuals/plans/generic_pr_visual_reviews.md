@@ -15,8 +15,8 @@ a manifest cannot advance its pointer. Baseline identity is `(repository,
 canonical Bazel test label, manifest asset path)`.
 
 The baseline/diff path ships exact-pixel comparison: the publisher resolves each
-candidate asset's baseline from the PR's base commit (passed by CI as
-`--base-sha`), falling back per target to the mutable devel-latest pointer
+candidate asset's baseline from the PR's base commit (looked up from the PR
+by the publisher), falling back per target to the mutable devel-latest pointer
 `baselines/<slug>.json` when the base commit's bundle lacks the target (devel
 pushes only publish targets whose results expose visual artifacts, so base bundles can have gaps).
 It classifies each asset `unchanged` / `modified` / `new` / `removed`, renders
