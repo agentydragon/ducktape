@@ -13,7 +13,7 @@ spec: {}
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: agentplane-staging-quota
+  name: quota
   namespace: agentplane-staging
 spec:
   hard:
@@ -26,7 +26,7 @@ spec:
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: agentplane-staging-limits
+  name: limits
   namespace: agentplane-staging
 spec:
   limits:

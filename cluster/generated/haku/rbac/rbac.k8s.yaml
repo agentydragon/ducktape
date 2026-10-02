@@ -82,7 +82,7 @@ subjects:
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: haku-sandbox-quota
+  name: quota
   namespace: haku-sandbox
 spec:
   hard:
@@ -99,7 +99,7 @@ spec:
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: haku-sandbox-limits
+  name: limits
   namespace: haku-sandbox
 spec:
   limits:

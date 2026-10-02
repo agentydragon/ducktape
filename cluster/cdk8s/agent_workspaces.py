@@ -162,7 +162,7 @@ def chart(app: App) -> Chart:
     k8s.KubeResourceQuota(
         chart,
         "quota",
-        metadata=k8s.ObjectMeta(name="agent-workspaces-quota", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="quota", namespace=NAMESPACE),
         spec=k8s.ResourceQuotaSpec(
             hard=_quantities(
                 {
@@ -182,7 +182,7 @@ def chart(app: App) -> Chart:
     k8s.KubeLimitRange(
         chart,
         "limits",
-        metadata=k8s.ObjectMeta(name="agent-workspaces-limits", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="limits", namespace=NAMESPACE),
         spec=k8s.LimitRangeSpec(
             limits=[
                 k8s.LimitRangeItem(

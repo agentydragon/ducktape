@@ -46,7 +46,7 @@ def _add_sandbox(chart: Chart) -> None:
     k8s.KubeResourceQuota(
         chart,
         "quota",
-        metadata=k8s.ObjectMeta(name="claude-sandbox-quota", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="quota", namespace=NAMESPACE),
         spec=k8s.ResourceQuotaSpec(
             hard=_quantities(
                 {
@@ -66,7 +66,7 @@ def _add_sandbox(chart: Chart) -> None:
     k8s.KubeLimitRange(
         chart,
         "limits",
-        metadata=k8s.ObjectMeta(name="claude-sandbox-limits", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="limits", namespace=NAMESPACE),
         spec=k8s.LimitRangeSpec(
             limits=[
                 # Default limits for containers without specified limits

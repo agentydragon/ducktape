@@ -10,7 +10,7 @@ spec: {}
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: agent-workspaces-quota
+  name: quota
   namespace: agent-workspaces
 spec:
   hard:
@@ -27,7 +27,7 @@ spec:
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: agent-workspaces-limits
+  name: limits
   namespace: agent-workspaces
 spec:
   limits:

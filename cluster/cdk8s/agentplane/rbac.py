@@ -92,7 +92,7 @@ class NamespaceQuota(Construct):
         k8s.KubeResourceQuota(
             self,
             "resourcequota",
-            metadata=k8s.ObjectMeta(name=f"{env.namespace}-quota", namespace=env.namespace),
+            metadata=k8s.ObjectMeta(name="quota", namespace=env.namespace),
             spec=k8s.ResourceQuotaSpec(
                 hard={
                     "requests.cpu": k8s.Quantity.from_string("4"),
@@ -106,7 +106,7 @@ class NamespaceQuota(Construct):
         k8s.KubeLimitRange(
             self,
             "limitrange",
-            metadata=k8s.ObjectMeta(name=f"{env.namespace}-limits", namespace=env.namespace),
+            metadata=k8s.ObjectMeta(name="limits", namespace=env.namespace),
             spec=k8s.LimitRangeSpec(
                 limits=[
                     k8s.LimitRangeItem(
