@@ -763,21 +763,11 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
         >
           {item.title} · completed
         </Box>
-        <Text
-          size="sm"
-          py="xs"
-          data-activity-title
-          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-        >
+        <Text size="sm" py="xs" data-activity-title style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
           {item.title}
         </Text>
         {item.detail !== undefined && (
-          <Text
-            size="sm"
-            py="xs"
-            data-activity-detail
-            style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-          >
+          <Text size="sm" py="xs" data-activity-detail style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {item.detail}
           </Text>
         )}

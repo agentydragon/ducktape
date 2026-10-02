@@ -626,9 +626,9 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
           ? { data: sidebarSessions, next_cursor: null, resume_token: null }
           : scenario.startsWith("SessionCompletedActivity")
             ? { data: [noisySession], next_cursor: null, resume_token: null }
-          : scenario.startsWith("SessionNoisy")
-            ? { data: [noisySession], next_cursor: null, resume_token: null }
-            : sessionPage
+            : scenario.startsWith("SessionNoisy")
+              ? { data: [noisySession], next_cursor: null, resume_token: null }
+              : sessionPage
       )
     );
   }
@@ -760,7 +760,11 @@ if (scenario.startsWith("SessionCompletedActivity")) {
     } else {
       const title = details.querySelector<HTMLElement>("[data-activity-title]");
       const detail = details.querySelector<HTMLElement>("[data-activity-detail]");
-      if (!details.open || title?.textContent !== longCommandActivityTitle || detail?.textContent !== longCommandActivityDetail) {
+      if (
+        !details.open ||
+        title?.textContent !== longCommandActivityTitle ||
+        detail?.textContent !== longCommandActivityDetail
+      ) {
         throw new Error("Expanded completed activity omitted its full title or detail");
       }
       if (title.getBoundingClientRect().height <= 0 || detail.getBoundingClientRect().height <= 0) {
