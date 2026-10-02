@@ -13,19 +13,29 @@ export function groupToolActivity(items: TranscriptItem[]): Array<TranscriptItem
   const rows: Array<TranscriptItem | ToolGroup> = [];
   let pending: Array<TranscriptToolRun | TranscriptThinking> = [];
   const flush = (): void => {
-    const runs = pending.filter((item) => item.kind === "tool-run");
+    // Thinking before the next tool belongs to that work; trailing thinking
+    // remains a separate disclosure when prose or another boundary intervenes.
+    let end = pending.length;
+    while (end > 0 && pending[end - 1]!.kind === "thinking") end -= 1;
+    const members = pending.slice(0, end);
+    const runs = members.filter((item) => item.kind === "tool-run");
     if (runs.length > 1) {
-      const events = new Map(pending.flatMap((item) => item.events).map((event) => [event.event_id, event]));
-      rows.push({ kind: "tool-group", id: runs[0]!.id, items: pending, events: [...events.values()] });
+      const events = new Map(members.flatMap((item) => item.events).map((event) => [event.event_id, event]));
+      rows.push({ kind: "tool-group", id: runs[0]!.id, items: members, events: [...events.values()] });
     } else {
-      rows.push(...pending);
+      rows.push(...members);
     }
+    rows.push(...pending.slice(end));
     pending = [];
   };
   for (const item of items) {
     if (item.kind === "thinking") {
       pending.push(item);
-    } else if (item.kind === "tool-run" && !item.standalone) {
+    } else if (
+      item.kind === "tool-run" &&
+      !item.standalone &&
+      !item.tools.some((tool) => tool.name === "Task" || tool.name === "Agent")
+    ) {
       const previous = pending.find((candidate) => candidate.kind === "tool-run");
       if (previous?.parentToolUseId !== item.parentToolUseId) flush();
       pending.push(item);
