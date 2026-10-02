@@ -53,7 +53,7 @@ SSH_READS_SET = "ssh-reads"
 _PUBLIC_CODER_INSTRUCTIONS = (
     Path(__file__).with_name("public_coder_instructions.md").read_text(encoding="utf-8").strip()
 )
-_HAKU_BOOTSTRAP = Path(__file__).with_name("haku_bootstrap.sh").read_text(encoding="utf-8")
+_HAKU_THREAD_SETUP = Path(__file__).with_name("haku_thread_setup.sh").read_text(encoding="utf-8")
 
 
 def reasoning_efforts(model: str) -> list[str]:
@@ -136,6 +136,9 @@ def settings(
                             "memory/procedures/run.md. Read those, then execute the run "
                             "procedure end to end. Commit and push haku-state as you go."
                         ),
+                        # The Forgejo egress policy substitutes the inert password placeholder
+                        # in the setup script with Haku's credential.
+                        setup_script=_HAKU_THREAD_SETUP,
                     )
                 }
                 if haku_preset_model is not None
@@ -198,18 +201,7 @@ def settings(
                             "coinbase-credentials",
                         ],
                         thread_preset=_THREAD_PRESET_HAKU_CLAUDE,
-                        # Shallow clone of haku-state over the in-cluster Forgejo, matching the
-                        # retired Console sandbox bootstrap's --depth 1 clone policy
-                        # (haku/x/sandbox_mcp/image/haku-sandbox-setup.sh):
-                        # because the box only needs the HEAD checkout, not full history. The
-                        # URL's userinfo carries the literal placeholder string as the password
-                        # half; git turns that into a Basic Authorization header, and the
-                        # `forgejo-haku` EgressPolicy's credentialRef substitutes it for the
-                        # `haku` Forgejo account's real password on the way out
-                        # (egress_staging_credentials.py) -- the placeholder itself is inert, so
-                        # it is safe to embed literally here. ducktape is cloned too, read-only
-                        # reference the same way Haku's own sandboxes carry it.
-                        bootstrap=_HAKU_BOOTSTRAP,
+                        # Each new Thread gets its own haku-state and ducktape checkout.
                     )
                 }
                 if haku_preset_model is not None

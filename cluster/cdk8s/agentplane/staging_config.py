@@ -92,7 +92,7 @@ _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
 _FINANCE_AGENT_INSTRUCTIONS = (
     Path(__file__).with_name("finance_agent_instructions.md").read_text(encoding="utf-8").strip()
 )
-_FINANCE_AGENT_BOOTSTRAP = Path(__file__).with_name("finance_agent_bootstrap.sh").read_text(encoding="utf-8")
+_FINANCE_AGENT_THREAD_SETUP = Path(__file__).with_name("finance_agent_thread_setup.sh").read_text(encoding="utf-8")
 # The ActionPolicySet objects actions_staging_policies creates for the public-coder
 # preset, named here because the preset binds them: reads of confirmed-public
 # repositories, of ducktape and its fork, and of the private Gaffer repository.
@@ -219,6 +219,8 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         cwd="/state/workspaces/{session_id}",
         reasoning_effort="medium",
         instructions=_FINANCE_AGENT_INSTRUCTIONS,
+        # The egress policy substitutes the inert Forgejo password placeholder in this script.
+        setup_script=_FINANCE_AGENT_THREAD_SETUP,
     )
     cfg.sandbox_presets["finance-agent"] = SandboxPreset(
         title="Finance agent",
@@ -239,9 +241,5 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         # through the same agentydragon-agent account, for the same generic-tooling role.
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
-        # Placeholder password: the `forgejo-finance-agent` EgressPolicy's credentialRef
-        # substitutes it for the `finance-agent` Forgejo account's real password on the
-        # way out (egress_staging_credentials.py), same shape as the `haku` preset.
-        bootstrap=_FINANCE_AGENT_BOOTSTRAP,
     )
     return cfg

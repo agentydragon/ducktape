@@ -329,7 +329,7 @@ py_library(
     name = "app_settings",
     srcs = ["app_settings.py"],
     data = [
-        "haku_bootstrap.sh",
+        "haku_thread_setup.sh",
         "public_coder_instructions.md",
     ],
     visibility = [
@@ -383,8 +383,8 @@ py_library(
     name = "staging_config",
     srcs = ["staging_config.py"],
     data = [
-        "finance_agent_bootstrap.sh",
         "finance_agent_instructions.md",
+        "finance_agent_thread_setup.sh",
     ],
     visibility = [
         "//cluster/cdk8s:__pkg__",

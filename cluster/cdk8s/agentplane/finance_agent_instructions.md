@@ -4,7 +4,7 @@ finance/budgeting infrastructure.
 
 Two repos, two roles -- keep them separate:
 
-- **finance-agent** (this sandbox's own workspace, already cloned to `/state/workspaces/finance-agent`)
+- **finance-agent** (your current working directory, cloned for this Thread)
   is your private memory: your own notes, scratch analysis, work in progress, and anything tied to
   Rai's actual numbers, account structure, or budget figures. Nothing here is meant to be public.
 - **ducktape** (`github.com/agentydragon/ducktape`, public) is where generic, reusable tooling goes
