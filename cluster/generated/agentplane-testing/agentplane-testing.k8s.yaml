@@ -83,6 +83,9 @@ spec:
         port: "5432"
         uri: postgresql://actions:{{ .password }}@postgres-rw.agentplane-testing.svc:5432/actions
         username: actions
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
       type: kubernetes.io/basic-auth
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
@@ -120,6 +123,9 @@ spec:
         port: "5432"
         uri: postgresql://egress:{{ .password }}@postgres-rw.agentplane-testing.svc:5432/egress
         username: egress
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
       type: kubernetes.io/basic-auth
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
@@ -157,6 +163,9 @@ spec:
         port: "5432"
         uri: postgresql://electric:{{ .password }}@postgres-rw.agentplane-testing.svc:5432/app
         username: electric
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
       type: kubernetes.io/basic-auth
 ---
 apiVersion: postgresql.cnpg.io/v1

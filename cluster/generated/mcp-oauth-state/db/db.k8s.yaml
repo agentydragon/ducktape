@@ -33,6 +33,9 @@ spec:
         port: "5432"
         uri: postgresql://mcp_oauth_grocy_sf:{{ .password }}@mcp-oauth-state-db-rw.mcp-oauth-state.svc:5432/mcp_oauth_grocy_sf
         username: mcp_oauth_grocy_sf
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
       type: kubernetes.io/basic-auth
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
@@ -70,6 +73,9 @@ spec:
         port: "5432"
         uri: postgresql://mcp_oauth_grocy_vallejo:{{ .password }}@mcp-oauth-state-db-rw.mcp-oauth-state.svc:5432/mcp_oauth_grocy_vallejo
         username: mcp_oauth_grocy_vallejo
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
       type: kubernetes.io/basic-auth
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
@@ -107,6 +113,9 @@ spec:
         port: "5432"
         uri: postgresql://mcp_oauth_tana:{{ .password }}@mcp-oauth-state-db-rw.mcp-oauth-state.svc:5432/mcp_oauth_tana
         username: mcp_oauth_tana
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
       type: kubernetes.io/basic-auth
 ---
 apiVersion: postgresql.cnpg.io/v1

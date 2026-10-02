@@ -140,6 +140,9 @@ spec:
         DATABASE_URL: postgresql+asyncpg://haku_indexer:{{ .password }}@haku-console-db-rw.haku-console.svc:5432/approval_store
         password: "{{ .password }}"
         username: haku_indexer
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
       type: kubernetes.io/basic-auth
 ---
 apiVersion: postgresql.cnpg.io/v1

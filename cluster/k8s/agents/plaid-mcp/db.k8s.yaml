@@ -33,6 +33,9 @@ spec:
         password: "{{ .password }}"
         port: "5432"
         username: plaid_ro
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
@@ -69,6 +72,9 @@ spec:
         password: "{{ .password }}"
         port: "5432"
         username: plaid_spend
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
 ---
 apiVersion: v1
 kind: ServiceAccount

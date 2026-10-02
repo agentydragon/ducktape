@@ -130,9 +130,7 @@ def _database(scope: Construct) -> None:
 
 def _readonly_credentials(scope: Construct) -> None:
     """ESO mints the read-only password and replaces it at `mint_db_role_secret`'s refresh
-    interval. `cnpg.io/reload` makes the CNPG operator watch the Secret, so a new password
-    reaches the role when ESO writes it, not at the operator's next unrelated reconcile.
-    Reflector mirrors the Secret into claude-sandbox."""
+    interval. Reflector mirrors the Secret into claude-sandbox."""
     mint_db_role_secret(
         scope,
         "readonly-credentials",
@@ -142,7 +140,6 @@ def _readonly_credentials(scope: Construct) -> None:
         host=POSTGRES.rw.host,
         port=POSTGRES.rw.port.number,
         database=_DATABASE,
-        target_labels={"cnpg.io/reload": "true"},
         target_annotations={
             "description": (
                 "Read-only Postgres credentials for sandbox agents. CNPG sets the study_casino_ro password from"
