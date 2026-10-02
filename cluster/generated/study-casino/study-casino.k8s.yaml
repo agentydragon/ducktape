@@ -32,7 +32,7 @@ spec:
   instances: 3
   managed:
     roles:
-      - comment: Read-only access for sandbox agents; object GRANTs come from the study-casino-db-readonly-provisioner Job.
+      - comment: Read-only access for sandbox agents; object GRANTs come from the db-readonly-provisioner Job.
         ensure: present
         login: true
         name: study_casino_ro
@@ -100,7 +100,7 @@ metadata:
   annotations:
     description: Applies the read-only object GRANTs for study_casino_ro. The role itself is managed declaratively by CNPG (Cluster.spec.managed.roles).
     kustomize.toolkit.fluxcd.io/force: enabled
-  name: study-casino-db-readonly-provisioner
+  name: db-readonly-provisioner
   namespace: study-casino
 spec:
   backoffLimit: 0
