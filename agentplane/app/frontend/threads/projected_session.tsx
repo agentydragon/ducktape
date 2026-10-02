@@ -806,7 +806,6 @@ function ProjectedSessionBody({
           threadId={threadId}
           entities={entities}
           localCommands={commands.local.commands}
-          store={commands.store}
           dismissedCommandIds={commands.local.dismissedCommandIds}
         />
         {selectedCommandIds.length > 0 && (

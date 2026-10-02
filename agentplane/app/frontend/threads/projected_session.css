@@ -41,9 +41,9 @@
   min-width: 0;
 }
 
-/* Keep room for the Retry affordance in the gutter before an unadmitted local message. */
+/* Keep room for actions and the evidence toggle in the gutter before an input message. */
 .agentplane-user-bubble[data-has-action="true"] {
-  max-width: min(34rem, calc(100% - 4.5rem));
+  max-width: min(34rem, calc(100% - 6rem));
 }
 
 .agentplane-reasoning-row {

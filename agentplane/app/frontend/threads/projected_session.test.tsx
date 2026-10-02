@@ -772,6 +772,34 @@ it.each([
   expect(new LocalCommands(THREAD.id).isDismissed("test-entity")).toBe(true);
 });
 
+it("replaces an applied input outcome with its confirmed message", async () => {
+  const text = "The harness accepted this input";
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          { operation: "submit_input", outcome: "effected", outcome_cursor: "1", outcome_reason: null },
+          { inputRef: reference("command-input", "command_input") }
+        ),
+        entity(
+          "confirmed_input",
+          { harness_message_id: "message", origin_command_ids: ["test-entity"] },
+          { inputRef: reference("confirmed-input", "confirmed_input") }
+        ),
+      ],
+    }),
+    {
+      "command-input:command_input": "Original command text",
+      "confirmed-input:confirmed_input": text,
+    }
+  );
+  const bubbles = container.querySelectorAll(".agentplane-user-bubble");
+  expect(bubbles).toHaveLength(1);
+  expect(bubbles[0]?.querySelector(".agentplane-verbatim")?.textContent).toBe(text);
+});
+
 it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {
   const container = await render(
     threadState({

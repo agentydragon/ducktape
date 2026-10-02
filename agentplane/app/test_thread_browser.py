@@ -1015,6 +1015,17 @@ async def expect_projected_cursor(page: Page, cursor: int) -> None:
     )
 
 
+async def expect_archived_events(
+    event_logs: EventLogStore, thread_id: str, expected: list[event_log_pb2.EventEntry]
+) -> list[event_log_pb2.EventEntry]:
+    async with asyncio.timeout(15):
+        while True:
+            events = await event_logs.events(thread_id, limit=100)
+            if events == expected:
+                return events
+            await asyncio.sleep(0.01)
+
+
 async def expect_history_bottom(page: Page) -> None:
     await page.wait_for_function(
         """() => {
@@ -1372,7 +1383,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
 
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
-        pending = page.get_by_role("region", name="Pending input messages")
+        pending = page.get_by_role("region", name="Input messages")
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
         await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
         await expect(page.locator('.agentplane-user-bubble[data-message-phase="local"]')).to_have_count(1)
@@ -1412,8 +1423,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         )
         await expect(pending).to_have_count(0)
         assert source.commands.empty(), "the runner must receive the Command once"
-        archived = await thread_browser.event_logs.events(thread.id, limit=100)
-        assert archived == source.entries
+        archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
         assert [entry for entry in archived if entry.event.HasField("command_admitted")] == [admission]
     finally:
         drop_reply.set()
@@ -1442,9 +1452,9 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     assert admission.event.command_admitted.command == command
     assert admission == source.entries[6]
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
+    await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
 
-    pending = page.get_by_role("region", name="Pending input messages")
+    pending = page.get_by_role("region", name="Input messages")
     await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
     await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1506,7 +1516,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         assert admission.event.command_admitted.command == command
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
-        pending = page.get_by_role("region", name="Pending input messages")
+        pending = page.get_by_role("region", name="Input messages")
         await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
 
         # Interrupt real shape delivery. The published Electric client must retry its own
@@ -1549,7 +1559,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         assert len(submissions) == 1
         assert source.commands.empty()
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-        assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
+        await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
     finally:
         drop_reply.set()
         await page.unroute_all(behavior="wait")
@@ -1567,7 +1577,7 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
     await composer.press("Enter")
     async with asyncio.timeout(15):
         command = await source.commands.get()
-    pending = page.get_by_role("region", name="Pending input messages")
+    pending = page.get_by_role("region", name="Input messages")
     await expect_pending_message_bubble(page, command.submit_input.text)
 
     async def terminal_shape_error(route: Route) -> None:
