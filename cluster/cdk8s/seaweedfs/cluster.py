@@ -109,6 +109,7 @@ TENANTS = frozenset(
         "nix-cache",  # nix_cache/attic.py
         "oci-cache",  # oci_cache/zot.py
         "public-coder-agent",  # public_coder_backup.py
+        "session-backup",  # session_backup.py
         "vm-images-publisher",  # vm_images_publisher/publisher.py
     }
 )

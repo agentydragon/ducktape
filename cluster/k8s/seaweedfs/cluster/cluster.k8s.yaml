@@ -257,6 +257,7 @@ spec:
               - nix-cache
               - oci-cache
               - public-coder-agent
+              - session-backup
               - vm-images-publisher
     - group: seaweed.seaweedfs.com
       kind: S3Identity
@@ -276,6 +277,7 @@ spec:
               - nix-cache
               - oci-cache
               - public-coder-agent
+              - session-backup
               - vm-images-publisher
     - group: seaweed.seaweedfs.com
       kind: S3Credentials
@@ -295,6 +297,7 @@ spec:
               - nix-cache
               - oci-cache
               - public-coder-agent
+              - session-backup
               - vm-images-publisher
   to:
     - group: seaweed.seaweedfs.com

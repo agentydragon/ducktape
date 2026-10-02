@@ -66,6 +66,7 @@ from cluster.cdk8s import (
     public_coder_sshpiper,
     reflector,
     reloader,
+    session_backup,
     talos_cloud_controller_manager,
     tana_mcp,
     user_agentydragon,
@@ -1002,6 +1003,19 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         volsync_kustomization,
     )
+    session_backup_artifact = artifact("session-backup", session_backup.OUTPUT_DIR)
+    session_backup.session_backup(
+        flux_chart,
+        write_directory(
+            root,
+            session_backup_artifact,
+            session_backup.chart,
+            siblings=["rest-server-auth.sops.yaml", "session-backup-volsync-restic-password.sops.yaml"],
+        ),
+        seaweedfs_operator_kustomization,
+        external_secrets_operator_kustomization,
+        volsync_kustomization,
+    )
     oci_cache_artifact = artifact("oci-cache", oci_cache_zot.OUTPUT_DIR)
     oci_cache_kustomization = oci_cache_flux_kustomizations.oci_cache(
         flux_chart,
@@ -1634,6 +1648,7 @@ def generate_manifests(root: Path) -> None:
             plaid_mcp_artifact,
             public_coder_agent_app_artifact,
             public_coder_agent_backup_artifact,
+            session_backup_artifact,
             activitywatch_artifact,
             agent_workspaces_app_artifact,
             airlock_artifact,

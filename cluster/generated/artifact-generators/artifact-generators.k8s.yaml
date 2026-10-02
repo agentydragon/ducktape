@@ -362,6 +362,11 @@ spec:
       name: public-coder-agent-backup
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/session-backup/**"
+          to: "@artifact/cluster/k8s/session-backup/"
+      name: session-backup
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/activitywatch/**"
           to: "@artifact/cluster/k8s/activitywatch/"
       name: activitywatch
