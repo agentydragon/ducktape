@@ -60,20 +60,19 @@ Model with constructs, deploy with one props object per environment.
   string spelled again. So a helper that builds an object returns it: the caller gets
   something to reference instead of a name to repeat.
 - **A name carries only what its namespace does not.** In namespace `atuin` the server
-  is `server`, its quota `quota`, its PVC `data`. A namespace's principal workload and
-  the Service, HTTPRoute and monitors in front of it are `app`, or the namespace's last
-  word when that is `proxy`, `mcp`, `exporter` or `publisher` (`loki-read-proxy/proxy`,
-  `plaid-mcp/mcp`). Stutter we do not author is accepted: names a Helm chart or operator
-  derives (Helm release names and what the chart builds from them, CloudNativePG's
-  `<cluster>-rw`, the components Seaweed, ClickHouse and Alertmanager append to a CR
-  name), vendored upstream manifests, and names that are an identity outside the
-  namespace (SeaweedFS bucket and IAM names, Postgres database and role names, a Secret
-  mirrored into other namespaces under one name, cross-namespace RBAC named for its
-  consumer, a Role named in Agentplane's grant catalog or kept for existing managed
-  Sandboxes, whose snapshotted grants resolve it by name). A stateful object (PVC, CNPG
-  Cluster, Valkey, VolSync source) keeps its name until it moves for another reason,
-  because renaming it migrates data (<../AGENTS.md> § Migrating stateful Flux
-  Kustomizations).
+  is `server`, its quota `quota`, its PVC `data`. A namespace's one main workload, and
+  the Service, HTTPRoute and monitors in front of it, may keep the namespace's name
+  (`litellm/litellm`) or be called `app`. Stutter we do not author is accepted: names a
+  Helm chart or operator derives (Helm release names and what the chart builds from
+  them, CloudNativePG's `<cluster>-rw`, the components Seaweed, ClickHouse and
+  Alertmanager append to a CR name), vendored upstream manifests, and names that are an
+  identity outside the namespace (SeaweedFS bucket and IAM names, Postgres database and
+  role names, a Secret mirrored into other namespaces under one name, cross-namespace
+  RBAC named for its consumer, a Role named in Agentplane's grant catalog or kept for
+  existing managed Sandboxes, whose snapshotted grants resolve it by name). A stateful
+  object (PVC, CNPG Cluster, Valkey, VolSync source) keeps its name until it moves for
+  another reason, because renaming it migrates data (<../AGENTS.md> § Migrating stateful
+  Flux Kustomizations).
 - **The service's `Settings` is its deployment contract.** Flags, env vars and settings
   files are rendered through the binary's pydantic-settings model
   (`util/settings_contract.py`: `cli_args`, `env_name`, `settings_file`,
