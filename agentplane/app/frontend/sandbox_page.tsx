@@ -52,15 +52,15 @@ const HARNESSES: { value: Harness; label: string }[] = [
 
 function setupLabel(state: SetupState): string {
   switch (state) {
-    case SetupState.SETUP_STATE_NOT_REQUIRED:
+    case SetupState.NOT_REQUIRED:
       return "—";
-    case SetupState.SETUP_STATE_RUNNING:
+    case SetupState.RUNNING:
       return "Running";
-    case SetupState.SETUP_STATE_SUCCEEDED:
+    case SetupState.SUCCEEDED:
       return "Complete";
-    case SetupState.SETUP_STATE_FAILED:
+    case SetupState.FAILED:
       return "Failed";
-    case SetupState.SETUP_STATE_INTERRUPTED:
+    case SetupState.INTERRUPTED:
       return "Interrupted";
     default:
       return "Unknown";
