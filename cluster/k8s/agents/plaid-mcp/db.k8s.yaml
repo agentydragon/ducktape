@@ -194,7 +194,7 @@ kind: CiliumNetworkPolicy
 metadata:
   annotations:
     description: Allow the one-shot readonly-role provisioner to resolve and connect to the Plaid CNPG primary.
-  name: plaid-mcp-db-readonly-provisioner-egress
+  name: db-readonly-provisioner-egress
   namespace: plaid-mcp
 spec:
   egress:

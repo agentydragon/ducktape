@@ -448,7 +448,7 @@ def _network_policy(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "network-policy",
-        metadata=ApiObjectMetadata(name="loki-ingress", namespace=NAME),
+        metadata=ApiObjectMetadata(name="ingress", namespace=NAME),
         endpoint_selector={"app.kubernetes.io/name": NAME},
         ingress=[
             # Promtail → Loki (log push)

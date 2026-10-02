@@ -196,7 +196,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: authentik-server-ingress
+  name: server-ingress
   namespace: authentik
 spec:
   endpointSelector:

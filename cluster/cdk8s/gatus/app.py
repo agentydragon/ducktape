@@ -127,7 +127,7 @@ def _network_policies(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "ingress",
-        metadata=ApiObjectMetadata(name="gatus-ingress", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="ingress", namespace=_NAMESPACE),
         endpoint_selector=SERVICE.pods.selector,
         ingress=[
             # Cilium Gateway API (reserved:ingress identity) → Gatus
@@ -148,7 +148,7 @@ def _network_policies(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "dns-visibility",
-        metadata=ApiObjectMetadata(name="gatus-dns-visibility", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="dns-visibility", namespace=_NAMESPACE),
         endpoint_selector=SERVICE.pods.selector,
         egress=[
             cilium.dns_egress(protocols=["ANY"], resolves=["*"]),

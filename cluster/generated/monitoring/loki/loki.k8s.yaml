@@ -385,7 +385,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: loki-ingress
+  name: ingress
   namespace: loki
 spec:
   egress:

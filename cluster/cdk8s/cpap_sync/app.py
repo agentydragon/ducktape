@@ -239,7 +239,7 @@ def chart(app: App) -> Chart:
         chart,
         "egress",
         metadata=ApiObjectMetadata(
-            name="cpap-sync-egress",
+            name="egress",
             namespace=NAMESPACE,
             annotations={
                 "description": (

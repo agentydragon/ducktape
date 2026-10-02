@@ -522,7 +522,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: haku-openclaw-spike-ingress
+  name: ingress
   namespace: haku-openclaw-spike
 spec:
   ingress:
@@ -546,7 +546,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: haku-openclaw-spike-egress
+  name: egress
   namespace: haku-openclaw-spike
 spec:
   egress:

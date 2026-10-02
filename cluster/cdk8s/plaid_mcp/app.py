@@ -275,7 +275,7 @@ def chart(app: App) -> Chart:
         chart,
         "ingress-policy",
         metadata=ApiObjectMetadata(
-            name="plaid-mcp-ingress",
+            name="ingress",
             namespace=NAMESPACE,
             annotations={
                 "description": (

@@ -318,7 +318,7 @@ kind: CiliumNetworkPolicy
 metadata:
   annotations:
     description: The Gateway may reach the page. Web Pods may reach Authentik, the database, and the private control Service.
-  name: claude-session-sync-web
+  name: web
   namespace: claude-session-sync
 spec:
   egress:
@@ -378,7 +378,7 @@ kind: CiliumNetworkPolicy
 metadata:
   annotations:
     description: Only web Pods may call the single Claude credential and sync control process.
-  name: claude-session-sync-control
+  name: control
   namespace: claude-session-sync
 spec:
   egress:

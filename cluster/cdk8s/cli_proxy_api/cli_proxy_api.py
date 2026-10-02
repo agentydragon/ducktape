@@ -246,7 +246,7 @@ def _network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "network-policy",
-        metadata=ApiObjectMetadata(name="cli-proxy-api-ingress", namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="ingress", namespace=NAMESPACE),
         endpoint_selector=SERVICE.pods.selector,
         ingress=[
             # cilium-envoy hostNetwork traffic carries reserved:ingress identity. Preserves the

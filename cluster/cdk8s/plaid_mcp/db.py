@@ -155,7 +155,7 @@ def _readonly_provisioner(chart: Chart) -> None:
         chart,
         "provisioner-egress",
         metadata=ApiObjectMetadata(
-            name="plaid-mcp-db-readonly-provisioner-egress",
+            name="db-readonly-provisioner-egress",
             namespace=NAMESPACE,
             annotations={
                 "description": (

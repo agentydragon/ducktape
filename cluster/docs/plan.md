@@ -439,7 +439,7 @@ Most services lack network policies. Goal: default-deny per namespace.
 
 ### Scoped Historical Logs for `claude-sandbox`
 
-Agents in `claude-sandbox` can't reach Loki — `loki-ingress` CNP only allows
+Agents in `claude-sandbox` can't reach Loki — the `ingress` CNP in `loki` only allows
 promtail/grafana/alloy/gatus/authentik, and Loki runs `auth_enabled: false` so the
 CNP is the entire access boundary. Without log access, post-mortems on dead pods
 (e.g. the 2026-05-24 `tana-mcp` livenessProbe kill) are limited to metrics +
@@ -447,7 +447,7 @@ kubelet's short-lived previous-container buffer.
 
 Options, from cheapest to cleanest:
 
-- **A. Allowlist `claude-sandbox` on `loki-ingress` CNP.** ~5 lines. Grants full
+- **A. Allowlist `claude-sandbox` on the `ingress` CNP in `loki`.** ~5 lines. Grants full
   cluster Loki read; scoping relies on the agent querying only namespaces it has
   business in (same trust model as `namespace-diagnostics-reader`).
 - **B. `loki-agent-proxy` deployment in `monitoring`.** nginx + njs/Lua that

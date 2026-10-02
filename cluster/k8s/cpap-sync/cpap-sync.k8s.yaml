@@ -519,7 +519,7 @@ kind: CiliumNetworkPolicy
 metadata:
   annotations:
     description: The sync Job may resolve DNS, reach the in-cluster CPAP gateway Service, and push to Forgejo through the cluster gateway.
-  name: cpap-sync-egress
+  name: egress
   namespace: cpap-sync
 spec:
   egress:

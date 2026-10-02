@@ -339,7 +339,7 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "ciliumnetworkpolicy",
-        metadata=ApiObjectMetadata(name="airlock-ingress", namespace=NAME),
+        metadata=ApiObjectMetadata(name="ingress", namespace=NAME),
         endpoint_selector=SERVICE.pods.selector,
         ingress=[
             _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.INGRESS),

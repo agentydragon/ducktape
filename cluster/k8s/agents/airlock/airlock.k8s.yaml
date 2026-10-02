@@ -265,7 +265,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: airlock-ingress
+  name: ingress
   namespace: airlock
 spec:
   endpointSelector:

@@ -66,7 +66,7 @@ class ResticBackup(Construct):
         self.network_policy = k8s.KubeNetworkPolicy(
             self,
             "volsync-egress",
-            metadata=k8s.ObjectMeta(name=f"{namespace}-volsync-egress", namespace=namespace),
+            metadata=k8s.ObjectMeta(name="volsync-egress", namespace=namespace),
             spec=k8s.NetworkPolicySpec(
                 pod_selector=k8s.LabelSelector(match_labels=mover_labels),
                 policy_types=["Egress"],

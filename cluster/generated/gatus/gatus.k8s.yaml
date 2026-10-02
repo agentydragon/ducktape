@@ -117,7 +117,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: gatus-ingress
+  name: ingress
   namespace: gatus
 spec:
   endpointSelector:
@@ -141,7 +141,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: gatus-dns-visibility
+  name: dns-visibility
   namespace: gatus
 spec:
   egress:

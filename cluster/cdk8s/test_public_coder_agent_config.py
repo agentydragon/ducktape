@@ -176,7 +176,7 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
 
 
 def test_app_egress_reaches_the_internet_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
-    egress = _one(app_objects, "NetworkPolicy", "public-coder-agent-egress")["spec"]["egress"]
+    egress = _one(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
     assert all(rule.get("to") for rule in egress)
     assert not any("ipBlock" in peer for rule in egress for peer in rule["to"])
     assert not {port["port"] for rule in egress for port in rule.get("ports", [])} & {443, 6443}

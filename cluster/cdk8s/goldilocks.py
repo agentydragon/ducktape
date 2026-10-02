@@ -55,7 +55,7 @@ def chart(app: App) -> Chart:
     k8s.KubeNetworkPolicy(
         chart,
         "dashboard-ingress",
-        metadata=k8s.ObjectMeta(name="goldilocks-dashboard-ingress", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="dashboard-ingress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(
                 match_labels={"app.kubernetes.io/name": NAME, "app.kubernetes.io/component": "dashboard"}

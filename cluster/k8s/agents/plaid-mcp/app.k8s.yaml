@@ -398,7 +398,7 @@ kind: CiliumNetworkPolicy
 metadata:
   annotations:
     description: Default-deny ingress for plaid-mcp pods. Only the cluster Gateway can reach the public Link UI and Plaid webhook routes.
-  name: plaid-mcp-ingress
+  name: ingress
   namespace: plaid-mcp
 spec:
   endpointSelector:
