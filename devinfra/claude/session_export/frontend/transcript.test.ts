@@ -723,7 +723,10 @@ describe("foldSessionEvents", () => {
         data: { level: "info", message: "large environment-manager details that are not transcript content" },
       }),
       event(5, "rate_limit_event", { type: "rate_limit_event", message: "Unsupported event kind" }),
-      event(6, "assistant", { type: "assistant", message: { content: [{ type: "text", text: "The project is ready." }] } }),
+      event(6, "assistant", {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "The project is ready." }] },
+      }),
     ]);
 
     expect(folded.map((item) => item.kind)).toEqual(["message", "message"]);

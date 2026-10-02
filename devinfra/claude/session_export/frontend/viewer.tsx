@@ -436,13 +436,7 @@ function CompactToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
   );
 }
 
-function TranscriptCard({
-  item,
-  session,
-}: {
-  item: TranscriptItem;
-  session: SessionSummary;
-}): JSX.Element {
+function TranscriptCard({ item, session }: { item: TranscriptItem; session: SessionSummary }): JSX.Element {
   if (item.kind === "tool-run") return <CompactToolRun item={item} />;
   const time = transcriptEventTime(item);
   const title =
@@ -456,21 +450,21 @@ function TranscriptCard({
           ? item.state === "held"
             ? "Peer message held"
             : "Peer message dropped"
-      : item.kind === "activity"
-        ? item.title
-        : item.kind === "thinking"
-          ? "Thinking"
-          : item.kind === "context"
-            ? "Context usage"
-            : item.kind === "stats"
-              ? "Code statistics"
-              : item.kind === "usage"
-                ? "Plan usage"
-                : item.kind === "status"
-                  ? "Session status"
-                  : item.kind === "summary" || item.kind === "notice"
-                    ? item.title
-                    : "Transcript item";
+          : item.kind === "activity"
+            ? item.title
+            : item.kind === "thinking"
+              ? "Thinking"
+              : item.kind === "context"
+                ? "Context usage"
+                : item.kind === "stats"
+                  ? "Code statistics"
+                  : item.kind === "usage"
+                    ? "Plan usage"
+                    : item.kind === "status"
+                      ? "Session status"
+                      : item.kind === "summary" || item.kind === "notice"
+                        ? item.title
+                        : "Transcript item";
   const color =
     item.kind === "message" || item.kind === "peer-message"
       ? item.kind === "message" && item.role === "assistant"
@@ -711,9 +705,7 @@ function TranscriptCard({
             </Text>
           </Stack>
         )}
-        {item.kind === "notice" && item.detail !== undefined && (
-          <FoldableDetail label="Details" detail={item.detail} />
-        )}
+        {item.kind === "notice" && item.detail !== undefined && <FoldableDetail label="Details" detail={item.detail} />}
       </Stack>
     </Paper>
   );
@@ -1029,11 +1021,7 @@ export function SessionViewer(): JSX.Element {
                             </Paper>
                           ))
                         : rows.map((row) => (
-                              <TranscriptCard
-                                key={`${row.kind}-${row.id}`}
-                                item={row}
-                                session={selectedSession}
-                              />
+                            <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />
                           ))}
                       {hasMoreEvents && (
                         <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>

@@ -4,11 +4,7 @@ const VIEWER_READY = [
   '[data-fold-kind="tool-run"][data-tool-count="5"]',
   "[data-tool-run-toggle]",
 ];
-const TOOL_RESULT_READY = [
-  "#session-viewer-title",
-  '[data-tool-name="Read"]',
-  "[data-tool-output-image]",
-];
+const TOOL_RESULT_READY = ["#session-viewer-title", '[data-tool-name="Read"]', "[data-tool-output-image]"];
 const READ_FILE_READY = [
   "#session-viewer-title",
   '[data-tool-file-path="src/session-viewer.ts"]',

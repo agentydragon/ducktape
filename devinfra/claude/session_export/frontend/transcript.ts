@@ -252,7 +252,11 @@ function toolResultContent(value: unknown): TranscriptToolResultContent {
 
 const READ_LINE_NUMBER_PREFIX = /^ *\d+(?:[:|] ?|\u2192|\t)/;
 
-function readFilePreview(tool: TranscriptToolCall, output: string | null, failed: boolean): TranscriptToolFilePreview | null {
+function readFilePreview(
+  tool: TranscriptToolCall,
+  output: string | null,
+  failed: boolean
+): TranscriptToolFilePreview | null {
   if (tool.name !== "Read" || output === null || output === "" || failed) return null;
   const path = string(object(tool.input)?.file_path) ?? "file";
   const withoutReminder = output.replace(/\n<system-reminder>[\s\S]*$/, "");
@@ -711,10 +715,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
       if (role === "assistant" && parentToolUseId !== null) accumulateSubagentActivity(parentToolUseId, payload, event);
       const isSidechain = payload.isSidechain === true;
       const sidechainRowLeftToParent = payload.subagentRowLeftToParent === true;
-      if (
-        parentToolUseId !== null ||
-        (isSidechain && !(sidechainRowLeftToParent && parentToolUseId === null))
-      ) {
+      if (parentToolUseId !== null || (isSidechain && !(sidechainRowLeftToParent && parentToolUseId === null))) {
         continue;
       }
       if (role === "user" && addPeerMessage(payload, event)) continue;

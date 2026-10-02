@@ -538,17 +538,17 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
       ? readFileEventPage
       : page.startsWith("SessionEventVisibility")
         ? eventVisibilityPage
-      : page.startsWith("SessionToolResult")
-      ? toolResultEventPage
-      : page.startsWith("SessionSubagent")
-        ? subagentEventPage
-        : page.startsWith("SessionPeerMessage")
-          ? peerMessageEventPage
-          : page.startsWith("SessionPeerHold")
-            ? peerHoldEventPage
-            : page.startsWith("SessionLocalCommandRows")
-              ? localCommandEventPage
-              : eventPage;
+        : page.startsWith("SessionToolResult")
+          ? toolResultEventPage
+          : page.startsWith("SessionSubagent")
+            ? subagentEventPage
+            : page.startsWith("SessionPeerMessage")
+              ? peerMessageEventPage
+              : page.startsWith("SessionPeerHold")
+                ? peerHoldEventPage
+                : page.startsWith("SessionLocalCommandRows")
+                  ? localCommandEventPage
+                  : eventPage;
     return Promise.resolve(json(events));
   }
   return Promise.reject(new Error(`Unmocked session sync request: ${url.pathname}`));
@@ -601,7 +601,8 @@ if (scenario.startsWith("SessionEventVisibility")) {
         "HIDDEN_CHILD_TOOL_OUTPUT",
       ];
       const leakedMarker = hiddenMarkers.find((marker) => transcript.includes(marker));
-      if (leakedMarker !== undefined) throw new Error(`Unsupported event content leaked into transcript: ${leakedMarker}`);
+      if (leakedMarker !== undefined)
+        throw new Error(`Unsupported event content leaked into transcript: ${leakedMarker}`);
       return;
     }
     attempts += 1;
