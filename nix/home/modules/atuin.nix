@@ -2,7 +2,7 @@
 #   - programs.atuin (CLI config + shell integrations)
 #   - SOPS-managed E2EE sync key at ${xdg.dataHome}/atuin/key
 #   - SOPS-managed server password (shared with the cluster-side
-#     atuin-user-provisioner Job — same plaintext seeds the argon2 hash
+#     user-provisioner Job — same plaintext seeds the argon2 hash
 #     in atuin's users table and authenticates `atuin login` here)
 #   - First-run `atuin login` via home-manager activation
 #

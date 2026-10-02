@@ -29,7 +29,7 @@ _NAMESPACE = "home-assistant"
 _RESTIC_SECRET = "home-assistant-config-restic"
 # Written by the S3Credentials.
 _S3_CREDENTIALS_SECRET = "home-assistant-seaweedfs-credentials"
-_SECRET_READER = "home-assistant-backup-secret-reader"
+_SECRET_READER = "backup-secret-reader"
 _SECRET_STORE = "home-assistant-backup-secrets"
 _REPOSITORY_SECRET = "home-assistant-config-restic-tenant"
 

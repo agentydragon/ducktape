@@ -595,7 +595,7 @@ def _backup(scope: Construct) -> None:
     k8s.KubeNetworkPolicy(
         scope,
         "backup-egress",
-        metadata=k8s.ObjectMeta(name=f"{_BACKUP}-egress", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="config-restic-egress", namespace=_NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels=_BACKUP_LABELS),
             policy_types=["Egress"],

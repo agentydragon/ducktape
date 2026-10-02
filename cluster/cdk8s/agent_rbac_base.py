@@ -23,6 +23,7 @@ NAMESPACE = "claude-sandbox"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/agent-rbac-base"
 
 _RBAC_GROUP = "rbac.authorization.k8s.io"
+_ADMIN_ROLE = "admin"
 _READ = ["get", "list", "watch"]
 _SANDBOX_USERS = "oidc-ksbx-groups:kubectl-sandbox-users"
 
@@ -46,7 +47,7 @@ def _add_sandbox(chart: Chart) -> None:
     k8s.KubeResourceQuota(
         chart,
         "quota",
-        metadata=k8s.ObjectMeta(name="claude-sandbox-quota", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="quota", namespace=NAMESPACE),
         spec=k8s.ResourceQuotaSpec(
             hard=_quantities(
                 {
@@ -66,7 +67,7 @@ def _add_sandbox(chart: Chart) -> None:
     k8s.KubeLimitRange(
         chart,
         "limits",
-        metadata=k8s.ObjectMeta(name="claude-sandbox-limits", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="limits", namespace=NAMESPACE),
         spec=k8s.LimitRangeSpec(
             limits=[
                 # Default limits for containers without specified limits
@@ -84,7 +85,7 @@ def _add_sandbox(chart: Chart) -> None:
     k8s.KubeRole(
         chart,
         "admin-role",
-        metadata=k8s.ObjectMeta(name="claude-sandbox-admin", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_ADMIN_ROLE, namespace=NAMESPACE),
         rules=[
             # Full access within claude-sandbox namespace (including secrets)
             k8s.PolicyRule(
@@ -116,8 +117,8 @@ def _add_sandbox(chart: Chart) -> None:
     k8s.KubeRoleBinding(
         chart,
         "admin-binding",
-        metadata=k8s.ObjectMeta(name="claude-sandbox-admin", namespace=NAMESPACE),
-        role_ref=k8s.RoleRef(api_group=_RBAC_GROUP, kind="Role", name="claude-sandbox-admin"),
+        metadata=k8s.ObjectMeta(name=_ADMIN_ROLE, namespace=NAMESPACE),
+        role_ref=k8s.RoleRef(api_group=_RBAC_GROUP, kind="Role", name=_ADMIN_ROLE),
         subjects=[k8s.Subject(kind="Group", name=_SANDBOX_USERS, api_group=_RBAC_GROUP)],
     )
     k8s.KubeRoleBinding(

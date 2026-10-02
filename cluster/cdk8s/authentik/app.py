@@ -259,7 +259,7 @@ def _network_policy(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "server-ingress",
-        metadata=ApiObjectMetadata(name="authentik-server-ingress", namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="server-ingress", namespace=NAMESPACE),
         endpoint_selector=_SERVER_LABELS,
         ingress=[
             IngressRule.from_gateway(_HTTP, _HTTPS),

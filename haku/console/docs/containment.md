@@ -252,7 +252,7 @@ popups). Rules:
 
 Haku's backend reads `X-authentik-username` on requests arriving through its gated route.
 Those headers are only forgeable by a direct in-cluster call to the Service — which the
-`haku-sandbox-ingress` CiliumNetworkPolicy
+`ingress` CiliumNetworkPolicy in `haku-sandbox`
 (<../../../cluster/cdk8s/haku/namespace.py>) blocks: the whole namespace
 admits ingress only from itself and the authentik-server pods running the outpost.
 (Same-namespace pods are Haku's own code at Haku's privilege — in-namespace forgery

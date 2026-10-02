@@ -53,7 +53,7 @@ SERVICE = ServiceRef(
 )
 _SESSION = SecretRef(namespace=NAME, name="airlock-session-secret").key("session-secret")
 _OIDC = SecretRef(namespace=NAME, name="airlock-oidc-config")
-_SECRET_WRITER = "airlock-secret-writer"
+_SECRET_WRITER = "secret-writer"
 # image-pins/ overrides the tag and copies it into AIRLOCK_IMAGE_TAG.
 _PLACEHOLDER_TAG = "unset"
 _CONFIG_MOUNT = "/etc/airlock"
@@ -339,7 +339,7 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "ciliumnetworkpolicy",
-        metadata=ApiObjectMetadata(name="airlock-ingress", namespace=NAME),
+        metadata=ApiObjectMetadata(name="ingress", namespace=NAME),
         endpoint_selector=SERVICE.pods.selector,
         ingress=[
             _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.INGRESS),

@@ -306,7 +306,7 @@ def _rbac(scope: Construct) -> None:
     k8s.KubeRole(
         scope,
         "reader",
-        metadata=k8s.ObjectMeta(name="ollama-reader", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="reader", namespace=_NAMESPACE),
         rules=[
             k8s.PolicyRule(
                 api_groups=[""],
@@ -322,7 +322,7 @@ def _rbac(scope: Construct) -> None:
         scope,
         "reader-binding",
         metadata=k8s.ObjectMeta(name="claude-ollama-reader", namespace=_NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name="ollama-reader"),
+        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name="reader"),
         subjects=[
             k8s.Subject(kind="ServiceAccount", name="default", namespace="claude-sandbox"),
             k8s.Subject(

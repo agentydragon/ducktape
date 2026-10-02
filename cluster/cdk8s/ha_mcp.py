@@ -262,7 +262,7 @@ class HaMcpApp(Construct):
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(
-                name="ha-mcp-ingress",
+                name="ingress",
                 namespace=_NAMESPACE,
                 annotations={
                     "description": (

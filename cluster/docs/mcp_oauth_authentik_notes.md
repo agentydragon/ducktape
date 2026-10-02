@@ -64,7 +64,7 @@ The MCP spec expects:
   When the hairpinned traffic reaches Authentik, Cilium evaluates the CNP
   at pod-to-pod level and rejects it because the source namespace
   (`kubectl-sandbox-mcp`) isn't in `fromEndpoints`.
-- **Fix**: add the MCP namespaces to `authentik-server-ingress` CNP.
+- **Fix**: add the MCP namespaces to the `server-ingress` CNP in `authentik`.
 
 ### Detour: in-cluster Authentik URL
 

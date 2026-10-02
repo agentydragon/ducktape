@@ -223,7 +223,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: cli-proxy-api-ingress
+  name: ingress
   namespace: cli-proxy-api
 spec:
   endpointSelector:

@@ -118,8 +118,7 @@ def _database(scope: Construct) -> None:
                     login=True,
                     password_secret=ClusterSpecManagedRolesPasswordSecret(name=_READONLY.name),
                     comment=(
-                        "Read-only access for sandbox agents; object GRANTs come from the"
-                        " study-casino-db-readonly-provisioner Job."
+                        "Read-only access for sandbox agents; object GRANTs come from the db-readonly-provisioner Job."
                     ),
                 )
             ]
@@ -159,7 +158,7 @@ def _readonly_provisioner(scope: Construct) -> None:
         scope,
         "readonly-provisioner",
         metadata=k8s.ObjectMeta(
-            name="study-casino-db-readonly-provisioner",
+            name="db-readonly-provisioner",
             namespace=_NAMESPACE,
             annotations={
                 "description": (

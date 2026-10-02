@@ -253,7 +253,7 @@ def _network_policies(chart: Chart) -> None:
         chart,
         "web-network-policy",
         metadata=ApiObjectMetadata(
-            name=f"{NAME}-web",
+            name="web",
             namespace=NAMESPACE,
             annotations={
                 "description": (
@@ -276,7 +276,7 @@ def _network_policies(chart: Chart) -> None:
         chart,
         "control-network-policy",
         metadata=ApiObjectMetadata(
-            name=f"{NAME}-control",
+            name="control",
             namespace=NAMESPACE,
             annotations={
                 "description": "Only web Pods may call the single Claude credential and sync control process."

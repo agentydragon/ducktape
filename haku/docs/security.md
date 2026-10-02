@@ -164,7 +164,7 @@ Trusted console code may also issue direct, no-ledger MCP calls under the DB-rev
 Operator session; exact Origin keeps that authority out of the framed agent UI.
 Source of truth: <../console/README.md>.
 
-### CiliumNetworkPolicy `haku-sandbox-ingress`
+### CiliumNetworkPolicy `ingress` in `haku-sandbox`
 
 Namespace-wide: ingress admitted only from `haku-sandbox` itself and the Authentik
 outpost (supersedes the per-service policies, PR #3645). Forward-auth identity headers

@@ -56,7 +56,7 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "ingress",
-        metadata=ApiObjectMetadata(name="haku-sandbox-ingress", namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="ingress", namespace=NAMESPACE),
         endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(),
         ingress=[
             CiliumNetworkPolicySpecIngress(

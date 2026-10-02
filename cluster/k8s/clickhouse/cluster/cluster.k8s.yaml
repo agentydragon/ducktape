@@ -455,7 +455,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: clickhouse-ingress
+  name: ingress
   namespace: clickhouse
 spec:
   ingress:
@@ -538,7 +538,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: clickhouse-keeper-ingress
+  name: keeper-ingress
   namespace: clickhouse
 spec:
   ingress:

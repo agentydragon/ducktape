@@ -52,7 +52,7 @@ def chart(app: App) -> Chart:
             namespace=NAMESPACE,
             annotations={
                 "description": (
-                    "Full CRUD within the haku-sandbox compute sandbox (mirrors claude-sandbox-admin): "
+                    "Full CRUD within the haku-sandbox compute sandbox (mirrors the claude-sandbox `admin` Role): "
                     "pods/log/exec/attach, services, configmaps, secrets, PVCs, events, plus apps and batch "
                     "workloads. The namespace is network-isolated behind its own mitmproxy; secrets here are "
                     "still expected to hold only read-only credentials Haku may fully use. Security model: "
@@ -123,7 +123,7 @@ def chart(app: App) -> Chart:
     k8s.KubeResourceQuota(
         chart,
         "quota",
-        metadata=k8s.ObjectMeta(name="haku-sandbox-quota", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="quota", namespace=NAMESPACE),
         spec=k8s.ResourceQuotaSpec(
             hard=_quantities(
                 {
@@ -143,7 +143,7 @@ def chart(app: App) -> Chart:
     k8s.KubeLimitRange(
         chart,
         "limits",
-        metadata=k8s.ObjectMeta(name="haku-sandbox-limits", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="limits", namespace=NAMESPACE),
         spec=k8s.LimitRangeSpec(
             limits=[
                 k8s.LimitRangeItem(

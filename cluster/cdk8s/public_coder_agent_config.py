@@ -724,7 +724,7 @@ def _network_policies(scope: Construct) -> None:
     k8s.KubeNetworkPolicy(
         scope,
         "egress",
-        metadata=k8s.ObjectMeta(name="public-coder-agent-egress", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="egress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             policy_types=["Egress"],
@@ -768,7 +768,7 @@ def _network_policies(scope: Construct) -> None:
     k8s.KubeNetworkPolicy(
         scope,
         "ingress",
-        metadata=k8s.ObjectMeta(name="public-coder-agent-ingress", namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(name="ingress", namespace=NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             policy_types=["Ingress"],

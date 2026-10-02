@@ -493,7 +493,7 @@ def networkpolicy_chart(app: App) -> Chart:
     k8s.KubeNetworkPolicy(
         chart,
         "clickhouse",
-        metadata=k8s.ObjectMeta(name="clickhouse-ingress", namespace=client.NAMESPACE),
+        metadata=k8s.ObjectMeta(name="ingress", namespace=client.NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels=client.LABELS),
             policy_types=["Ingress"],
@@ -535,7 +535,7 @@ def networkpolicy_chart(app: App) -> Chart:
     k8s.KubeNetworkPolicy(
         chart,
         "keeper",
-        metadata=k8s.ObjectMeta(name="clickhouse-keeper-ingress", namespace=client.NAMESPACE),
+        metadata=k8s.ObjectMeta(name="keeper-ingress", namespace=client.NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels=_KEEPER.pods.selector),
             policy_types=["Ingress"],
