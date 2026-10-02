@@ -94,6 +94,26 @@ export type TranscriptSummary = TranscriptBase & {
   details: string[];
 };
 
+export type TranscriptContextUsage = TranscriptBase & {
+  kind: "context";
+  model: string;
+  totalTokens: number;
+  rawMaxTokens: number;
+  percentage: number;
+  categories: Array<{ name: string; tokens: number }>;
+  mcpTools: Array<{ name: string; serverName: string; tokens: number }>;
+  memoryFiles: Array<{ type: string; path: string; tokens: number }>;
+  agents: Array<{ agentType: string; tokens: number }>;
+};
+
+export type TranscriptCodeStats = TranscriptBase & {
+  kind: "stats";
+  stats: JsonObject | null;
+};
+
+export type TranscriptPlanUsage = TranscriptBase & { kind: "usage" };
+export type TranscriptSessionStatus = TranscriptBase & { kind: "status" };
+
 export type TranscriptNotice = TranscriptBase & {
   kind: "notice";
   title: string;
@@ -109,6 +129,10 @@ export type TranscriptItem =
   | TranscriptActivity
   | TranscriptThinking
   | TranscriptSummary
+  | TranscriptContextUsage
+  | TranscriptCodeStats
+  | TranscriptPlanUsage
+  | TranscriptSessionStatus
   | TranscriptNotice;
 
 /** Claude Web consumes message-shaped records; Ducktape persists an API envelope. */
@@ -274,6 +298,103 @@ function usageDetails(payload: JsonObject): string[] {
   const duration = payload.duration_ms;
   if (typeof duration === "number") details.push(`${(duration / 1000).toFixed(1)} seconds`);
   return details;
+}
+
+function parseTokenCount(value: string | undefined): number | null {
+  if (value === undefined) return null;
+  const match = /^([\d.]+)\s*([km])?$/i.exec(value.trim());
+  if (match === null) return null;
+  const amount = Number.parseFloat(match[1] ?? "");
+  const unit = match[2]?.toLowerCase();
+  if (!Number.isFinite(amount)) return null;
+  return Math.round(amount * (unit === "m" ? 1_000_000 : unit === "k" ? 1_000 : 1));
+}
+
+function contextTable(text: string, heading: string): string[][] {
+  const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const section = new RegExp(`### ${escapedHeading}\\s*([\\s\\S]*?)(?=\\n### |\\n## |$)`).exec(text)?.[1];
+  if (section === undefined) return [];
+  return section
+    .split(/\r?\n/)
+    .filter((line) => line.trimStart().startsWith("|") && !/^\|[-\s|:]+\|$/.test(line.trim()))
+    .slice(1)
+    .map((line) =>
+      line
+        .split("|")
+        .slice(1, -1)
+        .map((cell) => cell.trim())
+    );
+}
+
+function parseContextUsage(text: string): Omit<TranscriptContextUsage, "id" | "events" | "kind"> | null {
+  if (!text.startsWith("## Context Usage")) return null;
+  const model = /\*\*Model:\*\*\s*(.+?)\s*$/m.exec(text)?.[1]?.trim();
+  const tokenMatch = /\*\*Tokens:\*\*\s*(\S+)\s*\/\s*(\S+)\s*\((\d+)%\)/.exec(text);
+  const totalTokens = parseTokenCount(tokenMatch?.[1]);
+  const rawMaxTokens = parseTokenCount(tokenMatch?.[2]);
+  const percentage = Number.parseInt(tokenMatch?.[3] ?? "", 10);
+  if (
+    model === undefined ||
+    totalTokens === null ||
+    rawMaxTokens === null ||
+    rawMaxTokens === 0 ||
+    !Number.isFinite(percentage)
+  )
+    return null;
+
+  const rows = (heading: string): Array<{ name: string; tokens: number }> =>
+    contextTable(text, heading).flatMap((cells) => {
+      const name = cells[0];
+      const tokens = parseTokenCount(cells.at(-1));
+      return name === undefined || tokens === null ? [] : [{ name, tokens }];
+    });
+  const mcpTools = contextTable(text, "MCP Tools").flatMap((cells) => {
+    const [name, serverName] = cells;
+    const tokens = parseTokenCount(cells.at(-1));
+    return name === undefined || serverName === undefined || tokens === null ? [] : [{ name, serverName, tokens }];
+  });
+  const memoryFiles = contextTable(text, "Memory Files").flatMap((cells) => {
+    const [type, path] = cells;
+    const tokens = parseTokenCount(cells.at(-1));
+    return type === undefined || path === undefined || tokens === null ? [] : [{ type, path, tokens }];
+  });
+  const agents = contextTable(text, "Custom Agents").flatMap((cells) => {
+    const [agentType] = cells;
+    const tokens = parseTokenCount(cells.at(-1));
+    return agentType === undefined || tokens === null ? [] : [{ agentType, tokens }];
+  });
+  return {
+    model,
+    totalTokens,
+    rawMaxTokens,
+    percentage,
+    categories: rows("Estimated usage by category"),
+    mcpTools,
+    memoryFiles,
+    agents,
+  };
+}
+
+type ParsedCodeStats = { kind: "none" } | { kind: "loading" } | { kind: "data"; stats: JsonObject };
+
+function parseCodeStats(text: string): ParsedCodeStats {
+  const raw = /<code-stats>([\s\S]*?)<\/code-stats>/.exec(text)?.[1]?.trim();
+  if (raw === undefined) return { kind: "none" };
+  if (raw === "") return { kind: "loading" };
+  try {
+    const stats = object(JSON.parse(raw));
+    return stats === null || !Array.isArray(stats.dailyActivity) ? { kind: "none" } : { kind: "data", stats };
+  } catch {
+    return { kind: "none" };
+  }
+}
+
+function localCommandOutput(payload: JsonObject): string | null {
+  const content = string(payload.content);
+  if (content === null) return null;
+  const stdout = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(content)?.[1]?.trim() ?? "";
+  const stderr = /<local-command-stderr>([\s\S]*?)<\/local-command-stderr>/.exec(content)?.[1]?.trim() ?? "";
+  return stderr || stdout || null;
 }
 
 const STANDALONE_TOOLS = new Set([
@@ -679,7 +800,31 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
 
     if (type === "system") {
       const subtype = string(payload.subtype) ?? "system event";
-      if (subtype === "peer_message_hold") {
+      if (subtype === "local_command" || subtype === "local_command_output") {
+        const output = localCommandOutput(payload);
+        if (output === null) continue;
+        const id = string(payload.uuid) ?? eventId(event);
+        const context = parseContextUsage(output);
+        if (context !== null) {
+          items.push({ kind: "context", id: `${id}-ctx`, ...context, events: [event] });
+        } else {
+          const stats = parseCodeStats(output);
+          if (stats.kind === "loading" || stats.kind === "data") {
+            items.push({
+              kind: "stats",
+              id: `${id}-stats`,
+              stats: stats.kind === "data" ? stats.stats : null,
+              events: [event],
+            });
+          } else if (output === "<plan-usage/>") {
+            items.push({ kind: "usage", id: `${id}-usage`, events: [event] });
+          } else if (output === "<session-status/>") {
+            items.push({ kind: "status", id: `${id}-status`, events: [event] });
+          } else {
+            items.push({ kind: "message", id, role: "assistant", text: output, events: [event] });
+          }
+        }
+      } else if (subtype === "peer_message_hold") {
         foldPeerHold(payload, event);
       } else if (subtype.startsWith("task_")) {
         addActivity(event, payload, subtype);

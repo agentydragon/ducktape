@@ -11,6 +11,7 @@ import {
   Loader,
   NavLink,
   Paper,
+  Progress,
   ScrollArea,
   Select,
   SimpleGrid,
@@ -382,7 +383,15 @@ function RawEvents({ item }: { item: TranscriptItem }): JSX.Element {
   );
 }
 
-function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showToolDetails: boolean }): JSX.Element {
+function TranscriptCard({
+  item,
+  showToolDetails,
+  session,
+}: {
+  item: TranscriptItem;
+  showToolDetails: boolean;
+  session: SessionSummary;
+}): JSX.Element {
   const time = transcriptEventTime(item);
   const title =
     item.kind === "message"
@@ -403,7 +412,17 @@ function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showT
               ? item.title
               : item.kind === "thinking"
                 ? "Thinking"
-                : item.title;
+                : item.kind === "context"
+                  ? "Context usage"
+                  : item.kind === "stats"
+                    ? "Code statistics"
+                    : item.kind === "usage"
+                      ? "Plan usage"
+                      : item.kind === "status"
+                        ? "Session status"
+                        : item.kind === "summary" || item.kind === "notice"
+                          ? item.title
+                          : "Transcript item";
   const color =
     item.kind === "message" || item.kind === "peer-message"
       ? item.kind === "message" && item.role === "assistant"
@@ -426,6 +445,8 @@ function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showT
       data-peer-from={item.kind === "peer-message" || item.kind === "peer-hold" ? item.from : undefined}
       data-peer-handback={item.kind === "peer-message" && item.handback ? "true" : undefined}
       data-peer-state={item.kind === "peer-hold" ? item.state : undefined}
+      data-context-model={item.kind === "context" ? item.model : undefined}
+      data-stats-state={item.kind === "stats" ? (item.stats === null ? "loading" : "data") : undefined}
       withBorder
       radius="sm"
       p="md"
@@ -548,6 +569,132 @@ function TranscriptCard({ item, showToolDetails }: { item: TranscriptItem; showT
               ))}
             </Group>
           ))}
+        {item.kind === "context" && (
+          <Stack gap="sm">
+            <Group justify="space-between" gap="xs">
+              <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+                {item.model}
+              </Text>
+              <Badge variant="light" color={item.percentage >= 90 ? "red" : item.percentage >= 70 ? "yellow" : "blue"}>
+                {item.percentage}% used
+              </Badge>
+            </Group>
+            <Progress
+              aria-label="Context window used"
+              value={Math.max(0, Math.min(100, item.percentage))}
+              color={item.percentage >= 90 ? "red" : item.percentage >= 70 ? "yellow" : "blue"}
+            />
+            <Text size="sm" c="dimmed">
+              {item.totalTokens.toLocaleString()} of {item.rawMaxTokens.toLocaleString()} tokens
+            </Text>
+            {(item.categories.length > 0 ||
+              item.mcpTools.length > 0 ||
+              item.memoryFiles.length > 0 ||
+              item.agents.length > 0) && (
+              <Accordion variant="contained" radius="sm">
+                <Accordion.Item value="context-breakdown">
+                  <Accordion.Control>Context breakdown</Accordion.Control>
+                  <Accordion.Panel>
+                    <Stack gap="xs">
+                      {item.categories.map((row) => (
+                        <Group key={`category-${row.name}`} justify="space-between" gap="xs">
+                          <Text size="sm">{row.name}</Text>
+                          <Text size="sm" c="dimmed">
+                            {row.tokens.toLocaleString()} tokens
+                          </Text>
+                        </Group>
+                      ))}
+                      {item.mcpTools.map((row) => (
+                        <Group key={`mcp-${row.serverName}-${row.name}`} justify="space-between" gap="xs">
+                          <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                            {row.name} · {row.serverName}
+                          </Text>
+                          <Text size="sm" c="dimmed">
+                            {row.tokens.toLocaleString()} tokens
+                          </Text>
+                        </Group>
+                      ))}
+                      {item.memoryFiles.map((row) => (
+                        <Group key={`memory-${row.type}-${row.path}`} justify="space-between" gap="xs">
+                          <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                            {row.type}: {row.path}
+                          </Text>
+                          <Text size="sm" c="dimmed">
+                            {row.tokens.toLocaleString()} tokens
+                          </Text>
+                        </Group>
+                      ))}
+                      {item.agents.map((row) => (
+                        <Group key={`agent-${row.agentType}`} justify="space-between" gap="xs">
+                          <Text size="sm">{row.agentType}</Text>
+                          <Text size="sm" c="dimmed">
+                            {row.tokens.toLocaleString()} tokens
+                          </Text>
+                        </Group>
+                      ))}
+                    </Stack>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
+            )}
+          </Stack>
+        )}
+        {item.kind === "stats" &&
+          (item.stats === null ? (
+            <Group gap="xs" role="status">
+              <Loader size="xs" aria-label="Loading code statistics" />
+              <Text size="sm" c="dimmed">
+                Loading code statistics…
+              </Text>
+            </Group>
+          ) : (
+            (() => {
+              const activity = Array.isArray(item.stats.dailyActivity)
+                ? item.stats.dailyActivity
+                    .map(inputRecord)
+                    .filter((value): value is Record<string, unknown> => value !== null)
+                : [];
+              const total = (field: string): number =>
+                activity.reduce((sum, row) => sum + (typeof row[field] === "number" ? (row[field] as number) : 0), 0);
+              return (
+                <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
+                  {[
+                    ["Active days", activity.length],
+                    ["Sessions", total("sessionCount")],
+                    ["Messages", total("messageCount")],
+                    ["Tool calls", total("toolCallCount")],
+                  ].map(([label, value]) => (
+                    <Paper key={label} withBorder radius="xs" p="xs">
+                      <Text size="xs" c="dimmed">
+                        {label}
+                      </Text>
+                      <Text fw={600}>{value.toLocaleString()}</Text>
+                    </Paper>
+                  ))}
+                </SimpleGrid>
+              );
+            })()
+          ))}
+        {item.kind === "usage" && (
+          <Text size="sm" c="dimmed">
+            Claude Code reported plan usage for this session.
+          </Text>
+        )}
+        {item.kind === "status" && (
+          <Stack gap="xs">
+            <Group gap="xs">
+              <Text size="sm" c="dimmed">
+                Synced session state
+              </Text>
+              <Badge variant="light" color={statusColor(session.status)}>
+                {session.status}
+              </Badge>
+            </Group>
+            <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+              {sessionSubtitle(session)}
+            </Text>
+          </Stack>
+        )}
         {item.kind === "notice" && item.detail !== undefined && (
           <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {item.detail}
@@ -902,6 +1049,7 @@ export function SessionViewer(): JSX.Element {
                                 key={`${row.kind}-${row.id}`}
                                 item={row}
                                 showToolDetails={showToolDetails}
+                                session={selectedSession}
                               />
                             )
                           )}

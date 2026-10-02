@@ -34,6 +34,106 @@ describe("adaptSessionEvent", () => {
 });
 
 describe("foldSessionEvents", () => {
+  it("turns Claude local-command markers into context, stats, usage, and status rows", () => {
+    const contextOutput = [
+      "## Context Usage",
+      "**Model:** claude-sonnet-4-5",
+      "**Tokens:** 42.5k / 200k (21%)",
+      "### Estimated usage by category",
+      "| Category | Tokens |",
+      "| --- | ---: |",
+      "| Messages | 30k |",
+      "| Tools | 12.5k |",
+      "### MCP Tools",
+      "| Tool | Server | Tokens |",
+      "| --- | --- | ---: |",
+      "| search | docs | 2.5k |",
+      "### Memory Files",
+      "| Type | Path | Tokens |",
+      "| --- | --- | ---: |",
+      "| project | /workspace/README.md | 1k |",
+      "### Custom Agents",
+      "| Agent | Runs | Tokens |",
+      "| --- | ---: | ---: |",
+      "| reviewer | 2 | 4k |",
+    ].join("\n");
+    const folded = foldSessionEvents([
+      event(1, "system", {
+        type: "system",
+        subtype: "local_command_output",
+        content: `<local-command-stdout>${contextOutput}</local-command-stdout>`,
+      }),
+      event(2, "system", {
+        type: "system",
+        subtype: "local_command_output",
+        content:
+          '<local-command-stdout><code-stats>{"dailyActivity":[{"date":"2026-09-30","sessionCount":2,"messageCount":12,"toolCallCount":5}]}</code-stats></local-command-stdout>',
+      }),
+      event(3, "system", {
+        type: "system",
+        subtype: "local_command_output",
+        content: "<local-command-stdout><plan-usage/></local-command-stdout>",
+      }),
+      event(4, "system", {
+        type: "system",
+        subtype: "local_command_output",
+        content: "<local-command-stdout><session-status/></local-command-stdout>",
+      }),
+      event(5, "system", {
+        type: "system",
+        subtype: "local_command_output",
+        content: "<local-command-stdout><code-stats></code-stats></local-command-stdout>",
+      }),
+      event(6, "system", {
+        type: "system",
+        subtype: "local_command_output",
+        content: "<local-command-stdout><code-stats>{broken json}</code-stats></local-command-stdout>",
+      }),
+      event(7, "system", {
+        type: "system",
+        subtype: "local_command_output",
+        content: "<local-command-stdout>script finished successfully</local-command-stdout>",
+      }),
+    ]);
+
+    expect(folded.map((item) => item.kind)).toEqual([
+      "context",
+      "stats",
+      "usage",
+      "status",
+      "stats",
+      "message",
+      "message",
+    ]);
+    expect(folded[2]).toMatchObject({ kind: "usage", events: [{ event_id: "event-3" }] });
+    expect(folded[3]).toMatchObject({ kind: "status", events: [{ event_id: "event-4" }] });
+    expect(folded[0]).toMatchObject({
+      kind: "context",
+      model: "claude-sonnet-4-5",
+      totalTokens: 42_500,
+      rawMaxTokens: 200_000,
+      percentage: 21,
+      categories: [
+        { name: "Messages", tokens: 30_000 },
+        { name: "Tools", tokens: 12_500 },
+      ],
+      mcpTools: [{ name: "search", serverName: "docs", tokens: 2_500 }],
+      memoryFiles: [{ type: "project", path: "/workspace/README.md", tokens: 1_000 }],
+      agents: [{ agentType: "reviewer", tokens: 4_000 }],
+    });
+    expect(folded[1]).toMatchObject({
+      kind: "stats",
+      stats: { dailyActivity: [{ date: "2026-09-30", sessionCount: 2, messageCount: 12, toolCallCount: 5 }] },
+    });
+    expect(folded[4]).toMatchObject({ kind: "stats", stats: null });
+    expect(folded[5]).toMatchObject({
+      kind: "message",
+      role: "assistant",
+      text: "<code-stats>{broken json}</code-stats>",
+    });
+    expect(folded[6]).toMatchObject({ kind: "message", role: "assistant", text: "script finished successfully" });
+  });
+
   it("renders peer messages and folds held, released, and dropped message states", () => {
     const folded = foldSessionEvents([
       event(1, "system", {

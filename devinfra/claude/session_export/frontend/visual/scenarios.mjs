@@ -27,6 +27,14 @@ const PEER_MESSAGE_READY = [
   '[data-fold-kind="peer-message"][data-peer-from="review-agent"][data-peer-handback="true"]',
 ];
 
+const LOCAL_COMMAND_READY = [
+  "#session-viewer-title",
+  '[data-fold-kind="context"][data-context-model="claude-sonnet-4-5"]',
+  '[data-fold-kind="stats"][data-stats-state="data"]',
+  '[data-fold-kind="usage"]',
+  '[data-fold-kind="status"]',
+];
+
 export const SCENARIOS = {
   SessionViewer: { element: "#app", readySelectors: VIEWER_READY },
   SessionViewer_dark: { element: "#app", readySelectors: VIEWER_READY, colorScheme: "dark" },
@@ -57,6 +65,12 @@ export const SCENARIOS = {
   SessionPeerMessage_mobile: {
     element: "#app",
     readySelectors: PEER_MESSAGE_READY,
+    viewport: { width: 420, height: 900 },
+  },
+  SessionLocalCommandRows: { element: "#app", readySelectors: LOCAL_COMMAND_READY },
+  SessionLocalCommandRows_mobile: {
+    element: "#app",
+    readySelectors: LOCAL_COMMAND_READY,
     viewport: { width: 420, height: 900 },
   },
   SessionSync: { element: "#app", readySelectors: SYNC_READY },

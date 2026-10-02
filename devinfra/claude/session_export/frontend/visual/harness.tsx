@@ -402,6 +402,36 @@ const peerMessageEventPage: SessionEventPage = {
   last_id: "peer-handback-1",
 };
 
+const localCommandEventPage: SessionEventPage = {
+  data: [
+    fixtureEvent(1, "system", {
+      type: "system",
+      subtype: "local_command_output",
+      content:
+        "<local-command-stdout>## Context Usage\n**Model:** claude-sonnet-4-5\n**Tokens:** 42.5k / 200k (21%)\n### Estimated usage by category\n| Category | Tokens |\n| --- | ---: |\n| Messages | 30k |\n| Tools | 12.5k |\n### MCP Tools\n| Tool | Server | Tokens |\n| --- | --- | ---: |\n| search | docs | 2.5k |\n</local-command-stdout>",
+    }),
+    fixtureEvent(2, "system", {
+      type: "system",
+      subtype: "local_command_output",
+      content:
+        '<local-command-stdout><code-stats>{"dailyActivity":[{"date":"2026-09-30","sessionCount":2,"messageCount":12,"toolCallCount":5}]}</code-stats></local-command-stdout>',
+    }),
+    fixtureEvent(3, "system", {
+      type: "system",
+      subtype: "local_command_output",
+      content: "<local-command-stdout><plan-usage/></local-command-stdout>",
+    }),
+    fixtureEvent(4, "system", {
+      type: "system",
+      subtype: "local_command_output",
+      content: "<local-command-stdout><session-status/></local-command-stdout>",
+    }),
+  ],
+  has_more: false,
+  first_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
+  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a504",
+};
+
 function mockFetch(input: RequestInfo | URL): Promise<Response> {
   const requestUrl = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
   const url = new URL(requestUrl, window.location.href);
@@ -426,7 +456,9 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
           ? peerMessageEventPage
           : page.startsWith("SessionPeerHold")
             ? peerHoldEventPage
-            : eventPage;
+            : page.startsWith("SessionLocalCommandRows")
+              ? localCommandEventPage
+              : eventPage;
     return Promise.resolve(json(events));
   }
   return Promise.reject(new Error(`Unmocked session sync request: ${url.pathname}`));
