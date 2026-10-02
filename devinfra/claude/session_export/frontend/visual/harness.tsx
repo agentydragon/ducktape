@@ -293,7 +293,13 @@ const latestFirstPageEvents = Array.from({ length: 12 }, (_, index) => {
     type: sequence % 2 === 0 ? "user" : "assistant",
     message: {
       role: sequence % 2 === 0 ? "user" : "assistant",
-      content: [{ type: "text", text: `Newest-first fixture message ${sequence}; shown in chronological order.` }],
+      // Keep this fixture scrollable even with compact rows and a small page header.
+      content: [
+        {
+          type: "text",
+          text: `Newest-first fixture message ${sequence}; shown in chronological order.\nThis detail keeps the initial history taller than the viewport.\nOlder events must prepend without moving the open disclosure.`,
+        },
+      ],
     },
   });
 });
