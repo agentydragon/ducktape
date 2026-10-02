@@ -5,6 +5,7 @@ import {
   Alert,
   Badge,
   Button,
+  Box,
   Center,
   Code,
   Group,
@@ -440,6 +441,31 @@ function CompactToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
 function TranscriptCard({ item, session }: { item: TranscriptItem; session: SessionSummary }): JSX.Element {
   if (item.kind === "tool-run") return <CompactToolRun item={item} />;
   const time = transcriptEventTime(item);
+  if (item.kind === "thinking") {
+    return (
+      <Paper component="details" aria-label="Thinking" data-fold-kind="thinking" withBorder radius="sm" p="xs">
+        <Box component="summary" fz="xs" style={{ cursor: "pointer" }}>
+          <Text component="span" size="xs" fw={500}>
+            Thinking
+          </Text>
+          {time !== null && (
+            <Text
+              component="time"
+              size="xs"
+              c="dimmed"
+              dateTime={item.events.at(-1)?.created_at}
+              style={{ float: "right" }}
+            >
+              {time}
+            </Text>
+          )}
+        </Box>
+        <Text size="sm" mt="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          {item.text}
+        </Text>
+      </Paper>
+    );
+  }
   const title =
     item.kind === "message"
       ? item.role === "user"
@@ -453,19 +479,17 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
             : "Peer message dropped"
           : item.kind === "activity"
             ? item.title
-            : item.kind === "thinking"
-              ? "Thinking"
-              : item.kind === "context"
-                ? "Context usage"
-                : item.kind === "stats"
-                  ? "Code statistics"
-                  : item.kind === "usage"
-                    ? "Plan usage"
-                    : item.kind === "status"
-                      ? "Session status"
-                      : item.kind === "summary" || item.kind === "notice"
-                        ? item.title
-                        : "Transcript item";
+            : item.kind === "context"
+              ? "Context usage"
+              : item.kind === "stats"
+                ? "Code statistics"
+                : item.kind === "usage"
+                  ? "Plan usage"
+                  : item.kind === "status"
+                    ? "Session status"
+                    : item.kind === "summary" || item.kind === "notice"
+                      ? item.title
+                      : "Transcript item";
   const color =
     item.kind === "message" || item.kind === "peer-message"
       ? item.kind === "message" && item.role === "assistant"
@@ -555,18 +579,6 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
         )}
         {item.kind === "activity" && item.detail !== undefined && (
           <FoldableDetail label="Task details" detail={item.detail} />
-        )}
-        {item.kind === "thinking" && (
-          <Accordion variant="default" radius="sm">
-            <Accordion.Item value="thinking">
-              <Accordion.Control>Show thinking</Accordion.Control>
-              <Accordion.Panel>
-                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                  {item.text}
-                </Text>
-              </Accordion.Panel>
-            </Accordion.Item>
-          </Accordion>
         )}
         {item.kind === "summary" &&
           (item.details.length === 0 ? (

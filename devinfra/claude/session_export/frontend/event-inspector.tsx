@@ -19,7 +19,13 @@ function EventRow({ event }: { event: SessionEvent }): JSX.Element {
       onToggle={(e) => setOpen(e.currentTarget.open)}
       style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
     >
-      <Box component="summary" py={4} style={{ cursor: "pointer" }} aria-label={`Raw event ${event.sequence_num}`}>
+      <Box
+        component="summary"
+        py={4}
+        fz="xs"
+        style={{ cursor: "pointer" }}
+        aria-label={`Raw event ${event.sequence_num}`}
+      >
         <Text component="span" size="xs" ff="monospace" c="dimmed" mr="xs">
           {event.sequence_num}
         </Text>

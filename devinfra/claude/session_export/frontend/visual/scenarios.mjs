@@ -44,6 +44,7 @@ const NOISY_READY = ['#app[data-noisy-ready="true"]'];
 export const SCENARIOS = {
   SessionNoisy: { element: "#app", readySelectors: NOISY_READY },
   SessionNoisy_mobile: { element: "#app", readySelectors: NOISY_READY, viewport: { width: 420, height: 900 } },
+  SessionNoisyThinking: { element: "#app", readySelectors: NOISY_READY },
   SessionNoisyRaw: { element: "#app", readySelectors: NOISY_READY },
   SessionNoisyHook: { element: "#app", readySelectors: NOISY_READY },
   SessionNoisyHook_mobile: { element: "#app", readySelectors: NOISY_READY, viewport: { width: 420, height: 900 } },

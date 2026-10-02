@@ -638,6 +638,11 @@ if (scenario.startsWith("SessionNoisy")) {
     if (!document.querySelector('[data-message-role="assistant"]') && !openedInspector) return;
     if (!scenario.includes("Raw") && !scenario.includes("Hook")) {
       if (document.querySelector('[data-fold-kind="notice"]')) throw new Error("Hook noise leaked into the transcript");
+      if (scenario.includes("Thinking")) {
+        const thinking = document.querySelector<HTMLDetailsElement>('[data-fold-kind="thinking"]');
+        if (thinking === null) return;
+        thinking.open = true;
+      }
       root.dataset.noisyReady = "true";
       observer.disconnect();
       return;

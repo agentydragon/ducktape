@@ -288,4 +288,5 @@ visual_test(
     env = {"TZ": "UTC"},
     harness = ":visual_harness_js",
     scenarios = ":visual_scenarios",
+    shard_count = 2,
 )
