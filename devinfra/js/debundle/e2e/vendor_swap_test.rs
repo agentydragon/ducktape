@@ -2420,17 +2420,11 @@ fn named_from_default_wrapper_avoids_upstream_default_local_collision() {
         upstream_source: "const _d = \"taken\";\nexport default { ping: () => _d };\n",
         chunk_source: "export { ping } from \"lib\";\n",
     });
-    assert_success(&fixture.result);
-    let probe_path = fixture
-        .wrapper_path
-        .parent()
-        .expect("wrapper has parent dir")
-        .join("__probe.mjs");
-    write_text_file(
-        &probe_path,
+    assert_wrapper_output(
+        &fixture,
         "const m = await import(\"./entry.js\");\nconsole.log(m.ping());\n",
+        "taken\n",
     );
-    assert_node_output(&probe_path, "taken\n", "");
 }
 
 #[test]
@@ -2438,17 +2432,11 @@ fn named_from_module_default_wrapper_avoids_upstream_default_local_collision() {
     let upstream_source = "const __vendor_default__ = \"taken\";\n\
                            export default function getter() { return __vendor_default__; }\n";
     let fixture = run_named_from_module_default_fixture(upstream_source);
-    assert_success(&fixture.result);
-    let probe_path = fixture
-        .wrapper_path
-        .parent()
-        .expect("wrapper has parent dir")
-        .join("__probe.mjs");
-    write_text_file(
-        &probe_path,
+    assert_wrapper_output(
+        &fixture,
         "const m = await import(\"./entry.js\");\nconsole.log(m.default());\n",
+        "taken\n",
     );
-    assert_node_output(&probe_path, "taken\n", "");
 }
 
 // ─── named_from_module_default named-export verification ────────────────
@@ -2491,17 +2479,11 @@ fn named_from_module_default_accepts_verified_default_aliases() {
         upstream_source: "export default function f() { return \"val\"; }\n",
         default_export_aliases: &[],
     });
-    assert_success(&fixture.result);
-    let probe_path = fixture
-        .wrapper_path
-        .parent()
-        .expect("wrapper has parent dir")
-        .join("__probe.mjs");
-    write_text_file(
-        &probe_path,
+    assert_wrapper_output(
+        &fixture,
         "const m = await import(\"./entry.js\");\nconsole.log(m.alias === m.default);\n",
+        "true\n",
     );
-    assert_node_output(&probe_path, "true\n", "");
 }
 
 #[test]
@@ -2544,17 +2526,11 @@ fn named_from_module_default_admits_authored_default_alias() {
         upstream_source: "export default function f() { return \"cy\"; }\n",
         default_export_aliases: &["c"],
     });
-    assert_success(&fixture.result);
-    let probe_path = fixture
-        .wrapper_path
-        .parent()
-        .expect("wrapper has parent dir")
-        .join("__probe.mjs");
-    write_text_file(
-        &probe_path,
+    assert_wrapper_output(
+        &fixture,
         "const m = await import(\"./entry.js\");\nconsole.log(m.c === m.default && m.c() === \"cy\");\n",
+        "true\n",
     );
-    assert_node_output(&probe_path, "true\n", "");
 }
 
 // ─── named_from_json_default ────────────────────────────────────────────
@@ -2684,13 +2660,11 @@ fn wrappers_preserve_reserved_and_string_export_names() {
             upstream_source: upstream,
             default_export_aliases: &[],
         });
-        assert_success(&fixture.result);
-        let probe = fixture.wrapper_path.with_file_name("probe.mjs");
-        write_text_file(
-            &probe,
+        assert_wrapper_output(
+            &fixture,
             "import * as m from './entry.js'; console.log(m.class, m['x-y']);",
+            "1 2\n",
         );
-        assert_node_output(&probe, "1 2\n", "");
     }
 }
 
@@ -2703,13 +2677,11 @@ fn json_wrapper_preserves_proto_as_an_own_data_property() {
         upstream_source: "{\"value\":1,\"__proto__\":{\"nested\":2}}",
         default_export_aliases: &[],
     });
-    assert_success(&fixture.result);
-    let probe = fixture.wrapper_path.with_file_name("probe.mjs");
-    write_text_file(
-        &probe,
+    assert_wrapper_output(
+        &fixture,
         "import data from './entry.js'; console.log(Object.hasOwn(data, '__proto__'), Object.getPrototypeOf(data) === Object.prototype);",
+        "true true\n",
     );
-    assert_node_output(&probe, "true true\n", "");
 }
 
 #[test]
@@ -2749,13 +2721,11 @@ fn module_default_wrapper_aliases_reserved_string_and_colliding_names() {
         upstream_source: "const existing = { value: 7 }; export default existing;",
         default_export_aliases: &["class", "x-y", "existing"],
     });
-    assert_success(&fixture.result);
-    let probe = fixture.wrapper_path.with_file_name("probe.mjs");
-    write_text_file(
-        &probe,
+    assert_wrapper_output(
+        &fixture,
         "import d, * as m from './entry.js'; console.log(m.class === d, m['x-y'] === d, m.existing.value);",
+        "true true 7\n",
     );
-    assert_node_output(&probe, "true true 7\n", "");
 }
 
 #[test]
@@ -2795,13 +2765,11 @@ fn json_wrapper_export_names_do_not_shadow_json_or_payload_local() {
         upstream_source: "{\"JSON\":1,\"_d\":2}",
         default_export_aliases: &[],
     });
-    assert_success(&fixture.result);
-    let probe = fixture.wrapper_path.with_file_name("probe.mjs");
-    write_text_file(
-        &probe,
+    assert_wrapper_output(
+        &fixture,
         "import * as m from './entry.js'; console.log(m.JSON, m._d);",
+        "1 2\n",
     );
-    assert_node_output(&probe, "1 2\n", "");
 }
 
 #[test]
