@@ -42,6 +42,11 @@ export type TranscriptToolImage = {
   mimeType: string;
 };
 
+export type TranscriptToolFilePreview = {
+  path: string;
+  contents: string;
+};
+
 export type TranscriptSubagentActivity = {
   latestToolName: string;
   toolCallCount: number;
@@ -56,6 +61,7 @@ export type TranscriptToolCall = {
   parentToolUseId?: string;
   subagentActivity?: TranscriptSubagentActivity;
   result?: string;
+  filePreview?: TranscriptToolFilePreview;
   outputImages?: TranscriptToolImage[];
   toolUseResult?: JsonObject;
   progress?: string;
@@ -118,7 +124,6 @@ export type TranscriptNotice = TranscriptBase & {
   kind: "notice";
   title: string;
   detail?: string;
-  routine?: boolean;
 };
 
 export type TranscriptItem =
@@ -245,6 +250,21 @@ function toolResultContent(value: unknown): TranscriptToolResultContent {
   return { text: text.length === 0 ? null : text.join("\n"), images };
 }
 
+const READ_LINE_NUMBER_PREFIX = /^ *\d+(?:[:|] ?|\u2192|\t)/;
+
+function readFilePreview(tool: TranscriptToolCall, output: string | null, failed: boolean): TranscriptToolFilePreview | null {
+  if (tool.name !== "Read" || output === null || output === "" || failed) return null;
+  const path = string(object(tool.input)?.file_path) ?? "file";
+  const withoutReminder = output.replace(/\n<system-reminder>[\s\S]*$/, "");
+  const withoutTrailingNewlines = withoutReminder.replace(/\n+$/, "");
+  const lines = withoutTrailingNewlines.split("\n");
+  const hasOnlyNumberedLines = lines.every((line) => line === "" || READ_LINE_NUMBER_PREFIX.test(line));
+  const contents = hasOnlyNumberedLines
+    ? lines.map((line) => line.replace(READ_LINE_NUMBER_PREFIX, "")).join("\n")
+    : withoutTrailingNewlines;
+  return { path, contents };
+}
+
 function eventId(event: SessionEvent): string {
   return event.event_id || event.sequence_num;
 }
@@ -270,22 +290,6 @@ function statusText(value: unknown, fallback: string): string {
   const status = string(value);
   if (status === null) return fallback;
   return status.replaceAll("_", " ");
-}
-
-function hookFailed(payload: JsonObject): boolean {
-  const response = object(payload.response) ?? object(payload.result) ?? payload;
-  const status = string(response.status)?.toLowerCase();
-  return (
-    response.is_error === true ||
-    response.success === false ||
-    (response.error !== undefined && response.error !== null && response.error !== "") ||
-    (typeof response.exit_code === "number" && response.exit_code !== 0) ||
-    (typeof response.exitCode === "number" && response.exitCode !== 0) ||
-    string(response.stderr) !== null ||
-    status === "error" ||
-    status === "failure" ||
-    status === "failed"
-  );
 }
 
 function usageDetails(payload: JsonObject): string[] {
@@ -446,6 +450,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
   const deniedTools = new Map<string, SessionEvent[]>();
   const pendingSubagentActivity = new Map<string, TranscriptSubagentActivity>();
   const countedSubagentEvents = new Set<string>();
+  const suppressedTaskIds = new Set<string>();
   const peerHoldsByMessageUuid = new Map<string, TranscriptPeerHold>();
   const peerMessagesByUuid = new Map<string, TranscriptPeerMessage>();
   const pendingPeerLifecycleEvents = new Map<string, SessionEvent[]>();
@@ -611,7 +616,11 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
   ): void => {
     const match = toolUseId === null ? undefined : toolsById.get(toolUseId);
     if (match !== undefined) {
-      match.call.result = result.text ?? match.call.result;
+      const output = result.text ?? match.call.result ?? null;
+      match.call.result = output ?? undefined;
+      delete match.call.filePreview;
+      const filePreview = readFilePreview(match.call, output, failed);
+      if (filePreview !== null) match.call.filePreview = filePreview;
       if (result.images.length > 0) match.call.outputImages = result.images;
       match.call.failed = failed;
       match.call.status = failed ? "error" : match.call.policyDenied ? "denied" : "complete";
@@ -655,6 +664,10 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
 
   const addActivity = (event: SessionEvent, payload: JsonObject, subtype: string): void => {
     const taskId = string(payload.task_id) ?? eventId(event);
+    if (payload.skip_transcript === true || payload.ambient === true || suppressedTaskIds.has(taskId)) {
+      suppressedTaskIds.add(taskId);
+      return;
+    }
     const parentToolUseId = string(payload.parent_tool_use_id);
     const parentMatch = parentToolUseId === null ? undefined : toolsById.get(parentToolUseId);
     const parentTool = parentMatch?.call;
@@ -696,6 +709,14 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     if (type === "user" || type === "assistant") {
       const role = type;
       if (role === "assistant" && parentToolUseId !== null) accumulateSubagentActivity(parentToolUseId, payload, event);
+      const isSidechain = payload.isSidechain === true;
+      const sidechainRowLeftToParent = payload.subagentRowLeftToParent === true;
+      if (
+        parentToolUseId !== null ||
+        (isSidechain && !(sidechainRowLeftToParent && parentToolUseId === null))
+      ) {
+        continue;
+      }
       if (role === "user" && addPeerMessage(payload, event)) continue;
       let text = "";
       let currentRun: TranscriptToolRun | null = null;
@@ -760,9 +781,11 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
         }
 
         flushRun();
-        if (blockType === "text") {
+        if (blockType === "text" || blockType === "connector_text") {
           const blockText = textFrom(block.text);
-          if (blockText !== null) text = text === "" ? blockText : `${text}\n${blockText}`;
+          if (blockText !== null && blockText !== "No response requested.") {
+            text = text === "" ? blockText : `${text}\n${blockText}`;
+          }
         } else if (blockType === "thinking") {
           flushText();
           const thinking = textFrom(block.thinking) ?? textFrom(block.text);
@@ -776,17 +799,6 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
         } else if (blockType === "tool_result") {
           flushText();
           addToolResult(string(block.tool_use_id), toolResultContent(block.content), block.is_error === true, event);
-        } else {
-          flushText();
-          const description = textFrom(block);
-          if (description !== null)
-            items.push({
-              kind: "notice",
-              id: `${eventId(event)}-block-${items.length}`,
-              title: statusText(blockType, "Content"),
-              detail: description,
-              events: [event],
-            });
         }
       }
       flushText();
@@ -820,17 +832,19 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
             items.push({ kind: "usage", id: `${id}-usage`, events: [event] });
           } else if (output === "<session-status/>") {
             items.push({ kind: "status", id: `${id}-status`, events: [event] });
+          } else if (output === "No response requested.") {
+            continue;
           } else {
             items.push({ kind: "message", id, role: "assistant", text: output, events: [event] });
           }
         }
       } else if (subtype === "peer_message_hold") {
         foldPeerHold(payload, event);
-      } else if (subtype.startsWith("task_")) {
+      } else if (subtype === "task_started" || subtype === "task_notification") {
         addActivity(event, payload, subtype);
       } else if (subtype === "permission_denied") {
         const toolUseId = string(payload.tool_use_id) ?? string(object(payload.tool_use)?.id);
-        if (toolUseId !== null) {
+        if (toolUseId !== null && payload.agent_id === undefined) {
           const match = toolsById.get(toolUseId);
           if (match !== undefined) {
             match.call.policyDenied = true;
@@ -842,9 +856,40 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
             deniedTools.set(toolUseId, [...(deniedTools.get(toolUseId) ?? []), event]);
           }
         }
-      } else if (subtype === "init" || subtype === "thinking_tokens") {
+      } else if (
+        subtype === "hook_started" ||
+        subtype === "hook_response" ||
+        subtype === "init" ||
+        subtype === "thinking_tokens"
+      ) {
         continue;
-      } else {
+      } else if (
+        subtype === "compact_boundary" ||
+        subtype === "model_refusal_fallback" ||
+        subtype === "model_fallback" ||
+        subtype === "gap_fill_failed" ||
+        subtype === "scheduled_task_fire" ||
+        subtype === "informational" ||
+        subtype === "ui_log" ||
+        subtype === "away_summary" ||
+        subtype === "memory_saved" ||
+        subtype === "model_consent_fallback" ||
+        subtype === "agents_killed"
+      ) {
+        if (subtype === "informational") {
+          if (parentToolUseId !== null || string(payload.level)?.toLowerCase() === "info") continue;
+          if (string(payload.content) === null) continue;
+        }
+        if (
+          parentToolUseId !== null &&
+          subtype !== "compact_boundary" &&
+          subtype !== "model_refusal_fallback" &&
+          subtype !== "model_fallback" &&
+          subtype !== "gap_fill_failed" &&
+          subtype !== "scheduled_task_fire"
+        ) {
+          continue;
+        }
         const title =
           subtype === "compact_boundary" ? "Conversation compacted" : `System · ${subtype.replaceAll("_", " ")}`;
         items.push({
@@ -852,24 +897,15 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
           id: eventId(event),
           title,
           detail: textFrom(payload.message) ?? textFrom(payload.description) ?? undefined,
-          routine: subtype === "hook_started" || (subtype === "hook_response" && !hookFailed(payload)),
           events: [event],
         });
+      } else {
+        continue;
       }
       continue;
     }
 
     if (type === "env_manager_log") {
-      const data = object(payload.data) ?? payload;
-      const level = string(data.level)?.toLowerCase() ?? "info";
-      items.push({
-        kind: "notice",
-        id: eventId(event),
-        title: `Runner log · ${level}`,
-        detail: textFrom(data.message) ?? undefined,
-        routine: level === "trace" || level === "debug" || level === "info",
-        events: [event],
-      });
       continue;
     }
 
@@ -882,18 +918,6 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
         else match.call.summary = detail ?? match.call.summary;
         addEvent(match.call.events, event);
         addEvent(match.run.events, event);
-      } else {
-        const name = string(payload.tool_name) ?? string(payload.name) ?? "Tool activity";
-        const activityId = id ?? eventId(event);
-        items.push({
-          kind: "activity",
-          id: `tool-activity-${activityId}`,
-          taskId: activityId,
-          title: name,
-          detail: detail ?? undefined,
-          status: type === "tool_progress" ? "running" : statusText(payload.status, "complete"),
-          events: [event],
-        });
       }
       continue;
     }
@@ -914,13 +938,8 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
       continue;
     }
 
-    const subtype = string(payload.subtype) ?? string(object(payload.request)?.subtype);
-    const title =
-      type === "control_request" || type === "control_response"
-        ? `Permission · ${subtype?.replaceAll("_", " ") ?? type.replaceAll("_", " ")}`
-        : type.replaceAll("_", " ");
-    const detail = textFrom(payload.message) ?? textFrom(payload.content) ?? textFrom(payload.summary);
-    items.push({ kind: "notice", id: eventId(event), title, detail: detail ?? undefined, events: [event] });
+    // Unsupported event kinds remain available through the raw event stream.
+    continue;
   }
 
   return items.flatMap((item): TranscriptItem[] => {

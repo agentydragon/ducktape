@@ -2,19 +2,27 @@ const SYNC_READY = ["#overview-heading", "#pairing-heading"];
 const VIEWER_READY = [
   "#session-viewer-title",
   '[data-fold-kind="tool-run"][data-tool-count="5"]',
-  '[data-tool-name="Bash"]',
-  '[data-tool-name="Grep"]',
-  '[data-tool-name="Glob"]',
+  "[data-tool-run-toggle]",
+];
+const TOOL_RESULT_READY = [
+  "#session-viewer-title",
   '[data-tool-name="Read"]',
-  '[data-tool-name="Task"]',
   "[data-tool-output-image]",
 ];
-const TOOL_RESULT_READY = ["#session-viewer-title", '[data-tool-name="Read"]', "[data-tool-output-image]"];
+const READ_FILE_READY = [
+  "#session-viewer-title",
+  '[data-tool-file-path="src/session-viewer.ts"]',
+  "[data-tool-file-preview]",
+];
+const EVENT_VISIBILITY_READY = [
+  "#session-viewer-title",
+  '[data-fold-kind="message"][data-message-role="user"]',
+  '[data-fold-kind="message"][data-message-role="assistant"]',
+];
 const SUBAGENT_READY = [
   "#session-viewer-title",
   '[data-subagent-activity][data-subagent-tool-count="2"]',
   '[data-subagent-latest-tool="Grep"]',
-  '[data-parent-tool-use-id="agent-17"] [data-tool-name="Grep"]',
 ];
 const PEER_HOLD_READY = [
   "#session-viewer-title",
@@ -47,6 +55,18 @@ export const SCENARIOS = {
   SessionToolResult_mobile: {
     element: "#app",
     readySelectors: TOOL_RESULT_READY,
+    viewport: { width: 420, height: 900 },
+  },
+  SessionReadFileResult: { element: "#app", readySelectors: READ_FILE_READY },
+  SessionReadFileResult_mobile: {
+    element: "#app",
+    readySelectors: READ_FILE_READY,
+    viewport: { width: 420, height: 900 },
+  },
+  SessionEventVisibility: { element: "#app", readySelectors: EVENT_VISIBILITY_READY },
+  SessionEventVisibility_mobile: {
+    element: "#app",
+    readySelectors: EVENT_VISIBILITY_READY,
     viewport: { width: 420, height: 900 },
   },
   SessionSubagent: { element: "#app", readySelectors: SUBAGENT_READY },

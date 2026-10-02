@@ -38,9 +38,21 @@ const first = {
 };
 const second = {
   ...first,
+  event_id: "event-3",
+  sequence_num: "3",
+  payload: { type: "user", message: { role: "user", content: [{ type: "text", text: "Second message" }] } },
+};
+const toolCall = {
+  ...first,
   event_id: "event-2",
   sequence_num: "2",
-  payload: { type: "user", message: { role: "user", content: [{ type: "text", text: "Second message" }] } },
+  event_type: "assistant",
+  payload: {
+    type: "assistant",
+    message: {
+      content: [{ type: "tool_use", id: "read-1", name: "Read", input: { file_path: "README.md" } }],
+    },
+  },
 };
 
 let root: ReturnType<typeof createRoot> | null = null;
@@ -66,7 +78,7 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: "watch-1" });
   let finishRefresh: ((value: Awaited<ReturnType<typeof listSessionEvents>>) => void) | undefined;
   vi.mocked(listSessionEvents)
-    .mockResolvedValueOnce({ data: [first], has_more: false, first_id: "event-1", last_id: "event-1" })
+    .mockResolvedValueOnce({ data: [first, toolCall], has_more: false, first_id: "event-1", last_id: "event-2" })
     .mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -91,19 +103,21 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
     '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
   ) as HTMLElement;
   viewport.scrollTop = 100;
-  const control = article.querySelector<HTMLButtonElement>(".mantine-Accordion-control")!;
+  const toolRun = container.querySelector('[data-fold-kind="tool-run"]')!;
+  const control = toolRun.querySelector<HTMLButtonElement>("[data-tool-run-toggle]")!;
   await act(async () => control.click());
   expect(control.getAttribute("aria-expanded")).toBe("true");
 
   await act(async () => stream.dispatchEvent(new Event("changed")));
   expect(finishRefresh).toBeDefined();
   expect(container.querySelector('[data-fold-kind="message"]')).toBe(article);
+  expect(container.querySelector('[data-fold-kind="tool-run"]')).toBe(toolRun);
   expect(container.querySelector('[aria-label="Session list"] button')).toBe(list);
   expect(container.querySelector('[aria-label="Session transcript"] .mantine-ScrollArea-viewport')).toBe(viewport);
   expect(viewport.scrollTop).toBe(100);
   expect(control.getAttribute("aria-expanded")).toBe("true");
   await act(async () =>
-    finishRefresh?.({ data: [first, second], has_more: false, first_id: "event-1", last_id: "event-2" })
+    finishRefresh?.({ data: [first, toolCall, second], has_more: false, first_id: "event-1", last_id: "event-3" })
   );
   expect(container.querySelector('[data-fold-kind="message"]')).toBe(article);
   expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(2);

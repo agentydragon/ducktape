@@ -288,6 +288,92 @@ const toolResultEventPage: SessionEventPage = {
   last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a503",
 };
 
+const readFileEventPage: SessionEventPage = {
+  data: [
+    fixtureEvent(1, "assistant", {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "tool-read-file",
+            name: "Read",
+            input: { file_path: "src/session-viewer.ts" },
+          },
+        ],
+      },
+    }),
+    fixtureEvent(2, "user", {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tool-read-file",
+            content:
+              "1: export function compactPreview(value: string): string {\n2:   return value.trim();\n3: }\n\n<system-reminder>fixture-only hidden reminder</system-reminder>",
+          },
+        ],
+      },
+    }),
+    fixtureEvent(3, "result", {
+      type: "result",
+      usage: { total_tokens: 815 },
+      duration_ms: 200,
+    }),
+  ],
+  has_more: false,
+  first_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
+  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a503",
+};
+
+const eventVisibilityPage: SessionEventPage = {
+  data: [
+    fixtureEvent(1, "user", {
+      type: "user",
+      message: { content: [{ type: "text", text: "Show me the useful conversation." }] },
+    }),
+    fixtureEvent(2, "system", {
+      type: "system",
+      subtype: "hook_started",
+      hook_name: "PostToolUse",
+      description: "HIDDEN_HOOK_START_DETAIL",
+    }),
+    fixtureEvent(3, "system", {
+      type: "system",
+      subtype: "hook_response",
+      response: { stdout: "HIDDEN_HOOK_OUTPUT_WITH_A_LARGE_BLOCK" },
+    }),
+    fixtureEvent(4, "env_manager_log", {
+      type: "env_manager_log",
+      data: { level: "info", message: "HIDDEN_ENVIRONMENT_MANAGER_LOG" },
+    }),
+    fixtureEvent(5, "assistant", {
+      type: "assistant",
+      parent_tool_use_id: "agent-hidden",
+      message: {
+        content: [{ type: "text", text: "HIDDEN_SUBAGENT_CHILD_MESSAGE" }],
+      },
+    }),
+    fixtureEvent(6, "user", {
+      type: "user",
+      parent_tool_use_id: "agent-hidden",
+      message: {
+        content: [{ type: "tool_result", tool_use_id: "child-tool", content: "HIDDEN_CHILD_TOOL_OUTPUT" }],
+      },
+    }),
+    fixtureEvent(7, "assistant", {
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Hooks and environment logs stay out of this transcript." }] },
+    }),
+  ],
+  has_more: false,
+  first_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
+  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a507",
+};
+
 const subagentEventPage: SessionEventPage = {
   data: [
     fixtureEvent(1, "user", {
@@ -448,7 +534,11 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
   if (url.pathname === "/v1/code/sessions") return Promise.resolve(json(sessionPage));
   if (/^\/v1\/code\/sessions\/[^/]+\/events$/.test(url.pathname)) {
     const page = new URLSearchParams(window.location.search).get("page") ?? "";
-    const events = page.startsWith("SessionToolResult")
+    const events = page.startsWith("SessionReadFileResult")
+      ? readFileEventPage
+      : page.startsWith("SessionEventVisibility")
+        ? eventVisibilityPage
+      : page.startsWith("SessionToolResult")
       ? toolResultEventPage
       : page.startsWith("SessionSubagent")
         ? subagentEventPage
@@ -476,3 +566,47 @@ createRoot(root).render(
     <App pathname={pathname} />
   </MantineProvider>
 );
+
+if (
+  scenario.startsWith("SessionReadFileResult") ||
+  scenario.startsWith("SessionToolResult") ||
+  scenario.startsWith("SessionSubagent")
+) {
+  let attempts = 0;
+  const expandFixtureDetails = (): void => {
+    const toggle = document.querySelector<HTMLButtonElement>("[data-tool-run-toggle]");
+    if (toggle !== null) {
+      toggle.click();
+      return;
+    }
+    attempts += 1;
+    if (attempts >= 300) throw new Error("Visual fixture tool disclosure did not mount");
+    window.setTimeout(expandFixtureDetails, 20);
+  };
+  window.setTimeout(expandFixtureDetails, 0);
+}
+
+if (scenario.startsWith("SessionEventVisibility")) {
+  let attempts = 0;
+  const assertSuppressedEventContent = (): void => {
+    const userMessage = document.querySelector('[data-message-role="user"]');
+    const assistantMessage = document.querySelector('[data-message-role="assistant"]');
+    if (userMessage !== null && assistantMessage !== null) {
+      const transcript = document.querySelector("[data-fold-kind='message']")?.parentElement?.innerText ?? "";
+      const hiddenMarkers = [
+        "HIDDEN_HOOK_START_DETAIL",
+        "HIDDEN_HOOK_OUTPUT_WITH_A_LARGE_BLOCK",
+        "HIDDEN_ENVIRONMENT_MANAGER_LOG",
+        "HIDDEN_SUBAGENT_CHILD_MESSAGE",
+        "HIDDEN_CHILD_TOOL_OUTPUT",
+      ];
+      const leakedMarker = hiddenMarkers.find((marker) => transcript.includes(marker));
+      if (leakedMarker !== undefined) throw new Error(`Unsupported event content leaked into transcript: ${leakedMarker}`);
+      return;
+    }
+    attempts += 1;
+    if (attempts >= 300) throw new Error("Visible event fixture messages did not mount");
+    window.setTimeout(assertSuppressedEventContent, 20);
+  };
+  window.setTimeout(assertSuppressedEventContent, 0);
+}

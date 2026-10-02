@@ -386,7 +386,42 @@ describe("foldSessionEvents", () => {
     expect(folded[0].events.map((item) => item.event_id)).toEqual(["event-1", "event-2", "event-3", "event-4"]);
   });
 
-  it("attributes child tool calls to their parent agent and summarizes its live activity", () => {
+  it("suppresses ambient and skip_transcript task events and their later notifications", () => {
+    const folded = foldSessionEvents([
+      event(1, "system", {
+        type: "system",
+        subtype: "task_started",
+        task_id: "hidden-task",
+        description: "Internal background work",
+        skip_transcript: true,
+      }),
+      event(2, "system", {
+        type: "system",
+        subtype: "task_notification",
+        task_id: "hidden-task",
+        status: "completed",
+        summary: "Large hidden internal summary",
+      }),
+      event(3, "system", {
+        type: "system",
+        subtype: "task_started",
+        task_id: "ambient-task",
+        description: "Ambient housekeeping",
+        ambient: true,
+      }),
+      event(4, "system", {
+        type: "system",
+        subtype: "task_notification",
+        task_id: "ambient-task",
+        status: "completed",
+        summary: "Large hidden ambient summary",
+      }),
+    ]);
+
+    expect(folded).toEqual([]);
+  });
+
+  it("folds child tool activity into its parent agent without rendering child rows", () => {
     const folded = foldSessionEvents([
       event(1, "assistant", {
         type: "assistant",
@@ -413,6 +448,13 @@ describe("foldSessionEvents", () => {
           ],
         },
       }),
+      event(3, "user", {
+        type: "user",
+        parent_tool_use_id: "agent-1",
+        message: {
+          content: [{ type: "tool_result", tool_use_id: "agent-read", content: "HIDDEN_CHILD_TOOL_OUTPUT" }],
+        },
+      }),
     ]);
 
     expect(folded[0]).toMatchObject({
@@ -430,19 +472,26 @@ describe("foldSessionEvents", () => {
         },
       ],
     });
-    expect(folded[1]).toMatchObject({
-      kind: "tool-run",
-      parentToolUseId: "agent-1",
-      tools: [
-        { name: "Read", parentToolUseId: "agent-1" },
-        { name: "Grep", parentToolUseId: "agent-1" },
-      ],
-    });
-    expect(folded[2]).toMatchObject({
-      kind: "message",
-      parentToolUseId: "agent-1",
-      text: "The fixture and assertion disagree.",
-    });
+    expect(folded).toHaveLength(1);
+    expect(folded.map((item) => item.kind)).toEqual(["tool-run"]);
+  });
+
+  it("renders only a parentless sidechain explicitly left in the transcript", () => {
+    const folded = foldSessionEvents([
+      event(1, "assistant", {
+        type: "assistant",
+        isSidechain: true,
+        message: { content: [{ type: "text", text: "Internal sidechain text." }] },
+      }),
+      event(2, "assistant", {
+        type: "assistant",
+        isSidechain: true,
+        subagentRowLeftToParent: true,
+        message: { content: [{ type: "text", text: "Handed back to the parent." }] },
+      }),
+    ]);
+
+    expect(folded).toMatchObject([{ kind: "message", text: "Handed back to the parent." }]);
   });
 
   it("starts a separate run after an intervening content block and applies standalone tool boundaries", () => {
@@ -553,6 +602,62 @@ describe("foldSessionEvents", () => {
     });
   });
 
+  it("folds successful Read output into a cleaned file preview", () => {
+    const rawOutput =
+      "1: const answer = 42;\n2: console.log(answer);\n\n<system-reminder>fixture-only reminder</system-reminder>";
+    const folded = foldSessionEvents([
+      event(1, "assistant", {
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", id: "read-file", name: "Read", input: { file_path: "src/example.ts" } }],
+        },
+      }),
+      event(2, "user", {
+        type: "user",
+        message: {
+          content: [{ type: "tool_result", tool_use_id: "read-file", content: rawOutput }],
+        },
+      }),
+    ]);
+
+    const tool = folded[0]?.kind === "tool-run" ? folded[0].tools[0] : undefined;
+    expect(tool).toMatchObject({
+      result: rawOutput,
+      filePreview: { path: "src/example.ts", contents: "const answer = 42;\nconsole.log(answer);" },
+    });
+  });
+
+  it("preserves unnumbered Read text and does not build previews for errors", () => {
+    const folded = foldSessionEvents([
+      event(1, "assistant", {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "tool_use", id: "read-plain", name: "Read", input: { file_path: "README.md" } },
+            { type: "tool_use", id: "read-error", name: "Read", input: { file_path: "missing.txt" } },
+          ],
+        },
+      }),
+      event(2, "user", {
+        type: "user",
+        message: {
+          content: [
+            { type: "tool_result", tool_use_id: "read-plain", content: "# heading\n1: mixed line\n" },
+            { type: "tool_result", tool_use_id: "read-error", is_error: true, content: "File not found" },
+          ],
+        },
+      }),
+    ]);
+
+    if (folded[0]?.kind !== "tool-run") throw new Error("Expected a tool run");
+    expect(folded[0].tools[0]).toMatchObject({
+      result: "# heading\n1: mixed line\n",
+      filePreview: { path: "README.md", contents: "# heading\n1: mixed line" },
+    });
+    expect(folded[0].tools[1]).toMatchObject({ result: "File not found", failed: true });
+    expect(folded[0].tools[1]).not.toHaveProperty("filePreview");
+  });
+
   it("keeps result text, images, and tool-use metadata as separate fields", () => {
     const toolUseResult = {
       tool_use_id: "read-image",
@@ -599,9 +704,49 @@ describe("foldSessionEvents", () => {
     expect(folded[0].tools[0]?.result).not.toContain("not transcript output");
   });
 
-  it("keeps unknown event types readable and preserves their source event", () => {
-    const [notice] = foldSessionEvents([event(1, "rate_limit_event", { message: "Try again in a moment." })]);
-    expect(notice).toMatchObject({ kind: "notice", title: "rate limit event", detail: "Try again in a moment." });
-    expect(notice?.events[0]?.event_id).toBe("event-1");
+  it("omits hook output, runner logs, and unsupported event types from the default fold", () => {
+    const folded = foldSessionEvents([
+      event(1, "user", { type: "user", message: { content: [{ type: "text", text: "Please inspect the project." }] } }),
+      event(2, "system", {
+        type: "system",
+        subtype: "hook_started",
+        hook_name: "PostToolUse",
+        description: "Large hook lifecycle detail that Claude Web does not show.",
+      }),
+      event(3, "system", {
+        type: "system",
+        subtype: "hook_response",
+        response: { stdout: "large hook output that should not become a transcript row" },
+      }),
+      event(4, "env_manager_log", {
+        type: "env_manager_log",
+        data: { level: "info", message: "large environment-manager details that are not transcript content" },
+      }),
+      event(5, "rate_limit_event", { type: "rate_limit_event", message: "Unsupported event kind" }),
+      event(6, "assistant", { type: "assistant", message: { content: [{ type: "text", text: "The project is ready." }] } }),
+    ]);
+
+    expect(folded.map((item) => item.kind)).toEqual(["message", "message"]);
+    expect(folded.map((item) => (item.kind === "message" ? item.text : ""))).toEqual([
+      "Please inspect the project.",
+      "The project is ready.",
+    ]);
+  });
+
+  it("omits unsupported content blocks and folds connector text as a message", () => {
+    const folded = foldSessionEvents([
+      event(1, "assistant", {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "connector_text", text: "Connected source result." },
+            { type: "vendor_internal_blob", text: "Large hidden internal payload." },
+            { type: "text", text: "No response requested." },
+          ],
+        },
+      }),
+    ]);
+
+    expect(folded).toMatchObject([{ kind: "message", text: "Connected source result." }]);
   });
 });
