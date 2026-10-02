@@ -95,7 +95,10 @@ ts_library(
     srcs = ["tool-groups.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    deps = [":api", ":transcript"],
+    deps = [
+        ":api",
+        ":transcript",
+    ],
 )
 
 ts_library(
@@ -241,8 +244,8 @@ vitest_bin.vitest_test(
         "vitest.config.mts",
         ":api_test",
         ":status_test",
-        ":transcript_test",
         ":tool_groups_test",
+        ":transcript_test",
         ":viewer_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
