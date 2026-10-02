@@ -23,11 +23,6 @@ on:
         required: false
         type: string
         default: ""
-      source_ref:
-        description: "Ref to resolve after the caller's trust decision instead of trusting an event-time commit SHA"
-        required: false
-        type: string
-        default: ""
       pr_head_sha:
         description: "Expected PR head parent when source_commit is a synthetic merge"
         required: false
@@ -80,22 +75,20 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-        name: "Check out source (source unavailable: no tests/build ran; inspect PR mergeability)"
+        name: "Check out source (a failure here means the source was unavailable; no tests or build ran)"
         with:
-          ref: ${{ inputs.source_ref || inputs.source_commit || github.sha }}
+          ref: ${{ inputs.source_commit || github.sha }}
           fetch-depth: 0
           allow-unsafe-pr-checkout: ${{ inputs.allow_unsafe_pr_checkout }}
 
-      # pull_request_target payloads can pair the current head SHA with an old
-      # merge_commit_sha. Resolve the live merge ref only after the caller's
-      # trust decision, then freeze it to this SHA and prove its second parent
-      # is the trusted head before loading any PR-controlled local action.
+      # Proves the checkout is the requested commit and that the PR head is its second
+      # parent. Fork callers resolved that commit before the trust decision
+      # (trusted-fork-pr-ci.yml).
       - name: Resolve and verify source revision
         id: source
         env:
           EXPECTED_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha }}
           SOURCE_COMMIT: ${{ inputs.source_commit }}
-          SOURCE_REF: ${{ inputs.source_ref }}
         run: python3 devinfra/ci/pr_mergeability.py verify-source
 
       - uses: ./.github/actions/setup-nix-devtools

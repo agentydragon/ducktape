@@ -34,11 +34,6 @@ on:
         required: false
         type: string
         default: ""
-      source_ref:
-        description: "Ref to resolve after the caller's trust decision instead of trusting an event-time commit SHA"
-        required: false
-        type: string
-        default: ""
       pr_head_sha:
         description: "Expected PR head parent when source_commit is a synthetic merge"
         required: false
@@ -82,9 +77,9 @@ jobs:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
       - uses: actions/checkout@v7
-        name: "Check out source (source unavailable: no tests/build ran; inspect PR mergeability)"
+        name: "Check out source (a failure here means the source was unavailable; no tests or build ran)"
         with:
-          ref: ${{ inputs.source_ref || inputs.source_commit || github.sha }}
+          ref: ${{ inputs.source_commit || github.sha }}
           fetch-depth: 0
           allow-unsafe-pr-checkout: ${{ inputs.allow_unsafe_pr_checkout }}
 
@@ -93,7 +88,6 @@ jobs:
         env:
           EXPECTED_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha }}
           SOURCE_COMMIT: ${{ inputs.source_commit }}
-          SOURCE_REF: ${{ inputs.source_ref }}
         run: python3 devinfra/ci/pr_mergeability.py verify-source
 
       # setup-nix-attic (not setup-nix-devtools) so the checks below can substitute

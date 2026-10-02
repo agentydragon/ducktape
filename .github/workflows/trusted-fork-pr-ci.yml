@@ -5,70 +5,61 @@
 # this workflow and the called reusable workflows from the base branch before
 # executing PR code.
 #
-# Draft pull requests get this CI like any other revision. A draft is an ordinary head
-# commit: the same trust decision and the same mergeability gate apply before any of it
-# runs, and a draft that conflicts with devel is stopped by mergeability rather than by
-# its draft status. Same-repo drafts already get bazel-ci from ci.yml, which never
-# filtered on draft status, so a draft from a fork was the one case whose base checks
-# came from here.
+# Same event types, checks and source semantics as a same-repo PR in ci.yml, drafts
+# included. Deviation: pull_request_target hands the workflow no merge commit, so the
+# first job asks GitHub for the one it built for this exact head
+# (devinfra/ci/pr_mergeability.py) and the jobs below check out that immutable commit.
+# Nothing re-resolves a ref after the trust decision, so a push after approval cannot
+# change what runs.
 name: Trusted fork PR CI
 run-name: >-
-  ${{ github.event_name == 'pull_request_target' &&
-      format('Trusted PR #{0} @ {1}', github.event.pull_request.number, github.event.pull_request.head.sha) ||
-      format('PR mergeability refresh on {0}', github.ref_name) }}
+  ${{ format('Trusted PR #{0} @ {1}', github.event.pull_request.number, github.event.pull_request.head.sha) }}
 
 on:
   pull_request_target:
     branches: [devel]
-    types: [opened, reopened, synchronize, ready_for_review, edited]
-  push:
-    branches: [devel]
-  schedule:
-    - cron: "*/15 * * * *"
-  workflow_dispatch:
 
 concurrency:
-  group: trusted-fork-pr-ci-${{ github.event.pull_request.number || github.ref }}
+  group: trusted-fork-pr-ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  mergeability:
-    name: Refresh PR mergeability check
+  merge-commit:
+    name: Resolve PR merge commit
+    # Same-repo PRs get their merge commit from the pull_request run in ci.yml.
+    if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
-      checks: write
     outputs:
-      mergeable: ${{ steps.inspect.outputs.mergeable }}
+      # Empty when there is nothing to build: GitHub builds no merge commit for a
+      # conflicted PR, and a PR that moved on is covered by the run for its new head.
+      sha: ${{ steps.resolve.outputs.sha }}
     steps:
-      # pull_request_target runs trusted base-branch code. This job reads PR metadata
-      # and publishes a check on the PR head; it never checks out PR-controlled code.
+      # pull_request_target runs trusted base-branch code. This job reads PR metadata;
+      # it never checks out PR-controlled code.
       - uses: actions/checkout@v7
         with:
           # Always run the trusted helper from devel. Event-time base.sha can point to
           # a commit from before this helper was added, breaking long-lived PRs.
           ref: devel
           fetch-depth: 1
-      - name: Inspect current PR mergeability
-        id: inspect
+      - name: Resolve the merge commit GitHub built for this PR head
+        id: resolve
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
-          BASE_BRANCH: devel
-        run: python3 devinfra/ci/pr_mergeability.py
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 devinfra/ci/pr_mergeability.py resolve
 
   bazel-ci:
-    needs: [mergeability]
-    if: >-
-      always() &&
-      github.event_name == 'pull_request_target' &&
-      github.event.pull_request.head.repo.full_name != github.repository &&
-      needs.mergeability.outputs.mergeable == 'true'
+    needs: [merge-commit]
+    if: needs.merge-commit.outputs.sha != ''
     uses: ./.github/workflows/bazel-ci.yml
     permissions:
       contents: read
@@ -82,10 +73,7 @@ jobs:
           github.event.pull_request.user.login != 'agentydragon' &&
           'fork-ci-review' || ''
         }}
-      # GitHub can emit pull_request_target with a current head SHA but a stale
-      # merge_commit_sha. Resolve the live merge ref after the trust decision;
-      # the called workflow verifies its second parent against pr_head_sha.
-      source_ref: refs/pull/${{ github.event.pull_request.number }}/merge
+      source_commit: ${{ needs.merge-commit.outputs.sha }}
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       pr_base_sha: ${{ github.event.pull_request.base.sha }}
       # actions/checkout v6 refuses fork code under pull_request_target unless
@@ -96,12 +84,8 @@ jobs:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
   nix-wheel-check:
-    needs: [mergeability]
-    if: >-
-      always() &&
-      github.event_name == 'pull_request_target' &&
-      github.event.pull_request.head.repo.full_name != github.repository &&
-      needs.mergeability.outputs.mergeable == 'true'
+    needs: [merge-commit]
+    if: needs.merge-commit.outputs.sha != ''
     uses: ./.github/workflows/nix-wheel-check.yml
     permissions:
       contents: read
@@ -113,7 +97,7 @@ jobs:
           github.event.pull_request.user.login != 'agentydragon' &&
           'fork-ci-review' || ''
         }}
-      source_ref: refs/pull/${{ github.event.pull_request.number }}/merge
+      source_commit: ${{ needs.merge-commit.outputs.sha }}
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       allow_unsafe_pr_checkout: true
     secrets:
@@ -130,14 +114,13 @@ jobs:
     needs: [nix-wheel-check]
     if: >-
       always() &&
-      github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Require the trusted fork Nix result
         if: needs.nix-wheel-check.result != 'success'
         run: |
-          echo "::error::The trusted fork Nix check did not succeed (job result: ${{ needs.nix-wheel-check.result }}). See the fork Nix job and PR mergeability check."
+          echo "::error::The trusted fork Nix check did not succeed (job result: ${{ needs.nix-wheel-check.result }}). See the fork Nix job and the Resolve PR merge commit job."
           exit 1
       - name: Confirm the trusted fork Nix result
         if: needs.nix-wheel-check.result == 'success'

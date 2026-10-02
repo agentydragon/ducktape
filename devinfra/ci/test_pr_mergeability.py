@@ -2,20 +2,28 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 import pytest_bazel
 
 from devinfra.ci.pr_mergeability import (
-    Assessment,
+    Conflicted,
+    GitHubApi,
+    GitHubApiError,
+    MergeCommitUnavailableError,
+    Obsolete,
+    Resolved,
     SourceRevisionError,
-    inspect_pull_request,
-    publish_check,
+    resolve_merge_commit,
     verify_source_revision,
 )
 
 
-def _pull(*, mergeable: bool | None, head: str = "head", base: str = "base", merge: str = "merge") -> dict[str, Any]:
+def _pull(
+    *, mergeable: bool | None = True, head: str = "head", state: str = "open", merge: str = "merge"
+) -> dict[str, Any]:
     return {
-        "base": {"ref": "devel", "sha": base},
+        "state": state,
+        "base": {"ref": "devel"},
         "head": {"sha": head},
         "mergeable": mergeable,
         "mergeable_state": "dirty" if mergeable is False else "clean",
@@ -23,186 +31,119 @@ def _pull(*, mergeable: bool | None, head: str = "head", base: str = "base", mer
     }
 
 
-class FakeApi:
-    def __init__(self, pulls: list[dict[str, Any]], commits: dict[str, dict[str, Any]]) -> None:
+def _merge(*parents: str) -> dict[str, Any]:
+    return {"parents": [{"sha": sha} for sha in parents]}
+
+
+class FakeApi(GitHubApi):
+    """Serves ``pulls`` in order, repeating the last; an error entry is raised instead of returned."""
+
+    def __init__(self, pulls: list[dict[str, Any] | GitHubApiError], commits: dict[str, dict[str, Any]]) -> None:
+        super().__init__(repository="example/repo", token="test-token")
         self.pulls = pulls
         self.commits = commits
         self.pull_calls = 0
-        self.check_runs: list[dict[str, Any]] = []
-        self.created: list[dict[str, Any]] = []
-        self.updated: list[tuple[int, dict[str, Any]]] = []
 
-    def get_pull_request(self, _number: int) -> dict[str, Any]:
-        result = self.pulls[min(self.pull_calls, len(self.pulls) - 1)]
+    def get_pull_request(self, number: int) -> dict[str, Any]:
+        pull = self.pulls[min(self.pull_calls, len(self.pulls) - 1)]
         self.pull_calls += 1
-        return result
+        if isinstance(pull, GitHubApiError):
+            raise pull
+        return pull
 
     def get_git_commit(self, sha: str) -> dict[str, Any]:
         return self.commits[sha]
 
-    def get_check_runs(self, _sha: str) -> list[dict[str, Any]]:
-        return self.check_runs
 
-    def create_check_run(self, payload: dict[str, Any]) -> None:
-        self.created.append(payload)
-
-    def update_check_run(self, check_run_id: int, payload: dict[str, Any]) -> None:
-        self.updated.append((check_run_id, payload))
-
-
-def test_conflicted_pull_request_is_classified_as_source_failure() -> None:
-    api = FakeApi([_pull(mergeable=False)], {})
+def test_clean_merge_of_the_pr_head_resolves_at_once() -> None:
+    api = FakeApi([_pull()], {"merge": _merge("base", "head")})
     delays: list[float] = []
 
-    result = inspect_pull_request(api, number=8507, sleep=delays.append)
-
-    assert result.conclusion == "failure"
-    assert result.title == "PR #8507 conflicts with devel"
-    assert "Rerunning this CI run will reuse its recorded merge source" in result.summary
-    assert not result.mergeable
+    assert resolve_merge_commit(api, number=12, head_sha="head", sleep=delays.append) == Resolved("merge")
     assert api.pull_calls == 1
     assert not delays
 
 
-def test_clean_synthetic_merge_is_mergeable_when_the_pr_head_is_its_second_parent() -> None:
-    api = FakeApi([_pull(mergeable=True)], {"merge": {"parents": [{"sha": "base"}, {"sha": "head"}]}})
+def test_merge_built_on_an_older_base_resolves() -> None:
+    # The first parent is whichever commit GitHub merged onto; it is not compared with the live base.
+    api = FakeApi([_pull()], {"merge": _merge("older-base", "head")})
 
-    result = inspect_pull_request(api, number=12)
-
-    assert result.conclusion == "success"
-    assert result.mergeable
-    assert "merges the PR head" in result.summary
+    assert resolve_merge_commit(api, number=12, head_sha="head") == Resolved("merge")
 
 
-def test_merge_built_on_an_older_base_is_mergeable() -> None:
-    # The first parent matches neither the PR's base metadata nor (in production) the live base tip.
-    api = FakeApi(
-        [_pull(mergeable=True, base="metadata-base")], {"merge": {"parents": [{"sha": "older-base"}, {"sha": "head"}]}}
-    )
-
-    result = inspect_pull_request(api, number=12, attempts=1)
-
-    assert result.conclusion == "success"
-    assert "`older-base` + `head`" in result.summary
-
-
-def test_merge_of_a_different_head_is_never_accepted() -> None:
-    api = FakeApi([_pull(mergeable=True)], {"merge": {"parents": [{"sha": "base"}, {"sha": "old-head"}]}})
+def test_waits_while_github_calculates_the_merge() -> None:
+    api = FakeApi([_pull(mergeable=None), _pull(mergeable=None), _pull()], {"merge": _merge("base", "head")})
     delays: list[float] = []
 
-    result = inspect_pull_request(api, number=12, attempts=2, sleep=delays.append)
+    outcome = resolve_merge_commit(api, number=12, head_sha="head", retry_delays=(1, 2, 4), sleep=delays.append)
 
-    assert result.conclusion == "failure"
-    assert result.title == "GitHub synthetic merge is stale or unavailable"
-    assert "expected PR head `head` as the second parent" in result.summary
-    assert delays == [1]
-
-
-def test_stale_merge_commit_is_retried_after_github_reports_mergeable() -> None:
-    api = FakeApi(
-        [_pull(mergeable=True), _pull(mergeable=True, head="new-head")],
-        {
-            "merge": {"parents": [{"sha": "base"}, {"sha": "old-head"}]},
-            "new-merge": {"parents": [{"sha": "base"}, {"sha": "new-head"}]},
-        },
-    )
-    api.pulls[1]["merge_commit_sha"] = "new-merge"
-    delays: list[float] = []
-
-    result = inspect_pull_request(api, number=13, sleep=delays.append)
-
-    assert result.conclusion == "success"
-    assert result.head_sha == "new-head"
-    assert api.pull_calls == 2
-    assert delays == [1]
-
-
-def test_unresolved_mergeability_fails_with_github_calculation_message() -> None:
-    api = FakeApi([_pull(mergeable=None)], {})
-    delays: list[float] = []
-
-    result = inspect_pull_request(api, number=14, attempts=3, sleep=delays.append)
-
-    assert result.conclusion == "failure"
-    assert result.title == "GitHub mergeability is still unknown"
-    assert "source-status delay" in result.summary
-    assert api.pull_calls == 3
+    assert outcome == Resolved("merge")
     assert delays == [1, 2]
 
 
-def test_publish_check_creates_or_updates_the_pr_head_check() -> None:
-    result = Assessment("head", "success", "Mergeable", "current merge is verified")
-    api = FakeApi([], {})
-
-    publish_check(api, number=15, result=result, details_url="https://example.test/run")
-
-    assert api.created == [
-        {
-            "head_sha": "head",
-            "name": "PR mergeability",
-            "status": "completed",
-            "conclusion": "success",
-            "output": {"title": "Mergeable", "summary": "current merge is verified"},
-            "details_url": "https://example.test/run",
-            "external_id": "pr-mergeability:15",
-        }
-    ]
-
-    api.check_runs = [{"id": 7, "external_id": "pr-mergeability:15"}]
-    publish_check(api, number=15, result=result, details_url="https://example.test/run")
-
-    expected_update = api.created[0].copy()
-    del expected_update["head_sha"]
-    assert api.updated == [(7, expected_update)]
-
-
-def test_source_ref_checkout_validates_the_synthetic_merge_head_parent() -> None:
-    resolved_sha = verify_source_revision(
-        "merge",
-        source_ref="refs/pull/15/merge",
-        expected_sha="event-sha",
-        expected_head_sha="head",
-        second_parent_sha="head",
+def test_waits_until_the_merge_commit_has_the_current_head() -> None:
+    api = FakeApi(
+        [_pull(merge="stale-merge"), _pull(merge="merge")],
+        {"stale-merge": _merge("base", "old-head"), "merge": _merge("base", "head")},
     )
+    delays: list[float] = []
 
-    assert resolved_sha == "merge"
-
-
-def test_source_commit_checkout_must_match_the_requested_sha() -> None:
-    message = _source_revision_error("checked-out", source_ref="", expected_sha="requested", expected_head_sha="")
-
-    assert message == "checked out checked-out, expected requested"
+    assert resolve_merge_commit(api, number=12, head_sha="head", sleep=delays.append) == Resolved("merge")
+    assert delays == [1]
 
 
-def test_live_source_ref_mismatch_explains_that_a_fresh_workflow_is_needed() -> None:
-    message = _source_revision_error(
-        "merge",
-        source_ref="refs/pull/15/merge",
-        expected_sha="event-sha",
-        expected_head_sha="current-head",
-        second_parent_sha="old-head",
-    )
+def test_retries_github_api_errors() -> None:
+    api = FakeApi([GitHubApiError("HTTP 502"), _pull()], {"merge": _merge("base", "head")})
+    delays: list[float] = []
 
-    assert "merge parent old-head" in message
-    assert "event-time PR head" in message
-    assert "start a fresh PR workflow" in message
+    assert resolve_merge_commit(api, number=12, head_sha="head", sleep=delays.append) == Resolved("merge")
+    assert delays == [1]
 
 
-def test_event_merge_sha_mismatch_explains_that_rerun_reuses_source() -> None:
-    message = _source_revision_error(
-        "merge", source_ref="", expected_sha="merge", expected_head_sha="current-head", second_parent_sha="old-head"
-    )
+def test_conflict_is_reported_at_once() -> None:
+    api = FakeApi([_pull(mergeable=False)], {})
+    delays: list[float] = []
 
-    assert "merge parent old-head" in message
-    assert "rerunning this run reuses the old source" in message
+    outcome = resolve_merge_commit(api, number=12, head_sha="head", sleep=delays.append)
+
+    assert isinstance(outcome, Conflicted)
+    assert "cannot be cleanly merged with `devel`" in outcome.detail
+    assert api.pull_calls == 1
+    assert not delays
 
 
-def _source_revision_error(resolved_sha: str, **kwargs: str) -> str:
-    try:
-        verify_source_revision(resolved_sha, **kwargs)
-    except SourceRevisionError as error:
-        return str(error)
-    raise AssertionError("invalid source revision was accepted")
+@pytest.mark.parametrize("pull", [_pull(head="newer-head"), _pull(state="closed")])
+def test_moved_head_or_closed_pr_is_obsolete(pull: dict[str, Any]) -> None:
+    assert isinstance(resolve_merge_commit(FakeApi([pull], {}), number=12, head_sha="head"), Obsolete)
+
+
+def test_fails_loudly_when_github_never_builds_the_merge() -> None:
+    api = FakeApi([_pull(mergeable=None)], {})
+    delays: list[float] = []
+
+    with pytest.raises(MergeCommitUnavailableError, match="not finished calculating"):
+        resolve_merge_commit(api, number=12, head_sha="head", retry_delays=(1, 2), sleep=delays.append)
+
+    assert delays == [1, 2]
+    assert api.pull_calls == 3
+
+
+def test_verified_source_is_the_resolved_commit_with_the_pr_head_as_second_parent() -> None:
+    resolved = verify_source_revision("merge", expected_sha="merge", expected_head_sha="head", second_parent_sha="head")
+
+    assert resolved == "merge"
+
+
+def test_checkout_of_another_commit_is_rejected() -> None:
+    with pytest.raises(SourceRevisionError, match="checked out checked-out, expected requested"):
+        verify_source_revision("checked-out", expected_sha="requested", expected_head_sha="")
+
+
+def test_merge_of_another_head_is_rejected() -> None:
+    with pytest.raises(SourceRevisionError, match="second parent old-head, expected PR head current-head"):
+        verify_source_revision(
+            "merge", expected_sha="merge", expected_head_sha="current-head", second_parent_sha="old-head"
+        )
 
 
 if __name__ == "__main__":
