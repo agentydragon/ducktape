@@ -387,7 +387,7 @@ it("loads newest events first, prepends older pages without duplication, and fol
     )
   );
   await vi.waitFor(() => expect(container?.textContent).toContain("Latest message"));
-  expect(listSessionEvents.mock.calls[0]?.slice(0, 3)).toEqual([session.id, undefined, "desc"]);
+  expect(vi.mocked(listSessionEvents).mock.calls[0]?.slice(0, 3)).toEqual([session.id, undefined, "desc"]);
   expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(1);
 
   await act(async () => container?.querySelector<HTMLButtonElement>('[aria-label="Show raw event stream"]')!.click());
@@ -403,7 +403,7 @@ it("loads newest events first, prepends older pages without duplication, and fol
   await act(async () => loadOlder.click());
   await vi.waitFor(() => expect(container?.querySelectorAll("[data-raw-event]")).toHaveLength(4));
 
-  expect(listSessionEvents.mock.calls[1]?.slice(0, 3)).toEqual([session.id, toolResult.event_id, "desc"]);
+  expect(vi.mocked(listSessionEvents).mock.calls[1]?.slice(0, 3)).toEqual([session.id, toolResult.event_id, "desc"]);
   expect(
     [...container.querySelectorAll<HTMLElement>("[data-raw-event]")].map((event) => event.dataset.sequence)
   ).toEqual(["1", "2", "3", "4"]);
@@ -481,7 +481,7 @@ it("catches up every page after a reconnect without dropping the selected older 
     "1250"
   );
   expect(viewport.scrollTop).toBe(100);
-  expect(listSessionEvents.mock.calls.map((call) => call.slice(0, 3))).toEqual([
+  expect(vi.mocked(listSessionEvents).mock.calls.map((call) => call.slice(0, 3))).toEqual([
     [session.id, undefined, "desc"],
     [olderSession.id, undefined, "desc"],
     [olderSession.id, undefined, "desc"],
@@ -527,7 +527,7 @@ it("keeps older-page pagination available when the newest loaded page contains o
   expect(loadOlder).toBeDefined();
   await act(async () => loadOlder?.click());
   await vi.waitFor(() => expect(container?.textContent).toContain("First message"));
-  expect(listSessionEvents.mock.calls[1]?.slice(0, 3)).toEqual([session.id, suppressed.event_id, "desc"]);
+  expect(vi.mocked(listSessionEvents).mock.calls[1]?.slice(0, 3)).toEqual([session.id, suppressed.event_id, "desc"]);
   expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(1);
 });
 
