@@ -12,7 +12,7 @@ entries:
       name: activitywatch
     attrs:
       external_host: "https://activitywatch.allegedly.works"
-      internal_host: "http://activitywatch-readonly.activitywatch.svc.cluster.local:5600"
+      internal_host: "http://readonly.activitywatch.svc.cluster.local:5600"
       mode: proxy
       authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]

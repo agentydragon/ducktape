@@ -454,8 +454,8 @@ Options, from cheapest to cleanest:
   rewrites incoming LogQL `query` params to inject `{namespace=~"<allowlist>"}`
   before forwarding to `loki-read:3100`. CNP grants `claude-sandbox` → proxy only,
   not Loki directly. Real per-namespace scoping. Mirrors existing precedent
-  (`tana-mcp` nginx whitelisting `/mcp` + `/health`, `activitywatch-readonly`
-  whitelisting `GET/POST /api/0/query`). Natural allowlist: the
+  (`tana-mcp` nginx whitelisting `/mcp` + `/health`, `activitywatch`'s `readonly`
+  proxy whitelisting `GET/POST /api/0/query`). Natural allowlist: the
   `namespace-diagnostics-reader` and `logs-configmaps-reader` binding sets in
   <agent_rbac.md>.
 - **C. Loki multi-tenancy.** Set `auth_enabled: true`, route per-namespace logs to

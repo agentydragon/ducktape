@@ -9,6 +9,7 @@ via Flux's image-automation marker. Also hand-written: the nginx configs the dir
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -43,10 +44,10 @@ _PODS = Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),))
 # The three Services share one Service port, each in front of a different sidecar port.
 _HTTP = Port(name="http", number=5600)
 # The read-only nginx, which the Authentik embedded outpost proxies to.
-_READONLY = ServiceRef(name="activitywatch-readonly", port=_HTTP, pods=_PODS, target_port=5601)
+_READONLY = ServiceRef(name="readonly", port=_HTTP, pods=_PODS, target_port=5601)
 # The bearer-proxy sidecar, one Service per direction.
-_WRITE = ServiceRef(name="activitywatch-write", port=_HTTP, pods=_PODS, target_port=5602)
-_READ = ServiceRef(name="activitywatch-read", port=_HTTP, pods=_PODS, target_port=5603)
+_WRITE = ServiceRef(name="write", port=_HTTP, pods=_PODS, target_port=5602)
+_READ = ServiceRef(name="read", port=_HTTP, pods=_PODS, target_port=5603)
 # The SOPS-managed bearers the bearer-proxy checks.
 _WRITE_TOKEN = SecretRef(namespace=_NAMESPACE, name="activitywatch-write-token").key("token")
 _READ_TOKEN = SecretRef(namespace=_NAMESPACE, name="activitywatch-read-token").key("token")
@@ -279,6 +280,8 @@ def chart(app: App) -> Chart:
     _deployment(chart)
     _data_claim(chart)
     _service(chart, "readonly-service", service=_READONLY)
+    # CLEANUP(added 2026-10-02): Remove once nothing resolves activitywatch-readonly.activitywatch.svc (consumers: cluster/k8s/authentik/app/blueprints/activitywatch-sso.yaml, applied by the separate authentik Kustomization).
+    _service(chart, "legacy-readonly-service", service=replace(_READONLY, name="activitywatch-readonly"))
     _service(
         chart,
         "write-service",
