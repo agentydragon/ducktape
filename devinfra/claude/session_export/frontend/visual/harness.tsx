@@ -119,7 +119,7 @@ function fixtureEvent(
     sequence_num: String(sequence),
     event_type,
     source: event_type === "user" ? "client" : "server",
-    created_at: `2026-09-30T18:4${sequence}:00Z`,
+    created_at: `2026-09-30T18:${String(sequence).padStart(2, "0")}:00Z`,
     received_at: null,
     processing_at: null,
     processed_at: null,
@@ -742,6 +742,14 @@ if (scenario.startsWith("SessionLatestFirst")) {
   let attempts = 0;
   let thinkingDetails: HTMLDetailsElement | null = null;
   let thinkingTop = 0;
+  let prependTimeout = 0;
+  const failAnchorScenario = (message: string): void => {
+    root.dataset.historyAnchorReady = "true";
+    root.dataset.historyAnchorError = message;
+    window.setTimeout(() => {
+      throw new Error(message);
+    }, 0);
+  };
   const verifyNewestFirstHistory = (): void => {
     if (phase === "prepended") return;
     const viewport = document.querySelector<HTMLDivElement>(
@@ -750,7 +758,12 @@ if (scenario.startsWith("SessionLatestFirst")) {
     const latestCard = document.querySelector<HTMLElement>('[data-history-sequences~="17"]');
     if (viewport === null || latestCard === null || viewport.scrollHeight <= viewport.clientHeight) {
       attempts += 1;
-      if (attempts >= 300) throw new Error("The newest-first transcript did not reach its initial tail");
+      if (attempts >= 300) {
+        if (scenario === "SessionLatestFirstAnchor")
+          failAnchorScenario("The transcript did not reach its initial tail");
+        else throw new Error("The newest-first transcript did not reach its initial tail");
+        return;
+      }
       window.setTimeout(verifyNewestFirstHistory, 20);
       return;
     }
@@ -758,7 +771,11 @@ if (scenario.startsWith("SessionLatestFirst")) {
     const latestRect = latestCard.getBoundingClientRect();
     if (Math.abs(latestRect.bottom - viewportRect.bottom) > 3) {
       attempts += 1;
-      if (attempts >= 300) throw new Error("The newest event is not visible at the initial transcript tail");
+      if (attempts >= 300) {
+        if (scenario === "SessionLatestFirstAnchor") failAnchorScenario("The newest event is not at the initial tail");
+        else throw new Error("The newest event is not visible at the initial transcript tail");
+        return;
+      }
       window.setTimeout(verifyNewestFirstHistory, 20);
       return;
     }
@@ -768,7 +785,10 @@ if (scenario.startsWith("SessionLatestFirst")) {
     const details = document.querySelector<HTMLDetailsElement>('details[aria-label="Thinking"]');
     if (details === null) {
       attempts += 1;
-      if (attempts >= 300) throw new Error("The native thinking disclosure did not mount");
+      if (attempts >= 300) {
+        failAnchorScenario("The native thinking disclosure did not mount");
+        return;
+      }
       window.setTimeout(verifyNewestFirstHistory, 20);
       return;
     }
@@ -782,9 +802,15 @@ if (scenario.startsWith("SessionLatestFirst")) {
       const loadOlder = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
         button.textContent?.includes("Load older events")
       );
-      if (loadOlder === undefined) throw new Error("The older-history control is missing at the initial tail");
+      if (loadOlder === undefined) {
+        failAnchorScenario("The older-history control is missing at the initial tail");
+        return;
+      }
       phase = "prepended";
       loadOlder.click();
+      prependTimeout = window.setTimeout(() => {
+        failAnchorScenario("The older page did not prepend sequence 1 within 5 seconds");
+      }, 5000);
       window.requestAnimationFrame(verifyNewestFirstHistory);
     });
   };
@@ -802,13 +828,22 @@ if (scenario.startsWith("SessionLatestFirst")) {
           candidate.textContent?.includes("Load older events")
         );
         if (viewport === null || details === null || details !== thinkingDetails || !details.open) {
-          throw new Error("Prepending older history replaced or closed the open thinking disclosure");
+          window.clearTimeout(prependTimeout);
+          failAnchorScenario("Prepending older history replaced or closed the open thinking disclosure");
+          return;
         }
-        if (button !== undefined) throw new Error("The exhausted older-history cursor left the load control enabled");
+        if (button !== undefined) {
+          window.clearTimeout(prependTimeout);
+          failAnchorScenario("The exhausted older-history cursor left the load control enabled");
+          return;
+        }
         const displacement = Math.abs(details.getBoundingClientRect().top - thinkingTop);
         if (displacement > 1.5) {
-          throw new Error(`Prepending older history moved the visible anchor by ${displacement.toFixed(1)}px`);
+          window.clearTimeout(prependTimeout);
+          failAnchorScenario(`Prepending older history moved the visible anchor by ${displacement.toFixed(1)}px`);
+          return;
         }
+        window.clearTimeout(prependTimeout);
         root.dataset.historyAnchorReady = "true";
         observer.disconnect();
       });
