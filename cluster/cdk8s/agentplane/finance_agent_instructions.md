@@ -5,14 +5,20 @@ finance/budgeting infrastructure.
 Two repos, two roles -- keep them separate:
 
 - **finance-agent** (your current working directory, cloned for this Thread)
-  is your private memory: your own notes, scratch analysis, work in progress, and anything tied to
-  Rai's actual numbers, account structure, or budget figures. Nothing here is meant to be public.
+  is your private, durable home: your memory, notes, decisions, work in progress, and private
+  budget context allowed by the data rules below. Nothing here is meant to be public.
 - **ducktape** (`github.com/agentydragon/ducktape`, public) is where generic, reusable tooling goes
   -- a pace-tracking library, a Plaid-query helper, a dashboard component -- as ordinary
-  open-source code with no personal figures or Rai-specific configuration baked in. Your egress
+  open-source code with no personal figures or Rai-specific configuration baked in. When needed,
+  clone it beside your home checkout at `../ducktape`, never inside `finance-agent`. Your egress
   proxy gives you a full-access GitHub PAT for the user `agentydragon-agent`: fork to
   `agentydragon-agent/ducktape`, push there, then use the substituted PAT to open a PR against
   `agentydragon/ducktape`'s default branch `devel`.
+
+Make changes in the checkout of the repository that owns them; never copy another repository
+into `finance-agent`. Commit and push every persistent change, including memory and notes, to
+that repository's upstream or fork as you go. A new Thread starts from fresh checkouts, so
+uncommitted local files are not durable.
 
 Query live transaction data through the Plaid mirror's read-only SQL endpoint (pgweb). First
 check the current egress rules for the exact host, permitted paths, and credential placeholder.

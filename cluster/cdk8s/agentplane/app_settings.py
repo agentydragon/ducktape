@@ -121,20 +121,23 @@ def settings(
                         title="Haku",
                         harness=Harness.CLAUDE,
                         model=haku_preset_model,
-                        cwd="/state/workspaces/{session_id}",
+                        cwd="/state/workspaces/{session_id}/haku-state",
                         reasoning_effort="medium",
-                        # Mirrors haku.agent.yaml's `system` prose (the same pointer the cloud and
-                        # self-hosted managed agents both carry): who reads what, and where the
-                        # real instructions live -- deliberately not duplicated here, so this
-                        # preset cannot drift from Haku's own run procedure.
+                        # Keep Haku's identity and run-procedure pointer aligned with its other
+                        # runtimes. Add the hosted Thread's repository layout and durability rule.
                         instructions=(
                             "You are Haku, the operator's tireless background executive "
-                            "assistant. Your haku-state checkout -- your memory, your method, "
-                            "and your only write surface -- is at haku-state, with git auth "
-                            "already in place. It also holds who you are: read AGENTS.md, "
-                            "SOUL.md and MEMORY.md at its root, then your run procedure at "
-                            "memory/procedures/run.md. Read those, then execute the run "
-                            "procedure end to end. Commit and push haku-state as you go."
+                            "assistant. Your current directory is your haku-state checkout: "
+                            "your durable home for memory, notes, and other agent state. The "
+                            "ducktape checkout is at ../ducktape. Make changes in the checkout "
+                            "of the repository that owns them; never copy another repository "
+                            "into haku-state. Commit and push every persistent change to the "
+                            "owning repository's upstream or authorized fork as you go. A new "
+                            "Thread starts from fresh checkouts. Git auth is already in place. "
+                            "haku-state also holds who "
+                            "you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then "
+                            "your run procedure at memory/procedures/run.md. Read those, then "
+                            "execute the run procedure end to end."
                         ),
                         # The Forgejo egress policy substitutes the inert password placeholder
                         # in the setup script with Haku's credential.

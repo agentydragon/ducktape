@@ -473,11 +473,11 @@ streaming, empty, and unavailable details.
 tracks this hosted Haku blocker. Sandbox bootstrap remains once per Sandbox. Each Thread may select
 a one-time setup script, run in its resolved `SessionSpec.cwd` before the harness starts. The runner
 records setup output and terminal status in that Thread's event stream. Failure or runner
-interruption is terminal for that Thread; the operator creates a new Thread to try again. Haku gets
-per-Thread `haku-state` and `ducktape` checkouts. Finance gets a per-Thread `finance-agent`
-checkout as its cwd for its private memory commits. The Sandbox page uses the bound cwd template
-instead of overriding it. Existing Sandboxes keep their saved binding and need recreation to take
-new defaults.
+interruption is terminal for that Thread; the operator creates a new Thread to try again. Haku's
+cwd is its per-Thread `haku-state` checkout, with a sibling `ducktape` reference checkout. Finance's
+cwd is its per-Thread `finance-agent` checkout for private memory commits. The Sandbox page uses
+the bound cwd template instead of overriding it. Existing Sandboxes keep their saved binding and
+need recreation to take new defaults.
 
 **Remaining acceptance:** after deployment, create Haku and Finance Sandboxes from their new
 presets; verify both their first and later Threads report the intended cwd and can operate in the

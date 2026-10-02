@@ -92,7 +92,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         title="Finance agent / Codex",
         harness=Harness.CODEX,
         model=codex_responses_name("gpt-6-luna"),
-        cwd="/state/workspaces/{session_id}",
+        cwd="/state/workspaces/{session_id}/finance-agent",
         reasoning_effort="medium",
         instructions=_FINANCE_AGENT_INSTRUCTIONS,
         # The egress policy substitutes the inert Forgejo password placeholder in this script.
