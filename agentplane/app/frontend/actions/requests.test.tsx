@@ -83,10 +83,8 @@ describe("ActionRequests", () => {
     const service: ActionService = { list: vi.fn(async () => [request("decision_pending", 1)]), decide: vi.fn() };
     const container = await render(service, ActionRequests);
     expect(container.textContent).not.toContain(stateLabel("decision_pending"));
-    const approveIndex = container.textContent?.indexOf("Approve") ?? -1;
-    const argumentsIndex = container.textContent?.indexOf("Exact arguments (unredacted)") ?? -1;
-    expect(approveIndex).toBeGreaterThanOrEqual(0);
-    expect(approveIndex).toBeLessThan(argumentsIndex);
+    expect(button(container, "Approve").getAttribute("aria-label")).toBe("Approve");
+    expect(button(container, "Deny").getAttribute("aria-label")).toBe("Deny");
     expect(container.textContent).toContain("Exact arguments (unredacted)");
     expect(container.textContent).toContain("test-exact-token");
     expect(container.textContent).toContain("test-exact-password");

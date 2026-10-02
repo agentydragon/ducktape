@@ -110,7 +110,9 @@ export async function render(service: ActionService, View: View): Promise<HTMLDi
 }
 
 export function button(container: HTMLElement, label: string): HTMLButtonElement {
-  const found = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes(label));
+  const found = [...container.querySelectorAll("button")].find(
+    (candidate) => candidate.getAttribute("aria-label") === label || candidate.textContent?.includes(label)
+  );
   if (!(found instanceof HTMLButtonElement)) throw new Error(`missing ${label} button`);
   return found;
 }
