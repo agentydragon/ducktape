@@ -2,7 +2,9 @@
 
 `--remote_executor=""` is **never required for correctness** — every workflow in
 this repo runs on RBE. The root `AGENTS.md` rule ("RBE is the expected default — do
-not disable it") holds for all of these.
+not disable it") holds for all of these. The one place without RBE is a claude-ai build
+box, whose egress refuses BuildBuddy
+(<../../agentplane/acceptance/README.md> § Where an agent can run it).
 
 The mechanics the table cites:
 
