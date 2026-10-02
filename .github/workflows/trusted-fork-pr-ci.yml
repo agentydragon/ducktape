@@ -11,6 +11,9 @@
 # (devinfra/ci/pr_mergeability.py) and the jobs below check out that immutable commit.
 # Nothing re-resolves a ref after the trust decision, so a push after approval cannot
 # change what runs.
+#
+# pr-visuals-publish.yml also names the agent identity: it publishes visual reviews only
+# for the agent fork's runs. Keep the two in sync.
 name: Trusted fork PR CI
 run-name: >-
   ${{ format('Trusted PR #{0} @ {1}', github.event.pull_request.number, github.event.pull_request.head.sha) }}

@@ -30,6 +30,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 from devinfra.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
 from devinfra.pr_visuals.check_run import upsert_check_run
+from devinfra.pr_visuals.pull_request import find_open_pull_request
 from util.visual_diff import compare_pngs
 from util.visual_review import MANIFEST_NAME, VisualReviewAsset, VisualReviewManifest
 
@@ -952,6 +953,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--bucket", required=True)
     result.add_argument("--public-base-url", required=True)
     result.add_argument("--pull-request", type=int)
+    result.add_argument(
+        "--pull-request-head",
+        help="OWNER:BRANCH of a fork PR, whose number and base commit the publisher looks up "
+        "(a fork's workflow_run event lists no pull_requests); exclusive with --pull-request and --base-sha",
+    )
     result.add_argument("--check-external-id")
     result.add_argument("--ci-conclusion", default="success")
     result.add_argument("--ci-details-url")
@@ -1009,6 +1015,8 @@ def publish_only(args: argparse.Namespace, *, github_token: str, api_key: str, d
 
 def main() -> None:
     args = parser().parse_args()
+    if args.pull_request_head and (args.pull_request is not None or args.base_sha):
+        raise ValueError("--pull-request-head looks up the pull request and its base itself; do not also pass them")
     github_token = os.environ.get("GITHUB_TOKEN")
     if not github_token:
         raise ValueError("GITHUB_TOKEN is required to publish the visual-review check run")
@@ -1037,7 +1045,18 @@ def main() -> None:
         publish_only(args, github_token=github_token, api_key=api_key, details_url=details_url)
         return
 
+    pull_request = args.pull_request
+    base_sha = args.base_sha or None
     try:
+        if args.pull_request_head:
+            found = find_open_pull_request(
+                repository=args.repository, head=args.pull_request_head, head_sha=args.sha, token=github_token
+            )
+            if found is None:
+                summary = "This commit is no longer the head of an open pull request; nothing to review."
+                print(summary)
+                return
+            pull_request, base_sha = found.number, found.base_sha
         invocations = _invocations_for(args, api_key=api_key)
         if args.ci_conclusion != "success":
             ci_failures = list_ci_failures(invocations)
@@ -1063,7 +1082,6 @@ def main() -> None:
             return
 
         s3 = boto3.client("s3", endpoint_url=args.endpoint)
-        base_sha = args.base_sha or None
         baseline_source: BaselineSource | None = None
         if base_sha:
             if not FULL_SHA.fullmatch(base_sha):
@@ -1133,14 +1151,14 @@ def main() -> None:
         conclusion = "failure"
         raise
     finally:
-        if comment_body is not None and args.pull_request is not None:
+        if comment_body is not None and pull_request is not None:
             upsert_pull_request_comment(
-                repository=args.repository, pull_request=args.pull_request, body=comment_body, token=github_token
+                repository=args.repository, pull_request=pull_request, body=comment_body, token=github_token
             )
-        elif refresh_stale_comment_body is not None and args.pull_request is not None:
+        elif refresh_stale_comment_body is not None and pull_request is not None:
             refresh_stale_pull_request_comment(
                 repository=args.repository,
-                pull_request=args.pull_request,
+                pull_request=pull_request,
                 commit_sha=args.sha,
                 body=refresh_stale_comment_body,
                 token=github_token,

@@ -1,12 +1,24 @@
+# Publishes visual reviews for the Bazel run of a same-repo PR or devel push (`CI`) and of
+# an agent-fork PR (`Trusted fork PR CI`). Deviation for the fork: its `workflow_run`
+# event lists no pull request, so the publisher finds the PR and its base commit from the
+# fork's head ref.
+#
+# Only the agent fork is followed, the identity trusted-fork-pr-ci.yml runs without
+# review. A reviewer approving another fork's CI run authorises the run, not hosting its
+# images in our bucket and its text in a bot comment. Keep the owner below in sync with
+# the trusted authors there.
 name: Publish PR visuals
 
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [CI, Trusted fork PR CI]
     types: [in_progress, completed]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_sha }}
+  # Per triggering workflow too: one PR head is the `head_sha` of both a `CI` run and a
+  # `Trusted fork PR CI` run (skipped, for a same-repo PR), and a sibling's events must
+  # not cancel this one's.
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.workflow_id }}-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: true
 
 permissions:
@@ -19,8 +31,12 @@ jobs:
   announce:
     if: >-
       github.event.action == 'in_progress' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.pull_requests[0] != null
+      (
+        (github.event.workflow_run.event == 'pull_request' &&
+         github.event.workflow_run.pull_requests[0] != null) ||
+        (github.event.workflow_run.event == 'pull_request_target' &&
+         github.event.workflow_run.head_repository.owner.login == 'agentydragon-agent')
+      )
     runs-on: ubuntu-latest
     env:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
@@ -66,6 +82,8 @@ jobs:
       (
         (github.event.workflow_run.event == 'pull_request' &&
          github.event.workflow_run.pull_requests[0] != null) ||
+        (github.event.workflow_run.event == 'pull_request_target' &&
+         github.event.workflow_run.head_repository.owner.login == 'agentydragon-agent') ||
         (github.event.workflow_run.event == 'push' &&
          github.event.workflow_run.head_branch == 'devel')
       )
@@ -104,9 +122,12 @@ jobs:
           # the older commit's images. `workflow_run.head_sha` is the PR head the run
           # was triggered on (not a merge sha) and never moves.
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          # PR run → the base devel commit whose published bundle is the diff baseline.
+          # Same-repo PR run → the base devel commit whose published bundle is the diff baseline.
           BASE_SHA: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].base.sha || '' }}
           PR_NUMBER: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number || '' }}
+          # Fork PR run → the fork's OWNER:BRANCH, from which the publisher looks up the PR
+          # and its base. Passed through the environment alone: a branch name is free text.
+          PR_HEAD_REF: ${{ github.event.workflow_run.event == 'pull_request_target' && format('{0}:{1}', github.event.workflow_run.head_repository.owner.login, github.event.workflow_run.head_branch) || '' }}
           CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
@@ -127,6 +148,11 @@ jobs:
           fi
           if [ -n "$PR_NUMBER" ]; then
             args+=(--pull-request "$PR_NUMBER")
+          fi
+          if [ -n "$PR_HEAD_REF" ]; then
+            args+=(--pull-request-head "$PR_HEAD_REF")
+          fi
+          if [ -n "$PR_NUMBER$PR_HEAD_REF" ]; then
             args+=(--check-external-id "pr-visual-review:${{ github.event.workflow_run.id }}")
           fi
           bb run //devinfra/pr_visuals:publisher_bin -- "${args[@]}"

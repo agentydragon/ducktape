@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 import pytest_bazel
+from botocore.exceptions import ClientError
 from PIL import Image
 
 from devinfra.ci.invocation_ids import invocation_id
@@ -34,6 +38,7 @@ from devinfra.pr_visuals.publisher import (
     upload_bundle,
     write_baseline_pointers,
 )
+from devinfra.pr_visuals.pull_request import PullRequestRef
 from util.visual_diff import compare_pngs
 from util.visual_review import VisualReviewAsset, VisualReviewManifest
 
@@ -631,6 +636,45 @@ def test_refresh_stale_pull_request_comment(
     assert created == []
 
 
+HEAD_SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def _publisher_argv(work_dir: Path, *options: str) -> list[str]:
+    return [
+        "publisher",
+        "--ci-run-id",
+        "33060467222",
+        "--ci-run-attempt",
+        "1",
+        "--work-dir",
+        str(work_dir),
+        "--sha",
+        HEAD_SHA,
+        "--repository",
+        "agentydragon/ducktape",
+        "--endpoint",
+        "https://s3.example",
+        "--bucket",
+        "pr-visuals",
+        "--public-base-url",
+        "https://s3.example/pr-visuals",
+        *options,
+    ]
+
+
+def _forbid(monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
+    """Fail the test if `publisher.main` reaches any of these."""
+
+    def forbidden(name: str) -> Callable[..., NoReturn]:
+        def fail(*_args: object, **_kwargs: object) -> NoReturn:
+            pytest.fail(f"the publisher must not reach {name}")
+
+        return fail
+
+    for name in names:
+        monkeypatch.setattr(f"devinfra.pr_visuals.publisher.{name}", forbidden(name))
+
+
 def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -642,12 +686,7 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     left alone because they are mutable and unordered across concurrent publishes."""
     checks: list[dict[str, object]] = []
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
-
-    def forbid(name: str) -> Callable[..., None]:
-        return lambda **_kwargs: pytest.fail(f"a cancelled run must not reach {name}")
-
-    for forbidden in ("upsert_pull_request_comment", "refresh_stale_pull_request_comment", "write_baseline_pointers"):
-        monkeypatch.setattr(f"devinfra.pr_visuals.publisher.{forbidden}", forbid(forbidden))
+    _forbid(monkeypatch, "upsert_pull_request_comment", "refresh_stale_pull_request_comment", "write_baseline_pointers")
     downloaded: list[list[str]] = []
 
     def record(invocations: list[str], _destination: Path, *, api_key: str) -> list[object]:
@@ -661,30 +700,7 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     monkeypatch.setenv("GITHUB_TOKEN", "token")
     monkeypatch.setenv("BUILDBUDDY_API_KEY", "key")
     monkeypatch.setattr(
-        "sys.argv",
-        [
-            "publisher",
-            "--ci-run-id",
-            "33060467222",
-            "--ci-run-attempt",
-            "1",
-            "--work-dir",
-            str(tmp_path / "work"),
-            "--sha",
-            "0123456789abcdef0123456789abcdef01234567",
-            "--repository",
-            "agentydragon/ducktape",
-            "--endpoint",
-            "https://s3.example",
-            "--bucket",
-            "pr-visuals",
-            "--public-base-url",
-            "https://s3.example/pr-visuals",
-            "--ci-conclusion",
-            "cancelled",
-            "--pull-request",
-            "4858",
-        ],
+        "sys.argv", _publisher_argv(tmp_path / "work", "--ci-conclusion", "cancelled", "--pull-request", "4858")
     )
 
     main()
@@ -697,8 +713,123 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     ], "a superseded run must still look for the artifacts its Bazel invocation left behind"
     assert len(checks) == 1, "the announced in-progress check must still be terminated"
     assert checks[0]["conclusion"] == "neutral"
-    assert checks[0]["commit_sha"] == "0123456789abcdef0123456789abcdef01234567"
+    assert checks[0]["commit_sha"] == HEAD_SHA
     assert "uperseded" in str(checks[0]["summary"])
+
+
+FORK_CHECK_ID = "pr-visual-review:33060467222"
+
+
+@dataclass
+class ForkRun:
+    checks: list[dict[str, object]] = field(default_factory=list)
+    comments: list[dict[str, object]] = field(default_factory=list)
+
+
+@pytest.fixture
+def fork_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ForkRun:
+    """`main()` as the publish workflow starts it for a fork PR's CI run, recording its GitHub writes.
+
+    A fork's `workflow_run` event lists no pull request, so the publisher is handed the PR's head ref instead.
+    """
+    run = ForkRun()
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: run.checks.append(kwargs))
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.upsert_pull_request_comment", lambda **kwargs: run.comments.append(kwargs)
+    )
+    # BuildBuddy holds nothing under the PR head's SHA, so the lookup falls through to the run-derived IDs.
+    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", lambda _request: b'{"invocation": []}')
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    monkeypatch.setenv("BUILDBUDDY_API_KEY", "key")
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.setattr(
+        "sys.argv",
+        _publisher_argv(
+            tmp_path / "work", "--pull-request-head", "fork-owner:topic", "--check-external-id", FORK_CHECK_ID
+        ),
+    )
+    return run
+
+
+class EmptyBucket:
+    """An S3 bucket nothing was ever published to, remembering which keys it was asked for."""
+
+    def __init__(self) -> None:
+        self.requested: list[str] = []
+
+    def get_object(self, **kwargs: str) -> NoReturn:
+        self.requested.append(kwargs["Key"])
+        raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+
+
+def test_a_fork_run_publishes_to_the_pr_its_head_ref_finds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fork_run: ForkRun
+) -> None:
+    """The PR number and base commit a same-repo run reads off its event come from the lookup instead,
+    and everything after is the same-repo path: comment on that PR, compare against that base, and —
+    this being a PR run — leave the devel baseline pointers alone."""
+    base_sha = "c" * 40
+    lookups: list[dict[str, str]] = []
+
+    def find(**kwargs: str) -> PullRequestRef:
+        lookups.append(kwargs)
+        return PullRequestRef(number=8733, base_sha=base_sha)
+
+    candidate = _single_asset_test(tmp_path / "candidate")
+    bucket = EmptyBucket()
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.find_open_pull_request", find)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", lambda *_args, **_kwargs: [candidate])
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.boto3.client", lambda *_args, **_kwargs: bucket)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upload_bundle", lambda *_args, **_kwargs: None)
+    _forbid(monkeypatch, "write_baseline_pointers")
+
+    main()
+
+    assert [(lookup["head"], lookup["head_sha"]) for lookup in lookups] == [("fork-owner:topic", HEAD_SHA)]
+    assert [comment["pull_request"] for comment in fork_run.comments] == [8733]
+    assert bucket.requested[0] == f"commits/{base_sha}/tests/{candidate.slug}/metadata.json"
+    assert [check["conclusion"] for check in fork_run.checks] == ["success", "success"]
+
+
+def test_a_fork_run_whose_commit_is_no_longer_a_pr_head_only_closes_its_check(
+    monkeypatch: pytest.MonkeyPatch, fork_run: ForkRun
+) -> None:
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.find_open_pull_request", lambda **_kwargs: None)
+    _forbid(monkeypatch, "download_visual_tests", "refresh_stale_pull_request_comment", "write_baseline_pointers")
+
+    main()
+
+    assert [(check["conclusion"], check["external_id"]) for check in fork_run.checks] == [("neutral", FORK_CHECK_ID)]
+    assert "no longer the head of an open pull request" in str(fork_run.checks[0]["summary"])
+    assert fork_run.comments == []
+
+
+def test_a_failed_pr_lookup_fails_the_check_instead_of_leaving_it_in_progress(
+    monkeypatch: pytest.MonkeyPatch, fork_run: ForkRun
+) -> None:
+    def ambiguous(**_kwargs: str) -> NoReturn:
+        raise ValueError("Expected exactly one item in iterable, but got two")
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.find_open_pull_request", ambiguous)
+    _forbid(monkeypatch, "download_visual_tests", "write_baseline_pointers")
+
+    with pytest.raises(ValueError, match="Expected exactly one"):
+        main()
+
+    assert [(check["conclusion"], check["external_id"]) for check in fork_run.checks] == [("failure", FORK_CHECK_ID)]
+    assert fork_run.comments == [], "with no PR identified there is nowhere to comment"
+
+
+@pytest.mark.parametrize("hand_given", [["--pull-request", "8733"], ["--base-sha", "c" * 40]], ids=["pr", "base"])
+def test_a_head_ref_lookup_refuses_a_hand_given_pr_or_base(
+    monkeypatch: pytest.MonkeyPatch, fork_run: ForkRun, hand_given: list[str]
+) -> None:
+    monkeypatch.setattr("sys.argv", [*sys.argv, *hand_given])
+
+    with pytest.raises(ValueError, match="do not also pass them"):
+        main()
+
+    assert fork_run.checks == []
 
 
 def test_upload_publishes_all_indexes_last(tmp_path: Path) -> None:

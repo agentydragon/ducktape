@@ -2,7 +2,8 @@
 
 Trusted publisher for PR visual reviews. The "Publish PR visuals" workflow
 (`.github/workflows/pr-visuals-publish.yml`) runs `publisher.py` after
-every PR and `devel` Bazel CI run, including failed and superseded ones. It
+every PR (same-repo or from the agent fork) and `devel` Bazel CI run, including
+failed and superseded ones. It
 locates that commit's Bazel invocations — by asking BuildBuddy which CI test
 invocation the commit has, falling back to IDs derived from the run's identity
 (<devinfra/ci/invocation_ids.py>) where it cannot know — then scans them for
@@ -74,6 +75,22 @@ A chain of rapid devel merges therefore leaves baselines progressively older
 pushes) and puts more `baseline_fallback` warnings on PR comments. The first
 uncancelled run heals it. Deferred fix: <devinfra/ci/TODO.md> § Visual publishing
 races the invocation it reads.
+
+## Fork PRs
+
+**Deviation:** an agent-fork PR's Bazel run is `Trusted fork PR CI`
+(`pull_request_target`), not `CI`, and its `workflow_run` event lists no pull
+request. The workflow passes the fork's `OWNER:BRANCH` as `--pull-request-head`,
+and <pull_request.py> finds the open PR whose head is the run's commit, taking its
+number and base commit from it. From there the run is a same-repo PR run.
+
+- A completed run whose commit is no longer an open PR's head (pushed over, or
+  the PR closed, before publication) gets a `neutral` check and no comment or
+  bundle; a newer head's own run publishes. Two such PRs fail the run rather than
+  guess.
+- Only the agent fork is followed. Another fork's CI run is authorised by a
+  reviewer, which does not extend to hosting its output in our bucket and PR
+  comments.
 
 ## Baseline resolution
 
