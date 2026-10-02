@@ -16,7 +16,7 @@ actions to the private control Service. Cilium admits that Service only from web
    commits the tag, the pod is in `ImagePullBackOff`.
 3. Open the page, sign in, and pair: **Start pairing**, approve in Claude, paste back the address the browser lands
    on. The first cycle then backfills; a large session logs its progress
-   (`kubectl -n claude-session-sync logs deploy/claude-session-sync-control`).
+   (`kubectl -n claude-session-sync logs deploy/control`).
 
 Pairing again from the page replaces the grant; the running sync switches to it. A grant that was revoked shows up as
 a failed cycle on the page, and pairing again fixes it.
@@ -40,7 +40,7 @@ stops if the access token has lapsed. It prints the status of each request and, 
 name and data shape (keys only, never values), the ids sent more than once, and whether the server ended it. Findings so far: [api.md](api.md) § Session watch.
 
 ```bash
-kubectl -n claude-session-sync exec deploy/claude-session-sync-control -- cat /data/credentials.json > /tmp/claude-credential.json
+kubectl -n claude-session-sync exec deploy/control -- cat /data/credentials.json > /tmp/claude-credential.json
 bb run //devinfra/claude/session_export:export_sessions_bin -- probe --credentials-file /tmp/claude-credential.json \
   --session session_<id> --listen-seconds 60
 rm /tmp/claude-credential.json

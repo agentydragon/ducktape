@@ -42,7 +42,8 @@ _OIDC_FIELDS = ("oidc_issuer", "oidc_client_id", "oidc_client_secret", "oidc_ses
 _DATA_CLAIM = "claude-session-sync-data"
 _DATA_DIR = "/data"
 _CREDENTIALS_FILE = f"{_DATA_DIR}/credentials.json"
-_CONTROL_NAME = f"{NAME}-control"
+_CONTROL_NAME = f"{NAME}-control"  # the control Pods' label value and container name
+_CONTROL_OBJECT_NAME = "control"  # the control Deployment and Service
 # The hosts the OAuth token is refreshed at and the sessions API is read from.
 _ANTHROPIC_HOSTS = ("api.anthropic.com", "platform.claude.com")
 _UID = 1000
@@ -57,7 +58,7 @@ WEB_SERVICE = ServiceRef(
     name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=NAMESPACE, labels=tuple(_WEB_LABELS.items()))
 )
 CONTROL_SERVICE = ServiceRef(
-    name=_CONTROL_NAME,
+    name=_CONTROL_OBJECT_NAME,
     port=Port(name="http", number=8080),
     pods=Pods(namespace=NAMESPACE, labels=tuple(_CONTROL_LABELS.items())),
 )
@@ -110,6 +111,7 @@ def _deployment(
     *,
     workload_id: str,
     name: str,
+    container: str,
     labels: dict[str, str],
     selector_labels: dict[str, str] | None = None,
     args: list[str],
@@ -142,7 +144,7 @@ def _deployment(
                     ),
                     containers=[
                         k8s.Container(
-                            name=name,
+                            name=container,
                             image=_IMAGE,
                             args=args,
                             ports=[service.port.k8s_container_port()],
@@ -179,6 +181,7 @@ def _web_deployment(chart: Chart) -> None:
         chart,
         workload_id="web-deployment",
         name=NAME,
+        container=NAME,
         labels=_WEB_LABELS,
         selector_labels={"app.kubernetes.io/name": NAME},  # preserve the existing Deployment's immutable selector
         args=["web"],
@@ -200,7 +203,8 @@ def _control_deployment(chart: Chart) -> None:
     _deployment(
         chart,
         workload_id="control-deployment",
-        name=_CONTROL_NAME,
+        name=_CONTROL_OBJECT_NAME,
+        container=_CONTROL_NAME,
         labels=_CONTROL_LABELS,
         args=["control"],
         service=CONTROL_SERVICE,

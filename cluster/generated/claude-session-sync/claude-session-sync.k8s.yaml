@@ -104,7 +104,7 @@ spec:
             - name: SESSION_SYNC_PUBLIC_BASE_URL
               value: https://claude-session-sync.allegedly.works
             - name: SESSION_SYNC_CONTROL_BASE_URL
-              value: http://claude-session-sync-control.claude-session-sync.svc:8080
+              value: http://control.claude-session-sync.svc:8080
             - name: SESSION_SYNC_PORT
               value: "8080"
             - name: SESSION_SYNC_OIDC_ISSUER
@@ -182,7 +182,7 @@ metadata:
   labels:
     app.kubernetes.io/component: control
     app.kubernetes.io/name: claude-session-sync-control
-  name: claude-session-sync-control
+  name: control
   namespace: claude-session-sync
 spec:
   replicas: 1
@@ -284,7 +284,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: claude-session-sync-control
+  name: control
   namespace: claude-session-sync
 spec:
   ports:
