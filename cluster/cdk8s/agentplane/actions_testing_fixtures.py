@@ -33,6 +33,7 @@ from cilium_crds.io.cilium import (
 from constructs import Construct
 
 from cluster.cdk8s import cilium, pod_policy
+from cluster.cdk8s.agentplane import dex
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy, deny_all_egress
 
@@ -162,7 +163,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
                 "https://agentplane-dex-testing.allegedly.works/dex"
             ),
             "OAUTH_FIXTURE_JWKS_URI": EnvValue.from_value(
-                f"http://agentplane-testing-dex.{_NAMESPACE}.svc.cluster.local:5556/dex/keys"
+                f"http://{dex.service().fqdn}:{dex.service().port.number}/dex/keys"
             ),
             "OAUTH_FIXTURE_AUDIENCE": EnvValue.from_value("agentplane-testing-mcp"),
         },
@@ -207,10 +208,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
                 cilium.endpoint_labels(_NAMESPACE, "agentplane-actions"), ports=[OAUTH_FIXTURE_PORT]
             )
         ],
-        egress=[
-            cilium.dns_egress(resolves=["*"]),
-            EgressRule.to_endpoints(cilium.endpoint_labels(_NAMESPACE, "agentplane-testing-dex"), 5556),
-        ],
+        egress=[cilium.dns_egress(resolves=["*"]), dex.service().egress()],
         egress_deny=deny_all_egress(),
     )
 

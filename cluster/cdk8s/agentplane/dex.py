@@ -47,12 +47,14 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAMESPACE = "agentplane-testing"
-_NAME = "agentplane-testing-dex"
+_NAME = "dex"
+# The Dex Pods' `app.kubernetes.io/name` label value, not an object name.
+_POD_LABEL = "agentplane-testing-dex"
 _IMAGE = "ghcr.io/dexidp/dex:v2.45.1"
 _SERVICE = ServiceRef(
     name=_NAME,
     port=Port(name="http", number=5556),
-    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _POD_LABEL),)),
 )
 # The client Secrets this Dex writes, which the app and the Action Service read.
 _OIDC = app_component.oidc_secret(_NAMESPACE)

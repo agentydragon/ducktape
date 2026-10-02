@@ -318,6 +318,7 @@ py_library(
     name = "actions_testing_fixtures",
     srcs = ["actions_testing_fixtures.py"],
     deps = [
+        ":dex",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:pod_policy",

@@ -3067,7 +3067,7 @@ spec:
             - name: OAUTH_FIXTURE_AUTHORIZATION_SERVER
               value: https://agentplane-dex-testing.allegedly.works/dex
             - name: OAUTH_FIXTURE_JWKS_URI
-              value: http://agentplane-testing-dex.agentplane-testing.svc.cluster.local:5556/dex/keys
+              value: http://dex.agentplane-testing.svc.cluster.local:5556/dex/keys
             - name: OAUTH_FIXTURE_AUDIENCE
               value: agentplane-testing-mcp
           image: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:unset
@@ -3365,7 +3365,7 @@ metadata:
     secret.reloader.stakater.com/reload: agentplane-testing-acceptance-operator,agentplane-oidc,agentplane-mcp-oauth
   labels:
     app.kubernetes.io/name: agentplane-testing-dex
-  name: agentplane-testing-dex
+  name: dex
   namespace: agentplane-testing
 spec:
   minReadySeconds: 0
@@ -3475,7 +3475,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: agentplane-testing-dex
+  name: dex
   namespace: agentplane-testing
 spec:
   externalIPs: []
@@ -3491,7 +3491,7 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: agentplane-testing-dex
+  name: dex
   namespace: agentplane-testing
 spec:
   hostnames:
@@ -3502,7 +3502,7 @@ spec:
       sectionName: https-wildcard
   rules:
     - backendRefs:
-        - name: agentplane-testing-dex
+        - name: dex
           port: 5556
       filters:
         - responseHeaderModifier:
@@ -3514,7 +3514,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-testing-dex
+  name: dex
   namespace: agentplane-testing
 spec:
   egress:
