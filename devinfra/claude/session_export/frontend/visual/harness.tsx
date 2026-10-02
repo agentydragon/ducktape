@@ -5,7 +5,13 @@ import { createRoot } from "react-dom/client";
 
 import type { SessionEventPage, SessionListPage, SessionSummary, SyncStatus } from "../api";
 import { App } from "../app";
-import { noisySession, noisySessionEvents } from "../fixtures/noisy-session";
+import {
+  longCommandActivityDetail,
+  longCommandActivitySessionEvents,
+  longCommandActivityTitle,
+  noisySession,
+  noisySessionEvents,
+} from "../fixtures/noisy-session";
 
 const FIXED_NOW = Date.parse("2026-09-30T18:45:00Z");
 Date.now = () => FIXED_NOW;
@@ -618,6 +624,8 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
       json(
         scenario.startsWith("SessionNoisySidebar")
           ? { data: sidebarSessions, next_cursor: null, resume_token: null }
+          : scenario.startsWith("SessionCompletedActivity")
+            ? { data: [noisySession], next_cursor: null, resume_token: null }
           : scenario.startsWith("SessionNoisy")
             ? { data: [noisySession], next_cursor: null, resume_token: null }
             : sessionPage
@@ -634,6 +642,16 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
             ? latestFirstSessionEventPage([...latestFirstOlderEvents].reverse(), false)
             : latestFirstSessionEventPage([...latestFirstPageEvents].reverse(), true)
         )
+      );
+    }
+    if (page.startsWith("SessionCompletedActivity")) {
+      return Promise.resolve(
+        json({
+          data: longCommandActivitySessionEvents,
+          has_more: false,
+          first_id: longCommandActivitySessionEvents[0]?.event_id,
+          last_id: longCommandActivitySessionEvents.at(-1)?.event_id,
+        })
       );
     }
     if (page.startsWith("SessionNoisy"))
@@ -715,6 +733,47 @@ if (
     window.setTimeout(expandFixtureDetails, 20);
   };
   window.setTimeout(expandFixtureDetails, 0);
+}
+
+if (scenario.startsWith("SessionCompletedActivity")) {
+  let attempts = 0;
+  let expanded = false;
+  const verifyActivitySummary = (): void => {
+    const details = [...document.querySelectorAll<HTMLDetailsElement>('[data-fold-kind="activity"]')].find(
+      (candidate) => candidate.querySelector("summary")?.getAttribute("title") === longCommandActivityTitle
+    );
+    if (details === undefined) {
+      attempts += 1;
+      if (attempts >= 300) throw new Error("Completed activity fixture did not mount");
+      window.setTimeout(verifyActivitySummary, 20);
+      return;
+    }
+    if (!expanded) {
+      const closedHeight = details.getBoundingClientRect().height;
+      root.dataset.completedActivityClosedHeight = String(closedHeight);
+      if (closedHeight > 28) throw new Error(`Collapsed completed activity is ${closedHeight}px tall`);
+      if (scenario.includes("Expanded")) {
+        expanded = true;
+        details.open = true;
+        return;
+      }
+    } else {
+      const title = details.querySelector<HTMLElement>("[data-activity-title]");
+      const detail = details.querySelector<HTMLElement>("[data-activity-detail]");
+      if (!details.open || title?.textContent !== longCommandActivityTitle || detail?.textContent !== longCommandActivityDetail) {
+        throw new Error("Expanded completed activity omitted its full title or detail");
+      }
+      if (title.getBoundingClientRect().height <= 0 || detail.getBoundingClientRect().height <= 0) {
+        throw new Error("Expanded completed activity title or detail is not visible");
+      }
+    }
+    scrollTranscriptElementIntoView(details);
+    root.dataset.completedActivityReady = "true";
+    activityObserver.disconnect();
+  };
+  const activityObserver = new MutationObserver(verifyActivitySummary);
+  activityObserver.observe(root, { childList: true, subtree: true, attributes: true });
+  window.setTimeout(verifyActivitySummary, 0);
 }
 
 if (scenario.startsWith("SessionEventVisibility")) {

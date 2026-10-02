@@ -12,7 +12,12 @@ export const noisySession: SessionSummary = {
   last_event_at: "2026-01-01T12:02:00Z",
 };
 
-function makeEvents(): SessionEvent[] {
+export const longCommandActivityTitle =
+  "Run the focused browser checks with all report artifacts\nnpm test -- --runInBand --reporter=default --coverage --outputFile=artifacts/session-summary/browser-results.json --config=visual/session-summary.config.mjs\nthen collect the local HTML report and attach it to the review summary";
+export const longCommandActivityDetail =
+  "Synthetic command activity completed successfully.\nThe browser checks passed and the HTML report is ready.";
+
+function makeEvents(includeLongCommandActivity = false): SessionEvent[] {
   const events: SessionEvent[] = [];
   function add(
     event_type: string,
@@ -141,6 +146,19 @@ function makeEvents(): SessionEvent[] {
       });
     }
   }
+  if (includeLongCommandActivity) {
+    add("system", {
+      subtype: "task_started",
+      task_id: "fixture-long-command",
+      description: longCommandActivityTitle,
+    });
+    add("system", {
+      subtype: "task_notification",
+      task_id: "fixture-long-command",
+      status: "completed",
+      summary: longCommandActivityDetail,
+    });
+  }
   message("assistant", [
     {
       type: "text",
@@ -155,3 +173,4 @@ function makeEvents(): SessionEvent[] {
 }
 
 export const noisySessionEvents: SessionEvent[] = makeEvents();
+export const longCommandActivitySessionEvents: SessionEvent[] = makeEvents(true);

@@ -753,11 +753,31 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
         title={time ?? undefined}
         py={2}
       >
-        <Box component="summary" fz="xs" c="dimmed" style={{ cursor: "pointer" }}>
+        <Box
+          component="summary"
+          fz="xs"
+          c="dimmed"
+          data-activity-summary
+          title={item.title}
+          style={{ cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+        >
           {item.title} · completed
         </Box>
+        <Text
+          size="sm"
+          py="xs"
+          data-activity-title
+          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+        >
+          {item.title}
+        </Text>
         {item.detail !== undefined && (
-          <Text size="sm" py="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          <Text
+            size="sm"
+            py="xs"
+            data-activity-detail
+            style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+          >
             {item.detail}
           </Text>
         )}

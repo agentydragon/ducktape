@@ -45,6 +45,21 @@ const LATEST_TAIL_READY = ['#app[data-latest-tail-ready="true"]'];
 const HISTORY_ANCHOR_READY = ['#app[data-history-anchor-ready="true"]'];
 
 export const SCENARIOS = {
+  SessionCompletedActivity: { element: "#app", readySelectors: ['#app[data-completed-activity-ready="true"]'] },
+  SessionCompletedActivityExpanded: {
+    element: "#app",
+    readySelectors: ['#app[data-completed-activity-ready="true"]'],
+  },
+  SessionCompletedActivity_mobile: {
+    element: "#app",
+    readySelectors: ['#app[data-completed-activity-ready="true"]'],
+    viewport: { width: 420, height: 900 },
+  },
+  SessionCompletedActivityExpanded_mobile: {
+    element: "#app",
+    readySelectors: ['#app[data-completed-activity-ready="true"]'],
+    viewport: { width: 420, height: 900 },
+  },
   SessionNoisyActivity: { element: "#app", readySelectors: ['#app[data-activity-ready="true"]'] },
   SessionNoisyActivityExpanded: { element: "#app", readySelectors: ['#app[data-activity-ready="true"]'] },
   SessionNoisyActivityExpanded_mobile: {
