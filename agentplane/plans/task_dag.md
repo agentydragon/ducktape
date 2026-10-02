@@ -525,7 +525,7 @@ needs evidence that work does not already provide.
 
 - **`DT` (existing P2) — high win, medium–high work:** Surface Action-backed tools through
   Claude driver MCP and Codex dynamic tools, plus the existing list/status and per-task stop floor
-  for background work. Reuse Action Service decisions, execution, idempotency, and provenance; it
+  for background work. Reuse Action Service decisions, execution, and idempotency; it
   remains deferred pending a named consumer. See [driver tools and background work](driver_tools_and_background.md).
 - **`HARNESS_INTERACTIVE_CONTROLS` — high win, high work:** Support questions and permission
   requests that park a turn, survive reconnect/restart, accept or reject a durable decision, and
