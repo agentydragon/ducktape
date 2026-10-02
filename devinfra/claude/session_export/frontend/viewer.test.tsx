@@ -680,3 +680,51 @@ it("keeps an open tool disclosure when older history extends its activity group"
   expect(retained.querySelector('[data-tool-run-toggle][aria-expanded="true"]')).not.toBeNull();
   expect(retained.textContent).toContain("README.md");
 });
+
+it("toggles activity from header labels and status badges without collapsing on body clicks", async () => {
+  const anotherTool = {
+    ...toolCall,
+    event_id: "another-tool",
+    sequence_num: "3",
+    payload: {
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "read-2", name: "Read", input: { file_path: "STYLE.md" } }] },
+    },
+  };
+  vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
+  vi.mocked(listSessionEvents).mockResolvedValue({
+    data: [anotherTool, toolCall, first],
+    has_more: false,
+    first_id: "another-tool",
+    last_id: "event-1",
+  });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  const group = await vi.waitFor(() => {
+    const button = container!.querySelector<HTMLButtonElement>("[data-tool-group-toggle]");
+    expect(button).not.toBeNull();
+    return button!;
+  });
+  expect(group.tagName).toBe("BUTTON");
+  expect(group.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => group.querySelector<HTMLElement>(".mantine-Text-root:nth-child(2)")!.click());
+  expect(group.getAttribute("aria-expanded")).toBe("true");
+  const tool = container.querySelector<HTMLButtonElement>("[data-tool-run-toggle]")!;
+  expect(tool.tagName).toBe("BUTTON");
+  await act(async () => tool.querySelector<HTMLElement>(".mantine-Badge-root:last-child")!.click());
+  expect(tool.getAttribute("aria-expanded")).toBe("true");
+  const body = tool.nextElementSibling as HTMLElement;
+  await act(async () => body.click());
+  expect(tool.getAttribute("aria-expanded")).toBe("true");
+  expect(group.getAttribute("aria-expanded")).toBe("true");
+  await act(async () => group.querySelector<HTMLElement>(".mantine-Badge-root")!.click());
+  expect(group.getAttribute("aria-expanded")).toBe("false");
+});

@@ -708,6 +708,19 @@ function scrollTranscriptElementIntoView(element: HTMLElement): void {
   viewport.dispatchEvent(new Event("scroll"));
 }
 
+function clickDisclosureRightEdge(button: HTMLButtonElement): void {
+  scrollTranscriptElementIntoView(button);
+  const rect = button.getBoundingClientRect();
+  const parentRect = button.parentElement!.getBoundingClientRect();
+  if (rect.width < parentRect.width - 2) throw new Error("Disclosure does not fill its row");
+  if (rect.height > 28) throw new Error("Disclosure exceeds 28px");
+  const hit = document.elementFromPoint(rect.right - 2, rect.top + rect.height / 2);
+  if (!(hit instanceof HTMLElement) || !button.contains(hit)) {
+    throw new Error("Right edge of disclosure is not clickable");
+  }
+  hit.click();
+}
+
 createRoot(root).render(
   <MantineProvider defaultColorScheme="auto">
     <App pathname={pathname} />
@@ -1036,7 +1049,7 @@ if (scenario.startsWith("SessionNoisyActivity")) {
       if (group.querySelector('[data-fold-kind="tool-run"]')) throw new Error("Tool group expanded by default");
       if (scenario.includes("Expanded")) {
         stage = 1;
-        group.querySelector<HTMLButtonElement>("[data-tool-group-toggle]")!.click();
+        clickDisclosureRightEdge(group.querySelector<HTMLButtonElement>("[data-tool-group-toggle]")!);
         return;
       }
     }
@@ -1045,7 +1058,7 @@ if (scenario.startsWith("SessionNoisyActivity")) {
       if (tool === null) return;
       if (stage === 1) {
         stage = 2;
-        tool.click();
+        clickDisclosureRightEdge(tool);
         return;
       }
       if (!group.querySelector("[data-tool-file-preview]")) return;

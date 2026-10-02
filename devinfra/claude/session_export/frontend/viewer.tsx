@@ -11,7 +11,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  ActionIcon,
   Accordion,
   Alert,
   Badge,
@@ -33,6 +32,7 @@ import {
   Text,
   TextInput,
   Title,
+  UnstyledButton,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 
@@ -550,22 +550,23 @@ function FoldableDetail({ label, detail }: { label: string; detail: string }): J
   const [expanded, setExpanded] = useState(false);
   return (
     <Stack gap={4}>
-      <Group gap={4}>
-        <ActionIcon
-          variant={expanded ? "light" : "subtle"}
-          size="xs"
-          aria-label={expanded ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          <Text size="xs" fw={600}>
-            {expanded ? "−" : "+"}
-          </Text>
-        </ActionIcon>
-        <Text size="xs" c="dimmed">
+      <UnstyledButton
+        w="100%"
+        mih={22}
+        px={4}
+        aria-label={expanded ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+        aria-expanded={expanded}
+        data-detail-toggle
+        onClick={() => setExpanded((value) => !value)}
+        style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}
+      >
+        <Text component="span" size="xs" fw={600} aria-hidden="true">
+          {expanded ? "−" : "+"}
+        </Text>
+        <Text component="span" size="xs" c="dimmed">
           {label}
         </Text>
-      </Group>
+      </UnstyledButton>
       {expanded && (
         <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
           {detail}
@@ -637,31 +638,43 @@ function CompactToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
       radius="sm"
       py={2}
     >
-      <Group gap={4} wrap="nowrap">
-        <ActionIcon
-          variant={expanded ? "light" : "subtle"}
-          size="sm"
-          aria-label={expanded ? "Hide tool details" : "Show tool details"}
-          aria-expanded={expanded}
-          data-tool-run-toggle
-          onClick={() => disclosures.toggleTool(item.id)}
-        >
-          <Text size="xs" fw={600}>
-            {expanded ? "−" : "+"}
-          </Text>
-        </ActionIcon>
-        <Badge size="xs" variant="light" color="cyan">
+      <UnstyledButton
+        w="100%"
+        mih={22}
+        px={4}
+        aria-label={expanded ? "Hide tool details" : "Show tool details"}
+        aria-expanded={expanded}
+        data-tool-run-toggle
+        onClick={() => disclosures.toggleTool(item.id)}
+        style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}
+      >
+        <Text component="span" size="xs" fw={600} c="blue" aria-hidden="true">
+          {expanded ? "−" : "+"}
+        </Text>
+        <Badge component="span" size="xs" variant="light" color="cyan" style={{ flexShrink: 0 }}>
           {item.tools.length}
         </Badge>
-        <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>
+        <Text
+          component="span"
+          size="xs"
+          c="dimmed"
+          lineClamp={1}
+          style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}
+        >
           {toolRunPreview(item)}
         </Text>
         {item.status !== "complete" && (
-          <Badge size="xs" variant="dot" color={toolStatusColor(item.status)}>
+          <Badge
+            component="span"
+            size="xs"
+            variant="dot"
+            color={toolStatusColor(item.status)}
+            style={{ flexShrink: 0 }}
+          >
             {item.status}
           </Badge>
         )}
-      </Group>
+      </UnstyledButton>
       {expanded && (
         <Stack gap="sm" mt="xs">
           <ToolRun item={item} />
@@ -683,27 +696,38 @@ function ToolActivityGroup({ item, session }: { item: ToolGroup; session: Sessio
       data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
       data-tool-count={tools.length}
     >
-      <Group gap={4} wrap="nowrap" py={2}>
-        <Button
-          variant="subtle"
-          color="gray"
-          size="compact-xs"
-          fw={400}
+      <Box py={2}>
+        <UnstyledButton
+          w="100%"
+          mih={22}
+          px={4}
           aria-label={expanded ? "Hide activity group" : "Show activity group"}
           aria-expanded={expanded}
           data-tool-group-toggle
           onClick={() => disclosures.toggleGroup(runIds, expanded)}
-          styles={{ root: { minWidth: 0 }, label: { display: "block", overflow: "hidden", textOverflow: "ellipsis" } }}
+          style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}
           title={toolGroupSummary(item)}
         >
-          {expanded ? "−" : "+"} {toolGroupSummary(item)}
-        </Button>
-        {statuses.map((status) => (
-          <Badge key={status} size="xs" variant="dot" color={toolStatusColor(status)}>
-            {status}
-          </Badge>
-        ))}
-      </Group>
+          <Text component="span" size="xs" aria-hidden="true">
+            {expanded ? "−" : "+"}
+          </Text>
+          <Text component="span" size="xs" truncate style={{ flex: 1, minWidth: 0 }}>
+            {toolGroupSummary(item)}
+          </Text>
+          {statuses.map((status) => (
+            <Badge
+              component="span"
+              key={status}
+              size="xs"
+              variant="dot"
+              color={toolStatusColor(status)}
+              style={{ flexShrink: 0 }}
+            >
+              {status}
+            </Badge>
+          ))}
+        </UnstyledButton>
+      </Box>
       {expanded && (
         <Stack gap={4} pl="xs" style={{ borderLeft: "1px solid var(--mantine-color-default-border)" }}>
           {item.items.map((row) => (
