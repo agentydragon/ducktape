@@ -210,10 +210,7 @@ function threadState({
   };
 }
 
-async function render(
-  state: ThreadState = threadState(),
-  bodies: Record<string, string> = {}
-): Promise<HTMLDivElement> {
+async function render(state: ThreadState = threadState()): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   // The real shell topbar (app.tsx) isn't mounted here, so ProjectedSession's title/menu need
@@ -224,28 +221,19 @@ async function render(
   const root = createRoot(container);
   mounted.push({ root, container, topbarTitle, topbarActions });
   await act(async () => {
-    const content = page(state, topbarTitle, topbarActions, bodies);
+    const content = page(state, topbarTitle, topbarActions);
     root.render(<ThreadsLiveProvider>{content}</ThreadsLiveProvider>);
   });
   container.append(topbarTitle, topbarActions);
   return container;
 }
 
-function page(
-  state: ThreadState,
-  topbarTitle: HTMLDivElement,
-  topbarActions: HTMLDivElement,
-  bodies: Record<string, string> = {}
-): JSX.Element {
+function page(state: ThreadState, topbarTitle: HTMLDivElement, topbarActions: HTMLDivElement): JSX.Element {
   const sync: ThreadSync = {
     Thread: ({ children }) => <>{children}</>,
     useThread: () => state,
     useCommandRows: () => [],
-    usePayload: ({ owner_id, field }) => ({
-      body: bodies[`${owner_id}:${field}`] ?? null,
-      error: null,
-      retry: () => {},
-    }),
+    usePayload: () => ({ body: null, error: null, retry: () => {} }),
   };
   return (
     <MantineProvider env="test">
@@ -786,6 +774,14 @@ it.each([
 
 it("replaces an applied input outcome with its confirmed message", async () => {
   const text = "The harness accepted this input";
+  const confirmed = entity(
+    "confirmed_input",
+    { harness_message_id: "message", origin_command_ids: ["test-entity"] },
+    { inputRef: reference("confirmed-input", "confirmed_input") }
+  );
+  const [historyRow] = await renderHistory([confirmed], false, { "confirmed-input:confirmed_input": text });
+  expect(historyRow?.querySelector(".agentplane-user-bubble .agentplane-verbatim")?.textContent).toBe(text);
+
   const container = await render(
     threadState({
       rows: [
@@ -795,21 +791,11 @@ it("replaces an applied input outcome with its confirmed message", async () => {
           { operation: "submit_input", outcome: "effected", outcome_cursor: "1", outcome_reason: null },
           { inputRef: reference("command-input", "command_input") }
         ),
-        entity(
-          "confirmed_input",
-          { harness_message_id: "message", origin_command_ids: ["test-entity"] },
-          { inputRef: reference("confirmed-input", "confirmed_input") }
-        ),
+        confirmed,
       ],
-    }),
-    {
-      "command-input:command_input": "Original command text",
-      "confirmed-input:confirmed_input": text,
-    }
+    })
   );
-  const bubbles = container.querySelectorAll(".agentplane-user-bubble");
-  expect(bubbles).toHaveLength(1);
-  expect(bubbles[0]?.querySelector(".agentplane-verbatim")?.textContent).toBe(text);
+  expect(container.querySelector('[aria-label="Input messages"]')).toBeNull();
 });
 
 it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {
