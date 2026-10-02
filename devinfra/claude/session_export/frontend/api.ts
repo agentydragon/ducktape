@@ -33,11 +33,12 @@ export function detailMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+async function call<T>(method: "GET" | "POST", path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method,
     credentials: "same-origin",
     cache: "no-store",
+    signal,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -72,10 +73,15 @@ export function listSessions(statuses: string[], cursor?: string): Promise<Sessi
   return call("GET", `/v1/code/sessions?${query}`);
 }
 
-export function listSessionEvents(sessionId: string, cursor?: string): Promise<SessionEventPage> {
-  const query = new URLSearchParams({ limit: "100", sort_order: "asc" });
+export function listSessionEvents(
+  sessionId: string,
+  cursor?: string,
+  sortOrder: "asc" | "desc" = "desc",
+  signal?: AbortSignal
+): Promise<SessionEventPage> {
+  const query = new URLSearchParams({ limit: "100", sort_order: sortOrder });
   if (cursor !== undefined) query.set("cursor", cursor);
-  return call("GET", `/v1/code/sessions/${encodeURIComponent(sessionId)}/events?${query}`);
+  return call("GET", `/v1/code/sessions/${encodeURIComponent(sessionId)}/events?${query}`, undefined, signal);
 }
 
 export function watchSessions(resumeToken: string): EventSource {

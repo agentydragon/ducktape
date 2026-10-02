@@ -119,7 +119,7 @@ function fixtureEvent(
     sequence_num: String(sequence),
     event_type,
     source: event_type === "user" ? "client" : "server",
-    created_at: `2026-09-30T18:4${sequence}:00Z`,
+    created_at: `2026-09-30T18:${String(sequence).padStart(2, "0")}:00Z`,
     received_at: null,
     processing_at: null,
     processed_at: null,
@@ -274,6 +274,48 @@ const eventPage: SessionEventPage = {
   first_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
   last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a508",
 };
+
+const latestFirstPageEvents = Array.from({ length: 12 }, (_, index) => {
+  const sequence = index + 6;
+  if (sequence === 10) {
+    return fixtureEvent(sequence, "assistant", {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "I will keep this disclosure open while older history is prepended." },
+          { type: "text", text: "The transcript stays chronological as older events load above." },
+        ],
+      },
+    });
+  }
+  return fixtureEvent(sequence, sequence % 2 === 0 ? "user" : "assistant", {
+    type: sequence % 2 === 0 ? "user" : "assistant",
+    message: {
+      role: sequence % 2 === 0 ? "user" : "assistant",
+      content: [{ type: "text", text: `Newest-first fixture message ${sequence}; shown in chronological order.` }],
+    },
+  });
+});
+const latestFirstOlderEvents = Array.from({ length: 5 }, (_, index) => {
+  const sequence = index + 1;
+  return fixtureEvent(sequence, "user", {
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "text", text: `Earlier fixture message ${sequence}.` }],
+    },
+  });
+});
+const latestFirstSessionEventPage = (
+  descendingEvents: SessionEventPage["data"],
+  hasMore: boolean
+): SessionEventPage => ({
+  data: descendingEvents,
+  has_more: hasMore,
+  first_id: descendingEvents[0]?.event_id ?? null,
+  last_id: descendingEvents.at(-1)?.event_id ?? null,
+});
 
 const toolResultEventPage: SessionEventPage = {
   data: [
@@ -578,6 +620,16 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
   }
   if (/^\/v1\/code\/sessions\/[^/]+\/events$/.test(url.pathname)) {
     const page = new URLSearchParams(window.location.search).get("page") ?? "";
+    if (page.startsWith("SessionLatestFirst")) {
+      const cursor = url.searchParams.get("cursor");
+      return Promise.resolve(
+        json(
+          cursor === latestFirstPageEvents[0]?.event_id
+            ? latestFirstSessionEventPage([...latestFirstOlderEvents].reverse(), false)
+            : latestFirstSessionEventPage([...latestFirstPageEvents].reverse(), true)
+        )
+      );
+    }
     if (page.startsWith("SessionNoisy"))
       return Promise.resolve(
         json({
@@ -620,6 +672,18 @@ try {
 }
 const pathname = scenario.startsWith("SessionSync") ? "/sync" : "/sessions";
 
+function scrollTranscriptElementIntoView(element: HTMLElement): void {
+  const viewport = document.querySelector<HTMLDivElement>(
+    '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
+  );
+  if (viewport === null) return;
+  const viewportRect = viewport.getBoundingClientRect();
+  const elementRect = element.getBoundingClientRect();
+  const targetTop = Math.max(0, (viewport.clientHeight - elementRect.height) / 2);
+  viewport.scrollTop += elementRect.top - viewportRect.top - targetTop;
+  viewport.dispatchEvent(new Event("scroll"));
+}
+
 createRoot(root).render(
   <MantineProvider defaultColorScheme="auto">
     <App pathname={pathname} />
@@ -636,6 +700,8 @@ if (
     const toggle = document.querySelector<HTMLButtonElement>("[data-tool-run-toggle]");
     if (toggle !== null) {
       toggle.click();
+      const toolRun = toggle.closest<HTMLElement>('[data-fold-kind="tool-run"]');
+      if (toolRun !== null) scrollTranscriptElementIntoView(toolRun);
       return;
     }
     attempts += 1;
@@ -671,6 +737,119 @@ if (scenario.startsWith("SessionEventVisibility")) {
   window.setTimeout(assertSuppressedEventContent, 0);
 }
 
+if (scenario.startsWith("SessionLatestFirst")) {
+  let phase: "tail" | "prepended" = "tail";
+  let attempts = 0;
+  let thinkingDetails: HTMLDetailsElement | null = null;
+  let thinkingTop = 0;
+  let prependTimeout = 0;
+  const failAnchorScenario = (message: string): never => {
+    root.dataset.historyAnchorReady = "true";
+    root.dataset.historyAnchorError = message;
+    throw new Error(message);
+  };
+  const verifyNewestFirstHistory = (): void => {
+    if (phase === "prepended") return;
+    const viewport = document.querySelector<HTMLDivElement>(
+      '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
+    );
+    const latestCard = document.querySelector<HTMLElement>('[data-history-sequences~="17"]');
+    if (viewport === null || latestCard === null || viewport.scrollHeight <= viewport.clientHeight) {
+      attempts += 1;
+      if (attempts >= 300) {
+        if (scenario === "SessionLatestFirstAnchor")
+          failAnchorScenario("The transcript did not reach its initial tail");
+        else throw new Error("The newest-first transcript did not reach its initial tail");
+        return;
+      }
+      window.setTimeout(verifyNewestFirstHistory, 20);
+      return;
+    }
+    const viewportRect = viewport.getBoundingClientRect();
+    const latestRect = latestCard.getBoundingClientRect();
+    if (Math.abs(latestRect.bottom - viewportRect.bottom) > 3) {
+      attempts += 1;
+      if (attempts >= 300) {
+        if (scenario === "SessionLatestFirstAnchor") failAnchorScenario("The newest event is not at the initial tail");
+        else throw new Error("The newest event is not visible at the initial transcript tail");
+        return;
+      }
+      window.setTimeout(verifyNewestFirstHistory, 20);
+      return;
+    }
+    root.dataset.latestTailReady = "true";
+    if (scenario !== "SessionLatestFirstAnchor") return;
+
+    const details = document.querySelector<HTMLDetailsElement>('details[aria-label="Thinking"]');
+    if (details === null) {
+      attempts += 1;
+      if (attempts >= 300) {
+        failAnchorScenario("The native thinking disclosure did not mount");
+        return;
+      }
+      window.setTimeout(verifyNewestFirstHistory, 20);
+      return;
+    }
+    const detailsRect = details.getBoundingClientRect();
+    viewport.scrollTop += detailsRect.top - viewportRect.top - 100;
+    viewport.dispatchEvent(new Event("scroll"));
+    details.open = true;
+    window.requestAnimationFrame(() => {
+      thinkingDetails = details;
+      thinkingTop = details.getBoundingClientRect().top;
+      const loadOlder = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes("Load older events")
+      );
+      if (loadOlder === undefined) {
+        failAnchorScenario("The older-history control is missing at the initial tail");
+        return;
+      }
+      phase = "prepended";
+      loadOlder.click();
+      prependTimeout = window.setTimeout(() => {
+        failAnchorScenario("The older page did not prepend sequence 1 within 5 seconds");
+      }, 5000);
+      window.requestAnimationFrame(verifyNewestFirstHistory);
+    });
+  };
+  window.setTimeout(verifyNewestFirstHistory, 0);
+
+  if (scenario === "SessionLatestFirstAnchor") {
+    const observer = new MutationObserver(() => {
+      if (phase !== "prepended" || !document.querySelector('[data-history-sequences~="1"]')) return;
+      window.requestAnimationFrame(() => {
+        const viewport = document.querySelector<HTMLDivElement>(
+          '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
+        );
+        const details = document.querySelector<HTMLDetailsElement>('details[aria-label="Thinking"]');
+        const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((candidate) =>
+          candidate.textContent?.includes("Load older events")
+        );
+        if (viewport === null || details === null || details !== thinkingDetails || !details.open) {
+          window.clearTimeout(prependTimeout);
+          failAnchorScenario("Prepending older history replaced or closed the open thinking disclosure");
+          return;
+        }
+        if (button !== undefined) {
+          window.clearTimeout(prependTimeout);
+          failAnchorScenario("The exhausted older-history cursor left the load control enabled");
+          return;
+        }
+        const displacement = Math.abs(details.getBoundingClientRect().top - thinkingTop);
+        if (displacement > 1.5) {
+          window.clearTimeout(prependTimeout);
+          failAnchorScenario(`Prepending older history moved the visible anchor by ${displacement.toFixed(1)}px`);
+          return;
+        }
+        window.clearTimeout(prependTimeout);
+        root.dataset.historyAnchorReady = "true";
+        observer.disconnect();
+      });
+    });
+    observer.observe(root, { childList: true, subtree: true, attributes: true });
+  }
+}
+
 if (scenario.startsWith("SessionNoisy")) {
   let openedInspector = false;
   let filtered = false;
@@ -683,6 +862,7 @@ if (scenario.startsWith("SessionNoisy")) {
         const thinking = document.querySelector<HTMLDetailsElement>('[data-fold-kind="thinking"]');
         if (thinking === null) return;
         thinking.open = true;
+        scrollTranscriptElementIntoView(thinking);
       }
       root.dataset.noisyReady = "true";
       observer.disconnect();
@@ -707,11 +887,20 @@ if (scenario.startsWith("SessionNoisy")) {
       if (!expanded) {
         expanded = true;
         rawRows[0]?.querySelector("summary")?.click();
+        if (rawRows[0] !== undefined) scrollTranscriptElementIntoView(rawRows[0]);
         return;
       }
       if (!document.querySelector("[data-event-json]")) return;
     } else if (rawRows.length !== noisySessionEvents.length) {
       throw new Error("The event inspector omitted stored events");
+    } else {
+      const viewport = document.querySelector<HTMLDivElement>(
+        '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
+      );
+      if (viewport !== null) {
+        viewport.scrollTop = 0;
+        viewport.dispatchEvent(new Event("scroll"));
+      }
     }
     root.dataset.noisyReady = "true";
     observer.disconnect();

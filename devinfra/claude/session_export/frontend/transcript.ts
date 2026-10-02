@@ -458,6 +458,13 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
   const peerHoldsByMessageUuid = new Map<string, TranscriptPeerHold>();
   const peerMessagesByUuid = new Map<string, TranscriptPeerMessage>();
   const pendingPeerLifecycleEvents = new Map<string, SessionEvent[]>();
+  const eventItemIndices = new Map<string, number>();
+  const nextEventItemId = (event: SessionEvent, kind: string): string => {
+    const key = eventId(event);
+    const index = eventItemIndices.get(key) ?? 0;
+    eventItemIndices.set(key, index + 1);
+    return `${key}-${kind}-${index}`;
+  };
 
   const addMessage = (
     role: "user" | "assistant",
@@ -481,7 +488,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     }
     items.push({
       kind: "message",
-      id: originToolUseId === undefined ? `${eventId(event)}-${items.length}` : `tool-message-${originToolUseId}`,
+      id: originToolUseId === undefined ? nextEventItemId(event, "message") : `tool-message-${originToolUseId}`,
       role,
       text,
       ...(originToolUseId === undefined ? {} : { originToolUseId }),
@@ -739,7 +746,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
         const blockType = string(block.type) ?? "";
         if (blockType === "tool_use") {
           flushText();
-          const id = string(block.id) ?? `${eventId(event)}-tool-${items.length}`;
+          const id = string(block.id) ?? nextEventItemId(event, "tool");
           const name = string(block.name) ?? "Tool";
           const standalone = STANDALONE_TOOLS.has(name);
           const previous = currentRun;
@@ -793,7 +800,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
           if (thinking !== null)
             items.push({
               kind: "thinking",
-              id: `${eventId(event)}-thinking-${items.length}`,
+              id: nextEventItemId(event, "thinking"),
               text: thinking,
               events: [event],
             });

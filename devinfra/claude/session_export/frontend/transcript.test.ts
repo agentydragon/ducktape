@@ -34,6 +34,31 @@ describe("adaptSessionEvent", () => {
 });
 
 describe("foldSessionEvents", () => {
+  it("keeps event-local fold IDs stable when earlier events are prepended", () => {
+    const earlier = event(1, "user", {
+      type: "user",
+      message: { content: [{ type: "text", text: "Earlier message" }] },
+    });
+    const later = event(8, "assistant", {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "thinking", thinking: "A later event's thinking block" },
+          { type: "text", text: "A later event's answer" },
+        ],
+      },
+    });
+
+    const laterItems = foldSessionEvents([later]);
+    const fullItems = foldSessionEvents([earlier, later]);
+
+    expect(
+      fullItems
+        .filter((item) => item.events.some((source) => source.event_id === later.event_id))
+        .map((item) => item.id)
+    ).toEqual(laterItems.map((item) => item.id));
+  });
+
   it("turns Claude local-command markers into context, stats, usage, and status rows", () => {
     const contextOutput = [
       "## Context Usage",

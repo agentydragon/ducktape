@@ -41,6 +41,8 @@ const LOCAL_COMMAND_READY = [
 
 const NOISY_READY = ['#app[data-noisy-ready="true"]'];
 const SIDEBAR_EXPANDED_READY = ['#app[data-noisy-ready="true"][data-sidebar-ready="expanded"]'];
+const LATEST_TAIL_READY = ['#app[data-latest-tail-ready="true"]'];
+const HISTORY_ANCHOR_READY = ['#app[data-history-anchor-ready="true"]'];
 
 export const SCENARIOS = {
   SessionNoisySidebar: { element: "#app", readySelectors: SIDEBAR_EXPANDED_READY },
@@ -63,6 +65,8 @@ export const SCENARIOS = {
   SessionNoisyRaw: { element: "#app", readySelectors: NOISY_READY },
   SessionNoisyHook: { element: "#app", readySelectors: NOISY_READY },
   SessionNoisyHook_mobile: { element: "#app", readySelectors: NOISY_READY, viewport: { width: 420, height: 900 } },
+  SessionLatestFirstTail: { element: "#app", readySelectors: LATEST_TAIL_READY },
+  SessionLatestFirstAnchor: { element: "#app", readySelectors: HISTORY_ANCHOR_READY },
   SessionViewer: { element: "#app", readySelectors: VIEWER_READY },
   SessionViewer_dark: { element: "#app", readySelectors: VIEWER_READY, colorScheme: "dark" },
   SessionViewer_mobile: {
