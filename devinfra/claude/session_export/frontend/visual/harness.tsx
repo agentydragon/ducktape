@@ -743,12 +743,10 @@ if (scenario.startsWith("SessionLatestFirst")) {
   let thinkingDetails: HTMLDetailsElement | null = null;
   let thinkingTop = 0;
   let prependTimeout = 0;
-  const failAnchorScenario = (message: string): void => {
+  const failAnchorScenario = (message: string): never => {
     root.dataset.historyAnchorReady = "true";
     root.dataset.historyAnchorError = message;
-    window.setTimeout(() => {
-      throw new Error(message);
-    }, 0);
+    throw new Error(message);
   };
   const verifyNewestFirstHistory = (): void => {
     if (phase === "prepended") return;
