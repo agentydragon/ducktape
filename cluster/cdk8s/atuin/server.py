@@ -19,7 +19,7 @@ NAMESPACE = "atuin"
 OUTPUT_DIR = f"{GENERATED_ROOT}/atuin"
 DATABASE = cnpg.PostgresRef.generated(name="atuin-db", namespace=NAMESPACE)
 SERVER = ServiceRef(
-    name="atuin-server",
+    name="server",
     port=Port(name="http", number=8888),
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )

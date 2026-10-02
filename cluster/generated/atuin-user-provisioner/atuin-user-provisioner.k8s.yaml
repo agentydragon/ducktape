@@ -77,7 +77,7 @@ kind: Job
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
-  name: atuin-user-provisioner
+  name: user-provisioner
   namespace: atuin
 spec:
   backoffLimit: 5

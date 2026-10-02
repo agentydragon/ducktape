@@ -157,7 +157,7 @@ configMapGenerator:
               - "[STATUS] == 200"
           - name: Atuin
             group: services
-            url: http://atuin-server.atuin.svc.cluster.local:8888
+            url: http://server.atuin.svc.cluster.local:8888
             interval: 60s
             conditions:
               - "[STATUS] == 200"

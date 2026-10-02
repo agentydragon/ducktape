@@ -42,7 +42,7 @@ kind: Deployment
 metadata:
   labels:
     app.kubernetes.io/name: atuin
-  name: atuin-server
+  name: server
   namespace: atuin
 spec:
   replicas: 1
@@ -103,7 +103,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: atuin-server
+  name: server
   namespace: atuin
 spec:
   ports:
@@ -128,5 +128,5 @@ spec:
       namespace: gateway-system
   rules:
     - backendRefs:
-        - name: atuin-server
+        - name: server
           port: 8888
