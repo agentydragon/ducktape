@@ -62,6 +62,32 @@ const toolCall = {
   },
 };
 
+function assistantEvent(sequence: number) {
+  return {
+    ...first,
+    event_id: `event-${sequence}`,
+    sequence_num: String(sequence),
+    event_type: "assistant",
+    payload: {
+      type: "assistant",
+      message: { role: "assistant", content: [{ type: "text", text: `Message ${sequence}` }] },
+    },
+  };
+}
+
+function eventRange(start: number, end: number, descending: boolean) {
+  const firstSequence = descending ? end : start;
+  const lastSequence = descending ? start : end;
+  return {
+    data: Array.from({ length: end - start + 1 }, (_, index) =>
+      assistantEvent(descending ? end - index : start + index)
+    ),
+    has_more: false,
+    first_id: `event-${firstSequence}`,
+    last_id: `event-${lastSequence}`,
+  };
+}
+
 let root: ReturnType<typeof createRoot> | null = null;
 let container: HTMLDivElement | null = null;
 const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
@@ -244,15 +270,25 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
   stream.onerror = null;
   vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: "watch-1" });
+  const refreshedToolCall = {
+    ...toolCall,
+    payload: {
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", id: "read-1", name: "Read", input: { file_path: "src/updated.py" } }],
+      },
+    },
+  };
   let finishRefresh: ((value: Awaited<ReturnType<typeof listSessionEvents>>) => void) | undefined;
   vi.mocked(listSessionEvents)
-    .mockResolvedValueOnce({ data: [first, toolCall], has_more: false, first_id: "event-1", last_id: "event-2" })
+    .mockResolvedValueOnce({ data: [toolCall, first], has_more: false, first_id: "event-2", last_id: "event-1" })
     .mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           finishRefresh = resolve;
         })
-    );
+    )
+    .mockResolvedValueOnce({ data: [second], has_more: false, first_id: "event-3", last_id: "event-3" });
 
   container = document.createElement("div");
   document.body.append(container);
@@ -270,7 +306,10 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
   const viewport = container.querySelector(
     '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
   ) as HTMLElement;
+  Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1000 });
+  Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 400 });
   viewport.scrollTop = 100;
+  await act(async () => viewport.dispatchEvent(new Event("scroll")));
   const toolRun = container.querySelector('[data-fold-kind="tool-run"]')!;
   const control = toolRun.querySelector<HTMLButtonElement>("[data-tool-run-toggle]")!;
   await act(async () => control.click());
@@ -285,12 +324,211 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
   expect(viewport.scrollTop).toBe(100);
   expect(control.getAttribute("aria-expanded")).toBe("true");
   await act(async () =>
-    finishRefresh?.({ data: [first, toolCall, second], has_more: false, first_id: "event-1", last_id: "event-3" })
+    finishRefresh?.({
+      data: [second, refreshedToolCall, first],
+      has_more: false,
+      first_id: "event-3",
+      last_id: "event-1",
+    })
   );
   expect(container.querySelector('[data-fold-kind="message"]')).toBe(article);
   expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(2);
   expect(viewport.scrollTop).toBe(100);
   expect(control.getAttribute("aria-expanded")).toBe("true");
+  expect(container.textContent).toContain("src/updated.py");
+  expect(listSessionEvents).toHaveBeenLastCalledWith(session.id, "event-2", "asc", expect.any(AbortSignal));
+});
+
+it("loads newest events first, prepends older pages without duplication, and folds tool results across the boundary", async () => {
+  const latest = {
+    ...first,
+    event_id: "event-4",
+    sequence_num: "4",
+    payload: { type: "user", message: { role: "user", content: [{ type: "text", text: "Latest message" }] } },
+  };
+  const toolResult = {
+    ...first,
+    event_id: "event-3",
+    sequence_num: "3",
+    payload: {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "read-1", content: [{ type: "text", text: "Earlier file contents" }] },
+        ],
+      },
+    },
+  };
+  const olderToolCall = { ...toolCall, sequence_num: "2" };
+  vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
+  vi.mocked(listSessionEvents)
+    .mockResolvedValueOnce({
+      data: [latest, toolResult],
+      has_more: true,
+      first_id: latest.event_id,
+      last_id: toolResult.event_id,
+    })
+    .mockResolvedValueOnce({
+      data: [olderToolCall, first],
+      has_more: false,
+      first_id: olderToolCall.event_id,
+      last_id: first.event_id,
+    });
+
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await vi.waitFor(() => expect(container?.textContent).toContain("Latest message"));
+  expect(listSessionEvents.mock.calls[0]?.slice(0, 3)).toEqual([session.id, undefined, "desc"]);
+  expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(1);
+
+  await act(async () => container?.querySelector<HTMLButtonElement>('[aria-label="Show raw event stream"]')!.click());
+  await vi.waitFor(() => expect(container?.querySelectorAll("[data-raw-event]")).toHaveLength(2));
+  const latestRawEvent = container.querySelector<HTMLDetailsElement>('[data-raw-event][data-sequence="4"]')!;
+  await act(async () => {
+    latestRawEvent.open = true;
+    latestRawEvent.dispatchEvent(new Event("toggle"));
+  });
+  const loadOlder = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Load older events")
+  )!;
+  await act(async () => loadOlder.click());
+  await vi.waitFor(() => expect(container?.querySelectorAll("[data-raw-event]")).toHaveLength(4));
+
+  expect(listSessionEvents.mock.calls[1]?.slice(0, 3)).toEqual([session.id, toolResult.event_id, "desc"]);
+  expect(
+    [...container.querySelectorAll<HTMLElement>("[data-raw-event]")].map((event) => event.dataset.sequence)
+  ).toEqual(["1", "2", "3", "4"]);
+  expect(container.querySelectorAll('[data-raw-event][data-sequence="4"]')[0]).toBe(latestRawEvent);
+  expect(latestRawEvent.open).toBe(true);
+  expect(container.textContent).toContain("4 of 4 loaded events");
+  expect(container.textContent).not.toContain("Load older events");
+
+  await act(async () => container?.querySelector<HTMLButtonElement>('[aria-label="Show folded transcript"]')!.click());
+  const toolRun = container.querySelector('[data-fold-kind="tool-run"]')!;
+  expect(toolRun.getAttribute("data-history-sequences")).toBe("2 3");
+  await act(async () => toolRun.querySelector<HTMLButtonElement>("[data-tool-run-toggle]")!.click());
+  expect(container.textContent).toContain("Earlier file contents");
+});
+
+it("catches up every page after a reconnect without dropping the selected older session or moving an older reader", async () => {
+  const olderSession = { ...session, id: "session-older", title: "Session from an older list page" };
+  const stream = new EventTarget() as EventTarget & {
+    close: () => void;
+    onopen: (() => void) | null;
+    onerror: (() => void) | null;
+  };
+  stream.close = vi.fn();
+  stream.onopen = null;
+  stream.onerror = null;
+  vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
+  vi.mocked(listSessions)
+    .mockResolvedValueOnce({ data: [session], next_cursor: "older-sessions", resume_token: "watch-1" })
+    .mockResolvedValueOnce({ data: [olderSession], next_cursor: null, resume_token: "watch-1" })
+    .mockResolvedValueOnce({ data: [session], next_cursor: "older-sessions", resume_token: "watch-1" });
+  vi.mocked(listSessionEvents)
+    .mockResolvedValueOnce({ ...eventRange(1, 1, true), has_more: false })
+    .mockResolvedValueOnce({ ...eventRange(901, 1000, true), has_more: true })
+    .mockResolvedValueOnce({ ...eventRange(1151, 1250, true), has_more: true })
+    .mockResolvedValueOnce({ ...eventRange(1001, 1100, false), has_more: true })
+    .mockResolvedValueOnce({ ...eventRange(1101, 1200, false), has_more: true })
+    .mockResolvedValueOnce({ ...eventRange(1201, 1250, false), has_more: false });
+
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await vi.waitFor(() => expect(container?.textContent).toContain("Message 1"));
+  const loadMoreSessions = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Load more sessions")
+  )!;
+  await act(async () => loadMoreSessions.click());
+  const olderSessionButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes(olderSession.title)
+  )!;
+  await act(async () => olderSessionButton.click());
+  await vi.waitFor(() => expect(container?.textContent).toContain("Message 1000"));
+
+  const viewport = container.querySelector(
+    '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
+  ) as HTMLElement;
+  Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 5000 });
+  Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 400 });
+  viewport.scrollTop = 100;
+  await act(async () => viewport.dispatchEvent(new Event("scroll")));
+  await act(async () => stream.dispatchEvent(new Event("reset")));
+
+  await vi.waitFor(() => expect(container?.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(350));
+  expect(container.querySelector('[aria-label="Session transcript"] h4')?.textContent).toBe(olderSession.title);
+  expect(container.querySelectorAll('[data-fold-kind="message"]')[0]?.getAttribute("data-history-sequences")).toBe(
+    "901"
+  );
+  expect(container.querySelectorAll('[data-fold-kind="message"]')[349]?.getAttribute("data-history-sequences")).toBe(
+    "1250"
+  );
+  expect(viewport.scrollTop).toBe(100);
+  expect(listSessionEvents.mock.calls.map((call) => call.slice(0, 3))).toEqual([
+    [session.id, undefined, "desc"],
+    [olderSession.id, undefined, "desc"],
+    [olderSession.id, undefined, "desc"],
+    [olderSession.id, "event-1000", "asc"],
+    [olderSession.id, "event-1100", "asc"],
+    [olderSession.id, "event-1200", "asc"],
+  ]);
+  expect(container.textContent).not.toContain("Could not load transcript");
+});
+
+it("keeps older-page pagination available when the newest loaded page contains only suppressed events", async () => {
+  const suppressed = {
+    ...first,
+    event_id: "event-2",
+    sequence_num: "2",
+    event_type: "system",
+    payload: { type: "system", subtype: "hook_response", response: { stdout: "suppressed fixture" } },
+  };
+  vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
+  vi.mocked(listSessionEvents)
+    .mockResolvedValueOnce({
+      data: [suppressed],
+      has_more: true,
+      first_id: suppressed.event_id,
+      last_id: suppressed.event_id,
+    })
+    .mockResolvedValueOnce({ data: [first], has_more: false, first_id: first.event_id, last_id: first.event_id });
+
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await vi.waitFor(() => expect(container?.textContent).toContain("No loaded events appear in the folded transcript."));
+  const loadOlder = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Load older events")
+  );
+  expect(loadOlder).toBeDefined();
+  await act(async () => loadOlder?.click());
+  await vi.waitFor(() => expect(container?.textContent).toContain("First message"));
+  expect(listSessionEvents.mock.calls[1]?.slice(0, 3)).toEqual([session.id, suppressed.event_id, "desc"]);
+  expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(1);
 });
 
 it("keeps suppressed events inspectable without expanding JSON or hook noise by default", async () => {

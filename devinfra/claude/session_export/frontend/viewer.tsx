@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from "react";
 import {
   ActionIcon,
   Accordion,
@@ -88,6 +88,43 @@ function maxSidebarWidth(layoutWidth: number): number {
     SIDEBAR_MIN_WIDTH,
     Math.min(SIDEBAR_MAX_WIDTH, layoutWidth - TRANSCRIPT_MIN_WIDTH - SIDEBAR_RESIZER_WIDTH)
   );
+}
+
+type TranscriptScrollIntent =
+  | { kind: "tail"; sessionId: string }
+  | {
+      kind: "anchor";
+      sessionId: string;
+      element: HTMLElement | null;
+      sequences: string[];
+      top: number;
+      scrollTop: number;
+      scrollHeight: number;
+    };
+
+function sequenceOrder(left: SessionEvent, right: SessionEvent): number {
+  const leftSequence = BigInt(left.sequence_num);
+  const rightSequence = BigInt(right.sequence_num);
+  return leftSequence < rightSequence ? -1 : leftSequence > rightSequence ? 1 : 0;
+}
+
+function mergeSessionEvents(previous: SessionEvent[], incoming: SessionEvent[]): SessionEvent[] {
+  if (incoming.length === 0) return previous;
+  const bySequence = new Map(previous.map((event) => [event.sequence_num, event]));
+  let changed = false;
+  for (const event of incoming) {
+    const existing = bySequence.get(event.sequence_num);
+    if (existing === undefined || JSON.stringify(existing) !== JSON.stringify(event)) {
+      bySequence.set(event.sequence_num, event);
+      changed = true;
+    }
+  }
+  return changed ? [...bySequence.values()].sort(sequenceOrder) : previous;
+}
+
+function mergeSessionPage(latest: SessionSummary[], previous: SessionSummary[]): SessionSummary[] {
+  const latestIds = new Set(latest.map((session) => session.id));
+  return [...latest, ...previous.filter((session) => !latestIds.has(session.id))];
 }
 
 function errorMessage(reason: unknown): string {
@@ -534,6 +571,7 @@ function CompactToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
       component="article"
       aria-label={item.tools.length === 1 ? `${item.tools[0]?.name ?? "Tool"} activity` : "Tool activity"}
       data-fold-kind="tool-run"
+      data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
       data-tool-count={item.tools.length}
       data-parent-tool-use-id={item.parentToolUseId}
       withBorder
@@ -582,7 +620,15 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
   const time = transcriptEventTime(item);
   if (item.kind === "thinking") {
     return (
-      <Paper component="details" aria-label="Thinking" data-fold-kind="thinking" withBorder radius="sm" p="xs">
+      <Paper
+        component="details"
+        aria-label="Thinking"
+        data-fold-kind="thinking"
+        data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
+        withBorder
+        radius="sm"
+        p="xs"
+      >
         <Box component="summary" fz="xs" style={{ cursor: "pointer" }}>
           <Text component="span" size="xs" fw={500}>
             Thinking
@@ -644,6 +690,7 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
       component="article"
       aria-label={title}
       data-fold-kind={item.kind}
+      data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
       data-message-role={item.kind === "message" ? item.role : undefined}
       data-parent-tool-use-id={item.kind === "message" ? item.parentToolUseId : undefined}
       data-peer-from={item.kind === "peer-message" || item.kind === "peer-hold" ? item.from : undefined}
@@ -880,8 +927,13 @@ export function SessionViewer(): JSX.Element {
   const [watchStatus, setWatchStatus] = useState<WatchStatus>("connecting");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [events, setEvents] = useState<SessionEvent[]>([]);
-  // A watch refresh must never remove the transcript DOM or reset its scroll/disclosures.
+  const sessionsFilter = useRef<StatusFilter | null>(null);
   const loadedSession = useRef<string | null>(null);
+  const loadedEventsSession = useRef<string | null>(null);
+  const eventHistory = useRef<SessionEvent[]>([]);
+  const eventViewport = useRef<HTMLDivElement | null>(null);
+  const followTail = useRef(true);
+  const pendingTranscriptScroll = useRef<TranscriptScrollIntent | null>(null);
   const [nextEventCursor, setNextEventCursor] = useState<string | null>(null);
   const [hasMoreEvents, setHasMoreEvents] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -891,6 +943,81 @@ export function SessionViewer(): JSX.Element {
   const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
   const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
   const [refreshCount, setRefreshCount] = useState(0);
+  const [eventRefreshToken, setEventRefreshToken] = useState(0);
+  const refreshCountRef = useRef(refreshCount);
+  refreshCountRef.current = refreshCount;
+  const eventLoadRefreshCount = useRef(0);
+  const pendingEventRefresh = useRef<string | null>(null);
+  const olderPageRequest = useRef<AbortController | null>(null);
+
+  const captureScrollAnchor = useCallback((sessionId: string): void => {
+    const viewport = eventViewport.current;
+    if (viewport === null) return;
+    const viewportTop = viewport.getBoundingClientRect().top;
+    const candidates = [...viewport.querySelectorAll<HTMLElement>("[data-fold-kind], [data-raw-event]")];
+    const element = candidates.find((candidate) => candidate.getBoundingClientRect().bottom > viewportTop) ?? null;
+    const sequences =
+      element?.dataset.historySequences?.split(" ") ??
+      (element?.dataset.sequence === undefined ? [] : [element.dataset.sequence]);
+    pendingTranscriptScroll.current = {
+      kind: "anchor",
+      sessionId,
+      element,
+      sequences,
+      top: element?.getBoundingClientRect().top ?? viewportTop,
+      scrollTop: viewport.scrollTop,
+      scrollHeight: viewport.scrollHeight,
+    };
+  }, []);
+
+  const updateTail = useCallback((): void => {
+    const viewport = eventViewport.current;
+    if (viewport !== null) {
+      followTail.current = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 48;
+    }
+  }, []);
+
+  const setEventViewport = useCallback(
+    (viewport: HTMLDivElement | null): void => {
+      const previous = eventViewport.current;
+      if (previous !== null) previous.removeEventListener("scroll", updateTail);
+      eventViewport.current = viewport;
+      if (viewport === null) return;
+      viewport.addEventListener("scroll", updateTail, { passive: true });
+      updateTail();
+    },
+    [updateTail]
+  );
+
+  useLayoutEffect(() => {
+    const viewport = eventViewport.current;
+    const intent = pendingTranscriptScroll.current;
+    if (viewport === null || intent === null || intent.sessionId !== selectedId) return;
+    if (intent.kind === "tail") {
+      viewport.scrollTop = viewport.scrollHeight;
+      followTail.current = true;
+      pendingTranscriptScroll.current = null;
+      return;
+    }
+
+    let anchor = intent.element?.isConnected === true ? intent.element : null;
+    if (anchor === null && intent.sequences.length > 0) {
+      anchor =
+        [...viewport.querySelectorAll<HTMLElement>("[data-history-sequences], [data-sequence]")].find((candidate) => {
+          const sequences =
+            candidate.dataset.historySequences?.split(" ") ??
+            (candidate.dataset.sequence === undefined ? [] : [candidate.dataset.sequence]);
+          return intent.sequences.some((sequence) => sequences.includes(sequence));
+        }) ?? null;
+    }
+    if (anchor !== null) {
+      viewport.scrollTop += anchor.getBoundingClientRect().top - intent.top;
+    } else {
+      viewport.scrollTop = intent.scrollTop + (viewport.scrollHeight - intent.scrollHeight);
+    }
+    followTail.current = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 48;
+    pendingTranscriptScroll.current = null;
+  }, [events, selectedId]);
 
   const availableLayoutWidth = layoutWidth || Math.max(0, window.innerWidth - 64);
   const sidebarMaxWidth = maxSidebarWidth(availableLayoutWidth);
@@ -942,17 +1069,21 @@ export function SessionViewer(): JSX.Element {
 
   useEffect(() => {
     let current = true;
+    const filterChanged = sessionsFilter.current !== filter;
     const statuses = filter === "all" ? ALL_STATUSES : [filter];
     // Only the first fetch needs a loading placeholder; watch refreshes retain the list.
     setSessionError(null);
     void listSessions(statuses)
       .then((page) => {
         if (!current) return;
-        setSessions(page.data);
+        sessionsFilter.current = filter;
+        setSessions((previous) => (filterChanged ? page.data : mergeSessionPage(page.data, previous)));
         setNextSessionCursor(page.next_cursor);
         setResumeToken(page.resume_token ?? null);
         setSelectedId((previous) =>
-          page.data.some((session) => session.id === previous) ? previous : (page.data[0]?.id ?? null)
+          filterChanged && !page.data.some((session) => session.id === previous)
+            ? (page.data[0]?.id ?? null)
+            : (previous ?? page.data[0]?.id ?? null)
         );
       })
       .catch((reason: unknown) => {
@@ -982,7 +1113,14 @@ export function SessionViewer(): JSX.Element {
     let current = true;
     if (selectedId === null) {
       loadedSession.current = null;
+      loadedEventsSession.current = null;
+      eventHistory.current = [];
+      pendingTranscriptScroll.current = null;
+      pendingEventRefresh.current = null;
+      olderPageRequest.current?.abort();
+      olderPageRequest.current = null;
       setLoadingEvents(false);
+      setLoadingMoreEvents(false);
       setEvents([]);
       setNextEventCursor(null);
       setHasMoreEvents(false);
@@ -990,20 +1128,38 @@ export function SessionViewer(): JSX.Element {
         current = false;
       };
     }
-    if (loadedSession.current !== selectedId) {
-      loadedSession.current = selectedId;
-      setLoadingEvents(true);
-      setEvents([]);
-      setNextEventCursor(null);
-      setHasMoreEvents(false);
-    }
+    loadedSession.current = selectedId;
+    loadedEventsSession.current = null;
+    eventHistory.current = [];
+    pendingTranscriptScroll.current = null;
+    pendingEventRefresh.current = null;
+    olderPageRequest.current?.abort();
+    olderPageRequest.current = null;
+    eventLoadRefreshCount.current = refreshCountRef.current;
+    followTail.current = true;
+    setLoadingEvents(true);
+    setLoadingMoreEvents(false);
+    setEvents([]);
+    setNextEventCursor(null);
+    setHasMoreEvents(false);
     setEventError(null);
-    void listSessionEvents(selectedId)
+    const controller = new AbortController();
+    void listSessionEvents(selectedId, undefined, "desc", controller.signal)
       .then((page) => {
-        if (!current) return;
-        setEvents(page.data);
+        if (!current || loadedSession.current !== selectedId) return;
+        const merged = mergeSessionEvents([], page.data);
+        eventHistory.current = merged;
+        loadedEventsSession.current = selectedId;
+        if (merged.length > 0) {
+          pendingTranscriptScroll.current = { kind: "tail", sessionId: selectedId };
+          setEvents(merged);
+        }
         setNextEventCursor(page.has_more ? page.last_id : null);
         setHasMoreEvents(page.has_more);
+        if (pendingEventRefresh.current === selectedId) {
+          pendingEventRefresh.current = null;
+          setEventRefreshToken((token) => token + 1);
+        }
       })
       .catch((reason: unknown) => {
         if (current) setEventError(errorMessage(reason));
@@ -1013,8 +1169,66 @@ export function SessionViewer(): JSX.Element {
       });
     return () => {
       current = false;
+      controller.abort();
     };
-  }, [refreshCount, selectedId]);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (selectedId === null) return;
+    if (loadedEventsSession.current !== selectedId) {
+      if (refreshCount > eventLoadRefreshCount.current) pendingEventRefresh.current = selectedId;
+      return;
+    }
+    let current = true;
+    const controller = new AbortController();
+    setEventError(null);
+    void (async () => {
+      try {
+        const newestPage = await listSessionEvents(selectedId, undefined, "desc", controller.signal);
+        if (!current || loadedSession.current !== selectedId) return;
+        const previousNewest = eventHistory.current.at(-1);
+        const catchUpEvents: SessionEvent[] = [];
+        if (previousNewest !== undefined) {
+          let cursor = previousNewest.event_id;
+          while (true) {
+            const page = await listSessionEvents(selectedId, cursor, "asc", controller.signal);
+            if (!current || loadedSession.current !== selectedId) return;
+            const previousCursor = cursor;
+            if (page.data.length > 0) {
+              catchUpEvents.push(...page.data);
+              if (page.last_id === null) throw new Error("The event page omitted its cursor.");
+              cursor = page.last_id;
+            }
+            if (!page.has_more) break;
+            if (page.data.length === 0 || page.last_id === null || page.last_id === previousCursor) {
+              throw new Error("The event history cursor did not advance.");
+            }
+          }
+        }
+        if (!current || loadedSession.current !== selectedId) return;
+        const merged = mergeSessionEvents(eventHistory.current, [...newestPage.data, ...catchUpEvents]);
+        if (merged !== eventHistory.current) {
+          if (followTail.current) {
+            pendingTranscriptScroll.current = { kind: "tail", sessionId: selectedId };
+          } else {
+            captureScrollAnchor(selectedId);
+          }
+          eventHistory.current = merged;
+          setEvents(merged);
+        }
+        if (previousNewest === undefined) {
+          setNextEventCursor(newestPage.has_more ? newestPage.last_id : null);
+          setHasMoreEvents(newestPage.has_more);
+        }
+      } catch (reason) {
+        if (current && loadedSession.current === selectedId) setEventError(errorMessage(reason));
+      }
+    })();
+    return () => {
+      current = false;
+      controller.abort();
+    };
+  }, [captureScrollAnchor, eventRefreshToken, refreshCount, selectedId]);
 
   const visibleSessions = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -1048,20 +1262,33 @@ export function SessionViewer(): JSX.Element {
   }, [filter, loadingMoreSessions, nextSessionCursor]);
 
   const loadMoreEvents = useCallback(async (): Promise<void> => {
-    if (selectedId === null || nextEventCursor === null || loadingMoreEvents) return;
+    const sessionId = selectedId;
+    if (sessionId === null || nextEventCursor === null || loadingMoreEvents) return;
+    const controller = new AbortController();
+    olderPageRequest.current?.abort();
+    olderPageRequest.current = controller;
     setLoadingMoreEvents(true);
     setEventError(null);
     try {
-      const page = await listSessionEvents(selectedId, nextEventCursor);
-      setEvents((previous) => [...previous, ...page.data]);
+      const page = await listSessionEvents(sessionId, nextEventCursor, "desc", controller.signal);
+      if (controller.signal.aborted || loadedSession.current !== sessionId) return;
+      const merged = mergeSessionEvents(eventHistory.current, page.data);
+      if (merged !== eventHistory.current) {
+        captureScrollAnchor(sessionId);
+        eventHistory.current = merged;
+        setEvents(merged);
+      }
       setNextEventCursor(page.has_more ? page.last_id : null);
       setHasMoreEvents(page.has_more);
     } catch (reason) {
-      setEventError(errorMessage(reason));
+      if (!controller.signal.aborted && loadedSession.current === sessionId) setEventError(errorMessage(reason));
     } finally {
-      setLoadingMoreEvents(false);
+      if (olderPageRequest.current === controller) {
+        olderPageRequest.current = null;
+        if (loadedSession.current === sessionId) setLoadingMoreEvents(false);
+      }
     }
-  }, [loadingMoreEvents, nextEventCursor, selectedId]);
+  }, [captureScrollAnchor, loadingMoreEvents, nextEventCursor, selectedId]);
 
   const toggleSidebar = (): void => {
     if (isMobile) {
@@ -1254,26 +1481,30 @@ export function SessionViewer(): JSX.Element {
                     <Center h={180}>
                       <Loader size="sm" aria-label="Loading transcript" />
                     </Center>
-                  ) : (showRawEvents ? events.length === 0 : transcript.length === 0) ? (
+                  ) : events.length === 0 ? (
                     <Center h={180}>
                       <Text c="dimmed" ta="center">
                         No events are stored for this session yet.
                       </Text>
                     </Center>
                   ) : (
-                    <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
+                    <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" viewportRef={setEventViewport}>
                       <Stack gap="sm" pr="sm">
+                        {hasMoreEvents && (
+                          <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
+                            Load older events
+                          </Button>
+                        )}
                         {showRawEvents ? (
                           <EventInspector key={selectedId} events={events} />
+                        ) : transcript.length === 0 ? (
+                          <Text size="sm" c="dimmed" role="status">
+                            No loaded events appear in the folded transcript.
+                          </Text>
                         ) : (
                           rows.map((row) => (
                             <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />
                           ))
-                        )}
-                        {hasMoreEvents && (
-                          <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
-                            Load more events
-                          </Button>
                         )}
                       </Stack>
                     </ScrollArea>
