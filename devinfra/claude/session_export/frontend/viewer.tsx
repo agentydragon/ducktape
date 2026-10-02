@@ -717,6 +717,20 @@ function ToolActivityGroup({ item, session }: { item: ToolGroup; session: Sessio
 
 function TranscriptCard({ item, session }: { item: TranscriptItem; session: SessionSummary }): JSX.Element {
   if (item.kind === "tool-run") return <CompactToolRun item={item} />;
+  if (item.kind === "narration") {
+    return (
+      <Text
+        component="p"
+        size="sm"
+        my={4}
+        data-fold-kind="narration"
+        data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
+        style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+      >
+        {item.text}
+      </Text>
+    );
+  }
   const time = transcriptEventTime(item);
   if (item.kind === "message") {
     return (

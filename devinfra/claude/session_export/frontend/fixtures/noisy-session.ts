@@ -174,3 +174,59 @@ function makeEvents(includeLongCommandActivity = false): SessionEvent[] {
 
 export const noisySessionEvents: SessionEvent[] = makeEvents();
 export const longCommandActivitySessionEvents: SessionEvent[] = makeEvents(true);
+
+export const narrationSession: SessionSummary = {
+  id: "session_fixture_narration_visibility",
+  title: "Check the sample format",
+  status: "archived",
+  created_at: "2026-09-30T18:43:00Z",
+  updated_at: "2026-09-30T18:44:00Z",
+  last_event_at: "2026-09-30T18:44:00Z",
+};
+
+// Invented protobuf bytes for the visual fixture: field 2 -> field 1 -> UTF-8 field 8.
+const syntheticNarrationSignature = btoa(
+  String.fromCharCode(0x12, 0x0d, 0x0a, 0x0b, 0x42, 0x09, 0x6e, 0x61, 0x72, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
+);
+
+export const narrationSessionEvents: SessionEvent[] = [
+  {
+    event_id: "00000000-0000-4000-8000-000000000801",
+    sequence_num: "801",
+    event_type: "assistant_message",
+    source: "worker",
+    created_at: narrationSession.last_event_at!,
+    received_at: null,
+    processing_at: null,
+    processed_at: null,
+    device_attestation_status: "DEVICE_ATTESTATION_STATUS_UNSPECIFIED",
+    sent_by_account_id: null,
+    payload: {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "fixture-narration-format-check",
+            name: "Bash",
+            input: { command: "printf 'sample ready'", description: "Check the sample format" },
+          },
+          {
+            type: "thinking",
+            thinking: "The format note is clear; I’ll verify its example next.",
+            signature: syntheticNarrationSignature,
+          },
+          {
+            type: "tool_use",
+            id: "fixture-narration-read-note",
+            name: "Read",
+            input: { file_path: "docs/sample-format.md" },
+          },
+          { type: "thinking", thinking: "Keep this internal note folded." },
+          { type: "text", text: "The sample format check passes." },
+        ],
+      },
+    },
+  },
+];

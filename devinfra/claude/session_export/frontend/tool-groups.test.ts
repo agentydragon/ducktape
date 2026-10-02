@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { noisySessionEvents } from "./fixtures/noisy-session";
+import { narrationSessionEvents, noisySessionEvents } from "./fixtures/noisy-session";
 import { foldSessionEvents, type TranscriptItem, type TranscriptToolRun } from "./transcript";
 import { groupToolActivity, toolGroupSummary } from "./tool-groups";
 
@@ -27,8 +27,27 @@ it.each<TranscriptItem>([
   { kind: "notice", id: "warning", events: [], title: "Permission required" },
   { kind: "summary", id: "end", events: [], title: "Turn complete", details: [] },
   { kind: "peer-hold", id: "peer", events: [], messageUuid: "peer", from: "review", state: "held" },
+  { kind: "narration", id: "narration", events: [], text: "Check the sample output." },
 ])("keeps $kind boundaries visible", (boundary) => {
   expect(groupToolActivity([first, boundary, second])).toEqual([first, boundary, second]);
+});
+
+it("flushes both tool runs around narration", () => {
+  const narration: TranscriptItem = {
+    kind: "narration",
+    id: "narration-between-tools",
+    events: first.events,
+    text: "Check the sample output.",
+  };
+  expect(groupToolActivity([first, narration, second])).toEqual([first, narration, second]);
+});
+
+it("keeps same-event narration between tool runs as a hard grouping boundary", () => {
+  const transcript = foldSessionEvents(narrationSessionEvents);
+  const rows = groupToolActivity(transcript);
+  expect(rows.map((row) => row.kind)).toEqual(["tool-run", "narration", "tool-run", "thinking", "message"]);
+  expect(rows).toEqual(transcript);
+  expect(rows[1]?.events[0]).toBe(narrationSessionEvents[0]);
 });
 
 it("keeps standalone tools and subagent scopes separate", () => {

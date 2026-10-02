@@ -87,7 +87,17 @@ ts_library(
     srcs = ["transcript.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    deps = [":api"],
+    deps = [
+        ":api",
+        ":narration",
+    ],
+)
+
+ts_library(
+    name = "narration",
+    srcs = ["narration.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
 )
 
 ts_library(
@@ -183,6 +193,18 @@ ts_library(
 )
 
 ts_library(
+    name = "narration_test",
+    testonly = True,
+    srcs = ["narration.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":narration",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "api_test",
     testonly = True,
     srcs = ["api.test.ts"],
@@ -243,6 +265,7 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.mts",
         ":api_test",
+        ":narration_test",
         ":status_test",
         ":tool_groups_test",
         ":transcript_test",

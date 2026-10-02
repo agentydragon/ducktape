@@ -11,6 +11,8 @@ import {
   longCommandActivityTitle,
   noisySession,
   noisySessionEvents,
+  narrationSession,
+  narrationSessionEvents,
 } from "../fixtures/noisy-session";
 
 const FIXED_NOW = Date.parse("2026-09-30T18:45:00Z");
@@ -624,11 +626,19 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
       json(
         scenario.startsWith("SessionNoisySidebar")
           ? { data: sidebarSessions, next_cursor: null, resume_token: null }
-          : scenario.startsWith("SessionCompletedActivity")
-            ? { data: [noisySession], next_cursor: null, resume_token: null }
-            : scenario.startsWith("SessionNoisy")
+          : scenario.startsWith("SessionNarrationVisibility")
+            ? {
+                data: [
+                  { ...narrationSession, git_branch: "feature/narration-fixture", repo_path: "~/code/sample-format" },
+                ],
+                next_cursor: null,
+                resume_token: null,
+              }
+            : scenario.startsWith("SessionCompletedActivity")
               ? { data: [noisySession], next_cursor: null, resume_token: null }
-              : sessionPage
+              : scenario.startsWith("SessionNoisy")
+                ? { data: [noisySession], next_cursor: null, resume_token: null }
+                : sessionPage
       )
     );
   }
@@ -651,6 +661,16 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
           has_more: false,
           first_id: longCommandActivitySessionEvents[0]?.event_id,
           last_id: longCommandActivitySessionEvents.at(-1)?.event_id,
+        })
+      );
+    }
+    if (page.startsWith("SessionNarrationVisibility")) {
+      return Promise.resolve(
+        json({
+          data: narrationSessionEvents,
+          has_more: false,
+          first_id: narrationSessionEvents[0]?.event_id,
+          last_id: narrationSessionEvents.at(-1)?.event_id,
         })
       );
     }
@@ -804,6 +824,58 @@ if (scenario.startsWith("SessionEventVisibility")) {
     window.setTimeout(assertSuppressedEventContent, 20);
   };
   window.setTimeout(assertSuppressedEventContent, 0);
+}
+
+if (scenario.startsWith("SessionNarrationVisibility")) {
+  let attempts = 0;
+  const failNarrationScenario = (message: string): never => {
+    // Let the visual runner pass readiness so it can report this page error directly.
+    root.dataset.narrationReady = "true";
+    root.dataset.narrationError = message;
+    throw new Error(message);
+  };
+  const verifyNarration = (): void => {
+    const narration = document.querySelector<HTMLElement>('[data-fold-kind="narration"]');
+    const thinking = document.querySelector<HTMLDetailsElement>('[data-fold-kind="thinking"]');
+    const toolRuns = [...document.querySelectorAll<HTMLElement>('[data-fold-kind="tool-run"]')];
+    if (narration === null || thinking === null || toolRuns.length !== 2) {
+      attempts += 1;
+      if (attempts >= 300) failNarrationScenario("Narration fixture rows did not mount");
+      window.setTimeout(verifyNarration, 20);
+      return;
+    }
+
+    const narrationRect = narration.getBoundingClientRect();
+    const thinkingBody = thinking.querySelector<HTMLElement>("p");
+    const orderedRows = [
+      ...document.querySelectorAll<HTMLElement>('[data-fold-kind="tool-run"], [data-fold-kind="narration"]'),
+    ];
+    if (
+      narration.textContent !== "The format note is clear; I’ll verify its example next." ||
+      narration.tagName !== "P" ||
+      narration.closest("details, summary, button, article") !== null ||
+      narrationRect.height <= 0 ||
+      thinking.open ||
+      thinkingBody === null ||
+      thinkingBody.getClientRects().length !== 0 ||
+      orderedRows.map((row) => row.dataset.foldKind).join(",") !== "tool-run,narration,tool-run" ||
+      document.querySelector(
+        '[data-tool-run-toggle][aria-expanded="true"], [data-tool-group-toggle][aria-expanded="true"]'
+      ) !== null
+    ) {
+      attempts += 1;
+      if (attempts >= 300) failNarrationScenario("Narration was hidden, styled as a card, or crossed a tool boundary");
+      window.setTimeout(verifyNarration, 20);
+      return;
+    }
+
+    scrollTranscriptElementIntoView(narration);
+    root.dataset.narrationReady = "true";
+    narrationObserver.disconnect();
+  };
+  const narrationObserver = new MutationObserver(verifyNarration);
+  narrationObserver.observe(root, { childList: true, subtree: true, attributes: true });
+  window.setTimeout(verifyNarration, 0);
 }
 
 if (scenario.startsWith("SessionLatestFirst")) {

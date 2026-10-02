@@ -87,6 +87,12 @@ export const SCENARIOS = {
   SessionNoisyRaw: { element: "#app", readySelectors: NOISY_READY },
   SessionNoisyHook: { element: "#app", readySelectors: NOISY_READY },
   SessionNoisyHook_mobile: { element: "#app", readySelectors: NOISY_READY, viewport: { width: 420, height: 900 } },
+  SessionNarrationVisibility: { element: "#app", readySelectors: ['#app[data-narration-ready="true"]'] },
+  SessionNarrationVisibility_mobile: {
+    element: "#app",
+    readySelectors: ['#app[data-narration-ready="true"]'],
+    viewport: { width: 420, height: 900 },
+  },
   SessionLatestFirstTail: { element: "#app", readySelectors: LATEST_TAIL_READY },
   SessionLatestFirstAnchor: { element: "#app", readySelectors: HISTORY_ANCHOR_READY },
   SessionViewer: { element: "#app", readySelectors: VIEWER_READY },

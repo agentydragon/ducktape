@@ -59,6 +59,53 @@ describe("foldSessionEvents", () => {
     ).toEqual(laterItems.map((item) => item.id));
   });
 
+  it("separates signed narration from ordinary thinking inside the original source event", () => {
+    // This invented wire fixture encodes outer bytes field 2 -> nested bytes field 1 -> UTF-8 field 8.
+    const narrationSignature = btoa(
+      String.fromCharCode(0x12, 0x0d, 0x0a, 0x0b, 0x42, 0x09, 0x6e, 0x61, 0x72, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
+    );
+    const mixed = event(8, "assistant", {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "before-narration", name: "Bash", input: { command: "printf ready" } },
+          { type: "thinking", thinking: "The next step checks the sample output.", signature: narrationSignature },
+          { type: "tool_use", id: "after-narration", name: "Read", input: { file_path: "sample.txt" } },
+          { type: "thinking", thinking: "Keep this internal note folded." },
+          { type: "text", text: "The sample check passes." },
+        ],
+      },
+    });
+
+    const folded = foldSessionEvents([mixed]);
+    expect(folded.map((item) => item.kind)).toEqual(["tool-run", "narration", "tool-run", "thinking", "message"]);
+    const narration = folded[1]!;
+    expect(narration).toMatchObject({ kind: "narration", text: "The next step checks the sample output." });
+    expect(narration.events).toHaveLength(1);
+    expect(narration.events[0]).toBe(mixed);
+    expect(narration.events[0]?.payload).toBe(mixed.payload);
+    expect(folded[3]).toMatchObject({ kind: "thinking", text: "Keep this internal note folded." });
+
+    const earlier = event(1, "user", { type: "user", message: { content: [{ type: "text", text: "Earlier" }] } });
+    const prependedNarration = foldSessionEvents([earlier, mixed]).find((item) => item.kind === "narration");
+    expect(prependedNarration?.id).toBe(narration.id);
+    expect(prependedNarration?.events[0]).toBe(mixed);
+  });
+
+  it.each([undefined, "", "not-a-signature", "thinking-signature"])(
+    "keeps a thinking block with signature %s as ordinary collapsed thinking",
+    (signature) => {
+      const block = { type: "thinking", thinking: "This remains private thinking." };
+      const folded = foldSessionEvents([
+        event(2, "assistant", {
+          type: "assistant",
+          message: { content: [{ ...block, ...(signature === undefined ? {} : { signature }) }] },
+        }),
+      ]);
+      expect(folded).toMatchObject([{ kind: "thinking", text: block.thinking }]);
+    }
+  );
+
   it("turns Claude local-command markers into context, stats, usage, and status rows", () => {
     const contextOutput = [
       "## Context Usage",

@@ -11,6 +11,8 @@ import {
   longCommandActivityDetail,
   longCommandActivitySessionEvents,
   longCommandActivityTitle,
+  narrationSession,
+  narrationSessionEvents,
   noisySession,
   noisySessionEvents,
 } from "./fixtures/noisy-session";
@@ -152,6 +154,47 @@ it("keeps the selected session when the session list is hidden and shown", async
   expect(container.querySelector('#session-sidebar button[aria-pressed="true"]')?.textContent).toContain(
     "Selected after toggling"
   );
+});
+
+it("shows signed narration as prose while ordinary thinking remains collapsed", async () => {
+  vi.mocked(listSessions).mockResolvedValue({ data: [narrationSession], next_cursor: null, resume_token: null });
+  vi.mocked(listSessionEvents).mockResolvedValue({
+    data: narrationSessionEvents,
+    has_more: false,
+    first_id: narrationSessionEvents[0]?.event_id ?? null,
+    last_id: narrationSessionEvents.at(-1)?.event_id ?? null,
+  });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+
+  await vi.waitFor(() => expect(container?.querySelector('[data-fold-kind="narration"]')).not.toBeNull());
+  const narration = container.querySelector<HTMLElement>('[data-fold-kind="narration"]')!;
+  expect(narration.tagName).toBe("P");
+  expect(narration.textContent).toBe("The format note is clear; I’ll verify its example next.");
+  expect(narration.closest("details, summary, button, article")).toBeNull();
+  expect(narration.dataset.historySequences).toBe("801");
+
+  const rows = [
+    ...container.querySelectorAll<HTMLElement>('[data-fold-kind="tool-run"], [data-fold-kind="narration"]'),
+  ];
+  expect(rows.map((row) => row.dataset.foldKind)).toEqual(["tool-run", "narration", "tool-run"]);
+  const thinking = container.querySelector<HTMLDetailsElement>('[data-fold-kind="thinking"]')!;
+  expect(thinking.open).toBe(false);
+  expect(thinking.querySelector("summary")?.textContent).toBe("Thinking");
+  expect(thinking.textContent).toContain("Keep this internal note folded.");
+  await act(async () => {
+    thinking.open = true;
+  });
+  expect(thinking.open).toBe(true);
+  expect(thinking.textContent).toContain("Keep this internal note folded.");
 });
 
 it("clamps pointer and keyboard resizing and restores the width after collapsing", async () => {

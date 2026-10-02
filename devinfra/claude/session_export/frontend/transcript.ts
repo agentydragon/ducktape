@@ -1,4 +1,5 @@
 import type { SessionEvent } from "./api";
+import { isNarrationSignature } from "./narration";
 
 type JsonObject = Record<string, unknown>;
 
@@ -94,6 +95,11 @@ export type TranscriptThinking = TranscriptBase & {
   text: string;
 };
 
+export type TranscriptNarration = TranscriptBase & {
+  kind: "narration";
+  text: string;
+};
+
 export type TranscriptSummary = TranscriptBase & {
   kind: "summary";
   title: string;
@@ -133,6 +139,7 @@ export type TranscriptItem =
   | TranscriptToolRun
   | TranscriptActivity
   | TranscriptThinking
+  | TranscriptNarration
   | TranscriptSummary
   | TranscriptContextUsage
   | TranscriptCodeStats
@@ -797,13 +804,15 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
         } else if (blockType === "thinking") {
           flushText();
           const thinking = textFrom(block.thinking) ?? textFrom(block.text);
-          if (thinking !== null)
+          if (thinking !== null) {
+            const narration = isNarrationSignature(block.signature);
             items.push({
-              kind: "thinking",
-              id: nextEventItemId(event, "thinking"),
+              kind: narration ? "narration" : "thinking",
+              id: nextEventItemId(event, narration ? "narration" : "thinking"),
               text: thinking,
               events: [event],
             });
+          }
         } else if (blockType === "tool_result") {
           flushText();
           addToolResult(string(block.tool_use_id), toolResultContent(block.content), block.is_error === true, event);
