@@ -197,7 +197,7 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: seaweedfs-master
+  name: master
   namespace: seaweedfs
 spec:
   minAvailable: 2
@@ -209,7 +209,7 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: seaweedfs-volume
+  name: volume
   namespace: seaweedfs
 spec:
   minAvailable: 2
@@ -221,7 +221,7 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: seaweedfs-filer
+  name: filer
   namespace: seaweedfs
 spec:
   minAvailable: 1

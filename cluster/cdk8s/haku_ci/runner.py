@@ -53,7 +53,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/haku-ci"
 
 _RUNNER = "haku-runner"
 _LABELS = {"app.kubernetes.io/name": _RUNNER}
-_AUTH = "haku-ci-forgejo"
+_AUTH = "forgejo"
 # The hand-written SOPS Secret (haku/forgejo-tea) Reflector copies into NAMESPACE for KEDA.
 FORGEJO_TOKEN_SECRET = "haku-forgejo-tea"
 FORGEJO_TOKEN_KEY = "token"

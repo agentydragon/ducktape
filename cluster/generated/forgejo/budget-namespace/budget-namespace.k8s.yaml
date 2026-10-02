@@ -18,7 +18,7 @@ automountServiceAccountToken: false
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: budget-budget-ledger-git-creds-reader
+  name: budget-ledger-git-creds-reader
   namespace: forgejo
 rules:
   - apiGroups:
@@ -33,12 +33,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: budget-budget-ledger-git-creds-reader
+  name: budget-ledger-git-creds-reader
   namespace: forgejo
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: budget-budget-ledger-git-creds-reader
+  name: budget-ledger-git-creds-reader
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -48,7 +48,7 @@ subjects:
 apiVersion: external-secrets.io/v1
 kind: ClusterSecretStore
 metadata:
-  name: kubernetes-budget-budget-ledger-git-creds-secret-store
+  name: kubernetes-budget-ledger-git-creds-secret-store
 spec:
   conditions:
     - namespaces:
@@ -78,7 +78,7 @@ spec:
   refreshInterval: 1h
   secretStoreRef:
     kind: ClusterSecretStore
-    name: kubernetes-budget-budget-ledger-git-creds-secret-store
+    name: kubernetes-budget-ledger-git-creds-secret-store
   target:
     creationPolicy: Owner
     name: budget-ledger-git-creds

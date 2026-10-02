@@ -459,7 +459,7 @@ def _pod_disruption_budget(scope: Construct, component: str, *, min_available: i
     k8s.KubePodDisruptionBudget(
         scope,
         f"pdb-{component}",
-        metadata=k8s.ObjectMeta(name=f"{NAME}-{component}", namespace=namespace.NAME),
+        metadata=k8s.ObjectMeta(name=component, namespace=namespace.NAME),
         spec=k8s.PodDisruptionBudgetSpec(
             min_available=k8s.IntOrString.from_number(min_available),
             selector=k8s.LabelSelector(match_labels=_component_labels(component)),

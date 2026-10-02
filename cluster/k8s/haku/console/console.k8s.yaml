@@ -36,7 +36,7 @@ automountServiceAccountToken: false
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: haku-console-haku-console-agent-api-reader
+  name: haku-console-agent-api-reader
   namespace: forgejo
 rules:
   - apiGroups:
@@ -51,12 +51,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: haku-console-haku-console-agent-api-reader
+  name: haku-console-agent-api-reader
   namespace: forgejo
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: haku-console-haku-console-agent-api-reader
+  name: haku-console-agent-api-reader
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -66,7 +66,7 @@ subjects:
 apiVersion: external-secrets.io/v1
 kind: ClusterSecretStore
 metadata:
-  name: kubernetes-haku-console-haku-console-agent-api-secret-store
+  name: kubernetes-haku-console-agent-api-secret-store
 spec:
   conditions:
     - namespaces:
@@ -96,7 +96,7 @@ spec:
   refreshInterval: 1h
   secretStoreRef:
     kind: ClusterSecretStore
-    name: kubernetes-haku-console-haku-console-agent-api-secret-store
+    name: kubernetes-haku-console-agent-api-secret-store
   target:
     creationPolicy: Owner
     name: haku-console-agent-api

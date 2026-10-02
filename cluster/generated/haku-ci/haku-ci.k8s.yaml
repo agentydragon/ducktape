@@ -64,7 +64,7 @@ automountServiceAccountToken: false
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: haku-ci-haku-ci-runner-token-reader
+  name: haku-ci-runner-token-reader
   namespace: forgejo
 rules:
   - apiGroups:
@@ -79,12 +79,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: haku-ci-haku-ci-runner-token-reader
+  name: haku-ci-runner-token-reader
   namespace: forgejo
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: haku-ci-haku-ci-runner-token-reader
+  name: haku-ci-runner-token-reader
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -94,7 +94,7 @@ subjects:
 apiVersion: external-secrets.io/v1
 kind: ClusterSecretStore
 metadata:
-  name: kubernetes-haku-ci-haku-ci-runner-token-secret-store
+  name: kubernetes-haku-ci-runner-token-secret-store
 spec:
   conditions:
     - namespaces:
@@ -124,7 +124,7 @@ spec:
   refreshInterval: 1h
   secretStoreRef:
     kind: ClusterSecretStore
-    name: kubernetes-haku-ci-haku-ci-runner-token-secret-store
+    name: kubernetes-haku-ci-runner-token-secret-store
   target:
     creationPolicy: Owner
     name: haku-ci-runner-token
@@ -166,7 +166,7 @@ immutable: false
 apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
 metadata:
-  name: haku-ci-forgejo
+  name: forgejo
   namespace: haku-ci
 spec:
   secretTargetRef:
@@ -360,7 +360,7 @@ spec:
   successfulJobsHistoryLimit: 3
   triggers:
     - authenticationRef:
-        name: haku-ci-forgejo
+        name: forgejo
       metadata:
         address: http://forgejo-http.forgejo:3000
         labels: haku-ci

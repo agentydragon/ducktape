@@ -27,7 +27,7 @@ def chart(app: App) -> Chart:
     PrometheusRule(
         chart,
         "seaweedfs-replication",
-        metadata=ApiObjectMetadata(name="seaweedfs-replication", namespace=namespace.NAME),
+        metadata=ApiObjectMetadata(name="replication", namespace=namespace.NAME),
         groups=[
             group(
                 "seaweedfs-replication",

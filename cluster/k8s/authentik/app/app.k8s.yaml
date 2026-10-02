@@ -273,7 +273,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: authentik-server
+  name: server
   namespace: authentik
 spec:
   podMetricsEndpoints:

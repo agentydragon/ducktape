@@ -290,7 +290,7 @@ def _pod_monitor(chart: Chart) -> None:
     PodMonitor(
         chart,
         "server-podmonitor",
-        metadata=ApiObjectMetadata(name="authentik-server", namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="server", namespace=NAMESPACE),
         selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
         # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
         pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
