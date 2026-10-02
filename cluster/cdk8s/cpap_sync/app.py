@@ -114,7 +114,6 @@ def namespace_chart(app: App) -> Chart:
         "namespace",
         name=NAMESPACE,
         vpa=Vpa.DISABLED,
-        agent_readable=None,
         labels={"name": NAMESPACE, "pod-security.kubernetes.io/enforce": "baseline"},
     )
     return chart

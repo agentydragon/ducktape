@@ -7,7 +7,7 @@ use readoff_render::kept_spans_for_anchor_set;
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use super::{hole_var_init_padded, render_var_slots};
+use super::render_var_slots;
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
 use crate::render::{AnchorSpan, holes_present, node_holds_anchor};
 use crate::{
@@ -15,43 +15,9 @@ use crate::{
     prove_synthesized_selector,
 };
 
-/// Read off a minimal selector for a single-target `var`/`let`/`const` whose
-/// target declarator value is **not** an object literal (objects route through
-/// [`try_object_read_off`]). Mirrors `read_off_candidates` (function/class) but
-/// slot-aware: holes non-target declarators to `DECLARATORS_*`, holes the target
-/// init with [`hole_expr`] around the read-off anchors, and restricts the kept
-/// spans to the target declarator so a group's chunk-wide anchor set never pins a
-/// span carried only by a sibling this selector holes away.
-///
-/// Deviation from the function/class read-off: there is no empty-kept structural
-/// fast path. A var's maximally-holed scaffold is the *degenerate* `const X =
-/// ANYTHING`, which pins nothing meaningful and would match any wrapped-const a
-/// rebuild adds (criterion 2). A var selector must keep a discriminating value
-/// anchor, so an empty anchor set yields `None` and the caller falls back to the
-/// keep-shallow group path.
-///
-/// Returns `None` — caller falls back — when the target is an object declarator,
-/// the read-off has no anchor set, every anchor lies outside the target slot, or
-/// the rendered selector fails the matcher gate.
-pub(crate) fn try_var_read_off(
-    index: &ChunkSelectorIndex<'_>,
-    var: &VarDecl,
-    decl: &IndexedDeclaration,
-    target: &SynthesizedTargetBinding,
-    target_slot: usize,
-) -> Result<Option<SpecializedSelector>> {
-    Ok(
-        try_var_read_off_candidates(index, var, decl, target, target_slot, 1)?
-            .into_iter()
-            .next(),
-    )
-}
-
-/// Up to `limit` ranked read-off selectors for a single-target non-object var, in
-/// the same priority order [`try_var_read_off`] picks from (minimal anchor →
-/// individually-discriminating value anchors → multi-feature cover), each proven
-/// uniquely and deduped by source. `limit == 1` reproduces [`try_var_read_off`]
-/// exactly; `limit > 1` powers the `synthesize-selectors --candidates N` menu.
+/// Up to `limit` proven single-target var selectors, using the minimal
+/// chunk-wide anchor set before trying alternative value anchors and slot cover.
+/// Unresolved targets fall through to the shared tuple/context read-off.
 pub(crate) fn try_var_read_off_candidates(
     index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
@@ -64,7 +30,7 @@ pub(crate) fn try_var_read_off_candidates(
     let Some(init) = declarator.init.as_deref() else {
         return Ok(Vec::new());
     };
-    // Objects are `try_object_read_off`'s domain (padded `ANYTHING` holes + the
+    // Objects are the object read-off's domain (padded `ANYTHING` holes + the
     // slot-aware key-set cover); this owns every other initializer shape.
     if matches!(init, Expr::Object(_)) {
         return Ok(Vec::new());
@@ -77,18 +43,11 @@ pub(crate) fn try_var_read_off_candidates(
 
     // Shared var-slot render: `DECLARATORS_*` holes for the non-target declarators
     // (none when the target stands alone), the target's non-object init holed via
-    // `hole_var_init_padded` (the `other` arm, i.e. `hole_expr`).
+    // shared class-member or expression holing.
     let render_with = |kept: &BTreeSet<AnchorSpan>,
                        regex_anchors: &BTreeMap<AnchorSpan, String>|
      -> Result<String> {
-        render_var_slots(
-            var,
-            &only_target,
-            &export_for,
-            kept,
-            regex_anchors,
-            &hole_var_init_padded,
-        )
+        render_var_slots(var, &only_target, &export_for, kept, regex_anchors)
     };
 
     let item = index
@@ -132,7 +91,7 @@ pub(crate) fn try_var_read_off_candidates(
         {
             continue;
         }
-        // Preserve the keep-shallow path's regex-literal upgrade: among kept string
+        // Apply the shared regex-literal upgrade: among kept string
         // literals, swap a volatile-suffix value for a `STR_LITERAL_MATCHING_RE`
         // anchor when the upgraded selector still resolves uniquely.
         let regex_anchors = accepted_regex_anchors(

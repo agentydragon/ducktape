@@ -17,7 +17,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAME,
         vpa=Vpa.DISABLED,
-        agent_readable=None,
         annotations={
             "description": (
                 "SeaweedFS object store on the OVH Kimsufi nodes, backed by the\n"

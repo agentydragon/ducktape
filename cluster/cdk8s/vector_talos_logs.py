@@ -70,7 +70,6 @@ def chart(app: App) -> Chart:
         name=NAMESPACE,
         # Fixed-resource DaemonSet -- opt out of Goldilocks/VPA recommendations.
         vpa=Vpa.DISABLED,
-        agent_readable=None,
         labels={
             # The receiver joins the host network so it can bind only host loopback;
             # baseline forbids hostNetwork. This is an operator-only namespace: Flux is its

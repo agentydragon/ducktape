@@ -300,7 +300,6 @@ def chart(app: App) -> Chart:
         name=NAMESPACE,
         # An eviction to resize the pod would interrupt a token refresh.
         vpa=Vpa.DISABLED,
-        agent_readable=None,
         labels={"name": NAMESPACE},
     )
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)

@@ -51,7 +51,7 @@ DATABASE = cnpg.PostgresRef.generated(name="langfuse-db", namespace=_NAMESPACE)
 
 
 def _namespace(scope: Construct) -> None:
-    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=None)
+    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO)
 
 
 def _database(scope: Construct) -> None:

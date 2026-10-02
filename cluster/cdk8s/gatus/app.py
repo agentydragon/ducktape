@@ -31,7 +31,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.gatus import config
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretRef
@@ -57,7 +57,7 @@ CONFIG_MAP = ConfigMapArgs(
 
 
 def _namespace(scope: Construct) -> None:
-    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
+    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO)
 
 
 def _database(scope: Construct) -> None:

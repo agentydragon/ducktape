@@ -255,6 +255,7 @@ py_library(
     srcs = ["namespaces.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":namespace_access",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -267,6 +268,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":namespace_access",
         ":namespaces",
         "@pypi//cdk8s",
         "@pypi//pytest",
@@ -394,6 +396,7 @@ py_library(
     srcs = ["public_coder_agent_config.py"],
     visibility = ["//cluster/cdk8s/litellm:__pkg__"],
     deps = [
+        ":agent_access_profiles",
         ":config_format",
         ":external_creds",
         ":forgejo_images",
@@ -632,11 +635,11 @@ py_library(
     srcs = ["ducktape_flux.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":agent_access_profiles",
         ":flux",
         ":generation",
         ":manifest_roots",
         ":namespaces",
-        "//cluster/cdk8s/haku:console_config",
         "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
         "@pypi//cdk8s",
@@ -707,6 +710,7 @@ py_library(
     name = "agent_shared_rbac",
     srcs = ["agent_shared_rbac.py"],
     deps = [
+        ":agent_access_profiles",
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
@@ -1612,6 +1616,7 @@ py_library(
     ],
     deps = [
         ":agent_machine_access",
+        ":agent_namespace_rbac",
         ":agent_rbac_base",
         ":agent_sandbox",
         ":agent_shared_rbac",
@@ -1930,5 +1935,54 @@ py_library(
         ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "agent_access_profiles",
+    srcs = ["agent_access_profiles.py"],
+    visibility = ["//cluster:__subpackages__"],
+    deps = [
+        ":namespace_access",
+        "//agentplane/app:kubernetes_grants",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "namespace_access",
+    srcs = ["namespace_access.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+py_library(
+    name = "agent_namespace_rbac",
+    srcs = ["agent_namespace_rbac.py"],
+    deps = [
+        ":agent_access_profiles",
+        ":flux",
+        ":generation",
+        ":manifest_roots",
+        ":namespace_access",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_test(
+    name = "test_agent_namespace_rbac",
+    srcs = ["test_agent_namespace_rbac.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":agent_access_profiles",
+        ":agent_namespace_rbac",
+        ":namespace_access",
+        ":namespaces",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

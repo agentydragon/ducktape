@@ -8,7 +8,7 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "nvidia-device-plugin"
 NAMESPACE = "nvidia-device-plugin"
@@ -22,7 +22,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAMESPACE,
         vpa=Vpa.RECOMMEND,
-        agent_readable=AgentReadable.LOGS,
         labels={"pod-security.kubernetes.io/enforce": "privileged"},
     )
     helm_release(

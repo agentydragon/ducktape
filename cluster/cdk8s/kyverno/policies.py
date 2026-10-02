@@ -29,10 +29,12 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecValidationFailureAction,
 )
 
+from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.kyverno import proxy_injection
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, AgentReadable, Vpa
+from cluster.cdk8s.namespace_access import AgentReadable
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
@@ -568,14 +570,7 @@ def generate_agent_diagnostics_readers_chart(app: App) -> Chart:
     namespace labels are GitOps-owned data classifications and access grants, not
     merely descriptive metadata."""
     chart = _chart(app, "generate-agent-diagnostics-readers")
-    subjects = [
-        {"kind": "Group", "name": "oidc-ksbx-groups:haku", "apiGroup": "rbac.authorization.k8s.io"},
-        {"kind": "Group", "name": "haku:access-profile:haku", "apiGroup": "rbac.authorization.k8s.io"},
-        {"kind": "ServiceAccount", "name": "haku", "namespace": "haku-sandbox"},
-        {"kind": "Group", "name": "oidc-ksbx-groups:kubectl-sandbox-users", "apiGroup": "rbac.authorization.k8s.io"},
-        {"kind": "Group", "name": "haku:access-profile:public-coder", "apiGroup": "rbac.authorization.k8s.io"},
-        {"kind": "ServiceAccount", "name": "claude-ai", "namespace": "agentplane-staging"},
-    ]
+    subjects = [subject.json() for subject in access.NAMESPACE_READER_SUBJECTS]
 
     def namespaces_labeled(label: AgentReadable) -> ClusterPolicySpecRulesMatchAny:
         return ClusterPolicySpecRulesMatchAny(

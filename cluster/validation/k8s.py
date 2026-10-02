@@ -167,13 +167,39 @@ class SecretRef(BaseModel):
     name: str = ""
 
 
+class RbacRule(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, alias_generator=to_camel)
+
+    api_groups: list[str] = Field(default_factory=list)
+    resources: list[str] = Field(default_factory=list)
+    verbs: list[str]
+    resource_names: list[str] = Field(default_factory=list)
+    non_resource_urls: list[str] = Field(default_factory=list, alias="nonResourceURLs")
+
+
+class RoleResource(K8sResource):
+    rules: list[RbacRule] = Field(default_factory=list)
+    aggregation_rule: dict | None = Field(default=None, alias="aggregationRule")
+
+
+class RbacRoleRef(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, alias_generator=to_camel)
+
+    api_group: str
+    kind: str
+    name: str
+
+
 class RoleBindingSubject(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    kind: str = ""
+    name: str = ""
     namespace: str = ""
 
 
 class RoleBindingResource(K8sResource):
+    role_ref: RbacRoleRef | None = Field(default=None, alias="roleRef")
     subjects: list[RoleBindingSubject] = Field(default_factory=list)
 
 
@@ -321,7 +347,10 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "ImagePolicy": ImagePolicyResource,
     "ArtifactGenerator": ArtifactGeneratorResource,
     "Receiver": ReceiverResource,
+    "Role": RoleResource,
+    "ClusterRole": RoleResource,
     "RoleBinding": RoleBindingResource,
+    "ClusterRoleBinding": RoleBindingResource,
     "Secret": SecretResource,
     "SecretStore": SecretStoreResource,
     "ClusterSecretStore": SecretStoreResource,

@@ -178,6 +178,91 @@ metadata and logs ClusterRoles cluster-wide too. The catalog and reconciler
 enforce the configured binding kind during ordinary operation; this remains a
 delegation limit of the app ServiceAccount's Kubernetes permissions.
 
+### Shared deployment definitions and parity contract
+
+`cluster/cdk8s/agent_access_profiles.py` holds existing Kubernetes grant references,
+static identity references, and deployment-side profile selections. Service charts
+still own their Roles and bindings; Agentplane consumes the same references for its
+catalog and presets, from which delegation is already generated. This does not add
+an Agentplane API or combine namespace-scoped readers into a cluster-wide binding.
+Service-specific Role names and ownership remain unchanged. The common namespace
+readers migrate to Flux-owned bindings as described below.
+
+The logical profiles are distinct from the transport identities:
+
+| Access path                                    | Logical profile / contract                                                                                                                       |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `haku:access-profile:public-coder` group       | Static public coder; equals managed `public-coder`                                                                                               |
+| `oidc-ksbx-groups:haku` group                  | Static Haku; checked independently                                                                                                               |
+| `haku:access-profile:haku` group               | Static Haku Console; checked independently                                                                                                       |
+| `haku-sandbox/haku` ServiceAccount             | Static Haku compute; checked independently                                                                                                       |
+| Managed `haku` preset                          | Includes public coder; matches each static Haku path, including the exact Coinbase grant below                                                   |
+| Managed `finance-agent` preset                 | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied                                              |
+| `agentplane-staging/claude-ai` ServiceAccount  | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting |
+| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset                                                          |
+
+Static and managed Haku, plus managed finance, explicitly receive **`get` on
+`agentplane-staging/coinbase-api-credentials`**. Public coder does not. Tests name
+that scope, resource, verb, and object literally, not by a Role whose rules could
+grow. Finance differs from public coder by exactly this named Secret read.
+Static Haku retains redundant narrow inventory bindings; managed Haku's broader
+cluster reader covers those rules without selecting the same Role names.
+
+`test_cluster_integration` compares the rendered, active RBAC rule coverage for
+each identity separately, using the new Flux-owned namespace readers **without**
+counting Kyverno-generated bindings. A migration check separately proves that the
+replacements match the existing Kyverno readers against active Namespace labels
+(including the rendered Flux bootstrap overlay).
+It checks static/managed parity, Haku's public-coder superset, finance's exact Coinbase addition, and
+explicit denials for staging operator/login, devbox restart, and public node proxy.
+The separate legacy accounts have their own contracts; their permissions are not
+unioned with Haku's to mask missing access on a particular path.
+
+`cluster/validation/agent_rbac.py` compares binding scopes, API groups, resources
+and subresources, verbs, resource names, and non-resource URL prefixes. Unsupported
+Role aggregation or Kyverno selector conditions fail closed. This is a declarative
+RBAC contract, **not** proof of live deployment or complete agent capability parity:
+built-in authorization, external identity group membership, admission constraints,
+egress, Actions policies, and authority reachable through exec/node proxy need
+separate verification. The broad Haku diagnostics Role is deliberately unchanged;
+narrowing its node-proxy/Flux capabilities is a follow-up policy decision.
+
+### Namespace reader migration: Kyverno to GitOps
+
+`cluster/cdk8s/namespace_access.py` declares namespace diagnostics once.
+`namespaces.py` derives labels from it; service charts no longer choose a second
+classification. `agent_namespace_rbac.py` emits static bindings referencing the
+same ClusterRoles as the managed catalog. Agentplane still owns the lifecycle of
+each sandbox ServiceAccount's bindings. No group grants blanket sandbox access,
+and no namespaced reader is bound cluster-wide.
+
+Each namespace has its own Flux Kustomization, dependent on its namespace owner
+and the shared Roles. An unavailable namespace cannot block readers elsewhere.
+The bootstrap `flux-system` label remains in its hand-written overlay during the
+migration; the integration test checks it against both projections.
+
+**Stage 1 (this PR):** add `agent-diagnostics-metadata` / `agent-diagnostics-logs`
+RoleBindings. Keep Kyverno's `agent-readable-*` bindings and generator temporarily.
+The names are distinct; Flux neither adopts Kyverno's synchronized objects nor
+adds Kyverno ownership labels. Overlap grants no additional permissions. Tests
+prove exact binding equivalence and static/managed parity without counting the
+old bindings.
+
+**Stage 2 (only after stage 1 deploys):** verify all `agent-namespace-rbac-*` Flux
+Kustomizations are Ready at the merged revision, and verify the new bindings'
+subjects, roleRefs and namespace scope. Then remove
+`generate-agent-diagnostics-readers` and its now-unneeded generation delegation,
+not unrelated Kyverno policies/controllers. Verify old `agent-readable-*`
+RoleBindings are gone; if the installed Kyverno version leaves any behind, remove
+only those legacy generated bindings through an operator-approved cleanup. Keep
+the Roles and new `agent-diagnostics-*` bindings. Recheck static access and a fresh
+managed sandbox before calling migration complete.
+
+Do not combine the stages: synchronized-generation cleanup may delete old objects
+before replacements deploy. If stage 1 fails, keep Kyverno in place. After stage 2,
+restore the old generator and verify its bindings before rolling back the new
+ones. No live RBAC changes are made by preparing this PR.
+
 ### Shared managed-agent diagnostics
 
 The staging `public-coder`, `finance-agent`, and `haku` presets compose the same
@@ -190,11 +275,12 @@ namespace-scoped diagnostics bundle in `cluster/cdk8s/agentplane/staging_config.
   explicit service-specific exception allowing logs in `public-coder-agent`, whose
   common namespace classification is metadata-only.
 
-Public coder and finance agent select exactly the same Kubernetes grants. Both
+Public coder and finance agent share diagnostics and testing grants. Finance also
+selects the explicit Coinbase credential grant; public coder does not. Both
 also select the existing `public-coder-agent-node-reader` and
 `public-coder-agent-cluster-metadata-reader` ClusterRoles, bound cluster-wide:
 node inventory, CRD schemas, and node metrics. They do **not** select Haku's broader
-`cluster-diagnostics-reader`, Coinbase credentials, or `haku-sandbox` writes.
+`cluster-diagnostics-reader` or `haku-sandbox` writes.
 Testing operator/login access is a separate shared bundle below. Action policies
 remain separate from these Kubernetes grants.
 
@@ -220,7 +306,7 @@ The Haku preset currently selects `cluster-diagnostics-reader` cluster-wide,
 within `agentplane-staging`, and `get` on exactly
 `agentplane-staging/coinbase-api-credentials` via the existing
 `claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its
-rules are shared while its static `claude-ai` RoleBinding remains Flux-owned.
+rules are shared while its static RoleBinding (legacy `claude-ai` plus all three Haku identities) remains Flux-owned.
 The preset also selects the existing Haku Console metadata and ClickHouse
 diagnostics Roles in their respective namespaces. Their managed binding
 delegation lives in separate Flux Kustomizations dependent on those services.
@@ -272,14 +358,11 @@ Remove the empty Role once those old Sandboxes have been replaced. Namespace
 cleanup delegation remains available for their old bindings.
 
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
-read selection. Kyverno's `agent-readable-*` labels grant the static identities access; managed
-Sandbox SAs require explicit catalog entries and preset selections before they receive
-those namespaced readers. No namespace label silently widens them.
-
-The shared diagnostics bundle's explicit catalog mirrors the metadata/log labels on every active
-cluster-managed Namespace. Log-labeled namespaces receive both metadata and pod-log
-grants; metadata-only labels receive only the metadata grant. Props stays excluded
-because its Namespace is absent from the live cluster and its Flux source is parked.
+read selection. `namespace_access.py` is the single reviewed namespace classification.
+It generates namespace labels, static RoleBindings, and managed catalog entries.
+Log-approved namespaces receive metadata and pod-log grants; metadata-only
+namespaces receive metadata alone. An absent namespace grants nothing. Props stays
+excluded because its Namespace is absent and its Flux source is parked.
 The `flux-system` and `ducktape-flux` delegation Kustomizations have no `dependsOn`:
 they are bootstrap roots without generated owner Kustomizations. The cluster integration
 test derives active label opt-ins and checks their catalog grants, all three preset defaults, and
@@ -375,9 +458,8 @@ one of two data-classification labels:
 
 Both classifications grant the same subjects: Haku's OIDC and synthetic access-profile groups,
 its in-cluster ServiceAccounts, `kubectl-sandbox-users`, the synthetic public-coder group, and
-agentplane-staging's `claude-ai` ServiceAccount. The Kyverno policy
-`generate-agent-diagnostics-readers` (`cluster/cdk8s/kyverno/policies.py`) generates the
-corresponding namespaced RoleBindings. Sensitive or identity-specific access remains explicit
+agentplane-staging's `claude-ai` ServiceAccount. The new Flux-owned bindings come from `agent_namespace_rbac.py`; the Kyverno
+generator remains only for the staged migration described above. Sensitive or identity-specific access remains explicit
 service RBAC.
 
 Augur is parked in `gaffer-private` and has no namespace in the cluster. Its agent RBAC

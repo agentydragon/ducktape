@@ -27,7 +27,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAMESPACE,
         vpa=Vpa.AUTO,
-        agent_readable=None,
         labels={
             "name": NAMESPACE,
             # Pin the cluster-default (Talos) baseline profile explicitly. The Haku egress fence

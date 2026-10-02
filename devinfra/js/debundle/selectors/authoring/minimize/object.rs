@@ -8,7 +8,7 @@ use readoff_render::kept_spans_for_anchor_set;
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use super::{finish_minimized_selector, hole_var_init_padded, render_var_slots};
+use super::{finish_minimized_selector, render_var_slots};
 use crate::render::{AnchorSpan, MAX_MINIMIZER_ANCHORS, node_holds_anchor, span_key};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
@@ -58,7 +58,7 @@ pub(crate) fn object_anchor_ranking(object: &ObjectLit) -> Vec<AnchorSpan> {
 /// hence the score's first key is "did the target slot resolve at all", which a
 /// key/value unique to the target slot (`accent`) flips true. Keeps adding the
 /// best anchor until the matcher's uniqueness proof passes, or the target's own
-/// anchors are exhausted (then `None`, and the caller keeps its keep-shallow
+/// anchors are exhausted (then `None`, and the caller tries the tuple/context
 /// form).
 fn cover_object_slot(
     index: &ChunkSelectorIndex<'_>,
@@ -100,49 +100,9 @@ fn cover_object_slot(
     finish_minimized_selector(index, decl, target, render_with(&kept)?)
 }
 
-/// Read off a minimal selector for a single-target `var`/`let`/`const` whose
-/// target declarator value is an object literal (W3 + key-set minimization).
-///
-/// Handles the single-target object whether it stands alone or sits inside a
-/// multi-declarator group (one target slot, `DECLARATORS_*` holes for the rest).
-/// Two passes, both rendering through one slot-aware `render_with` that holes the
-/// object with [`hole_object_padded`] (interleaved `ANYTHING`) so the kept key
-/// subset survives key reorder:
-///
-///   1. **Read-off.** The chunk-wide shape index ranks the statement's own
-///      features by selective × stable, so a globally-rare discriminating
-///      key/value wins. Its kept spans are restricted to the target declarator (a
-///      group's anchor set may name a key carried only by a *sibling* declarator
-///      this selector holes away), and the matcher proves the restricted pin.
-///   2. **Cover fallback.** A matcher-driven minimal cover over the target
-///      object's own keys (and direct literal values) — the key-set analogue of
-///      greedy set-cover: anchor the rarest discriminating keys, hole the
-///      common ones. This is what singles out a target object inside a
-///      multi-declarator group, where the chunk-wide read-off cannot see the
-///      per-slot key sets.
-///
-/// Returns `None` — so the caller falls back to the keep-shallow group path —
-/// when the target is not a single object declarator or neither pass resolves it.
-pub(crate) fn try_object_read_off(
-    index: &ChunkSelectorIndex<'_>,
-    var: &VarDecl,
-    decl: &IndexedDeclaration,
-    targets: &[SynthesizedTargetBinding],
-    target_slots: &BTreeSet<usize>,
-) -> Result<Option<SpecializedSelector>> {
-    Ok(
-        try_object_read_off_candidates(index, var, decl, targets, target_slots, 1)?
-            .into_iter()
-            .next(),
-    )
-}
-
-/// Up to `limit` ranked read-off selectors for a single-target object declarator —
-/// the `synthesize-selectors --candidates N` menu. `limit == 1` reproduces
-/// [`try_object_read_off`] exactly (minimal anchor set, else the slot key-set
-/// cover). For `limit > 1`, once a primary read-off exists the menu is extended
-/// with the slot's individually-discriminating value anchors; an object that has
-/// no minimal/cover read-off offers no menu (matching the single-pick `None`).
+/// Up to `limit` proven single-target object selectors, using the minimal
+/// chunk-wide anchor set before trying alternative value anchors and slot cover.
+/// Unresolved targets fall through to the shared tuple/context read-off.
 pub(crate) fn try_object_read_off_candidates(
     index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
@@ -176,14 +136,7 @@ pub(crate) fn try_object_read_off_candidates(
     let export_for =
         |name: &str| (name == target.runtime_binding).then(|| target.export_name.clone());
     let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
-        render_var_slots(
-            var,
-            &only_target,
-            &export_for,
-            kept,
-            &no_regex,
-            &hole_var_init_padded,
-        )
+        render_var_slots(var, &only_target, &export_for, kept, &no_regex)
     };
 
     let item = index

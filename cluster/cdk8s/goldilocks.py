@@ -19,7 +19,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/goldilocks"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None)
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
     helm_release(
         chart,
         NAME,

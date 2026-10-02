@@ -33,7 +33,7 @@ def _resources(*, cpu_request: str, memory_request: str, cpu_limit: str, memory_
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None)
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
     helm_release(
         chart,
         NAME,

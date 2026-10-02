@@ -20,7 +20,7 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "clickhouse-operator"
 NAMESPACE = "clickhouse"
@@ -78,7 +78,6 @@ def namespace_chart(app: App) -> Chart:
         # local-PV-pinned replica unschedulable. Keep recommendations visible in
         # Goldilocks without mutating operator-managed Pods.
         vpa=Vpa.RECOMMEND,
-        agent_readable=AgentReadable.LOGS,
         labels={
             "pod-security.kubernetes.io/enforce": "baseline",
             "pod-security.kubernetes.io/audit": "restricted",

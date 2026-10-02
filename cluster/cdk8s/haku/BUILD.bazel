@@ -36,6 +36,7 @@ py_library(
     deps = [
         ":console_config",
         ":database",
+        "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:node_scheduling",
@@ -175,6 +176,7 @@ py_library(
     srcs = ["rbac.py"],
     deps = [
         ":namespace",
+        "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",

@@ -44,7 +44,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAMESPACE,
         vpa=Vpa.RECOMMEND,
-        agent_readable=None,
         annotations={"description": "Redis operator for managing Valkey instances"},
     )
     helm_release(

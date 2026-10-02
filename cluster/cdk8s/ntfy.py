@@ -164,12 +164,7 @@ class Ntfy(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         namespaces.namespace(
-            self,
-            "namespace",
-            name=NAMESPACE,
-            vpa=Vpa.RECOMMEND,
-            agent_readable=None,
-            labels={"app.kubernetes.io/name": NAMESPACE},
+            self, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels={"app.kubernetes.io/name": NAMESPACE}
         )
         _secret_store(self)
         _database(self)

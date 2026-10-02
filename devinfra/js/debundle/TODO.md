@@ -37,8 +37,7 @@ The sections below hold details, not competing priority queues.
    replace unsafe wrapper interpolation with AST construction and parser/Node
    regressions. A blanket reserved-word ban would reject valid export names.
 2. **Strict spec automation.** Keep next-version porting the product target.
-   Prioritize unknown-field/default consistency, correct edits and explicit
-   skipped-candidate reasons. Whole-document YAML reserialization, unrelated
+   Prioritize correct edits and explicit skipped-candidate reasons. Whole-document YAML reserialization, unrelated
    formatting changes and dropping comments are acceptable: text preservation
    is not a requirement. Keep gate-before-write, atomic writes and dry-run
    reporting, not the input's textual layout.
@@ -136,35 +135,18 @@ rebuilds, codegen cache), and materialize-stage performance work lives in
    holes back to a name pin. Keep pin-compatible with the released debundler
    expected by the downstream corpus validation flow, regenerate goldens, and
    re-measure selector debt after each batch.
-2. **Retire the keep-shallow group cover.** Multi-target var binding-group
-   read-off landed, but `minimize_var_group_selector` still falls back to
-   `collect_expr_anchors` plus `AnchorCandidates` for groups whose per-slot
-   single-binding view cannot single a slot out. Remove that path after
-   tuple-aware read-off covers the residual groups, or deliberately accept them
-   as selector debt.
-3. **Hole declaration neighbors in enclosing-context anchoring.** When
-   `render_via_neighbor_context` anchors a near-duplicate target to a stable
-   neighboring function/class declaration, it still pins the neighbor's body
-   verbatim. Reuse the per-form read-off to hole the neighbor name/params/body
-   and keep only its discriminating value anchor. Ignored expectation fixture:
-   `neighbor_context_whole_function_neighbor`.
-4. **Route class-expression initializers through class read-off.**
-   `try_var_read_off` still has no `Expr::Class` arm, so `const X = class {…}`
-   can be pinned whole while the equivalent class declaration minimizes via
-   class-body holing. Ignored expectation fixture:
-   `class_expression_const_whole_body`.
-5. **Undo-log alpha bindings in the matcher.** `selector_match`'s `Bindings`
+2. **Undo-log alpha bindings in the matcher.** `selector_match`'s `Bindings`
    (a stack of `AlphaScope` frames of `HashMap`s) is cloned to snapshot before
    each backtracking alternative. If fresh profiles of whole-spec
    `synthesize-selectors --apply` show that cloning hot, replace
    clone-on-snapshot with an undo log and switch the maps to `FxHashMap`.
-6. **Skip neighbor-borrowed uniqueness.** When a candidate's uniqueness comes
+3. **Skip neighbor-borrowed uniqueness.** When a candidate's uniqueness comes
    only from a non-target neighbor (the target's own body fully holed, a
    neighboring declaration pinned), skip it with a reason instead of reporting
    `would_change`. Key the check on that property, not on selector length:
    neighbor-borrows as short as two lines slip under the >40-line over-pin
    heuristic.
-7. **Say why a `--candidates N` menu is short.** `synthesize-selectors
+4. **Say why a `--candidates N` menu is short.** `synthesize-selectors
 --candidates N` returning one candidate does not say whether only one anchor
    exists or the menu is not enumerated for that shape (seen on an empty
    `class X extends Y {}`). Distinguish the two in the JSON.
@@ -231,12 +213,6 @@ how to confirm. An entry is deleted when it is reproduced and fixed with a test,
 or disproved. Status says how far it was checked; "reported" means nobody has
 confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
 
-- **`UnassignedMode` ignores unknown fields.** Status: confirmed by reading.
-  `spec/spec.rs` `UnassignedMode` (`tag = "kind"`) has no `deny_unknown_fields`, so a
-  misspelled `catchall_file` key such as `target_path` is ignored and the target
-  falls back to its default; a `spec/spec_tree.rs` test carried exactly that typo and
-  still passed. Adding `deny_unknown_fields` is a behaviour change: a spec with a
-  typo then fails to load.
 - **Vendor name validation accepts reserved words.** Status: function read,
   reachability not checked. `vendor/mod.rs` `is_valid_identifier` accepts
   `class`, `default` and `await`; it gates namespace, local and facade names that
@@ -251,15 +227,6 @@ confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
   likely benign. The post-seed reporting in `peel/quotient.rs` keeps an SCC
   whose owners collapse into one class, while the `translate_*` helpers drop it
   and `would_be_cycles_after_contract` fabricates a two-class evidence.
-- **`SwapVendorChunksConfig` has two defaults.** Status: reported. The derived
-  `Default` gives `write = false`; the serde field default is `true`. Omitting
-  `swap_vendor_chunks` therefore differs from writing `{}`, though the field doc
-  says they match. Small impact: both output paths are `None` when omitted.
-- **`chunk_renames_map` silently drops non-`binding` members.** Status: reported.
-  `spec/spec_tree.rs` `chunk_renames_map` maps `binding_patches.yaml` members with
-  `m.selector.binding?`, so a member selecting by `cross_ref` or another kind is
-  accepted by the parser and then skipped without a diagnostic (STYLE.md § General,
-  strict data mapping).
 - **`needs_ast_for_chunk` tests the opposite direction to its comment.** Status:
   reported. In `prepare_chunks.rs` the block commented "Chunk that imports a
   vendor target needs AST" checks whether a vendor target imports this chunk;
@@ -270,13 +237,6 @@ confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
   `path`, while `spec::is_residual_module_path`, `spec_stats` and the CLI derive
   it from the `residual/` prefix. Possibly intentional (authoring tree versus
   materialized), but undocumented.
-- **Two source-import resolvers can pick different entry files.** Status:
-  reported. `ArtifactSourceImportResolver::resolve` goes through
-  `get_chunk_entry_path`, which falls back from `chunk.entry_file` to the analysis
-  entry file, then the first `Entry` or `Runtime` file, then the first file;
-  `ArtifactIndexes::resolve_source_path_reference` reads only `entry_files`, with
-  no fallback. They disagree for a chunk whose `entry_file` is empty or missing
-  from `files`. Compare the fallbacks before unifying them.
 - **CLI papercuts.** Status: reported. `gate list` and `gate cut` require
   `--graph` even with `--cycles`, which only needs it to derive a default path;
   `scc --cycles-only --singletons-only` silently returns nothing (no

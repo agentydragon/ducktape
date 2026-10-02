@@ -785,10 +785,6 @@ impl ChunkBundle {
             .with_context(|| format!("missing artifact chunk {chunk_name}"))
     }
 
-    fn find_js_chunk(&self, chunk_id: ChunkId) -> Option<&JsChunk> {
-        self.find_chunk(chunk_id).map(|chunk| &chunk.js)
-    }
-
     pub fn js_chunk(&self, chunk_id: ChunkId) -> Result<&JsChunk> {
         Ok(&self.chunk(chunk_id)?.js)
     }
@@ -813,14 +809,14 @@ impl ChunkBundle {
         indexes: &'a ArtifactIndexes,
     ) -> ArtifactSourceImportResolver<'a> {
         ArtifactSourceImportResolver {
-            artifact: self,
+            chunk_table: &self.chunk_table,
             indexes,
         }
     }
 }
 
 pub struct ArtifactSourceImportResolver<'a> {
-    artifact: &'a ChunkBundle,
+    chunk_table: &'a ChunkTable,
     indexes: &'a ArtifactIndexes,
 }
 
@@ -831,18 +827,20 @@ impl ArtifactSourceImportResolver<'_> {
         caller_chunk_id: ChunkId,
         caller_file: &str,
     ) -> Option<(String, String, String)> {
-        if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
-            return None;
-        }
-        let caller_source_path =
-            source_path_for_artifact_file(self.artifact, caller_chunk_id, caller_file)?;
-        let imported_source_path =
-            resolve_chunk_source_path_reference(source, &caller_source_path)?;
-        let target_chunk_id = self.indexes.chunk_id_for_source(&imported_source_path)?;
-        let target_chunk_name = self.artifact.chunk_table.name(target_chunk_id);
-        let target_entry_file = get_chunk_entry_path(self.artifact, target_chunk_id)?;
-        let path = join_module_path(&[target_chunk_name, target_entry_file.as_str()]);
-        Some((target_chunk_name.to_string(), target_entry_file, path))
+        // This caller resolves source paths only; runtime imports additionally
+        // prefer already-emitted output paths. Share source resolution, not that
+        // distinct precedence policy.
+        let resolved = self.indexes.resolve_source_path_reference(
+            source,
+            caller_chunk_id,
+            caller_file,
+            self.chunk_table,
+        )?;
+        Some((
+            self.chunk_table.name(resolved.target_chunk_id).to_string(),
+            resolved.target_file,
+            resolved.target_path,
+        ))
     }
 }
 
@@ -874,7 +872,9 @@ impl ArtifactIndexes {
                 bail!("Duplicate chunk id {chunk_name} at index {index}");
             }
             let chunk = &chunk_artifact.js;
-            entry_files.insert(chunk_id, chunk.entry_file.clone());
+            if let Some(entry) = chunk_entry_path(chunk_artifact) {
+                entry_files.insert(chunk_id, entry.to_string());
+            }
             let source_path = artifact.chunk_source_path(chunk_id);
             if let Some(existing) = source_chunk_index.insert(source_path.clone(), chunk_id) {
                 bail!(
@@ -915,10 +915,6 @@ impl ArtifactIndexes {
         };
         indexes.index_manifest_imports(artifact);
         Ok(indexes)
-    }
-
-    fn chunk_id_for_source(&self, source_path: &str) -> Option<ChunkId> {
-        self.source_chunk_index.get(source_path).copied()
     }
 
     fn resolve_artifact_output_reference(
@@ -1735,23 +1731,42 @@ fn fraction(part: usize, total: usize) -> f64 {
 }
 
 pub fn get_chunk_entry_path(artifact: &ChunkBundle, chunk_id: ChunkId) -> Option<String> {
-    let chunk_artifact = artifact.find_chunk(chunk_id)?;
-    let chunk = &chunk_artifact.js;
-    if !chunk.entry_file.is_empty() && chunk.get_file(&chunk.entry_file).is_some() {
-        return Some(chunk.entry_file.clone());
-    }
-    let manifest = &chunk_artifact.analysis;
-    chunk
-        .get_file(&manifest.entry_file)
-        .is_some()
-        .then(|| manifest.entry_file.clone())
-        .or_else(|| {
-            chunk.files.iter().find_map(|file| {
-                matches!(file.metadata.role, FileRole::Entry | FileRole::Runtime)
-                    .then(|| file.path.clone())
-            })
+    chunk_entry_path(artifact.find_chunk(chunk_id)?).map(str::to_string)
+}
+
+fn chunk_entry_path(chunk: &ChunkArtifact) -> Option<&str> {
+    select_entry_file(
+        &chunk.js.entry_file,
+        &chunk.analysis.entry_file,
+        chunk
+            .js
+            .files
+            .iter()
+            .map(|file| (file.path.as_str(), file.metadata.role)),
+    )
+}
+
+/// Prefer a present recorded entry, then the analyzed entry, then the first
+/// entry/runtime file, finally the first file. Never index a dangling entry.
+fn select_entry_file<'a>(
+    recorded: &str,
+    analyzed: &str,
+    files: impl IntoIterator<Item = (&'a str, FileRole)>,
+) -> Option<&'a str> {
+    files
+        .into_iter()
+        .min_by_key(|(path, role)| {
+            if !recorded.is_empty() && *path == recorded {
+                0
+            } else if *path == analyzed {
+                1
+            } else if matches!(role, FileRole::Entry | FileRole::Runtime) {
+                2
+            } else {
+                3
+            }
         })
-        .or_else(|| chunk.files.first().map(|f| f.path.clone()))
+        .map(|(path, _)| path)
 }
 
 pub fn relative_module_specifier(from_dir: &Path, target_path: &Path) -> String {
@@ -1898,18 +1913,6 @@ pub fn module_path_dirname(path: &str) -> String {
         .to_string()
 }
 
-fn source_path_for_artifact_file(
-    artifact: &ChunkBundle,
-    chunk_id: ChunkId,
-    file: &str,
-) -> Option<String> {
-    let chunk = artifact.find_js_chunk(chunk_id)?;
-    Some(chunk.get_file(file).map_or_else(
-        || artifact.chunk_source_path(chunk_id),
-        |artifact_file| artifact_file.metadata.source_path.clone(),
-    ))
-}
-
 fn resolve_chunk_source_path_reference(source: &str, caller_source_path: &str) -> Option<String> {
     let imported_path = if source.starts_with('/') {
         normalize_module_path(source.trim_start_matches('/')).ok()?
@@ -1926,6 +1929,36 @@ fn resolve_chunk_source_path_reference(source: &str, caller_source_path: &str) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn entry_selection_uses_present_files_and_stable_fallback_order() {
+        let files = [
+            ("first.js", FileRole::Runtime),
+            ("analysis.js", FileRole::Entry),
+            ("recorded.js", FileRole::Entry),
+        ];
+        assert_eq!(
+            select_entry_file("recorded.js", "analysis.js", files),
+            Some("recorded.js")
+        );
+        for recorded in ["", "missing.js"] {
+            assert_eq!(
+                select_entry_file(recorded, "analysis.js", files),
+                Some("analysis.js")
+            );
+            assert_eq!(
+                select_entry_file(recorded, "missing.js", files),
+                Some("first.js")
+            );
+        }
+        let modules = [("module.js", FileRole::Module)];
+        assert_eq!(select_entry_file("", "", modules), Some("module.js"));
+        assert_eq!(
+            select_entry_file("", "", [modules[0], files[0]]),
+            Some("first.js")
+        );
+        assert_eq!(select_entry_file("missing", "missing", []), None);
+    }
 
     #[test]
     fn body_only_update_rejects_indexed_layout_changes() {

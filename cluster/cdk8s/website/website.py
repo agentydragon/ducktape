@@ -144,7 +144,7 @@ _INDEX_HTML = textwrap.dedent(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=None)
+    namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO)
     k8s.KubeConfigMap(
         chart,
         "content",

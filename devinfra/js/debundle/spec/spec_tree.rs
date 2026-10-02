@@ -589,13 +589,14 @@ fn chunk_renames_map(
 ) -> BTreeMap<String, ChunkRenames> {
     let members = binding_patch_members
         .into_iter()
-        .filter_map(|member| {
-            Some(ChunkRenameMember {
-                name: member.name,
-                selector: ChunkRenameSelector {
-                    binding: member.selector.binding?,
-                },
-            })
+        .map(|member| ChunkRenameMember {
+            name: member.name,
+            selector: ChunkRenameSelector {
+                binding: member
+                    .selector
+                    .binding
+                    .expect("validated binding patch selector"),
+            },
         })
         .collect::<Vec<_>>();
     if members.is_empty() {

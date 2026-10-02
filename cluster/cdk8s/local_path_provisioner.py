@@ -16,7 +16,7 @@ from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "local-path-provisioner"
 NAMESPACE = "local-path-storage"
@@ -97,7 +97,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAMESPACE,
         vpa=Vpa.RECOMMEND,
-        agent_readable=AgentReadable.LOGS,
         labels={
             "pod-security.kubernetes.io/enforce": "privileged",
             "pod-security.kubernetes.io/audit": "privileged",

@@ -95,7 +95,7 @@ _ELEMENT_CONFIG = {
 
 
 def _namespace(scope: Construct) -> None:
-    namespaces.namespace(scope, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None)
+    namespaces.namespace(scope, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
 
 
 def _database(scope: Construct) -> None:

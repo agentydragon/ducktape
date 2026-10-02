@@ -17,7 +17,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.scripts import nebula_mesh
 
@@ -81,7 +81,7 @@ def _tcp_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
     k8s.KubeDeployment(
         chart,
         "deployment",

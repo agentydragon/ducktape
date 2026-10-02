@@ -364,9 +364,7 @@ def _published_secrets_reader(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
-    namespaces.namespace(
-        chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None, labels={"name": NAMESPACE}
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels={"name": NAMESPACE})
     k8s.KubeServiceAccount(
         chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE)
     )

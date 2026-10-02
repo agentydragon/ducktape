@@ -8,6 +8,7 @@ from cdk8s import App
 
 from cluster.cdk8s import (
     agent_machine_access,
+    agent_namespace_rbac,
     agent_rbac_base,
     agent_sandbox,
     agent_shared_rbac,
@@ -1514,7 +1515,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, public_coder_agent_devbox_artifact, kubevirt_kustomization, external_secrets_operator_kustomization
     )
     agentplane_staging_artifact = artifact("agentplane-staging", staging.ENV.output_dir)
-    staging.agentplane_staging(
+    agentplane_staging_kustomization = staging.agentplane_staging(
         flux_chart,
         agentplane_staging_artifact,
         agentplane_staging_health_checks,
@@ -1524,45 +1525,48 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
     )
-    binding_delegation.add_flux_kustomizations(
+    namespace_dependencies = {
+        "activitywatch": activitywatch_kustomization,
+        "agent-sandbox-system": agent_sandbox_controller_kustomization,
+        "agentplane-index": agentplane_index_kustomization,
+        "agentplane-testing": agentplane_testing_kustomization,
+        "airlock": airlock_kustomization,
+        "authentik": authentik_kustomization,
+        "cert-manager": cert_manager_kustomization,
+        "cli-proxy-api": cli_proxy_api_kustomization,
+        "clickhouse": clickhouse_kustomization,
+        "cnpg-system": cnpg_kustomization,
+        "ducktape-flux": None,
+        "haku-console": haku_console_kustomization,
+        # Bootstrap roots have no generated owner Kustomization to depend on.
+        "flux-system": None,
+        "gatus": gatus_kustomization,
+        "grocy-sf": grocy_sf_kustomization,
+        "grocy-vallejo": grocy_vallejo_kustomization,
+        "haku-ci": haku_ci_kustomization,
+        "haku-sandbox": haku_rbac_kustomization,
+        "litellm": litellm_kustomization,
+        "local-path-storage": local_path_provisioner_kustomization,
+        "loki": loki_kustomization,
+        "monitoring": monitoring_namespace_kustomization,
+        "nix-cache": nix_cache_kustomization,
+        "node-feature-discovery": node_feature_discovery_kustomization,
+        "nvidia-device-plugin": nvidia_device_plugin_kustomization,
+        "oci-cache": oci_cache_kustomization,
+        "openebs": openebs_lvm_kustomization,
+        "plaid-mcp": plaid_mcp_kustomization,
+        "proxmox-proxy": proxmox_proxy_kustomization,
+        "public-coder-agent": public_coder_agent_app_kustomization,
+        "study-casino": study_casino_kustomization,
+        "tana-mcp": tana_mcp_kustomization,
+        "vm-images-publisher": vm_images_publisher_kustomization,
+    }
+    binding_delegation.add_flux_kustomizations(flux_chart, staging.ENV, namespace_dependencies)
+    agent_namespace_rbac.write_manifests(root)
+    agent_namespace_rbac.add_flux_kustomizations(
         flux_chart,
-        staging.ENV,
-        {
-            "activitywatch": activitywatch_kustomization,
-            "agent-sandbox-system": agent_sandbox_controller_kustomization,
-            "agentplane-index": agentplane_index_kustomization,
-            "agentplane-testing": agentplane_testing_kustomization,
-            "airlock": airlock_kustomization,
-            "authentik": authentik_kustomization,
-            "cert-manager": cert_manager_kustomization,
-            "cli-proxy-api": cli_proxy_api_kustomization,
-            "clickhouse": clickhouse_kustomization,
-            "cnpg-system": cnpg_kustomization,
-            "ducktape-flux": None,
-            "haku-console": haku_console_kustomization,
-            # Bootstrap roots have no generated owner Kustomization to depend on.
-            "flux-system": None,
-            "gatus": gatus_kustomization,
-            "grocy-sf": grocy_sf_kustomization,
-            "grocy-vallejo": grocy_vallejo_kustomization,
-            "haku-ci": haku_ci_kustomization,
-            "haku-sandbox": haku_rbac_kustomization,
-            "litellm": litellm_kustomization,
-            "local-path-storage": local_path_provisioner_kustomization,
-            "loki": loki_kustomization,
-            "monitoring": monitoring_namespace_kustomization,
-            "nix-cache": nix_cache_kustomization,
-            "node-feature-discovery": node_feature_discovery_kustomization,
-            "nvidia-device-plugin": nvidia_device_plugin_kustomization,
-            "oci-cache": oci_cache_kustomization,
-            "openebs": openebs_lvm_kustomization,
-            "plaid-mcp": plaid_mcp_kustomization,
-            "proxmox-proxy": proxmox_proxy_kustomization,
-            "public-coder-agent": public_coder_agent_app_kustomization,
-            "study-casino": study_casino_kustomization,
-            "tana-mcp": tana_mcp_kustomization,
-            "vm-images-publisher": vm_images_publisher_kustomization,
-        },
+        {**namespace_dependencies, "agentplane-staging": agentplane_staging_kustomization},
+        claude_rbac_kustomization,
     )
     # Every artifact built above except the parked nodes': those Kustomizations are suspended.
     write_artifact_generators(

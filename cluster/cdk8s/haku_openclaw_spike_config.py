@@ -159,7 +159,6 @@ def namespace_chart(app: App) -> Chart:
         "namespace",
         name=_NAMESPACE,
         vpa=Vpa.AUTO,
-        agent_readable=None,
         labels={"name": _NAMESPACE},
         annotations={"description": "Isolated OpenClaw plus Claude Code subscription compatibility spike for Haku."},
     )

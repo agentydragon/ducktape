@@ -96,7 +96,6 @@ def _namespace_chart(app: App) -> Chart:
         name=NAMESPACE,
         vpa=Vpa.RECOMMEND,
         # This namespace contains OAuth client registrations and bearer/refresh tokens.
-        agent_readable=None,
     )
     return chart
 

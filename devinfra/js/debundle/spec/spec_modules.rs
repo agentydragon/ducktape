@@ -179,7 +179,21 @@ pub fn load_binding_patch_members(modules_root: &Path) -> Result<Vec<Member>> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    Ok(read_binding_patches_file(&path)?.members)
+    let members = read_binding_patches_file(&path)?.members;
+    for (index, member) in members.iter().enumerate() {
+        let selector = member.selector.selected().with_context(|| {
+            format!(
+                "{}: member {index} requires exactly one binding selector",
+                path.display()
+            )
+        })?;
+        anyhow::ensure!(
+            matches!(selector, MemberSelectorSpec::Binding(_)),
+            "{}: member {index} requires a binding selector",
+            path.display(),
+        );
+    }
+    Ok(members)
 }
 
 /// Every chunk-top binding name claimed by an emitted `*.yaml`

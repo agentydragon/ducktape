@@ -30,7 +30,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAMESPACE,
         vpa=Vpa.RECOMMEND,
-        agent_readable=None,
         labels={"name": NAMESPACE},
         annotations={"description": "Externally managed SeaweedFS S3 credential source Secrets."},
     )

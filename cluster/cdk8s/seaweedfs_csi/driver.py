@@ -198,7 +198,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAMESPACE,
         vpa=Vpa.RECOMMEND,
-        agent_readable=None,
         # CSI driver needs hostPath, hostPID, SYS_ADMIN, and privileged containers.
         labels={
             "pod-security.kubernetes.io/enforce": "privileged",

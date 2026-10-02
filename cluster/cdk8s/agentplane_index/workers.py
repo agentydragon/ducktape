@@ -34,7 +34,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cnpg.database import Database
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -218,7 +218,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAME,
         vpa=Vpa.DISABLED,
-        agent_readable=AgentReadable.LOGS,
         labels={"name": NAME},
         annotations={"description": "Single-repository semantic indexes for ducktape and haku-state."},
     )

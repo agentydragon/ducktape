@@ -23,7 +23,7 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 CNPG_DATABASE_READY = (
@@ -174,14 +174,11 @@ def namespace_chart(
     *,
     name: str,
     vpa: Vpa,
-    agent_readable: AgentReadable | None,
     labels: Mapping[str, str] | None = None,
     annotations: Mapping[str, str] | None = None,
 ) -> Chart:
     """A chart holding only `namespaces.namespace`'s Namespace, for the writer of the directory
     whose Kustomization owns it."""
     chart = Chart(app, "namespace", disable_resource_name_hashes=True)
-    namespaces.namespace(
-        chart, "namespace", name=name, vpa=vpa, agent_readable=agent_readable, labels=labels, annotations=annotations
-    )
+    namespaces.namespace(chart, "namespace", name=name, vpa=vpa, labels=labels, annotations=annotations)
     return chart

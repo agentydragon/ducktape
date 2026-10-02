@@ -9,6 +9,7 @@ py_library(
     srcs = ["rbac.py"],
     deps = [
         ":environment",
+        "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
@@ -299,6 +300,7 @@ py_library(
         "//agentplane/crds:actionpolicyset",
         "//agentplane/crds:egressbinding",
         "//agentplane/crds:egresspolicy",
+        "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s/providers/agentplane:action_policy_set",
@@ -400,6 +402,7 @@ py_library(
         "//agentplane/app:kubernetes_grants",
         "//agentplane/app:main",
         "//agentplane/app:presets",
+        "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:model_rosters",
         "//cluster/cdk8s/litellm:keys",
     ],

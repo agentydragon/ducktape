@@ -25,7 +25,7 @@ from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
@@ -407,7 +407,7 @@ def _rotation(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.METADATA)
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
     forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _database(chart)
     _server(chart, storage=_storage(chart))

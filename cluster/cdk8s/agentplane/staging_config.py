@@ -8,9 +8,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from agentplane.app.action_federation import ActionFederationSettings
-from agentplane.app.kubernetes_grants import ClusterRoleBindingGrant, ClusterRoleRef, RoleBindingGrant, RoleRef
+from agentplane.app.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import Harness, SandboxPreset, ThreadPreset
+from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.app_settings import (
     AGENTPLANE_TESTING_POLICY,
     AIQUOTA_READ_POLICY,
@@ -33,62 +34,6 @@ from cluster.cdk8s.litellm.keys import ANTIGRAVITY_CLIENT_MODELS, CLAUDE_CLIENT_
 from cluster.cdk8s.model_rosters import ApiShape, Provider, codex_responses_name, exposed_name
 
 _NAMESPACE = "agentplane-staging"
-# The static Haku and public-coder identities receive Kyverno's metadata/log readers in these
-# approved namespaces. Keep the explicit managed-Sandbox catalog in sync with
-# the deployed Namespace labels; test_cluster_integration checks that contract.
-_AGENT_READABLE_LOG_NAMESPACES = (
-    "activitywatch",
-    "agentplane-index",
-    "agentplane-testing",
-    "airlock",
-    "authentik",
-    "cert-manager",
-    "cli-proxy-api",
-    "clickhouse",
-    "cnpg-system",
-    "flux-system",
-    "gatus",
-    "grocy-sf",
-    "grocy-vallejo",
-    "haku-ci",
-    "litellm",
-    "local-path-storage",
-    "loki",
-    "monitoring",
-    "node-feature-discovery",
-    "nvidia-device-plugin",
-    "oci-cache",
-    "openebs",
-    "plaid-mcp",
-    "proxmox-proxy",
-    "study-casino",
-    "tana-mcp",
-)
-_AGENT_READABLE_METADATA_ONLY_NAMESPACES = (
-    "agent-sandbox-system",
-    "nix-cache",
-    "public-coder-agent",
-    "vm-images-publisher",
-)
-
-
-def _namespace_read_grants() -> dict[str, RoleBindingGrant]:
-    grants: dict[str, RoleBindingGrant] = {}
-    for namespace in sorted((*_AGENT_READABLE_LOG_NAMESPACES, *_AGENT_READABLE_METADATA_ONLY_NAMESPACES)):
-        grants[f"{namespace}-metadata"] = RoleBindingGrant(
-            kind="RoleBinding",
-            namespace=namespace,
-            role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-metadata"),
-        )
-        if namespace in _AGENT_READABLE_LOG_NAMESPACES:
-            grants[f"{namespace}-logs"] = RoleBindingGrant(
-                kind="RoleBinding",
-                namespace=namespace,
-                role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
-            )
-    return grants
-
-
 _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
 _FINANCE_AGENT_INSTRUCTIONS = (
     Path(__file__).with_name("finance_agent_instructions.md").read_text(encoding="utf-8").strip()
@@ -129,117 +74,15 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
                 namespace=_NAMESPACE,
                 role_ref=RoleRef(kind="Role", name=TOOL_CONFIG_READER_ROLE_NAME),
             ),
-            # Reuse public-coder's narrow cluster inventory, not Haku's broader
-            # cluster-diagnostics-reader (which includes node proxy access).
-            "public-coder-node-read": ClusterRoleBindingGrant(
-                kind="ClusterRoleBinding",
-                role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-node-reader"),
-            ),
-            "public-coder-cluster-metadata-read": ClusterRoleBindingGrant(
-                kind="ClusterRoleBinding",
-                role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-cluster-metadata-reader"),
-            ),
-            "cluster-diagnostics": ClusterRoleBindingGrant(
-                kind="ClusterRoleBinding",
-                role_ref=ClusterRoleRef(kind="ClusterRole", name="cluster-diagnostics-reader"),
-            ),
-            "haku-sandbox-write": RoleBindingGrant(
-                kind="RoleBinding", namespace="haku-sandbox", role_ref=RoleRef(kind="Role", name="haku-sandbox-admin")
-            ),
-            "agentplane-testing-operator": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace="agentplane-testing",
-                role_ref=RoleRef(kind="Role", name="agentplane-testing-operator"),
-            ),
-            "agentplane-staging-metadata": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace=_NAMESPACE,
-                role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-metadata"),
-            ),
-            "agentplane-staging-logs": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace=_NAMESPACE,
-                role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
-            ),
-            **_namespace_read_grants(),
-            "coinbase-credentials": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace=_NAMESPACE,
-                role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
-            ),
-            "haku-console-metadata": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace="haku-console",
-                role_ref=RoleRef(kind="Role", name="agent-haku-console-metadata-reader"),
-            ),
-            "clickhouse-diagnostics": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace="clickhouse",
-                role_ref=RoleRef(kind="Role", name="agent-clickhouse-diagnostics-reader"),
-            ),
-            "ducktape-flux-read": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace="ducktape-flux",
-                role_ref=RoleRef(kind="Role", name="ducktape-flux-reader"),
-            ),
-            "public-coder-volsync-status": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace="public-coder-agent",
-                role_ref=RoleRef(kind="Role", name="agent-public-coder-extended-diagnostics-reader"),
-            ),
-            "public-coder-agent-reader": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace="public-coder-agent",
-                role_ref=RoleRef(kind="Role", name="public-coder-agent-reader"),
-            ),
-            "agentplane-testing-login": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace="public-coder-agent",
-                role_ref=RoleRef(kind="Role", name="agentplane-testing-login-reader"),
-            ),
+            **agent_access_profiles.catalog(),
         },
         # Retain cleanup authority when a catalog choice is disabled while its
         # existing Sandboxes still hold a binding in that scope.
-        kubernetes_binding_cleanup_namespaces=sorted(
-            {
-                "haku-sandbox",
-                "haku-console",
-                "ducktape-flux",
-                *_AGENT_READABLE_LOG_NAMESPACES,
-                *_AGENT_READABLE_METADATA_ONLY_NAMESPACES,
-            }
-        ),
+        kubernetes_binding_cleanup_namespaces=agent_access_profiles.cleanup_namespaces(),
         kubernetes_cluster_binding_cleanup=True,
     )
-    # Deployment-side bundles: expand to the existing concrete grants at launch,
-    # without another API concept or a cluster-wide binding of namespaced readers.
-    shared_diagnostics = [
-        "agentplane-staging-metadata",
-        "agentplane-staging-logs",
-        *_namespace_read_grants(),
-        "haku-console-metadata",
-        "clickhouse-diagnostics",
-        "ducktape-flux-read",
-        "public-coder-volsync-status",
-        "public-coder-agent-reader",
-    ]
-    # Testing operator/login authority is explicit, not hidden in diagnostics.
-    shared_testing = ["agentplane-testing-operator", "agentplane-testing-login"]
-    public_grants = [
-        *shared_diagnostics,
-        *shared_testing,
-        "public-coder-node-read",
-        "public-coder-cluster-metadata-read",
-    ]
-    cfg.sandbox_presets["public-coder"].kubernetes_grants = public_grants.copy()
-    cfg.sandbox_presets["haku"].kubernetes_grants = [
-        *shared_diagnostics,
-        *shared_testing,
-        # Haku-only authority, deliberately outside the shared read-only bundle.
-        "cluster-diagnostics",
-        "haku-sandbox-write",
-        "coinbase-credentials",
-    ]
+    for preset in ("public-coder", "haku"):
+        cfg.sandbox_presets[preset].kubernetes_grants = list(agent_access_profiles.MANAGED_GRANTS[preset])
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
     # they name staging-only credentials (forgejo-finance-agent, plaid-pgweb) that
     # agentplane-testing never provisions, and unlike "haku" they have no other caller,
@@ -274,7 +117,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         # through the same agentydragon-agent account, for the same generic-tooling role.
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
-        kubernetes_grants=public_grants.copy(),
+        kubernetes_grants=list(agent_access_profiles.MANAGED_GRANTS["finance-agent"]),
     )
     for preset in ("public-coder", "finance-agent", "haku"):
         cfg.sandbox_presets[preset].policies.append(AGENTPLANE_TESTING_POLICY)

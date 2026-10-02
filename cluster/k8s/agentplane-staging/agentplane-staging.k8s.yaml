@@ -2168,6 +2168,7 @@ data:
           - agentplane-testing-login
           - public-coder-node-read
           - public-coder-cluster-metadata-read
+          - coinbase-credentials
         thread_preset: finance-agent-codex
     kubernetes_grants:
       sandbox-tool-config:
@@ -5019,6 +5020,16 @@ subjects:
     kind: ServiceAccount
     name: claude-ai
     namespace: agentplane-staging
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:haku
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy

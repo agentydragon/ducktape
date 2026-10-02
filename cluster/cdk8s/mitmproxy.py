@@ -208,9 +208,7 @@ class Mitmproxy(Construct):
 
 def namespace_chart(app: App) -> Chart:
     chart = Chart(app, "namespace", disable_resource_name_hashes=True)
-    namespaces.namespace(
-        chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None, labels={"name": NAMESPACE}
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, labels={"name": NAMESPACE})
     return chart
 
 

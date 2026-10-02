@@ -52,7 +52,6 @@ def virt_operator_namespace_patch(app: App) -> Chart:
         "namespace",
         name=KUBEVIRT_NAMESPACE,
         vpa=Vpa.DISABLED,
-        agent_readable=None,
         # Upstream sets `enforce: privileged`; audit and warn match it.
         labels={"pod-security.kubernetes.io/audit": "privileged", "pod-security.kubernetes.io/warn": "privileged"},
     )
@@ -61,7 +60,7 @@ def virt_operator_namespace_patch(app: App) -> Chart:
 
 def cdi_operator_namespace_patch(app: App) -> Chart:
     chart = Chart(app, "namespace-patch", disable_resource_name_hashes=True)
-    namespaces.namespace_patch(chart, "namespace", name=_CDI_NAMESPACE, vpa=Vpa.DISABLED, agent_readable=None)
+    namespaces.namespace_patch(chart, "namespace", name=_CDI_NAMESPACE, vpa=Vpa.DISABLED)
     return chart
 
 

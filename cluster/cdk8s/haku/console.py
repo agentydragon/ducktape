@@ -31,7 +31,6 @@ from cdk8s_plus_34 import (
     Deployment,
     DeploymentStrategy,
     EnvValue,
-    Group,
     ImagePullPolicy,
     ISecret,
     Job,
@@ -57,7 +56,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import node_scheduling, pod_policy, service_ref
+from cluster.cdk8s import agent_access_profiles as access, node_scheduling, pod_policy, service_ref
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
@@ -229,10 +228,10 @@ class Console(Construct):
             ),
             role=Role.from_role_name(self, "diagnostics-role-ref", diagnostics),
         ).add_subjects(
-            Group.from_name(self, "group-haku", "oidc-ksbx-groups:haku"),
-            Group.from_name(self, "group-profile-haku", "haku:access-profile:haku"),
-            ServiceAccount.from_service_account_name(self, "sa-haku", "haku", namespace_name="haku-sandbox"),
-            Group.from_name(self, "group-profile-public-coder", console_config.PUBLIC_CODER_GROUP),
+            *[
+                subject.imported(self, f"diagnostics-subject-{index}")
+                for index, subject in enumerate(access.profile_subjects("haku-console-metadata"))
+            ]
         )
         # Consumer-owned referent identity for source-approved external credentials.
         ServiceAccount(

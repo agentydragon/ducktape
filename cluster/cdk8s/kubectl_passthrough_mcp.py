@@ -111,7 +111,7 @@ def _deployment(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED, agent_readable=None)
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED)
     k8s.KubeServiceAccount(
         chart,
         "serviceaccount",

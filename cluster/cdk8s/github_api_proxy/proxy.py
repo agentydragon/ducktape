@@ -188,7 +188,6 @@ def _namespace(scope: Construct) -> None:
         "namespace",
         name=_NAMESPACE,
         vpa=Vpa.RECOMMEND,
-        agent_readable=None,
         labels={
             "pod-security.kubernetes.io/enforce": "restricted",
             "pod-security.kubernetes.io/enforce-version": "latest",

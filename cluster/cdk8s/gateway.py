@@ -104,7 +104,7 @@ def https_route(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "gateway-system", disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None)
+    namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.RECOMMEND)
     # Every listener admits routes from all namespaces. Per-listener Selector restriction is
     # avoided because Cilium bug #42159 makes listener-scoped allowedRoutes config bleed
     # across listeners (see cluster/docs/plan.md). The fence against agents publishing

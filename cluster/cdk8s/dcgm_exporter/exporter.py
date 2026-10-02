@@ -48,7 +48,6 @@ def chart(app: App) -> Chart:
         name=NAMESPACE,
         # Fixed-resource DaemonSet -- opt out of Goldilocks/VPA recommendations.
         vpa=Vpa.DISABLED,
-        agent_readable=None,
         labels={
             # GPU exporter runs with the nvidia runtimeClass and host GPU device injection.
             "pod-security.kubernetes.io/enforce": "privileged",

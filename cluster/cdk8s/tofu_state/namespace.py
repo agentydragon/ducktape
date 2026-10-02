@@ -11,8 +11,4 @@ from cluster.cdk8s.namespaces import Vpa
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(
-        root,
-        f"{HAND_WRITTEN_ROOT}/tofu-state",
-        partial(namespace_chart, name="tofu-state", vpa=Vpa.AUTO, agent_readable=None),
-    )
+    write_charts(root, f"{HAND_WRITTEN_ROOT}/tofu-state", partial(namespace_chart, name="tofu-state", vpa=Vpa.AUTO))

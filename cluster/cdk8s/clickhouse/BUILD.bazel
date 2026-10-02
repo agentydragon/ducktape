@@ -49,12 +49,12 @@ py_library(
     srcs = ["installation.py"],
     deps = [
         ":client",
+        "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:public_coder_proxy",
         "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/haku:console_config",
         "//cluster/cdk8s/providers/clickhouse:clickhouseinstallation",
         "//cluster/cdk8s/providers/clickhouse:clickhousekeeperinstallation",
         "//cluster/cdk8s/providers/flux:kustomization",

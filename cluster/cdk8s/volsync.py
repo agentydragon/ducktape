@@ -46,7 +46,7 @@ _SERVICE_MONITOR_AUTH_PATCH = f"""\
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.INITIAL, agent_readable=None)
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.INITIAL)
     account = k8s.KubeServiceAccount(
         chart, "metrics-account", metadata=k8s.ObjectMeta(name=_METRICS_ACCOUNT, namespace=NAMESPACE)
     )

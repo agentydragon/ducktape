@@ -133,15 +133,18 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
     )
 
 
-def test_coinbase_static_grant_is_preserved_and_managed_haku_picks_scoped_grant(
+def test_coinbase_is_scoped_to_static_haku_managed_haku_and_finance(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    """The static OAuth account keeps its grant; managed Haku picks a separate SA binding."""
+    """Coinbase is an explicit credential grant, never part of public diagnostics."""
     docs = agentplane_manifests[staging.ENV.namespace]
 
     role_binding = _by_name(docs, "RoleBinding", "claude-ai-coinbase-reader")
     assert role_binding["subjects"] == [
-        {"apiGroup": "", "kind": "ServiceAccount", "name": "claude-ai", "namespace": staging.ENV.namespace}
+        {"apiGroup": "", "kind": "ServiceAccount", "name": "claude-ai", "namespace": staging.ENV.namespace},
+        {"apiGroup": "rbac.authorization.k8s.io", "kind": "Group", "name": "oidc-ksbx-groups:haku"},
+        {"apiGroup": "rbac.authorization.k8s.io", "kind": "Group", "name": "haku:access-profile:haku"},
+        {"apiGroup": "", "kind": "ServiceAccount", "name": "haku", "namespace": "haku-sandbox"},
     ]
 
     egress_bindings = {doc["metadata"]["name"]: doc for doc in docs if doc["kind"] == "EgressBinding"}
@@ -158,6 +161,8 @@ def test_coinbase_static_grant_is_preserved_and_managed_haku_picks_scoped_grant(
     haku_preset = config["sandbox_presets"]["haku"]
     assert COINBASE_POLICY in haku_preset["policies"], haku_preset
     assert "coinbase-credentials" in haku_preset["kubernetes_grants"]
+    assert "coinbase-credentials" in config["sandbox_presets"]["finance-agent"]["kubernetes_grants"]
+    assert "coinbase-credentials" not in config["sandbox_presets"]["public-coder"]["kubernetes_grants"]
     assert config["kubernetes_grants"]["coinbase-credentials"] == {
         "kind": "RoleBinding",
         "namespace": staging.ENV.namespace,
@@ -244,11 +249,15 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
     catalog = config["kubernetes_grants"]
     selected = config["sandbox_presets"][preset]["kubernetes_grants"]
-    assert selected == config["sandbox_presets"]["public-coder"]["kubernetes_grants"]
+    credential_grants = {"coinbase-credentials"} if preset == "finance-agent" else set()
+    assert set(selected) == set(config["sandbox_presets"]["public-coder"]["kubernetes_grants"]) | credential_grants
     assert len(selected) == len(set(selected))
     haku = config["sandbox_presets"]["haku"]["kubernetes_grants"]
     assert len(haku) == len(set(haku))
-    assert set(haku) - set(selected) == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"}
+    assert (
+        set(haku) - set(selected)
+        == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"} - credential_grants
+    )
     assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"}
     assert {
         "agentplane-staging-metadata",
@@ -290,7 +299,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         ("public-coder-agent", "public-coder-agent-reader"),
         ("public-coder-agent", "agentplane-testing-login-reader"),
         ("agentplane-testing", "agentplane-testing-operator"),
-    }
+    } | ({("agentplane-staging", "claude-ai-coinbase-reader")} if preset == "finance-agent" else set())
     testing_config = yaml.safe_load(
         _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "agentplane-app-config")["data"][
             "config.yaml"

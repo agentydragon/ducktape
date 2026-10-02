@@ -39,7 +39,6 @@ class EgressCredentials(Construct):
             "namespace",
             name=namespace,
             vpa=Vpa.RECOMMEND,
-            agent_readable=None,
             annotations={"description": f"Outbound credentials readable only by the {proxy_namespace} egress proxy."},
         )
         proxy_role = Role(

@@ -81,7 +81,7 @@ def _values(webhook_issuer: str) -> dict[str, object]:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "external-secrets-operator", disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None)
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
     webhook_issuer = Issuer(
         chart,
         "webhook-issuer",

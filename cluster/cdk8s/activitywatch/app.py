@@ -28,7 +28,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -60,7 +60,6 @@ def _namespace(scope: Construct) -> None:
         vpa=Vpa.AUTO,
         # Lets the approved agent identities read workload metadata and pod logs here,
         # so a crashlooping sidecar can be diagnosed without an operator grant.
-        agent_readable=AgentReadable.LOGS,
         labels={
             "pod-security.kubernetes.io/enforce": "privileged",
             "pod-security.kubernetes.io/audit": "privileged",

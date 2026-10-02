@@ -21,7 +21,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/trust"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None)
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
     helm_release(
         chart,
         NAME,

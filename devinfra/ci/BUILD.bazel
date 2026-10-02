@@ -275,6 +275,7 @@ py_test(
     srcs = ["test_pr_mergeability.py"],
     deps = [
         ":pr_mergeability",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

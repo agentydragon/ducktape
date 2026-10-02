@@ -189,7 +189,6 @@ class GoogleMcp(Construct):
             "namespace",
             name=_NAME,
             vpa=Vpa.DISABLED,
-            agent_readable=None,
             labels={"name": _NAME},
             annotations={"description": "Holds the write-scoped Google OAuth token; never mirrored elsewhere."},
         )

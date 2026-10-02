@@ -10,18 +10,14 @@ from cdk8s import App, Chart
 
 from cluster.cdk8s.generation import namespace_chart, write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 
 
 def haku_egress_proxy(app: App) -> Chart:
-    return namespace_chart(
-        app, name="haku-egress-proxy", vpa=Vpa.AUTO, agent_readable=None, labels={"name": "haku-egress-proxy"}
-    )
+    return namespace_chart(app, name="haku-egress-proxy", vpa=Vpa.AUTO, labels={"name": "haku-egress-proxy"})
 
 
 def write_manifests(root: Path) -> None:
     write_charts(
-        root,
-        f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp",
-        partial(namespace_chart, name="plaid-mcp", vpa=Vpa.DISABLED, agent_readable=AgentReadable.LOGS),
+        root, f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp", partial(namespace_chart, name="plaid-mcp", vpa=Vpa.DISABLED)
     )

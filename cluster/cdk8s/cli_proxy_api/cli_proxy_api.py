@@ -33,7 +33,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
@@ -77,7 +77,7 @@ _CONFIG = textwrap.dedent(
 
 
 def _namespace(scope: Construct) -> None:
-    namespaces.namespace(scope, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
+    namespaces.namespace(scope, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
 
 
 def _data_claim(scope: Construct) -> None:

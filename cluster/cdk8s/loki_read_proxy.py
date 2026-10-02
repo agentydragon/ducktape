@@ -174,7 +174,7 @@ def _deployment(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
-    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED, agent_readable=None)
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED)
     _deployment(chart)
     k8s.KubeService(
         chart,

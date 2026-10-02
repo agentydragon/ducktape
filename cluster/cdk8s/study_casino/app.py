@@ -42,7 +42,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import copy_source_file
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
 from cluster.cdk8s.reflector import mirror_annotations
 from cluster.cdk8s.secret_ref import SecretRef
@@ -89,7 +89,6 @@ def _namespace(scope: Construct) -> None:
         name=_NAMESPACE,
         # Single-pod personal app; opt out of Goldilocks/VPA recommendations.
         vpa=Vpa.DISABLED,
-        agent_readable=AgentReadable.LOGS,
         labels={"name": _NAMESPACE},
     )
 

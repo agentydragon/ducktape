@@ -144,7 +144,7 @@ pub(crate) fn collect_regex_anchor_candidates(init: &Expr) -> BTreeMap<AnchorSpa
 /// selector *still* resolves uniquely (gate 1). The exact-literal form is the
 /// default; regex is opt-in by merit. Upgrades are applied one literal at a time
 /// so a too-broad pattern on one literal never blocks a sound upgrade on another.
-/// Shared by the read-off single-target var path and the keep-shallow group path.
+/// Shared by the read-off single-target var path and tuple-aware group read-off.
 pub(crate) fn accepted_regex_anchors(
     index: &ChunkSelectorIndex,
     decl: &IndexedDeclaration,

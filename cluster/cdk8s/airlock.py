@@ -27,7 +27,7 @@ from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterDataFrom,
@@ -286,7 +286,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAME,
         vpa=Vpa.AUTO,
-        agent_readable=AgentReadable.LOGS,
         labels={"name": NAME},
         annotations={
             # controlledValues has to be spelled out here: default-vpa-requests-only

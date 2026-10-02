@@ -211,7 +211,6 @@ def chart(app: App, *, config: SshMcpConfig, mesh: Mesh) -> Chart:
         "namespace",
         name=NAMESPACE,
         vpa=Vpa.DISABLED,
-        agent_readable=None,
         labels={"name": NAMESPACE},
         annotations={"description": "SSH MCP backend; private keys stay in this namespace."},
     )

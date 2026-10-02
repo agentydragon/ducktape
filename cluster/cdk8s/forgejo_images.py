@@ -32,7 +32,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAME,
         vpa=Vpa.RECOMMEND,
-        agent_readable=None,
         annotations={
             "description": (
                 "Holds the shared credential for the ducktape-ci Forgejo registry tenant"

@@ -47,10 +47,9 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
-from cluster.cdk8s import node_scheduling, public_coder_proxy
+from cluster.cdk8s import agent_access_profiles as access, node_scheduling, public_coder_proxy
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -555,7 +554,7 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
     chart = Chart(app, "agent-diagnostics-rbac", disable_resource_name_hashes=True)
     name = "agent-clickhouse-diagnostics-reader"
     read = ["get", "list", "watch"]
-    role = k8s.KubeRole(
+    k8s.KubeRole(
         chart,
         "role",
         metadata=k8s.ObjectMeta(
@@ -581,7 +580,6 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
             ),
         ],
     )
-    rbac_group = "rbac.authorization.k8s.io"
     k8s.KubeRoleBinding(
         chart,
         "binding",
@@ -590,13 +588,8 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
             namespace=client.NAMESPACE,
             annotations={"description": "Binds Haku and public-coder to secret-free ClickHouse status."},
         ),
-        role_ref=k8s.RoleRef(api_group=rbac_group, kind=role.kind, name=role.name),
-        subjects=[
-            k8s.Subject(kind="Group", name="oidc-ksbx-groups:haku", api_group=rbac_group),
-            k8s.Subject(kind="Group", name="haku:access-profile:haku", api_group=rbac_group),
-            k8s.Subject(kind="ServiceAccount", name="haku", namespace="haku-sandbox"),
-            k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group=rbac_group),
-        ],
+        role_ref=access.role_ref("clickhouse-diagnostics"),
+        subjects=[subject.k8s() for subject in access.profile_subjects("clickhouse-diagnostics")],
     )
     return chart
 

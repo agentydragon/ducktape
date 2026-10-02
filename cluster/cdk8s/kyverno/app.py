@@ -123,7 +123,7 @@ def _values() -> dict[str, object]:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "kyverno", disable_resource_name_hashes=True)
-    namespace = namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.RECOMMEND, agent_readable=None)
+    namespace = namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.RECOMMEND)
     helm_release(
         chart,
         NAME,

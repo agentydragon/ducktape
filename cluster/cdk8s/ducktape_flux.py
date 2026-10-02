@@ -14,10 +14,9 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
@@ -36,7 +35,7 @@ def _reader_binding(chart: Chart, name: str, *, description: str, subjects: list
         chart,
         name,
         metadata=k8s.ObjectMeta(name=name, namespace=NAMESPACE, annotations={"description": description}),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_READER),
+        role_ref=access.role_ref("ducktape-flux-read"),
         subjects=subjects,
     )
 
@@ -44,9 +43,7 @@ def _reader_binding(chart: Chart, name: str, *, description: str, subjects: list
 def chart(app: App) -> Chart:
     chart = Chart(app, NAMESPACE, disable_resource_name_hashes=True)
     # A control-plane boundary only: managed workloads retain their own namespaces.
-    namespaces.namespace(
-        chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None, labels={"name": NAMESPACE}
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels={"name": NAMESPACE})
     # Intentionally sparse, like flux-system's public-repository source: the source roots
     # the ArtifactGenerator consumes, and the paths public Kustomizations read directly,
     # including the suspended ones' under the parked tree.
@@ -93,19 +90,13 @@ def chart(app: App) -> Chart:
         chart,
         "public-coder-agent-ducktape-flux-reader",
         description="Binds the public-coder access profile to public Ducktape Flux diagnostics.",
-        subjects=[
-            k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group="rbac.authorization.k8s.io")
-        ],
+        subjects=[access.PUBLIC_CODER.k8s()],
     )
     _reader_binding(
         chart,
         "haku-ducktape-flux-reader",
         description="Binds the Haku OIDC group to public Ducktape Flux diagnostics.",
-        subjects=[
-            k8s.Subject(kind="Group", name="oidc-ksbx-groups:haku", api_group="rbac.authorization.k8s.io"),
-            k8s.Subject(kind="Group", name="haku:access-profile:haku", api_group="rbac.authorization.k8s.io"),
-            k8s.Subject(kind="ServiceAccount", name="haku", namespace="haku-sandbox"),
-        ],
+        subjects=[subject.k8s() for subject in access.HAKU_IDENTITIES],
     )
     return chart
 

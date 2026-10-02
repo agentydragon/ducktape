@@ -315,6 +315,7 @@ py_test(
         "@multitool//tools/kustomize",
     ],
     deps = [
+        ":agent_rbac",
         ":checks",
         ":cluster",
         ":conftest",
@@ -323,6 +324,7 @@ py_test(
         ":flux_bootstrap_auth",
         ":health_checks",
         ":image_automation",
+        ":k8s",
         ":kustomize",
         "//cluster/cdk8s:manifest_roots",
         "//util/bazel:runfiles",
@@ -465,5 +467,23 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "agent_rbac",
+    testonly = True,
+    srcs = ["agent_rbac.py"],
+    deps = [":k8s"],
+)
+
+py_test(
+    name = "test_agent_rbac",
+    srcs = ["test_agent_rbac.py"],
+    deps = [
+        ":agent_rbac",
+        ":k8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

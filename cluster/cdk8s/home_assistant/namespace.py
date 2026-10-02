@@ -18,7 +18,6 @@ def write_manifests(root: Path) -> None:
             namespace_chart,
             name="home-assistant",
             vpa=Vpa.RECOMMEND,
-            agent_readable=None,
             labels={
                 # Home Assistant and Matter need the host network for mDNS, Bluetooth and
                 # Matter fabric traffic on the physical home LAN.

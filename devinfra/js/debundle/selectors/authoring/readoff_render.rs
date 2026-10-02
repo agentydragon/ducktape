@@ -130,6 +130,32 @@ pub fn kept_spans_for_anchor_set(
     collector.kept
 }
 
+/// Literal forms not yet represented in `SelectorFeature`. Tuple read-off tries
+/// these after ranked features instead of losing coverage when its own slots
+/// cannot resolve independently. Every resulting selector still needs proof.
+pub fn unindexed_literal_spans(item: &ModuleItem) -> BTreeSet<AnchorSpan> {
+    #[derive(Default)]
+    struct UnindexedLiterals(BTreeSet<AnchorSpan>);
+
+    impl Visit for UnindexedLiterals {
+        fn visit_expr(&mut self, expr: &Expr) {
+            if matches!(
+                expr,
+                Expr::Lit(Lit::Null(_) | Lit::Regex(_) | Lit::JSXText(_)) | Expr::Tpl(_)
+            ) {
+                let span = expr.span();
+                self.0.insert((span.lo.0, span.hi.0));
+            } else {
+                expr.visit_children_with(self);
+            }
+        }
+    }
+
+    let mut collector = UnindexedLiterals::default();
+    item.visit_with(&mut collector);
+    collector.0
+}
+
 /// Walks the target item collecting the byte span of every token that exhibits
 /// a chosen [`ValueAnchor`], mirroring the `SelectorFeature` taxonomy so the
 /// span-level pin matches the feature the read-off scored.

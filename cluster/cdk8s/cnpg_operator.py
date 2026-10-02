@@ -20,7 +20,7 @@ from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "cnpg"
 NAMESPACE = "cnpg-system"
@@ -42,7 +42,7 @@ _CRITICAL_VALUES: dict[str, object] = {
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.INITIAL, agent_readable=AgentReadable.LOGS)
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.INITIAL)
     repository = https_helm_repository(chart, NAME, "flux-system", url="https://cloudnative-pg.github.io/charts")
     helm_release(
         chart,

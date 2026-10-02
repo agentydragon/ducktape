@@ -22,7 +22,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=_NAMESPACE,
         vpa=Vpa.AUTO,
-        agent_readable=None,
         annotations={
             # The suspended parked/budget Kustomization may still have this namespace in
             # its inventory. Keep that stale inventory from pruning the active namespace.

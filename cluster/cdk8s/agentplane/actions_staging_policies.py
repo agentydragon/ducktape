@@ -29,7 +29,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s import agent_access_profiles as access, cilium, external_creds
 from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
@@ -467,7 +467,13 @@ def add_staging_action_policies(scope: Construct) -> None:
         "rolebinding-claude-ai-coinbase",
         metadata=ApiObjectMetadata(name="claude-ai-coinbase-reader", namespace=_NAMESPACE),
         role=coinbase_reader,
-    ).add_subjects(claude_ai)
+    ).add_subjects(
+        claude_ai,
+        *(
+            subject.imported(scope, f"coinbase-subject-{index}")
+            for index, subject in enumerate(access.profile_subjects("coinbase-credentials"))
+        ),
+    )
     EgressPolicy(
         scope,
         "egresspolicy-coinbase",

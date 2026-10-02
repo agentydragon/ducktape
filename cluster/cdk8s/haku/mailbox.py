@@ -397,7 +397,6 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAMESPACE,
         vpa=Vpa.AUTO,
-        agent_readable=None,
         labels={
             "name": NAMESPACE,
             # The per-public-node SMTP ingress must bind hostPort 25. Pod Security's baseline

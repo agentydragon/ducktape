@@ -331,7 +331,7 @@ pub struct LoadJsChunksArgs {
     pub js_list_path: PathBuf,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SwapVendorChunksConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -345,6 +345,16 @@ pub struct SwapVendorChunksConfig {
     #[serde(skip_serializing_if = "is_true")]
     #[serde(default = "default_true")]
     pub write: bool,
+}
+
+impl Default for SwapVendorChunksConfig {
+    fn default() -> Self {
+        Self {
+            output_manifest_path: None,
+            output_wrapper_dir: None,
+            write: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -480,7 +490,7 @@ pub enum VendorLevel {
 /// the case the standalone map used to express ("emit unclaimed
 /// code to a separate file at `target`").
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case", tag = "kind")]
+#[serde(rename_all = "snake_case", tag = "kind", deny_unknown_fields)]
 pub enum UnassignedMode {
     /// Unclaimed bindings stay inline in the chunk's entry file (the
     /// residual module); no separate residual file is emitted. Renames
@@ -1791,5 +1801,13 @@ mod tests {
                 referenced_by: "decorateClassMember".to_string(),
             })
         );
+    }
+
+    #[test]
+    fn omitted_and_empty_vendor_swap_configs_have_the_same_defaults() {
+        let empty: SwapVendorChunksConfig = serde_json::from_str("{}").unwrap();
+        let omitted = SwapVendorChunksConfig::default();
+        assert!(empty.write);
+        assert_eq!(omitted.write, empty.write);
     }
 }

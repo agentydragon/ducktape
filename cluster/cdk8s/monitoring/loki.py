@@ -33,7 +33,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
 
@@ -62,7 +62,6 @@ def _storage(chart: Chart) -> None:
         "namespace",
         name=NAME,
         vpa=Vpa.INITIAL,
-        agent_readable=AgentReadable.LOGS,
         labels={
             "pod-security.kubernetes.io/enforce": "privileged",
             "pod-security.kubernetes.io/audit": "privileged",

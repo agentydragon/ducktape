@@ -45,7 +45,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku_ci import runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "haku-ci"
 NAMESPACE = "haku-ci"
@@ -557,7 +557,6 @@ def chart(app: App) -> Chart:
         name=NAMESPACE,
         # The runner's resources are set deliberately; no VPA recommendations wanted.
         vpa=Vpa.DISABLED,
-        agent_readable=AgentReadable.LOGS,
         labels={
             "name": NAMESPACE,
             # Enforce the privileged Pod Security level. The dind sidecar runs privileged (the

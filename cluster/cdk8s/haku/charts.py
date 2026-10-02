@@ -68,9 +68,7 @@ def console_chart(app: App) -> Chart:
     # namespace; this one gets ordinary egress). That is the confidentiality boundary
     # letting the console hold secrets Haku may not read, e.g. the Claude Code web
     # session bearer.
-    namespaces.namespace(
-        chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, agent_readable=None, labels={"name": NAMESPACE}
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, labels={"name": NAMESPACE})
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     # The static-Agent bearer tf/gitops/haku-state mints; Reflector mirrors it on to the
     # Agent's callers.

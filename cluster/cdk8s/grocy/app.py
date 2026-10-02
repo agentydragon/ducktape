@@ -43,7 +43,7 @@ from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App p
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.volsync.replication_destination import ReplicationDestination
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -265,7 +265,7 @@ def _source_mover_zone_affinity() -> ReplicationSourceSpecRsyncTlsMoverAffinity:
 def household_chart(app: App, *, household: str) -> Chart:
     namespace = service(household).pods.namespace
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=namespace, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
+    namespaces.namespace(chart, "namespace", name=namespace, vpa=Vpa.AUTO)
     _server(chart, namespace)
     k8s.KubePersistentVolumeClaim(
         chart,

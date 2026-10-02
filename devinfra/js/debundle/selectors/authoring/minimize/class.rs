@@ -25,21 +25,24 @@ fn class_render_with<'a>(
     target: &'a SynthesizedTargetBinding,
 ) -> impl Fn(&BTreeSet<AnchorSpan>) -> Result<String> + 'a {
     move |kept: &BTreeSet<AnchorSpan>| {
-        let mut holed_class = class.clone();
-        // A minified superclass identifier is alpha-wildcarded, so always hole
-        // `extends` to ANYTHING — it still discriminates "has a superclass" from a
-        // bare class without pinning the volatile name.
-        holed_class.super_class = class
-            .super_class
-            .as_ref()
-            .map(|_| Box::new(anything_expr()));
-        holed_class.body = hole_class_members(&class.body, kept);
         emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Class(ClassDecl {
             ident: ident_node(&target.export_name),
             declare: false,
-            class: Box::new(holed_class),
+            class: Box::new(hole_class(class, kept)),
         }))))
     }
+}
+
+/// Shared pruning for declarations, expression initializers and neighbor context.
+pub(super) fn hole_class(class: &Class, kept: &BTreeSet<AnchorSpan>) -> Class {
+    let mut holed = class.clone();
+    // Preserve superclass presence, not its rebuild-volatile identifier.
+    holed.super_class = class
+        .super_class
+        .as_ref()
+        .map(|_| Box::new(anything_expr()));
+    holed.body = hole_class_members(&class.body, kept);
+    holed
 }
 
 /// Up to `limit` ranked candidate selectors for the class — the

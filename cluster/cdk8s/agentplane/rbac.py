@@ -11,13 +11,13 @@ from __future__ import annotations
 from typing import cast
 
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import ApiResource, Group, IApiResource, Role, RoleBinding, RolePolicyRule, ServiceAccount, k8s
+from cdk8s_plus_34 import ApiResource, IApiResource, Role, RoleBinding, RolePolicyRule, ServiceAccount, k8s
 from constructs import Construct
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.api_resource import custom_resource, named_resource
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 
 TESTING_OPERATOR_ROLE_NAME = "agentplane-testing-operator"
 
@@ -72,7 +72,6 @@ class NamespaceQuota(Construct):
             vpa=Vpa.DISABLED,
             # Standing agent access to metadata and logs (Kyverno-generated bindings);
             # write access lives in the operator Role below.
-            agent_readable=AgentReadable.LOGS,
             labels={"name": env.namespace},
             annotations={"description": env.description},
         )
@@ -160,15 +159,10 @@ class AgentRbac(Construct):
             metadata=ApiObjectMetadata(name="agent-agentplane-testing-operator", namespace=env.namespace),
             role=Role.from_role_name(self, "role-ref", TESTING_OPERATOR_ROLE_NAME),
         ).add_subjects(
-            # Haku and public-coder agent identities plus the interactive
-            # kubectl-sandbox group. public-coder is listed explicitly because this
-            # Role grants beyond the read-only diagnostics bindings Kyverno generates
-            # from the namespace label.
-            Group.from_name(self, "haku-oidc-group", "oidc-ksbx-groups:haku"),
-            Group.from_name(self, "haku-access-profile-group", "haku:access-profile:haku"),
-            Group.from_name(self, "public-coder-access-profile-group", "haku:access-profile:public-coder"),
-            ServiceAccount.from_service_account_name(self, "haku-sandbox-sa", "haku", namespace_name="haku-sandbox"),
-            Group.from_name(self, "kubectl-sandbox-users-group", "oidc-ksbx-groups:kubectl-sandbox-users"),
+            *[
+                subject.imported(self, f"operator-subject-{index}")
+                for index, subject in enumerate(access.TESTING_OPERATOR_SUBJECTS)
+            ]
         )
 
 

@@ -25,7 +25,6 @@ def chart(app: App) -> Chart:
         # diagnostics readers cannot create RoleBindings here. Keep both generic
         # agent and public-coder opt-ins absent until we intentionally add an
         # explicit binding or a narrowly scoped resource-filter exception.
-        agent_readable=None,
     )
     return chart
 

@@ -156,9 +156,7 @@ def _codex_template(chart: Chart) -> SandboxTemplate:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(
-        chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None, labels={"name": NAMESPACE}
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels={"name": NAMESPACE})
     # Sized for ~a dozen concurrent workspaces (each requests 500m/1Gi + a 10Gi PVC per the
     # workspace SandboxTemplate) plus warm-pool idle capacity.
     k8s.KubeResourceQuota(

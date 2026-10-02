@@ -4578,3 +4578,714 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in activitywatch; policy shared with managed agents.
+  name: agent-namespace-rbac-activitywatch
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: activitywatch
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/activitywatch
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in agent-sandbox-system; policy shared with managed agents.
+  name: agent-namespace-rbac-agent-sandbox-system
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: agent-sandbox-controller
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/agent-sandbox-system
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in agentplane-index; policy shared with managed agents.
+  name: agent-namespace-rbac-agentplane-index
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: agentplane-index
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/agentplane-index
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in agentplane-staging; policy shared with managed agents.
+  name: agent-namespace-rbac-agentplane-staging
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: agentplane-staging
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/agentplane-staging
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in agentplane-testing; policy shared with managed agents.
+  name: agent-namespace-rbac-agentplane-testing
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: agentplane-testing
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/agentplane-testing
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in airlock; policy shared with managed agents.
+  name: agent-namespace-rbac-airlock
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: airlock
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/airlock
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in authentik; policy shared with managed agents.
+  name: agent-namespace-rbac-authentik
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: authentik
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/authentik
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in cert-manager; policy shared with managed agents.
+  name: agent-namespace-rbac-cert-manager
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: cert-manager
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/cert-manager
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in cli-proxy-api; policy shared with managed agents.
+  name: agent-namespace-rbac-cli-proxy-api
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: cli-proxy-api
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/cli-proxy-api
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in clickhouse; policy shared with managed agents.
+  name: agent-namespace-rbac-clickhouse
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: clickhouse
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/clickhouse
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in cnpg-system; policy shared with managed agents.
+  name: agent-namespace-rbac-cnpg-system
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: cnpg
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/cnpg-system
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in flux-system; policy shared with managed agents.
+  name: agent-namespace-rbac-flux-system
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/flux-system
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in gatus; policy shared with managed agents.
+  name: agent-namespace-rbac-gatus
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: gatus
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/gatus
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in grocy-sf; policy shared with managed agents.
+  name: agent-namespace-rbac-grocy-sf
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: grocy-sf
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/grocy-sf
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in grocy-vallejo; policy shared with managed agents.
+  name: agent-namespace-rbac-grocy-vallejo
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: grocy-vallejo
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/grocy-vallejo
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in haku-ci; policy shared with managed agents.
+  name: agent-namespace-rbac-haku-ci
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: haku-ci
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/haku-ci
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in litellm; policy shared with managed agents.
+  name: agent-namespace-rbac-litellm
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: litellm
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/litellm
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in local-path-storage; policy shared with managed agents.
+  name: agent-namespace-rbac-local-path-storage
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: local-path-provisioner
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/local-path-storage
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in loki; policy shared with managed agents.
+  name: agent-namespace-rbac-loki
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: loki
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/loki
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in monitoring; policy shared with managed agents.
+  name: agent-namespace-rbac-monitoring
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: monitoring-namespace
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/monitoring
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in nix-cache; policy shared with managed agents.
+  name: agent-namespace-rbac-nix-cache
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: nix-cache
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/nix-cache
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in node-feature-discovery; policy shared with managed agents.
+  name: agent-namespace-rbac-node-feature-discovery
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: node-feature-discovery
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/node-feature-discovery
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in nvidia-device-plugin; policy shared with managed agents.
+  name: agent-namespace-rbac-nvidia-device-plugin
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: nvidia-device-plugin
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/nvidia-device-plugin
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in oci-cache; policy shared with managed agents.
+  name: agent-namespace-rbac-oci-cache
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: oci-cache
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/oci-cache
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in openebs; policy shared with managed agents.
+  name: agent-namespace-rbac-openebs
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: openebs-lvm
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/openebs
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in plaid-mcp; policy shared with managed agents.
+  name: agent-namespace-rbac-plaid-mcp
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: plaid-mcp
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/plaid-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in proxmox-proxy; policy shared with managed agents.
+  name: agent-namespace-rbac-proxmox-proxy
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: proxmox-proxy
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/proxmox-proxy
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in public-coder-agent; policy shared with managed agents.
+  name: agent-namespace-rbac-public-coder-agent
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: public-coder-agent-app
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/public-coder-agent
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in study-casino; policy shared with managed agents.
+  name: agent-namespace-rbac-study-casino
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: study-casino
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/study-casino
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in tana-mcp; policy shared with managed agents.
+  name: agent-namespace-rbac-tana-mcp
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: tana-mcp
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/tana-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in vm-images-publisher; policy shared with managed agents.
+  name: agent-namespace-rbac-vm-images-publisher
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: vm-images-publisher
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/vm-images-publisher
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true

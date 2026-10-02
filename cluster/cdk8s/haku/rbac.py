@@ -8,6 +8,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -16,8 +17,6 @@ NAME = "haku-rbac"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/rbac"
 SERVICE_ACCOUNT = "haku"
 ADMIN_ROLE = "haku-sandbox-admin"
-
-_RBAC_GROUP = "rbac.authorization.k8s.io"
 
 
 def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
@@ -95,11 +94,8 @@ def chart(app: App) -> Chart:
         chart,
         "haku-binding",
         metadata=k8s.ObjectMeta(name="haku", namespace=NAMESPACE),
-        role_ref=k8s.RoleRef(api_group=_RBAC_GROUP, kind="Role", name=ADMIN_ROLE),
-        subjects=[
-            k8s.Subject(kind="ServiceAccount", name=SERVICE_ACCOUNT, namespace=NAMESPACE),
-            k8s.Subject(kind="Group", name="haku:access-profile:haku", api_group=_RBAC_GROUP),
-        ],
+        role_ref=access.role_ref("haku-sandbox-write"),
+        subjects=[access.HAKU_SERVICE_ACCOUNT.k8s(), access.HAKU_CONSOLE.k8s()],
     )
     k8s.KubeRoleBinding(
         chart,
@@ -115,8 +111,8 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        role_ref=k8s.RoleRef(api_group=_RBAC_GROUP, kind="Role", name=ADMIN_ROLE),
-        subjects=[k8s.Subject(kind="Group", name="oidc-ksbx-groups:haku", api_group=_RBAC_GROUP)],
+        role_ref=access.role_ref("haku-sandbox-write"),
+        subjects=[access.HAKU_OIDC.k8s()],
     )
     # Shared by everything in haku-sandbox: the managed-agent worker, haku-ui, AND the sandbox warm
     # pool (haku/workspaces.py) -- a claimed box runs a LOCAL Bazel build of haku-state (no RBE;

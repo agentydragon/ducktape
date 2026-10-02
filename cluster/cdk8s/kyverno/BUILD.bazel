@@ -10,6 +10,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespace_access",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
         "@pypi//cdk8s",
@@ -35,8 +36,10 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":proxy_injection",
+        "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespace_access",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s/providers/kyverno:cluster_policy",
         "//cluster/cdk8s/providers/kyverno:clusterpolicy",

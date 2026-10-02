@@ -1,6 +1,5 @@
 //! Golden minimizer outputs: each fixture's `expected_match.js` is the selector
-//! `synthesize-selectors --apply` emits for its `source.js`. Two cases are `#[ignore]`d
-//! until the gaps tracked in TODO.md § Read-off minimizer polish close.
+//! `synthesize-selectors --apply` emits for its `source.js`.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -626,7 +625,6 @@ minimizer_expectation_case!(
 );
 
 minimizer_expectation_case!(
-    #[ignore = "neighbor-context anchoring pins the whole neighbor function declaration instead of holing it to its anchor"]
     minimizes_neighbor_context_whole_function_neighbor,
     fixture = "neighbor_context_whole_function_neighbor",
     name = "neighbor function declaration is holed to its discriminating anchor, not pinned whole",
@@ -636,7 +634,6 @@ minimizer_expectation_case!(
 );
 
 minimizer_expectation_case!(
-    #[ignore = "class-expression-valued const is pinned whole; not routed through the class read-off"]
     minimizes_class_expression_const_whole_body,
     fixture = "class_expression_const_whole_body",
     name = "class-expression const keeps only one discriminating member, not the whole class body",
@@ -651,5 +648,36 @@ minimizer_expectation_case!(
     name = "class anchor inside a constructor sequence expression is holed in place, not pinned via a neighbor",
     module = "app/errors",
     bindings = [("SelectedError", "selectedError")],
+    expected = "expected_match.js",
+);
+
+minimizer_expectation_case!(
+    minimizes_jointly_unique_binding_group,
+    fixture = "jointly_unique_binding_group",
+    name = "ambiguous individual slots resolve as a unique tuple",
+    module = "app/pair",
+    bindings = [("SelectedLeft", "left"), ("SelectedRight", "right")],
+    expected = "expected_match.js",
+);
+
+minimizer_expectation_case!(
+    minimizes_neighbor_class_context,
+    fixture = "neighbor_class_context",
+    name = "neighbor class retains only its discriminating member",
+    module = "app/helpers",
+    bindings = [("SelectedHelper", "selectedHelper")],
+    expected = "expected_match.js",
+);
+
+minimizer_expectation_case!(
+    minimizes_binding_group_unindexed_literals,
+    fixture = "binding_group_unindexed_literals",
+    name = "tuple read-off retains null, regex and template literal coverage",
+    module = "app/literals",
+    bindings = [
+        ("SelectedNull", "selectedNull"),
+        ("SelectedRegex", "selectedRegex"),
+        ("SelectedTemplate", "selectedTemplate"),
+    ],
     expected = "expected_match.js",
 );

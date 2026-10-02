@@ -41,12 +41,7 @@ def _cluster_role(chart: Chart, name: str, *rules: k8s.PolicyRule) -> None:
 
 def _add_sandbox(chart: Chart) -> None:
     namespaces.namespace(
-        chart,
-        "namespace",
-        name=NAMESPACE,
-        vpa=Vpa.RECOMMEND,
-        agent_readable=None,
-        labels={"name": NAMESPACE, "environment": "development"},
+        chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels={"name": NAMESPACE, "environment": "development"}
     )
     k8s.KubeResourceQuota(
         chart,

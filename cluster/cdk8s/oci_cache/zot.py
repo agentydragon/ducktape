@@ -19,7 +19,7 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -189,7 +189,7 @@ def _deployment(chart: Chart, *, storage: s3.PrivateBucket) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAMESPACE, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
+    namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO)
     _deployment(chart, storage=_storage(chart))
     k8s.KubeService(
         chart,

@@ -78,7 +78,6 @@ def _namespace(scope: Construct) -> None:
         # load. Stay opted-in for recommendation reports, but don't let
         # goldilocks mutate pods.
         vpa=Vpa.RECOMMEND,
-        agent_readable=None,
     )
 
 
