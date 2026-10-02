@@ -45,6 +45,10 @@ function HistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolea
   const policySet = decision?.policy_evidence?.matched.policy_set;
   const [raw, setRaw] = useState(false);
   const result = request.execution?.result;
+  const executionError = request.execution?.error;
+  const hasResult = result !== null && result !== undefined;
+  const hasExecutionError = executionError !== null && executionError !== undefined;
+  const decisionState = request.state === "allowed" || request.state === "denied";
   // An MCP group's result is its stored CallToolResult, the same authority the Action Service answers
   // MCP callers by (`agentplane/action_service/tool_results.py`), drawn by the Action's own widget or
   // as the tool answered. Anything else, a sandbox group's own models or a group this page cannot
@@ -58,9 +62,11 @@ function HistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolea
           request={request}
           status={
             <>
-              <Text size="xs" c="dimmed">
-                {stateLabel(request.state)}
-              </Text>
+              {decisionState && (
+                <Text size="xs" c="dimmed">
+                  {stateLabel(request.state)}
+                </Text>
+              )}
               {decision && (
                 <Badge color={decision.verdict === "allow" ? "green" : "red"}>
                   {decision.verdict === "allow" ? "Allowed" : "Denied"}
@@ -78,14 +84,23 @@ function HistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolea
             Auto-approved via policy <Code>{policySet}</Code>
           </Text>
         )}
-        {result !== null && result !== undefined && <ExecutionResult result={result} pretty={prettyResult} raw={raw} />}
-        {request.execution?.error && (
-          <div>
-            <Text size="sm" fw={600} mb={4}>
-              Execution error
-            </Text>
-            <JsonView value={request.execution.error} />
-          </div>
+        {(hasResult || hasExecutionError || !decisionState) && (
+          <Stack gap="xs" data-testid="action-execution-outcome">
+            {hasResult && <ExecutionResult result={result} pretty={prettyResult} raw={raw} />}
+            {hasExecutionError && (
+              <div>
+                <Text size="sm" fw={600} mb={4}>
+                  Execution error
+                </Text>
+                <JsonView value={executionError} />
+              </div>
+            )}
+            {!decisionState && (
+              <Text size="xs" c="dimmed" data-testid="action-execution-state">
+                {stateLabel(request.state)}
+              </Text>
+            )}
+          </Stack>
         )}
       </Stack>
     </Paper>

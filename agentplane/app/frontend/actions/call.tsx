@@ -86,8 +86,8 @@ export function ActionCall({
           </Text>
           <Group gap="xs" justify="flex-end" wrap="wrap">
             {status}
-            {headerActions}
             {(prettyArguments !== null || prettyResult) && <RawSwitch raw={raw} onChange={onRawChange} />}
+            {headerActions}
           </Group>
         </Group>
         {/* TODO: the caller's own framing renders verbatim as plain text; markdown rendering is a

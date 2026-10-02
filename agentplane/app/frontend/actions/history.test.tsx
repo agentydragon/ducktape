@@ -118,6 +118,19 @@ describe("ActionHistory", () => {
     expect(container.textContent).toContain("Execution error");
   });
 
+  it("places the execution state beneath its result", async () => {
+    const container = await render(
+      { list: async () => [succeeded("test_sandbox", { ok: true })], decide: vi.fn() },
+      withoutGroups
+    );
+    const outcome = container.querySelector<HTMLElement>('[data-testid="action-execution-outcome"]');
+    const state = outcome?.querySelector('[data-testid="action-execution-state"]');
+
+    expect(outcome?.firstElementChild?.textContent).toContain("Result");
+    expect(state?.textContent).toBe("succeeded");
+    expect(outcome?.lastElementChild).toBe(state);
+  });
+
   it("shows the exact arguments open, as the pending card does", async () => {
     const container = await render({ list: async () => [request("succeeded", 1)], decide: vi.fn() }, withoutGroups);
     expect(container.textContent).toContain("Exact arguments (unredacted)");
