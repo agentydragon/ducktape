@@ -5,6 +5,18 @@ The conventions this plan's work follows are in `README.md` § Using Augur and `
 are in <SPEC.md>; capability requirements every item below must meet are in
 <sim/REQUIREMENTS.md>.
 
+## Tracks
+
+In priority order; their items are under § Work.
+
+1. **Trust in the economy model** (§ Economy model trust): no model other than historical
+   replay is vetted, and every projection inherits that.
+2. **A correct answer for a liquid FIRE portfolio:** BIND and EXUS, MIDYEAR, the Distributions
+   and Payments tax slices, MA3 and STUDY, then RUN and ROBUST.
+3. **Backstops:** GX (moving to Europe) and housing (§ Property taxes, GHOUSE).
+4. **Consolidation:** TLHCOHORT and the app's future (§ Open questions).
+5. **Deferred:** private equity (GPE; the stake is valued at $0) and performance.
+
 ## Open questions
 
 - **The app's model selection.** The app picks its economy model through
@@ -12,9 +24,7 @@ are in <SPEC.md>; capability requirements every item below must meet are in
   the fitted models through a tombstoned visibility exception. That union is the pattern
   the conventions rule out. Deciding the app's model selection is part of deciding the app's
   future, which is not decided.
-- **Held feature PRs.** #8139 (uncertain equity mean), #8141 (pinned equity mean) and #8142
-  (block bootstrap) would land in `x/models/`; #8143 is trading costs. Each waits on the
-  owner's go.
+- **Held feature PRs.** #8143 (trading costs) waits on the owner's go.
 - **Integer money.** Integer quanta were chosen for speed at large rollout counts, a gain
   never measured. If a measurement shows it does not pay, `World` may instead know its
   currency and take and return exact fixed-point `Decimal` money.
@@ -23,6 +33,47 @@ are in <SPEC.md>; capability requirements every item below must meet are in
 
 Each item is its own reviewable change; "after X" is a content prerequisite, nothing else.
 Every change is checked against an independent calculation, never a copy of the engine's.
+
+### Economy model trust
+
+Goal: at least one economy model other than historical replay whose 30–60 year trajectories are
+believable and whose case for being sensible holds up. At that horizon trust is a reasoned
+argument, not a statistical certificate: a century of US data holds about three independent
+30-year windows, and no record can tell a 1% tail from a 5% one. Sanity checks catch the absurd;
+the rest is judged the way one picks a model on little data: plausible assumptions, the simplest
+structure that produces the behavior a decision depends on, and numbers that look right beside
+history and published results. The decisions served turn on the chance of ruin and of forced
+spending cuts, not on final wealth, so what a model must make believable is sequence risk: how
+deep and long drawdowns and inflation episodes run, above all early in the horizon. Today
+`x/models/structural_macro.py` is Gaussian and US-only, with equity independent of inflation
+and no parameter uncertainty, and historical replay has only US history.
+
+- **CARDS:** each model in `x/models/` says in prose beside its code what it assumes, what it
+  leaves out, its data window, and why those choices are sensible for a 30–60 year household
+  question.
+- **SANITY:** a check any caller can run on sampled trajectories that rejects absurd output: an
+  economy growing 10,000× in two years, a material chance of prices rising tenfold in a year.
+  Starts from `x/models/sample_sanity.py`, which only the app calls today.
+- **BOOT:** vet the US stationary block bootstrap (`x/models/stationary_bootstrap.py`; #5510):
+  its card argues the choices, SANITY passes, and its withdrawal and ruin numbers sit plausibly
+  beside Trinity and Anarkulova–Cederburg–O'Doherty. It keeps joint crashes and stagflation,
+  but recombines only US history.
+- **PANEL** (after BOOT): a multi-country block bootstrap on the Jordà–Schularick–Taylor
+  macrohistory panel, which partly corrects US survivorship and gives an ex-US equity leg.
+- **REGIME:** regime-switching lognormal equity (RSLN2) with the macro VAR, under parameter
+  uncertainty (#5487, #5488): tails beyond history. Worth its complexity only if a decision
+  turns on the bootstraps' floor at history's worst month.
+- **ADOPT:** a model leaves `x/` when its card's argument survives review, it passes SANITY,
+  and its numbers are believable beside history and published results (the American Academy
+  of Actuaries' wealth factors, Anarkulova–Cederburg–O'Doherty's developed-market withdrawal
+  results). Short-horizon checks on held-out data are welcome where the data allows, not a
+  gate.
+- **BRACKET:** a 30–60 year answer is reported across the adopted models and named stresses
+  (Japan after 1990, the US 1970s), saying whether the decision survives each; where the
+  models disagree, the disagreement is the finding.
+- **CURVES:** a muni yield curve (#5835), and a decision whether to pursue a Treasury curve
+  beyond the two points `model/bond_fund.py` interpolates (#5834 closed without a recorded
+  reason).
 
 ### Taxes (closing the gaps SPEC lists in its supported tax scope)
 
@@ -119,6 +170,9 @@ Annual totals are right without DECLINE and INSTALLMENTS; Mare Island is not wit
   partially sell the existing nominal-bond slice, then off-par acquisition. Hold-to-maturity
   becomes a policy, not the instrument's illiquidity. Then a native-position version of
   <x/bond_policies/README.md>'s supplied-curve control.
+- **EXUS:** VT's and VXUS's ex-US holdings follow an ex-US equity path, not US returns. The
+  series is in the record (`MacroHistory.ex_us_equity_level`, developed markets from 1975);
+  what remains is the product mapping and carrying the path through replay and the bootstrap.
 - **Trading costs:** a proportional cost per trade, readable in the trace (#5486, held #8143).
 - **Fund expense ratios:** a fund's annual expense ratio accrues as a drag on its value,
   readable in the trace; model them before comparing products whose costs differ materially.
@@ -154,15 +208,10 @@ Annual totals are right without DECLINE and INSTALLMENTS; Mare Island is not wit
   conventions before its result is labeled a reproduction.
 - **RUN** (after BIND, the tax slices and MIDYEAR): public synthetic-lot household example of
   a spending-flex × allocation grid on shared paths, extending `x/joint_spending_allocation`.
-- **SCORE:** compare existing fits and simple controls on the same observables, origins and
-  held-out periods, with dependence-aware uncertainty or an explicit refusal to rank.
-- **ROBUST** (after RUN and SCORE): select RUN's policies under each model, evaluate them on
+  Each cell reports the chance of ruin and how deep, how long and how often spending is forced
+  below plan, not final wealth.
+- **ROBUST** (after RUN and ADOPT): select RUN's policies under each model, evaluate them on
   fresh draws under the others.
-- **READY** (after ROBUST and any adopted model change): review held-out multi-horizon joint
-  equity/rates/inflation behavior against agreed tolerances before claiming forecast fidelity.
-  Candidates: #5487 (joint fit), #5488 (regimes), #5510 (resampling), #5835 (muni curve); the
-  two-point Treasury curve beyond ten years (`model/bond_fund.py`, #5834 closed without a
-  recorded reason) needs a decision whether to pursue it.
 
 ### Gated on an owner decision
 
