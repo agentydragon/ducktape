@@ -39,13 +39,13 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: haku-openclaw-spike-volsync-repository-reader
+  name: volsync-repository-reader
   namespace: haku-openclaw-spike
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: haku-openclaw-spike-volsync-repository-reader
+  name: volsync-repository-reader
   namespace: haku-openclaw-spike
 rules:
   - apiGroups:
@@ -61,15 +61,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: haku-openclaw-spike-volsync-repository-reader
+  name: volsync-repository-reader
   namespace: haku-openclaw-spike
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: haku-openclaw-spike-volsync-repository-reader
+  name: volsync-repository-reader
 subjects:
   - kind: ServiceAccount
-    name: haku-openclaw-spike-volsync-repository-reader
+    name: volsync-repository-reader
     namespace: haku-openclaw-spike
 ---
 apiVersion: external-secrets.io/v1
@@ -82,7 +82,7 @@ spec:
     kubernetes:
       auth:
         serviceAccount:
-          name: haku-openclaw-spike-volsync-repository-reader
+          name: volsync-repository-reader
           namespace: haku-openclaw-spike
       remoteNamespace: haku-openclaw-spike
       server:

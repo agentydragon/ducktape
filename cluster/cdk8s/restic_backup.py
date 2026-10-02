@@ -106,7 +106,7 @@ class ResticBackup(Construct):
                 ],
             ),
         )
-        reader = k8s.ObjectMeta(name=f"{namespace}-volsync-repository-reader", namespace=namespace)
+        reader = k8s.ObjectMeta(name="volsync-repository-reader", namespace=namespace)
         self.service_account = k8s.KubeServiceAccount(self, "repository-reader-sa", metadata=reader)
         self.role = k8s.KubeRole(
             self,

@@ -52,7 +52,7 @@ def chart(app: App) -> Chart:
             namespace=NAMESPACE,
             annotations={
                 "description": (
-                    "Full CRUD within the haku-sandbox compute sandbox (mirrors claude-sandbox-admin): "
+                    "Full CRUD within the haku-sandbox compute sandbox (mirrors the claude-sandbox `admin` Role): "
                     "pods/log/exec/attach, services, configmaps, secrets, PVCs, events, plus apps and batch "
                     "workloads. The namespace is network-isolated behind its own mitmproxy; secrets here are "
                     "still expected to hold only read-only credentials Haku may fully use. Security model: "

@@ -40,7 +40,7 @@ imagePullSecrets:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: plaid-mcp-secret-manager
+  name: secret-manager
   namespace: plaid-mcp
 rules:
   - apiGroups:
@@ -58,12 +58,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: plaid-mcp-secret-manager
+  name: secret-manager
   namespace: plaid-mcp
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: plaid-mcp-secret-manager
+  name: secret-manager
 subjects:
   - kind: ServiceAccount
     name: plaid-mcp

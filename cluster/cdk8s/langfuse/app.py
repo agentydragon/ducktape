@@ -99,7 +99,7 @@ def _log_reader(scope: Construct) -> None:
     role = k8s.KubeRole(
         scope,
         "log-reader",
-        metadata=k8s.ObjectMeta(name="langfuse-log-reader", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="log-reader", namespace=_NAMESPACE),
         rules=[
             k8s.PolicyRule(
                 api_groups=[""],

@@ -91,13 +91,13 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: public-coder-agent-volsync-repository-reader
+  name: volsync-repository-reader
   namespace: public-coder-agent
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: public-coder-agent-volsync-repository-reader
+  name: volsync-repository-reader
   namespace: public-coder-agent
 rules:
   - apiGroups:
@@ -113,15 +113,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: public-coder-agent-volsync-repository-reader
+  name: volsync-repository-reader
   namespace: public-coder-agent
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: public-coder-agent-volsync-repository-reader
+  name: volsync-repository-reader
 subjects:
   - kind: ServiceAccount
-    name: public-coder-agent-volsync-repository-reader
+    name: volsync-repository-reader
     namespace: public-coder-agent
 ---
 apiVersion: external-secrets.io/v1
@@ -134,7 +134,7 @@ spec:
     kubernetes:
       auth:
         serviceAccount:
-          name: public-coder-agent-volsync-repository-reader
+          name: volsync-repository-reader
           namespace: public-coder-agent
       remoteNamespace: public-coder-agent
       server:
