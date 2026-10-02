@@ -8,6 +8,7 @@ import {
   Box,
   Center,
   Code,
+  Drawer,
   Group,
   Image,
   Loader,
@@ -22,6 +23,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 
 import {
   ApiError,
@@ -43,6 +45,50 @@ import {
 type StatusFilter = "all" | "active" | "paused" | "archived";
 type WatchStatus = "connecting" | "connected" | "reconnecting";
 const ALL_STATUSES = ["active", "paused", "archived"];
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_DEFAULT_WIDTH = 300;
+const TRANSCRIPT_MIN_WIDTH = 420;
+const SIDEBAR_RESIZER_WIDTH = 8;
+const SIDEBAR_WIDTH_STORAGE_KEY = "claude-session-sidebar-width";
+const SIDEBAR_VISIBLE_STORAGE_KEY = "claude-session-sidebar-visible";
+
+function clampSidebarWidth(width: number): number {
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
+}
+
+function readSidebarWidth(): number {
+  try {
+    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    const width = stored === null ? SIDEBAR_DEFAULT_WIDTH : Number(stored);
+    return Number.isFinite(width) ? clampSidebarWidth(width) : SIDEBAR_DEFAULT_WIDTH;
+  } catch {
+    return SIDEBAR_DEFAULT_WIDTH;
+  }
+}
+
+function readSidebarVisibility(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_VISIBLE_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function storeSidebarPreference(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Session browsing still works when the browser disables local storage.
+  }
+}
+
+function maxSidebarWidth(layoutWidth: number): number {
+  return Math.max(
+    SIDEBAR_MIN_WIDTH,
+    Math.min(SIDEBAR_MAX_WIDTH, layoutWidth - TRANSCRIPT_MIN_WIDTH - SIDEBAR_RESIZER_WIDTH)
+  );
+}
 
 function errorMessage(reason: unknown): string {
   return reason instanceof ApiError || reason instanceof Error ? reason.message : "Could not load sessions.";
@@ -103,6 +149,99 @@ function SessionRow({
         </Stack>
       }
     />
+  );
+}
+
+function SessionList({
+  id,
+  sessions,
+  visibleSessions,
+  selectedId,
+  loadingSessions,
+  nextSessionCursor,
+  loadingMoreSessions,
+  search,
+  filter,
+  onSearchChange,
+  onFilterChange,
+  onSelect,
+  onLoadMore,
+}: {
+  id: string;
+  sessions: SessionSummary[];
+  visibleSessions: SessionSummary[];
+  selectedId: string | null;
+  loadingSessions: boolean;
+  nextSessionCursor: string | null;
+  loadingMoreSessions: boolean;
+  search: string;
+  filter: StatusFilter;
+  onSearchChange: (search: string) => void;
+  onFilterChange: (filter: StatusFilter) => void;
+  onSelect: (sessionId: string) => void;
+  onLoadMore: () => void;
+}): JSX.Element {
+  return (
+    <Paper
+      id={id}
+      component="aside"
+      aria-label="Session list"
+      withBorder
+      radius="sm"
+      p="xs"
+      style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}
+    >
+      <Stack gap="xs" style={{ flex: 1, minHeight: 0 }}>
+        <TextInput
+          label="Search loaded sessions"
+          type="search"
+          value={search}
+          onChange={(event) => onSearchChange(event.currentTarget.value)}
+        />
+        <Select
+          label="Status"
+          data={[
+            { value: "all", label: "All sessions" },
+            { value: "active", label: "Active" },
+            { value: "paused", label: "Paused" },
+            { value: "archived", label: "Archived" },
+          ]}
+          value={filter}
+          onChange={(value) => {
+            if (value !== null) onFilterChange(value as StatusFilter);
+          }}
+        />
+        <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
+          {loadingSessions ? (
+            <Center h={240}>
+              <Loader size="sm" aria-label="Loading sessions" />
+            </Center>
+          ) : visibleSessions.length === 0 ? (
+            <Center h={180} px="md">
+              <Text c="dimmed" ta="center">
+                {sessions.length === 0 ? "No sessions in the sync yet." : "No matching sessions."}
+              </Text>
+            </Center>
+          ) : (
+            <Stack gap={4}>
+              {visibleSessions.map((session) => (
+                <SessionRow
+                  key={session.id}
+                  session={session}
+                  selected={session.id === selectedId}
+                  onSelect={() => onSelect(session.id)}
+                />
+              ))}
+            </Stack>
+          )}
+          {nextSessionCursor !== null && (
+            <Button fullWidth variant="default" mt="xs" loading={loadingMoreSessions} onClick={onLoadMore}>
+              Load more sessions
+            </Button>
+          )}
+        </ScrollArea>
+      </Stack>
+    </Paper>
   );
 }
 
@@ -725,9 +864,16 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
 }
 
 export function SessionViewer(): JSX.Element {
+  const isMobile = useMediaQuery("(max-width: 48em)", false);
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [showRawEvents, setShowRawEvents] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(readSidebarVisibility);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
+  const [layoutWidth, setLayoutWidth] = useState(0);
+  const [isResizing, setIsResizing] = useState(false);
+  const layoutRef = useRef<HTMLDivElement>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [nextSessionCursor, setNextSessionCursor] = useState<string | null>(null);
   const [resumeToken, setResumeToken] = useState<string | null>(null);
@@ -745,6 +891,54 @@ export function SessionViewer(): JSX.Element {
   const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
   const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
   const [refreshCount, setRefreshCount] = useState(0);
+
+  const availableLayoutWidth = layoutWidth || Math.max(0, window.innerWidth - 64);
+  const sidebarMaxWidth = maxSidebarWidth(availableLayoutWidth);
+  const visibleSidebarWidth = Math.min(sidebarWidth, sidebarMaxWidth);
+
+  useEffect(() => {
+    storeSidebarPreference(SIDEBAR_VISIBLE_STORAGE_KEY, String(sidebarVisible));
+  }, [sidebarVisible]);
+
+  useEffect(() => {
+    storeSidebarPreference(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    const layout = layoutRef.current;
+    if (layout === null) return;
+    const updateWidth = (): void => setLayoutWidth(layout.clientWidth);
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+    if (typeof ResizeObserver === "undefined") {
+      return () => window.removeEventListener("resize", updateWidth);
+    }
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(layout);
+    return () => {
+      window.removeEventListener("resize", updateWidth);
+      observer.disconnect();
+    };
+  }, [isMobile, sidebarVisible]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const resize = (event: PointerEvent): void => {
+      const bounds = layoutRef.current?.getBoundingClientRect();
+      if (bounds !== undefined) {
+        setSidebarWidth(clampSidebarWidth(Math.min(event.clientX - bounds.left, maxSidebarWidth(bounds.width))));
+      }
+    };
+    const stopResizing = (): void => setIsResizing(false);
+    window.addEventListener("pointermove", resize);
+    window.addEventListener("pointerup", stopResizing);
+    window.addEventListener("pointercancel", stopResizing);
+    return () => {
+      window.removeEventListener("pointermove", resize);
+      window.removeEventListener("pointerup", stopResizing);
+      window.removeEventListener("pointercancel", stopResizing);
+    };
+  }, [isResizing]);
 
   useEffect(() => {
     let current = true;
@@ -869,168 +1063,243 @@ export function SessionViewer(): JSX.Element {
     }
   }, [loadingMoreEvents, nextEventCursor, selectedId]);
 
+  const toggleSidebar = (): void => {
+    if (isMobile) {
+      setMobileDrawerOpen((opened) => !opened);
+    } else {
+      setSidebarVisible((visible) => !visible);
+    }
+  };
+
+  const renderSessionList = (id: string, closeDrawerOnSelect: boolean): JSX.Element => (
+    <SessionList
+      id={id}
+      sessions={sessions}
+      visibleSessions={visibleSessions}
+      selectedId={selectedId}
+      loadingSessions={loadingSessions}
+      nextSessionCursor={nextSessionCursor}
+      loadingMoreSessions={loadingMoreSessions}
+      search={search}
+      filter={filter}
+      onSearchChange={setSearch}
+      onFilterChange={setFilter}
+      onSelect={(sessionId) => {
+        setSelectedId(sessionId);
+        if (closeDrawerOnSelect) setMobileDrawerOpen(false);
+      }}
+      onLoadMore={() => void loadMoreSessions()}
+    />
+  );
+
   return (
-    <Paper component="div" role="region" aria-labelledby="session-viewer-title" withBorder radius="md" p="md">
-      <Stack gap="md">
-        <Group justify="space-between" align="center">
-          <Stack gap={4}>
-            <Title id="session-viewer-title" order={2} size="h3">
-              Sessions
-            </Title>
-            <Text size="sm" c="dimmed">
-              Read-only view of the synced Claude Code session history.
-            </Text>
-          </Stack>
-          <Group gap="sm">
-            {resumeToken !== null && (
-              <Badge role="status" variant="dot" color={watchStatus === "connected" ? "green" : "yellow"}>
-                {watchLabel}
-              </Badge>
-            )}
-            <Button variant="default" onClick={() => setRefreshCount((count) => count + 1)}>
-              Refresh
-            </Button>
+    <>
+      <Paper
+        component="div"
+        role="region"
+        aria-label="Session history"
+        withBorder
+        radius="md"
+        p="md"
+        style={{ display: "flex", flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden" }}
+      >
+        <Stack gap="sm" style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+          <Group justify="flex-end" align="center" wrap="wrap">
+            <Group gap="sm">
+              {resumeToken !== null && (
+                <Badge role="status" variant="dot" color={watchStatus === "connected" ? "green" : "yellow"}>
+                  {watchLabel}
+                </Badge>
+              )}
+              <Button
+                variant="default"
+                aria-controls={isMobile ? "session-sidebar-mobile" : "session-sidebar"}
+                aria-expanded={isMobile ? mobileDrawerOpen : sidebarVisible}
+                onClick={toggleSidebar}
+              >
+                {isMobile ? "Session list" : sidebarVisible ? "Hide session list" : "Show session list"}
+              </Button>
+              <Button variant="default" onClick={() => setRefreshCount((count) => count + 1)}>
+                Refresh
+              </Button>
+            </Group>
           </Group>
-        </Group>
 
-        <SimpleGrid cols={{ base: 1, sm: 2 }}>
-          <TextInput
-            label="Search loaded sessions"
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.currentTarget.value)}
-          />
-          <Select
-            label="Status"
-            data={[
-              { value: "all", label: "All sessions" },
-              { value: "active", label: "Active" },
-              { value: "paused", label: "Paused" },
-              { value: "archived", label: "Archived" },
-            ]}
-            value={filter}
-            onChange={(value) => {
-              if (value !== null) setFilter(value as StatusFilter);
+          {sessionError !== null && (
+            <Alert color="red" title="Could not load sessions">
+              {sessionError}
+            </Alert>
+          )}
+
+          <div
+            ref={layoutRef}
+            data-session-viewer-layout
+            style={{
+              display: "flex",
+              flex: 1,
+              minHeight: 0,
+              minWidth: 0,
+              overflow: "hidden",
+              userSelect: isResizing ? "none" : undefined,
             }}
-          />
-        </SimpleGrid>
+          >
+            {!isMobile && sidebarVisible && (
+              <div
+                data-session-sidebar-width={visibleSidebarWidth}
+                style={{ flex: `0 0 ${visibleSidebarWidth}px`, minWidth: 0, overflow: "hidden" }}
+              >
+                {renderSessionList("session-sidebar", false)}
+              </div>
+            )}
+            {!isMobile && sidebarVisible && (
+              <div
+                role="separator"
+                aria-label="Resize session list"
+                aria-controls="session-sidebar"
+                aria-orientation="vertical"
+                aria-valuemin={SIDEBAR_MIN_WIDTH}
+                aria-valuemax={sidebarMaxWidth}
+                aria-valuenow={visibleSidebarWidth}
+                aria-valuetext={`${visibleSidebarWidth} pixels`}
+                tabIndex={0}
+                data-session-sidebar-resizer
+                onPointerDown={(event) => {
+                  if (event.button !== 0 || event.isPrimary === false) return;
+                  event.preventDefault();
+                  setIsResizing(true);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft") {
+                    event.preventDefault();
+                    setSidebarWidth(clampSidebarWidth(visibleSidebarWidth - 16));
+                  } else if (event.key === "ArrowRight") {
+                    event.preventDefault();
+                    setSidebarWidth(clampSidebarWidth(Math.min(visibleSidebarWidth + 16, sidebarMaxWidth)));
+                  } else if (event.key === "Home") {
+                    event.preventDefault();
+                    setSidebarWidth(SIDEBAR_MIN_WIDTH);
+                  } else if (event.key === "End") {
+                    event.preventDefault();
+                    setSidebarWidth(sidebarMaxWidth);
+                  }
+                }}
+                style={{
+                  alignSelf: "stretch",
+                  cursor: "col-resize",
+                  flex: `0 0 ${SIDEBAR_RESIZER_WIDTH}px`,
+                  outlineOffset: -2,
+                  touchAction: "none",
+                  userSelect: isResizing ? "none" : undefined,
+                }}
+              >
+                <div
+                  aria-hidden="true"
+                  style={{
+                    borderLeft: "1px solid var(--mantine-color-default-border)",
+                    height: "100%",
+                    margin: "auto",
+                    width: 1,
+                  }}
+                />
+              </div>
+            )}
 
-        {sessionError !== null && (
-          <Alert color="red" title="Could not load sessions">
-            {sessionError}
-          </Alert>
-        )}
-
-        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-          <Paper component="aside" aria-label="Session list" withBorder radius="sm" p="xs">
-            <ScrollArea h="min(32rem, 60vh)" type="auto">
-              {loadingSessions ? (
+            <Paper
+              component="div"
+              role="region"
+              aria-label="Session transcript"
+              withBorder
+              radius="sm"
+              p="md"
+              style={{ flex: 1, height: "100%", minHeight: 0, minWidth: 0, overflow: "hidden" }}
+            >
+              {selectedSession === null ? (
                 <Center h={240}>
-                  <Loader size="sm" aria-label="Loading sessions" />
-                </Center>
-              ) : visibleSessions.length === 0 ? (
-                <Center h={180} px="md">
                   <Text c="dimmed" ta="center">
-                    {sessions.length === 0 ? "No sessions in the sync yet." : "No matching sessions."}
+                    Select a session to view its transcript.
                   </Text>
                 </Center>
               ) : (
-                <Stack gap={4}>
-                  {visibleSessions.map((session) => (
-                    <SessionRow
-                      key={session.id}
-                      session={session}
-                      selected={session.id === selectedId}
-                      onSelect={() => setSelectedId(session.id)}
-                    />
-                  ))}
+                <Stack gap="md" aria-busy={loadingEvents} style={{ height: "100%", minHeight: 0 }}>
+                  <Group justify="space-between" align="flex-start" gap="xs">
+                    <Stack gap={4}>
+                      <Title order={4}>{selectedSession.title || "Untitled session"}</Title>
+                      <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
+                        {sessionSubtitle(selectedSession)}
+                      </Text>
+                    </Stack>
+                    <Group gap={4}>
+                      <Badge variant="light" color={statusColor(selectedSession.status)}>
+                        {selectedSession.status}
+                      </Badge>
+                      <Button
+                        variant={showRawEvents ? "light" : "subtle"}
+                        size="compact-xs"
+                        aria-label={showRawEvents ? "Show folded transcript" : "Show raw event stream"}
+                        aria-pressed={showRawEvents}
+                        onClick={() => setShowRawEvents((value) => !value)}
+                      >
+                        {showRawEvents ? "Transcript" : "Events"}
+                      </Button>
+                    </Group>
+                  </Group>
+
+                  {eventError !== null && (
+                    <Alert color="red" title="Could not load transcript">
+                      {eventError}
+                    </Alert>
+                  )}
+
+                  {loadingEvents ? (
+                    <Center h={180}>
+                      <Loader size="sm" aria-label="Loading transcript" />
+                    </Center>
+                  ) : (showRawEvents ? events.length === 0 : transcript.length === 0) ? (
+                    <Center h={180}>
+                      <Text c="dimmed" ta="center">
+                        No events are stored for this session yet.
+                      </Text>
+                    </Center>
+                  ) : (
+                    <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
+                      <Stack gap="sm" pr="sm">
+                        {showRawEvents ? (
+                          <EventInspector key={selectedId} events={events} />
+                        ) : (
+                          rows.map((row) => (
+                            <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />
+                          ))
+                        )}
+                        {hasMoreEvents && (
+                          <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
+                            Load more events
+                          </Button>
+                        )}
+                      </Stack>
+                    </ScrollArea>
+                  )}
                 </Stack>
               )}
-              {nextSessionCursor !== null && (
-                <Button
-                  fullWidth
-                  variant="default"
-                  mt="xs"
-                  loading={loadingMoreSessions}
-                  onClick={() => void loadMoreSessions()}
-                >
-                  Load more sessions
-                </Button>
-              )}
-            </ScrollArea>
-          </Paper>
-
-          <Paper component="div" role="region" aria-label="Session transcript" withBorder radius="sm" p="md">
-            {selectedSession === null ? (
-              <Center h={240}>
-                <Text c="dimmed" ta="center">
-                  Select a session to view its transcript.
-                </Text>
-              </Center>
-            ) : (
-              <Stack gap="md" aria-busy={loadingEvents}>
-                <Group justify="space-between" align="flex-start" gap="xs">
-                  <Stack gap={4}>
-                    <Title order={4}>{selectedSession.title || "Untitled session"}</Title>
-                    <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
-                      {sessionSubtitle(selectedSession)}
-                    </Text>
-                  </Stack>
-                  <Group gap={4}>
-                    <Badge variant="light" color={statusColor(selectedSession.status)}>
-                      {selectedSession.status}
-                    </Badge>
-                    <Button
-                      variant={showRawEvents ? "light" : "subtle"}
-                      size="compact-xs"
-                      aria-label={showRawEvents ? "Show folded transcript" : "Show raw event stream"}
-                      aria-pressed={showRawEvents}
-                      onClick={() => setShowRawEvents((value) => !value)}
-                    >
-                      {showRawEvents ? "Transcript" : "Events"}
-                    </Button>
-                  </Group>
-                </Group>
-
-                {eventError !== null && (
-                  <Alert color="red" title="Could not load transcript">
-                    {eventError}
-                  </Alert>
-                )}
-
-                {loadingEvents ? (
-                  <Center h={180}>
-                    <Loader size="sm" aria-label="Loading transcript" />
-                  </Center>
-                ) : (showRawEvents ? events.length === 0 : transcript.length === 0) ? (
-                  <Center h={180}>
-                    <Text c="dimmed" ta="center">
-                      No events are stored for this session yet.
-                    </Text>
-                  </Center>
-                ) : (
-                  <ScrollArea h="min(32rem, 60vh)" type="auto">
-                    <Stack gap="sm" pr="sm">
-                      {showRawEvents ? (
-                        <EventInspector key={selectedId} events={events} />
-                      ) : (
-                        rows.map((row) => (
-                          <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />
-                        ))
-                      )}
-                      {hasMoreEvents && (
-                        <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
-                          Load more events
-                        </Button>
-                      )}
-                    </Stack>
-                  </ScrollArea>
-                )}
-              </Stack>
-            )}
-          </Paper>
-        </SimpleGrid>
-      </Stack>
-    </Paper>
+            </Paper>
+          </div>
+        </Stack>
+      </Paper>
+      {isMobile && (
+        <Drawer
+          opened={mobileDrawerOpen}
+          onClose={() => setMobileDrawerOpen(false)}
+          title="Sessions"
+          position="left"
+          size="min(88vw, 24rem)"
+          padding="md"
+          styles={{
+            body: { display: "flex", height: "calc(100dvh - 5rem)", minHeight: 0 },
+            content: { height: "100dvh" },
+          }}
+        >
+          {renderSessionList("session-sidebar-mobile", true)}
+        </Drawer>
+      )}
+    </>
   );
 }

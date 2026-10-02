@@ -74,34 +74,55 @@ type AppProps = { pathname?: string };
 
 export function App({ pathname = window.location.pathname }: AppProps = {}): JSX.Element {
   const page = pathname === "/sync" ? "sync" : "sessions";
+  const header = (
+    <Group component="header" justify="space-between" align="center" gap="md" wrap="wrap">
+      <Title order={1}>Claude session sync</Title>
+      <Group component="nav" aria-label="Pages" gap="xs">
+        <Button
+          component="a"
+          href="/sessions"
+          variant={page === "sessions" ? "light" : "subtle"}
+          aria-current={page === "sessions" ? "page" : undefined}
+        >
+          Sessions
+        </Button>
+        <Button
+          component="a"
+          href="/sync"
+          variant={page === "sync" ? "light" : "subtle"}
+          aria-current={page === "sync" ? "page" : undefined}
+        >
+          Sync status
+        </Button>
+      </Group>
+    </Group>
+  );
+
+  if (page === "sync") {
+    return (
+      <Container size="xl" py="xl">
+        <Stack gap="md">
+          {header}
+          <main>
+            <SyncPage />
+          </main>
+        </Stack>
+      </Container>
+    );
+  }
 
   return (
-    <Container size="xl" py="xl">
-      <Stack gap="md">
-        <Group component="header" justify="space-between" align="center" gap="md" wrap="wrap">
-          <Title order={1}>Claude session sync</Title>
-          <Group component="nav" aria-label="Pages" gap="xs">
-            <Button
-              component="a"
-              href="/sessions"
-              variant={page === "sessions" ? "light" : "subtle"}
-              aria-current={page === "sessions" ? "page" : undefined}
-            >
-              Sessions
-            </Button>
-            <Button
-              component="a"
-              href="/sync"
-              variant={page === "sync" ? "light" : "subtle"}
-              aria-current={page === "sync" ? "page" : undefined}
-            >
-              Sync status
-            </Button>
-          </Group>
-        </Group>
-        <Stack component="main" gap="md">
-          {page === "sync" ? <SyncPage /> : <SessionViewer />}
-        </Stack>
+    <Container
+      fluid
+      px="md"
+      py="md"
+      style={{ boxSizing: "border-box", display: "flex", flexDirection: "column", height: "100dvh" }}
+    >
+      <Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
+        {header}
+        <main style={{ display: "flex", flex: 1, minHeight: 0, minWidth: 0 }}>
+          <SessionViewer />
+        </main>
       </Stack>
     </Container>
   );
