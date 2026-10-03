@@ -29,15 +29,17 @@ afterEach(async () => {
 const CREATED: SandboxView = {
   name: "test-created-sandbox",
   uid: "00000000-0000-4000-8000-000000000001",
-  state: "waiting_for_pod",
+  namespace: "agentplane-test",
   created_at: "2026-01-01T00:00:00Z",
   operating_mode: "Running",
   service_account: { namespace: "agentplane-test", name: "test-created-sandbox" },
-  conditions: [],
+  status: null,
   kubernetes_grants: [],
   kubernetes_grants_ready: true,
   kubernetes_grant_error: null,
+  launch_grants_pending: false,
   deleting: false,
+  pod: null,
 };
 
 async function render(

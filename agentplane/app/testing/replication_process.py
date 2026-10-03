@@ -52,7 +52,6 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import event_log_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.egress_views import EgressReader
-from agentplane.sandbox_service.models import ProvisioningState
 from agentplane.sandbox_service.testing.backend import backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 
@@ -223,7 +222,7 @@ def _run(
     boundary: CommitBoundary | None,
     cursor: int,
     frontend_directory: Path | None,
-    sandbox_state: ProvisioningState | None,
+    sandbox_present: bool,
     replay_after: int | None,
     electric_url: str | None,
 ) -> None:
@@ -235,7 +234,7 @@ def _run(
             boundary,
             cursor,
             frontend_directory,
-            sandbox_state,
+            sandbox_present,
             replay_after,
             electric_url,
         )
@@ -249,7 +248,7 @@ async def _serve(
     boundary: CommitBoundary | None,
     cursor: int,
     frontend_directory: Path | None,
-    sandbox_state: ProvisioningState | None,
+    sandbox_present: bool,
     replay_after: int | None,
     electric_url: str | None,
 ) -> None:
@@ -258,13 +257,11 @@ async def _serve(
     ingestion = Ingestion(engine) if boundary is None else GatedIngestion(engine, Gate(boundary, connection), cursor)
     database_updates = DatabaseUpdates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
-    index = LiveIndex(stale_after_seconds=90, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)})
-    if sandbox_state is not None:
+    index = LiveIndex(
+        stale_after_seconds=90, core_v1=core, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)}
+    )
+    if sandbox_present:
         raw, running = seed_runner(custom, core, SANDBOX)
-        if sandbox_state is ProvisioningState.SUSPENDED:
-            raw["spec"]["operatingMode"] = "Suspended"
-        if sandbox_state is ProvisioningState.WAITING_FOR_POD_READY:
-            running.status.conditions[0].status = "False"
         index.sandboxes[SANDBOX] = raw
         index.pods[SANDBOX] = running
     with (
@@ -350,6 +347,7 @@ async def _serve(
                 await runners.close()
                 await database_updates.close()
                 await engine.dispose()
+                await core.close()
 
 
 async def receive(connection: Connection) -> object:
@@ -399,7 +397,7 @@ async def app_process(
     boundary: CommitBoundary | None = None,
     cursor: int = 0,
     frontend_directory: Path | None = None,
-    sandbox_state: ProvisioningState | None = ProvisioningState.RUNNING,
+    sandbox_present: bool = True,
     replay_after: int | None = None,
     electric_url: str | None = None,
 ) -> AsyncIterator[AppProcess]:
@@ -414,7 +412,7 @@ async def app_process(
             boundary,
             cursor,
             frontend_directory,
-            sandbox_state,
+            sandbox_present,
             replay_after,
             electric_url,
         ),

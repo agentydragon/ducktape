@@ -34,8 +34,9 @@ export async function fetchWithLogin(input: RequestInfo | URL, init?: RequestIni
 }
 
 export type SandboxView = components["schemas"]["SandboxView"];
+export type PodView = components["schemas"]["PodView"];
+export type RawResourceStatus = Record<string, unknown> | null;
 export type NewSandbox = components["schemas"]["NewSandbox"];
-export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
 export type ThreadScope = components["schemas"]["ThreadScopeResponse"];
 export type ThreadEntityView = components["schemas"]["ThreadEntityView"];

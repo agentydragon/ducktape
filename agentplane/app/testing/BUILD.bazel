@@ -37,7 +37,6 @@ py_library(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:harness",
         "//agentplane/sandbox_service:egress_views",
-        "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service/testing:backend",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "@pypi//asyncpg",

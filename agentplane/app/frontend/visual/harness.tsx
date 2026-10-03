@@ -57,11 +57,11 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "demo-a1b2",
     uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
-    state: "running",
+    namespace: "agentplane-visual",
     created_at: ago(3 * HOUR),
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "demo-a1b2" },
-    conditions: [{ type: "Ready", status: "True", reason: "PodReady", message: null }],
+    status: { conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }] },
     kubernetes_grants: [
       {
         name: "workspace-read",
@@ -74,73 +74,105 @@ const SANDBOXES: SandboxView[] = [
     ],
     kubernetes_grants_ready: true,
     kubernetes_grant_error: null,
+    launch_grants_pending: false,
     deleting: false,
-    node_name: "harness-node",
     pod: {
-      phase: "Running",
-      ip: "10.0.0.7",
-      node_name: "harness-node",
-      reason: null,
-      message: null,
-      conditions: [
-        { type: "PodScheduled", status: "True", reason: null, message: null },
-        { type: "Ready", status: "True", reason: null, message: null },
+      name: "demo-a1b2",
+      namespace: "agentplane-visual",
+      uid: "visual-pod-a1b2",
+      deleting: false,
+      owner_references: [
+        {
+          api_version: "agents.x-k8s.io/v1beta1",
+          kind: "Sandbox",
+          name: "demo-a1b2",
+          uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
+          controller: true,
+        },
       ],
-      containers: [{ name: "runner", state: "running", reason: null, message: null, ready: true, restart_count: 0 }],
+      node_name: "harness-node",
+      status: {
+        phase: "Running",
+        podIP: "10.0.0.7",
+        startTime: ago(2 * HOUR),
+        qosClass: "Burstable",
+        conditions: [
+          { type: "PodScheduled", status: "True", lastTransitionTime: ago(2 * HOUR) },
+          { type: "Ready", status: "True", lastTransitionTime: ago(HOUR) },
+        ],
+        containerStatuses: [
+          { name: "runner", state: { running: { startedAt: ago(HOUR) } }, ready: true, restartCount: 0 },
+        ],
+      },
     },
   },
   {
     name: "codex-c3d4",
     uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
-    state: "waiting_for_pod_ready",
+    namespace: "agentplane-visual",
     created_at: ago(2 * 60_000),
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "codex-c3d4" },
-    conditions: [{ type: "Ready", status: "False", reason: "PodPending", message: null }],
+    status: { conditions: [{ type: "Ready", status: "False", reason: "PodPending" }] },
     kubernetes_grants: [],
     kubernetes_grants_ready: true,
     kubernetes_grant_error: null,
+    launch_grants_pending: false,
     deleting: false,
-    node_name: "harness-node",
     pod: {
-      phase: "Pending",
-      ip: null,
-      node_name: "harness-node",
-      reason: null,
-      message: null,
-      conditions: [{ type: "Ready", status: "False", reason: "ContainersNotReady", message: null }],
-      containers: [
+      name: "codex-c3d4",
+      namespace: "agentplane-visual",
+      uid: "visual-pod-c3d4",
+      deleting: false,
+      owner_references: [
         {
-          name: "runner",
-          state: "waiting",
-          reason: "ImagePullBackOff",
-          message: 'Back-off pulling image "registry.test/agentplane-runner:harness"',
-          ready: false,
-          restart_count: 0,
+          api_version: "agents.x-k8s.io/v1beta1",
+          kind: "Sandbox",
+          name: "codex-c3d4",
+          uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
+          controller: true,
         },
       ],
+      node_name: "harness-node",
+      status: {
+        phase: "Pending",
+        conditions: [{ type: "Ready", status: "False", reason: "ContainersNotReady" }],
+        containerStatuses: [
+          {
+            name: "runner",
+            state: {
+              waiting: {
+                reason: "ImagePullBackOff",
+                message: 'Back-off pulling image "registry.test/agentplane-runner:harness"',
+              },
+            },
+            ready: false,
+            restartCount: 0,
+          },
+        ],
+      },
     },
   },
   {
     name: "old-e5f6",
     uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
-    state: "suspended",
+    namespace: "agentplane-visual",
     created_at: ago(48 * HOUR),
     operating_mode: "Suspended",
     service_account: { namespace: "agentplane-visual", name: "old-e5f6" },
-    conditions: [{ type: "Ready", status: "False", reason: "Suspended", message: null }],
+    status: { conditions: [{ type: "Ready", status: "False", reason: "Suspended" }] },
     kubernetes_grants: [],
     kubernetes_grants_ready: true,
     kubernetes_grant_error: null,
+    launch_grants_pending: false,
     deleting: false,
-    node_name: null,
     pod: null,
   },
 ];
 
 if (scenario.grantError) {
   const sandbox = SANDBOXES[0]!;
-  sandbox.state = "waiting_for_grants";
+  sandbox.launch_grants_pending = true;
   sandbox.kubernetes_grants_ready = false;
   sandbox.kubernetes_grant_error = "ApiException (403)";
 }
@@ -149,14 +181,15 @@ if (scenario.threadlessSandbox) {
   SANDBOXES.push({
     name: "test-provisioning",
     uid: "0f9c1d2e-0000-4000-8000-000000000007",
-    state: "waiting_for_pod",
+    namespace: "agentplane-visual",
     created_at: ago(30_000),
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "test-provisioning" },
-    conditions: [],
+    status: null,
     kubernetes_grants: [],
     kubernetes_grants_ready: true,
     kubernetes_grant_error: null,
+    launch_grants_pending: false,
     deleting: false,
     pod: null,
   });

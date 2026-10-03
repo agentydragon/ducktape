@@ -186,7 +186,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, runner_port=0, frontend_directory=directory, sandbox_state=None, electric_url=electric.url
+            db_url, runner_port=0, frontend_directory=directory, sandbox_present=False, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -253,7 +253,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, runner_port=0, frontend_directory=directory, sandbox_state=None, electric_url=electric.url
+            db_url, runner_port=0, frontend_directory=directory, sandbox_present=False, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):

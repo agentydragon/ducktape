@@ -19,8 +19,9 @@ from agentplane.sandbox_service.kubernetes_grants import (
     RoleBindingGrant,
     RoleRef,
 )
-from agentplane.sandbox_service.models import OperatingMode, ProvisioningState
+from agentplane.sandbox_service.models import OperatingMode
 from agentplane.subjects import ServiceAccountRef
+from util.agent_sandbox import SANDBOX_API
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -116,42 +117,28 @@ class NewSandbox(BaseModel):
     bootstrap: str = Field(default="", max_length=65_536, description="Runner initialization script for this Sandbox.")
 
 
-class Condition(BaseModel):
-    """A Kubernetes status condition, as the Sandbox controller and the kubelet report them."""
+class OwnerReferenceView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    model_config = ConfigDict(extra="ignore")
+    api_version: str
+    kind: str
+    name: str
+    uid: str
+    controller: bool
 
-    type: str
-    status: str
-    reason: str | None = None
-    message: str | None = None
 
-
-class ContainerStatus(BaseModel):
-    """One container of the Pod: which of the kubelet's three states it is in, and why."""
+class PodView(BaseModel):
+    """The owned Pod's identity metadata and the kubelet's unmodified status object."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    state: str = Field(description="waiting, running, or terminated.")
-    reason: str | None = None
-    message: str | None = None
-    ready: bool
-    restart_count: int
-
-
-class PodStatus(BaseModel):
-    """What the kubelet says about the Sandbox's Pod; absent while no Pod exists."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    phase: str | None
-    ip: str | None
-    node_name: str | None
-    reason: str | None = None
-    message: str | None = None
-    conditions: list[Condition]
-    containers: list[ContainerStatus]
+    namespace: str
+    uid: str
+    deleting: bool
+    owner_references: list[OwnerReferenceView]
+    node_name: str | None = None
+    status: dict[str, object] | None = None
 
 
 class SandboxView(BaseModel):
@@ -161,11 +148,10 @@ class SandboxView(BaseModel):
 
     name: str = Field(description="The Sandbox name, and its Pod's; the handle for every operation.")
     uid: UUID = Field(description="The API server's identity of this Sandbox; what an owned binding references.")
-    state: ProvisioningState
+    namespace: str
     created_at: datetime
     operating_mode: OperatingMode
-    conditions: list[Condition] = Field(description="The Sandbox's own status conditions.")
-    node_name: str | None = Field(default=None, description="Where the Sandbox controller placed the Pod.")
+    status: dict[str, object] | None = None
     service_account: ServiceAccountRef = Field(
         description="The ServiceAccount its Pod runs as, read off the Sandbox: the subject every "
         "egress and action-policy binding names it by."
@@ -176,17 +162,50 @@ class SandboxView(BaseModel):
     kubernetes_grants: list[ResolvedGrant]
     kubernetes_grants_ready: bool
     kubernetes_grant_error: str | None
+    launch_grants_pending: bool
     deleting: bool = False
-    pod: PodStatus | None = None
+    pod: PodView | None = None
 
 
 def sandbox_view(value: protocol_pb2.Sandbox) -> SandboxView:
     data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
     data.setdefault("kubernetes_grant_error", None)
-    if "pod" in data:
-        for field in ("phase", "ip", "node_name"):
-            data["pod"].setdefault(field, None)
     return SandboxView.model_validate(data)
+
+
+def sandbox_has_ready_pod(view: SandboxView) -> bool:
+    if (
+        view.deleting
+        or view.operating_mode != OperatingMode.RUNNING
+        or view.launch_grants_pending
+        or not view.kubernetes_grants_ready
+        or view.kubernetes_grant_error is not None
+        or view.pod is None
+        or view.pod.name != view.name
+        or view.pod.namespace != view.namespace
+        or not view.pod.uid
+        or view.pod.deleting
+    ):
+        return False
+    owners = [owner for owner in view.pod.owner_references if owner.controller]
+    if len(owners) != 1:
+        return False
+    owner = owners[0]
+    if (
+        owner.api_version != SANDBOX_API.api_version
+        or owner.kind != "Sandbox"
+        or owner.name != view.name
+        or owner.uid != str(view.uid)
+    ):
+        return False
+    status = view.pod.status
+    if status is None or status.get("phase") != "Running" or not status.get("podIP"):
+        return False
+    conditions = status.get("conditions")
+    return isinstance(conditions, list) and any(
+        isinstance(condition, dict) and condition.get("type") == "Ready" and condition.get("status") == "True"
+        for condition in conditions
+    )
 
 
 def create_request(value: NewSandbox) -> protocol_pb2.CreateSandboxRequest:

@@ -5,20 +5,20 @@ from collections.abc import Iterable
 from datetime import datetime
 
 from google.protobuf.json_format import ParseDict
+from google.protobuf.struct_pb2 import Struct
 from google.protobuf.timestamp_pb2 import Timestamp
 from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.kubernetes_grants import DnsName, KubernetesGrant
-from agentplane.sandbox_service.models import OperatingMode, ProvisioningState
+from agentplane.sandbox_service.models import OperatingMode
 from agentplane.sandbox_service.protocol_pb2 import (
-    Condition,
-    ContainerStatus,
-    PodStatus,
+    OwnerReference,
     ResolvedGrant,
     Sandbox,
     SandboxBinding,
+    SandboxPod,
     ServiceAccount,
 )
 
@@ -64,61 +64,57 @@ class _SandboxSpec(BaseModel):
     pod_template: _PodTemplate = Field(alias="podTemplate", default_factory=_PodTemplate)
 
 
-class _SandboxStatus(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    conditions: list[dict[str, object]] = Field(default_factory=list)
-    node_name: str | None = Field(alias="nodeName", default=None)
-
-
 class SandboxResource(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     metadata: _ObjectMeta
     spec: _SandboxSpec
-    status: _SandboxStatus = Field(default_factory=_SandboxStatus)
+    status: dict[str, object] | None = None
 
 
-def sandbox_views(sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod]) -> list[Sandbox]:
+def sandbox_views(
+    sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod], *, api_client: k8s_client.ApiClient
+) -> list[Sandbox]:
     """One row per Sandbox, each joined to the Pod of the same name."""
     pods_by_name = {pod.metadata.name: pod for pod in pods}
     views = []
     for item in sandboxes:
         parsed = SandboxResource.model_validate(item)
-        views.append(_view(parsed, pods_by_name.get(parsed.metadata.name)))
+        views.append(_view(parsed, pods_by_name.get(parsed.metadata.name), api_client=api_client))
     return views
 
 
-def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None) -> Sandbox:
-    return _view(SandboxResource.model_validate(sandbox), pod)
+def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None, *, api_client: k8s_client.ApiClient) -> Sandbox:
+    return _view(SandboxResource.model_validate(sandbox), pod, api_client=api_client)
 
 
-def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None) -> Sandbox:
+def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None, *, api_client: k8s_client.ApiClient) -> Sandbox:
     grants = _resolved_grants(sandbox)
     created_at = Timestamp()
     created_at.FromDatetime(sandbox.metadata.creation_timestamp)
     return Sandbox(
         name=sandbox.metadata.name,
         uid=sandbox.metadata.uid,
-        state=_state(sandbox, pod),
         created_at=created_at,
         operating_mode=sandbox.spec.operating_mode,
+        namespace=sandbox.metadata.namespace,
+        status=_struct(sandbox.status) if sandbox.status is not None else None,
+        launch_grants_pending=PROVISIONING_ANNOTATION in sandbox.metadata.annotations,
         service_account=ServiceAccount(
             namespace=sandbox.metadata.namespace, name=sandbox.spec.pod_template.spec.service_account_name
         ),
-        conditions=[
-            ParseDict({k: v for k, v in c.items() if k in {"type", "status", "reason", "message"}}, Condition())
-            for c in sandbox.status.conditions
-        ],
-        node_name=sandbox.status.node_name,
         binding=_binding(sandbox),
         kubernetes_grants=grants,
         kubernetes_grants_ready=not grants
         or sandbox.metadata.annotations.get(KUBERNETES_GRANTS_READY_ANNOTATION) == "true",
         kubernetes_grant_error=sandbox.metadata.annotations.get(KUBERNETES_GRANTS_ERROR_ANNOTATION),
         deleting=sandbox.metadata.deletion_timestamp is not None,
-        pod=_pod_status(pod) if pod is not None else None,
+        pod=_pod(pod, api_client=api_client) if pod is not None else None,
     )
+
+
+def _struct(value: dict[str, object]) -> Struct:
+    return ParseDict(value, Struct())
 
 
 def _binding(sandbox: SandboxResource) -> SandboxBinding | None:
@@ -140,56 +136,28 @@ def _resolved_grants(sandbox: SandboxResource) -> list[ResolvedGrant]:
     return result
 
 
-def _pod_status(pod: k8s_client.V1Pod) -> PodStatus:
-    status = pod.status if pod.status is not None else k8s_client.V1PodStatus()
-    return PodStatus(
-        phase=status.phase,
-        ip=status.pod_ip,
-        node_name=pod.spec.node_name if pod.spec is not None else None,
-        reason=status.reason,
-        message=status.message,
-        conditions=[
-            Condition(type=condition.type, status=condition.status, reason=condition.reason, message=condition.message)
-            for condition in status.conditions or []
+def _pod(pod: k8s_client.V1Pod, *, api_client: k8s_client.ApiClient) -> SandboxPod:
+    result = SandboxPod(
+        name=pod.metadata.name or "",
+        namespace=pod.metadata.namespace or "",
+        uid=pod.metadata.uid or "",
+        deleting=pod.metadata.deletion_timestamp is not None,
+        **({"node_name": pod.spec.node_name} if pod.spec is not None and pod.spec.node_name is not None else {}),
+        owner_references=[
+            OwnerReference(
+                api_version=owner.api_version or "",
+                kind=owner.kind or "",
+                name=owner.name or "",
+                uid=owner.uid or "",
+                controller=owner.controller is True,
+            )
+            for owner in pod.metadata.owner_references or []
         ],
-        containers=[_container_status(container) for container in status.container_statuses or []],
     )
-
-
-def _container_status(container: k8s_client.V1ContainerStatus) -> ContainerStatus:
-    # Exactly one of the three is set by the kubelet; a status with none is a container not yet scheduled.
-    state = container.state if container.state is not None else k8s_client.V1ContainerState()
-    if state.waiting is not None:
-        name, reason, message = "waiting", state.waiting.reason, state.waiting.message
-    elif state.terminated is not None:
-        name, reason, message = "terminated", state.terminated.reason, state.terminated.message
-    elif state.running is not None:
-        name, reason, message = "running", None, None
-    else:
-        name, reason, message = "waiting", None, None
-    return ContainerStatus(
-        name=container.name,
-        state=name,
-        reason=reason,
-        message=message,
-        ready=container.ready,
-        restart_count=container.restart_count,
-    )
-
-
-def _state(sandbox: SandboxResource, pod: k8s_client.V1Pod | None) -> ProvisioningState:
-    if sandbox.spec.operating_mode == OperatingMode.SUSPENDED:
-        return ProvisioningState.SUSPENDED
-    if pod is None:
-        return ProvisioningState.WAITING_FOR_POD
-    if PROVISIONING_ANNOTATION in sandbox.metadata.annotations:
-        return ProvisioningState.WAITING_FOR_GRANTS
-    if _resolved_grants(sandbox) and sandbox.metadata.annotations.get(KUBERNETES_GRANTS_READY_ANNOTATION) != "true":
-        return ProvisioningState.WAITING_FOR_GRANTS
-    return ProvisioningState.RUNNING if _pod_ready(pod) else ProvisioningState.WAITING_FOR_POD_READY
-
-
-def _pod_ready(pod: k8s_client.V1Pod) -> bool:
-    if pod.status is None or pod.status.conditions is None:
-        return False
-    return any(condition.type == "Ready" and condition.status == "True" for condition in pod.status.conditions)
+    if pod.status is not None:
+        status = api_client.sanitize_for_serialization(pod.status)
+        if not isinstance(status, dict):
+            raise TypeError(f"Kubernetes serialized Pod status as {type(status).__name__}, not dict")
+        result.status.SetInParent()
+        ParseDict(status, result.status)
+    return result

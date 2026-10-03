@@ -7,16 +7,11 @@ import pytest_bazel
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL, UnknownPolicySetError
-from agentplane.sandbox_service.kubernetes_views import sandbox_view
-from agentplane.sandbox_service.testing.fake_inventory import (
-    NAMESPACE,
-    FakeCustomObjectsApi,
-    action_policy_set,
-    sandbox,
-)
+from agentplane.sandbox_service.protocol_pb2 import Sandbox, ServiceAccount
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, action_policy_set
 from util.kubernetes import CustomObjectsClient
 
-LIVE = sandbox_view(sandbox("live"), None)
+LIVE = Sandbox(name="live", uid="test-live-uid", service_account=ServiceAccount(namespace=NAMESPACE, name="live"))
 READS = {"type": "exact_actions", "actions": {"github": ["search_code", "get_file_contents"]}}
 
 

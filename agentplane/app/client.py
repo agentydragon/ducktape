@@ -21,13 +21,12 @@ from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from agentplane.app.api import EgressGrant, ModelCatalog
 from agentplane.app.decisions import Decision
 from agentplane.app.presets import SandboxPresetView
-from agentplane.app.sandbox_models import NewSandbox, SandboxView
+from agentplane.app.sandbox_models import NewSandbox, SandboxView, sandbox_has_ready_pod
 from agentplane.app.threads.bridge import NewSession
 from agentplane.app.threads.view.views import ThreadView
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.sandbox_service.egress_views import BindingView, PolicyView
-from agentplane.sandbox_service.models import ProvisioningState
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -190,10 +189,6 @@ def _event(payload: str) -> event_log_pb2.EventEntry:
         raise SessionStreamError(f"not an EventEntry: {error}: {payload[:400]!r}") from error
 
 
-def is_running(view: SandboxView) -> bool:
-    """Whether the sandbox has a Pod with an address.
-
-    Necessary for a session and not sufficient: the runner in that Pod may not be listening yet, and
-    the app answers `503` until it is.
-    """
-    return view.state is ProvisioningState.RUNNING and view.pod is not None and view.pod.ip is not None
+def has_ready_pod(view: SandboxView) -> bool:
+    """Whether inventory identity, grants, and kubelet status permit a session attempt."""
+    return sandbox_has_ready_pod(view)

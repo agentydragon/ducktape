@@ -15,7 +15,7 @@ from typing import cast
 import pytest
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.app.client import Client, is_running
+from agentplane.app.client import Client, has_ready_pod
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, SessionDefaults
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
@@ -116,8 +116,8 @@ async def _running(client: Client, name: str) -> SandboxView:
     async for attempt in AsyncRetrying(stop=stop_after_delay(SANDBOX_READY_SECONDS), wait=wait_fixed(2), reraise=True):
         with attempt:
             view = await client.sandbox(name)
-            if not is_running(view):
-                raise SandboxNotReadyError(f"{name} is {view.state} with pod {view.pod}")
+            if not has_ready_pod(view):
+                raise SandboxNotReadyError(f"{name} has no ready, authorized Pod: {view.pod}")
             return view
     raise AssertionError("unreachable: reraise=True either returns the view or raises")
 

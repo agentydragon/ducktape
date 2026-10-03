@@ -20,7 +20,7 @@ import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
 import { LiveStatus, useRequiredThreadsLive, type Live, type ThreadsSnapshot } from "./live";
-import { stateDetail } from "./sandboxes";
+import { sandboxStatusDetail, sandboxReady } from "./sandbox_status";
 import "./sidebar.css";
 import { ConnectionIndicator } from "./stream_status";
 import { archivedCount, groupThreads, type ThreadGroup } from "./thread_groups";
@@ -162,13 +162,12 @@ function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Eleme
       </Tooltip>
     );
   }
-  const detail = stateDetail(sandbox);
-  const [kind, Icon] =
-    sandbox.state === "running"
-      ? (["running", IconPlayerPlay] as const)
-      : sandbox.state === "suspended"
-        ? (["suspended", IconPlayerPause] as const)
-        : (["pending", IconClock] as const);
+  const detail = sandboxStatusDetail(sandbox);
+  const [kind, Icon] = sandboxReady(sandbox)
+    ? (["running", IconPlayerPlay] as const)
+    : sandbox.operating_mode === "Suspended"
+      ? (["suspended", IconPlayerPause] as const)
+      : (["pending", IconClock] as const);
   return (
     <Tooltip label={detail} multiline style={{ whiteSpace: "pre-line" }} withArrow>
       <span className={`agentplane-sidebar-state-icon ${kind}`}>

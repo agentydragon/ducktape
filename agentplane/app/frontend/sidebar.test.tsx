@@ -32,18 +32,29 @@ afterEach(async () => {
 });
 
 function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxView {
+  const uid = `00000000-0000-4000-8000-${name.padStart(12, "0").slice(-12)}`;
   return {
     name,
-    uid: `00000000-0000-4000-8000-${name.padStart(12, "0").slice(-12)}`,
-    state: "running",
+    uid,
+    namespace: "agentplane-test",
     created_at: "2026-01-01T00:00:00Z",
     operating_mode: "Running",
     service_account: { namespace: "agentplane-test", name },
-    conditions: [],
+    status: null,
     kubernetes_grants: [],
     kubernetes_grants_ready: true,
     kubernetes_grant_error: null,
+    launch_grants_pending: false,
     deleting: false,
+    pod: {
+      name,
+      namespace: "agentplane-test",
+      uid: `${uid}-pod`,
+      deleting: false,
+      node_name: "test-node",
+      owner_references: [{ api_version: "agents.x-k8s.io/v1beta1", kind: "Sandbox", name, uid, controller: true }],
+      status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
+    },
     ...overrides,
   };
 }
@@ -170,8 +181,8 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   await pushSnapshot(
     stream,
     snapshot([renamed], {
-      "test-sandbox": sandbox("test-sandbox", { state: "suspended", operating_mode: "Suspended" }),
-      "test-threadless": sandbox("test-threadless", { state: "waiting_for_pod" }),
+      "test-sandbox": sandbox("test-sandbox", { operating_mode: "Suspended", pod: null }),
+      "test-threadless": sandbox("test-threadless", { pod: null }),
     })
   );
   expect(container.textContent).not.toContain("Before rename");
@@ -273,7 +284,7 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
       thread({ id: "t-2", sandbox: "demo-a1b2", session_id: "s-2", name: "Clean up the stale branch" }),
       thread({ id: "t-3", sandbox: "prod-x7f2", session_id: "s-3", name: "Investigate flaky CI" }),
     ],
-    { "demo-a1b2": sandbox("demo-a1b2"), "prod-x7f2": sandbox("prod-x7f2", { state: "suspended" }) }
+    { "demo-a1b2": sandbox("demo-a1b2"), "prod-x7f2": sandbox("prod-x7f2", { operating_mode: "Suspended", pod: null }) }
   );
 
   expect(container.textContent).toContain("demo-a1b2");
@@ -308,7 +319,7 @@ it("opens retained Thread history even when its Sandbox is gone", async () => {
 });
 
 it("opens the details of a provisioning Sandbox with no Threads", async () => {
-  const pending = sandbox("test-provisioning", { state: "waiting_for_pod" });
+  const pending = sandbox("test-provisioning", { pod: null });
   await render([], { [pending.name]: pending });
   expect(container.textContent).toContain("0 threads");
   expect(container.querySelector(".agentplane-sidebar-state-icon.pending")).not.toBeNull();

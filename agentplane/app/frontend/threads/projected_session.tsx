@@ -58,6 +58,7 @@ import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronol
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusDot } from "../thread_status_dot";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
+import { sandboxReady, sandboxSummary } from "../sandbox_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { installThreadFavicon, type ThreadFaviconPulseEpoch } from "../thread_favicon";
 import { appDocumentTitle, threadDocumentTitle } from "../tab_metadata";
@@ -1016,8 +1017,8 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
       ? "Sandbox no longer exists. Showing archived Thread history; controls are disabled."
       : "Sandbox absent from last inventory snapshot. Current availability unknown; controls are disabled.";
   }
-  if (sandbox.state === "running") return null;
-  return `Last observed Sandbox state: ${sandbox.state}. Showing retained Thread history; controls are disabled.`;
+  if (sandboxReady(sandbox)) return null;
+  return `Last observed Sandbox and Pod: ${sandboxSummary(sandbox).label}. Showing retained Thread history; controls are disabled.`;
 }
 
 function harnessLabel(harness: ThreadView["harness"]): string {
@@ -1103,7 +1104,7 @@ export function ProjectedSession({
             <SyncedThread
               threadId={threadId}
               thread={thread}
-              available={inventoryFresh && sandbox?.state === "running"}
+              available={inventoryFresh && sandboxReady(sandbox)}
               inventory={environment.stream}
               onStatusLabelChange={setTabStatus}
             />

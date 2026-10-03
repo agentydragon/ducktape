@@ -25,7 +25,6 @@ import {
   displayableError,
   models,
   modelsForHarness,
-  type Condition,
   type KubernetesGrantView,
   type ModelCatalog,
   type NewSandbox,
@@ -36,6 +35,7 @@ import {
 import type { ActionPolicySetView } from "./actions/client";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
+import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { StaleNotice } from "./stream_status";
 
 const EMPTY_FORM: NewSandbox = {
@@ -54,43 +54,6 @@ function hasSessionDefaults(defaults: SessionDefaults): boolean {
   return Object.values(defaults).some((value) => value !== undefined && value !== null && value !== "");
 }
 
-export const STATE_COLORS: Record<string, string> = {
-  running: "green",
-  suspended: "gray",
-  waiting_for_grants: "yellow",
-  waiting_for_pod: "yellow",
-  waiting_for_pod_ready: "yellow",
-};
-
-function conditionLine({ type, status, reason, message }: Condition): string {
-  return [`${type}=${status}`, reason, message].filter((part) => part).join(" · ");
-}
-
-/** The State badge's hover detail: the Sandbox's own conditions, then the Pod's phase and containers. */
-export function stateDetail(row: SandboxView): string {
-  const lines = row.conditions.map(conditionLine);
-  if (!row.kubernetes_grants_ready) lines.push("Kubernetes grants are still being applied");
-  if (row.kubernetes_grant_error) lines.push(`Kubernetes grant error: ${row.kubernetes_grant_error}`);
-  if (row.pod) {
-    lines.push(
-      [`Pod ${row.pod.phase ?? "unknown"}`, row.pod.reason, row.pod.message].filter((part) => part).join(" · ")
-    );
-    for (const container of row.pod.containers) {
-      lines.push(
-        [
-          `${container.name}: ${container.state}`,
-          container.reason,
-          container.message,
-          container.restart_count > 0 ? `${container.restart_count} restarts` : null,
-        ]
-          .filter((part) => part)
-          .join(" · ")
-      );
-    }
-  }
-  return lines.length > 0 ? lines.join("\n") : "No conditions reported";
-}
-
 /** A set to pick, with the verdict the Action Service wrote on it: a refused set binds nothing. */
 function policySetOption(policySet: ActionPolicySetView): { value: string; label: string } {
   const state = policySet.refused ? "invalid" : readiness(policySet.ready, policySet.generation).label;
@@ -98,9 +61,10 @@ function policySetOption(policySet: ActionPolicySetView): { value: string; label
 }
 
 function StateBadge({ row }: { row: SandboxView }): JSX.Element {
+  const summary = sandboxSummary(row);
   return (
-    <Tooltip label={stateDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
-      <Badge color={STATE_COLORS[row.state] ?? "blue"}>{row.state}</Badge>
+    <Tooltip label={sandboxStatusDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
+      <Badge color={summary.color}>{summary.label}</Badge>
     </Tooltip>
   );
 }
@@ -413,14 +377,15 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Name</Table.Th>
-            <Table.Th visibleFrom="sm">State</Table.Th>
+            <Table.Th visibleFrom="sm">Status</Table.Th>
             <Table.Th visibleFrom="sm">Node</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
           {rows.map((row) => {
-            const node = `${row.node_name ?? "—"} ${row.pod?.ip ? `(${row.pod.ip})` : ""}`;
+            const ip = podIp(row);
+            const node = `${row.pod?.node_name ?? "—"} ${ip ? `(${ip})` : ""}`;
             const state = <StateBadge row={row} />;
             return (
               <Table.Tr key={row.name}>

@@ -1,10 +1,11 @@
 """Agentplane's sandbox inventory: the labelled Sandboxes in one namespace and the Pod under each.
 
 Kubernetes is the inventory in this slice — this component persists no private database — so every
-fact it knows about a sandbox is a label or annotation on its Sandbox, and the provisioning state is
-derived from the Sandbox and its Pod. It creates standalone Sandboxes: the Pod and volume
-shape is copied from the namespace's `SandboxTemplate` at creation, so the manifest stays the one
-place the runner Pod is defined, and no claim or warm pool sits in between.
+fact it knows about a sandbox is a label or annotation on its Sandbox. It projects the Sandbox CR
+status and its same-name Pod status separately, without deriving a combined provisioning state. It
+creates standalone Sandboxes: the Pod and volume shape is copied from the namespace's
+`SandboxTemplate` at creation, so the manifest stays the one place the runner Pod is defined, and no
+claim or warm pool sits in between.
 """
 
 from __future__ import annotations
@@ -104,11 +105,13 @@ class SandboxInventory:
             ),
             self._core_v1.list_namespaced_pod(self._namespace),
         )
-        return sandbox_views(_ResourceList.model_validate(sandboxes_page).items, pods.items)
+        return sandbox_views(
+            _ResourceList.model_validate(sandboxes_page).items, pods.items, api_client=self._core_v1.api_client
+        )
 
     async def get(self, name: str) -> Sandbox:
         sandbox = await self._sandbox(name)
-        return sandbox_view(sandbox, await self._pod(name))
+        return sandbox_view(sandbox, await self._pod(name), api_client=self._core_v1.api_client)
 
     async def create(
         self,
@@ -182,7 +185,7 @@ class SandboxInventory:
                 }
             },
         )
-        return sandbox_view(sandbox, None)
+        return sandbox_view(sandbox, None, api_client=self._core_v1.api_client)
 
     async def pending_grants(self, name: str) -> LaunchGrants | None:
         raw = (await self._sandbox(name)).metadata.annotations.get(PROVISIONING_ANNOTATION)

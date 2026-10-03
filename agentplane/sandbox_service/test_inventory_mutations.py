@@ -7,12 +7,13 @@ from uuid import uuid4
 
 import pytest
 import pytest_bazel
+from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
-from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError, SandboxRunningError
+from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError, SandboxRunningError
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -46,41 +47,39 @@ def _populate_one_of_each_state(custom_objects: FakeCustomObjectsApi, core_v1: F
     }
 
 
-async def test_list_derives_each_provisioning_state_from_the_sandbox_and_its_pod(
+async def test_list_keeps_each_resource_status_separate(
     inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
 ) -> None:
     _populate_one_of_each_state(custom_objects, core_v1)
 
     views = {view.name: view for view in await inventory.list_sandboxes()}
 
-    assert {name: view.state for name, view in views.items()} == {
-        "podless": ProvisioningState.WAITING_FOR_POD,
-        "starting": ProvisioningState.WAITING_FOR_POD_READY,
-        "live": ProvisioningState.RUNNING,
-        "paused": ProvisioningState.SUSPENDED,
+    assert {name: (view.operating_mode, view.HasField("pod")) for name, view in views.items()} == {
+        "podless": (OperatingMode.RUNNING, False),
+        "starting": (OperatingMode.RUNNING, True),
+        "live": (OperatingMode.RUNNING, True),
+        "paused": (OperatingMode.SUSPENDED, False),
     }
     live = views["live"]
     assert live.HasField("pod")
-    assert (live.node_name, live.pod.phase, live.pod.ip, live.pod.node_name) == (
-        "test-node",
-        "Running",
-        "10.0.0.7",
-        "test-node",
-    )
-    assert [(condition.type, condition.status, condition.reason) for condition in live.conditions] == [
-        ("Ready", "True", "PodReady")
-    ]
-    assert [(container.name, container.state, container.ready) for container in live.pod.containers] == [
-        ("runner", "running", True)
-    ]
+    assert live.pod.node_name == "test-node"
+    assert MessageToDict(live.status) == {
+        "conditions": [{"type": "Ready", "status": "True", "reason": "PodReady"}],
+        "nodeName": "test-node",
+    }
+    pod_status = MessageToDict(live.pod.status)
+    assert (pod_status["phase"], pod_status["podIP"]) == ("Running", "10.0.0.7")
+    assert pod_status["conditions"] == [{"type": "Ready", "status": "True"}]
+    assert pod_status["containerStatuses"][0]["state"] == {"running": {}}
     # A Pod held up by its image is visible as such, so the app can say why nothing is running.
     starting = views["starting"].pod
     assert starting is not None
-    assert [(container.state, container.reason, container.message) for container in starting.containers] == [
-        ("waiting", "ImagePullBackOff", "ImagePullBackOff on starting")
-    ]
+    starting_status = MessageToDict(starting.status)
+    assert starting_status["containerStatuses"][0]["state"] == {
+        "waiting": {"reason": "ImagePullBackOff", "message": "ImagePullBackOff on starting"}
+    }
     assert not views["podless"].HasField("pod")
-    assert not views["podless"].conditions
+    assert not views["podless"].HasField("status")
 
 
 async def test_get_reads_one_sandbox_and_refuses_foreign_or_missing_ones(
@@ -91,7 +90,8 @@ async def test_get_reads_one_sandbox_and_refuses_foreign_or_missing_ones(
     view = await inventory.get("live")
 
     assert view.HasField("pod")
-    assert (view.state, view.pod.ip) == (ProvisioningState.RUNNING, "10.0.0.7")
+    assert view.operating_mode == OperatingMode.RUNNING
+    assert MessageToDict(view.pod.status)["podIP"] == "10.0.0.7"
     with pytest.raises(SandboxNotFoundError):
         await inventory.get("foreign")
     with pytest.raises(SandboxNotFoundError):
@@ -104,7 +104,8 @@ async def test_create_stamps_a_labelled_sandbox_from_the_template(
     view = await inventory.create(CreateSandboxRequest(slug="my-task", template="agentplane-test-runner"))
 
     assert re.fullmatch(r"my-task-[a-z0-9]{5}", view.name)
-    assert view.state == ProvisioningState.WAITING_FOR_POD
+    assert view.operating_mode == OperatingMode.RUNNING
+    assert not view.HasField("pod")
     stored = custom_objects.objects[("sandboxes", view.name)]
     assert stored["kind"] == "Sandbox"
     assert stored["metadata"]["labels"] == {MANAGED_LABEL: "true"}
@@ -176,7 +177,7 @@ async def test_suspend_and_resume_patch_the_operating_mode(
         ("sandboxes", "live", {"metadata": {"uid": str(suspended.uid)}, "spec": {"operatingMode": "Suspended"}}),
         ("sandboxes", "live", {"metadata": {"uid": str(resumed.uid)}, "spec": {"operatingMode": "Running"}}),
     ]
-    assert (suspended.state, resumed.state) == (ProvisioningState.SUSPENDED, ProvisioningState.RUNNING)
+    assert (suspended.operating_mode, resumed.operating_mode) == (OperatingMode.SUSPENDED, OperatingMode.RUNNING)
     with pytest.raises(SandboxNotFoundError):
         await inventory.suspend("foreign")
 

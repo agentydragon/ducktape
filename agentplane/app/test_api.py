@@ -1109,8 +1109,7 @@ async def test_a_running_thread_cannot_be_archived(
     core_v1: FakeCoreV1Api,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
-    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+    custom_objects.objects[("sandboxes", "live")], core_v1.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = await event_logs.open("live", "s-1", spec)
 

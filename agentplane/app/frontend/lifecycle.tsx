@@ -16,7 +16,7 @@ export const DELETE_NEEDS_SUSPENDED = "Suspend the sandbox before deleting it";
 
 /** Whether the API will accept a deletion: only a suspended sandbox may go. */
 export function deletable(sandbox: SandboxView): boolean {
-  return sandbox.operating_mode === "Suspended";
+  return sandbox.operating_mode === "Suspended" && !sandbox.deleting;
 }
 
 export function SuspendResume({
@@ -28,10 +28,11 @@ export function SuspendResume({
 }): JSX.Element {
   const resume = sandbox.operating_mode === "Suspended";
   return (
-    <Tooltip label={resume ? "Resume" : "Suspend"} withArrow>
+    <Tooltip label={sandbox.deleting ? "Sandbox deleting" : resume ? "Resume" : "Suspend"} withArrow>
       <ActionIcon
         variant="light"
         aria-label={resume ? "Resume" : "Suspend"}
+        disabled={sandbox.deleting}
         onClick={() => onAct(resume ? "resume" : "suspend")}
       >
         {resume ? <IconPlayerPlay size={16} /> : <IconPlayerPause size={16} />}

@@ -7,6 +7,7 @@ made.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -18,6 +19,15 @@ from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 
 NAMESPACE = "agentplane-test"
 TEMPLATE = "agentplane-test-runner"
+_FAKE_API_CLIENTS: set[k8s_client.ApiClient] = set()
+
+
+async def close_fake_api_clients() -> None:
+    """Close clients opened by fake Kubernetes APIs after the async test that used them."""
+    clients = tuple(_FAKE_API_CLIENTS)
+    _FAKE_API_CLIENTS.clear()
+    await asyncio.gather(*(client.close() for client in clients))
+
 
 # What the test template carries, and what every Sandbox the inventory creates must copy.
 POD_TEMPLATE: dict[str, Any] = {
@@ -144,8 +154,18 @@ class FakeCustomObjectsApi:
 
 class FakeCoreV1Api:
     def __init__(self) -> None:
+        self._api_client: k8s_client.ApiClient | None = None
         self.pods: dict[str, k8s_client.V1Pod] = {}
         self.service_accounts: dict[str, k8s_client.V1ServiceAccount] = {}
+
+    @property
+    def api_client(self) -> k8s_client.ApiClient:
+        """Construct the async client only when a projection runs inside its event loop."""
+        if self._api_client is None:
+            asyncio.get_running_loop()
+            self._api_client = k8s_client.ApiClient()
+            _FAKE_API_CLIENTS.add(self._api_client)
+        return self._api_client
 
     async def create_namespaced_service_account(
         self, namespace: str, body: k8s_client.V1ServiceAccount
@@ -353,7 +373,12 @@ def pod(name: str, *, phase: str, ready: bool, ip: str | None, waiting_reason: s
         )
     )
     return k8s_client.V1Pod(
-        metadata=k8s_client.V1ObjectMeta(name=name, creation_timestamp=datetime(2026, 9, 1, 12, 0, 10, tzinfo=UTC)),
+        metadata=k8s_client.V1ObjectMeta(
+            name=name,
+            namespace=NAMESPACE,
+            uid=f"test-pod-{name}",
+            creation_timestamp=datetime(2026, 9, 1, 12, 0, 10, tzinfo=UTC),
+        ),
         spec=k8s_client.V1PodSpec(containers=[k8s_client.V1Container(name="runner")], node_name="test-node"),
         status=k8s_client.V1PodStatus(
             phase=phase,

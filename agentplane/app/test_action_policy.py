@@ -22,10 +22,10 @@ from agentplane.action_service.policy_view import (
 from agentplane.app.action_policy import ActionPolicyInventory, BindingProvenance
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
-from agentplane.sandbox_service.kubernetes_views import sandbox_view
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, sandbox
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi
+from agentplane.subjects import ServiceAccountRef
 
-LIVE = sandbox_view(sandbox("live"), None)
+LIVE = ServiceAccountRef(namespace=NAMESPACE, name="live")
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ async def test_for_subject_asks_the_service_and_adds_only_who_wrote_each_binding
         CredentialPlaceholder("test-operator-token"),
     )
 
-    view = await inventory.for_subject(client, LIVE.service_account)
+    view = await inventory.for_subject(client, LIVE)
 
     assert asked == [f"/v1/operator/action-policy/service-accounts/{NAMESPACE}/live"]
     assert [(b.name, b.provenance) for b in view.bindings] == [

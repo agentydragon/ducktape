@@ -7,15 +7,17 @@ function sandboxView(name: string, overrides: Partial<SandboxView> = {}): Sandbo
   return {
     name,
     uid: `00000000-0000-4000-8000-${name.padStart(12, "0")}`,
-    state: "running",
+    namespace: "agentplane-test",
     created_at: "2026-01-01T00:00:00Z",
     operating_mode: "Running",
     service_account: { namespace: "agentplane-test", name },
-    conditions: [],
+    status: null,
     kubernetes_grants: [],
     kubernetes_grants_ready: true,
     kubernetes_grant_error: null,
+    launch_grants_pending: false,
     deleting: false,
+    pod: null,
     ...overrides,
   };
 }
@@ -38,13 +40,13 @@ it("groups threads by sandbox, newest thread first fixing each group's order", (
   const newest = threadView({ id: "t-newest", sandbox: "sb-b", session_id: "s-1" });
   const middle = threadView({ id: "t-middle", sandbox: "sb-a", session_id: "s-2" });
   const oldest = threadView({ id: "t-oldest", sandbox: "sb-a", session_id: "s-3" });
-  const sandboxes = { "sb-a": sandboxView("sb-a"), "sb-b": sandboxView("sb-b", { state: "suspended" }) };
+  const sandboxes = { "sb-a": sandboxView("sb-a"), "sb-b": sandboxView("sb-b", { operating_mode: "Suspended" }) };
 
   const groups = groupThreads([newest, middle, oldest], sandboxes, false);
 
   expect(groups.map((group) => group.sandboxName)).toEqual(["sb-b", "sb-a"]);
   expect(groups[1].threads).toEqual([middle, oldest]);
-  expect(groups[0].sandbox?.state).toBe("suspended");
+  expect(groups[0].sandbox?.operating_mode).toBe("Suspended");
 });
 
 it("groups a thread whose sandbox is gone under a null sandbox rather than dropping it", () => {
@@ -70,7 +72,7 @@ it("hides archived Threads without hiding their existing Sandbox", () => {
 });
 
 it("includes a provisioning Sandbox before any Thread exists", () => {
-  const pending = sandboxView("test-provisioning", { state: "waiting_for_pod" });
+  const pending = sandboxView("test-provisioning");
   expect(groupThreads([], { [pending.name]: pending }, false)).toEqual([
     { sandboxName: pending.name, sandbox: pending, threads: [] },
   ]);

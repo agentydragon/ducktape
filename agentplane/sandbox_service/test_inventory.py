@@ -8,7 +8,7 @@ import pytest_bazel
 
 from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
-from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError
+from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, SessionDestination
 from agentplane.sandbox_service.session_lifecycle import launch_spec
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
@@ -24,7 +24,12 @@ async def test_read_retained_sandbox_without_mutation(cluster: Cluster) -> None:
     assert view.uid == SANDBOX_UID
     assert view.service_account.namespace == SANDBOX_NAMESPACE
     assert view.service_account.name == ACCOUNT
-    assert view.state == ProvisioningState.RUNNING
+    assert view.operating_mode == OperatingMode.RUNNING
+    assert not view.launch_grants_pending
+    assert view.HasField("pod")
+    assert view.pod.name == SANDBOX
+    assert view.pod.namespace == SANDBOX_NAMESPACE
+    assert view.pod.uid == "test-pod-uid"
     assert cluster.fake.objects == before
 
 
@@ -68,7 +73,7 @@ async def test_suspended_sandbox_is_not_resumed(cluster: Cluster) -> None:
     cluster.fake.pods.clear()
     before = deepcopy(cluster.fake.objects)
     view = await cluster.inventory.get(SANDBOX)
-    assert view.state == ProvisioningState.SUSPENDED
+    assert view.operating_mode == OperatingMode.SUSPENDED
     assert view.uid == SANDBOX_UID
     assert cluster.fake.objects == before
 

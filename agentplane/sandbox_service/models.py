@@ -1,4 +1,4 @@
-"""Sandbox state vocabulary and domain errors shared with the browser API."""
+"""Sandbox operating-mode vocabulary and domain errors shared with the browser API."""
 
 from enum import StrEnum
 
@@ -6,14 +6,6 @@ from enum import StrEnum
 class OperatingMode(StrEnum):
     RUNNING = "Running"
     SUSPENDED = "Suspended"
-
-
-class ProvisioningState(StrEnum):
-    WAITING_FOR_GRANTS = "waiting_for_grants"
-    WAITING_FOR_POD = "waiting_for_pod"
-    WAITING_FOR_POD_READY = "waiting_for_pod_ready"
-    RUNNING = "running"
-    SUSPENDED = "suspended"
 
 
 class InventoryError(Exception):

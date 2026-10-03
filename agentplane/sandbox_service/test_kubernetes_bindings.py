@@ -31,7 +31,6 @@ from agentplane.sandbox_service.kubernetes_grants import (
     resolve_grants,
 )
 from agentplane.sandbox_service.kubernetes_views import KUBERNETES_GRANTS_ANNOTATION, sandbox_view
-from agentplane.sandbox_service.models import ProvisioningState
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, ResolvedGrant
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -86,10 +85,11 @@ async def test_distinct_sandboxes_bind_only_their_own_service_accounts() -> None
     first, selection = await _sandbox(inventory, core, ["config"], catalog)
     second, _ = await _sandbox(inventory, core, ["config"], catalog)
     bindings = KubernetesBindings(inventory, cast(Any, rbac))
-    assert (await inventory.get(first)).state == ProvisioningState.WAITING_FOR_GRANTS
+    assert not (await inventory.get(first)).kubernetes_grants_ready
     await bindings.reconcile_once()
     first_view, second_view = await inventory.get(first), await inventory.get(second)
-    assert first_view.state == second_view.state == ProvisioningState.RUNNING
+    assert first_view.kubernetes_grants_ready
+    assert second_view.kubernetes_grants_ready
     assert first_view.kubernetes_grants == selection
     assert len(rbac.bindings) == 2
     for view in (first_view, second_view):
@@ -116,24 +116,24 @@ async def test_missing_role_ref_never_reports_grants_ready() -> None:
     bindings = KubernetesBindings(inventory, cast(Any, rbac))
     rbac.missing_roles.add((NAMESPACE, "config-reader"))
     await bindings.ensure(await inventory.get(name))
-    assert (await inventory.get(name)).state == ProvisioningState.WAITING_FOR_GRANTS
+    assert not (await inventory.get(name)).kubernetes_grants_ready
     assert (await inventory.get(name)).kubernetes_grant_error == "ApiException (404)"
     assert rbac.creates == 0
 
     rbac.missing_roles.clear()
     await bindings.ensure(await inventory.get(name))
-    assert (await inventory.get(name)).state == ProvisioningState.RUNNING
+    assert (await inventory.get(name)).kubernetes_grants_ready
     assert rbac.creates == 2
 
     rbac.missing_cluster_roles.add("diagnostics")
     await bindings.ensure(await inventory.get(name))
-    assert (await inventory.get(name)).state == ProvisioningState.WAITING_FOR_GRANTS
+    assert not (await inventory.get(name)).kubernetes_grants_ready
     assert (await inventory.get(name)).kubernetes_grant_error == "ApiException (404)"
     assert rbac.creates == 2
 
     rbac.missing_cluster_roles.clear()
     await bindings.ensure(await inventory.get(name))
-    assert (await inventory.get(name)).state == ProvisioningState.RUNNING
+    assert (await inventory.get(name)).kubernetes_grants_ready
 
 
 async def test_partial_creation_recovers_from_persisted_selection_after_catalog_removal() -> None:
@@ -146,7 +146,7 @@ async def test_partial_creation_recovers_from_persisted_selection_after_catalog_
     bindings = KubernetesBindings(inventory, cast(Any, rbac))
     await bindings.ensure(await inventory.get(name))
     failed = await inventory.get(name)
-    assert failed.state == ProvisioningState.WAITING_FOR_GRANTS
+    assert not failed.kubernetes_grants_ready
     assert failed.kubernetes_grant_error == "ApiException (503)"
     assert len(rbac.bindings) == 1
     # A restart with a changed catalog reads the Sandbox annotation; it does not resolve the
@@ -154,7 +154,7 @@ async def test_partial_creation_recovers_from_persisted_selection_after_catalog_
     await KubernetesBindings(inventory, cast(Any, rbac)).reconcile_once()
     recovered = await inventory.get(name)
     assert recovered.kubernetes_grants == selected
-    assert recovered.state == ProvisioningState.RUNNING
+    assert recovered.kubernetes_grants_ready
     assert not recovered.HasField("kubernetes_grant_error")
     assert len(rbac.bindings) == 2
 
@@ -171,7 +171,7 @@ async def test_same_name_with_another_subject_is_never_adopted() -> None:
     )
     rbac.bindings[(NAMESPACE, binding.metadata.name)] = binding
     await KubernetesBindings(inventory, cast(Any, rbac)).ensure(view)
-    assert (await inventory.get(name)).state == ProvisioningState.WAITING_FOR_GRANTS
+    assert not (await inventory.get(name)).kubernetes_grants_ready
     assert (await inventory.get(name)).kubernetes_grant_error == "BindingConflictError"
     assert rbac.bindings[(NAMESPACE, binding.metadata.name)] is binding
 
@@ -195,10 +195,10 @@ async def test_external_scopes_recover_and_clean_up_after_deletion() -> None:
     )
     rbac.fail_on_create = 2
     await bindings.reconcile_once()
-    assert (await inventory.get(name)).state == ProvisioningState.WAITING_FOR_GRANTS
+    assert not (await inventory.get(name)).kubernetes_grants_ready
     await bindings.reconcile_once()
     view = await inventory.get(name)
-    assert view.state == ProvisioningState.RUNNING
+    assert view.kubernetes_grants_ready
     cross = rbac.bindings[("another-namespace", binding_name(view, selected[0]))]
     cluster = rbac.cluster_bindings[binding_name(view, selected[1])]
     assert cross.metadata.owner_references is None
@@ -314,7 +314,7 @@ async def test_orphan_sweep_checks_sandbox_created_after_list_snapshot() -> None
                     )
                 }
                 custom.objects[("sandboxes", "late")] = raw
-                binding = _binding(sandbox_view(raw, None), selected)
+                binding = _binding(sandbox_view(raw, None, api_client=core.api_client), selected)
                 assert isinstance(binding, k8s_client.V1ClusterRoleBinding)
                 assert binding.metadata is not None
                 assert binding.metadata.name is not None

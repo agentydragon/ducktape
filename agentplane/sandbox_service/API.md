@@ -23,18 +23,21 @@ lookup or runner contact. An ordinary workload token, even for the destination's
 not grant access. There is no separate manager/delivery tier or inferred Thread identity in v1.
 Listed services can operate across owners, but must still supply the verified destination owner/UID.
 
-Resolution checks the stored Sandbox account, UID, lifecycle state, and current ready Pod's controller
-ownership before selecting its endpoint. Name reuse with a new UID is refused. A successor Pod under
-the same Sandbox may replace the endpoint. These are Kubernetes association checks, not cryptographic
-runner authentication. **TODO:** proper runner RPC authentication/TLS; v1 requires network isolation.
-Service API authentication is implemented independently of that deferred runner-authentication work.
+Resolution checks the stored Sandbox account, UID, operating mode, provisioning/grant facts, and current
+ready Pod's identity and controller ownership before selecting its endpoint. Name reuse with a new UID
+is refused. A successor Pod under the same Sandbox may replace the endpoint. These are Kubernetes
+association checks, not cryptographic runner authentication. **TODO:** proper runner RPC
+authentication/TLS; v1 requires network isolation. Service API authentication is implemented
+independently of that deferred runner-authentication work.
 
 ## Inventory and explicit sandbox lifecycle
 
 The same service-caller allowlist gates every RPC. Provisioning is always enabled:
 
 - `ListSandboxes`, `GetSandbox`: Kubernetes-backed inventory, including concrete stored launch
-  bindings, provisioning state, and current Pod observations.
+  bindings, the Sandbox CR's raw status, and a same-name Pod's identity metadata and raw status as
+  separate objects. Operating mode, launch-grants-pending, and Kubernetes-grant facts remain
+  separate fields; the service does not synthesize one status from them.
 - `ListTemplates`: available SandboxTemplates. The app renders its configured grant catalog locally.
 - `CreateSandbox`: concrete template, policy/grant selections, optional session defaults, and bootstrap.
   Grant intent is stored on the Sandbox so reconciliation can recover partial provisioning without

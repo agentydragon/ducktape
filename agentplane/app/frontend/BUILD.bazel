@@ -573,6 +573,13 @@ ts_library(
 )
 
 ts_library(
+    name = "sandbox_status",
+    srcs = ["sandbox_status.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
     name = "sandboxes",
     srcs = [
         "sandboxes.tsx",
@@ -588,6 +595,7 @@ ts_library(
         ":client",
         ":lifecycle",
         ":live",
+        ":sandbox_status",
         ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -623,6 +631,7 @@ ts_library(
     deps = [
         ":client",
         ":live",
+        ":sandbox_status",
         ":tab_metadata",
     ],
 )
@@ -674,7 +683,7 @@ ts_library(
     deps = [
         ":client",
         ":live",
-        ":sandboxes",
+        ":sandbox_status",
         ":sidebar_css",
         ":stream_status",
         ":thread_groups",
@@ -772,6 +781,7 @@ ts_library(
         ":lifecycle",
         ":live",
         ":raw_switch",
+        ":sandbox_status",
         ":stream_status",
         ":topbar",
         "//:node_modules/@bufbuild/protobuf",

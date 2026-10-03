@@ -28,7 +28,6 @@ from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_READY_ANNOTATION,
     PROVISIONING_ANNOTATION,
 )
-from agentplane.sandbox_service.models import ProvisioningState
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
@@ -463,7 +462,11 @@ async def test_open_and_resume_refuse_unready_grants_without_app(
         )
         annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([MessageToDict(grant, preserving_proto_field_name=True)])
         annotations[KUBERNETES_GRANTS_READY_ANNOTATION] = "false"
-    assert (await cluster.inventory.get(SANDBOX)).state == ProvisioningState.WAITING_FOR_GRANTS
+    view = await cluster.inventory.get(SANDBOX)
+    if pending_launch:
+        assert view.launch_grants_pending
+    else:
+        assert not view.kubernetes_grants_ready
     configured = replace(resources, caller_accounts=frozenset({OWNER}), platform_instructions="Test guidance")
     async with service_client(configured, token_file) as caller:
         runner = caller.runner(DESTINATION)

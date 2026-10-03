@@ -23,15 +23,33 @@ const live = vi.hoisted(
         sandbox: {
           name: "startup-test",
           uid: "00000000-0000-4000-8000-000000000001",
-          state: "running",
+          namespace: "agentplane-test",
           created_at: "2026-01-01T00:00:00Z",
           operating_mode: "Running",
           service_account: { namespace: "agentplane-test", name: "startup-test" },
-          conditions: [],
+          status: null,
           kubernetes_grants: [],
           kubernetes_grants_ready: true,
           kubernetes_grant_error: null,
+          launch_grants_pending: false,
           deleting: false,
+          pod: {
+            name: "startup-test",
+            namespace: "agentplane-test",
+            uid: "test-pod-1",
+            deleting: false,
+            node_name: "test-node",
+            owner_references: [
+              {
+                api_version: "agents.x-k8s.io/v1beta1",
+                kind: "Sandbox",
+                name: "startup-test",
+                uid: "00000000-0000-4000-8000-000000000001",
+                controller: true,
+              },
+            ],
+            status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
+          },
         },
         threads: [] as ThreadView[],
         bindings: [],
@@ -59,7 +77,7 @@ afterEach(async () => {
   (live.snapshot.sandbox as SandboxView).kubernetes_grants = [];
   (live.snapshot.sandbox as SandboxView).kubernetes_grants_ready = true;
   (live.snapshot.sandbox as SandboxView).kubernetes_grant_error = null;
-  (live.snapshot.sandbox as SandboxView).state = "running";
+  (live.snapshot.sandbox as SandboxView).launch_grants_pending = false;
 });
 afterAll(() => vi.unstubAllGlobals());
 
@@ -210,7 +228,7 @@ it("lets a later Thread override the Sandbox reasoning default locally", async (
 });
 
 it("shows the selected Kubernetes grant scope, role, and application error", async () => {
-  (live.snapshot.sandbox as SandboxView).state = "waiting_for_grants";
+  (live.snapshot.sandbox as SandboxView).launch_grants_pending = true;
   (live.snapshot.sandbox as SandboxView).kubernetes_grants = [
     {
       name: "workspace-read",
@@ -230,7 +248,7 @@ it("shows the selected Kubernetes grant scope, role, and application error", asy
   if (!statusTab) throw new Error("Missing Status tab");
   await act(async () => statusTab.click());
   expect(container.textContent).toContain("Error");
-  expect(container.textContent).toContain("Kubernetes grants are not ready; sessions cannot start yet.");
+  expect(container.textContent).toContain("Launch or Kubernetes grants are not ready; sessions cannot start yet.");
   expect(container.textContent).toContain("workspace-read · RoleBinding · namespace agentplane-test");
   expect(container.textContent).toContain("Role/workspace-reader");
   expect(container.textContent).toContain("binding controller is waiting");

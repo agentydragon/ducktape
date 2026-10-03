@@ -24,7 +24,6 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
-from agentplane.sandbox_service.models import ProvisioningState
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -217,7 +216,7 @@ async def test_partial_create_recovers_from_kubernetes_state_without_app(case: C
         )
     (view,) = await case.service.inventory.list_sandboxes()
     case.core.pods[view.name] = pod(view.name, phase="Running", ready=True, ip="10.0.0.1")
-    assert (await case.service.inventory.get(view.name)).state == ProvisioningState.WAITING_FOR_GRANTS
+    assert (await case.service.inventory.get(view.name)).launch_grants_pending
     assert await case.service.inventory.pending_grants(view.name) is not None
     case.custom.fail_plural = None
     # A fresh service with a changed catalog must use the recorded concrete grant, not current UI defaults.
@@ -225,7 +224,9 @@ async def test_partial_create_recovers_from_kubernetes_state_without_app(case: C
     await restarted.reconcile_once()
     await restarted.reconcile_once()
     assert await restarted.inventory.pending_grants(view.name) is None
-    assert (await restarted.inventory.get(view.name)).state == ProvisioningState.RUNNING
+    recovered = await restarted.inventory.get(view.name)
+    assert not recovered.launch_grants_pending
+    assert recovered.kubernetes_grants_ready
     assert len([key for key in case.custom.objects if key[0] == "egressbindings"]) == 1
     assert len([key for key in case.custom.objects if key[0] == "actionpolicybindings"]) == 1
     assert len(case.rbac.bindings) == 1

@@ -61,6 +61,7 @@ from agentplane.app.sandbox_models import (
     SandboxView,
     create_request,
     grant_views,
+    sandbox_has_ready_pod,
     sandbox_view,
 )
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
@@ -747,7 +748,12 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
         # A deleted Sandbox has no running harness to keep visible.
         pass
     else:
-        if sandbox.state == "running":
+        if sandbox.pod is not None:
+            if not sandbox_has_ready_pod(sandbox):
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "cannot verify the runner while a Pod exists; wait for its status to become ready or for it to be removed",
+                )
             sessions = await bridge.list_sessions(thread.sandbox)
             if any(
                 session.session_id == thread.session_id and session.harness_state == protocol_pb2.HARNESS_STATE_RUNNING

@@ -15,19 +15,21 @@ from agentplane.sandbox_service.egress_views import (
     FluxOwnedBindingError,
     UnknownPolicyError,
 )
-from agentplane.sandbox_service.kubernetes_views import sandbox_view
+from agentplane.sandbox_service.protocol_pb2 import Sandbox, ServiceAccount
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCustomObjectsApi,
     egress_binding,
     egress_credential,
     egress_policy,
-    sandbox,
 )
 from agentplane.subjects import ServiceAccountRef
 
 LIVE = ServiceAccountRef(namespace=NAMESPACE, name="live")
 OTHER = ServiceAccountRef(namespace=NAMESPACE, name="other")
+LIVE_SANDBOX = Sandbox(
+    name="live", uid="test-live-uid", service_account=ServiceAccount(namespace=NAMESPACE, name="live")
+)
 
 GITHUB_RULE = {
     "hosts": ["api.github.com", "*.githubusercontent.com"],
@@ -162,9 +164,7 @@ async def test_grant_creates_a_binding_the_sandbox_owns(
     """Creating the binding is the grant: nothing has to answer it afterwards. The API server names
     it, so the app learns the name from what it gets back."""
     _seed(custom_objects)
-    live = sandbox_view(sandbox("live"), None)
-
-    granted = await egress.grant(live, ["pypi", "github"])
+    granted = await egress.grant(LIVE_SANDBOX, ["pypi", "github"])
 
     assert granted.name.startswith("live-")
     created = custom_objects.objects[("egressbindings", granted.name)]
@@ -173,7 +173,7 @@ async def test_grant_creates_a_binding_the_sandbox_owns(
         "apiVersion": "agents.x-k8s.io/v1beta1",
         "kind": "Sandbox",
         "name": "live",
-        "uid": str(live.uid),
+        "uid": str(LIVE_SANDBOX.uid),
         "controller": False,
         "blockOwnerDeletion": False,
     }
@@ -189,10 +189,8 @@ async def test_a_second_grant_is_another_binding_and_not_an_edit_of_the_first(
     """`expiresAt` is per binding, so granting a running sandbox cannot append to a binding that
     carries other policies: at the deadline it would take those away too."""
     _seed(custom_objects)
-    live = sandbox_view(sandbox("live"), None)
-
-    first = await egress.grant(live, ["pypi"])
-    second = await egress.grant(live, ["github"])
+    first = await egress.grant(LIVE_SANDBOX, ["pypi"])
+    second = await egress.grant(LIVE_SANDBOX, ["github"])
 
     assert first.name != second.name
     assert custom_objects.objects[("egressbindings", first.name)]["spec"]["policies"] == ["pypi"]
@@ -211,7 +209,7 @@ async def test_a_grant_naming_a_policy_the_namespace_lacks_writes_nothing(
     before = set(custom_objects.objects)
 
     with pytest.raises(UnknownPolicyError) as refused:
-        await egress.grant(sandbox_view(sandbox("live"), None), ["pypi", "vanished"])
+        await egress.grant(LIVE_SANDBOX, ["pypi", "vanished"])
 
     assert refused.value.names == ["vanished"]
     assert set(custom_objects.objects) == before

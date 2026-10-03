@@ -99,6 +99,7 @@ ts_library(
         "//agentplane/app/frontend:actions_affordance",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:sandbox_status",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:tab_metadata",
         "//agentplane/app/frontend:thread_status",

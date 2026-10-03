@@ -9,12 +9,12 @@ import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.agent import Agent
-from agentplane.app.client import Client, is_running
+from agentplane.app.client import Client, has_ready_pod
 from agentplane.app.sandbox_models import SandboxView
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service.models import ProvisioningState
+from agentplane.sandbox_service.models import OperatingMode
 
 Sandboxes = Callable[..., Awaitable[SandboxView]]
 POD_TRANSITION_SECONDS = 300.0
@@ -30,7 +30,7 @@ async def _wait_until_suspended_without_pod(client: Client, name: str) -> None:
     ):
         with attempt:
             view = await client.sandbox(name)
-            assert view.state is ProvisioningState.SUSPENDED, f"{name} is still {view.state}"
+            assert view.operating_mode is OperatingMode.SUSPENDED, f"{name} is still {view.operating_mode}"
             assert view.pod is None, f"{name} still has its old Pod: {view.pod}"
 
 
@@ -63,8 +63,8 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
     async for attempt in AsyncRetrying(stop=stop_after_delay(POD_TRANSITION_SECONDS), wait=wait_fixed(2), reraise=True):
         with attempt:
             resumed = await client.sandbox(view.name)
-            if not is_running(resumed):
-                raise AssertionError(f"{view.name} is {resumed.state} with pod {resumed.pod}")
+            if not has_ready_pod(resumed):
+                raise AssertionError(f"{view.name} has no ready, authorized Pod: {resumed.pod}")
 
     for harness, agent in agents.items():
         await agent.resume()

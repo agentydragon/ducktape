@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandSchema, type Command } from "../../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_pb";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
-import { command, getThread, models, resumeThread, type ThreadView } from "../client";
+import { command, getThread, models, resumeThread, type SandboxView, type ThreadView } from "../client";
 import { historyRows, rowKey } from "./history_rows";
 import { ThreadsLiveProvider } from "../live";
 import { LocalCommands } from "./local_commands";
@@ -65,7 +65,38 @@ let favicon: HTMLLinkElement;
 // What the sandbox inventory stream reports -- nothing at all while `sandboxes` is null -- and
 // whether it then drops. By default the thread's sandbox is running on a current inventory, so its
 // controls are live.
-type Inventory = Array<{ name: string; state: string }> | null;
+type Inventory = SandboxView[] | null;
+function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running"): SandboxView {
+  const uid = "20000000-0000-4000-8000-000000000001";
+  return {
+    name: THREAD.sandbox,
+    uid,
+    namespace: "agentplane-test",
+    created_at: "2026-01-01T00:00:00Z",
+    operating_mode,
+    status: null,
+    service_account: { namespace: "agentplane-test", name: THREAD.sandbox },
+    kubernetes_grants: [],
+    kubernetes_grants_ready: true,
+    kubernetes_grant_error: null,
+    launch_grants_pending: false,
+    deleting: false,
+    pod:
+      operating_mode === "Suspended"
+        ? null
+        : {
+            name: THREAD.sandbox,
+            namespace: "agentplane-test",
+            uid: "test-pod-1",
+            deleting: false,
+            node_name: "test-node",
+            owner_references: [
+              { api_version: "agents.x-k8s.io/v1beta1", kind: "Sandbox", name: THREAD.sandbox, uid, controller: true },
+            ],
+            status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
+          },
+  };
+}
 let sandboxes: Inventory = [];
 let inventoryFresh = true;
 let inventoryDrops = false;
@@ -80,7 +111,7 @@ beforeEach(() => {
   favicon.href = "/favicon.svg";
   document.head.append(favicon);
   localStorage.clear();
-  sandboxes = [{ name: THREAD.sandbox, state: "running" }];
+  sandboxes = [inventorySandbox()];
   inventoryFresh = true;
   inventoryDrops = false;
   sharedFeed = "active";
@@ -471,9 +502,9 @@ it("does not show active-turn status when the runner is not active", async () =>
 
 // Retained history still says the harness runs and the feed failed; neither is live any more.
 it.each([
-  [{ archived: true }, [{ name: THREAD.sandbox, state: "running" }], "Thread archived"],
+  [{ archived: true }, [inventorySandbox()], "Thread archived"],
   [{ archived: false }, [], "Sandbox unavailable"],
-  [{ archived: false }, [{ name: THREAD.sandbox, state: "suspended" }], "Sandbox unavailable"],
+  [{ archived: false }, [inventorySandbox("Suspended")], "Sandbox unavailable"],
 ])("shows a gray dot for thread %o with sandboxes %o: %s", async (overrides, inventory, label) => {
   vi.mocked(getThread).mockResolvedValue({ ...THREAD, ...overrides });
   sharedThread = overrides;
@@ -485,8 +516,8 @@ it.each([
   expect(dot?.getAttribute("style")).toContain("--mantine-color-gray-6");
 });
 
-const RUNNING = { name: THREAD.sandbox, state: "running" };
-const SUSPENDED = { name: THREAD.sandbox, state: "suspended" };
+const RUNNING = inventorySandbox();
+const SUSPENDED = inventorySandbox("Suspended");
 const STALE = "sandboxes last updated 40 minutes ago";
 const ABSENT = "Sandbox absent from last inventory snapshot. Current availability unknown";
 const OUT_OF_DATE = /^What's on screen may be out of date; last update \d{2}:\d{2}:\d{2}$/;
@@ -502,7 +533,7 @@ function matching(text: string | RegExp): unknown {
 it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | null, string | RegExp | null]>([
   ["a running sandbox", [RUNNING], {}, null, null],
   ["an inventory not yet heard from", null, {}, null, null],
-  ["a suspended sandbox", [SUSPENDED], {}, "Last observed Sandbox state: suspended.", null],
+  ["a suspended sandbox", [SUSPENDED], {}, "Last observed Sandbox and Pod: Suspended.", null],
   ["a deleted sandbox", [], {}, "Sandbox no longer exists.", null],
   ["a running sandbox on a stale inventory", [RUNNING], { fresh: false }, null, STALE],
   ["an absence from a stale inventory", [], { fresh: false }, ABSENT, STALE],
@@ -514,7 +545,7 @@ it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | n
     "a suspended sandbox on a stream down a minute",
     [SUSPENDED],
     { droppedFor: STALE_AFTER_MS },
-    "state: suspended.",
+    "and Pod: Suspended.",
     OUT_OF_DATE,
   ],
 ])("explains %s in the header", async (_, inventory, { fresh = true, droppedFor }, status, alert) => {

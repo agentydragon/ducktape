@@ -127,10 +127,10 @@ py_library(
     deps = [
         "//agentplane/app:changes",
         "//agentplane/app:live",
+        "//agentplane/app:sandbox_models",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:protocol_pb2",
-        "@pypi//protobuf",
     ],
 )
 

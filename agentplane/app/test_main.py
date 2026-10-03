@@ -40,7 +40,8 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.fake_inventory import pod, sandbox
+from agentplane.sandbox_service.testing.backend import seed_runner
+from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
@@ -197,13 +198,16 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     content: ContentStore,
     runners: SandboxSessions,
     ingester: Ingester,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
     fails while the drain is on, and the unwind then releases the ingestion lease and every
     connection the app held."""
-    live_index.sandboxes[SANDBOX] = sandbox(SANDBOX)
-    live_index.pods[SANDBOX] = pod(SANDBOX, phase="Running", ready=True, ip="127.0.0.1")
+    raw, running = seed_runner(custom_objects, core_v1, SANDBOX)
+    live_index.sandboxes[SANDBOX] = raw
+    live_index.pods[SANDBOX] = running
     app = create_app(
         inventory,
         bridge,

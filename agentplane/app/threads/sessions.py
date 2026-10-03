@@ -2,14 +2,15 @@
 
 from agentplane.app.changes import Changes
 from agentplane.app.live import LiveIndex
+from agentplane.app.sandbox_models import sandbox_has_ready_pod
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
-from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError
+from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
 
 
 class SandboxNotReachableError(Exception):
-    def __init__(self, name: str, state: ProvisioningState) -> None:
-        super().__init__(f"sandbox {name=} has no reachable runner: it is {state}")
+    def __init__(self, name: str) -> None:
+        super().__init__(f"sandbox {name=} has no ready, authorized Pod")
         self.name = name
 
 
@@ -24,14 +25,14 @@ class SandboxSessions:
         return self._index.changes
 
     def running(self) -> set[str]:
-        return {view.name for view in self._index.sandbox_views() if view.state is ProvisioningState.RUNNING}
+        return {view.name for view in self._index.sandbox_views() if sandbox_has_ready_pod(view)}
 
     def client(self, sandbox: str) -> Runner:
         view = self._index.sandbox_view(sandbox)
         if view is None:
             raise SandboxNotFoundError(sandbox)
-        if view.state is not ProvisioningState.RUNNING:
-            raise SandboxNotReachableError(sandbox, view.state)
+        if not sandbox_has_ready_pod(view):
+            raise SandboxNotReachableError(sandbox)
         destination = SandboxDestination(
             owner=ServiceAccount(namespace=view.service_account.namespace, name=view.service_account.name),
             sandbox=view.name,
@@ -43,6 +44,3 @@ class SandboxSessions:
 
     async def close(self) -> None:
         await self._service.close()
-
-
-# gazelle:include_dep @pypi//protobuf

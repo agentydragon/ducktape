@@ -6,7 +6,7 @@ from ipaddress import ip_address
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError
+from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination
 from util.agent_sandbox import SANDBOX_API
 
@@ -33,7 +33,13 @@ class DestinationResolver:
         view = await self.inventory.get(destination.sandbox)
         if view.uid != destination.sandbox_uid or view.service_account != destination.owner:
             raise SandboxNotFoundError(destination.sandbox)
-        if view.deleting or view.state != ProvisioningState.RUNNING:
+        if (
+            view.deleting
+            or view.operating_mode != OperatingMode.RUNNING
+            or view.launch_grants_pending
+            or not view.kubernetes_grants_ready
+            or view.HasField("kubernetes_grant_error")
+        ):
             raise DestinationUnavailableError
         try:
             pod = await self.core.read_namespaced_pod(destination.sandbox, self.inventory.namespace)

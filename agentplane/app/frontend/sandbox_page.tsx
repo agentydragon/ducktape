@@ -29,7 +29,6 @@ import {
   modelsForHarness,
   openSession,
   RunnerUnavailableError,
-  type Condition,
   type Harness,
   type ModelOption,
   type SandboxView,
@@ -41,6 +40,16 @@ import { JsonView } from "./json_view";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
 import { RawSwitch } from "./raw_switch";
+import {
+  containerStatuses,
+  podIp,
+  podPhase,
+  rawConditions,
+  rawString,
+  sandboxReady,
+  sandboxSummary,
+  type RawCondition,
+} from "./sandbox_status";
 import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
 import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../runner/protocol_pb";
@@ -77,30 +86,39 @@ function isTab(value: string | null): value is Tab {
   return TABS.includes(value as Tab);
 }
 
-function ConditionsTable({ conditions }: { conditions: Condition[] }): JSX.Element {
+function ConditionsTable({ title, conditions }: { title: string; conditions: RawCondition[] }): JSX.Element {
   return (
-    <Table>
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th>Condition</Table.Th>
-          <Table.Th>Status</Table.Th>
-          <Table.Th>Reason</Table.Th>
-          <Table.Th>Message</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {conditions.map((condition) => (
-          <Table.Tr key={condition.type}>
-            <Table.Td>{condition.type}</Table.Td>
-            <Table.Td>
-              <Badge color={condition.status === "True" ? "green" : "orange"}>{condition.status}</Badge>
-            </Table.Td>
-            <Table.Td>{condition.reason ?? "—"}</Table.Td>
-            <Table.Td>{condition.message ?? "—"}</Table.Td>
+    <Stack gap="xs">
+      <Title order={5}>{title}</Title>
+      <Table>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Condition</Table.Th>
+            <Table.Th>Status</Table.Th>
+            <Table.Th>Reason</Table.Th>
+            <Table.Th>Message</Table.Th>
+            <Table.Th>Transition</Table.Th>
           </Table.Tr>
-        ))}
-      </Table.Tbody>
-    </Table>
+        </Table.Thead>
+        <Table.Tbody>
+          {conditions.map((condition) => (
+            <Table.Tr key={condition.type}>
+              <Table.Td>{condition.type}</Table.Td>
+              <Table.Td>
+                <Badge color={condition.status === "True" ? "green" : "orange"}>{condition.status}</Badge>
+              </Table.Td>
+              <Table.Td>{condition.reason ?? "—"}</Table.Td>
+              <Table.Td>{condition.message ?? "—"}</Table.Td>
+              <Table.Td>
+                {condition.lastTransitionTime ?? "—"}
+                {condition.lastProbeTime ? ` · probed ${condition.lastProbeTime}` : ""}
+                {condition.observedGeneration !== null ? ` · generation ${condition.observedGeneration}` : ""}
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Stack>
   );
 }
 
@@ -142,6 +160,9 @@ function KubernetesGrantStatus({ sandbox }: { sandbox: SandboxView }): JSX.Eleme
 /** What Kubernetes says about the sandbox: the Sandbox CR's own status, then its Pod's. */
 function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
   const [raw, setRaw] = useState(false);
+  const sandboxConditions = rawConditions(sandbox.status);
+  const podConditions = rawConditions(sandbox.pod?.status ?? null);
+  const containers = containerStatuses(sandbox.pod?.status ?? null);
   return (
     <Stack gap="xs">
       <Group>
@@ -154,7 +175,7 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
         <>
           <Text size="sm">
             Sandbox {sandbox.operating_mode.toLowerCase()}, created {new Date(sandbox.created_at).toLocaleString()}
-            {sandbox.node_name ? `, placed on ${sandbox.node_name}` : ", not placed"}
+            {sandbox.pod?.node_name ? `, Pod placed on ${sandbox.pod.node_name}` : ", Pod not placed"}
           </Text>
           {/* The account its Pod runs as is what every binding names, so the tabs below are its policy, not this
               Sandbox's: two sandboxes sharing an account share what they may do. */}
@@ -162,32 +183,59 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
             Runs as ServiceAccount {sandbox.service_account.namespace}/{sandbox.service_account.name}, the subject its
             egress and action-policy bindings name.
           </Text>
-          {sandbox.conditions.length > 0 && <ConditionsTable conditions={sandbox.conditions} />}
+          {sandbox.status && rawString(sandbox.status.phase) && (
+            <Text size="sm">Sandbox status phase: {rawString(sandbox.status.phase)}</Text>
+          )}
+          {sandboxConditions.length > 0 ? (
+            <ConditionsTable title="Sandbox conditions" conditions={sandboxConditions} />
+          ) : (
+            <Text size="sm" c="dimmed">
+              No Sandbox conditions reported.
+            </Text>
+          )}
           <KubernetesGrantStatus sandbox={sandbox} />
           {sandbox.pod ? (
             <>
               <Text size="sm">
-                Pod {sandbox.pod.phase ?? "unknown"}
-                {sandbox.pod.ip ? ` at ${sandbox.pod.ip}` : ""}
+                Pod {podPhase(sandbox) ?? "phase unknown"}
+                {podIp(sandbox) ? ` at ${podIp(sandbox)}` : ""}
                 {sandbox.pod.node_name ? ` on ${sandbox.pod.node_name}` : ""}
-                {sandbox.pod.reason ? `: ${sandbox.pod.reason}` : ""}
-                {sandbox.pod.message ? ` (${sandbox.pod.message})` : ""}
+                {sandbox.pod.deleting ? " · deleting" : ""}
+                {rawString(sandbox.pod.status?.reason) ? `: ${rawString(sandbox.pod.status?.reason)}` : ""}
+                {rawString(sandbox.pod.status?.message) ? ` (${rawString(sandbox.pod.status?.message)})` : ""}
               </Text>
-              {sandbox.pod.conditions.length > 0 && <ConditionsTable conditions={sandbox.pod.conditions} />}
-              {sandbox.pod.containers.map((container) => (
-                <Group key={container.name} gap="xs">
+              <Text size="xs" c="dimmed">
+                Pod {sandbox.pod.namespace}/{sandbox.pod.name} · UID {sandbox.pod.uid}
+                {rawString(sandbox.pod.status?.startTime)
+                  ? ` · started ${rawString(sandbox.pod.status?.startTime)}`
+                  : ""}
+                {rawString(sandbox.pod.status?.qosClass) ? ` · QoS ${rawString(sandbox.pod.status?.qosClass)}` : ""}
+              </Text>
+              {podConditions.length > 0 ? (
+                <ConditionsTable title="Pod conditions" conditions={podConditions} />
+              ) : (
+                <Text size="sm" c="dimmed">
+                  No Pod conditions reported.
+                </Text>
+              )}
+              {containers.length > 0 && <Title order={5}>Containers</Title>}
+              {containers.map((container) => (
+                <Group key={`${container.role}/${container.name}`} gap="xs">
                   <Text size="sm" fw={600}>
-                    {container.name}
+                    {container.role === "container" ? container.name : `${container.role} ${container.name}`}
                   </Text>
                   <Badge color={container.state === "running" ? "green" : "orange"}>{container.state}</Badge>
                   {container.ready && <Badge variant="light">ready</Badge>}
-                  {container.restart_count > 0 && <Badge color="red">{container.restart_count} restarts</Badge>}
+                  {container.restartCount > 0 && <Badge color="red">{container.restartCount} restarts</Badge>}
                   {container.reason && <Text size="sm">{container.reason}</Text>}
                   {container.message && (
                     <Text size="sm" c="dimmed">
                       {container.message}
                     </Text>
                   )}
+                  {container.exitCode !== null && <Text size="sm">exit {container.exitCode}</Text>}
+                  {container.startedAt && <Text size="sm">started {container.startedAt}</Text>}
+                  {container.finishedAt && <Text size="sm">finished {container.finishedAt}</Text>}
                 </Group>
               ))}
             </>
@@ -247,16 +295,18 @@ export function SandboxPage({
   // moments that can change it: the Pod coming or going, and a session opening, which the store
   // records as a thread and the stream then pushes. A harness stopping is not among them; it shows
   // when the page next reads.
-  const state = sandbox?.state;
-  const podIp = sandbox?.pod?.ip;
+  const ready = sandboxReady(sandbox);
+  const currentPodIp = sandbox ? podIp(sandbox) : null;
+  const podUid = sandbox?.pod?.uid;
   const openedSessions = threads.length;
   const bindingKey = JSON.stringify(sandbox?.binding ?? null);
   useEffect(() => {
     let cancelled = false;
     let retry: number | undefined;
     setSessionList("loading");
-    if (state !== "running") {
+    if (!ready) {
       setSessions([]);
+      setSessionList("waiting");
       return;
     }
     async function refresh(): Promise<void> {
@@ -280,7 +330,7 @@ export function SandboxPage({
       cancelled = true;
       window.clearTimeout(retry);
     };
-  }, [name, state, podIp, openedSessions]);
+  }, [name, ready, currentPodIp, podUid, openedSessions]);
 
   useEffect(() => {
     void (async () => {
@@ -407,7 +457,11 @@ export function SandboxPage({
           >
             {name}
           </Title>
-          {sandbox && <Badge style={{ flexShrink: 0 }}>{sandbox.state}</Badge>}
+          {sandbox && (
+            <Badge color={sandboxSummary(sandbox).color} style={{ flexShrink: 0 }}>
+              {sandboxSummary(sandbox).label}
+            </Badge>
+          )}
           {defaultsLabel && (
             <Badge variant="light" style={{ flexShrink: 0 }}>
               {defaultsLabel}
@@ -440,11 +494,11 @@ export function SandboxPage({
       )}
       {error && <Text c="red">{error}</Text>}
       {live.snapshot !== null && sandbox === null && <Text c="red">There is no sandbox {name} any more.</Text>}
-      {sandbox && sandbox.state !== "running" && (
+      {sandbox && !ready && (
         <Text>
-          {sandbox.state === "waiting_for_grants"
-            ? "Kubernetes grants are not ready; sessions cannot start yet."
-            : `The sandbox is ${sandbox.state}; sessions need a running Pod.`}
+          {sandbox.launch_grants_pending || !sandbox.kubernetes_grants_ready
+            ? "Launch or Kubernetes grants are not ready; sessions cannot start yet."
+            : `Sandbox status: ${sandboxSummary(sandbox).label}. Sessions need a ready Pod.`}
         </Text>
       )}
       <Tabs
@@ -471,8 +525,8 @@ export function SandboxPage({
         </Tabs.Panel>
         <Tabs.Panel value="sessions" pt="sm">
           <Stack>
-            {state === "running" && sessionList === "loading" && <Text role="status">Loading sessions…</Text>}
-            {state === "running" && sessionList === "waiting" && (
+            {ready && sessionList === "loading" && <Text role="status">Loading sessions…</Text>}
+            {ready && sessionList === "waiting" && (
               <Text role="status">Waiting for the sandbox runner to become available; retrying automatically…</Text>
             )}
             {typeof sessionList === "object" && <Text c="red">{sessionList.error}</Text>}
@@ -500,7 +554,7 @@ export function SandboxPage({
               <Button
                 onClick={() => void createSession()}
                 loading={creatingSession}
-                disabled={!sandbox || sandbox.state !== "running" || sessionList !== "ready" || !model}
+                disabled={!ready || sessionList !== "ready" || !model}
               >
                 {creatingSession ? "Creating session…" : "New session"}
               </Button>

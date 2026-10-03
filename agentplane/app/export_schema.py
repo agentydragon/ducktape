@@ -7,11 +7,14 @@ them is published here.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, cast
 
 import httpx
+from kubernetes_asyncio import client as k8s_client
+from kubernetes_asyncio.client import CoreV1Api
 from pydantic import TypeAdapter
 
 from agentplane.app.action_policy import ActionPolicyInventory
@@ -35,14 +38,14 @@ from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 
 
-def openapi_document() -> dict[str, Any]:
+def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
     # Only routes and models shape the document; the inventory's clients are never called.
     inventory = SandboxServiceClient("schema.invalid:8080", namespace="schema", token_file=Path("/schema-unused-token"))
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
     database_updates = DatabaseUpdates(engine.url)
     event_logs, content = EventLogStore(engine), ContentStore(engine)
-    live = LiveIndex(stale_after_seconds=900)
+    live = LiveIndex(stale_after_seconds=900, core_v1=CoreV1Api(api_client))
     runners = SandboxSessions(live, inventory)
     document: dict[str, Any] = create_app(
         inventory,
@@ -84,8 +87,13 @@ def openapi_document() -> dict[str, Any]:
     return document
 
 
+async def openapi_document() -> dict[str, Any]:
+    async with k8s_client.ApiClient() as api_client:
+        return _openapi_document(api_client)
+
+
 def main() -> None:
-    print(json.dumps(openapi_document(), indent=2))
+    print(json.dumps(asyncio.run(openapi_document()), indent=2))
 
 
 if __name__ == "__main__":

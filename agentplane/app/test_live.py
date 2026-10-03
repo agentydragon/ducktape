@@ -57,7 +57,8 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.models import ProvisioningState
+from agentplane.sandbox_service.models import OperatingMode
+from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,
@@ -66,7 +67,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     action_policy_set,
     egress_binding,
     egress_policy,
-    pod,
     sandbox,
 )
 from agentplane.subjects import ServiceAccountRef
@@ -95,9 +95,8 @@ MODELS = ModelCatalog(
 @pytest.fixture
 def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_index: LiveIndex) -> LiveIndex:
     """The same objects in the fake API server and in the index, so the two paths can be compared."""
-    custom_objects.objects[(SANDBOXES_PLURAL, "runner-1")] = sandbox("runner-1")
+    seed_runner(custom_objects, core_v1, "runner-1")
     custom_objects.objects[(SANDBOXES_PLURAL, "shelved")] = sandbox("shelved", operating_mode="Suspended")
-    core_v1.pods["runner-1"] = pod("runner-1", phase="Running", ready=True, ip="10.0.0.7")
     custom_objects.objects[("egresspolicies", "github")] = egress_policy(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
@@ -376,9 +375,8 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
             seeded.sandboxes["runner-1"] = sandbox("runner-1", operating_mode="Suspended")
             seeded.changes.notify()
             suspended = await _next_threads(stream)
-            assert (
-                next(view for view in suspended.sandboxes if view.name == "runner-1").state
-                == ProvisioningState.SUSPENDED
+            assert next(view for view in suspended.sandboxes if view.name == "runner-1").operating_mode == (
+                OperatingMode.SUSPENDED
             )
             del seeded.sandboxes["runner-1"]
             seeded.changes.notify()
