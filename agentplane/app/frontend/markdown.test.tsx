@@ -91,4 +91,34 @@ describe("Markdown", () => {
         .join("\n")
     ).toBe("<not a real tag>\n");
   });
+
+  it("keeps Markdown tables in a horizontally scrollable wrapper", async () => {
+    const rendered = await render("| Stage | Value |\n| --- | --- |\n| Parsed | 12.3456 |");
+    const table = rendered.querySelector("table");
+
+    expect(table?.parentElement?.className).toBe("agentplane-markdown-table-scroll");
+  });
+
+  it("sanitizes hostile HTML and URL schemes while keeping safe Markdown links", async () => {
+    const rendered = await render(
+      [
+        "**Safe emphasis** and [safe link](https://example.test/guide).",
+        "",
+        "<script>window.__sessionMarkdownFixtureExecuted = true</script>",
+        '<img src="x" onerror="window.__sessionMarkdownFixtureExecuted = true">',
+        '<a href="javascript:alert(1)" onclick="window.__sessionMarkdownFixtureExecuted = true">unsafe HTML link</a>',
+        "[unsafe Markdown link](javascript:alert(1))",
+        "[data URL](data:text/html,<script>alert(1)</script>)",
+      ].join("\n")
+    );
+
+    expect(rendered.querySelector("strong")?.textContent).toBe("Safe emphasis");
+    expect(rendered.querySelector('a[href="https://example.test/guide"]')?.textContent).toBe("safe link");
+    expect(rendered.querySelector("script, img")).toBeNull();
+    expect(rendered.querySelector("[onclick], [onerror]")).toBeNull();
+    expect(rendered.querySelector('a[href^="javascript:"], a[href^="data:"]')).toBeNull();
+    expect(
+      (window as typeof window & { __sessionMarkdownFixtureExecuted?: boolean }).__sessionMarkdownFixtureExecuted
+    ).toBeUndefined();
+  });
 });

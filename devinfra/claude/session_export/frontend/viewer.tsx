@@ -36,6 +36,7 @@ import {
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 
+import { Markdown } from "../../../../agentplane/app/frontend/markdown";
 import {
   ApiError,
   getSession,
@@ -826,9 +827,7 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
             Subagent
           </Badge>
         )}
-        <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-          {item.text}
-        </Text>
+        <Markdown source={item.text} size="sm" />
       </Paper>
     );
   }

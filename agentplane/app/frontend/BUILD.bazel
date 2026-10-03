@@ -818,6 +818,10 @@ ts_library(
         "css.d.ts",
     ],
     tsconfig = TSCONFIG,
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//devinfra/claude/session_export/frontend:__pkg__",
+    ],
     deps = [
         ":code_block",
         ":markdown_css",

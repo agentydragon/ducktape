@@ -346,6 +346,68 @@ it("opens the mobile session drawer and keeps the chosen session after it closes
   );
 });
 
+it("renders message Markdown and preserves the exact source in the raw event stream", async () => {
+  const userText = [
+    "Please explain **full precision** in `parseResult`.",
+    "",
+    "[Read the synthetic guide](https://example.test/precision)",
+    "",
+    "<script>window.__sessionMarkdownFixtureExecuted = true</script>",
+    '<a href="javascript:alert(1)" onclick="window.__sessionMarkdownFixtureExecuted = true">unsafe link</a>',
+  ].join("\n");
+  const userEvent = {
+    ...first,
+    payload: { type: "user", message: { role: "user", content: [{ type: "text", text: userText }] } },
+  };
+  const assistantEventWithMarkdown = {
+    ...assistantEvent(2),
+    payload: {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "## Result\n\nThe value stays **precise** until display." }],
+      },
+    },
+  };
+  vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
+  vi.mocked(listSessionEvents).mockResolvedValue({
+    data: [userEvent, assistantEventWithMarkdown],
+    has_more: false,
+    first_id: userEvent.event_id,
+    last_id: assistantEventWithMarkdown.event_id,
+  });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+
+  await vi.waitFor(() => expect(container?.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(2));
+  const userArticle = container.querySelector<HTMLElement>('[data-message-role="user"]')!;
+  const assistantArticle = container.querySelector<HTMLElement>('[data-message-role="assistant"]')!;
+  expect(userArticle.querySelector(".agentplane-markdown")).not.toBeNull();
+  expect(assistantArticle.querySelector(".agentplane-markdown")).not.toBeNull();
+  expect(userArticle.textContent).not.toContain("**");
+  expect(assistantArticle.textContent).not.toContain("## Result");
+  expect(userArticle.querySelector('a[href^="javascript:"]')).toBeNull();
+  expect(userArticle.querySelector("script, [onclick]")).toBeNull();
+
+  await act(async () => container?.querySelector<HTMLButtonElement>('[aria-label="Show raw event stream"]')?.click());
+  await vi.waitFor(() => expect(container?.querySelector('[data-raw-event][data-sequence="1"]')).not.toBeNull());
+  await act(async () => container?.querySelector<HTMLElement>('[data-raw-event][data-sequence="1"] summary')?.click());
+  await vi.waitFor(() =>
+    expect(container?.querySelector('[data-raw-event][data-sequence="1"] [data-event-json]')).not.toBeNull()
+  );
+  const rawJson =
+    container.querySelector('[data-raw-event][data-sequence="1"] [data-event-json]')?.textContent ?? "null";
+  expect(JSON.parse(rawJson)).toEqual(userEvent);
+});
+
 it("applies committed session and transcript changes without restarting the watch", async () => {
   const stream = new EventTarget() as EventTarget & {
     close: () => void;

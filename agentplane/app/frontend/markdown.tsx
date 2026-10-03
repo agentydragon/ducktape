@@ -1,4 +1,4 @@
-import { Text } from "@mantine/core";
+import { Text, type TextProps } from "@mantine/core";
 import DOMPurify from "dompurify";
 import { Marked } from "marked";
 import { createElement, type JSX, type ReactNode, useMemo } from "react";
@@ -65,6 +65,7 @@ const ALLOWED_TAGS = [
 
 const STREAMING_CURSOR_MARKER = "data-agentplane-streaming-cursor";
 const STREAMING_CURSOR_KEY = "agentplane-streaming-cursor";
+const MARKDOWN_TABLE_SCROLL_CLASS = "agentplane-markdown-table-scroll";
 
 function appendStreamingCursor(content: DocumentFragment): void {
   const cursor = document.createElement("span");
@@ -149,7 +150,14 @@ function toReactNode(node: ChildNode, key: string, singleLine: boolean): ReactNo
   );
   const children = [...node.childNodes].map((child, index) => toReactNode(child, `${key}.${index}`, singleLine));
   // This key stays fixed as text changes, so React reuses the cursor DOM node through streaming.
-  return createElement(node.tagName.toLowerCase(), { ...props, key: cursor ? STREAMING_CURSOR_KEY : key }, ...children);
+  const renderedNode = createElement(
+    node.tagName.toLowerCase(),
+    { ...props, key: cursor ? STREAMING_CURSOR_KEY : key },
+    ...children
+  );
+  return node.tagName === "TABLE"
+    ? createElement("div", { key, className: MARKDOWN_TABLE_SCROLL_CLASS }, renderedNode)
+    : renderedNode;
 }
 
 /**
@@ -158,17 +166,20 @@ function toReactNode(node: ChildNode, key: string, singleLine: boolean): ReactNo
  * with each sanitized HTML string. The local class supplies the small amount of prose styling this
  * transcript needs; Mantine 9 removed the old `TypographyStylesProvider` wrapper. Render through
  * `Text` (at its default `md` size, matching `VerbatimText`) rather than a bare `div`, so this reads
- * `theme.fontSizes`/`lineHeights` like the rest of the app; `component="div"` because the content can
- * contain block-level tags that a `Text`'s default `<p>` can't legally contain.
+ * `theme.fontSizes`/`lineHeights` like the rest of the app; callers can choose a smaller scale for
+ * dense transcript prose. Use `component="div"` because the content can contain block-level tags
+ * that a `Text`'s default `<p>` can't legally contain.
  */
 export function Markdown({
   source,
   streaming = false,
   singleLine = false,
+  size = "md",
 }: {
   source: string;
   streaming?: boolean;
   singleLine?: boolean;
+  size?: TextProps["size"];
 }): JSX.Element {
   const content = useMemo(() => {
     const rendered = marked.parse(source);
@@ -187,7 +198,11 @@ export function Markdown({
     return [...template.content.childNodes].map((node, index) => toReactNode(node, String(index), singleLine));
   }, [source, singleLine, streaming]);
   return (
-    <Text component="div" className={`agentplane-markdown${singleLine ? " agentplane-markdown--single-line" : ""}`}>
+    <Text
+      component="div"
+      size={size}
+      className={`agentplane-markdown${singleLine ? " agentplane-markdown--single-line" : ""}`}
+    >
       {content}
     </Text>
   );

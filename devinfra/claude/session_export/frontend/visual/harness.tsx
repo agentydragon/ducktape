@@ -83,6 +83,15 @@ const sessions: Array<SessionSummary & { git_branch: string; repo_path: string }
   },
 ];
 
+const markdownSession: SessionSummary = {
+  id: "session_fixture_markdown",
+  title: "Render a readable transcript",
+  status: "active",
+  created_at: "2026-09-30T18:40:00Z",
+  updated_at: "2026-09-30T18:42:00Z",
+  last_event_at: "2026-09-30T18:42:00Z",
+};
+
 const sessionPage: SessionListPage = { data: sessions, next_cursor: null, resume_token: null };
 const liveUpdatedSession: SessionSummary = {
   ...noisySession,
@@ -158,6 +167,58 @@ function fixtureEvent(
     payload,
   };
 }
+
+const markdownEventPage: SessionEventPage = {
+  data: [
+    fixtureEvent(1, "user", {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: [
+              "Could you explain why the value stays **precise** in `parseResult`?",
+              "",
+              "- Keep all input digits.",
+              "- Round only for presentation.",
+              "",
+              "| Stage | Value |",
+              "| --- | ---: |",
+              "| Parsed | `12.3456` |",
+              "| Display | `12.35` |",
+            ].join("\n"),
+          },
+        ],
+      },
+    }),
+    fixtureEvent(2, "assistant", {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: [
+              "## Result",
+              "",
+              "The parser keeps **all four decimal places** until display. See [the synthetic guide](https://example.test/precision).",
+              "",
+              "Long reference: https://example.test/precision/analysis/parsed-value/retain-every-decimal-place/format-only-at-the-final-display-boundary/line-breaks-must-occur-inside-this-long-address",
+              "",
+              "```ts",
+              "export const display = parsed.toFixed(2);",
+              "```",
+            ].join("\n"),
+          },
+        ],
+      },
+    }),
+  ],
+  has_more: false,
+  first_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a501",
+  last_id: "d4c8b29a-4f1d-4a22-8b3c-73f621e9a502",
+};
 
 const eventPage: SessionEventPage = {
   data: [
@@ -644,6 +705,8 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
   if (url.pathname === "/api/pairing/complete") return Promise.resolve(json(pairedStatus));
   if (url.pathname === "/api/sync") return Promise.resolve(new Response(null, { status: 202 }));
   if (url.pathname === "/v1/code/sessions") {
+    if (scenario.startsWith("SessionMarkdown"))
+      return Promise.resolve(json({ data: [markdownSession], next_cursor: null, resume_token: null }));
     return Promise.resolve(
       json(
         scenario.startsWith("SessionLiveUpdates")
@@ -680,6 +743,7 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
           last_id: liveEvents.at(-1)?.event_id,
         })
       );
+    if (page.startsWith("SessionMarkdown")) return Promise.resolve(json(markdownEventPage));
     if (page.startsWith("SessionLatestFirst")) {
       const cursor = url.searchParams.get("cursor");
       return Promise.resolve(

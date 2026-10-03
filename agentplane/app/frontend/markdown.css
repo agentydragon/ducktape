@@ -7,7 +7,12 @@
   margin-block: 1em 0.5em;
 }
 
-.agentplane-markdown :where(p, ul, ol, pre, blockquote, table) {
+.agentplane-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agentplane-markdown :where(p, ul, ol, pre, blockquote, .agentplane-markdown-table-scroll) {
   margin-block: 0.75em;
 }
 
@@ -39,6 +44,26 @@
   overflow-wrap: anywhere;
 }
 
+.agentplane-markdown-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.agentplane-markdown :where(table) {
+  border-collapse: collapse;
+  margin: 0;
+}
+
+.agentplane-markdown :where(th, td) {
+  border: 1px solid var(--mantine-color-default-border);
+  overflow-wrap: anywhere;
+  padding: 0.25rem 0.5rem;
+}
+
+.agentplane-markdown :where(a) {
+  overflow-wrap: anywhere;
+}
+
 /* A reasoning preview keeps Markdown's inline formatting while treating its block structure as
    one continuous line. Its fixed-width block clips overflowing inline content and supplies the ellipsis. */
 .agentplane-markdown--single-line {
@@ -47,10 +72,31 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  overflow-wrap: normal;
 }
 
 .agentplane-markdown--single-line
-  :where(h1, h2, h3, h4, h5, h6, p, ul, ol, li, pre, blockquote, table, tbody, thead, tr, td, th) {
+  :where(
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    p,
+    ul,
+    ol,
+    li,
+    pre,
+    blockquote,
+    table,
+    tbody,
+    thead,
+    tr,
+    td,
+    th,
+    .agentplane-markdown-table-scroll
+  ) {
   display: inline;
   margin: 0;
   padding: 0;
@@ -61,10 +107,14 @@
   list-style: none;
 }
 
+.agentplane-markdown--single-line .agentplane-markdown-table-scroll {
+  overflow: visible;
+}
+
 .agentplane-markdown--single-line pre {
   white-space: inherit;
 }
 
-.agentplane-markdown--single-line :where(code) {
+.agentplane-markdown--single-line :where(a, code) {
   overflow-wrap: normal;
 }

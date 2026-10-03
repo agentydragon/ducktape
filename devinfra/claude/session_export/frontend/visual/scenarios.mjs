@@ -38,6 +38,14 @@ const LOCAL_COMMAND_READY = [
   '[data-fold-kind="usage"]',
   '[data-fold-kind="status"]',
 ];
+const MARKDOWN_READY = [
+  '[aria-label="Session history"]',
+  '[data-message-role="user"] .agentplane-markdown ul',
+  '[data-message-role="user"] .agentplane-markdown table',
+  '[data-message-role="assistant"] .agentplane-markdown h2',
+  '[data-message-role="assistant"] .agentplane-markdown a[href^="https://"]',
+  '[data-message-role="assistant"] .agentplane-markdown pre',
+];
 
 const NOISY_READY = ['#app[data-noisy-ready="true"]'];
 const SIDEBAR_EXPANDED_READY = ['#app[data-noisy-ready="true"][data-sidebar-ready="expanded"]'];
@@ -107,6 +115,12 @@ export const SCENARIOS = {
   SessionViewer_mobile: {
     element: "#app",
     readySelectors: VIEWER_READY,
+    viewport: { width: 420, height: 900 },
+  },
+  SessionMarkdown: { element: "#app", readySelectors: MARKDOWN_READY },
+  SessionMarkdown_mobile: {
+    element: "#app",
+    readySelectors: MARKDOWN_READY,
     viewport: { width: 420, height: 900 },
   },
   SessionToolResult: { element: "#app", readySelectors: TOOL_RESULT_READY },
