@@ -112,7 +112,7 @@ afterEach(async () => {
   else Object.defineProperty(window, "matchMedia", originalMatchMedia);
   vi.unstubAllGlobals();
   vi.useRealTimers();
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 it("recovers an initial session-list network failure without a refresh control", async () => {
@@ -163,7 +163,9 @@ it("keeps the selected session when the session list is hidden and shown", async
   );
   await vi.waitFor(() => expect(container?.querySelector("#session-sidebar")).not.toBeNull());
 
-  const secondRow = container.querySelector<HTMLButtonElement>('#session-sidebar button[aria-pressed="false"]')!;
+  const secondRow = [...container.querySelectorAll<HTMLButtonElement>("#session-sidebar button[aria-pressed]")].find(
+    (button) => button.textContent?.includes(secondSession.title)
+  )!;
   await act(async () => secondRow.click());
   await vi.waitFor(() => expect(container?.textContent).toContain("Selected after toggling"));
 
@@ -323,9 +325,9 @@ it("opens the mobile session drawer and keeps the chosen session after it closes
   await act(async () => toggle.click());
   await vi.waitFor(() => expect(document.body.querySelector("#session-sidebar-mobile")).not.toBeNull());
 
-  const secondRow = document.body.querySelector<HTMLButtonElement>(
-    '#session-sidebar-mobile button[aria-pressed="false"]'
-  )!;
+  const secondRow = [
+    ...document.body.querySelectorAll<HTMLButtonElement>("#session-sidebar-mobile button[aria-pressed]"),
+  ].find((button) => button.textContent?.includes(secondSession.title))!;
   await act(async () => secondRow.click());
   await vi.waitFor(() => expect(container?.textContent).toContain("Selected after toggling"));
   expect(container.querySelector('button[aria-controls="session-sidebar-mobile"]')?.getAttribute("aria-expanded")).toBe(
@@ -508,9 +510,10 @@ it("updates an older loaded session into and out of the active filter across a s
     stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [olderArchived.id] }) }))
   );
   await vi.waitFor(() => expect(getSession).toHaveBeenCalledTimes(2));
-  await vi.waitFor(() =>
-    expect(container?.querySelector("#session-sidebar button")?.textContent).not.toContain(olderActive.title)
-  );
+  await vi.waitFor(() => {
+    const rows = [...(container?.querySelectorAll<HTMLButtonElement>("#session-sidebar button[aria-pressed]") ?? [])];
+    expect(rows.some((button) => button.textContent?.includes(olderActive.title))).toBe(false);
+  });
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "");
     search.dispatchEvent(new Event("input", { bubbles: true }));
@@ -759,10 +762,14 @@ it("catches up every page after a reconnect without dropping the selected older 
   Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 400 });
   viewport.scrollTop = 100;
   await act(async () => viewport.dispatchEvent(new Event("scroll")));
-  stream.onerror?.();
+  await act(async () => {
+    stream.onerror?.();
+  });
   expect(container.textContent).toContain("Reconnecting…");
-  stream.onopen?.();
-  await act(async () => stream.dispatchEvent(new Event("reset")));
+  await act(async () => {
+    stream.onopen?.();
+    stream.dispatchEvent(new Event("reset"));
+  });
 
   await vi.waitFor(() => expect(container?.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(350));
   expect(container.querySelector('[aria-label="Session transcript"] h4')?.textContent).toBe(olderSession.title);
