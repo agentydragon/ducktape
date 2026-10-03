@@ -17,6 +17,7 @@ from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service.client import ReconnectRequiredError, Runner, SandboxServiceClient
+from agentplane.sandbox_service.kind import from_wire
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
 from agentplane.subjects import ServiceAccountRef
@@ -40,15 +41,19 @@ class Service:
         if destination.namespace != self.sandboxes.namespace:
             raise DestinationRejectedError
         try:
-            sandbox = await self.sandboxes.get(destination.name)
+            sandbox = await self.sandboxes.get(destination.name, kind=destination.kind)
         except SandboxNotFoundError as error:
             raise DestinationRejectedError from error
-        if sandbox.uid != destination.uid or sandbox.service_account != ServiceAccount(
-            namespace=owner.namespace, name=owner.name
+        if (
+            from_wire(sandbox.kind) != destination.kind
+            or sandbox.uid != destination.uid
+            or sandbox.service_account != ServiceAccount(namespace=owner.namespace, name=owner.name)
         ):
             raise DestinationRejectedError
         return self.sandboxes.runner(
-            SandboxDestination(sandbox=destination.name, sandbox_uid=destination.uid, owner=sandbox.service_account)
+            SandboxDestination(
+                sandbox=destination.name, sandbox_uid=destination.uid, owner=sandbox.service_account, kind=sandbox.kind
+            )
         )
 
     async def subscribe(self, principal: WorkloadPrincipal, body: Subscribe) -> SubscriptionView:

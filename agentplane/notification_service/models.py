@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from agentplane.sandbox_service.models import EnvironmentKind
+
 
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True, hide_input_in_errors=True)
@@ -22,6 +24,7 @@ class DestinationRef(Model):
     namespace: str = Field(min_length=1, max_length=63)
     name: str = Field(min_length=1, max_length=63)
     uid: str = Field(min_length=1, max_length=128)
+    kind: EnvironmentKind
 
 
 class Subscribe(Model):

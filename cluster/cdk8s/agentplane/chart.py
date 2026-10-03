@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 
+from agentplane.sandbox_service.kubevirt import VmTemplate
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
     actions,
@@ -25,7 +26,9 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 
 
-def environment_chart(app: App, env: Environment) -> Chart:
+def environment_chart(
+    app: App, env: Environment, *, vm_templates: dict[str, VmTemplate] | None = None, vm_relay_image: str | None = None
+) -> Chart:
     """The shared objects. The fleet rules attach as a synth-time validation, so a caller
     may keep adding objects to the returned chart and they are still checked.
 
@@ -45,6 +48,8 @@ def environment_chart(app: App, env: Environment) -> Chart:
         env,
         manager=ServiceAccountRef(namespace=env.namespace, name=app_component.NAME),
         caller=app_component.service(env.namespace),
+        vm_templates=vm_templates,
+        vm_relay_image=vm_relay_image,
     )
     app_component.App(chart, "app", env)
     actions.Actions(chart, "actions", env)

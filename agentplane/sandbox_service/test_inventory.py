@@ -9,7 +9,12 @@ import pytest_bazel
 from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, SessionDestination
+from agentplane.sandbox_service.protocol_pb2 import (
+    ENVIRONMENT_KIND_AGENT_SANDBOX,
+    ENVIRONMENT_KIND_KUBEVIRT,
+    SandboxDestination,
+    SessionDestination,
+)
 from agentplane.sandbox_service.session_lifecycle import launch_spec
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
@@ -26,6 +31,20 @@ async def test_read_retained_sandbox_without_mutation(cluster: Cluster) -> None:
     assert view.service_account.name == ACCOUNT
     assert view.state == ProvisioningState.RUNNING
     assert cluster.fake.objects == before
+
+
+def test_vm_session_cwd_requires_workspace_child() -> None:
+    destination = SessionDestination(
+        sandbox=SandboxDestination(kind=ENVIRONMENT_KIND_KUBEVIRT, sandbox="test-vm", sandbox_uid="vm-uid"),
+        session_id="session-1",
+    )
+    overrides: dict[str, object] = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/workspace"}
+    with pytest.raises(ValueError, match="child of /workspace"):
+        launch_spec(destination, overrides, binding=None, platform_instructions="")
+    spec = launch_spec(
+        destination, {**overrides, "cwd": "/workspace/session-1"}, binding=None, platform_instructions=""
+    )
+    assert spec.cwd == "/workspace/session-1"
 
 
 @pytest.mark.parametrize(
@@ -52,7 +71,12 @@ async def test_legacy_binding_storage_is_preserved_but_not_exposed(cluster: Clus
         assert binding.session_defaults.instructions == ""
         spec = launch_spec(
             SessionDestination(
-                sandbox=SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid),
+                sandbox=SandboxDestination(
+                    owner=view.service_account,
+                    sandbox=view.name,
+                    sandbox_uid=view.uid,
+                    kind=ENVIRONMENT_KIND_AGENT_SANDBOX,
+                ),
                 session_id="retained-session",
             ),
             {},

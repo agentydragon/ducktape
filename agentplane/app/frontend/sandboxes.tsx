@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import { type JSX, useEffect, useState } from "react";
+import { type JSX, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { readiness } from "./actions/policy";
@@ -29,17 +29,21 @@ import {
   type KubernetesGrantView,
   type ModelCatalog,
   type NewSandbox,
+  type SandboxKind,
   type SandboxPresetView,
+  type SandboxTemplateView,
   type SandboxView,
   type SessionDefaults,
 } from "./client";
 import type { ActionPolicySetView } from "./actions/client";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
+import { CAPABILITY_LABELS, SANDBOX_KIND_OPTIONS, sandboxKindLabel } from "./sandbox_kinds";
 import { StaleNotice } from "./stream_status";
 
 const EMPTY_FORM: NewSandbox = {
   slug: "",
+  kind: "agent_sandbox",
   template: "",
   policies: [],
   action_policy_sets: [],
@@ -57,9 +61,12 @@ function hasSessionDefaults(defaults: SessionDefaults): boolean {
 export const STATE_COLORS: Record<string, string> = {
   running: "green",
   suspended: "gray",
+  stopping: "orange",
   waiting_for_grants: "yellow",
   waiting_for_pod: "yellow",
   waiting_for_pod_ready: "yellow",
+  waiting_for_vm: "yellow",
+  waiting_for_guest: "yellow",
 };
 
 function conditionLine({ type, status, reason, message }: Condition): string {
@@ -88,6 +95,19 @@ export function stateDetail(row: SandboxView): string {
       );
     }
   }
+  if (row.vm) {
+    lines.push(
+      [`VirtualMachine ${row.vm.printable_status ?? row.vm.phase ?? "unknown"}`, row.vm.reason, row.vm.message]
+        .filter((part) => part)
+        .join(" · ")
+    );
+    if (row.vm.guest_ip) lines.push(`Guest IP ${row.vm.guest_ip}`);
+    if (row.vm.node_name) lines.push(`VM node ${row.vm.node_name}`);
+  }
+  const capabilities = row.capabilities ?? [];
+  if (capabilities.length > 0) {
+    lines.push(`Capabilities: ${capabilities.map((capability) => CAPABILITY_LABELS[capability]).join(", ")}`);
+  }
   return lines.length > 0 ? lines.join("\n") : "No conditions reported";
 }
 
@@ -105,7 +125,7 @@ function StateBadge({ row }: { row: SandboxView }): JSX.Element {
   );
 }
 
-export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
+export function SandboxList({ onOpen }: { onOpen: (name: string, kind: SandboxKind) => void }): JSX.Element {
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
@@ -121,15 +141,18 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const reasoningEfforts = modelOptions.find((option) => option.model === thread.model)?.reasoning_efforts ?? [];
   // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
-  const [templates, setTemplates] = useState<string[]>([]);
+  const [templates, setTemplates] = useState<SandboxTemplateView[]>([]);
+  const compatibleTemplates = templates.filter((template) => template.kind === form.kind);
+  const selectedTemplate = compatibleTemplates.find((template) => template.name === form.template);
   // The namespace's action policy sets; a preset pre-fills the pick and the operator edits it.
   const [policySets, setPolicySets] = useState<ActionPolicySetView[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
-  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<{ name: string; kind: SandboxKind } | null>(null);
   const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
   const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPreset = searchParams.get(PRESET_PARAM);
+  const handledPreset = useRef<string | null>(null);
 
   /** Fill the form from a preset, or clear what one filled; every launch field stays editable. */
   function pickPreset(preset: SandboxPresetView | null): void {
@@ -148,6 +171,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     }
     setForm((current) => ({
       ...current,
+      kind: preset.kind ?? "agent_sandbox",
       template: preset.template,
       policies: preset.policies,
       action_policy_sets: preset.action_policy_sets,
@@ -159,9 +183,21 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   // The URL names a preset the form has not taken yet: once the catalog is here, take it.
   useEffect(() => {
-    if (requestedPreset === null || requestedPreset === selectedPreset) return;
+    if (requestedPreset === null) {
+      handledPreset.current = null;
+      return;
+    }
+    // A local form change can clear a preset and its URL parameter in separate React updates. Do
+    // not reapply the old URL value in the render between those updates.
+    if (requestedPreset === selectedPreset || requestedPreset === handledPreset.current) {
+      handledPreset.current = requestedPreset;
+      return;
+    }
     const preset = presets.find((candidate) => candidate.name === requestedPreset);
-    if (preset) pickPreset(preset);
+    if (preset) {
+      handledPreset.current = requestedPreset;
+      pickPreset(preset);
+    }
   }, [requestedPreset, selectedPreset, presets]);
 
   useEffect(() => {
@@ -204,8 +240,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   // No refresh after an action: the change reaches the API server, and the watch behind the
   // stream brings the new row back on its own.
-  async function act(name: string, action: "suspend" | "resume" | "delete"): Promise<void> {
-    const params = { params: { path: { name } } };
+  async function act(name: string, kind: SandboxKind, action: "suspend" | "resume" | "delete"): Promise<void> {
+    const params = { params: { path: { name }, query: { kind } } };
     const { error: failure } =
       action === "delete"
         ? await api.DELETE("/sandboxes/{name}", params)
@@ -230,7 +266,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       params.delete(PRESET_PARAM);
       setSearchParams(params, { replace: true });
       setError(null);
-      onOpen(data.name);
+      onOpen(data.name, data.kind ?? "agent_sandbox");
     }
   }
 
@@ -241,10 +277,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       <LiveStatus live={live} />
       {confirmingDelete !== null && (
         <ConfirmDelete
-          name={confirmingDelete}
+          name={confirmingDelete.name}
+          kind={confirmingDelete.kind}
           onCancel={() => setConfirmingDelete(null)}
           onConfirm={() => {
-            void act(confirmingDelete, "delete");
+            void act(confirmingDelete.name, confirmingDelete.kind, "delete");
             setConfirmingDelete(null);
           }}
         />
@@ -255,7 +292,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           clearable
           label="Preset"
           description="Fills editable launch defaults"
-          data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
+          data={presets
+            .filter((preset) => (preset.kind ?? "agent_sandbox") === form.kind)
+            .map((preset) => ({ value: preset.name, label: preset.title }))}
           value={selectedPreset}
           onChange={(name) => {
             const preset = presets.find((candidate) => candidate.name === name) ?? null;
@@ -263,6 +302,21 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             const params = new URLSearchParams(searchParams);
             if (preset) params.set(PRESET_PARAM, preset.name);
             else params.delete(PRESET_PARAM);
+            setSearchParams(params, { replace: true });
+          }}
+          style={{ flex: "1 1 12rem" }}
+        />
+        <Select
+          label="Environment kind"
+          allowDeselect={false}
+          data={SANDBOX_KIND_OPTIONS}
+          value={form.kind}
+          onChange={(kind) => {
+            if (!kind || kind === form.kind) return;
+            if (selectedPreset) pickPreset(null);
+            setForm((current) => ({ ...current, kind: kind as SandboxKind, template: "" }));
+            const params = new URLSearchParams(searchParams);
+            params.delete(PRESET_PARAM);
             setSearchParams(params, { replace: true });
           }}
           style={{ flex: "1 1 12rem" }}
@@ -277,10 +331,16 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           label="Template"
           searchable
           clearable
-          data={templates}
+          data={compatibleTemplates.map((template) => ({ value: template.name, label: template.name }))}
           value={form.template || null}
           onChange={(template) => setForm({ ...form, template: template ?? "" })}
-          placeholder={templates.length > 0 ? "Choose a template" : "Loading templates…"}
+          placeholder={
+            templates.length === 0
+              ? "Loading templates…"
+              : compatibleTemplates.length > 0
+                ? "Choose a compatible template"
+                : `No ${sandboxKindLabel(form.kind)} templates available`
+          }
           style={{ flex: "1 1 14rem" }}
         />
         <MultiSelect
@@ -332,6 +392,18 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           New sandbox
         </Button>
       </Group>
+      {selectedTemplate && selectedTemplate.capabilities.length > 0 && (
+        <Group gap="xs" aria-label="Template capabilities">
+          <Text size="xs" c="dimmed">
+            Template supports
+          </Text>
+          {selectedTemplate.capabilities.map((capability) => (
+            <Badge key={capability} variant="light">
+              {CAPABILITY_LABELS[capability]}
+            </Badge>
+          ))}
+        </Group>
+      )}
       <Textarea
         label="Bootstrap script"
         description="Runs once before this Sandbox's first session"
@@ -413,6 +485,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Name</Table.Th>
+            <Table.Th visibleFrom="sm">Environment</Table.Th>
             <Table.Th visibleFrom="sm">State</Table.Th>
             <Table.Th visibleFrom="sm">Node</Table.Th>
             <Table.Th />
@@ -420,14 +493,20 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         </Table.Thead>
         <Table.Tbody>
           {rows.map((row) => {
-            const node = `${row.node_name ?? "—"} ${row.pod?.ip ? `(${row.pod.ip})` : ""}`;
+            const kind = row.kind ?? "agent_sandbox";
+            const nodeName = row.vm?.node_name ?? row.pod?.node_name ?? row.node_name;
+            const address = row.vm?.guest_ip ?? row.pod?.ip;
+            const node = `${nodeName ?? "—"} ${address ? `(${address})` : ""}`;
             const state = <StateBadge row={row} />;
             return (
-              <Table.Tr key={row.name}>
+              <Table.Tr key={`${kind}/${row.name}`}>
                 <Table.Td>
-                  <Button variant="subtle" px="xs" onClick={() => onOpen(row.name)}>
+                  <Button variant="subtle" px="xs" onClick={() => onOpen(row.name, kind)}>
                     {row.name}
                   </Button>
+                  <Badge ml="xs" variant="light" hiddenFrom="sm">
+                    {sandboxKindLabel(kind)}
+                  </Badge>
                   {/* On a phone the other columns fold under the name, leaving room for the actions. */}
                   <Stack gap="xs" hiddenFrom="sm">
                     {state}
@@ -436,11 +515,12 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                     </Text>
                   </Stack>
                 </Table.Td>
+                <Table.Td visibleFrom="sm">{sandboxKindLabel(kind)}</Table.Td>
                 <Table.Td visibleFrom="sm">{state}</Table.Td>
                 <Table.Td visibleFrom="sm">{node}</Table.Td>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <Group gap="xs" wrap="nowrap" justify="flex-end">
-                    <SuspendResume sandbox={row} onAct={(action) => void act(row.name, action)} />
+                    <SuspendResume sandbox={row} onAct={(action) => void act(row.name, kind, action)} />
                     <Menu position="bottom-end">
                       <Menu.Target>
                         <ActionIcon variant="subtle" aria-label={`More actions for ${row.name}`}>
@@ -449,7 +529,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                       </Menu.Target>
                       <Menu.Dropdown>
                         {/* The API refuses a running sandbox (inventory.py); suspend is one click left. */}
-                        <Menu.Item color="red" disabled={!deletable(row)} onClick={() => setConfirmingDelete(row.name)}>
+                        <Menu.Item
+                          color="red"
+                          disabled={!deletable(row)}
+                          onClick={() => setConfirmingDelete({ name: row.name, kind })}
+                        >
                           Delete
                         </Menu.Item>
                       </Menu.Dropdown>

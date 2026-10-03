@@ -141,7 +141,8 @@ async def sandbox(client: Client) -> AsyncIterator[Callable[..., Awaitable[Sandb
         bootstrap: str = "",
     ) -> SandboxView:
         if template is None:
-            [template] = await client.templates()
+            [available_template] = await client.templates()
+            template = available_template.name
         values: dict[str, object] = {
             "slug": slug,
             "template": template,

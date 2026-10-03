@@ -20,26 +20,29 @@ from agentplane.app.threads.models import EventLog, SandboxIngestion
 class IngestionLease:
     sandbox: str
     token: UUID
+    sandbox_kind: str = "agent_sandbox"
 
 
 class IngestionLeaseLostError(Exception):
     """The sandbox ingester no longer owns authority to commit observations."""
 
 
-async def acquire(session: AsyncSession, sandbox: str, duration: timedelta) -> IngestionLease | None:
+async def acquire(
+    session: AsyncSession, sandbox: str, duration: timedelta, *, sandbox_kind: str = "agent_sandbox"
+) -> IngestionLease | None:
     _positive_duration(duration)
     token = uuid4()
     acquired = await session.scalar(
         insert(SandboxIngestion)
-        .values(sandbox=sandbox, token=token, expires_at=func.clock_timestamp() + duration)
+        .values(sandbox_kind=sandbox_kind, sandbox=sandbox, token=token, expires_at=func.clock_timestamp() + duration)
         .on_conflict_do_update(
-            index_elements=[SandboxIngestion.sandbox],
+            index_elements=[SandboxIngestion.sandbox_kind, SandboxIngestion.sandbox],
             set_={"token": token, "expires_at": func.clock_timestamp() + duration},
             where=SandboxIngestion.expires_at <= func.clock_timestamp(),
         )
         .returning(SandboxIngestion.token)
     )
-    return IngestionLease(sandbox, token) if acquired is not None else None
+    return IngestionLease(sandbox, token, sandbox_kind) if acquired is not None else None
 
 
 async def renew(session: AsyncSession, lease: IngestionLease, duration: timedelta) -> bool:
@@ -48,6 +51,7 @@ async def renew(session: AsyncSession, lease: IngestionLease, duration: timedelt
         update(SandboxIngestion)
         .where(
             SandboxIngestion.sandbox == lease.sandbox,
+            SandboxIngestion.sandbox_kind == lease.sandbox_kind,
             SandboxIngestion.token == lease.token,
             SandboxIngestion.expires_at > func.clock_timestamp(),
         )
@@ -59,7 +63,11 @@ async def renew(session: AsyncSession, lease: IngestionLease, duration: timedelt
 
 async def release(session: AsyncSession, lease: IngestionLease) -> None:
     await session.execute(
-        delete(SandboxIngestion).where(SandboxIngestion.sandbox == lease.sandbox, SandboxIngestion.token == lease.token)
+        delete(SandboxIngestion).where(
+            SandboxIngestion.sandbox_kind == lease.sandbox_kind,
+            SandboxIngestion.sandbox == lease.sandbox,
+            SandboxIngestion.token == lease.token,
+        )
     )
 
 
@@ -72,11 +80,14 @@ async def fence(session: AsyncSession, lease: IngestionLease, thread_id: UUID) -
     # Lock before reading database time: a transaction that waited on an owner must not rely on
     # its transaction-start timestamp. Takeover/renewal waits until this write commits or rolls back.
     owned = await session.scalar(
-        select(SandboxIngestion).where(SandboxIngestion.sandbox == lease.sandbox).with_for_update()
+        select(SandboxIngestion)
+        .where(SandboxIngestion.sandbox_kind == lease.sandbox_kind, SandboxIngestion.sandbox == lease.sandbox)
+        .with_for_update()
     )
     now = (await session.scalars(select(func.clock_timestamp()))).one()
     if owned is None or owned.token != lease.token or owned.expires_at <= now:
         raise IngestionLeaseLostError(lease.sandbox)
-    sandbox = await session.scalar(select(EventLog.sandbox).where(EventLog.id == thread_id))
-    if sandbox != lease.sandbox:
+    sandbox = await session.execute(select(EventLog.sandbox_kind, EventLog.sandbox).where(EventLog.id == thread_id))
+    identity = sandbox.one_or_none()
+    if identity != (lease.sandbox_kind, lease.sandbox):
         raise IngestionLeaseLostError("lease does not own this thread's sandbox")

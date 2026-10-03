@@ -19,6 +19,7 @@ py_library(
     deps = [
         ":sessions",
         "//agentplane/app:database_updates",
+        "//agentplane/app:sandbox_models",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/events:ingestion_lease",
         "//agentplane/app/threads/view:fold",
@@ -92,6 +93,7 @@ py_library(
     deps = [
         ":models",
         "//agentplane/app:database_updates",
+        "//agentplane/app:sandbox_models",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:views",
         "//agentplane/runner:protocol_pb2",
@@ -127,7 +129,9 @@ py_library(
     deps = [
         "//agentplane/app:changes",
         "//agentplane/app:live",
+        "//agentplane/app:sandbox_models",
         "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:kind",
         "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//protobuf",
@@ -141,6 +145,7 @@ py_library(
         ":ingestion",
         ":sessions",
         "//agentplane/app:changes",
+        "//agentplane/app:sandbox_models",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
         "//agentplane/protocol:command_pb2",

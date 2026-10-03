@@ -18,6 +18,8 @@ service SandboxService {
   rpc SuspendSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ResumeSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc DeleteSandbox(SandboxRequest) returns (google.protobuf.Empty);
+  // The VM must be halted and its old VMI gone; disks and environment UID stay put.
+  rpc ReplaceVmImage(ReplaceVmImageRequest) returns (Sandbox);
   rpc ListTemplates(google.protobuf.Empty) returns (ListTemplatesResponse);
 
   rpc GrantEgress(GrantEgressRequest) returns (GrantEgressResponse);
@@ -36,10 +38,17 @@ message ServiceAccount {
   string name = 2;
 }
 
+enum EnvironmentKind {
+  ENVIRONMENT_KIND_UNSPECIFIED = 0;
+  ENVIRONMENT_KIND_AGENT_SANDBOX = 1;
+  ENVIRONMENT_KIND_KUBEVIRT = 2;
+}
+
 message SandboxDestination {
   ServiceAccount owner = 1;
   string sandbox = 2;
   string sandbox_uid = 3;
+  EnvironmentKind kind = 4;
 }
 
 message SessionDestination {
@@ -48,8 +57,15 @@ message SessionDestination {
 }
 
 message SandboxRequest { SandboxDestination destination = 1; }
+message ReplaceVmImageRequest {
+  SandboxDestination destination = 1;
+  string template = 2;
+}
 message SessionRequest { SessionDestination destination = 1; }
-message GetSandboxRequest { string name = 1; }
+message GetSandboxRequest {
+  string name = 1;
+  EnvironmentKind kind = 2;
+}
 
 message OpenSessionRequest {
   SessionDestination destination = 1;
@@ -107,6 +123,7 @@ message CreateSandboxRequest {
   repeated string kubernetes_grants = 5;
   SessionDefaults session_defaults = 6;
   string bootstrap = 7;
+  EnvironmentKind kind = 8;
 }
 
 // Kubernetes names/status vocabulary is preserved, not recast as runner state.
@@ -146,6 +163,16 @@ message PodStatus {
   repeated Condition conditions = 6;
   repeated ContainerStatus containers = 7;
 }
+message VirtualMachineStatus {
+  optional string phase = 1;
+  optional string printable_status = 2;
+  optional string vmi_uid = 3;
+  optional string guest_ip = 4;
+  optional string node_name = 5;
+  repeated Condition conditions = 6;
+  optional string reason = 7;
+  optional string message = 8;
+}
 message Sandbox {
   string name = 1;
   string uid = 2;
@@ -161,9 +188,21 @@ message Sandbox {
   optional string kubernetes_grant_error = 12;
   bool deleting = 13;
   PodStatus pod = 14;
+  EnvironmentKind kind = 15;
+  string template = 16;
+  repeated string capabilities = 17;
+  VirtualMachineStatus vm = 18;
 }
 message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }
-message ListTemplatesResponse { repeated string templates = 1; }
+message TemplateDescriptor {
+  string name = 1;
+  EnvironmentKind kind = 2;
+  repeated string capabilities = 3;
+}
+message ListTemplatesResponse {
+  repeated string templates = 1;
+  repeated TemplateDescriptor descriptors = 2;
+}
 
 message GrantEgressRequest {
   SandboxDestination destination = 1;

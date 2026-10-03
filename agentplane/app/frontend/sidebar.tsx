@@ -24,6 +24,7 @@ import { stateDetail } from "./sandboxes";
 import "./sidebar.css";
 import { ConnectionIndicator } from "./stream_status";
 import { archivedCount, groupThreads, type ThreadGroup } from "./thread_groups";
+import { sandboxRoute } from "./sandbox_kinds";
 import { ThreadStatusDot } from "./thread_status_dot";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 
@@ -280,7 +281,7 @@ function ThreadGroupSection({
         ) : (
           <Link
             className="agentplane-sidebar-group-name agentplane-sidebar-group-link"
-            to={`/sandboxes/${encodeURIComponent(group.sandboxName)}`}
+            to={sandboxRoute(group.sandboxName, group.sandboxKind)}
             onClick={onNavigate}
           >
             {group.sandboxName}
@@ -349,7 +350,9 @@ function SidebarView({
   const threads = data?.threads ?? [];
   const groups = groupThreads(
     threads,
-    Object.fromEntries((data?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
+    Object.fromEntries(
+      (data?.sandboxes ?? []).map((sandbox) => [`${sandbox.kind ?? "agent_sandbox"}/${sandbox.name}`, sandbox])
+    ),
     includeArchived
   );
   const archived = archivedCount(threads);
@@ -437,7 +440,7 @@ function SidebarView({
         )}
         {groups.map((group) => (
           <ThreadGroupSection
-            key={group.sandboxName}
+            key={`${group.sandboxKind}/${group.sandboxName}`}
             group={group}
             fresh={fresh}
             current={current}

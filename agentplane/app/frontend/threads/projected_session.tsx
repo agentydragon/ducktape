@@ -693,7 +693,11 @@ function ProjectedSessionBody({
   const threadsLive = useRequiredThreadsLive();
   const status = threadStatusFromSnapshot(
     threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
-    threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox),
+    threadsLive.snapshot?.sandboxes.find(
+      (candidate) =>
+        candidate.name === thread.sandbox &&
+        (candidate.kind ?? "agent_sandbox") === (thread.sandbox_kind ?? "agent_sandbox")
+    ),
     snapshotFresh(threadsLive)
   );
   const pulseEpoch = useRef<ThreadFaviconPulseEpoch>({ current: null });
@@ -1044,13 +1048,21 @@ export function ProjectedSession({
   const threadsLive = useRequiredThreadsLive();
   const topbarStatus = threadStatusFromSnapshot(
     threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
-    threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox),
+    threadsLive.snapshot?.sandboxes.find(
+      (candidate) =>
+        candidate.name === thread?.sandbox &&
+        (candidate.kind ?? "agent_sandbox") === (thread?.sandbox_kind ?? "agent_sandbox")
+    ),
     snapshotFresh(threadsLive)
   );
   const [error, setError] = useState<string | null>(null);
   const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
-  const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
+  const sandbox = environment.snapshot?.sandboxes.find(
+    (candidate) =>
+      candidate.name === thread?.sandbox &&
+      (candidate.kind ?? "agent_sandbox") === (thread?.sandbox_kind ?? "agent_sandbox")
+  );
   const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
   useEffect(() => {
     void getThread(threadId).then(setThread, (reason: unknown) => setError(displayableError(reason)));

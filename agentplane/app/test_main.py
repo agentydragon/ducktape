@@ -202,7 +202,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
     fails while the drain is on, and the unwind then releases the ingestion lease and every
     connection the app held."""
-    live_index.sandboxes[SANDBOX] = sandbox(SANDBOX)
+    live_index.sandboxes[("agent_sandbox", SANDBOX)] = sandbox(SANDBOX)
     live_index.pods[SANDBOX] = pod(SANDBOX, phase="Running", ready=True, ip="127.0.0.1")
     app = create_app(
         inventory,

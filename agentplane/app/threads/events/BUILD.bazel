@@ -8,6 +8,7 @@ py_library(
     deps = [
         ":debug",
         "//agentplane/app:database_updates",
+        "//agentplane/app:sandbox_models",
         "//agentplane/app/threads:models",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:harness",

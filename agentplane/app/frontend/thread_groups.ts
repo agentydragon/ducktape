@@ -2,10 +2,11 @@
  * A flat newest-first Thread list folded into Sandbox groups, including Sandboxes without
  * Threads. A missing Sandbox still has a group for its retained Thread history.
  */
-import type { SandboxView, ThreadView } from "./client";
+import type { SandboxKind, SandboxView, ThreadView } from "./client";
 
 export interface ThreadGroup {
   sandboxName: string;
+  sandboxKind: SandboxKind;
   /** The Sandbox's live view, or null once it no longer exists. */
   sandbox: SandboxView | null;
   /** Newest first, matching the API's own order. */
@@ -24,16 +25,25 @@ export function groupThreads(
   const groups = new Map<string, ThreadGroup>();
   for (const thread of threads) {
     if (!includeArchived && thread.archived) continue;
-    let group = groups.get(thread.sandbox);
+    const sandboxKind = thread.sandbox_kind ?? "agent_sandbox";
+    const key = `${sandboxKind}/${thread.sandbox}`;
+    let group = groups.get(key);
     if (!group) {
-      group = { sandboxName: thread.sandbox, sandbox: sandboxes[thread.sandbox] ?? null, threads: [] };
-      groups.set(thread.sandbox, group);
+      group = {
+        sandboxName: thread.sandbox,
+        sandboxKind,
+        sandbox: sandboxes[key] ?? null,
+        threads: [],
+      };
+      groups.set(key, group);
     }
     group.threads.push(thread);
   }
   for (const sandbox of Object.values(sandboxes)) {
-    if (!groups.has(sandbox.name)) {
-      groups.set(sandbox.name, { sandboxName: sandbox.name, sandbox, threads: [] });
+    const sandboxKind = sandbox.kind ?? "agent_sandbox";
+    const key = `${sandboxKind}/${sandbox.name}`;
+    if (!groups.has(key)) {
+      groups.set(key, { sandboxName: sandbox.name, sandboxKind, sandbox, threads: [] });
     }
   }
   return [...groups.values()];

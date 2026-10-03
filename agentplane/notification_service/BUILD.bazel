@@ -108,6 +108,7 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     deps = [
+        "//agentplane/sandbox_service:models",
         "@pypi//pydantic",
     ],
 )
@@ -125,6 +126,7 @@ py_library(
         "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:kind",
         "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/workload_auth:principal",
@@ -234,6 +236,7 @@ py_test(
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:models",
         "//agentplane/workload_auth:principal",
         "@pypi//protobuf",
         "@pypi//pytest",

@@ -121,7 +121,13 @@ class FakeCustomObjectsApi:
         assert _content_type == "application/merge-patch+json"
         assert isinstance(body, dict)
         target = await self.get_namespaced_custom_object("", "", namespace, plural, name)
+        metadata_patch = body.get("metadata", {})
+        if "resourceVersion" in metadata_patch and (
+            metadata_patch["resourceVersion"] != target["metadata"].get("resourceVersion")
+        ):
+            raise k8s_client.ApiException(status=409)
         merge_patch(target, body)
+        target["metadata"]["resourceVersion"] = str(int(target["metadata"].get("resourceVersion", "1")) + 1)
         if target["metadata"].get("deletionTimestamp") and not target["metadata"].get("finalizers"):
             del self.objects[(plural, name)]
         self.patches.append((plural, name, body))
@@ -146,6 +152,35 @@ class FakeCoreV1Api:
     def __init__(self) -> None:
         self.pods: dict[str, k8s_client.V1Pod] = {}
         self.service_accounts: dict[str, k8s_client.V1ServiceAccount] = {}
+        self.config_maps: dict[str, k8s_client.V1ConfigMap] = {}
+
+    async def create_namespaced_config_map(
+        self, namespace: str, body: k8s_client.V1ConfigMap
+    ) -> k8s_client.V1ConfigMap:
+        assert namespace == NAMESPACE
+        name = body.metadata.name
+        if name in self.config_maps:
+            raise k8s_client.ApiException(status=409)
+        body.metadata.resource_version = "1"
+        self.config_maps[name] = body
+        return body
+
+    async def patch_namespaced_config_map(
+        self, name: str, namespace: str, body: dict[str, Any]
+    ) -> k8s_client.V1ConfigMap:
+        actual = await self.read_namespaced_config_map(name, namespace)
+        if body["metadata"]["resourceVersion"] != actual.metadata.resource_version:
+            raise k8s_client.ApiException(status=409)
+        actual.data.update(body["data"])
+        actual.metadata.resource_version = str(int(actual.metadata.resource_version) + 1)
+        return actual
+
+    async def read_namespaced_config_map(self, name: str, namespace: str) -> k8s_client.V1ConfigMap:
+        assert namespace == NAMESPACE
+        try:
+            return self.config_maps[name]
+        except KeyError:
+            raise k8s_client.ApiException(status=404) from None
 
     async def create_namespaced_service_account(
         self, namespace: str, body: k8s_client.V1ServiceAccount
@@ -156,6 +191,13 @@ class FakeCoreV1Api:
             raise k8s_client.ApiException(status=409)
         self.service_accounts[name] = body
         return body
+
+    async def read_namespaced_service_account(self, name: str, namespace: str) -> k8s_client.V1ServiceAccount:
+        assert namespace == NAMESPACE
+        try:
+            return self.service_accounts[name]
+        except KeyError:
+            raise k8s_client.ApiException(status=404) from None
 
     async def patch_namespaced_service_account(
         self, name: str, namespace: str, body: dict[str, Any]

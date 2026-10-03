@@ -13,6 +13,7 @@ from agentplane.notification_service.db import Entry, Inbox, Subscription
 from agentplane.notification_service.models import DestinationRef, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, Store
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.sandbox_service.models import EnvironmentKind
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
@@ -20,7 +21,9 @@ from agentplane.workload_auth.principal import WorkloadPrincipal
 
 PRINCIPAL = WorkloadPrincipal("test", "owner", "system:serviceaccount:test:owner", "pod", "pod-uid")
 BODY = Subscribe(
-    destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
+    destination_ref=DestinationRef(
+        namespace="test", name="sandbox", uid="sandbox-uid", kind=EnvironmentKind.AGENT_SANDBOX
+    ),
     session_id="session",
     client_key="first",
     request_id=uuid4(),

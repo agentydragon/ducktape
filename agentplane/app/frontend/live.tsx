@@ -15,6 +15,7 @@ import { createContext, type JSX, type ReactNode, useContext, useEffect, useStat
 
 import type { components } from "./api/schema";
 import { followStream, type StreamConnection } from "./live_stream";
+import type { SandboxKind } from "./client";
 import { type StreamStatus, useStreamStatus } from "./stream_status";
 
 export type WatchHealth = components["schemas"]["WatchHealth"];
@@ -38,17 +39,19 @@ export function liveThreadsUrl(): string {
   return "/live/threads";
 }
 
-export function liveSandboxUrl(name: string, includeArchived: boolean): string {
-  return `/live/sandboxes/${encodeURIComponent(name)}?include_archived=${includeArchived}`;
+export function liveSandboxUrl(name: string, kind: SandboxKind, includeArchived: boolean): string {
+  const params = new URLSearchParams({ kind, include_archived: String(includeArchived) });
+  return `/live/sandboxes/${encodeURIComponent(name)}?${params}`;
 }
 
 /** The stream at `url`, which the connection indicator calls `name`. */
 export function useLive<T extends { watch: WatchHealth }>(url: string, name: string): Live<T> {
   const [state, setState] = useState<Pick<Live<T>, "snapshot" | "health">>({ snapshot: null, health: null });
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
-  // A different object starts blank; the same one under a different filter does not. Only the path
-  // says which this is, so a query-string-only change resets nothing.
-  const resource = new URL(url, window.location.origin).pathname;
+  // Kind selects a distinct Kubernetes resource even when it shares the same name. Other query
+  // changes only alter the snapshot filter, so they can retain the current frame while reconnecting.
+  const parsed = new URL(url, window.location.origin);
+  const resource = `${parsed.pathname}?kind=${parsed.searchParams.get("kind") ?? ""}`;
   useEffect(() => setState({ snapshot: null, health: null }), [resource]);
   useEffect(
     () =>

@@ -1,5 +1,6 @@
 """Independent sandbox lifecycle and runner-session gateway; no database or log archive."""
 
+import re
 from typing import cast
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -24,11 +25,14 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
+from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
+from agentplane.sandbox_service.kubevirt import VmTemplate
 from agentplane.sandbox_service.main import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import notifications
+from cluster.cdk8s.agentplane import egress, notifications
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.kubevirt_experiment.policy import KubeVirtProxyPolicy
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
@@ -52,10 +56,21 @@ def service(namespace: str) -> ServiceRef:
 
 class SandboxService(Construct):
     def __init__(
-        self, scope: Construct, id: str, env: Environment, *, manager: ServiceAccountRef, caller: ServiceRef
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        manager: ServiceAccountRef,
+        caller: ServiceRef,
+        vm_templates: dict[str, VmTemplate] | None = None,
+        vm_relay_image: str | None = None,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
+        catalog = vm_templates or {}
+        if catalog and (vm_relay_image is None or re.fullmatch(r".+@sha256:[0-9a-f]{64}", vm_relay_image) is None):
+            raise ValueError("approved VM templates require a digest-pinned relay image")
         endpoint = service(env.namespace)
         account = ServiceAccount(
             self, "account", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
@@ -71,6 +86,7 @@ class SandboxService(Construct):
             agent_actions_service_url=env.app_config.agent_actions_service_url,
             agent_notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
             default_policies=env.app_config.default_policies,
+            vm_templates=catalog,
             kubernetes_grants=env.app_config.kubernetes_grants,
             kubernetes_binding_cleanup_namespaces=set(env.app_config.kubernetes_binding_cleanup_namespaces),
             kubernetes_cluster_binding_cleanup=env.app_config.kubernetes_cluster_binding_cleanup,
@@ -144,8 +160,34 @@ class SandboxService(Construct):
                 EgressRule.to_endpoints(
                     cilium.endpoint_labels(env.namespace, "agentplane-runner"), settings.runner_port
                 ),
+                EgressRule.to_endpoints(
+                    {
+                        "k8s:io.kubernetes.pod.namespace": env.namespace,
+                        "kubevirt.io": "virt-launcher",
+                        MANAGED_LABEL: "true",
+                    },
+                    settings.runner_port,
+                ),
             ],
         )
+        if catalog:
+            assert vm_relay_image is not None
+            KubeVirtProxyPolicy(
+                self,
+                "launcher-relay-admission",
+                namespace=env.namespace,
+                image=vm_relay_image,
+                proxy_host=egress.proxy(env.namespace).fqdn,
+                approved_templates=sorted(catalog),
+            )
+            NetworkPolicy(
+                self,
+                "launcher-network-policy",
+                metadata=ApiObjectMetadata(name="agentplane-vm-launchers", namespace=env.namespace),
+                endpoint_selector={"kubevirt.io": "virt-launcher", MANAGED_LABEL: "true"},
+                ingress=[endpoint.pods.admit(settings.runner_port)],
+                egress=[cilium.dns_egress(), egress.proxy(env.namespace).egress()],
+            )
         if env.replicas.pdb_min_available is not None:
             add_pod_disruption_budget(
                 self,
@@ -265,11 +307,25 @@ class SandboxService(Construct):
                     resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
                     verbs=["create", "get", "list", "watch", "patch", "delete"],
                 ),
+                RolePolicyRule(
+                    resources=[custom_resource("kubevirt.io", "virtualmachines")],
+                    verbs=["create", "get", "list", "watch", "patch", "delete"],
+                ),
+                RolePolicyRule(
+                    resources=[custom_resource("kubevirt.io", "virtualmachineinstances")],
+                    verbs=["get", "list", "watch"],
+                ),
+                RolePolicyRule(
+                    resources=[custom_resource("cdi.kubevirt.io", "datavolumes")], verbs=["create", "get", "list"]
+                ),
+                RolePolicyRule(resources=[custom_resource("", "configmaps")], verbs=["create", "get", "patch"]),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 # One ServiceAccount per Sandbox, created with it and owned by it; no
                 # patching beyond stamping that owner reference, and no reading of the
                 # tokens minted for it.
-                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["create", "patch", "delete"]),
+                RolePolicyRule(
+                    resources=[custom_resource("", "serviceaccounts")], verbs=["create", "get", "patch", "delete"]
+                ),
                 RolePolicyRule(
                     resources=[
                         custom_resource("agentplane.allegedly.works", resource)

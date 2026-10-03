@@ -2,7 +2,7 @@ import { Badge, Button, Group, MultiSelect, Stack, Table, Text, Title, Tooltip }
 import { type JSX, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
+import { api, displayableError, type BindingView, type Decision, type PolicyView, type SandboxKind } from "./client";
 
 // Shared diagnostic history has no stream; resource changes are pushed (live.tsx).
 const DECISIONS_REFRESH_MS = 5000;
@@ -319,7 +319,15 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
 }
 
 /** What may leave the sandbox and what recently did: its pushed bindings and the proxy's decisions. */
-export function EgressSection({ name, bindings }: { name: string; bindings: BindingView[] | null }): JSX.Element {
+export function EgressSection({
+  name,
+  kind,
+  bindings,
+}: {
+  name: string;
+  kind: SandboxKind;
+  bindings: BindingView[] | null;
+}): JSX.Element {
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
   const [decisionsError, setDecisionsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -328,7 +336,9 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
   const [picked, setPicked] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
-    const recent = await api.GET("/sandboxes/{name}/egress/decisions", { params: { path: { name } } });
+    const recent = await api.GET("/sandboxes/{name}/egress/decisions", {
+      params: { path: { name }, query: { kind } },
+    });
     if (recent.error) {
       setDecisions(null);
       setDecisionsError(displayableError(recent.error));
@@ -336,7 +346,7 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
       setDecisions(recent.data);
       setDecisionsError(null);
     }
-  }, [name]);
+  }, [kind, name]);
 
   useEffect(() => {
     void refresh();
@@ -363,7 +373,7 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
 
   async function grant(): Promise<void> {
     const { error: failure } = await api.POST("/sandboxes/{name}/egress", {
-      params: { path: { name } },
+      params: { path: { name }, query: { kind } },
       body: { policies: picked },
     });
     setError(failure ? displayableError(failure) : null);

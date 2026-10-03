@@ -57,6 +57,18 @@ def _migrate_from_0015(db_url: str, column_type: str, stored: list[str]) -> list
     thread = uuid.uuid4()
     try:
         with engine.begin() as connection:
+            # The fixture starts at head. Recreate the 0015 identity shape before
+            # stamping it, so 0017 can add provider identity during the upgrade.
+            connection.execute(text("ALTER TABLE event_log DROP CONSTRAINT uq_event_log_sandbox_kind_session"))
+            connection.execute(
+                text(
+                    "ALTER TABLE event_log ADD CONSTRAINT event_log_sandbox_session_id_key UNIQUE (sandbox, session_id)"
+                )
+            )
+            connection.execute(text("ALTER TABLE event_log DROP COLUMN sandbox_kind"))
+            connection.execute(text("ALTER TABLE sandbox_ingestion DROP CONSTRAINT sandbox_ingestion_pkey"))
+            connection.execute(text("ALTER TABLE sandbox_ingestion DROP COLUMN sandbox_kind"))
+            connection.execute(text("ALTER TABLE sandbox_ingestion ADD PRIMARY KEY (sandbox)"))
             connection.execute(
                 text(
                     f'ALTER TABLE thread_payload_chunk ALTER COLUMN "text" TYPE {column_type} USING "text"::{column_type}'

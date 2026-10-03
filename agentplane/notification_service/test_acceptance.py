@@ -33,7 +33,7 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import Runner
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
+from agentplane.sandbox_service.protocol_pb2 import ENVIRONMENT_KIND_AGENT_SANDBOX, SandboxDestination, ServiceAccount
 from agentplane.sandbox_service.testing.kubernetes import (
     ACCOUNT,
     SANDBOX,
@@ -122,6 +122,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         owner=ServiceAccount(namespace=owner.namespace, name=owner.name),
                         sandbox=SANDBOX,
                         sandbox_uid=SANDBOX_UID,
+                        kind=ENVIRONMENT_KIND_AGENT_SANDBOX,
                     )
                     native = remote.runner(destination)
                     await native.open("notifications", MessageToDict(spec))
@@ -184,7 +185,12 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         await action_http.get(f"/v1/operator/action-requests/{request['id']}", headers=delegate_headers)
                     ).status_code == 401
                     body = {
-                        "destination_ref": {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX, "uid": SANDBOX_UID},
+                        "destination_ref": {
+                            "namespace": SANDBOX_NAMESPACE,
+                            "name": SANDBOX,
+                            "uid": SANDBOX_UID,
+                            "kind": "agent_sandbox",
+                        },
                         "session_id": "notifications",
                         "request_id": request["id"],
                         "client_key": "listen",

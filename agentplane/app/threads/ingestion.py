@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
+from agentplane.app.sandbox_models import SandboxKind
 from agentplane.app.threads.events import event_log, ingestion_lease
 from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
@@ -77,9 +78,11 @@ class Ingestion:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
 
-    async def acquire(self, sandbox: str, duration: timedelta) -> IngestionLease | None:
+    async def acquire(
+        self, sandbox: str, duration: timedelta, *, sandbox_kind: str = "agent_sandbox"
+    ) -> IngestionLease | None:
         async with self._sessions.begin() as session:
-            return await ingestion_lease.acquire(session, sandbox, duration)
+            return await ingestion_lease.acquire(session, sandbox, duration, sandbox_kind=sandbox_kind)
 
     async def renew(self, lease: IngestionLease, duration: timedelta) -> bool:
         async with self._sessions.begin() as session:
@@ -207,7 +210,9 @@ class Feed:
         try:
             attachment = await self.client.attach(self.session_id)
             attached = attachment.attached
-            thread_id = await self.event_logs.open(self.lease.sandbox, self.session_id, attached.spec)
+            thread_id = await self.event_logs.open(
+                self.lease.sandbox, self.session_id, attached.spec, sandbox_kind=self.lease.sandbox_kind
+            )
             stored = await self.event_logs.last_cursor(thread_id)
             if stored > attached.last_cursor:
                 if await self.event_logs.feed_state(thread_id) is None:
@@ -262,8 +267,8 @@ class Ingester:
         self._runners = runners
         self._event_logs = event_logs
         self._ingestion = ingestion
-        self._feeds: dict[tuple[str, str], Feed] = {}
-        self._leases: dict[str, IngestionLease] = {}
+        self._feeds: dict[tuple[str, str, str], Feed] = {}
+        self._leases: dict[tuple[SandboxKind, str], IngestionLease] = {}
         self._changed = asyncio.Event()
         self._reconcile_lock = asyncio.Lock()
         self._coordinator: asyncio.Task[None] | None = None
@@ -292,36 +297,39 @@ class Ingester:
         """Renew ownership of the running sandboxes and discover sessions opened through any replica."""
         async with self._reconcile_lock:
             running = self._runners.running()
-            for sandbox in set(self._leases) - running:
-                await self._release(sandbox)
+            for identity in set(self._leases) - running:
+                await self._release(identity)
             async with asyncio.TaskGroup() as tasks:
-                for sandbox in sorted(running):
-                    tasks.create_task(self._reconcile_sandbox(sandbox))
+                for identity in sorted(running):
+                    tasks.create_task(self._reconcile_sandbox(identity))
 
-    async def _reconcile_sandbox(self, sandbox: str) -> None:
+    async def _reconcile_sandbox(self, identity: tuple[SandboxKind, str]) -> None:
+        sandbox_kind, sandbox = identity
         try:
             async with asyncio.timeout(10):
-                lease = self._leases.get(sandbox)
+                lease = self._leases.get(identity)
                 if lease is not None and not await self._ingestion.renew(lease, LEASE_DURATION):
-                    await self._release(sandbox)
+                    await self._release(identity)
                     lease = None
                 if lease is None:
-                    lease = await self._ingestion.acquire(sandbox, LEASE_DURATION)
+                    lease = await self._ingestion.acquire(sandbox, LEASE_DURATION, sandbox_kind=sandbox_kind)
                     if lease is None:
                         return
-                    self._leases[sandbox] = lease
+                    self._leases[identity] = lease
                 try:
                     async with asyncio.timeout(5):
-                        client = self._runners.client(sandbox)
+                        client = self._runners.client(sandbox, sandbox_kind)
                         summaries = await client.list_sessions()
                     for summary in summaries:
-                        key = (sandbox, summary.session_id)
+                        key = (sandbox_kind, sandbox, summary.session_id)
                         feed = self._feeds.get(key)
                         if feed is not None and feed.task is not None and not feed.task.done():
                             if feed.client is client:
                                 continue
                             await feed.close()
-                        thread_id = await self._event_logs.open(sandbox, summary.session_id, summary.spec)
+                        thread_id = await self._event_logs.open(
+                            sandbox, summary.session_id, summary.spec, sandbox_kind=sandbox_kind
+                        )
                         snapshot = await self._event_logs.feed_state(thread_id)
                         # A semantic replay failure is durable evidence that this runner's prefix is
                         # unsafe. A new coordinator or app replica must not call set_attached() and
@@ -343,7 +351,9 @@ class Ingester:
                             ingestion=self._ingestion,
                             lease=lease,
                         )
-                        feed.task = asyncio.create_task(feed.run(), name=f"ingest-{sandbox}-{summary.session_id}")
+                        feed.task = asyncio.create_task(
+                            feed.run(), name=f"ingest-{sandbox_kind}-{sandbox}-{summary.session_id}"
+                        )
                         self._feeds[key] = feed
                 except (
                     grpc.aio.AioRpcError,
@@ -352,14 +362,18 @@ class Ingester:
                     SandboxNotFoundError,
                     TimeoutError,
                 ):
-                    logger.warning("sandbox %s ingestion discovery unavailable", sandbox, exc_info=True)
+                    logger.warning(
+                        "sandbox %s/%s ingestion discovery unavailable", sandbox_kind, sandbox, exc_info=True
+                    )
         except SQLAlchemyError, OSError, TimeoutError:
-            logger.warning("sandbox %s ingestion reconciliation failed; will retry", sandbox, exc_info=True)
+            logger.warning(
+                "sandbox %s/%s ingestion reconciliation failed; will retry", sandbox_kind, sandbox, exc_info=True
+            )
 
-    async def _release(self, sandbox: str) -> None:
-        for key in [key for key in self._feeds if key[0] == sandbox]:
+    async def _release(self, identity: tuple[SandboxKind, str]) -> None:
+        for key in [key for key in self._feeds if key[:2] == identity]:
             await self._feeds.pop(key).close()
-        await self._ingestion.release(self._leases.pop(sandbox))
+        await self._ingestion.release(self._leases.pop(identity))
 
     async def close(self) -> None:
         if self._coordinator is not None:
@@ -367,5 +381,5 @@ class Ingester:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._coordinator
             self._coordinator = None
-        for sandbox in list(self._leases):
-            await self._release(sandbox)
+        for identity in list(self._leases):
+            await self._release(identity)

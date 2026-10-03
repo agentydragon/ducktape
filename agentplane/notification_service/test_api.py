@@ -34,7 +34,7 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
     app.dependency_overrides[authenticated_caller] = lambda: PRINCIPAL
     app.dependency_overrides[notification_service] = lambda: override
     body = {
-        "destination_ref": {"namespace": "test", "name": "sandbox", "uid": "sandbox-uid"},
+        "destination_ref": {"namespace": "test", "name": "sandbox", "uid": "sandbox-uid", "kind": "agent_sandbox"},
         "session_id": "session",
         "client_key": "listen",
         "request_id": str(uuid4()),

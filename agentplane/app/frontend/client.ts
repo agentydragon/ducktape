@@ -35,6 +35,9 @@ export async function fetchWithLogin(input: RequestInfo | URL, init?: RequestIni
 
 export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
+export type SandboxKind = "agent_sandbox" | "kubevirt";
+export type SandboxCapability = "pod_exec" | "stop_start" | "live_migration" | "ram_suspend";
+export type SandboxTemplateView = components["schemas"]["SandboxTemplateView"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
 export type ThreadScope = components["schemas"]["ThreadScopeResponse"];
@@ -254,9 +257,9 @@ export function displayableError(error: unknown): string {
  */
 export class RunnerUnavailableError extends Error {}
 
-export async function listSessions(sandbox: string): Promise<SessionSummary[]> {
+export async function listSessions(sandbox: string, kind: SandboxKind): Promise<SessionSummary[]> {
   const { data, error, response } = await api.GET("/sandboxes/{name}/sessions", {
-    params: { path: { name: sandbox } },
+    params: { path: { name: sandbox }, query: { kind } },
   });
   // These routes report a missing Pod address as 409 and an unavailable runner as 503.
   if (error && (response.status === 409 || response.status === 503)) {
@@ -268,12 +271,13 @@ export async function listSessions(sandbox: string): Promise<SessionSummary[]> {
 
 export async function openSession(
   sandbox: string,
+  kind: SandboxKind,
   sessionId: string,
   spec: SessionSpec,
   setupScript?: string
 ): Promise<Attached> {
   const { data, error } = await api.POST("/sandboxes/{name}/sessions", {
-    params: { path: { name: sandbox } },
+    params: { path: { name: sandbox }, query: { kind } },
     body: { session_id: sessionId, spec: toJson(SessionSpecSchema, spec) as JsonObject, setup_script: setupScript },
   });
   if (error) throw new Error(displayableError(error));
@@ -336,9 +340,9 @@ export async function getThread(threadId: string): Promise<ThreadView> {
 }
 
 /** A session's thread, or null before the bridge has opened the session. */
-export async function findThread(sandbox: string, sessionId: string): Promise<ThreadView | null> {
+export async function findThread(sandbox: string, kind: SandboxKind, sessionId: string): Promise<ThreadView | null> {
   const { data, error } = await api.GET("/threads", {
-    params: { query: { sandbox, session_id: sessionId, include_archived: true } },
+    params: { query: { sandbox, sandbox_kind: kind, session_id: sessionId, include_archived: true } },
   });
   if (error) throw new Error(displayableError(error));
   return data[0] ?? null;

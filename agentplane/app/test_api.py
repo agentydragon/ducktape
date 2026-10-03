@@ -27,6 +27,7 @@ from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, r
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.sandbox_models import SandboxKind
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
@@ -227,7 +228,9 @@ def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCust
 
 
 def test_templates_list_the_concrete_choices_for_the_create_form(client: TestClient) -> None:
-    assert client.get("/sandboxes/templates").json() == [TEMPLATE]
+    assert client.get("/sandboxes/templates").json() == [
+        {"name": TEMPLATE, "kind": "agent_sandbox", "capabilities": ["pod_exec", "stop_start"]}
+    ]
 
 
 def test_create_requires_an_explicit_template(client: TestClient) -> None:
@@ -524,7 +527,11 @@ def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assemb
     setup_scripts: list[str | None] = []
 
     async def open_session(
-        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
+        name: str,
+        session_id: str,
+        spec: dict[str, object],
+        setup_script: str | None = None,
+        kind: SandboxKind = "agent_sandbox",
     ) -> protocol_pb2.Attached:
         calls.append(("open", spec))
         setup_scripts.append(setup_script)
@@ -575,7 +582,11 @@ def test_direct_session_launch_leaves_platform_instructions_to_service(
     captured: list[dict[str, object]] = []
 
     async def open_session(
-        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
+        name: str,
+        session_id: str,
+        spec: dict[str, object],
+        setup_script: str | None = None,
+        kind: SandboxKind = "agent_sandbox",
     ) -> protocol_pb2.Attached:
         captured.append(spec)
         return protocol_pb2.Attached(session_id=session_id)
@@ -599,7 +610,11 @@ def test_service_launch_failure_preserves_uncertainty(
     status_code: int,
 ) -> None:
     async def failed_open(
-        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
+        name: str,
+        session_id: str,
+        spec: dict[str, object],
+        setup_script: str | None = None,
+        kind: SandboxKind = "agent_sandbox",
     ) -> protocol_pb2.Attached:
         raise error_type("test upstream failure")
 
@@ -630,7 +645,9 @@ def test_a_runner_that_does_not_answer_is_a_503(
     ingestion: Ingestion,
 ) -> None:
     """A Pod with an address but no runner listening yet, as right after a resume."""
-    live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
+    live_index.sandboxes[("agent_sandbox", "live")], live_index.pods["live"] = seed_runner(
+        custom_objects, core_v1, "live"
+    )
 
     # A bound but never listening port refuses every connection for as long as the socket is open.
     with socket.socket() as closed_port:
@@ -687,7 +704,9 @@ async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
     """A runner that takes the command's Attach but never answers its Open, as a wedged one: the
     route answers rather than holding the request, and lets go of the runner's stream."""
     monkeypatch.setattr("agentplane.runner.client.OBSERVE_ANSWER_S", 1)
-    live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
+    live_index.sandboxes[("agent_sandbox", "live")], live_index.pods["live"] = seed_runner(
+        custom_objects, core_v1, "live"
+    )
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = await event_logs.open("live", "test-unanswered", spec)
     wedged = UnansweringRunner()
@@ -871,6 +890,7 @@ def test_presets_publish_editable_sandbox_and_session_defaults(client: TestClien
         {
             "name": "public-coder",
             "title": "Public coder",
+            "kind": "agent_sandbox",
             "template": "agentplane-test-runner",
             "policies": ["github"],
             "action_policy_sets": ["github-reads"],
@@ -1114,7 +1134,9 @@ async def test_a_running_thread_cannot_be_archived(
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = await event_logs.open("live", "s-1", spec)
 
-    async def running_sessions(_sandbox: str) -> list[protocol_pb2.SessionSummary]:
+    async def running_sessions(
+        _sandbox: str, _kind: SandboxKind = "agent_sandbox"
+    ) -> list[protocol_pb2.SessionSummary]:
         return [
             protocol_pb2.SessionSummary(session_id="s-1", spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING)
         ]
@@ -1145,6 +1167,20 @@ async def test_a_running_thread_cannot_be_archived(
     thread = await store.get_thread(thread_id)
     assert thread is not None
     assert thread.archived is False
+
+
+async def test_same_name_and_session_are_distinct_across_environment_kinds(
+    event_logs: EventLogStore, store: ThreadStore
+) -> None:
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    container_id = await event_logs.open("same-name", "same-session", spec)
+    vm_id = await event_logs.open("same-name", "same-session", spec, sandbox_kind="kubevirt")
+
+    assert container_id != vm_id
+    assert await event_logs.find("same-name", "same-session") == container_id
+    assert await event_logs.find("same-name", "same-session", sandbox_kind="kubevirt") == vm_id
+    assert [thread.id for thread in await store.list_threads(sandbox="same-name")] == [container_id]
+    assert [thread.id for thread in await store.list_threads(sandbox="same-name", sandbox_kind="kubevirt")] == [vm_id]
 
 
 async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
@@ -1196,17 +1232,19 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
         assert default_thread_ids == {str(live_thread), str(other_live_thread)}
         # Neither thread's feed has attached; the sidebar's per-thread status dot reads this as gray.
         assert {row["harness_state"] for row in default_body["threads"]} == {"HARNESS_STATE_UNSPECIFIED"}
-        assert set(default_body["sandboxes"]) == {"live", "test-provisioning"}
-        assert default_body["sandboxes"]["test-provisioning"]["state"] == "waiting_for_pod"
-        assert (default_body["sandboxes"]["live"]["name"], default_body["sandboxes"]["live"]["state"]) == (
-            "live",
-            "running",
-        )
+        assert set(default_body["sandboxes"]) == {"agent_sandbox/live", "agent_sandbox/test-provisioning"}
+        assert default_body["sandboxes"]["agent_sandbox/test-provisioning"]["state"] == "waiting_for_pod"
+        assert (
+            default_body["sandboxes"]["agent_sandbox/live"]["name"],
+            default_body["sandboxes"]["agent_sandbox/live"]["state"],
+        ) == ("live", "running")
 
         all_body = (await http.get("/threads/with-sandboxes", params={"include_archived": "true"})).json()
         all_thread_ids = {row["id"] for row in all_body["threads"]}
         assert all_thread_ids == {str(live_thread), str(other_live_thread), str(gone_thread)}
-        assert set(all_body["sandboxes"]) == {"live", "test-provisioning"}, "the deleted 'gone' sandbox must not appear"
+        assert set(all_body["sandboxes"]) == {"agent_sandbox/live", "agent_sandbox/test-provisioning"}, (
+            "the deleted 'gone' sandbox must not appear"
+        )
 
 
 def test_healthz_answers_outside_the_schema(client: TestClient) -> None:

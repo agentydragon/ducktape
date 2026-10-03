@@ -265,7 +265,7 @@ async def _serve(
             raw["spec"]["operatingMode"] = "Suspended"
         if sandbox_state is ProvisioningState.WAITING_FOR_POD_READY:
             running.status.conditions[0].status = "False"
-        index.sandboxes[SANDBOX] = raw
+        index.sandboxes[("agent_sandbox", SANDBOX)] = raw
         index.pods[SANDBOX] = running
     with (
         TemporaryDirectory() as directory,

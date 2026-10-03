@@ -57,6 +57,9 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "demo-a1b2",
     uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
+    kind: "agent_sandbox",
+    template: "agentplane-runner",
+    capabilities: ["pod_exec", "stop_start"],
     state: "running",
     created_at: ago(3 * HOUR),
     operating_mode: "Running",
@@ -92,6 +95,9 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "codex-c3d4",
     uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
+    kind: "agent_sandbox",
+    template: "agentplane-runner",
+    capabilities: ["pod_exec", "stop_start"],
     state: "waiting_for_pod_ready",
     created_at: ago(2 * 60_000),
     operating_mode: "Running",
@@ -124,6 +130,9 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "old-e5f6",
     uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
+    kind: "agent_sandbox",
+    template: "agentplane-runner",
+    capabilities: ["pod_exec", "stop_start"],
     state: "suspended",
     created_at: ago(48 * HOUR),
     operating_mode: "Suspended",
@@ -138,6 +147,37 @@ const SANDBOXES: SandboxView[] = [
   },
 ];
 
+if (scenario.vmSandbox) {
+  SANDBOXES.push({
+    name: "vm-d4c3",
+    uid: "0f9c1d2e-0000-4000-8000-00000000d4c3",
+    kind: "kubevirt",
+    template: "ubuntu-dev-vm",
+    capabilities: ["stop_start"],
+    state: "suspended",
+    created_at: ago(6 * HOUR),
+    operating_mode: "Suspended",
+    service_account: { namespace: "agentplane-visual", name: "vm-d4c3-launcher" },
+    conditions: [{ type: "Ready", status: "False", reason: "Suspended", message: null }],
+    kubernetes_grants: [],
+    kubernetes_grants_ready: true,
+    kubernetes_grant_error: null,
+    deleting: false,
+    node_name: null,
+    pod: null,
+    vm: {
+      phase: null,
+      printable_status: "Stopped",
+      vmi_uid: null,
+      guest_ip: null,
+      node_name: null,
+      conditions: [],
+      reason: null,
+      message: null,
+    },
+  });
+}
+
 if (scenario.grantError) {
   const sandbox = SANDBOXES[0]!;
   sandbox.state = "waiting_for_grants";
@@ -149,6 +189,9 @@ if (scenario.threadlessSandbox) {
   SANDBOXES.push({
     name: "test-provisioning",
     uid: "0f9c1d2e-0000-4000-8000-000000000007",
+    kind: "agent_sandbox",
+    template: "agentplane-runner",
+    capabilities: ["pod_exec", "stop_start"],
     state: "waiting_for_pod",
     created_at: ago(30_000),
     operating_mode: "Running",
@@ -396,6 +439,7 @@ const THREADS: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000001",
     sandbox: "demo-a1b2",
+    sandbox_kind: "agent_sandbox",
     session_id: "s-1",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -411,6 +455,7 @@ const THREADS: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000000",
     sandbox: "demo-a1b2",
+    sandbox_kind: "agent_sandbox",
     session_id: "s-0",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -425,6 +470,7 @@ const THREADS: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000002",
     sandbox: "demo-a1b2",
+    sandbox_kind: "agent_sandbox",
     session_id: "s-2",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -450,6 +496,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000003",
     sandbox: "codex-c3d4",
+    sandbox_kind: "agent_sandbox",
     session_id: "s-3",
     harness: "HARNESS_CODEX",
     model: "harness-codex-model",
@@ -464,6 +511,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000004",
     sandbox: "old-e5f6",
+    sandbox_kind: "agent_sandbox",
     session_id: "s-4",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -478,6 +526,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000005",
     sandbox: "old-debug-3f9c",
+    sandbox_kind: "agent_sandbox",
     session_id: "s-5",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -492,6 +541,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000006",
     sandbox: "demo-a1b2",
+    sandbox_kind: "agent_sandbox",
     session_id: "s-6",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -1607,7 +1657,14 @@ routes.push(
       },
     ],
   ],
-  ["GET", /^\/sandboxes\/templates$/, () => ["agentplane-runner"]],
+  [
+    "GET",
+    /^\/sandboxes\/templates$/,
+    () => [
+      { name: "agentplane-runner", kind: "agent_sandbox", capabilities: ["pod_exec", "stop_start"] },
+      { name: "ubuntu-dev-vm", kind: "kubevirt", capabilities: ["stop_start"] },
+    ],
+  ],
   [
     "GET",
     /^\/kubernetes-grants$/,
@@ -2020,8 +2077,11 @@ class HarnessEventSource extends EventTarget {
       return;
     }
     if (sandbox !== null) {
+      const kind = url.searchParams.get("kind") ?? "agent_sandbox";
       const snapshot: SandboxSnapshot = {
-        sandbox: SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox)) ?? null,
+        sandbox:
+          SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox) && (row.kind ?? "agent_sandbox") === kind) ??
+          null,
         bindings: BINDINGS,
         action_policy: ACTION_POLICY,
         threads: THREADS,
@@ -2213,6 +2273,52 @@ if (scenario.openActionPolicySets) {
     control.click();
   });
   openSets.observe(document, { childList: true, subtree: true });
+}
+if (scenario.selectKubevirt) {
+  let step: "environment" | "select-environment" | "template" | "select-template" = "environment";
+  const selectEnvironment = new MutationObserver(() => {
+    if (step === "environment") {
+      const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Environment kind");
+      const control = label?.control;
+      if (!(control instanceof HTMLInputElement)) return;
+      step = "select-environment";
+      control.click();
+      return;
+    }
+    if (step === "select-environment") {
+      const environment = [...document.querySelectorAll('[role="option"]')].find(
+        (option) => option.textContent === "KubeVirt VM"
+      );
+      if (!(environment instanceof HTMLElement)) return;
+      environment.click();
+      step = "template";
+      return;
+    }
+    if (step === "template") {
+      const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Template");
+      const control = label?.control;
+      if (!(control instanceof HTMLInputElement)) return;
+      step = "select-template";
+      control.click();
+      return;
+    }
+    const template = [...document.querySelectorAll('[role="option"]')].find(
+      (option) => option.textContent === "ubuntu-dev-vm"
+    );
+    if (!(template instanceof HTMLElement)) return;
+    selectEnvironment.disconnect();
+    template.click();
+  });
+  selectEnvironment.observe(document, { childList: true, subtree: true });
+}
+if (scenario.openVmImageUpdate) {
+  const openImageUpdate = new MutationObserver(() => {
+    const button = [...document.querySelectorAll("button")].find((node) => node.textContent === "Update VM image");
+    if (!(button instanceof HTMLButtonElement)) return;
+    openImageUpdate.disconnect();
+    button.click();
+  });
+  openImageUpdate.observe(document, { childList: true, subtree: true });
 }
 if (scenario.checkComposerControls) {
   const checkControls = new MutationObserver(() => {

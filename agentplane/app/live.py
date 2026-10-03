@@ -43,7 +43,7 @@ from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnav
 from agentplane.app.changes import Changes
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.identity import CallerIdentity, require_caller
-from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
+from agentplane.app.sandbox_models import SandboxKind, SandboxView, sandbox_view as http_sandbox_view
 from agentplane.app.shutdown import Shutdown
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.views import ThreadView
@@ -57,6 +57,8 @@ from agentplane.sandbox_service.egress_views import (
     matching_bindings,
 )
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, sandbox_view, sandbox_views
+from agentplane.sandbox_service.kubevirt import VmiResource, VmResource, controller_owned_by, pod_owned_by_vmi, vm_view
+from agentplane.sandbox_service.kubevirt_contract import KUBEVIRT_API_VERSION, VM_KIND, VMIS_PLURAL, VMS_PLURAL
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
@@ -120,7 +122,9 @@ class LiveIndex:
     """
 
     stale_after_seconds: float
-    sandboxes: dict[str, object] = field(default_factory=dict)
+    sandboxes: dict[tuple[SandboxKind, str], object] = field(default_factory=dict)
+    virtual_machines: dict[tuple[SandboxKind, str], object] = field(default_factory=dict)
+    virtual_machine_instances: dict[str, object] = field(default_factory=dict)
     pods: dict[str, k8s_client.V1Pod] = field(default_factory=dict, repr=False)
     bindings: dict[str, object] = field(default_factory=dict)
     policies: dict[str, object] = field(default_factory=dict)
@@ -135,11 +139,28 @@ class LiveIndex:
     changes: Changes = field(default_factory=Changes)
 
     def sandbox_views(self) -> list[SandboxView]:
-        return [http_sandbox_view(view) for view in sandbox_views(self.sandboxes.values(), self.pods.values())]
+        containers = [http_sandbox_view(view) for view in sandbox_views(self.sandboxes.values(), self.pods.values())]
+        virtual_machines = [http_sandbox_view(self._virtual_machine_view(vm)) for vm in self.virtual_machines.values()]
+        return [*containers, *virtual_machines]
 
-    def sandbox_view(self, name: str) -> SandboxView | None:
-        raw = self.sandboxes.get(name)
+    def sandbox_view(self, name: str, kind: SandboxKind = "agent_sandbox") -> SandboxView | None:
+        key = (kind, name)
+        if kind == "kubevirt":
+            raw = self.virtual_machines.get(key)
+            return None if raw is None else http_sandbox_view(self._virtual_machine_view(raw))
+        raw = self.sandboxes.get(key)
         return None if raw is None else http_sandbox_view(sandbox_view(raw, self.pods.get(name)))
+
+    def _virtual_machine_view(self, raw: object) -> object:
+        vm = VmResource.model_validate(raw)
+        vmi_raw = self.virtual_machine_instances.get(vm.metadata.name)
+        vmi = VmiResource.model_validate(vmi_raw) if vmi_raw is not None else None
+        if vmi is not None and not controller_owned_by(
+            vmi.metadata, api_version=KUBEVIRT_API_VERSION, kind=VM_KIND, name=vm.metadata.name, uid=vm.metadata.uid
+        ):
+            vmi = None
+        matching_pods = [pod for pod in self.pods.values() if vmi is not None and pod_owned_by_vmi(pod, vmi)]
+        return vm_view(vm, vmi, matching_pods[0] if len(matching_pods) == 1 else None)
 
     def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return matching_bindings(
@@ -204,9 +225,26 @@ def watch_for(
                 list=custom_objects.list_namespaced_custom_object,
                 args=(*SANDBOX_API, sandbox_namespace, SANDBOXES_PLURAL),
                 kwargs={"label_selector": f"{MANAGED_LABEL}=true"},
-                key=_name,
+                key=lambda raw: ("agent_sandbox", _name(raw)),
                 names=lambda: set(index.sandboxes),
                 apply=lambda name, obj: apply_to(index.sandboxes, name, obj),
+            ),
+            WatchedKind(
+                name=VMS_PLURAL,
+                list=custom_objects.list_namespaced_custom_object,
+                args=("kubevirt.io", "v1", sandbox_namespace, VMS_PLURAL),
+                kwargs={"label_selector": f"{MANAGED_LABEL}=true"},
+                key=lambda raw: ("kubevirt", _name(raw)),
+                names=lambda: set(index.virtual_machines),
+                apply=lambda name, obj: apply_to(index.virtual_machines, name, obj),
+            ),
+            WatchedKind(
+                name=VMIS_PLURAL,
+                list=custom_objects.list_namespaced_custom_object,
+                args=("kubevirt.io", "v1", sandbox_namespace, VMIS_PLURAL),
+                key=_name,
+                names=lambda: set(index.virtual_machine_instances),
+                apply=lambda name, obj: apply_to(index.virtual_machine_instances, name, obj),
             ),
             WatchedKind(
                 name=PODS_PLURAL,
@@ -429,6 +467,7 @@ async def live_sandbox(
     action_policy: ActionPolicy,
     shutdown: Shutdown,
     name: str,
+    kind: SandboxKind = "agent_sandbox",
     include_archived: Annotated[bool, Query(description="Also carry archived threads.")] = False,
 ) -> StreamingResponse:
     """One sandbox page, pushed: the sandbox, its bindings, its action policy, and its threads.
@@ -441,12 +480,12 @@ async def live_sandbox(
     policy = ActionPolicyFrames(index, lambda subject: action_policy_frame(request, caller, action_policy, subject))
 
     async def snapshot() -> SandboxSnapshot:
-        sandbox = index.sandbox_view(name)
+        sandbox = index.sandbox_view(name, kind)
         return SandboxSnapshot(
             sandbox=sandbox,
             bindings=[] if sandbox is None else index.bindings_for(sandbox.service_account),
             action_policy=None if sandbox is None else await policy.for_subject(sandbox.service_account),
-            threads=await store.list_threads(sandbox=name, include_archived=include_archived),
+            threads=await store.list_threads(sandbox=name, sandbox_kind=kind, include_archived=include_archived),
             watch=_health(index),
         )
 

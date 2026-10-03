@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from agentplane.app.sandbox_models import SessionDefaults
+from agentplane.app.sandbox_models import SandboxKind, SessionDefaults
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.instructions import combine_instructions
 
@@ -33,6 +33,7 @@ class SandboxPreset(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str
+    kind: SandboxKind = "agent_sandbox"
     template: str
     policies: list[str] = Field(default_factory=list, description="EgressPolicy names every launch is granted.")
     action_policy_sets: list[str] = Field(
@@ -51,6 +52,7 @@ class SandboxPresetView(BaseModel):
 
     name: str
     title: str
+    kind: SandboxKind = "agent_sandbox"
     template: str
     policies: list[str]
     action_policy_sets: list[str]
@@ -84,6 +86,7 @@ class PresetCatalog(BaseModel):
             SandboxPresetView(
                 name=name,
                 title=preset.title,
+                kind=preset.kind,
                 template=preset.template,
                 policies=preset.policies,
                 action_policy_sets=preset.action_policy_sets,

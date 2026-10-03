@@ -5,9 +5,12 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
+from cdk8s import Chart, Testing as CdkTesting
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import app, notifications, sandbox_service
+from agentplane.sandbox_service.kubevirt import VmTemplate
+from agentplane.subjects import ServiceAccountRef
+from cluster.cdk8s.agentplane import app, notifications, sandbox_service, staging
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -42,6 +45,13 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     )
     for rule in resource("Role", app.NAME)["rules"]:
         assert set(rule["verbs"]) <= {"get", "list", "watch"}
+    app_rules = resource("Role", app.NAME)["rules"]
+    kubevirt_rules = [rule for rule in app_rules if rule.get("apiGroups") == ["kubevirt.io"]]
+    assert {resource for rule in kubevirt_rules for resource in rule["resources"]} == {
+        "virtualmachines",
+        "virtualmachineinstances",
+    }
+    assert all(set(rule["verbs"]) == {"get", "list", "watch"} for rule in kubevirt_rules)
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
     assert backend_config["kubernetes_binding_cleanup_namespaces"] == sorted(
         backend_config["kubernetes_binding_cleanup_namespaces"]
@@ -64,6 +74,78 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
         for ports in rule.get("toPorts", [])
         for port in ports["ports"]
     )
+
+
+def test_vm_catalog_emits_admission_and_launcher_fence_together() -> None:
+    namespace = staging.ENV.namespace
+    template = VmTemplate(
+        image=f"registry.test/guest@sha256:{'a' * 64}",
+        image_pull_secret="test-pull-creds",
+        storage_class="test-local-storage",
+        llm_base_url="http://llm.test",
+        proxy_url="http://10.0.2.2:3128",
+        ca_bundle_config_map="test-egress-ca",
+        kubernetes_host="kubernetes.test",
+        kubernetes_credential_name="test-credential",
+    )
+    chart = Chart(CdkTesting.app(), "vm-catalog", disable_resource_name_hashes=True)
+    sandbox_service.SandboxService(
+        chart,
+        "sandbox-service",
+        staging.ENV,
+        manager=ServiceAccountRef(namespace=namespace, name=app.NAME),
+        caller=app.service(namespace),
+        vm_templates={"test-vm": template},
+        vm_relay_image=f"registry.test/relay@sha256:{'b' * 64}",
+    )
+    documents = CdkTesting.synth(chart)
+    config = one(
+        item
+        for item in documents
+        if item["kind"] == "ConfigMap" and item["metadata"]["name"] == "agentplane-sandbox-service-config"
+    )
+    assert set(yaml.safe_load(config["data"]["config.yaml"])["vm_templates"]) == {"test-vm"}
+    policy = one(item for item in documents if item["kind"] == "ClusterPolicy")
+    assert policy["metadata"]["name"] == f"{namespace}-launcher-relay"
+    fence = one(
+        item
+        for item in documents
+        if item["kind"] == "CiliumNetworkPolicy" and item["metadata"]["name"] == "agentplane-vm-launchers"
+    )
+    assert fence["spec"]["endpointSelector"]["matchLabels"] == {
+        "kubevirt.io": "virt-launcher",
+        "agentplane.allegedly.works/managed": "true",
+    }
+    assert fence["spec"]["ingress"] == [
+        {
+            "fromEndpoints": [{"matchLabels": sandbox_service.service(namespace).pods.cilium}],
+            "toPorts": [{"ports": [{"port": "7000", "protocol": "TCP"}]}],
+        }
+    ]
+
+
+def test_vm_catalog_requires_pinned_relay_image() -> None:
+    chart = Chart(CdkTesting.app(), "missing-relay", disable_resource_name_hashes=True)
+    with pytest.raises(ValueError, match="digest-pinned relay image"):
+        sandbox_service.SandboxService(
+            chart,
+            "sandbox-service",
+            staging.ENV,
+            manager=ServiceAccountRef(namespace=staging.ENV.namespace, name=app.NAME),
+            caller=app.service(staging.ENV.namespace),
+            vm_templates={
+                "test-vm": VmTemplate(
+                    image=f"registry.test/guest@sha256:{'a' * 64}",
+                    image_pull_secret="test-pull-creds",
+                    storage_class="test-local-storage",
+                    llm_base_url="http://llm.test",
+                    proxy_url="http://10.0.2.2:3128",
+                    ca_bundle_config_map="test-egress-ca",
+                    kubernetes_host="kubernetes.test",
+                    kubernetes_credential_name="test-credential",
+                )
+            },
+        )
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)

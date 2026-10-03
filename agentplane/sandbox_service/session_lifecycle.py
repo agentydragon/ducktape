@@ -9,6 +9,8 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.instructions import combine_instructions
+from agentplane.sandbox_service.kind import from_wire
+from agentplane.sandbox_service.models import EnvironmentKind
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SessionDestination
 
 # gazelle:include_dep @pypi//protobuf
@@ -29,6 +31,11 @@ def launch_spec(
         values["cwd"] = values["cwd"].replace("{session_id}", destination.session_id)
     spec = ParseDict(values | overrides, protocol_pb2.SessionSpec())
     validate_spec(spec)
+    path = PurePosixPath(spec.cwd)
+    if from_wire(destination.sandbox.kind) == EnvironmentKind.KUBEVIRT and (
+        ".." in path.parts or path == PurePosixPath("/workspace") or not path.is_relative_to("/workspace")
+    ):
+        raise ValueError("VM session cwd must be a child of /workspace")
     context = (
         "Your explicit Sandbox Service session destination is:\n"
         f"{MessageToJson(destination, preserving_proto_field_name=True)}\n"
@@ -41,6 +48,7 @@ def launch_spec(
                     "namespace": sandbox_namespace,
                     "name": destination.sandbox.sandbox,
                     "uid": destination.sandbox.sandbox_uid,
+                    "kind": from_wire(destination.sandbox.kind).value,
                 },
                 "session_id": destination.session_id,
             }

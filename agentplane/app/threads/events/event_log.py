@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
+from agentplane.app.sandbox_models import SandboxKind, parse_sandbox_kind
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
 from agentplane.app.threads.models import Event, EventLog, FeedState
 from agentplane.protocol import event_log_pb2
@@ -66,6 +67,7 @@ class RunnerSession:
     """The runner session a log copies, which is where its thread's commands go."""
 
     sandbox: str
+    sandbox_kind: SandboxKind
     session_id: str
 
 
@@ -73,19 +75,22 @@ class EventLogStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
 
-    async def open(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
+    async def open(
+        self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec, *, sandbox_kind: str = "agent_sandbox"
+    ) -> UUID:
         """The session's event log, created from the spec on first sight; its id is the thread's."""
         async with self._sessions.begin() as session:
             created = await session.scalar(
                 insert(EventLog)
                 .values(
+                    sandbox_kind=sandbox_kind,
                     sandbox=sandbox,
                     session_id=session_id,
                     harness=Harness(protocol_pb2.Harness.Name(spec.harness)),
                     model=spec.model,
                     cwd=spec.cwd,
                 )
-                .on_conflict_do_nothing(index_elements=[EventLog.sandbox, EventLog.session_id])
+                .on_conflict_do_nothing(index_elements=[EventLog.sandbox_kind, EventLog.sandbox, EventLog.session_id])
                 .returning(EventLog.id)
             )
             if created is not None:
@@ -93,24 +98,38 @@ class EventLogStore:
                 return created
             return (
                 await session.scalars(
-                    select(EventLog.id).where(EventLog.sandbox == sandbox, EventLog.session_id == session_id)
+                    select(EventLog.id).where(
+                        EventLog.sandbox_kind == sandbox_kind,
+                        EventLog.sandbox == sandbox,
+                        EventLog.session_id == session_id,
+                    )
                 )
             ).one()
 
-    async def find(self, sandbox: str, session_id: str) -> UUID | None:
+    async def find(self, sandbox: str, session_id: str, *, sandbox_kind: str = "agent_sandbox") -> UUID | None:
         async with self._sessions() as session:
             return (
                 await session.scalars(
-                    select(EventLog.id).where(EventLog.sandbox == sandbox, EventLog.session_id == session_id)
+                    select(EventLog.id).where(
+                        EventLog.sandbox_kind == sandbox_kind,
+                        EventLog.sandbox == sandbox,
+                        EventLog.session_id == session_id,
+                    )
                 )
             ).one_or_none()
 
     async def runner_session(self, thread_id: UUID) -> RunnerSession | None:
         async with self._sessions() as session:
             log = (
-                await session.execute(select(EventLog.sandbox, EventLog.session_id).where(EventLog.id == thread_id))
+                await session.execute(
+                    select(EventLog.sandbox, EventLog.sandbox_kind, EventLog.session_id).where(EventLog.id == thread_id)
+                )
             ).one_or_none()
-            return None if log is None else RunnerSession(log.sandbox, log.session_id)
+            return (
+                None
+                if log is None
+                else RunnerSession(log.sandbox, parse_sandbox_kind(log.sandbox_kind), log.session_id)
+            )
 
     async def last_cursor(self, thread_id: UUID) -> int:
         async with self._sessions() as session:

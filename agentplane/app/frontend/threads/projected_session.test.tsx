@@ -47,6 +47,7 @@ const mounted: Array<{
 }> = [];
 const THREAD: ThreadView = {
   id: "10000000-0000-4000-8000-000000000001",
+  sandbox_kind: "agent_sandbox",
   sandbox: "composer-test",
   session_id: "session-test",
   harness: "HARNESS_CLAUDE",

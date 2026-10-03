@@ -12,6 +12,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.app.changes import Changes
+from agentplane.app.sandbox_models import SandboxKind
 from agentplane.app.threads.events.event_log import EventLogStore, FeedError, ThreadNotFoundError
 from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
@@ -65,8 +66,10 @@ class RunnerBridge:
         self._ingester = ingester
         self._thread_changes = thread_changes
 
-    async def list_sessions(self, sandbox: str) -> list[protocol_pb2.SessionSummary]:
-        return await self._runners.client(sandbox).list_sessions()
+    async def list_sessions(
+        self, sandbox: str, sandbox_kind: SandboxKind = "agent_sandbox"
+    ) -> list[protocol_pb2.SessionSummary]:
+        return await self._runners.client(sandbox, sandbox_kind).list_sessions()
 
     async def open_session(
         self,
@@ -74,24 +77,25 @@ class RunnerBridge:
         session_id: str,
         spec: protocol_pb2.SessionSpec | dict[str, object],
         setup_script: str | None = None,
+        sandbox_kind: SandboxKind = "agent_sandbox",
     ) -> protocol_pb2.Attached:
-        existing = await self._event_logs.find(sandbox, session_id)
+        existing = await self._event_logs.find(sandbox, session_id, sandbox_kind=sandbox_kind)
         if existing is not None:
             snapshot = await self._event_logs.feed_state(existing)
             if snapshot is not None and isinstance(snapshot.end, FeedError):
                 raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
         try:
-            attached = await self._runners.client(sandbox).open(
+            attached = await self._runners.client(sandbox, sandbox_kind).open(
                 session_id, MessageToDict(spec) if isinstance(spec, protocol_pb2.SessionSpec) else spec, setup_script
             )
         except (ValueError, ParseError) as error:
             raise MalformedMessageError(f"invalid session overrides: {error}") from error
-        return await self._archive_open(sandbox, session_id, attached)
+        return await self._archive_open(sandbox, sandbox_kind, session_id, attached)
 
     async def _archive_open(
-        self, sandbox: str, session_id: str, attached: protocol_pb2.Attached
+        self, sandbox: str, sandbox_kind: SandboxKind, session_id: str, attached: protocol_pb2.Attached
     ) -> protocol_pb2.Attached:
-        thread_id = await self._event_logs.open(sandbox, session_id, attached.spec)
+        thread_id = await self._event_logs.open(sandbox, session_id, attached.spec, sandbox_kind=sandbox_kind)
         await self._ingester.start()
         # In particular, do not return a resumed session while the database still says its
         # previous harness ended. Commands remain runner-first; this only synchronizes Open.
@@ -115,7 +119,7 @@ class RunnerBridge:
         runner_session = await self._event_logs.runner_session(thread_id)
         if runner_session is None:
             raise ThreadNotFoundError(thread_id)
-        sessions = await self.list_sessions(runner_session.sandbox)
+        sessions = await self.list_sessions(runner_session.sandbox, runner_session.sandbox_kind)
         summary = next((row for row in sessions if row.session_id == runner_session.session_id), None)
         if summary is None:
             raise RunnerError(
@@ -131,8 +135,12 @@ class RunnerBridge:
             raise RunnerError(f"runner session {runner_session.session_id!r} has no recoverable session spec")
         if protocol_pb2.Harness.Name(summary.spec.harness) != expected_harness or summary.spec.cwd != expected_cwd:
             raise RunnerError("runner's retained session spec does not match this Thread's harness and workspace")
-        attached = await self._runners.client(runner_session.sandbox).resume(runner_session.session_id)
-        return await self._archive_open(runner_session.sandbox, runner_session.session_id, attached)
+        attached = await self._runners.client(runner_session.sandbox, runner_session.sandbox_kind).resume(
+            runner_session.session_id
+        )
+        return await self._archive_open(
+            runner_session.sandbox, runner_session.sandbox_kind, runner_session.session_id, attached
+        )
 
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Return only after this Thread's matching runner admission is in the app archive."""
@@ -149,6 +157,7 @@ class RunnerBridge:
         await self._ingester.start()
         try:
             await self._command(
+                runner_session.sandbox_kind,
                 runner_session.sandbox,
                 runner_session.session_id,
                 command,
@@ -158,8 +167,16 @@ class RunnerBridge:
         except TimeoutError as error:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
 
-    async def _command(self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int) -> None:
-        await self._runners.client(sandbox).command(session_id, command, after_cursor=after_cursor)
+    async def _command(
+        self,
+        sandbox_kind: SandboxKind,
+        sandbox: str,
+        session_id: str,
+        command: command_pb2.Command,
+        *,
+        after_cursor: int,
+    ) -> None:
+        await self._runners.client(sandbox, sandbox_kind).command(session_id, command, after_cursor=after_cursor)
 
     async def _wait_for_admission(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Wait for the ingester's committed prefix, never for a native command effect."""
@@ -208,12 +225,14 @@ Bridge = Annotated[RunnerBridge, Depends(_bridge)]
 
 
 @router.get("")
-async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
-    return [MessageToDict(summary) for summary in await bridge.list_sessions(name)]
+async def list_sessions(bridge: Bridge, name: str, kind: SandboxKind = "agent_sandbox") -> list[dict[str, object]]:
+    return [MessageToDict(summary) for summary in await bridge.list_sessions(name, kind)]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def open_session(bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
+async def open_session(
+    bridge: Bridge, name: str, body: NewSession, kind: SandboxKind = "agent_sandbox"
+) -> dict[str, object]:
     _parse(protocol_pb2.SessionSpec(), body.spec)  # Validate without losing explicit empty overrides.
-    attached = await bridge.open_session(name, body.session_id, body.spec, body.setup_script)
+    attached = await bridge.open_session(name, body.session_id, body.spec, body.setup_script, kind)
     return MessageToDict(attached)

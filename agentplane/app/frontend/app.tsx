@@ -11,6 +11,8 @@ import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { ThreadsLiveProvider } from "./live";
 import { SandboxList } from "./sandboxes";
+import { sandboxRoute } from "./sandbox_kinds";
+import type { SandboxKind } from "./client";
 import { ProjectedSession } from "./threads/projected_session";
 import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
@@ -21,10 +23,6 @@ import { appDocumentTitle } from "./tab_metadata";
 import "./shell.css";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
-function sandboxPath(name: string): string {
-  return `/sandboxes/${encodeURIComponent(name)}`;
-}
-
 function required(value: string | undefined, name: string): string {
   if (value === undefined) throw new Error(`route parameter ${name} is missing`);
   return value;
@@ -48,7 +46,7 @@ function ThreadsLanding(): JSX.Element {
 
 function SandboxListRoute(): JSX.Element {
   const navigate = useNavigate();
-  return <SandboxList onOpen={(name) => void navigate(sandboxPath(name))} />;
+  return <SandboxList onOpen={(name, kind) => void navigate(sandboxRoute(name, kind))} />;
 }
 
 function ConsentRoute(): JSX.Element {
@@ -58,10 +56,14 @@ function ConsentRoute(): JSX.Element {
 
 function SandboxRoute(): JSX.Element {
   const name = required(useParams().name, "name");
+  const location = useLocation();
+  const requestedKind = new URLSearchParams(location.search).get("kind");
+  const kind: SandboxKind = requestedKind === "kubevirt" ? "kubevirt" : "agent_sandbox";
   const navigate = useNavigate();
   return (
     <SandboxPage
       name={name}
+      kind={kind}
       onBack={() => void navigate("/sandboxes")}
       onOpenThread={(threadId) => void navigate(`/threads/${encodeURIComponent(threadId)}`)}
     />

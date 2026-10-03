@@ -14,6 +14,18 @@ class ProvisioningState(StrEnum):
     WAITING_FOR_POD_READY = "waiting_for_pod_ready"
     RUNNING = "running"
     SUSPENDED = "suspended"
+    WAITING_FOR_VM = "waiting_for_vm"
+    WAITING_FOR_GUEST = "waiting_for_guest"
+    STOPPING = "stopping"
+
+
+class EnvironmentKind(StrEnum):
+    AGENT_SANDBOX = "agent_sandbox"
+    KUBEVIRT = "kubevirt"
+
+
+def environment_kind(value: str) -> EnvironmentKind:
+    return EnvironmentKind(value)
 
 
 class InventoryError(Exception):

@@ -25,9 +25,12 @@ class EventLog(Base):
     """
 
     __tablename__ = "event_log"
-    __table_args__ = (UniqueConstraint("sandbox", "session_id"),)
+    __table_args__ = (
+        UniqueConstraint("sandbox_kind", "sandbox", "session_id", name="uq_event_log_sandbox_kind_session"),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    sandbox_kind: Mapped[str] = mapped_column(Text, default="agent_sandbox", server_default=text("'agent_sandbox'"))
     sandbox: Mapped[str] = mapped_column(Text)
     session_id: Mapped[str] = mapped_column(Text)
     harness: Mapped[Harness] = mapped_column(
@@ -80,6 +83,9 @@ class Event(Base):
 class SandboxIngestion(Base):
     __tablename__ = "sandbox_ingestion"
 
+    sandbox_kind: Mapped[str] = mapped_column(
+        Text, primary_key=True, default="agent_sandbox", server_default=text("'agent_sandbox'")
+    )
     sandbox: Mapped[str] = mapped_column(Text, primary_key=True)
     token: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
