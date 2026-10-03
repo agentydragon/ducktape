@@ -198,7 +198,7 @@ fn deficient_chain_explains_participants_and_blocked_bystander() {
         "{a:#}"
     );
     for record in [b, c, bystander] {
-        assert_eq!(record["outcome"]["witness"], chain_witness, "{record:#}");
+        assert_eq!(&record["outcome"]["witness"], chain_witness, "{record:#}");
     }
     assert!(
         !chain_witness["selectors"]
@@ -334,7 +334,7 @@ fn multi_binding_groups_contribute_one_exclusivity_representative() {
     );
     for export in ["LeftTwo", "RightOne", "RightTwo"] {
         assert_eq!(
-            find_outcome(&outcomes, "unsatisfiable", export)["outcome"]["witness"],
+            &find_outcome(&outcomes, "unsatisfiable", export)["outcome"]["witness"],
             conflict,
             "all members share one group diagnostic"
         );
