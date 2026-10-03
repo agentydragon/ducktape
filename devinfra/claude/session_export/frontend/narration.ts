@@ -79,7 +79,9 @@ export function decodeNarrationSignatureType(signature: unknown): string | undef
     binary = atob(signature);
   } catch (error) {
     // An invalid optional signature is ordinary thinking; unrelated decoder errors should surface.
-    if (error instanceof DOMException && error.name === "InvalidCharacterError") return undefined;
+    if (typeof error === "object" && error !== null && "name" in error && error.name === "InvalidCharacterError") {
+      return undefined;
+    }
     throw error;
   }
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));

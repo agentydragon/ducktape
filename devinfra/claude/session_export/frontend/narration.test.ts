@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment happy-dom
+
+import { describe, expect, it, vi } from "vitest";
 
 import { decodeNarrationSignatureType, isNarrationSignature } from "./narration";
 
@@ -117,6 +119,21 @@ describe("narration signature decoding", () => {
     expect(decodeNarrationSignatureType(undefined)).toBeUndefined();
     expect(decodeNarrationSignatureType(42)).toBeUndefined();
     expect(decodeNarrationSignatureType("")).toBeUndefined();
+  });
+
+  it("ignores the browser's InvalidCharacterError but rethrows unrelated base64 decoder errors", () => {
+    // happy-dom's atob throws a DOMException from a different realm than the test global.
+    expect(decodeNarrationSignatureType("%not-base64%")).toBeUndefined();
+
+    const unexpectedError = new Error("unexpected decoder failure");
+    vi.stubGlobal("atob", () => {
+      throw unexpectedError;
+    });
+    try {
+      expect(() => decodeNarrationSignatureType("anything")).toThrow(unexpectedError);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("preserves the source decoder's BOM behavior", () => {
