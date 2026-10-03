@@ -6,6 +6,7 @@ from pathlib import Path
 
 from cdk8s import App
 
+from agentplane.crds.generate import CRD_FILES
 from cluster.cdk8s import (
     agent_machine_access,
     agent_namespace_rbac,
@@ -321,7 +322,7 @@ def generate_manifests(root: Path) -> None:
     flux_chart = flux.kustomizations_chart(flux_app)
     agentplane_crds_artifact = artifact("agentplane-crds", agentplane_crds.OUTPUT_DIR)
     agentplane_crds_kustomization = agentplane_crds.agentplane_crds(
-        flux_chart, write_directory(root, agentplane_crds_artifact, siblings=agentplane_crds.CRD_FILES)
+        flux_chart, write_directory(root, agentplane_crds_artifact, siblings=CRD_FILES)
     )
     agent_sandbox_controller_artifact = artifact("agent-sandbox-controller", agent_sandbox.CONTROLLER_DIR)
     agent_sandbox_controller_kustomization = agent_sandbox.agent_sandbox_controller(

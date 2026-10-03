@@ -1636,6 +1636,7 @@ py_library(
         ":vector_talos_logs",
         ":volsync",
         ":vpa",
+        "//agentplane/crds:generate",
         "//cluster/cdk8s:cnpg_operator",
         "//cluster/cdk8s:ducktape_flux",
         "//cluster/cdk8s:gateway",
