@@ -292,7 +292,7 @@ class SandboxInventory:
             ),
         )
         disks = [
-            {"name": "root", "disk": {"bus": "virtio"}},
+            {"name": "root", "disk": {"bus": "virtio"}, "bootOrder": 1},
             {"name": "state", "disk": {"bus": "virtio"}, "serial": "state"},
             {"name": "workspace", "disk": {"bus": "virtio"}, "serial": "workspace"},
             {"name": "config", "disk": {"bus": "virtio"}, "serial": "agentplane-config"},
@@ -331,6 +331,7 @@ class SandboxInventory:
                         "domain": {
                             "cpu": {"cores": template.cpu_cores},
                             "resources": {"requests": {"memory": template.memory}},
+                            "firmware": {"bootloader": {"efi": {"secureBoot": False}}},
                             "devices": {
                                 "disks": disks,
                                 "interfaces": [
@@ -808,12 +809,16 @@ class SandboxInventory:
         if isinstance(sandbox, VmResource):
             if mode == OperatingMode.RUNNING and PROVISIONING_ANNOTATION in sandbox.metadata.annotations:
                 raise ValueError("VM grants are not ready")
-            if (
-                mode == OperatingMode.RUNNING
-                and sandbox.spec.get("runStrategy") == "Halted"
-                and await self.current_vm_instance(name, sandbox.metadata.uid) is not None
-            ):
-                raise InventoryError("the previous VM instance is still stopping")
+            if mode == OperatingMode.RUNNING and sandbox.spec.get("runStrategy") == "Halted":
+                try:
+                    await self._custom_objects.get_namespaced_custom_object(
+                        "kubevirt.io", "v1", self._namespace, VMIS_PLURAL, name
+                    )
+                except k8s_client.ApiException as error:
+                    if error.status != 404:
+                        raise
+                else:
+                    raise InventoryError("the previous VM instance is still stopping")
             patch = {
                 "metadata": {
                     "uid": sandbox.metadata.uid,

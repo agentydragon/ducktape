@@ -7,11 +7,12 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
+from pydantic import ValidationError
 
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubevirt import VmTemplate
-from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 from util.kubernetes import CustomObjectsClient
@@ -32,6 +33,11 @@ def _template() -> VmTemplate:
     )
 
 
+def test_vm_template_requires_supported_state_schema() -> None:
+    with pytest.raises(ValidationError, match="state_schema_version"):
+        VmTemplate.model_validate({**_template().model_dump(), "state_schema_version": 2})
+
+
 async def test_vm_starts_only_after_dependencies_and_retains_disks_on_delete() -> None:
     custom, core = FakeCustomObjectsApi(), FakeCoreV1Api()
     catalog = {"test-vm": _template()}
@@ -48,6 +54,9 @@ async def test_vm_starts_only_after_dependencies_and_retains_disks_on_delete() -
     vm = custom.objects[("virtualmachines", view.name)]
     assert view.kind == "kubevirt"
     assert vm["spec"]["runStrategy"] == "Halted"
+    domain = vm["spec"]["template"]["spec"]["domain"]
+    assert domain["firmware"]["bootloader"]["efi"]["secureBoot"] is False
+    assert domain["devices"]["disks"][0]["bootOrder"] == 1
     assert vm["spec"]["template"]["spec"]["readinessProbe"]["tcpSocket"]["port"] == 7000
     account = core.service_accounts[f"vm-{view.name}-account"]
     assert account.metadata.owner_references[0].uid == view.uid
@@ -75,6 +84,30 @@ async def test_vm_starts_only_after_dependencies_and_retains_disks_on_delete() -
     assert json.loads(config.data["config.json"])["format_blank_disks"] == []
     assert await inventory.ensure_vm_dependencies(view)
     await inventory.suspend(view.name, kind="kubevirt", uid=view.uid)
+    custom.objects[("virtualmachineinstances", view.name)] = {
+        "metadata": {
+            "name": view.name,
+            "namespace": NAMESPACE,
+            "uid": str(uuid4()),
+            "creationTimestamp": "2026-09-02T10:00:00Z",
+            "ownerReferences": [
+                {
+                    "apiVersion": "kubevirt.io/v1",
+                    "kind": "VirtualMachine",
+                    "name": view.name,
+                    "uid": view.uid,
+                    "controller": True,
+                }
+            ],
+        },
+        "status": {"phase": "Running"},
+    }
+    with pytest.raises(InventoryError, match="still stopping"):
+        await inventory.resume(view.name, kind="kubevirt", uid=view.uid)
+    custom.objects[("virtualmachineinstances", view.name)]["metadata"]["deletionTimestamp"] = "2026-09-02T10:01:00Z"
+    with pytest.raises(InventoryError, match="still stopping"):
+        await inventory.resume(view.name, kind="kubevirt", uid=view.uid)
+    del custom.objects[("virtualmachineinstances", view.name)]
     catalog["test-vm"] = catalog["test-vm"].model_copy(update={"image": f"registry.test/runner@sha256:{'b' * 64}"})
     await inventory.replace_vm_image(view.name, uid=view.uid, template_name="test-vm")
     root = next(volume for volume in vm["spec"]["template"]["spec"]["volumes"] if volume["name"] == "root")

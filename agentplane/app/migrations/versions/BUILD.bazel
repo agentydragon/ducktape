@@ -18,6 +18,7 @@ exports_files(
         "0014_operator_session_login.py",
         "0015_event_payload_json.py",
         "0016_thread_payload_chunk_json.py",
+        "0017_sandbox_kind_identity.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )

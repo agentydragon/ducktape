@@ -644,7 +644,10 @@ py_library(
 py_library(
     name = "kubevirt",
     srcs = ["kubevirt.py"],
-    visibility = ["//agentplane:__subpackages__"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__subpackages__",
+    ],
     deps = [
         ":binding_storage",
         ":kubernetes_views",

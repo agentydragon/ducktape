@@ -1516,6 +1516,41 @@ rules:
       - patch
       - delete
   - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - delete
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachineinstances
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - cdi.kubevirt.io
+    resources:
+      - datavolumes
+    verbs:
+      - create
+      - get
+      - list
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - create
+      - get
+      - patch
+  - apiGroups:
       - ""
     resources:
       - pods
@@ -1529,6 +1564,7 @@ rules:
       - serviceaccounts
     verbs:
       - create
+      - get
       - patch
       - delete
   - apiGroups:
@@ -1648,6 +1684,7 @@ data:
     lifecycle_timeout_s: 300
     default_policies:
       - basic
+    vm_templates: {}
     kubernetes_grants:
       sandbox-tool-config:
         kind: RoleBinding
@@ -2260,6 +2297,15 @@ spec:
         - ports:
             - port: "7000"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            agentplane.allegedly.works/managed: "true"
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            kubevirt.io: virt-launcher
+      toPorts:
+        - ports:
+            - port: "7000"
+              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-sandbox-service
@@ -2367,6 +2413,22 @@ rules:
       - agents.x-k8s.io
     resources:
       - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachineinstances
     verbs:
       - get
       - list

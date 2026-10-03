@@ -2275,22 +2275,39 @@ if (scenario.openActionPolicySets) {
   openSets.observe(document, { childList: true, subtree: true });
 }
 if (scenario.selectKubevirt) {
-  let opened = false;
+  let step: "environment" | "select-environment" | "template" | "select-template" = "environment";
   const selectEnvironment = new MutationObserver(() => {
-    if (!opened) {
+    if (step === "environment") {
       const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Environment kind");
       const control = label?.control;
       if (!(control instanceof HTMLInputElement)) return;
-      opened = true;
+      step = "select-environment";
       control.click();
       return;
     }
-    const selected = [...document.querySelectorAll('[role="option"]')].find(
-      (option) => option.textContent === "KubeVirt VM"
+    if (step === "select-environment") {
+      const environment = [...document.querySelectorAll('[role="option"]')].find(
+        (option) => option.textContent === "KubeVirt VM"
+      );
+      if (!(environment instanceof HTMLElement)) return;
+      environment.click();
+      step = "template";
+      return;
+    }
+    if (step === "template") {
+      const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Template");
+      const control = label?.control;
+      if (!(control instanceof HTMLInputElement)) return;
+      step = "select-template";
+      control.click();
+      return;
+    }
+    const template = [...document.querySelectorAll('[role="option"]')].find(
+      (option) => option.textContent === "ubuntu-dev-vm"
     );
-    if (!(selected instanceof HTMLElement)) return;
+    if (!(template instanceof HTMLElement)) return;
     selectEnvironment.disconnect();
-    selected.click();
+    template.click();
   });
   selectEnvironment.observe(document, { childList: true, subtree: true });
 }

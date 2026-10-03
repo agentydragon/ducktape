@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from google.protobuf.json_format import ParseDict
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -45,7 +45,7 @@ class VmTemplate(BaseModel):
 
     image: str = Field(pattern=r"^.+@sha256:[0-9a-f]{64}$")
     image_pull_secret: str = Field(min_length=1)
-    state_schema_version: int = Field(default=1, ge=1)
+    state_schema_version: Literal[1] = 1
     cpu_cores: int = Field(default=4, ge=4)
     memory: str = Field(default="10Gi", pattern=r"^(?:8|9|[1-9][0-9]+)Gi$")
     state_disk: str = "20Gi"
