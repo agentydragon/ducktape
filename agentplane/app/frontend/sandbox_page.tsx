@@ -90,34 +90,36 @@ function ConditionsTable({ title, conditions }: { title: string; conditions: Raw
   return (
     <Stack gap="xs">
       <Title order={5}>{title}</Title>
-      <Table>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Condition</Table.Th>
-            <Table.Th>Status</Table.Th>
-            <Table.Th>Reason</Table.Th>
-            <Table.Th>Message</Table.Th>
-            <Table.Th>Transition</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {conditions.map((condition) => (
-            <Table.Tr key={condition.type}>
-              <Table.Td>{condition.type}</Table.Td>
-              <Table.Td>
-                <Badge color={condition.status === "True" ? "green" : "orange"}>{condition.status}</Badge>
-              </Table.Td>
-              <Table.Td>{condition.reason ?? "—"}</Table.Td>
-              <Table.Td>{condition.message ?? "—"}</Table.Td>
-              <Table.Td>
-                {condition.lastTransitionTime ?? "—"}
-                {condition.lastProbeTime ? ` · probed ${condition.lastProbeTime}` : ""}
-                {condition.observedGeneration !== null ? ` · generation ${condition.observedGeneration}` : ""}
-              </Table.Td>
+      <Table.ScrollContainer minWidth={620} type="native">
+        <Table>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Condition</Table.Th>
+              <Table.Th>Status</Table.Th>
+              <Table.Th>Reason</Table.Th>
+              <Table.Th>Message</Table.Th>
+              <Table.Th>Transition</Table.Th>
             </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
+          </Table.Thead>
+          <Table.Tbody>
+            {conditions.map((condition) => (
+              <Table.Tr key={condition.type}>
+                <Table.Td>{condition.type}</Table.Td>
+                <Table.Td>
+                  <Badge color={condition.status === "True" ? "green" : "orange"}>{condition.status}</Badge>
+                </Table.Td>
+                <Table.Td>{condition.reason ?? "—"}</Table.Td>
+                <Table.Td>{condition.message ?? "—"}</Table.Td>
+                <Table.Td>
+                  {condition.lastTransitionTime ?? "—"}
+                  {condition.lastProbeTime ? ` · probed ${condition.lastProbeTime}` : ""}
+                  {condition.observedGeneration !== null ? ` · generation ${condition.observedGeneration}` : ""}
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
     </Stack>
   );
 }
