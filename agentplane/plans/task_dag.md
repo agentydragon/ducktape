@@ -862,6 +862,8 @@ recommends an explicit creation-time `agent_sandbox` / `kubevirt` choice, with t
 baked into the guest and the token-holding relay outside it in the launcher Pod. Sandbox
 Service owns both providers; harness selection is independent. Presets prefill editable
 kind/template fields. No existing environment conversion or live migration is implied.
+The selected v1 approach uses existing Kyverno admission to inject the relay and private
+token mounts; the first implementation step is a disposable VM proof on the pinned stack.
 
 This node gates the pinned-version proof of sidecar admission, proxy-only token mounts,
 guest routing, storage and resource containment. The plan owns the proposed implementation
