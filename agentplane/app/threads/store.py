@@ -29,7 +29,12 @@ class ThreadStore:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
 
     async def list_threads(
-        self, *, sandbox: str | None = None, session_id: str | None = None, include_archived: bool = False
+        self,
+        *,
+        sandbox: str | None = None,
+        sandbox_kind: str = "agent_sandbox",
+        session_id: str | None = None,
+        include_archived: bool = False,
     ) -> list[ThreadView]:
         """Newest first; each filter given narrows the list to threads matching it. Archived
         threads are excluded unless asked for, mirroring the Sandbox inventory's own default."""
@@ -50,7 +55,7 @@ class ThreadStore:
             .order_by(EventLog.created_at.desc())
         )
         if sandbox is not None:
-            query = query.where(EventLog.sandbox == sandbox)
+            query = query.where(EventLog.sandbox == sandbox, EventLog.sandbox_kind == sandbox_kind)
         if session_id is not None:
             query = query.where(EventLog.session_id == session_id)
         if not include_archived:
@@ -133,6 +138,7 @@ def _view(
     harness_state = attachment.harness_state if attachment is not None else protocol_pb2.HARNESS_STATE_UNSPECIFIED
     return ThreadView(
         id=log.id,
+        sandbox_kind=log.sandbox_kind,
         sandbox=log.sandbox,
         session_id=log.session_id,
         harness=log.harness,

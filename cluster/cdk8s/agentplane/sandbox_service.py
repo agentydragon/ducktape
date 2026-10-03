@@ -24,6 +24,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
+from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 from agentplane.sandbox_service.main import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
@@ -130,6 +131,14 @@ class SandboxService(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 EgressRule.to_endpoints(
                     cilium.endpoint_labels(env.namespace, "agentplane-runner"), settings.runner_port
+                ),
+                EgressRule.to_endpoints(
+                    {
+                        "k8s:io.kubernetes.pod.namespace": env.namespace,
+                        "kubevirt.io": "virt-launcher",
+                        MANAGED_LABEL: "true",
+                    },
+                    settings.runner_port,
                 ),
             ],
         )
@@ -252,11 +261,25 @@ class SandboxService(Construct):
                     resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
                     verbs=["create", "get", "list", "watch", "patch", "delete"],
                 ),
+                RolePolicyRule(
+                    resources=[custom_resource("kubevirt.io", "virtualmachines")],
+                    verbs=["create", "get", "list", "watch", "patch", "delete"],
+                ),
+                RolePolicyRule(
+                    resources=[custom_resource("kubevirt.io", "virtualmachineinstances")],
+                    verbs=["get", "list", "watch"],
+                ),
+                RolePolicyRule(
+                    resources=[custom_resource("cdi.kubevirt.io", "datavolumes")], verbs=["create", "get", "list"]
+                ),
+                RolePolicyRule(resources=[custom_resource("", "configmaps")], verbs=["create", "get", "patch"]),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 # One ServiceAccount per Sandbox, created with it and owned by it; no
                 # patching beyond stamping that owner reference, and no reading of the
                 # tokens minted for it.
-                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["create", "patch", "delete"]),
+                RolePolicyRule(
+                    resources=[custom_resource("", "serviceaccounts")], verbs=["create", "get", "patch", "delete"]
+                ),
                 RolePolicyRule(
                     resources=[
                         custom_resource("agentplane.allegedly.works", resource)

@@ -16,7 +16,7 @@ export const DELETE_NEEDS_SUSPENDED = "Suspend the sandbox before deleting it";
 
 /** Whether the API will accept a deletion: only a suspended sandbox may go. */
 export function deletable(sandbox: SandboxView): boolean {
-  return sandbox.operating_mode === "Suspended";
+  return sandbox.operating_mode === "Suspended" && sandbox.state === "suspended";
 }
 
 export function SuspendResume({
@@ -27,12 +27,15 @@ export function SuspendResume({
   onAct: (action: "suspend" | "resume") => void;
 }): JSX.Element {
   const resume = sandbox.operating_mode === "Suspended";
+  const stopping = sandbox.state === "stopping";
   return (
-    <Tooltip label={resume ? "Resume" : "Suspend"} withArrow>
+    <Tooltip label={stopping ? "Wait for the VM to stop" : resume ? "Resume" : "Suspend"} withArrow>
       <ActionIcon
         variant="light"
         aria-label={resume ? "Resume" : "Suspend"}
-        onClick={() => onAct(resume ? "resume" : "suspend")}
+        aria-disabled={stopping}
+        data-disabled={stopping ? true : undefined}
+        onClick={() => !stopping && onAct(resume ? "resume" : "suspend")}
       >
         {resume ? <IconPlayerPlay size={16} /> : <IconPlayerPause size={16} />}
       </ActionIcon>
@@ -63,10 +66,12 @@ export function DeleteButton({ sandbox, onDelete }: { sandbox: SandboxView; onDe
 /** What deleting asks before it happens; rendered only while the question stands. */
 export function ConfirmDelete({
   name,
+  kind = "agent_sandbox",
   onCancel,
   onConfirm,
 }: {
   name: string;
+  kind?: SandboxView["kind"];
   onCancel: () => void;
   onConfirm: () => void;
 }): JSX.Element {
@@ -74,7 +79,10 @@ export function ConfirmDelete({
     <Modal opened onClose={onCancel} title={`Delete ${name}?`}>
       <Stack>
         <Text size="sm">
-          The Pod and its volume go with the sandbox, and everything written on it. Threads already recorded outlive it.
+          {kind === "kubevirt"
+            ? "The virtual machine and its disks go with the sandbox, and everything written on them."
+            : "The Pod and its volume go with the sandbox, and everything written on it."}{" "}
+          Threads already recorded outlive it.
         </Text>
         <Group justify="flex-end">
           <Button variant="default" onClick={onCancel}>

@@ -22,6 +22,7 @@ from agentplane.sandbox_service.instructions import resolved_agent_instructions
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, RoleBindingGrant
+from agentplane.sandbox_service.kubevirt import VmTemplate
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -42,6 +43,7 @@ class Settings(BaseSettings):
     agent_actions_service_url: str | None = None
     lifecycle_timeout_s: float = Field(default=300, gt=0)
     default_policies: list[str] = Field(default_factory=list)
+    vm_templates: dict[str, VmTemplate] = Field(default_factory=dict)
     kubernetes_grants: dict[str, KubernetesGrant] = Field(default_factory=dict)
     kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)
     kubernetes_cluster_binding_cleanup: bool = False
@@ -90,6 +92,7 @@ async def serve(settings: Settings) -> None:
             namespace=settings.sandbox_namespace,
             core_v1=core,
             custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api)),
+            vm_templates=settings.vm_templates,
         )
         principals = WorkloadPrincipalResolver(
             authentication=k8s_client.AuthenticationV1Api(api),

@@ -57,6 +57,8 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
+from agentplane.sandbox_service.kubevirt_contract import LAUNCHER_SERVICE_ACCOUNT_ANNOTATION, VM_TEMPLATE_ANNOTATION
 from agentplane.sandbox_service.models import ProvisioningState
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -118,7 +120,7 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
     for (kind, name), obj in custom_objects.objects.items():
         match kind:
             case "sandboxes":
-                live_index.sandboxes[name] = obj
+                live_index.sandboxes[("agent_sandbox", name)] = obj
             case "egressbindings":
                 live_index.bindings[name] = obj
             case "egresspolicies":
@@ -137,6 +139,33 @@ async def test_the_index_projects_the_rows_a_listing_would_return(
     """The push and the fetch share their projection; this is what says they still do."""
     assert seeded.sandbox_views() == [sandbox_view(view) for view in await inventory.list_sandboxes()]
     assert seeded.sandbox_view("runner-1") == sandbox_view(await inventory.get("runner-1"))
+
+
+def test_same_name_container_and_vm_remain_distinct_in_the_live_index(seeded: LiveIndex) -> None:
+    seeded.virtual_machines[("kubevirt", "runner-1")] = {
+        "metadata": {
+            "name": "runner-1",
+            "namespace": NAMESPACE,
+            "uid": "00000000-0000-4000-8000-000000000099",
+            "creationTimestamp": NOW.isoformat(),
+            "labels": {MANAGED_LABEL: "true"},
+            "annotations": {LAUNCHER_SERVICE_ACCOUNT_ANNOTATION: "runner-1-vm", VM_TEMPLATE_ANNOTATION: "vm-template"},
+        },
+        "spec": {"runStrategy": "Halted"},
+        "status": {"printableStatus": "Stopped"},
+    }
+
+    container = seeded.sandbox_view("runner-1", "agent_sandbox")
+    vm = seeded.sandbox_view("runner-1", "kubevirt")
+    same_name = [view for view in seeded.sandbox_views() if view.name == "runner-1"]
+
+    assert container is not None
+    assert container.pod is not None
+    assert vm is not None
+    assert vm.kind == "kubevirt"
+    assert vm.pod is None
+    assert vm.state == ProvisioningState.SUSPENDED
+    assert {view.kind for view in same_name} == {"agent_sandbox", "kubevirt"}
 
 
 async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex, egress: EgressAccess) -> None:
@@ -257,7 +286,7 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
 
 
 def test_a_sandbox_the_watch_has_dropped_is_gone_rather_than_missing(seeded: LiveIndex) -> None:
-    del seeded.sandboxes["runner-1"]
+    del seeded.sandboxes[("agent_sandbox", "runner-1")]
 
     assert seeded.sandbox_view("runner-1") is None
 
@@ -287,7 +316,7 @@ async def test_a_frame_goes_out_per_change_with_health_through_the_quiet(seeded:
 
     assert _read(await anext(stream)) == ("snapshot", ["runner-1", "shelved"])
     assert _read(await anext(stream))[0] == "health"
-    del seeded.sandboxes["runner-1"]
+    del seeded.sandboxes[("agent_sandbox", "runner-1")]
     seeded.changes.notify()
 
     assert await asyncio.wait_for(_next_snapshot(stream), timeout=5) == ["shelved"]
@@ -373,14 +402,14 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
             await store.archive(thread_id)
             assert (await _next_threads(stream)).threads[0].archived
 
-            seeded.sandboxes["runner-1"] = sandbox("runner-1", operating_mode="Suspended")
+            seeded.sandboxes[("agent_sandbox", "runner-1")] = sandbox("runner-1", operating_mode="Suspended")
             seeded.changes.notify()
             suspended = await _next_threads(stream)
             assert (
                 next(view for view in suspended.sandboxes if view.name == "runner-1").state
                 == ProvisioningState.SUSPENDED
             )
-            del seeded.sandboxes["runner-1"]
+            del seeded.sandboxes[("agent_sandbox", "runner-1")]
             seeded.changes.notify()
             deleted = await _next_threads(stream)
             assert [view.name for view in deleted.sandboxes] == ["shelved"]

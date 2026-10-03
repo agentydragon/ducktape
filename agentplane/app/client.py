@@ -21,7 +21,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from agentplane.app.api import EgressGrant, ModelCatalog
 from agentplane.app.decisions import Decision
 from agentplane.app.presets import SandboxPresetView
-from agentplane.app.sandbox_models import NewSandbox, SandboxView
+from agentplane.app.sandbox_models import NewSandbox, SandboxTemplateView, SandboxView
 from agentplane.app.threads.bridge import NewSession
 from agentplane.app.threads.view.views import ThreadView
 from agentplane.protocol import command_pb2, event_log_pb2
@@ -82,8 +82,8 @@ class Client:
     async def presets(self) -> list[SandboxPresetView]:
         return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]
 
-    async def templates(self) -> list[str]:
-        return list(await self._json("GET", "/sandboxes/templates"))
+    async def templates(self) -> list[SandboxTemplateView]:
+        return [SandboxTemplateView.model_validate(row) for row in await self._json("GET", "/sandboxes/templates")]
 
     async def policies(self) -> list[PolicyView]:
         return [PolicyView.model_validate(row) for row in await self._json("GET", "/egress/policies")]

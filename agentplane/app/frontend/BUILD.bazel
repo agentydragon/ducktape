@@ -207,6 +207,7 @@ ts_library(
         ":actions_client",
         ":actions_requests",
         ":actions_testing",
+        ":client",
         ":stream_status",
         ":topbar",
         "//:node_modules/@types/react",
@@ -544,6 +545,7 @@ ts_library(
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":live_stream",
         ":schema",
         ":stream_status",
@@ -573,6 +575,13 @@ ts_library(
 )
 
 ts_library(
+    name = "sandbox_kinds",
+    srcs = ["sandbox_kinds.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
     name = "sandboxes",
     srcs = [
         "sandboxes.tsx",
@@ -588,6 +597,7 @@ ts_library(
         ":client",
         ":lifecycle",
         ":live",
+        ":sandbox_kinds",
         ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -674,6 +684,7 @@ ts_library(
     deps = [
         ":client",
         ":live",
+        ":sandbox_kinds",
         ":sandboxes",
         ":sidebar_css",
         ":stream_status",
@@ -772,6 +783,7 @@ ts_library(
         ":lifecycle",
         ":live",
         ":raw_switch",
+        ":sandbox_kinds",
         ":stream_status",
         ":topbar",
         "//:node_modules/@bufbuild/protobuf",
@@ -964,6 +976,7 @@ ts_library(
         ":actions_requests",
         ":consent",
         ":live",
+        ":sandbox_kinds",
         ":sandbox_page",
         ":sandboxes",
         ":settings",

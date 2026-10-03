@@ -126,9 +126,13 @@ class SandboxServiceClient:
         result = await self.unary(self.stub.ListTemplates, Empty())
         return list(result.templates)
 
-    async def get(self, name: str) -> Sandbox:
+    async def list_template_descriptors(self) -> list[protocol_pb2.TemplateDescriptor]:
+        result = await self.unary(self.stub.ListTemplates, Empty())
+        return list(result.descriptors)
+
+    async def get(self, name: str, *, kind: str = "") -> Sandbox:
         try:
-            result = await self.unary(self.stub.GetSandbox, protocol_pb2.GetSandboxRequest(name=name))
+            result = await self.unary(self.stub.GetSandbox, protocol_pb2.GetSandboxRequest(name=name, kind=kind))
         except ServiceError as error:
             if error.code == grpc.StatusCode.NOT_FOUND:
                 raise SandboxNotFoundError(name) from error
@@ -138,22 +142,35 @@ class SandboxServiceClient:
     async def create(self, spec: CreateSandboxRequest) -> Sandbox:
         return await self.unary(self.stub.CreateSandbox, spec, timeout_s=self.lifecycle_timeout_s)
 
-    async def _lifecycle(self, call: Callable[..., Awaitable[Empty]], name: str) -> None:
-        view = await self.get(name)
-        destination = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid)
+    async def _lifecycle(self, call: Callable[..., Awaitable[Empty]], name: str, *, kind: str = "") -> None:
+        view = await self.get(name, kind=kind)
+        destination = SandboxDestination(
+            owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid, kind=view.kind
+        )
         await self.unary(call, protocol_pb2.SandboxRequest(destination=destination))
 
-    async def suspend(self, name: str) -> None:
-        await self._lifecycle(self.stub.SuspendSandbox, name)
+    async def suspend(self, name: str, *, kind: str = "") -> None:
+        await self._lifecycle(self.stub.SuspendSandbox, name, kind=kind)
 
-    async def resume(self, name: str) -> None:
-        await self._lifecycle(self.stub.ResumeSandbox, name)
+    async def resume(self, name: str, *, kind: str = "") -> None:
+        await self._lifecycle(self.stub.ResumeSandbox, name, kind=kind)
 
-    async def delete(self, name: str) -> None:
-        await self._lifecycle(self.stub.DeleteSandbox, name)
+    async def delete(self, name: str, *, kind: str = "") -> None:
+        await self._lifecycle(self.stub.DeleteSandbox, name, kind=kind)
+
+    async def replace_vm_image(self, name: str, *, template: str, kind: str = "kubevirt") -> Sandbox:
+        view = await self.get(name, kind=kind)
+        destination = SandboxDestination(
+            owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid, kind=view.kind
+        )
+        return await self.unary(
+            self.stub.ReplaceVmImage, protocol_pb2.ReplaceVmImageRequest(destination=destination, template=template)
+        )
 
     async def grant_egress(self, sandbox: Sandbox, policies: list[str]) -> str:
-        destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
+        destination = SandboxDestination(
+            owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid, kind=sandbox.kind
+        )
         result = await self.unary(
             self.stub.GrantEgress, protocol_pb2.GrantEgressRequest(destination=destination, policies=policies)
         )

@@ -101,7 +101,10 @@ class NewSandbox(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     slug: Slug = Field(description="Human-chosen name stem; a random suffix makes the Sandbox name unique.")
-    template: str = Field(min_length=1, description="SandboxTemplate whose Pod and volume shape this Sandbox copies.")
+    kind: Literal["agent_sandbox", "kubevirt"] = Field(
+        default="agent_sandbox", description="Environment provider used to create this Sandbox."
+    )
+    template: str = Field(min_length=1, description="Provider template used to create this environment.")
     policies: list[str] = Field(default_factory=list, description="EgressPolicy names to grant.")
     action_policy_sets: list[str] = Field(
         default_factory=list,
@@ -117,7 +120,7 @@ class NewSandbox(BaseModel):
 
 
 class Condition(BaseModel):
-    """A Kubernetes status condition, as the Sandbox controller and the kubelet report them."""
+    """A status condition reported by the environment's Kubernetes controllers."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -154,20 +157,54 @@ class PodStatus(BaseModel):
     containers: list[ContainerStatus]
 
 
+class VirtualMachineStatus(BaseModel):
+    """What KubeVirt reports about this Sandbox's VirtualMachine and its instance."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    phase: str | None = None
+    printable_status: str | None = None
+    vmi_uid: str | None = None
+    guest_ip: str | None = None
+    node_name: str | None = None
+    conditions: list[Condition]
+    reason: str | None = None
+    message: str | None = None
+
+
+SandboxKind = Literal["agent_sandbox", "kubevirt"]
+SandboxCapability = Literal["pod_exec", "stop_start", "live_migration", "ram_suspend"]
+
+
+class SandboxTemplateView(BaseModel):
+    """An available launch template, tagged with the provider and actions it supports."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    kind: SandboxKind
+    capabilities: list[SandboxCapability]
+
+
 class SandboxView(BaseModel):
     """One inventory row: the Sandbox's identity plus what it and its Pod say."""
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(description="The Sandbox name, and its Pod's; the handle for every operation.")
+    name: str = Field(description="The environment name and the handle for every operation.")
     uid: UUID = Field(description="The API server's identity of this Sandbox; what an owned binding references.")
+    kind: SandboxKind = Field(default="agent_sandbox", description="The provider that owns this Sandbox.")
+    template: str = Field(default="", description="The concrete template used to create this Sandbox.")
+    capabilities: list[SandboxCapability] = Field(
+        default_factory=list, description="Provider operations supported by this Sandbox."
+    )
     state: ProvisioningState
     created_at: datetime
     operating_mode: OperatingMode
-    conditions: list[Condition] = Field(description="The Sandbox's own status conditions.")
-    node_name: str | None = Field(default=None, description="Where the Sandbox controller placed the Pod.")
+    conditions: list[Condition] = Field(description="The environment's own status conditions.")
+    node_name: str | None = Field(default=None, description="Where the environment is running.")
     service_account: ServiceAccountRef = Field(
-        description="The ServiceAccount its Pod runs as, read off the Sandbox: the subject every "
+        description="The ServiceAccount assigned to this environment: the subject every "
         "egress and action-policy binding names it by."
     )
     binding: SandboxBinding | None = Field(
@@ -178,10 +215,16 @@ class SandboxView(BaseModel):
     kubernetes_grant_error: str | None
     deleting: bool = False
     pod: PodStatus | None = None
+    vm: VirtualMachineStatus | None = None
 
 
 def sandbox_view(value: protocol_pb2.Sandbox) -> SandboxView:
     data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+    # Older persisted Sandboxes and Sandbox Service versions have no provider identity yet.
+    if not data.get("kind"):
+        data["kind"] = "agent_sandbox"
+    data.setdefault("template", "")
+    data.setdefault("capabilities", [])
     data.setdefault("kubernetes_grant_error", None)
     if "pod" in data:
         for field in ("phase", "ip", "node_name"):

@@ -23,6 +23,7 @@ from agentplane.sandbox_service.protocol_pb2 import (
 )
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
+TEMPLATE_ANNOTATION = "agentplane.allegedly.works/template"
 SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
 PROVISIONING_ANNOTATION = "agentplane.allegedly.works/pending-launch-grants"
 KUBERNETES_GRANTS_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants"
@@ -100,6 +101,9 @@ def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None) -> Sandbox:
     return Sandbox(
         name=sandbox.metadata.name,
         uid=sandbox.metadata.uid,
+        kind="agent_sandbox",
+        template=sandbox.metadata.annotations.get(TEMPLATE_ANNOTATION, ""),
+        capabilities=["pod_exec", "stop_start"],
         state=_state(sandbox, pod),
         created_at=created_at,
         operating_mode=sandbox.spec.operating_mode,

@@ -149,7 +149,9 @@ async def local_runners(
     live_index: LiveIndex, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
 ) -> AsyncIterator[SandboxSessions]:
     """`SANDBOX` running, its Pod at the local runner's address."""
-    live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
+    live_index.sandboxes[("agent_sandbox", SANDBOX)], live_index.pods[SANDBOX] = seed_runner(
+        custom_objects, core_v1, SANDBOX
+    )
     runners = SandboxSessions(live_index, sandbox_endpoint.client())
     yield runners
     await runners.close()
@@ -1394,7 +1396,9 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
         async with asyncio.timeout(10):
             await discovered.wait()
         discovered.clear()
-        live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
+        live_index.sandboxes[("agent_sandbox", SANDBOX)], live_index.pods[SANDBOX] = seed_runner(
+            custom_objects, core_v1, SANDBOX
+        )
         live_index.changes.notify()
         async with asyncio.timeout(10):
             await discovered.wait()
@@ -1491,7 +1495,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     await replicas.owner_ingester.close()
     await replicas.survivor_ingester.close()
 
-    del live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX]
+    del live_index.sandboxes[("agent_sandbox", SANDBOX)], live_index.pods[SANDBOX]
     offline_ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
     offline = RunnerBridge(
         runners=local_runners,

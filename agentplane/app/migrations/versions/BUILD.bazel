@@ -156,3 +156,12 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "0017_sandbox_kind_identity",
+    srcs = ["0017_sandbox_kind_identity.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)

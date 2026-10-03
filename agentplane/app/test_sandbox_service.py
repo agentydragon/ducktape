@@ -41,7 +41,7 @@ async def cluster() -> AsyncIterator[Cluster]:
 
 @pytest.fixture(autouse=True)
 async def discover(cluster: Cluster, live_index: LiveIndex) -> None:
-    live_index.sandboxes[SANDBOX] = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
+    live_index.sandboxes[("agent_sandbox", SANDBOX)] = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
     live_index.pods[SANDBOX] = await k8s_client.CoreV1Api(cluster.api).read_namespaced_pod(SANDBOX, SANDBOX_NAMESPACE)
 
 

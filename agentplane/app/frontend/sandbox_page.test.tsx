@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 
-import type { SandboxView, ThreadView } from "./client";
+import type { SandboxKind, SandboxView, ThreadView } from "./client";
 import type { Live, SandboxSnapshot } from "./live";
 import { SandboxPage } from "./sandbox_page";
 
@@ -23,6 +23,7 @@ const live = vi.hoisted(
         sandbox: {
           name: "startup-test",
           uid: "00000000-0000-4000-8000-000000000001",
+          kind: "agent_sandbox",
           state: "running",
           created_at: "2026-01-01T00:00:00Z",
           operating_mode: "Running",
@@ -55,6 +56,10 @@ afterEach(async () => {
   container.remove();
   vi.useRealTimers();
   live.snapshot.threads = [];
+  (live.snapshot.sandbox as SandboxView).kind = "agent_sandbox";
+  (live.snapshot.sandbox as SandboxView).template = "agentplane-runner";
+  (live.snapshot.sandbox as SandboxView).capabilities = [];
+  (live.snapshot.sandbox as SandboxView).vm = null;
   (live.snapshot.sandbox as SandboxView).binding = null;
   (live.snapshot.sandbox as SandboxView).kubernetes_grants = [];
   (live.snapshot.sandbox as SandboxView).kubernetes_grants_ready = true;
@@ -65,6 +70,7 @@ afterAll(() => vi.unstubAllGlobals());
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "session_id">): ThreadView {
   return {
+    sandbox_kind: "agent_sandbox",
     sandbox: "startup-test",
     harness: "HARNESS_CLAUDE",
     model: "test-model",
@@ -80,7 +86,8 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sessio
 
 async function render(
   sessions: (request: Request) => Promise<Response>,
-  threadActions: (request: Request) => Promise<Response> = async () => new Response(null, { status: 204 })
+  threadActions: (request: Request) => Promise<Response> = async () => new Response(null, { status: 204 }),
+  kind: SandboxKind = "agent_sandbox"
 ): Promise<ReturnType<typeof vi.fn>> {
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
@@ -95,6 +102,9 @@ async function render(
     if (path === "/egress/policies" || path === "/sandboxes/startup-test/egress/decisions") {
       return Promise.resolve(Response.json([]));
     }
+    if (path === "/sandboxes/startup-test/replace-vm-image" && request.method === "POST") {
+      return Promise.resolve(Response.json(live.snapshot.sandbox));
+    }
     if (path.startsWith("/sandboxes/startup-test/sessions")) return sessions(request);
     if (/^\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
     throw new Error(`Unexpected request: ${request.method} ${path}`);
@@ -107,7 +117,7 @@ async function render(
     root.render(
       <MantineProvider env="test">
         <MemoryRouter>
-          <SandboxPage name="startup-test" onBack={vi.fn()} onOpenThread={onOpenThread} />
+          <SandboxPage name="startup-test" kind={kind} onBack={vi.fn()} onOpenThread={onOpenThread} />
         </MemoryRouter>
       </MantineProvider>
     )
@@ -223,7 +233,7 @@ it("shows the selected Kubernetes grant scope, role, and application error", asy
   ];
   (live.snapshot.sandbox as SandboxView).kubernetes_grants_ready = false;
   (live.snapshot.sandbox as SandboxView).kubernetes_grant_error = "binding controller is waiting";
-  await render(async () => Response.json([]));
+  await render(async () => Response.json([]), undefined, "kubevirt");
   const statusTab = [...container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')].find(
     (tab) => tab.textContent === "Status"
   );
@@ -234,6 +244,74 @@ it("shows the selected Kubernetes grant scope, role, and application error", asy
   expect(container.textContent).toContain("workspace-read · RoleBinding · namespace agentplane-test");
   expect(container.textContent).toContain("Role/workspace-reader");
   expect(container.textContent).toContain("binding controller is waiting");
+});
+
+it("shows KubeVirt status and supported operations without presenting a missing Pod", async () => {
+  const sandbox = live.snapshot.sandbox as SandboxView;
+  sandbox.kind = "kubevirt";
+  sandbox.template = "vm-template";
+  sandbox.capabilities = ["stop_start"];
+  sandbox.vm = {
+    phase: "Running",
+    printable_status: "Running",
+    vmi_uid: "vmi-uid-1",
+    guest_ip: "10.0.0.25",
+    node_name: "vm-node-1",
+    conditions: [{ type: "Ready", status: "True", reason: null, message: null }],
+    reason: null,
+    message: null,
+  };
+  await render(async () => Response.json([]));
+  const statusTab = [...container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')].find(
+    (tab) => tab.textContent === "Status"
+  );
+  if (!statusTab) throw new Error("Missing Status tab");
+  await act(async () => statusTab.click());
+
+  expect(container.textContent).toContain("KubeVirt VM");
+  expect(container.textContent).toContain("Virtual machine");
+  expect(container.textContent).toContain("Guest IP 10.0.0.25");
+  expect(container.textContent).toContain("Stop / start");
+  expect(container.textContent).not.toContain("No Pod.");
+});
+
+it("confirms VM image refresh and sends the current template without removing disks", async () => {
+  const sandbox = live.snapshot.sandbox as SandboxView;
+  sandbox.kind = "kubevirt";
+  sandbox.template = "vm-template";
+  sandbox.state = "suspended";
+  sandbox.operating_mode = "Suspended";
+  sandbox.capabilities = ["stop_start"];
+  sandbox.vm = {
+    phase: null,
+    printable_status: "Stopped",
+    vmi_uid: null,
+    guest_ip: null,
+    node_name: null,
+    conditions: [],
+    reason: null,
+    message: null,
+  };
+  await render(async () => Response.json([]), undefined, "kubevirt");
+
+  const update = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Update VM image"
+  );
+  if (!update) throw new Error("Missing VM image update button");
+  await act(async () => update.click());
+  const dialog = document.querySelector('[role="dialog"]');
+  expect(dialog?.textContent).toContain("Its attached disks and their data stay in place.");
+  const confirm = [...(dialog?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
+    (button) => button.textContent === "Update VM image"
+  );
+  if (!confirm) throw new Error("Missing VM image update confirmation");
+  await act(async () => confirm.click());
+
+  const request = fetchMock.mock.calls
+    .map(([call]) => call)
+    .find((call) => call.method === "POST" && new URL(call.url).pathname.endsWith("/replace-vm-image"));
+  expect(request).toBeDefined();
+  await expect(request!.json()).resolves.toEqual({ template: "vm-template" });
 });
 
 /** Mantine portals a Menu's dropdown onto `document.body`, so its items live outside `container`. */

@@ -20,7 +20,7 @@ from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.command_relay import admit_running_command
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError, RunnerEndpoint
 from agentplane.sandbox_service.egress_views import BindingNotFoundError, UnknownPolicyError
-from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
+from agentplane.sandbox_service.models import EnvironmentKind, InventoryError, SandboxNotFoundError, environment_kind
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.subjects import ServiceAccountRef
@@ -107,6 +107,13 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
         # TODO: runner RPC authentication/TLS. V1 relies on the deployment network boundary.
         client = RunnerClient(endpoint.target)
         try:
+            if environment_kind(destination.kind) == EnvironmentKind.KUBEVIRT:
+                # A successful runner RPC proves the guest initialized its disks. Clear the
+                # one-shot format permission on the config disk before admitting work.
+                await client.list_sessions()
+                await self.resources.provisioning.inventory.retire_vm_disk_initialization(
+                    destination.sandbox, destination.sandbox_uid
+                )
             yield client, endpoint
         finally:
             await client.close()
@@ -127,7 +134,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             inventory = self.resources.provisioning.inventory
             if not request.name:
                 raise ValueError("name is required")
-            return await inventory.get(request.name)
+            return await inventory.get(request.name, kind=request.kind)
 
     @override
     async def CreateSandbox(
@@ -142,8 +149,12 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
         destination = request.destination
         if not all((destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)):
             raise ValueError("Sandbox name, UID, and owner are required")
-        view = await provisioning.inventory.get(destination.sandbox)
-        if view.uid != destination.sandbox_uid or view.service_account != destination.owner:
+        view = await provisioning.inventory.get(destination.sandbox, kind=destination.kind)
+        if (
+            view.uid != destination.sandbox_uid
+            or view.service_account != destination.owner
+            or environment_kind(view.kind) != environment_kind(destination.kind)
+        ):
             raise SandboxNotFoundError(destination.sandbox)
         return provisioning, view
 
@@ -151,24 +162,38 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def SuspendSandbox(self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext) -> Empty:
         async with self.request(context):
             provisioning, view = await self.checked_sandbox(request)
-            await provisioning.inventory.suspend(view.name, uid=view.uid)
+            await provisioning.inventory.suspend(view.name, uid=view.uid, kind=view.kind)
             return Empty()
 
     @override
     async def ResumeSandbox(self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext) -> Empty:
         async with self.request(context):
             provisioning, view = await self.checked_sandbox(request)
-            if await provisioning.inventory.pending_grants(view.name) is not None:
+            if await provisioning.inventory.pending_grants(view.name, kind=view.kind) is not None:
                 raise InventoryError("Sandbox provisioning is incomplete")
-            await provisioning.inventory.resume(view.name, uid=view.uid)
+            await provisioning.inventory.resume(view.name, uid=view.uid, kind=view.kind)
             return Empty()
 
     @override
     async def DeleteSandbox(self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext) -> Empty:
         async with self.request(context):
             provisioning, view = await self.checked_sandbox(request)
-            await provisioning.inventory.delete(view.name, uid=view.uid)
+            await provisioning.inventory.delete(view.name, uid=view.uid, kind=view.kind)
             return Empty()
+
+    @override
+    async def ReplaceVmImage(
+        self, request: protocol_pb2.ReplaceVmImageRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.Sandbox:
+        async with self.request(context):
+            provisioning, view = await self.checked_sandbox(
+                protocol_pb2.SandboxRequest(destination=request.destination)
+            )
+            if environment_kind(view.kind) != EnvironmentKind.KUBEVIRT or not request.template:
+                raise ValueError("a VM and approved template are required")
+            return await provisioning.inventory.replace_vm_image(
+                view.name, uid=view.uid, template_name=request.template
+            )
 
     @override
     async def ListTemplates(
@@ -176,7 +201,9 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     ) -> protocol_pb2.ListTemplatesResponse:
         async with self.request(context):
             inventory = self.resources.provisioning.inventory
-            return protocol_pb2.ListTemplatesResponse(templates=await inventory.list_templates())
+            return protocol_pb2.ListTemplatesResponse(
+                templates=await inventory.list_templates(), descriptors=await inventory.list_template_descriptors()
+            )
 
     @override
     async def GrantEgress(
@@ -283,6 +310,10 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 async with asyncio.timeout(self.resources.admission_timeout_s):
                     attachment = await client.attach(destination.session_id, after_cursor=request.follow.after_cursor)
                 try:
+                    if environment_kind(destination.sandbox.kind) == EnvironmentKind.KUBEVIRT:
+                        await self.resources.provisioning.inventory.retire_vm_disk_initialization(
+                            destination.sandbox.sandbox, destination.sandbox.sandbox_uid
+                        )
                     deadline = asyncio.get_running_loop().time() + self.resources.follow_lease_s
                     async with asyncio.timeout(self.resources.admission_timeout_s):
                         await context.write(protocol_pb2.FollowSessionResponse(attached=attachment.attached))

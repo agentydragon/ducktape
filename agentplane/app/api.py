@@ -58,6 +58,8 @@ from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.sandbox_models import (
     KubernetesGrantView,
     NewSandbox,
+    SandboxKind,
+    SandboxTemplateView,
     SandboxView,
     create_request,
     grant_views,
@@ -128,7 +130,7 @@ class ModelCatalog(BaseModel):
     accept it. A thread carries its harness and model; a sandbox is a Pod and carries neither.
 
     `models` holds each model's metadata once; `harnesses` references it by `model` id, so a
-    model two harnesses both accept (e.g. a local Ollama route) names its display name only once.
+    model accepted by two harnesses names its display name only once.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -238,9 +240,14 @@ async def list_sandboxes(inventory: Inventory) -> list[SandboxView]:
 
 
 @router.get("/templates")
-async def list_templates(inventory: Inventory) -> list[str]:
-    """The templates the operator may select in a concrete new-Sandbox request."""
-    return await inventory.list_templates()
+async def list_templates(inventory: Inventory) -> list[SandboxTemplateView]:
+    """Available templates, their environment kind, and the operations each supports."""
+    return [
+        SandboxTemplateView(
+            name=template.name or "", kind=template.kind or "agent_sandbox", capabilities=list(template.capabilities)
+        )
+        for template in await inventory.list_template_descriptors()
+    ]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -255,27 +262,39 @@ async def create_sandbox(
 
 
 @router.get("/{name}")
-async def get_sandbox(inventory: Inventory, name: str) -> SandboxView:
-    return sandbox_view(await inventory.get(name))
+async def get_sandbox(inventory: Inventory, name: str, kind: SandboxKind = "agent_sandbox") -> SandboxView:
+    return sandbox_view(await inventory.get(name, kind=kind))
 
 
 @router.post("/{name}/suspend", status_code=status.HTTP_204_NO_CONTENT)
-async def suspend_sandbox(inventory: Inventory, name: str) -> Response:
-    await inventory.suspend(name)
+async def suspend_sandbox(inventory: Inventory, name: str, kind: SandboxKind = "agent_sandbox") -> Response:
+    await inventory.suspend(name, kind=kind)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{name}/resume", status_code=status.HTTP_204_NO_CONTENT)
-async def resume_sandbox(inventory: Inventory, name: str) -> Response:
-    await inventory.resume(name)
+async def resume_sandbox(inventory: Inventory, name: str, kind: SandboxKind = "agent_sandbox") -> Response:
+    await inventory.resume(name, kind=kind)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_sandbox(inventory: Inventory, name: str) -> Response:
-    """Delete the sandbox and everything on its volume; 409 while it is still running."""
-    await inventory.delete(name)
+async def delete_sandbox(inventory: Inventory, name: str, kind: SandboxKind = "agent_sandbox") -> Response:
+    """Delete a stopped environment; a KubeVirt VM's persistent disks are retained."""
+    await inventory.delete(name, kind=kind)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class ReplaceVmImage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template: str = Field(min_length=1, description="KubeVirt template whose current image digest to pin.")
+
+
+@router.post("/{name}/replace-vm-image")
+async def replace_vm_image(inventory: Inventory, name: str, body: ReplaceVmImage) -> SandboxView:
+    """Pin the template's current boot image on a halted KubeVirt VM; its disks stay attached."""
+    return sandbox_view(await inventory.replace_vm_image(name, template=body.template, kind="kubevirt"))
 
 
 class EgressGrant(BaseModel):
@@ -287,23 +306,29 @@ class EgressGrant(BaseModel):
 
 
 @router.get("/{name}/egress")
-async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> list[BindingView]:
+async def sandbox_egress(
+    inventory: Inventory, egress: Egress, name: str, kind: SandboxKind = "agent_sandbox"
+) -> list[BindingView]:
     """What may leave the sandbox: the bindings naming the ServiceAccount it runs as, with their
     policies as they resolve."""
-    return await egress.bindings_for(sandbox_view(await inventory.get(name)).service_account)
+    return await egress.bindings_for(sandbox_view(await inventory.get(name, kind=kind)).service_account)
 
 
 @router.post("/{name}/egress", status_code=status.HTTP_201_CREATED)
-async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, body: EgressGrant) -> BindingView:
+async def grant_sandbox_egress(
+    inventory: Inventory, egress: Egress, name: str, body: EgressGrant, kind: SandboxKind = "agent_sandbox"
+) -> BindingView:
     """Grant policies to a sandbox already running: a new binding naming it, never an edit of one it
     has, so this grant's expiry and revocation are its own."""
-    return await egress.grant(await inventory.get(name), body.policies)
+    return await egress.grant(await inventory.get(name, kind=kind), body.policies)
 
 
 @router.get("/{name}/egress/decisions")
-async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, name: str) -> list[Decision]:
+async def sandbox_egress_decisions(
+    inventory: Inventory, decisions: Decisions, name: str, kind: SandboxKind = "agent_sandbox"
+) -> list[Decision]:
     """What recently left or was refused, from the proxy; 502 when the proxy cannot be asked."""
-    return await decisions.recent(sandbox_view(await inventory.get(name)).service_account)
+    return await decisions.recent(sandbox_view(await inventory.get(name, kind=kind)).service_account)
 
 
 egress_router = APIRouter(prefix="/egress", tags=["egress"])
@@ -664,12 +689,15 @@ class CommandReconciliationResponse(BaseModel):
 async def list_threads(
     store: Store,
     sandbox: Annotated[str | None, Query(description="Only threads of this sandbox.")] = None,
+    sandbox_kind: SandboxKind = "agent_sandbox",
     session_id: Annotated[str | None, Query(description="Only threads of this session id.")] = None,
     include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
 ) -> list[ThreadView]:
     """Every persisted thread, newest first; a thread outlives its sandbox. Both filters together
     name at most one thread: a session's."""
-    return await store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=include_archived)
+    return await store.list_threads(
+        sandbox=sandbox, sandbox_kind=sandbox_kind, session_id=session_id, include_archived=include_archived
+    )
 
 
 class ThreadsWithSandboxes(BaseModel):
@@ -679,7 +707,7 @@ class ThreadsWithSandboxes(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     threads: list[ThreadView]
-    sandboxes: dict[str, SandboxView]
+    sandboxes: dict[str, SandboxView] = Field(description="Existing environments keyed by '<kind>/<name>'.")
 
 
 @threads.get("/with-sandboxes")
@@ -690,7 +718,7 @@ async def list_threads_with_sandboxes(
 ) -> ThreadsWithSandboxes:
     """Visible Threads newest first, joined with the complete Sandbox inventory."""
     thread_views = await store.list_threads(include_archived=include_archived)
-    sandboxes = {view.name: sandbox_view(view) for view in await inventory.list_sandboxes()}
+    sandboxes = {f"{view.kind}/{view.name}": sandbox_view(view) for view in await inventory.list_sandboxes()}
     return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
 
 
@@ -742,13 +770,13 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
     if thread is None:
         raise ThreadNotFoundError(thread_id)
     try:
-        sandbox = sandbox_view(await inventory.get(thread.sandbox))
+        sandbox = sandbox_view(await inventory.get(thread.sandbox, kind=thread.sandbox_kind))
     except SandboxNotFoundError:
         # A deleted Sandbox has no running harness to keep visible.
         pass
     else:
         if sandbox.state == "running":
-            sessions = await bridge.list_sessions(thread.sandbox)
+            sessions = await bridge.list_sessions(thread.sandbox, thread.sandbox_kind)
             if any(
                 session.session_id == thread.session_id and session.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
                 for session in sessions

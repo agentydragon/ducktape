@@ -80,21 +80,23 @@ class Provisioning:
             else None,
         )
         await self.ensure(view)
-        return await self.inventory.get(view.name)
+        return await self.inventory.get(view.name, kind=view.kind)
 
     async def ensure(self, sandbox: Sandbox) -> None:
         if sandbox.deleting:
             return
-        intent = await self.inventory.pending_grants(sandbox.name)
+        intent = await self.inventory.pending_grants(sandbox.name, kind=sandbox.kind)
         if intent is None:
             return  # Existing staging resources have no new intent to reinterpret or replace.
+        if not await self.inventory.ensure_vm_dependencies(sandbox):
+            return
         if intent.policies:
             await self.egress.grant(sandbox, intent.policies, initial=True)
         if intent.action_policy_sets:
             await self.action_policy.bind(sandbox, intent.action_policy_sets, initial=True)
         if sandbox.kubernetes_grants:
             await self.bindings.ensure(sandbox)
-            if not (await self.inventory.get(sandbox.name)).kubernetes_grants_ready:
+            if not (await self.inventory.get(sandbox.name, kind=sandbox.kind)).kubernetes_grants_ready:
                 return
         await self.inventory.finish_provisioning(sandbox)
 

@@ -42,6 +42,13 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     )
     for rule in resource("Role", app.NAME)["rules"]:
         assert set(rule["verbs"]) <= {"get", "list", "watch"}
+    app_rules = resource("Role", app.NAME)["rules"]
+    kubevirt_rules = [
+        rule for rule in app_rules if set(rule["resources"]) == {"virtualmachines", "virtualmachineinstances"}
+    ]
+    assert len(kubevirt_rules) == 1
+    assert kubevirt_rules[0]["apiGroups"] == ["kubevirt.io"]
+    assert set(kubevirt_rules[0]["verbs"]) == {"get", "list", "watch"}
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
     assert backend_config["kubernetes_binding_cleanup_namespaces"] == sorted(
         backend_config["kubernetes_binding_cleanup_namespaces"]

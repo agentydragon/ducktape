@@ -10,7 +10,8 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import RbacAuthorizationV1Api
 
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.kubevirt_contract import KUBEVIRT_API_VERSION, VM_KIND, vm_aux_name
+from agentplane.sandbox_service.models import EnvironmentKind, SandboxNotFoundError, environment_kind
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, Sandbox
 from util.agent_sandbox import SANDBOX_API
 
@@ -20,6 +21,7 @@ MANAGED_BY_LABEL = "app.agentplane.allegedly.works/managed-by"
 MANAGED_BY_APP = "integration-app"
 SANDBOX_UID_ANNOTATION = "app.agentplane.allegedly.works/sandbox-uid"
 SANDBOX_NAME_ANNOTATION = "app.agentplane.allegedly.works/sandbox-name"
+SANDBOX_KIND_ANNOTATION = "app.agentplane.allegedly.works/sandbox-kind"
 KUBERNETES_BINDINGS_FINALIZER = "app.agentplane.allegedly.works/kubernetes-bindings"
 
 
@@ -34,11 +36,12 @@ def binding_name(sandbox: Sandbox, grant: ResolvedGrant) -> str:
 
 def _binding(sandbox: Sandbox, grant: ResolvedGrant) -> k8s_client.V1RoleBinding | k8s_client.V1ClusterRoleBinding:
     template = grant.grant
+    vm = environment_kind(sandbox.kind) == EnvironmentKind.KUBEVIRT
     owner_references = (
         [
             k8s_client.V1OwnerReference(
-                api_version=SANDBOX_API.api_version,
-                kind="Sandbox",
+                api_version=KUBEVIRT_API_VERSION if vm else SANDBOX_API.api_version,
+                kind=VM_KIND if vm else "Sandbox",
                 name=sandbox.name,
                 uid=str(sandbox.uid),
                 controller=False,
@@ -52,7 +55,11 @@ def _binding(sandbox: Sandbox, grant: ResolvedGrant) -> k8s_client.V1RoleBinding
         name=binding_name(sandbox, grant),
         namespace=template.namespace if template.kind == "RoleBinding" else None,
         labels={MANAGED_BY_LABEL: MANAGED_BY_APP},
-        annotations={SANDBOX_UID_ANNOTATION: str(sandbox.uid), SANDBOX_NAME_ANNOTATION: sandbox.name},
+        annotations={
+            SANDBOX_UID_ANNOTATION: str(sandbox.uid),
+            SANDBOX_NAME_ANNOTATION: sandbox.name,
+            **({SANDBOX_KIND_ANNOTATION: sandbox.kind} if vm else {}),
+        },
         owner_references=owner_references,
     )
     role_ref = k8s_client.V1RoleRef(
@@ -81,6 +88,7 @@ def _matches(
         and metadata.labels.get(MANAGED_BY_LABEL) == MANAGED_BY_APP
         and metadata.annotations
         and metadata.annotations.get(SANDBOX_UID_ANNOTATION) == wanted.annotations[SANDBOX_UID_ANNOTATION]
+        and metadata.annotations.get(SANDBOX_KIND_ANNOTATION) == wanted.annotations.get(SANDBOX_KIND_ANNOTATION)
         and actual.role_ref == expected.role_ref
         and actual.subjects == expected.subjects
         and (metadata.owner_references or []) == (wanted.owner_references or [])
@@ -113,14 +121,14 @@ class KubernetesBindings:
             await self._report_error(sandbox, error)
         else:
             if not sandbox.kubernetes_grants_ready or sandbox.HasField("kubernetes_grant_error"):
-                await self._inventory.set_kubernetes_grants_status(sandbox.name, ready=True)
+                await self._inventory.set_kubernetes_grants_status(sandbox.name, ready=True, kind=sandbox.kind)
 
     async def _report_error(self, sandbox: Sandbox, error: Exception) -> None:
         detail = f"{type(error).__name__}" + (
             f" ({error.status})" if isinstance(error, k8s_client.ApiException) else ""
         )
         logger.error("Kubernetes grant reconciliation failed for %s", sandbox.name, exc_info=error)
-        await self._inventory.set_kubernetes_grants_status(sandbox.name, ready=False, error=detail)
+        await self._inventory.set_kubernetes_grants_status(sandbox.name, ready=False, error=detail, kind=sandbox.kind)
 
     async def _read(
         self, expected: k8s_client.V1RoleBinding | k8s_client.V1ClusterRoleBinding
@@ -166,7 +174,7 @@ class KubernetesBindings:
             if error.status != 404:
                 raise
             if sandbox.kubernetes_grants_ready:
-                await self._inventory.set_kubernetes_grants_status(sandbox.name, ready=False)
+                await self._inventory.set_kubernetes_grants_status(sandbox.name, ready=False, kind=sandbox.kind)
             try:
                 await self._create(expected)
             except k8s_client.ApiException as create_error:
@@ -208,7 +216,7 @@ class KubernetesBindings:
         except Exception as error:
             await self._report_error(sandbox, error)
         else:
-            await self._inventory.remove_finalizer(sandbox.name, KUBERNETES_BINDINGS_FINALIZER)
+            await self._inventory.remove_finalizer(sandbox.name, KUBERNETES_BINDINGS_FINALIZER, kind=sandbox.kind)
 
     async def reconcile_once(self) -> None:
         sandboxes = await self._inventory.list_sandboxes()
@@ -272,7 +280,12 @@ class KubernetesBindings:
             and len(binding.subjects) == 1
             and binding.subjects[0].kind == "ServiceAccount"
             and binding.subjects[0].namespace == self._inventory.namespace
-            and binding.subjects[0].name == name
+            and binding.subjects[0].name
+            == (
+                vm_aux_name(name, "account")
+                if metadata.annotations.get(SANDBOX_KIND_ANNOTATION) == EnvironmentKind.KUBEVIRT
+                else name
+            )
         )
 
     async def _is_confirmed_orphan(
@@ -287,7 +300,9 @@ class KubernetesBindings:
         # A new Sandbox and binding can appear after the list snapshot. A direct
         # GET after seeing the binding avoids deleting its live grant as an orphan.
         try:
-            current = await self._inventory.get(name)
+            current = await self._inventory.get(
+                name, kind=binding.metadata.annotations.get(SANDBOX_KIND_ANNOTATION, "")
+            )
         except SandboxNotFoundError:
             return True
         return str(current.uid) != uid

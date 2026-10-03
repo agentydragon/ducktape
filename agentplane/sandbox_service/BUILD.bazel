@@ -52,9 +52,12 @@ py_library(
     deps = [
         ":binding_storage",
         ":kubernetes_views",
+        ":kubevirt",
+        ":kubevirt_contract",
         ":models",
         ":session_config",
         "//agentplane/action_service/policies:resources",
+        "//agentplane/egress:resources",
         "//agentplane/sandbox_service:protocol_pb2",
         "//util:agent_sandbox",
         "//util:kubernetes",
@@ -116,6 +119,7 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":inventory",
+        ":kubevirt",
         ":models",
         "//agentplane/sandbox_service:protocol_pb2",
         "//util:agent_sandbox",
@@ -139,6 +143,7 @@ py_library(
         ":inventory",
         ":kubernetes_bindings",
         ":kubernetes_grants",
+        ":kubevirt",
         ":provisioning",
         "//agentplane:subjects",
         "//agentplane/workload_auth:principal",
@@ -175,6 +180,7 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":instructions",
+        ":models",
         "//agentplane/runner:client",
         "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
@@ -201,6 +207,8 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":action_policy_views",
+        ":kubevirt_contract",
+        ":models",
         ":owned_binding",
         "//agentplane/action_service/policies:resources",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -215,6 +223,8 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":egress_views",
+        ":kubevirt_contract",
+        ":models",
         ":owned_binding",
         "//agentplane/egress:resources",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -232,6 +242,7 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":inventory",
+        ":kubevirt_contract",
         ":models",
         "//agentplane/sandbox_service:protocol_pb2",
         "//util:agent_sandbox",
@@ -627,5 +638,47 @@ py_library(
     deps = [
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "kubevirt",
+    srcs = ["kubevirt.py"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        ":binding_storage",
+        ":kubernetes_views",
+        ":kubevirt_contract",
+        ":models",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "kubevirt_contract",
+    srcs = ["kubevirt_contract.py"],
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+py_test(
+    name = "test_kubevirt",
+    srcs = ["test_kubevirt.py"],
+    deps = [
+        ":conftest",
+        ":destinations",
+        ":inventory",
+        ":kubevirt",
+        ":models",
+        "//:conftest",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/testing:fake_inventory",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

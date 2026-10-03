@@ -509,7 +509,7 @@ async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_o
     runs as, through the operator federation, with the app adding only who wrote each binding. Where the service cannot
     be asked, the frame says so in place of the policy rather than showing an empty one, and an
     agent watching the same stream is told why rather than shown an operator's answer."""
-    custom_objects.objects[("sandboxes", "live")] = live_index.sandboxes["live"] = sandbox("live")
+    custom_objects.objects[("sandboxes", "live")] = live_index.sandboxes[("agent_sandbox", "live")] = sandbox("live")
     _bind_live_sandbox(review.policies)
     browser = review.browser
     await browser.get("/auth/login")

@@ -159,6 +159,9 @@ class ThreadView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: UUID
+    sandbox_kind: Literal["agent_sandbox", "kubevirt"] = Field(
+        default="agent_sandbox", description="Provider of the Sandbox this Thread's runner came from."
+    )
     sandbox: str
     session_id: str
     harness: Harness = Field(description="The runner protocol Harness enum member.")

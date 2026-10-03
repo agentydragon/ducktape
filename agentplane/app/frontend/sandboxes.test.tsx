@@ -29,6 +29,9 @@ afterEach(async () => {
 const CREATED: SandboxView = {
   name: "test-created-sandbox",
   uid: "00000000-0000-4000-8000-000000000001",
+  kind: "agent_sandbox",
+  template: "test-template",
+  capabilities: ["pod_exec", "stop_start"],
   state: "waiting_for_pod",
   created_at: "2026-01-01T00:00:00Z",
   operating_mode: "Running",
@@ -50,6 +53,7 @@ async function render(
   const preset: SandboxPresetView = {
     name: "test-preset",
     title: "Test preset",
+    kind: "agent_sandbox",
     template: "test-template",
     policies: [],
     action_policy_sets: ["test-reads"],
@@ -82,7 +86,11 @@ async function render(
         : path === "/presets"
           ? [preset]
           : path === "/sandboxes/templates"
-            ? ["test-template", "other-template"]
+            ? [
+                { name: "test-template", kind: "agent_sandbox", capabilities: ["pod_exec", "stop_start"] },
+                { name: "other-template", kind: "agent_sandbox", capabilities: ["pod_exec"] },
+                { name: "vm-template", kind: "kubevirt", capabilities: ["stop_start"] },
+              ]
             : path === "/action-policy/sets"
               ? policySets
               : path === "/kubernetes-grants"
@@ -157,6 +165,29 @@ it("inherits the preset model and replaces incompatible choices when the harness
   expect(options(container, "Model").map((node) => node.textContent)).toEqual(["Test Claude"]);
 });
 
+it("filters launch templates by environment kind and sends the selected kind and its capabilities", async () => {
+  const { container } = await render();
+  await choose(container, "Environment kind", "KubeVirt VM");
+  expect(input(container, "Template").value).toBe("");
+  await act(async () => input(container, "Template").click());
+  expect(options(container, "Template").map((node) => node.textContent)).toEqual(["vm-template"]);
+  await choose(container, "Template", "vm-template");
+  expect(container.textContent).toContain("Stop / start");
+
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  await type(input(container, "Name"), "picked-vm");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+
+  expect(post).toHaveBeenCalledWith(
+    "/sandboxes",
+    expect.objectContaining({
+      body: expect.objectContaining({ kind: "kubevirt", template: "vm-template" }),
+    })
+  );
+});
+
 it("pre-fills the preset's policy sets and Kubernetes grants, shows role scope, and sends the picks", async () => {
   const { container, onOpen } = await render();
   expect(input(container, "Action policy sets").value).toBe("");
@@ -187,7 +218,7 @@ it("pre-fills the preset's policy sets and Kubernetes grants, shows role scope, 
       }),
     })
   );
-  expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name, CREATED.kind);
 });
 
 it("allows an operator to remove the preset grant and sends an explicit empty grant list", async () => {

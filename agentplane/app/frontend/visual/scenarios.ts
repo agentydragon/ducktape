@@ -100,6 +100,12 @@ export interface Scenario extends ScenarioOptions {
   recovery?: "messages" | "tools";
   openRecoveryDetails?: boolean;
   failedTurn?: "before-content" | "after-content";
+  /** Include a suspended KubeVirt sandbox so kind-aware inventory rows can be reviewed. */
+  vmSandbox?: boolean;
+  /** Select KubeVirt in the create form after it mounts. */
+  selectKubevirt?: boolean;
+  /** Open the VM image refresh confirmation after the detail view mounts. */
+  openVmImageUpdate?: boolean;
 }
 
 /** A Pixel 6's CSS viewport: the app is used from a phone, so every page has to fit its width. */
@@ -345,6 +351,14 @@ export const SCENARIOS: Record<string, Scenario> = {
 
   sandboxes: { element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 900 } },
   sandboxes_phone: { element: "#app", route: "/sandboxes", viewport: PHONE, outputName: "sandboxes-phone" },
+  sandboxes_kubevirt: {
+    element: "#app",
+    route: "/sandboxes",
+    viewport: { width: 1200, height: 1000 },
+    vmSandbox: true,
+    selectKubevirt: true,
+    readySelectors: ['[aria-label="Template capabilities"]'],
+  },
   sandboxes_stale: {
     element: "#app",
     route: "/sandboxes",
@@ -559,6 +573,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: `${SANDBOX_ROUTE}?tab=status`,
     viewport: PHONE,
     outputName: "sandbox-status-phone",
+  },
+  sandbox_kubevirt_image_update: {
+    element: "#app",
+    route: "/sandboxes/vm-d4c3?kind=kubevirt&tab=status",
+    viewport: { width: 1200, height: 900 },
+    vmSandbox: true,
+    openVmImageUpdate: true,
+    readySelectors: ['[role="dialog"]'],
   },
   sandbox_status_grant_error: {
     element: "#app",

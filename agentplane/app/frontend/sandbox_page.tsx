@@ -4,6 +4,7 @@ import {
   Button,
   Group,
   Menu,
+  Modal,
   Select,
   Stack,
   Switch,
@@ -13,6 +14,7 @@ import {
   TextInput,
   Textarea,
   Title,
+  Tooltip,
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
@@ -32,15 +34,17 @@ import {
   type Condition,
   type Harness,
   type ModelOption,
+  type SandboxKind,
   type SandboxView,
   type ThreadView,
 } from "./client";
 import { ActionPolicySection } from "./actions/policy";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
-import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
+import { ConfirmDelete, DeleteButton, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
 import { RawSwitch } from "./raw_switch";
+import { CAPABILITY_LABELS, sandboxKindLabel } from "./sandbox_kinds";
 import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
 import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../runner/protocol_pb";
@@ -139,6 +143,57 @@ function KubernetesGrantStatus({ sandbox }: { sandbox: SandboxView }): JSX.Eleme
   );
 }
 
+function VirtualMachineStatus({ sandbox }: { sandbox: SandboxView }): JSX.Element {
+  const vm = sandbox.vm;
+  if (!vm) return <></>;
+  const status = vm.printable_status ?? vm.phase ?? "Unknown";
+  return (
+    <Stack gap="xs">
+      <Group gap="xs">
+        <Title order={5}>Virtual machine</Title>
+        <Badge color={status.toLowerCase() === "running" ? "green" : "yellow"}>{status}</Badge>
+      </Group>
+      <Text size="sm">
+        {vm.guest_ip ? `Guest IP ${vm.guest_ip}` : "Guest IP not available"}
+        {vm.node_name ? ` · node ${vm.node_name}` : ""}
+      </Text>
+      {vm.vmi_uid && (
+        <Text size="xs" c="dimmed">
+          Instance UID {vm.vmi_uid}
+        </Text>
+      )}
+      {(vm.reason || vm.message) && (
+        <Text size="sm" c={vm.reason ? "orange" : "dimmed"}>
+          {[vm.reason, vm.message].filter(Boolean).join(" · ")}
+        </Text>
+      )}
+      {vm.conditions.length > 0 && <ConditionsTable conditions={vm.conditions} />}
+    </Stack>
+  );
+}
+
+function SandboxCapabilities({ sandbox }: { sandbox: SandboxView }): JSX.Element {
+  const capabilities = sandbox.capabilities ?? [];
+  return (
+    <Stack gap="xs">
+      <Title order={5}>Capabilities</Title>
+      {capabilities.length > 0 ? (
+        <Group gap="xs">
+          {capabilities.map((capability) => (
+            <Badge key={capability} variant="light">
+              {CAPABILITY_LABELS[capability]}
+            </Badge>
+          ))}
+        </Group>
+      ) : (
+        <Text size="sm" c="dimmed">
+          No provider capabilities reported.
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
 /** What Kubernetes says about the sandbox: the Sandbox CR's own status, then its Pod's. */
 function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
   const [raw, setRaw] = useState(false);
@@ -159,11 +214,13 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
           {/* The account its Pod runs as is what every binding names, so the tabs below are its policy, not this
               Sandbox's: two sandboxes sharing an account share what they may do. */}
           <Text size="sm">
-            Runs as ServiceAccount {sandbox.service_account.namespace}/{sandbox.service_account.name}, the subject its
-            egress and action-policy bindings name.
+            ServiceAccount {sandbox.service_account.namespace}/{sandbox.service_account.name} is the subject its egress
+            and action-policy bindings name.
           </Text>
           {sandbox.conditions.length > 0 && <ConditionsTable conditions={sandbox.conditions} />}
+          <SandboxCapabilities sandbox={sandbox} />
           <KubernetesGrantStatus sandbox={sandbox} />
+          <VirtualMachineStatus sandbox={sandbox} />
           {sandbox.pod ? (
             <>
               <Text size="sm">
@@ -191,9 +248,9 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
                 </Group>
               ))}
             </>
-          ) : (
+          ) : !sandbox.vm ? (
             <Text size="sm">No Pod.</Text>
-          )}
+          ) : null}
         </>
       )}
     </Stack>
@@ -202,10 +259,12 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
 
 export function SandboxPage({
   name,
+  kind,
   onOpenThread,
   onBack,
 }: {
   name: string;
+  kind: SandboxKind;
   onOpenThread: (threadId: string) => void;
   onBack: () => void;
 }): JSX.Element {
@@ -226,9 +285,10 @@ export function SandboxPage({
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingVmImageUpdate, setConfirmingVmImageUpdate] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
 
-  const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived), `Sandbox ${name}`);
+  const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, kind, includeArchived), `Sandbox ${name}`);
   const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
   const threads = live.snapshot?.threads ?? [];
   // The store's copy of each session's thread, which outlives the runner's own list.
@@ -261,7 +321,7 @@ export function SandboxPage({
     }
     async function refresh(): Promise<void> {
       try {
-        const rows = await listSessions(name);
+        const rows = await listSessions(name, kind);
         if (cancelled) return;
         setSessions(rows);
         setSessionList("ready");
@@ -280,7 +340,7 @@ export function SandboxPage({
       cancelled = true;
       window.clearTimeout(retry);
     };
-  }, [name, state, podIp, openedSessions]);
+  }, [name, kind, state, podIp, openedSessions]);
 
   useEffect(() => {
     void (async () => {
@@ -330,7 +390,9 @@ export function SandboxPage({
   // No re-read after an action: the change reaches the API server, and the watch behind the
   // stream brings the sandbox's new state back on its own.
   async function act(action: "suspend" | "resume"): Promise<void> {
-    const { error: failure } = await api.POST(`/sandboxes/{name}/${action}`, { params: { path: { name } } });
+    const { error: failure } = await api.POST(`/sandboxes/{name}/${action}`, {
+      params: { path: { name }, query: { kind } },
+    });
     setError(failure ? displayableError(failure) : null);
   }
 
@@ -344,12 +406,27 @@ export function SandboxPage({
 
   /** Deleting leaves nothing to look at, so a deleted sandbox takes the view back to the list. */
   async function remove(): Promise<void> {
-    const { error: failure } = await api.DELETE("/sandboxes/{name}", { params: { path: { name } } });
+    const { error: failure } = await api.DELETE("/sandboxes/{name}", {
+      params: { path: { name }, query: { kind } },
+    });
     if (!failure) {
       onBack();
       return;
     }
     setError(displayableError(failure));
+  }
+
+  async function updateVmImage(): Promise<void> {
+    if (!sandbox || sandbox.kind !== "kubevirt" || !sandbox.template) return;
+    if (!deletable(sandbox)) {
+      setError("Wait for the VM to stop before updating its image.");
+      return;
+    }
+    const { error: failure } = await api.POST("/sandboxes/{name}/replace-vm-image", {
+      params: { path: { name } },
+      body: { template: sandbox.template },
+    });
+    setError(failure ? displayableError(failure) : null);
   }
 
   async function createSession(): Promise<void> {
@@ -362,6 +439,7 @@ export function SandboxPage({
     try {
       await openSession(
         name,
+        kind,
         sessionId,
         fromJson(SessionSpecSchema, {
           harness,
@@ -382,7 +460,7 @@ export function SandboxPage({
 
   async function openThread(sessionId: string): Promise<void> {
     try {
-      const thread = threadBySession[sessionId] ?? (await findThread(name, sessionId));
+      const thread = threadBySession[sessionId] ?? (await findThread(name, kind, sessionId));
       if (!thread) throw new Error(`Thread metadata is not available for session ${sessionId}`);
       onOpenThread(thread.id);
     } catch (reason: unknown) {
@@ -408,6 +486,11 @@ export function SandboxPage({
             {name}
           </Title>
           {sandbox && <Badge style={{ flexShrink: 0 }}>{sandbox.state}</Badge>}
+          {sandbox && (
+            <Badge variant="light" style={{ flexShrink: 0 }}>
+              {sandboxKindLabel(sandbox.kind)}
+            </Badge>
+          )}
           {defaultsLabel && (
             <Badge variant="light" style={{ flexShrink: 0 }}>
               {defaultsLabel}
@@ -422,6 +505,18 @@ export function SandboxPage({
         {sandbox && (
           <Group gap="xs" ml="auto" wrap="nowrap">
             <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
+            {sandbox.kind === "kubevirt" && sandbox.template && (
+              <Tooltip label={deletable(sandbox) ? "Update VM boot image" : "Wait for the VM to stop"} withArrow>
+                <Button
+                  size="compact-sm"
+                  variant="light"
+                  disabled={!deletable(sandbox)}
+                  onClick={() => setConfirmingVmImageUpdate(true)}
+                >
+                  Update VM image
+                </Button>
+              </Tooltip>
+            )}
             <DeleteButton sandbox={sandbox} onDelete={() => setConfirmingDelete(true)} />
           </Group>
         )}
@@ -431,6 +526,7 @@ export function SandboxPage({
       {confirmingDelete && (
         <ConfirmDelete
           name={name}
+          kind={sandbox?.kind}
           onCancel={() => setConfirmingDelete(false)}
           onConfirm={() => {
             setConfirmingDelete(false);
@@ -438,20 +534,49 @@ export function SandboxPage({
           }}
         />
       )}
+      {confirmingVmImageUpdate && sandbox?.kind === "kubevirt" && (
+        <Modal opened onClose={() => setConfirmingVmImageUpdate(false)} title={`Update ${name}'s VM image?`}>
+          <Stack>
+            <Text size="sm">
+              The VM boot image will be refreshed from template <strong>{sandbox.template}</strong>. Its attached disks
+              and their data stay in place. The VM remains suspended; resume it when you are ready to boot the updated
+              image.
+            </Text>
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setConfirmingVmImageUpdate(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  setConfirmingVmImageUpdate(false);
+                  void updateVmImage();
+                }}
+              >
+                Update VM image
+              </Button>
+            </Group>
+          </Stack>
+        </Modal>
+      )}
       {error && <Text c="red">{error}</Text>}
       {live.snapshot !== null && sandbox === null && <Text c="red">There is no sandbox {name} any more.</Text>}
       {sandbox && sandbox.state !== "running" && (
         <Text>
-          {sandbox.state === "waiting_for_grants"
-            ? "Kubernetes grants are not ready; sessions cannot start yet."
-            : `The sandbox is ${sandbox.state}; sessions need a running Pod.`}
+          {sandbox.state === "stopping"
+            ? "The VM is stopping; wait until it is suspended before updating its image or deleting it."
+            : sandbox.state === "waiting_for_grants"
+              ? "Kubernetes grants are not ready; sessions cannot start yet."
+              : `The sandbox is ${sandbox.state}; sessions need a running environment.`}
         </Text>
       )}
       <Tabs
         value={tab}
         onChange={(value) => {
           if (!isTab(value)) return;
-          setSearchParams(value === DEFAULT_TAB ? {} : { tab: value }, { replace: true });
+          const next = new URLSearchParams(searchParams);
+          if (value === DEFAULT_TAB) next.delete("tab");
+          else next.set("tab", value);
+          setSearchParams(next, { replace: true });
         }}
       >
         <Tabs.List>
@@ -461,7 +586,7 @@ export function SandboxPage({
           <Tabs.Tab value="status">Status</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="egress" pt="sm">
-          <EgressSection name={name} bindings={live.snapshot?.bindings ?? null} />
+          <EgressSection name={name} kind={kind} bindings={live.snapshot?.bindings ?? null} />
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
           <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />

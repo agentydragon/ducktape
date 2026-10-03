@@ -12,6 +12,8 @@ from agentplane.sandbox_service.action_policy_views import (
     ActionPolicyReader,
     UnknownPolicySetError,
 )
+from agentplane.sandbox_service.kubevirt_contract import KUBEVIRT_API_VERSION, VM_KIND
+from agentplane.sandbox_service.models import EnvironmentKind, environment_kind
 from agentplane.sandbox_service.owned_binding import create_binding
 from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
@@ -53,8 +55,12 @@ class ActionPolicyBindings(ActionPolicyReader):
                     # so the cascade holds.
                     "ownerReferences": [
                         {
-                            "apiVersion": SANDBOX_API.api_version,
-                            "kind": SANDBOX_KIND,
+                            "apiVersion": KUBEVIRT_API_VERSION
+                            if environment_kind(sandbox.kind) == EnvironmentKind.KUBEVIRT
+                            else SANDBOX_API.api_version,
+                            "kind": VM_KIND
+                            if environment_kind(sandbox.kind) == EnvironmentKind.KUBEVIRT
+                            else SANDBOX_KIND,
                             "name": sandbox.name,
                             "uid": str(sandbox.uid),
                             "controller": False,
