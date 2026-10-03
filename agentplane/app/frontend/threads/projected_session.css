@@ -46,20 +46,22 @@
   max-width: min(34rem, calc(100% - 6rem));
 }
 
-.agentplane-reasoning-row {
+/* A step of a run (a reasoning step, a tool call) as one line, opening to its content below -- see
+   step_line.tsx. */
+.agentplane-step-row {
   display: flex;
   min-width: 0;
   align-items: baseline;
   gap: var(--mantine-spacing-xs);
 }
 
-.agentplane-reasoning-details,
-.agentplane-reasoning-static {
+.agentplane-step-details,
+.agentplane-step-static {
   min-width: 0;
   flex: 1;
 }
 
-.agentplane-reasoning-details > summary {
+.agentplane-step-details > summary {
   display: flex;
   min-width: 0;
   align-items: baseline;
@@ -68,11 +70,11 @@
   list-style: none;
 }
 
-.agentplane-reasoning-details > summary::-webkit-details-marker {
+.agentplane-step-details > summary::-webkit-details-marker {
   display: none;
 }
 
-.agentplane-reasoning-details > summary::before {
+.agentplane-step-details > summary::before {
   flex: none;
   width: 0;
   height: 0;
@@ -81,11 +83,11 @@
   content: "";
 }
 
-.agentplane-reasoning-details[open] > summary::before {
+.agentplane-step-details[open] > summary::before {
   transform: rotate(90deg);
 }
 
-.agentplane-reasoning-summary {
+.agentplane-step-summary {
   display: flex;
   min-width: 0;
   flex: 1;
@@ -94,11 +96,11 @@
   white-space: nowrap;
 }
 
-.agentplane-reasoning-title {
+.agentplane-step-title {
   flex: none;
 }
 
-.agentplane-reasoning-preview {
+.agentplane-step-preview {
   position: relative;
   min-width: 0;
   flex: 1;
@@ -107,15 +109,22 @@
   white-space: nowrap;
 }
 
-.agentplane-reasoning-details[open] > summary .agentplane-reasoning-preview {
+.agentplane-step-details[open] > summary .agentplane-step-preview {
   display: none;
 }
 
-.agentplane-reasoning-preview .agentplane-markdown--single-line {
+.agentplane-step-trailing {
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: var(--mantine-spacing-xs);
+}
+
+.agentplane-step-preview .agentplane-markdown--single-line {
   white-space: inherit;
 }
 
-.agentplane-reasoning-retry {
+.agentplane-step-retry {
   flex: none;
   border: 0;
   padding: 0;

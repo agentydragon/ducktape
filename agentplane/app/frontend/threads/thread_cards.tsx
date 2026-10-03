@@ -7,6 +7,7 @@ import { Markdown } from "../markdown";
 import { lifecyclePresentation } from "./history_rows";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
 import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
+import { StepLine } from "./step_line";
 import { useThreadSync, type PayloadRef, type ThreadEntity } from "./thread_sync";
 
 /** How a body renders: the agent's prose (assistant text, reasoning) as Markdown, tool arguments and
@@ -221,43 +222,32 @@ function ReasoningPreview({
     return () => observer.disconnect();
   }, [body, onOverflowChange]);
 
-  const summary = (
-    <div className="agentplane-reasoning-summary">
-      <Text component="span" className="agentplane-reasoning-title" c="dimmed">
-        Reasoning
-      </Text>
-      <div className="agentplane-reasoning-preview" ref={preview}>
-        {body === null ? (
+  return (
+    <StepLine
+      title="Reasoning"
+      preview={
+        body === null ? (
           <Text component="span" c="dimmed">
             {error ? "Preview unavailable" : "Loading preview…"}
           </Text>
         ) : (
           <Markdown source={body} singleLine />
-        )}
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="agentplane-reasoning-row">
-      {overflows && body !== null && body.trim().length > 0 ? (
-        <details
-          className="agentplane-reasoning-details"
-          open={open}
-          onToggle={(event) => setOpen(event.currentTarget.open)}
-        >
-          <summary>{summary}</summary>
-          {open && <Markdown source={body} />}
-        </details>
-      ) : (
-        <div className="agentplane-reasoning-static">{summary}</div>
-      )}
-      {error && (
-        <button className="agentplane-reasoning-retry" onClick={retry} type="button">
-          Retry
-        </button>
-      )}
-    </div>
+        )
+      }
+      previewRef={preview}
+      aside={
+        error && (
+          <button className="agentplane-step-retry" onClick={retry} type="button">
+            Retry
+          </button>
+        )
+      }
+      expandable={overflows && body !== null && body.trim().length > 0}
+      open={open}
+      onOpenChange={setOpen}
+    >
+      {body !== null && <Markdown source={body} />}
+    </StepLine>
   );
 }
 

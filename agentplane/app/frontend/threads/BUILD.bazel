@@ -174,12 +174,24 @@ ts_library(
 )
 
 ts_library(
+    name = "step_line",
+    srcs = ["step_line.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "thread_cards",
     srcs = ["thread_cards.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":history_rows",
         ":retained_disclosures",
+        ":step_line",
         ":thread_evidence",
         ":thread_sync",
         "//:node_modules/@mantine/core",

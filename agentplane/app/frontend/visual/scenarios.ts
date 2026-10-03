@@ -744,7 +744,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-reasoning",
     openReasoning: true,
     longReasoningPreview: true,
-    readySelectors: ["details.agentplane-reasoning-details[open] > .agentplane-markdown"],
+    readySelectors: ["details.agentplane-step-details[open] > .agentplane-markdown"],
   },
   session_reasoning_phone: {
     element: "#app",
@@ -753,7 +753,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-reasoning-phone",
     openReasoning: true,
     longReasoningPreview: true,
-    readySelectors: ["details.agentplane-reasoning-details[open] > .agentplane-markdown"],
+    readySelectors: ["details.agentplane-step-details[open] > .agentplane-markdown"],
   },
   // A fenced code block in a registered language, syntax-highlighted in prose the way tool-call
   // Arguments/Output already are -- distinct from session_tool_payloads below, which is the
@@ -775,7 +775,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 700 },
     outputName: "session-standalone-reasoning",
     standaloneReasoning: true,
-    readySelectors: ['[data-thread-anchor="20"] .agentplane-reasoning-preview .agentplane-markdown--single-line'],
+    readySelectors: ['[data-thread-anchor="20"] .agentplane-step-preview .agentplane-markdown--single-line'],
   },
   session_standalone_reasoning_preview: {
     element: "#app",
@@ -784,7 +784,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-standalone-reasoning-preview",
     standaloneReasoning: true,
     longReasoningPreview: true,
-    readySelectors: ['[data-thread-anchor="20"] details.agentplane-reasoning-details'],
+    readySelectors: ['[data-thread-anchor="20"] details.agentplane-step-details'],
   },
   // The same standalone reasoning step, opened: now it gets the card chrome (padding, border) the
   // collapsed row above deliberately lacks.
@@ -796,7 +796,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     standaloneReasoning: true,
     longReasoningPreview: true,
     openReasoning: true,
-    readySelectors: ['[data-thread-anchor="20"] details.agentplane-reasoning-details[open] > .agentplane-markdown'],
+    readySelectors: ['[data-thread-anchor="20"] details.agentplane-step-details[open] > .agentplane-markdown'],
   },
   // JSON arguments highlighted, and a non-JSON output in the same code block, uninterpreted. The
   // history follows its bottom, so the viewports are tall enough to keep the tool call, and the

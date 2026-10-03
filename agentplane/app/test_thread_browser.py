@@ -435,7 +435,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await expect(page.get_by_text("Projected browser prefix", exact=True)).to_be_visible()
                 await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
                 await expect(
-                    page.locator(f'[data-thread-anchor="{reasoning.cursor}"] .agentplane-reasoning-details')
+                    page.locator(f'[data-thread-anchor="{reasoning.cursor}"] .agentplane-step-details')
                 ).to_have_count(0)
                 await expect(page.get_by_text("On-demand tool output", exact=True)).to_have_count(0)
                 # Closed disclosures read no bodies: no body subset names their owners.
@@ -492,7 +492,7 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 )
                 await run.locator("summary", has_text="Output").click()
                 await expect(run.get_by_text("On-demand tool output", exact=True)).to_be_visible()
-                reasoning_details = run.locator("details.agentplane-reasoning-details")
+                reasoning_details = run.locator("details.agentplane-step-details")
                 await expect(reasoning_details).to_be_visible()
                 await reasoning_details.locator("summary").click()
                 expanded_reasoning = reasoning_details.locator(":scope > .agentplane-markdown")

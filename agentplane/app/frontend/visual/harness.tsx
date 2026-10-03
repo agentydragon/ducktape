@@ -2152,7 +2152,7 @@ function openRun(summaries: HTMLElement[]): void {
 if (scenario.openReasoning) {
   const openReasoning = new MutationObserver(() => {
     const summaries = [...document.querySelectorAll("summary")];
-    const step = document.querySelector<HTMLElement>("details.agentplane-reasoning-details > summary");
+    const step = document.querySelector<HTMLElement>("details.agentplane-step-details > summary");
     if (!step) {
       openRun(summaries);
       return;
