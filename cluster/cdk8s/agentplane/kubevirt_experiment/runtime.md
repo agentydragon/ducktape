@@ -24,11 +24,35 @@ and the following virtio disks:
 | `state`             | Retained XFS filesystem, label `APSTATE`                                   | `/state`; runner journals and quota-limited native histories                           |
 | `workspace`         | Retained ext4 filesystem, label `APWORKSPACE`                              | `/workspace`; checkouts, home, and tool caches                                         |
 
-The approved template's `ca_bundle_config_map` names the existing trust-manager
-output in the VM namespace. The guest uses its PEM bundle unchanged and gives Java
+Attach the existing trust-manager ConfigMap in the VM namespace as a read-only
+configuration disk with serial `agentplane-trust`. The guest uses its PEM bundle
+unchanged and gives Java
 its passwordless PKCS#12 store, without rebuilding either at boot. Both files must
 be nonempty for startup to proceed. ConfigMap disks are boot snapshots: stop/start
 the VM after a bundle update, including CA rotation.
+
+Add the disk and volume to the VMI template alongside the public config disk:
+
+```yaml
+spec:
+  template:
+    spec:
+      domain:
+        devices:
+          disks:
+            - name: trust
+              disk:
+                bus: virtio
+              serial: agentplane-trust
+      volumes:
+        - name: trust
+          configMap:
+            name: agentplane-testing-egress-ca
+```
+
+Use the ConfigMap for the VM's egress gateway, containing both
+`data.ca-certificates.crt` and `binaryData.ca-certificates.p12` from trust-manager.
+The example name is for the testing namespace.
 
 The guest validates schema version 1 before preparing disks. Formatting requires
 explicit `format_blank_disks` authorization, no filesystem signatures, and a
