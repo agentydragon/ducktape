@@ -28,6 +28,19 @@ async def test_read_retained_sandbox_without_mutation(cluster: Cluster) -> None:
     assert cluster.fake.objects == before
 
 
+def test_vm_session_cwd_requires_workspace_child() -> None:
+    destination = SessionDestination(
+        sandbox=SandboxDestination(kind="kubevirt", sandbox="test-vm", sandbox_uid="vm-uid"), session_id="session-1"
+    )
+    overrides: dict[str, object] = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/workspace"}
+    with pytest.raises(ValueError, match="child of /workspace"):
+        launch_spec(destination, overrides, binding=None, platform_instructions="")
+    spec = launch_spec(
+        destination, {**overrides, "cwd": "/workspace/session-1"}, binding=None, platform_instructions=""
+    )
+    assert spec.cwd == "/workspace/session-1"
+
+
 @pytest.mark.parametrize(
     "raw",
     [

@@ -30,9 +30,9 @@ def launch_spec(
     validate_spec(spec)
     path = PurePosixPath(spec.cwd)
     if environment_kind(destination.sandbox.kind) == EnvironmentKind.KUBEVIRT and (
-        ".." in path.parts or not path.is_relative_to("/workspace")
+        ".." in path.parts or path == PurePosixPath("/workspace") or not path.is_relative_to("/workspace")
     ):
-        raise ValueError("VM session cwd must be under /workspace")
+        raise ValueError("VM session cwd must be a child of /workspace")
     context = (
         "Your explicit Sandbox Service session destination is:\n"
         f"{MessageToJson(destination, preserving_proto_field_name=True)}\n"
