@@ -305,6 +305,8 @@ The micro owner graph is a directed, labeled graph `G = (V, E)`:
   statement ordinal.
 - **Rebind edges:** `eager_rebind`, `lazy_rebind` or `deferred_rebind`
   from an owner that assigns a binding to the owner that declares it.
+- **Co-declaration edges:** `co_declaration` in both directions between sites
+  declaring one shared `var` binding, requiring one destination.
 - **Local-effect edges:** `local_effect` from a statement whose modeled
   mutation is local to a target owner (A10).
 - **Side-effect order edges:** potential `O₂ -> O₁` (`sequenced`) constraints
@@ -1532,7 +1534,7 @@ of bindings is forced to co-locate, and the spec splits them."
 original output: bundlers can't emit JavaScript that TDZs at runtime
 (the bundle ran for someone). So every owner-level SCC of
 constraining edges (`EagerUse`, `Sequenced`, `EagerRebind`,
-`LazyRebind`, `DeferredRebind`, `LocalEffect`) reflects a
+`LazyRebind`, `DeferredRebind`, `CoDeclaration`, `LocalEffect`) reflects a
 _colocation invariant the bundler relied on_. (`DeferredRebind` —
 a rebind nested ≥2 closures deep or past an `await` — joins
 `G_atomic` bidirectionally like the other rebinds because ESM
@@ -1624,7 +1626,7 @@ Five layers, bottom-up:
 1. **Owner graph** — fine-grained program facts (`graph/`).
    One vertex per top-level owner; edges record `EagerUse`,
    `LazyUse`, `EagerRebind`, `LazyRebind`, `DeferredRebind`,
-   `Sequenced`, and the local-effect edges that target-local
+   `CoDeclaration`, `Sequenced`, and the local-effect edges that target-local
    mutation produces. Each
    edge records whether it constrains init/materialization order.
 2. **Atomic graph** — SCC condensation of the constraining-edge
