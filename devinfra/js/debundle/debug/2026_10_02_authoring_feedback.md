@@ -27,51 +27,10 @@ reproduced**, not that the requested feature exists. Convert their assertions
 to the desired contract when implementing a request. The existing repeated
 declaration test is an additional independent reproduction for R3.
 
-The remaining characterization cases cover R2 and R4; the existing
+The remaining characterization case covers R4; the existing
 repeated-declaration suite covers R3 and scope separation. The original
-validation run passed on the revision above; CI validates the updated branch.
+validation run passed on the revision above.
 [BuildBuddy run and test output](https://app.buildbuddy.io/invocation/c6245dea-5f4a-40f2-a051-15ea9873c85f).
-
-## R2 — Explain where a multi-statement selector stops matching
-
-**Type:** diagnostic feature request. **Priority:** high.
-
-**Impact observed:** complex helper extractions failed without enough detail
-to distinguish a mistaken selector from a matcher defect. This was especially
-costly around multiple declarations and comma expressions. Those failures do
-not, by themselves, establish incorrect matching.
-
-**Minimal source and selector:**
-
-```js
-// Source
-const a = 7;
-const b = 9;
-
-// Selector, claiming lower and upper
-const lower = 7;
-const upper = 8;
-```
-
-**Current behavior:** each claimed export gets `no_match`, without a
-`nearest_unclaimed` candidate or mismatch reason. Changing the source's `9`
-to `8` resolves the selector; the reproducer includes this control.
-
-**Requested behavior:** offer the candidate statement range and the first
-incompatible location, e.g. second declaration, initializer literal
-`expected 8, found 9`. Extend the explanation to identifier-binding conflicts,
-parameter patterns, and list-hole boundaries as supported cases are added.
-Heuristic candidate ranking must not change exact matching semantics.
-
-**Acceptance:** this example points to the second initializer, with source
-and selector locations; the matching control produces no error. Keep the
-explanation bounded for large chunks.
-
-**Existing boundary:**
-[near-miss diagnostics](../docs/selector_resolution.md#nearest-unclaimed)
-currently score single-statement templates. This is an extension of that
-capability, already anticipated in the selector diagnostics queue in
-[TODO.md](../TODO.md#automation-product-flows-over-the-solver).
 
 ## R3 — Support valid repeated top-level `var` declarations
 

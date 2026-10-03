@@ -10,7 +10,6 @@ package(default_testonly = True)
 debundle_e2e_test(
     name = "authoring_feedback_repro_test",
     tags = ["manual"],
-    deps = ["@crates//:serde_json"],
 )
 
 rust_library(
