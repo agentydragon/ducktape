@@ -93,6 +93,21 @@ A command never decides exactly-one itself; it calls `selector_resolve`. Its
 contradiction with assumption cores" are measured dead ends: do not reopen
 either without a new measurement.
 
+### Debug a selector at known source
+
+Use <docs/debugging_selectors.md>: first `inspect-source --around-binding` or
+`--statements` to see numbered source statements, then
+`spec match-selector --explain --statements` with `--match` or a
+`--selector 'module.yaml#/source_matches/0'` address. Check the printed range
+before interpreting a mismatch; these indices belong to the parsed input file,
+not a prepared owner graph. Keep source and selector inputs reproducible.
+
+The explanation is local. It does not check uniqueness, other selectors,
+all-different, or external reference identities. A `matched` explanation cannot
+replace `spec validate` or the extraction gate. `limited` and `unsupported` are
+inconclusive. Do not treat a failed backtracking branch as proof of a matcher
+bug; reduce the range/pattern and establish a supported control first.
+
 ## Soundness over completeness
 
 Any spec the validator accepts must emit a bundle that runs correctly.
