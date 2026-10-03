@@ -1217,8 +1217,11 @@ describe("tool call rows", () => {
 
   it("shows the JSON a command call holds in place of the command while Raw is on", async () => {
     const container = await renderTool("Bash", { command: "ls", description: "List files" });
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
     await toggle(container.querySelector("summary")!);
-    const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    // On the title line, outside its summary and apart from the content below it.
+    const raw = container.querySelector<HTMLInputElement>(".agentplane-step-row > .agentplane-step-controls input")!;
+    expect(raw.type).toBe("checkbox");
     const firstBlock = () => container.querySelector(".agentplane-code-block")?.textContent;
     expect(firstBlock()).toBe("ls");
 

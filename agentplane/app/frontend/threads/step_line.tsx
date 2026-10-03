@@ -12,6 +12,7 @@ export function StepLine({
   previewRef,
   trailing,
   aside,
+  controls,
   expandable,
   open,
   onOpenChange,
@@ -24,6 +25,9 @@ export function StepLine({
   trailing?: ReactNode;
   /** Beside the line, outside its disclosure. */
   aside?: ReactNode;
+  /** Controls for the disclosed content, at the end of the line while it is open. Outside the
+   * summary, so using one does not toggle the disclosure. */
+  controls?: ReactNode;
   expandable: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -56,6 +60,7 @@ export function StepLine({
         <div className="agentplane-step-static">{summary}</div>
       )}
       {aside}
+      {expandable && open && controls && <div className="agentplane-step-controls">{controls}</div>}
     </div>
   );
 }

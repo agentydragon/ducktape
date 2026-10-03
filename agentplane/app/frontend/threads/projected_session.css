@@ -49,6 +49,7 @@
 /* A step of a run (a reasoning step, a tool call) as one line, opening to its content below -- see
    step_line.tsx. */
 .agentplane-step-row {
+  position: relative;
   display: flex;
   min-width: 0;
   align-items: baseline;
@@ -111,6 +112,26 @@
 
 .agentplane-step-details[open] > summary .agentplane-step-preview {
   display: none;
+}
+
+/* Controls for the opened content sit at the end of the title line, short of the evidence icon. The
+   line gives them room, and lets its badges wrap rather than run under them. */
+.agentplane-step-controls {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 1.5rem;
+  display: flex;
+  height: 1lh;
+  align-items: center;
+}
+
+.agentplane-step-row:has(> .agentplane-step-controls) > .agentplane-step-details > summary {
+  padding-inline-end: 6rem;
+}
+
+.agentplane-step-details[open] > summary .agentplane-step-summary {
+  flex-wrap: wrap;
+  white-space: normal;
 }
 
 /* The row's evidence icon is pinned to its card's corner, so the line stops short of it rather than

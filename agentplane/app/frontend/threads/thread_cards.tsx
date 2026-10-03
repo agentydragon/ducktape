@@ -375,13 +375,9 @@ function ToolCard({
       {(args) => {
         const argumentsBody = args?.body ?? null;
         const call = argumentsBody === null ? null : parseCommandCall(state.tool_name, argumentsBody);
+        const rawSwitch = call && <RawSwitch raw={raw} onChange={setRaw} />;
         const detail = (
           <Stack gap="xs">
-            {call && (
-              <Group justify="flex-end">
-                <RawSwitch raw={raw} onChange={setRaw} />
-              </Group>
-            )}
             <RecoveryNotes state={state} tool />
             {entity.textRef && <Body reference={entity.textRef} format="markdown" />}
             {args && argumentsBody === null && <Text c="dimmed">Loading complete revision…</Text>}
@@ -426,7 +422,10 @@ function ToolCard({
                 <Group gap="xs">
                   <ItemStatus items={[entity]} live={live} />
                 </Group>
-                <EvidenceToggle entity={entity} />
+                <Group gap="xs" wrap="nowrap">
+                  {rawSwitch}
+                  <EvidenceToggle entity={entity} />
+                </Group>
               </Group>
               {detail}
               <EvidencePanel threadId={threadId} entity={entity} />
@@ -457,6 +456,7 @@ function ToolCard({
                   </button>
                 )
               }
+              controls={rawSwitch}
               expandable={disclosable}
               open={open}
               onOpenChange={setOpen}
