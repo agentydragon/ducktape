@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from agentplane.runner.cgroups import AgentCgroups
+
 
 @dataclass(frozen=True, slots=True)
 class ClaudeLaunch:
@@ -33,7 +35,7 @@ class DebugCheckpoint:
 
 @dataclass(frozen=True, slots=True)
 class RunnerConfig:
-    # Holds `sessions/<session_id>/` with the session log and the harness's own persistence.
+    # Holds runner-owned logs and metadata.
     state_dir: Path
     # Base environment of every harness child, as --harness-env gave it; native credentials are
     # added per launch.
@@ -44,6 +46,17 @@ class RunnerConfig:
     model_context_windows: Mapping[str, int] = field(default_factory=dict)
     claude: ClaudeLaunch | None = None
     codex: CodexLaunch | None = None
+    # VM guests keep app work in a delegated cgroup and run it under a separate unprivileged UID.
+    # Container deployments leave this unset and retain their existing process behavior.
+    process_isolation: AgentCgroups | None = None
+    # When set, new and retained session working directories must stay beneath this mount.
+    workspace_root: Path | None = None
+    # VM guests separate native harness histories from the runner's journal tree so project quota
+    # can keep untrusted harness writes from consuming journal capacity. Containers keep the
+    # existing per-session layout by leaving this unset.
+    native_state_dir: Path | None = None
+    # VM initialization/setup scripts work on the workspace disk, not the runner-owned state tree.
+    initialization_cwd: Path | None = None
     # A hidden test-only process-integration seam. Deployments never set it. Once the runner
     # reaches this boundary it appends DebugCheckpoint and waits to be killed by the test; a
     # replacement runner sees that persisted event and proceeds normally.

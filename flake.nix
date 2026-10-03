@@ -172,6 +172,12 @@
         config.allowUnfree = true;
       };
 
+      # One released wheel package is shared by the OCI runner image and the VM guest.
+      agentplaneRunner = import ./agentplane/runner/package.nix {
+        inherit pkgsUnstable;
+        wheel = artifacts.agentplane-runner;
+      };
+
       pkgsMaster = import nixpkgs-master {
         inherit system;
         config.allowUnfree = true;
@@ -294,6 +300,10 @@
               hostname
               username
               homeManagerHost
+              ;
+            inherit
+              agentplaneRunner
+              pkgsUnstable
               ;
             # These project packages are passed only to hosts that opt into them.
             # Lazy: hosts that do not consume a package never force its build/fetch.
@@ -568,6 +578,14 @@
           hostname = "cpap-gateway";
           hostModule = ./cpap/gateway/nixos.nix;
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          enableHomeManager = false;
+        };
+
+        # NixOS guest used by the KubeVirt Agentplane execution environment.
+        agentplane-runner-vm = mkNixos {
+          hostname = "agentplane-runner-vm";
+          username = "runner";
+          hostModule = ./agentplane/runner/vm.nix;
           enableHomeManager = false;
         };
 

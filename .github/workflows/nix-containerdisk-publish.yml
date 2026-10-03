@@ -16,9 +16,16 @@ on:
         description: Full Forgejo registry image name, without a tag
         required: true
         type: string
+      build_runner_wheel:
+        description: Build the Agentplane runner wheel from this checkout before building the guest image
+        required: false
+        type: boolean
+        default: false
     secrets:
       SOPS_AGE_KEY:
         required: true
+      BUILDBUDDY_API_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -31,6 +38,8 @@ jobs:
     env:
       FLAKE_OUTPUT: ${{ inputs.flake_output }}
       IMAGE: ${{ inputs.image }}
+      IMAGE_NAME: ${{ inputs.image_name }}
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
       - uses: actions/checkout@v7
 
@@ -38,14 +47,99 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
+      - name: Install BuildBuddy CLI
+        if: inputs.build_runner_wheel
+        run: nix profile install .#citools
+
+      - name: Choose runner wheel build invocation
+        if: inputs.build_runner_wheel
+        id: invocation
+        shell: bash
+        run: |
+          invocation_id="$(python3 devinfra/ci/invocation_ids.py \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role build)"
+          echo "id=$invocation_id" >> "$GITHUB_OUTPUT"
+
+      - name: Build runner wheel from this checkout
+        if: inputs.build_runner_wheel
+        id: runner-build
+        uses: ./.github/actions/bb-remote
+        with:
+          script: |
+            bazel build //agentplane/runner:runner_wheel \
+              --invocation_id="$BUILD_INVOCATION_ID" \
+              --config=rbe --config=ci \
+              --remote_default_exec_properties="container-image=docker://$RBE_CONTAINER_IMAGE"
+          env_overrides: |
+            BUILD_INVOCATION_ID=${{ steps.invocation.outputs.id }}
+          linkage_roles: build
+          bazel_invocation_ids: ${{ steps.invocation.outputs.id }}
+          run_from_commit: ${{ github.sha }}
+
+      - name: Download runner wheel from BuildBuddy
+        if: inputs.build_runner_wheel
+        id: runner-wheel
+        shell: bash
+        env:
+          INVOCATION_IDS: ${{ steps.runner-build.outputs.bazel_invocation_ids }}
+        run: |
+          set -euo pipefail
+          read -r invocation_id remainder <<< "$INVOCATION_IDS"
+          test -n "$invocation_id"
+          test -z "${remainder:-}"
+          output="$RUNNER_TEMP/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl"
+          artifact_name="$(bbapi artifact --kind build list "$invocation_id" --json | \
+            jq -er '[.[] | select(.label == "//agentplane/runner:runner_wheel" and \
+              (.name | endswith("agentplane_runner-0.1.0-py3-none-linux_x86_64.whl")))] | \
+              if length == 1 then .[0].name else error("expected one runner wheel build output") end')"
+          bbapi artifact --kind build download "$invocation_id" \
+            "//agentplane/runner:runner_wheel/$artifact_name" --output "$output"
+          test -s "$output"
+          echo "path=$output" >> "$GITHUB_OUTPUT"
+
       - name: Build containerDisk image
-        run: nix build ".#$FLAKE_OUTPUT" --print-build-logs
+        env:
+          RUNNER_WHEEL: ${{ steps.runner-wheel.outputs.path }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$RUNNER_WHEEL" ]]; then
+            ARTIFACT_OVERRIDES="$(jq -cn --arg wheel "$RUNNER_WHEEL" '{"agentplane-runner": $wheel}')"
+            DUCKTAPE_ARTIFACT_OVERRIDES="$ARTIFACT_OVERRIDES" \
+              nix build ".#$FLAKE_OUTPUT" --impure --print-build-logs
+          else
+            nix build ".#$FLAKE_OUTPUT" --print-build-logs
+          fi
 
       - name: Compute tag
         id: meta
         shell: bash
         run: |
           echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare non-deployable prototype image artifact
+        if: github.ref_name != 'devel'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/$IMAGE_NAME.tar"
+          cp -L result "$archive"
+          sha256sum "$archive" > "$archive.sha256"
+          {
+            echo "### Prototype image artifact"
+            echo "Feature branch image is retained as a workflow artifact and was not pushed to the registry."
+            echo "SHA-256: \`$(cut -d ' ' -f 1 "$archive.sha256")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload non-deployable prototype image artifact
+        if: github.ref_name != 'devel'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.image_name }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/${{ inputs.image_name }}.tar
+            ${{ runner.temp }}/${{ inputs.image_name }}.tar.sha256
+          if-no-files-found: error
+          retention-days: 14
 
       # Keep feature-branch/manual runs from publishing a tag that Flux would
       # consider deployable. workflow_dispatch on devel remains useful for a

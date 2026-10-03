@@ -30,7 +30,10 @@ class StateOwner:
 
     def __init__(self, root: Path) -> None:
         make_directory(root)
-        descriptor = os.open(root / ".agentplane-runner-owner", os.O_RDWR | os.O_CREAT, 0o600)
+        # Linux permits an exclusive flock on a read-only descriptor. Native harnesses inherit this
+        # descriptor so the ownership fence survives runner death, but they must not be able to
+        # write or truncate the lock file after switching to the unprivileged agent UID.
+        descriptor = os.open(root / ".agentplane-runner-owner", os.O_RDONLY | os.O_CREAT, 0o600)
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:

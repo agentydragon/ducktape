@@ -8,8 +8,8 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator, Awaitable
-from contextlib import AsyncExitStack
-from pathlib import PurePosixPath
+from contextlib import AsyncExitStack, suppress
+from pathlib import Path, PurePosixPath
 
 import grpc
 
@@ -18,6 +18,7 @@ from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.codex import CodexAdapter
 from agentplane.runner.config import RunnerConfig
+from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.initialization import InitializationLog
 from agentplane.runner.journal import Journal
 from agentplane.runner.session import Session
@@ -57,6 +58,8 @@ class Runner:
         self.config = config
         self._state_owner = StateOwner(config.state_dir)
         try:
+            if config.process_isolation is not None:
+                config.process_isolation.prepare()
             self.store = SessionStore(config.state_dir / "sessions")
         except BaseException:
             self._state_owner.close()
@@ -114,37 +117,40 @@ class Runner:
         return self._initialization_log
 
     async def _execute_initialization(self, source: bytes, attempt: int, log: InitializationLog) -> None:
-        process = await asyncio.create_subprocess_exec(
-            "/bin/sh",
-            "-eu",
-            cwd=self.config.state_dir,
-            env={**os.environ, **self.config.environment},
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        process = HarnessProcess(
+            ["/bin/sh", "-eu"],
+            cwd=self.config.initialization_cwd or self.config.state_dir,
+            environment={**os.environ, **self.config.environment},
+            state_owner_descriptor=self._state_owner.descriptor,
+            process_isolation=self.config.process_isolation,
         )
-        assert process.stdin is not None
-        assert process.stdout is not None
-        assert process.stderr is not None
+        await process.start()
         stdout = asyncio.create_task(
-            self._record_initialization_output(process.stdout, attempt, protocol_pb2.INITIALIZATION_STREAM_STDOUT, log)
+            self._record_initialization_output(
+                process.output_chunks(), attempt, protocol_pb2.INITIALIZATION_STREAM_STDOUT, log
+            )
         )
         stderr = asyncio.create_task(
-            self._record_initialization_output(process.stderr, attempt, protocol_pb2.INITIALIZATION_STREAM_STDERR, log)
+            self._record_initialization_output(
+                process.stderr_byte_chunks(), attempt, protocol_pb2.INITIALIZATION_STREAM_STDERR, log
+            )
         )
-        process.stdin.write(source)
-        await process.stdin.drain()
-        process.stdin.close()
-        await process.stdin.wait_closed()
+        with suppress(BrokenPipeError, ConnectionResetError):
+            # A script may exit before consuming all of its stdin.
+            await process.write(source)
+        await process.close_stdin()
         exit_code = await process.wait()
         await asyncio.gather(stdout, stderr)
         log.append_result(attempt, exit_code)
 
     @staticmethod
     async def _record_initialization_output(
-        stream: asyncio.StreamReader, attempt: int, source: protocol_pb2.InitializationStream, log: InitializationLog
+        stream: AsyncIterator[bytes],
+        attempt: int,
+        source: protocol_pb2.InitializationStream,
+        log: InitializationLog,
     ) -> None:
-        while data := await stream.read(4096):
+        async for data in stream:
             log.append_output(attempt, source, data)
 
     async def startup(self) -> None:
@@ -157,6 +163,10 @@ class Runner:
         async with self._sessions_lock:
             if session_id not in self.sessions:
                 record = self.store.read(session_id)
+                try:
+                    self._validate_workspace(record.cwd)
+                except ValueError as error:
+                    raise OpenError(f"stored session {session_id}: {error}") from error
                 journal = await self._resources.enter_async_context(
                     Journal.open(self.store.directory(session_id) / "journal.sqlite", str(record.event_source_id))
                 )
@@ -197,6 +207,10 @@ class Runner:
                 raise OpenError("spec.cwd and spec.model are required")
             if not PurePosixPath(request.spec.cwd).is_absolute():
                 raise OpenError(f"spec.cwd must be an absolute path, not {request.spec.cwd!r}")
+            try:
+                self._validate_workspace(request.spec.cwd)
+            except ValueError as error:
+                raise OpenError(str(error)) from error
             source = request.setup_script.encode()
             if len(source) > _MAX_BOOTSTRAP_BYTES:
                 raise OpenError(f"setup_script exceeds {_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
@@ -211,6 +225,15 @@ class Runner:
         ):
             await session.ensure_running()
         return session
+
+    def _validate_workspace(self, cwd: str) -> None:
+        workspace_root = self.config.workspace_root
+        if workspace_root is None:
+            return
+        root = workspace_root.resolve()
+        candidate = Path(cwd).resolve()
+        if candidate == root or root not in candidate.parents:
+            raise ValueError(f"spec.cwd must be a child of {root}, not {cwd!r}")
 
     async def stop(self) -> None:
         tasks: list[asyncio.Future[object] | asyncio.Task[None]] = [

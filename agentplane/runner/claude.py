@@ -80,7 +80,7 @@ class ClaudeAdapter(HarnessAdapter):
         ]
 
     def environment(self) -> Mapping[str, str]:
-        config_dir = self.session.directory / "claude"
+        config_dir = self.session.native_directory / "claude"
         config_dir.mkdir(exist_ok=True)
         environment = {
             **self.session.config.environment,
@@ -106,7 +106,7 @@ class ClaudeAdapter(HarnessAdapter):
         if resumed:
             try:
                 recovered = await asyncio.to_thread(
-                    read_history, self.session.directory / "claude", self._native_session_id
+                    read_history, self.session.native_directory / "claude", self._native_session_id
                 )
             except (OSError, ValueError) as error:
                 recovered = None

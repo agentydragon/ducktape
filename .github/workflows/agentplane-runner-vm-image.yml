@@ -1,0 +1,53 @@
+# Build the NixOS Agentplane runner guest and publish its qcow2 containerDisk.
+name: Agentplane Runner VM Image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - ".github/actions/bb-remote/action.yml"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-runner-vm-image.yml"
+      - ".github/workflows/nix-containerdisk-publish.yml"
+      - "agentplane/runner/**"
+      - "devinfra/ci/invocation_ids.py"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/flake/packages.nix"
+      - "nix/nixos/modules/vm-hardware.nix"
+  pull_request:
+    paths:
+      # keep-sorted start
+      - ".github/actions/bb-remote/action.yml"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-runner-vm-image.yml"
+      - ".github/workflows/nix-containerdisk-publish.yml"
+      - "agentplane/runner/**"
+      - "devinfra/ci/invocation_ids.py"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/flake/packages.nix"
+      - "nix/nixos/modules/vm-hardware.nix"
+      # keep-sorted end
+  workflow_dispatch:
+
+concurrency:
+  group: agentplane-runner-vm-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    uses: ./.github/workflows/nix-containerdisk-publish.yml
+    with:
+      flake_output: agentplane-runner-vm-container-disk
+      image_name: agentplane-runner-vm
+      image: git.allegedly.works/ducktape-ci/agentplane-runner-vm
+      build_runner_wheel: true
+    secrets:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}

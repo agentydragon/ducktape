@@ -6,9 +6,8 @@ import asyncio
 import json
 import logging
 import os
-import signal
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,6 +63,9 @@ class Session:
         self.state_owner_descriptor = state_owner_descriptor
         self.make_adapter = make_adapter
         self.directory = store.directory(session_id)
+        self.native_directory = (
+            config.native_state_dir / session_id if config.native_state_dir is not None else self.directory
+        )
         self.journal = journal
         # The writer's view, including the stdout reader's batch before it commits. What a client
         # may be told is the published log's, `journal.recovery_state`.
@@ -125,39 +127,26 @@ class Session:
         self._setup_task = asyncio.create_task(self._run_setup(script), name=f"{self.session_id}-setup")
 
     async def _run_setup(self, script: str) -> None:
-        process: asyncio.subprocess.Process | None = None
+        process: HarnessProcess | None = None
         readers: list[asyncio.Task[None]] = []
         try:
             await self.emit(event_pb2.SetupStarted(), sources=[])
             cwd = Path(self.record.cwd)
             await asyncio.to_thread(cwd.mkdir, parents=True, exist_ok=True)
-            process = await asyncio.create_subprocess_exec(
-                "/bin/sh",
-                "-eu",
+            process = HarnessProcess(
+                ["/bin/sh", "-eu"],
                 cwd=cwd,
-                env={**os.environ, **self.config.environment},
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-                pass_fds=(self.state_owner_descriptor,),
+                environment={**os.environ, **self.config.environment},
+                state_owner_descriptor=self.state_owner_descriptor,
+                process_isolation=self.config.process_isolation,
             )
-            assert process.stdin is not None
-            assert process.stdout is not None
-            assert process.stderr is not None
-            stdout = asyncio.create_task(self._record_setup_output(process.stdout, stdout=True))
-            stderr = asyncio.create_task(self._record_setup_output(process.stderr, stdout=False))
+            await process.start()
+            stdout = asyncio.create_task(self._record_setup_output(process.output_chunks(), stdout=True))
+            stderr = asyncio.create_task(self._record_setup_output(process.stderr_byte_chunks(), stdout=False))
             readers = [stdout, stderr]
-            process.stdin.write(script.encode())
-            try:
-                await process.stdin.drain()
-            except BrokenPipeError, ConnectionResetError:
-                # A script may exit before consuming the rest of its stdin.
-                pass
-            finally:
-                process.stdin.close()
-                with suppress(BrokenPipeError, ConnectionResetError):
-                    await process.stdin.wait_closed()
+            with suppress(BrokenPipeError, ConnectionResetError):
+                await process.write(script.encode())
+            await process.close_stdin()
             exit_code = await process.wait()
             await asyncio.gather(stdout, stderr)
             await self.emit(event_pb2.SetupFinished(exit_code=exit_code), sources=[])
@@ -170,7 +159,7 @@ class Session:
             raise
         except Exception:
             logger.exception("session %s: setup interrupted", self.session_id)
-            if process is not None and process.returncode is None:
+            if process is not None and process.running:
                 await self._stop_setup_process(process)
             for reader in readers:
                 if not reader.done():
@@ -179,30 +168,21 @@ class Session:
             if self.setup_state == protocol_pb2.SETUP_STATE_RUNNING:
                 await self.emit(event_pb2.SetupInterrupted(), sources=[])
         finally:
-            if process is not None and process.returncode is None:
+            if process is not None and process.running:
                 await self._stop_setup_process(process)
             for reader in readers:
                 if not reader.done():
                     reader.cancel()
             await asyncio.gather(*readers, return_exceptions=True)
 
-    async def _record_setup_output(self, stream: asyncio.StreamReader, *, stdout: bool) -> None:
-        while data := await stream.read(4096):
+    async def _record_setup_output(self, stream: AsyncIterator[bytes], *, stdout: bool) -> None:
+        async for data in stream:
             output = event_pb2.SetupOutput(stdout=data) if stdout else event_pb2.SetupOutput(stderr=data)
             await self.emit(output, sources=[])
 
     @staticmethod
-    async def _stop_setup_process(process: asyncio.subprocess.Process) -> None:
-        if process.returncode is not None:
-            return
-        with suppress(ProcessLookupError):
-            os.killpg(process.pid, signal.SIGTERM)
-        try:
-            await asyncio.wait_for(process.wait(), timeout=5)
-        except TimeoutError:
-            with suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGKILL)
-            await process.wait()
+    async def _stop_setup_process(process: HarnessProcess) -> None:
+        await process.stop()
 
     async def emit(
         self,
@@ -268,6 +248,8 @@ class Session:
         async with self._lock:
             if self.running:
                 return
+            if self.config.native_state_dir is not None:
+                await asyncio.to_thread(self.native_directory.mkdir, parents=True, exist_ok=True)
             adapter = self.make_adapter(self)
             # The session's working directory is the spec's; a fresh one is created for the harness.
             cwd = Path(self.record.cwd)
@@ -277,6 +259,7 @@ class Session:
                 cwd=cwd,
                 environment=adapter.environment(),
                 state_owner_descriptor=self.state_owner_descriptor,
+                process_isolation=self.config.process_isolation,
             )
             await process.start()
             self.process, self.adapter, self._stopping = process, adapter, False

@@ -16,28 +16,8 @@
 {
   pkgs,
   pkgsUnstable,
-  wheel,
+  runner,
 }:
-let
-  python = pkgsUnstable.python314;
-
-  runner = python.pkgs.buildPythonApplication {
-    pname = "agentplane-runner";
-    version = "latest";
-    format = "wheel";
-    src = wheel;
-    dependencies = with python.pkgs; [
-      aiosqlite
-      greenlet # sqlalchemy's asyncio extension
-      grpcio
-      protobuf
-      pydantic
-      sqlalchemy
-      typer
-    ];
-    pythonImportsCheck = [ "agentplane.runner.main" ];
-  };
-in
 import ../images/sandbox.nix {
   inherit pkgs;
   name = "agentplane-runner";

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 from pathlib import Path
 
@@ -9,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.runner import protocol_pb2
-from agentplane.runner.store import SessionRecord, SessionStore
+from agentplane.runner.store import SessionRecord, SessionStore, StateOwner, StateOwnershipError
 from agentplane.runner.testing.storage_image import StorageImage
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -27,6 +28,18 @@ def test_a_stored_record_reproduces_the_spec_it_was_created_from(tmp_path: Path)
     store = SessionStore(tmp_path)
     store.write("session-1", SessionRecord.from_spec(spec))
     assert store.read("session-1").spec() == spec
+
+
+def test_inherited_state_owner_descriptor_is_read_only_and_still_exclusive(tmp_path: Path) -> None:
+    owner = StateOwner(tmp_path)
+    assert fcntl.fcntl(owner.descriptor, fcntl.F_GETFL) & os.O_ACCMODE == os.O_RDONLY
+
+    with pytest.raises(StateOwnershipError, match="is already owned"):
+        StateOwner(tmp_path)
+
+    owner.close()
+    replacement = StateOwner(tmp_path)
+    replacement.close()
 
 
 @pytest.fixture

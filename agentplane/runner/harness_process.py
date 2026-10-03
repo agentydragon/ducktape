@@ -9,6 +9,8 @@ from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
 
+from agentplane.runner.cgroups import AgentCgroups
+
 # Tool results ride inside single frames, so a line can run to megabytes.
 _LINE_LIMIT = 64 * 1024 * 1024
 # The most stdout one read takes. The lines it completes are one journal batch, so this bounds how
@@ -22,13 +24,23 @@ _STDERR_TAIL_BYTES = 4096
 
 class HarnessProcess:
     def __init__(
-        self, command: Sequence[str], *, cwd: Path, environment: Mapping[str, str], state_owner_descriptor: int
+        self,
+        command: Sequence[str],
+        *,
+        cwd: Path,
+        environment: Mapping[str, str],
+        state_owner_descriptor: int,
+        process_isolation: AgentCgroups | None = None,
     ) -> None:
         self.command = list(command)
         self.cwd = cwd
         self.environment = dict(environment)
         self.state_owner_descriptor = state_owner_descriptor
+        self.process_isolation = process_isolation
         self._process: asyncio.subprocess.Process | None = None
+        self._cgroup_path: Path | None = None
+        self._wait_lock = asyncio.Lock()
+        self._wait_result: int | None = None
         self._native_pid = 0
         self._stdin_lock = asyncio.Lock()
         self._stderr_tail = b""
@@ -36,11 +48,24 @@ class HarnessProcess:
     async def start(self) -> None:
         report_reader, report_writer = os.pipe()
         os.set_inheritable(report_writer, True)
+        supervisor_command = [_SUPERVISOR, "--native-pid-fd", str(report_writer)]
         try:
+            if self.process_isolation is not None:
+                self._cgroup_path = await asyncio.to_thread(self.process_isolation.create_process_group)
+                supervisor_command.extend(
+                    [
+                        "--cgroup-procs",
+                        str(self._cgroup_path / "cgroup.procs"),
+                        "--cgroup-kill",
+                        str(self._cgroup_path / "cgroup.kill"),
+                        "--agent-uid",
+                        str(self.process_isolation.agent_uid),
+                        "--agent-gid",
+                        str(self.process_isolation.agent_gid),
+                    ]
+                )
             self._process = await asyncio.create_subprocess_exec(
-                _SUPERVISOR,
-                "--native-pid-fd",
-                str(report_writer),
+                *supervisor_command,
                 *self.command,
                 cwd=self.cwd,
                 env=self.environment,
@@ -57,6 +82,11 @@ class HarnessProcess:
                 start_new_session=True,
                 limit=_LINE_LIMIT,
             )
+        except BaseException:
+            if self._cgroup_path is not None:
+                await asyncio.to_thread(AgentCgroups.destroy_process_group, self._cgroup_path)
+                self._cgroup_path = None
+            raise
         finally:
             os.close(report_writer)
         try:
@@ -70,7 +100,7 @@ class HarnessProcess:
             # No reader is attached before the pid; this one keeps the supervisor's account of why.
             async for _ in self.stderr_chunks():
                 pass
-            await self._process.wait()
+            await self.wait()
             raise RuntimeError(
                 f"harness supervisor did not report a native pid: {reported!r}; {self.describe_exit()}"
             ) from error
@@ -98,6 +128,20 @@ class HarnessProcess:
             stdin.write(line.encode() + b"\n")
             await stdin.drain()
 
+    async def write(self, data: bytes) -> None:
+        stdin = self.process.stdin
+        assert stdin is not None
+        async with self._stdin_lock:
+            stdin.write(data)
+            await stdin.drain()
+
+    async def close_stdin(self) -> None:
+        stdin = self.process.stdin
+        assert stdin is not None
+        stdin.close()
+        with suppress(BrokenPipeError, ConnectionResetError):
+            await stdin.wait_closed()
+
     async def line_batches(self) -> AsyncIterator[list[str]]:
         """stdout lines without their newline, until EOF: each batch the lines one read completes.
 
@@ -118,11 +162,21 @@ class HarnessProcess:
             yield [buffered.rstrip(b"\r").decode()]
 
     async def stderr_chunks(self) -> AsyncIterator[str]:
+        async for chunk in self.stderr_byte_chunks():
+            yield chunk.decode(errors="replace")
+
+    async def stderr_byte_chunks(self) -> AsyncIterator[bytes]:
         stderr = self.process.stderr
         assert stderr is not None
         while chunk := await stderr.read(65536):
             self._stderr_tail = (self._stderr_tail + chunk)[-_STDERR_TAIL_BYTES:]
-            yield chunk.decode(errors="replace")
+            yield chunk
+
+    async def output_chunks(self) -> AsyncIterator[bytes]:
+        stdout = self.process.stdout
+        assert stdout is not None
+        while chunk := await stdout.read(65536):
+            yield chunk
 
     def describe_exit(self) -> str:
         """The exit status and the end of stderr, which say why a harness did not survive its launch."""
@@ -130,22 +184,30 @@ class HarnessProcess:
         return f"{exit_code=}, {stderr_tail=}"
 
     async def wait(self) -> int:
-        return await self.process.wait()
+        async with self._wait_lock:
+            if self._wait_result is not None:
+                return self._wait_result
+            exit_code = await self.process.wait()
+            if self._cgroup_path is not None:
+                await asyncio.to_thread(AgentCgroups.destroy_process_group, self._cgroup_path)
+                self._cgroup_path = None
+            self._wait_result = exit_code
+            return self._wait_result
 
     async def stop(self, *, grace_s: float = 5) -> int:
         """Close stdin, which both harnesses treat as end of session; escalate if that is not enough."""
         process = self.process
         if process.returncode is not None:
-            return process.returncode
+            return await self.wait()
         if process.stdin is not None:
             with suppress(BrokenPipeError, ConnectionResetError):
                 process.stdin.close()
         for send in (self._signal_group(signal.SIGTERM), self._signal_group(signal.SIGKILL)):
             try:
-                return await asyncio.wait_for(process.wait(), timeout=grace_s)
+                return await asyncio.wait_for(self.wait(), timeout=grace_s)
             except TimeoutError:
                 send()
-        return await process.wait()
+        return await self.wait()
 
     def _signal_group(self, signum: int) -> Callable[[], None]:
         def send() -> None:

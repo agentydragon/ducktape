@@ -101,9 +101,17 @@ ducktapePkgs
   # Claude Code and Codex (agentplane/runner/image.nix).
   # Build: nix build .#agentplane-runner-image
   # Load:  docker load < result
+  agentplane-runner = import ../../agentplane/runner/package.nix {
+    inherit pkgsUnstable;
+    wheel = artifacts.agentplane-runner;
+  };
   agentplane-runner-image = import ../../agentplane/runner/image.nix {
     inherit pkgs pkgsUnstable;
-    wheel = artifacts.agentplane-runner;
+    runner = self.packages.${system}.agentplane-runner;
+  };
+  # KubeVirt's NixOS guest packaged as a containerDisk; publish through the dedicated workflow.
+  agentplane-runner-vm-container-disk = import ../../agentplane/runner/container-disk.nix {
+    inherit pkgs self;
   };
   # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake
   # output retained; see x/codex_pod_image/deploy/README.md for status.

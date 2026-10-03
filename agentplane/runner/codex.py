@@ -73,7 +73,7 @@ class CodexAdapter(HarnessAdapter):
 
     def environment(self) -> Mapping[str, str]:
         # Codex refuses to start without an existing CODEX_HOME.
-        codex_home = self.session.directory / "codex"
+        codex_home = self.session.native_directory / "codex"
         codex_home.mkdir(exist_ok=True)
         return {
             **self.session.config.environment,
@@ -116,7 +116,7 @@ class CodexAdapter(HarnessAdapter):
         reason = "native continuation evidence is unavailable or unsupported"
         try:
             recovered = await asyncio.to_thread(
-                read_history, self.session.directory / "codex", self._thread_id, observed
+                read_history, self.session.native_directory / "codex", self._thread_id, observed
             )
         except (OSError, ValueError) as error:
             recovered = None

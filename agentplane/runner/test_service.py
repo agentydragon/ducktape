@@ -41,6 +41,7 @@ def config(harness: protocol_pb2.Harness, harness_binary: Path, tmp_path: Path) 
     """Overrides the package fixture: the session's harness is `harness_binary`, not the pinned one."""
     return RunnerConfig(
         state_dir=tmp_path / "state",
+        native_state_dir=tmp_path / "native-state",
         claude=ClaudeLaunch(binary=harness_binary, base_url=TEST_ENDPOINT, auth_token="test-token")
         if harness == protocol_pb2.HARNESS_CLAUDE
         else None,
@@ -73,12 +74,15 @@ async def test_failed_session_shutdown_still_closes_its_database(
 
 
 async def test_a_harness_that_dies_in_its_handshake_names_its_exit_and_stderr(
-    client: RunnerClient, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, config: RunnerConfig, harness: protocol_pb2.Harness, spec: protocol_pb2.SessionSpec
 ) -> None:
     with pytest.raises(RunnerError) as raised:
         await client.attach("launch-failure-1", spec=spec)
     assert "exit_code=3" in str(raised.value)
     assert REFUSAL in str(raised.value)
+    assert config.native_state_dir is not None
+    native_home = "claude" if harness == protocol_pb2.HARNESS_CLAUDE else "codex"
+    assert (config.native_state_dir / "launch-failure-1" / native_home).is_dir()
 
 
 @pytest.mark.parametrize("harness_binary", [Path("/nonexistent/agentplane-test-harness")])
@@ -105,6 +109,23 @@ async def test_summaries_report_the_published_log_not_a_batch_in_progress(tmp_pa
             assert (summary.last_cursor, summary.active_turn_id) == (0, "")
         (summary,) = runner.summaries()
         assert (summary.last_cursor, summary.active_turn_id) == (1, "test-turn")
+    finally:
+        await runner.stop()
+
+
+async def test_vm_workspace_root_rejects_outside_paths_and_symlink_escapes(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside"
+    workspace.mkdir()
+    outside.mkdir()
+    (workspace / "escape").symlink_to(outside, target_is_directory=True)
+    runner = Runner(RunnerConfig(state_dir=tmp_path / "state", workspace_root=workspace))
+    try:
+        runner._validate_workspace(str(workspace / "new-session"))
+        with pytest.raises(ValueError, match="must be a child"):
+            runner._validate_workspace(str(outside / "session"))
+        with pytest.raises(ValueError, match="must be a child"):
+            runner._validate_workspace(str(workspace / "escape" / "session"))
     finally:
         await runner.stop()
 
