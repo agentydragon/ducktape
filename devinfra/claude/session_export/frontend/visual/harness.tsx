@@ -3,7 +3,7 @@ import "@mantine/core/styles.css";
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
-import type { SessionEventPage, SessionListPage, SessionSummary, SyncStatus } from "../api";
+import type { SessionEvent, SessionEventPage, SessionListPage, SessionSummary, SyncStatus } from "../api";
 import { App } from "../app";
 import {
   longCommandActivityDetail,
@@ -84,6 +84,28 @@ const sessions: Array<SessionSummary & { git_branch: string; repo_path: string }
 ];
 
 const sessionPage: SessionListPage = { data: sessions, next_cursor: null, resume_token: null };
+const liveUpdatedSession: SessionSummary = {
+  ...noisySession,
+  title: "Live update arrived from the session feed",
+  status: "active",
+  updated_at: "2026-10-01T18:44:00Z",
+  last_event_at: "2026-10-01T18:44:00Z",
+};
+const liveUpdatedEvent: SessionEvent = {
+  ...(noisySessionEvents.at(-1) as SessionEvent),
+  event_id: "00000000-0000-4000-8000-000000000999",
+  sequence_num: String(BigInt(noisySessionEvents.at(-1)?.sequence_num ?? "0") + 1n),
+  event_type: "assistant",
+  created_at: "2026-10-01T18:44:00Z",
+  payload: {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "The transcript updated automatically from a committed change." }],
+    },
+  },
+};
+let liveEvents: SessionEvent[] = [...noisySessionEvents];
 const sidebarSessions: Array<SessionSummary & { git_branch: string; repo_path: string }> = [
   { ...noisySession, git_branch: "worktree/session-sidebar", repo_path: "~/code/sample-meter" },
   {
@@ -624,26 +646,40 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
   if (url.pathname === "/v1/code/sessions") {
     return Promise.resolve(
       json(
-        scenario.startsWith("SessionNoisySidebar")
-          ? { data: sidebarSessions, next_cursor: null, resume_token: null }
-          : scenario.startsWith("SessionNarrationVisibility")
-            ? {
-                data: [
-                  { ...narrationSession, git_branch: "feature/narration-fixture", repo_path: "~/code/sample-format" },
-                ],
-                next_cursor: null,
-                resume_token: null,
-              }
-            : scenario.startsWith("SessionCompletedActivity")
-              ? { data: [noisySession], next_cursor: null, resume_token: null }
-              : scenario.startsWith("SessionNoisy")
+        scenario.startsWith("SessionLiveUpdates")
+          ? { data: [noisySession], next_cursor: null, resume_token: "fixture-watch-token" }
+          : scenario.startsWith("SessionNoisySidebar")
+            ? { data: sidebarSessions, next_cursor: null, resume_token: null }
+            : scenario.startsWith("SessionNarrationVisibility")
+              ? {
+                  data: [
+                    { ...narrationSession, git_branch: "feature/narration-fixture", repo_path: "~/code/sample-format" },
+                  ],
+                  next_cursor: null,
+                  resume_token: null,
+                }
+              : scenario.startsWith("SessionCompletedActivity")
                 ? { data: [noisySession], next_cursor: null, resume_token: null }
-                : sessionPage
+                : scenario.startsWith("SessionNoisy")
+                  ? { data: [noisySession], next_cursor: null, resume_token: null }
+                  : sessionPage
       )
     );
   }
+  if (/^\/v1\/code\/sessions\/[^/]+$/.test(url.pathname)) {
+    return Promise.resolve(json({ session: liveUpdatedSession }));
+  }
   if (/^\/v1\/code\/sessions\/[^/]+\/events$/.test(url.pathname)) {
     const page = new URLSearchParams(window.location.search).get("page") ?? "";
+    if (page.startsWith("SessionLiveUpdates"))
+      return Promise.resolve(
+        json({
+          data: liveEvents,
+          has_more: false,
+          first_id: liveEvents[0]?.event_id,
+          last_id: liveEvents.at(-1)?.event_id,
+        })
+      );
     if (page.startsWith("SessionLatestFirst")) {
       const cursor = url.searchParams.get("cursor");
       return Promise.resolve(
@@ -716,6 +752,35 @@ try {
 }
 const pathname = scenario.startsWith("SessionSync") ? "/sync" : "/sessions";
 
+let liveEventSource: EventSource | null = null;
+if (scenario.startsWith("SessionLiveUpdates")) {
+  class FixtureEventSource extends EventTarget {
+    onopen: ((this: EventSource, event: Event) => unknown) | null = null;
+    onerror: ((this: EventSource, event: Event) => unknown) | null = null;
+    readonly url: string;
+    readonly withCredentials = false;
+    readonly CONNECTING = 0;
+    readonly OPEN = 1;
+    readonly CLOSED = 2;
+    readyState = 0;
+
+    constructor(url: string) {
+      super();
+      this.url = url;
+      liveEventSource = this as unknown as EventSource;
+      window.setTimeout(() => {
+        this.readyState = 1;
+        this.onopen?.(new Event("open"));
+      }, 0);
+    }
+
+    close(): void {
+      this.readyState = 2;
+    }
+  }
+  window.EventSource = FixtureEventSource as unknown as typeof EventSource;
+}
+
 function scrollTranscriptElementIntoView(element: HTMLElement): void {
   const viewport = document.querySelector<HTMLDivElement>(
     '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
@@ -746,6 +811,33 @@ createRoot(root).render(
     <App pathname={pathname} />
   </MantineProvider>
 );
+
+if (scenario.startsWith("SessionLiveUpdates")) {
+  let emitted = false;
+  const observer = new MutationObserver(() => {
+    if (!emitted && document.querySelector('[data-message-role="assistant"]')) {
+      emitted = true;
+      window.setTimeout(() => {
+        liveEvents = [...noisySessionEvents, liveUpdatedEvent];
+        liveEventSource?.dispatchEvent(
+          new MessageEvent("changed", { data: JSON.stringify({ session_ids: [noisySession.id] }) })
+        );
+      }, 180);
+    }
+    const title = document.querySelector('[aria-label="Session transcript"] h4')?.textContent;
+    if (
+      title === liveUpdatedSession.title &&
+      document.body.textContent?.includes("The transcript updated automatically from a committed change.")
+    ) {
+      if ([...document.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Refresh")) {
+        throw new Error("The session page still exposes a manual Refresh control");
+      }
+      root.dataset.liveUpdateReady = "true";
+      observer.disconnect();
+    }
+  });
+  observer.observe(root, { childList: true, subtree: true, attributes: true });
+}
 
 if (
   scenario.startsWith("SessionReadFileResult") ||

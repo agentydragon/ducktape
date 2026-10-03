@@ -9,6 +9,7 @@ import type { components } from "./api/schema";
 export type SyncStatus = components["schemas"]["SyncStatus"];
 export type PairingStart = components["schemas"]["PairingStart"];
 export type SessionSummary = components["schemas"]["SessionSummary"];
+export type SessionDetail = components["schemas"]["SessionDetail"];
 export type SessionEvent = components["schemas"]["Event"];
 export type SessionListPage = components["schemas"]["SessionListPage"];
 export type SessionEventPage = components["schemas"]["SessionEventPage"];
@@ -66,11 +67,15 @@ export function syncNow(): Promise<void> {
   return call("POST", "/api/sync");
 }
 
-export function listSessions(statuses: string[], cursor?: string): Promise<SessionListPage> {
+export function listSessions(statuses: string[], cursor?: string, signal?: AbortSignal): Promise<SessionListPage> {
   const query = new URLSearchParams({ limit: "100" });
   for (const status of statuses) query.append("statuses", status);
   if (cursor !== undefined) query.set("cursor", cursor);
-  return call("GET", `/v1/code/sessions?${query}`);
+  return call("GET", `/v1/code/sessions?${query}`, undefined, signal);
+}
+
+export function getSession(sessionId: string, signal?: AbortSignal): Promise<SessionDetail> {
+  return call("GET", `/v1/code/sessions/${encodeURIComponent(sessionId)}`, undefined, signal);
 }
 
 export function listSessionEvents(

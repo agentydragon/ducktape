@@ -38,6 +38,7 @@ import { useMediaQuery } from "@mantine/hooks";
 
 import {
   ApiError,
+  getSession,
   listSessionEvents,
   listSessions,
   watchSessions,
@@ -137,6 +138,55 @@ function mergeSessionEvents(previous: SessionEvent[], incoming: SessionEvent[]):
 function mergeSessionPage(latest: SessionSummary[], previous: SessionSummary[]): SessionSummary[] {
   const latestIds = new Set(latest.map((session) => session.id));
   return [...latest, ...previous.filter((session) => !latestIds.has(session.id))];
+}
+
+function sessionMatchesFilter(session: SessionSummary, filter: StatusFilter): boolean {
+  return filter === "all" || session.status === filter;
+}
+
+function sortSessions(sessions: SessionSummary[]): SessionSummary[] {
+  return [...sessions].sort((left, right) => {
+    // Match PostgreSQL's DESC ordering (NULLS FIRST), then the API's stable ID tie-breaker.
+    const leftTime = left.last_event_at === null ? Number.POSITIVE_INFINITY : Date.parse(left.last_event_at);
+    const rightTime = right.last_event_at === null ? Number.POSITIVE_INFINITY : Date.parse(right.last_event_at);
+    const byTimestamp = rightTime - leftTime;
+    return (Number.isNaN(byTimestamp) ? 0 : byTimestamp) || right.id.localeCompare(left.id);
+  });
+}
+
+function retryable(reason: unknown): boolean {
+  if (reason instanceof ApiError) return reason.status === 408 || reason.status === 429 || reason.status >= 500;
+  return reason instanceof TypeError;
+}
+
+function waitForRetry(delay: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(new DOMException("Request aborted", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, delay);
+    const abort = (): void => {
+      window.clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      reject(new DOMException("Request aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+async function retryTransient<T>(request: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  let delay = 500;
+  while (!signal.aborted) {
+    try {
+      return await request();
+    } catch (reason) {
+      if (!retryable(reason)) throw reason;
+      await waitForRetry(delay, signal);
+      delay = Math.min(delay * 2, 30_000);
+    }
+  }
+  throw new DOMException("Request aborted", "AbortError");
 }
 
 function errorMessage(reason: unknown): string {
@@ -1112,10 +1162,16 @@ export function SessionViewer(): JSX.Element {
   const [isResizing, setIsResizing] = useState(false);
   const layoutRef = useRef<HTMLDivElement>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
   const [nextSessionCursor, setNextSessionCursor] = useState<string | null>(null);
   const [resumeToken, setResumeToken] = useState<string | null>(null);
   const [watchStatus, setWatchStatus] = useState<WatchStatus>("connecting");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const sessionsFilter = useRef<StatusFilter | null>(null);
   const loadedSession = useRef<string | null>(null);
@@ -1132,13 +1188,109 @@ export function SessionViewer(): JSX.Element {
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
   const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
-  const [refreshCount, setRefreshCount] = useState(0);
-  const [eventRefreshToken, setEventRefreshToken] = useState(0);
-  const refreshCountRef = useRef(refreshCount);
-  refreshCountRef.current = refreshCount;
-  const eventLoadRefreshCount = useRef(0);
+  const [sessionReload, setSessionReload] = useState(0);
+  const sessionVersions = useRef(new Map<string, number>());
+  const appliedDetailVersions = useRef(new Map<string, number>());
+  const detailRequests = useRef(new Map<string, AbortController>());
+  const olderSessionsRequest = useRef<AbortController | null>(null);
   const pendingEventRefresh = useRef<string | null>(null);
   const olderPageRequest = useRef<AbortController | null>(null);
+  const eventCatchupJob = useRef<{
+    sessionId: string;
+    controller: AbortController;
+    running: boolean;
+    dirty: boolean;
+  } | null>(null);
+  const requestEventCatchupRef = useRef<(sessionId: string) => void>(() => {});
+
+  const replaceSessions = useCallback((next: SessionSummary[]): void => {
+    sessionsRef.current = next;
+    setSessions(next);
+  }, []);
+
+  const applySessionDetail = useCallback(
+    (sessionId: string, summary: SessionSummary | null, appliedVersion: number): void => {
+      const previous = sessionsRef.current;
+      const retained = previous.filter((candidate) => candidate.id !== sessionId);
+      appliedDetailVersions.current.set(sessionId, appliedVersion);
+      const next = sortSessions(
+        summary !== null && sessionMatchesFilter(summary, filterRef.current) ? [summary, ...retained] : retained
+      );
+      replaceSessions(next);
+      if (selectedIdRef.current === sessionId && !next.some((candidate) => candidate.id === sessionId)) {
+        setSelectedId(next[0]?.id ?? null);
+      }
+    },
+    [replaceSessions]
+  );
+
+  const loadSessionDetail = useCallback(
+    async (sessionId: string, controller: AbortController): Promise<void> => {
+      while (!controller.signal.aborted) {
+        const requestedVersion = sessionVersions.current.get(sessionId) ?? 0;
+        try {
+          const response = await retryTransient(() => getSession(sessionId, controller.signal), controller.signal);
+          if (controller.signal.aborted) return;
+          applySessionDetail(sessionId, response.session, requestedVersion);
+          if (requestedVersion !== (sessionVersions.current.get(sessionId) ?? 0)) continue;
+          return;
+        } catch (reason) {
+          if (controller.signal.aborted) return;
+          if (requestedVersion !== (sessionVersions.current.get(sessionId) ?? 0)) continue;
+          if (reason instanceof ApiError && reason.status === 404) {
+            applySessionDetail(sessionId, null, requestedVersion);
+          } else {
+            setSessionError(errorMessage(reason));
+          }
+          return;
+        }
+      }
+    },
+    [applySessionDetail]
+  );
+
+  const refreshSessionDetail = useCallback(
+    (sessionId: string): void => {
+      sessionVersions.current.set(sessionId, (sessionVersions.current.get(sessionId) ?? 0) + 1);
+      if (detailRequests.current.has(sessionId)) return;
+      const controller = new AbortController();
+      detailRequests.current.set(sessionId, controller);
+      void loadSessionDetail(sessionId, controller).finally(() => {
+        if (detailRequests.current.get(sessionId) === controller) detailRequests.current.delete(sessionId);
+      });
+    },
+    [loadSessionDetail]
+  );
+
+  const refreshSelectedEvents = useCallback((sessionId: string | null): void => {
+    if (sessionId === null) return;
+    if (loadedEventsSession.current === sessionId) {
+      requestEventCatchupRef.current(sessionId);
+    } else {
+      pendingEventRefresh.current = sessionId;
+    }
+  }, []);
+
+  const handleChangedSessions = useCallback(
+    (sessionIds: string[]): void => {
+      const changedIds = [...new Set(sessionIds)];
+      for (const sessionId of changedIds) refreshSessionDetail(sessionId);
+      const selected = selectedIdRef.current;
+      if (selected !== null && changedIds.includes(selected)) refreshSelectedEvents(selected);
+    },
+    [refreshSelectedEvents, refreshSessionDetail]
+  );
+
+  const handleWatchReset = useCallback((): void => {
+    for (const session of sessionsRef.current) refreshSessionDetail(session.id);
+    setSessionReload((count) => count + 1);
+    refreshSelectedEvents(selectedIdRef.current);
+  }, [refreshSelectedEvents, refreshSessionDetail]);
+
+  const changedHandlerRef = useRef(handleChangedSessions);
+  changedHandlerRef.current = handleChangedSessions;
+  const resetHandlerRef = useRef(handleWatchReset);
+  resetHandlerRef.current = handleWatchReset;
 
   const captureScrollAnchor = useCallback((sessionId: string): void => {
     const viewport = eventViewport.current;
@@ -1159,6 +1311,123 @@ export function SessionViewer(): JSX.Element {
       scrollHeight: viewport.scrollHeight,
     };
   }, []);
+
+  const requestEventCatchup = useCallback(
+    (sessionId: string): void => {
+      if (loadedEventsSession.current !== sessionId || loadedSession.current !== sessionId) {
+        pendingEventRefresh.current = sessionId;
+        return;
+      }
+      let job = eventCatchupJob.current;
+      if (job !== null && job.sessionId !== sessionId) {
+        job.controller.abort();
+        eventCatchupJob.current = null;
+        job = null;
+      }
+      if (job === null) {
+        job = { sessionId, controller: new AbortController(), running: false, dirty: false };
+        eventCatchupJob.current = job;
+      }
+      job.dirty = true;
+      if (job.running) return;
+      job.running = true;
+      const activeJob = job;
+      void (async () => {
+        while (
+          activeJob.dirty &&
+          !activeJob.controller.signal.aborted &&
+          loadedEventsSession.current === sessionId &&
+          loadedSession.current === sessionId
+        ) {
+          activeJob.dirty = false;
+          try {
+            const newestPage = await retryTransient(
+              () => listSessionEvents(sessionId, undefined, "desc", activeJob.controller.signal),
+              activeJob.controller.signal
+            );
+            if (
+              activeJob.controller.signal.aborted ||
+              loadedSession.current !== sessionId ||
+              loadedEventsSession.current !== sessionId
+            )
+              return;
+            const previousNewest = eventHistory.current.at(-1);
+            const catchUpEvents: SessionEvent[] = [];
+            if (previousNewest !== undefined) {
+              const frontier = newestPage.data.reduce(
+                (latest, event) => (BigInt(event.sequence_num) > latest ? BigInt(event.sequence_num) : latest),
+                BigInt(previousNewest.sequence_num)
+              );
+              let cursor = previousNewest.event_id;
+              while (true) {
+                const page = await retryTransient(
+                  () => listSessionEvents(sessionId, cursor, "asc", activeJob.controller.signal),
+                  activeJob.controller.signal
+                );
+                if (
+                  activeJob.controller.signal.aborted ||
+                  loadedSession.current !== sessionId ||
+                  loadedEventsSession.current !== sessionId
+                )
+                  return;
+                const previousCursor = cursor;
+                if (page.data.length > 0) {
+                  const throughFrontier = page.data.filter((event) => BigInt(event.sequence_num) <= frontier);
+                  catchUpEvents.push(...throughFrontier);
+                  if (page.last_id === null) throw new Error("The event page omitted its cursor.");
+                  cursor = page.last_id;
+                  if (page.data.some((event) => BigInt(event.sequence_num) > frontier)) break;
+                  if (throughFrontier.some((event) => BigInt(event.sequence_num) === frontier)) break;
+                }
+                if (!page.has_more) break;
+                if (page.data.length === 0 || page.last_id === null || page.last_id === previousCursor) {
+                  throw new Error("The event history cursor did not advance.");
+                }
+              }
+            }
+            if (activeJob.controller.signal.aborted || loadedSession.current !== sessionId) return;
+            const merged = mergeSessionEvents(eventHistory.current, [...newestPage.data, ...catchUpEvents]);
+            if (merged !== eventHistory.current) {
+              if (followTail.current) {
+                pendingTranscriptScroll.current = { kind: "tail", sessionId };
+              } else {
+                captureScrollAnchor(sessionId);
+              }
+              eventHistory.current = merged;
+              setEvents(merged);
+            }
+            if (previousNewest === undefined) {
+              setNextEventCursor(newestPage.has_more ? newestPage.last_id : null);
+              setHasMoreEvents(newestPage.has_more);
+            }
+            setEventError(null);
+          } catch (reason) {
+            if (!activeJob.controller.signal.aborted && loadedSession.current === sessionId) {
+              setEventError(errorMessage(reason));
+            }
+            activeJob.dirty = false;
+          }
+        }
+      })().finally(() => {
+        activeJob.running = false;
+        if (eventCatchupJob.current === activeJob && activeJob.controller.signal.aborted) {
+          eventCatchupJob.current = null;
+        } else if (eventCatchupJob.current === activeJob && activeJob.dirty) {
+          requestEventCatchupRef.current(sessionId);
+        }
+      });
+    },
+    [captureScrollAnchor]
+  );
+  requestEventCatchupRef.current = requestEventCatchup;
+
+  useEffect(() => {
+    const job = eventCatchupJob.current;
+    if (job !== null && job.sessionId !== selectedId) {
+      job.controller.abort();
+      eventCatchupJob.current = null;
+    }
+  }, [selectedId]);
 
   const updateTail = useCallback((): void => {
     const viewport = eventViewport.current;
@@ -1259,45 +1528,114 @@ export function SessionViewer(): JSX.Element {
 
   useEffect(() => {
     let current = true;
+    const controller = new AbortController();
     const filterChanged = sessionsFilter.current !== filter;
     const statuses = filter === "all" ? ALL_STATUSES : [filter];
-    // Only the first fetch needs a loading placeholder; watch refreshes retain the list.
+    const versionsAtStart = new Map(sessionVersions.current);
+    const appliedVersionsAtStart = new Map(appliedDetailVersions.current);
+    olderSessionsRequest.current?.abort();
+    olderSessionsRequest.current = null;
+    setLoadingMoreSessions(false);
     setSessionError(null);
-    void listSessions(statuses)
+    void retryTransient(() => listSessions(statuses, undefined, controller.signal), controller.signal)
       .then((page) => {
-        if (!current) return;
+        if (!current || controller.signal.aborted) return;
         sessionsFilter.current = filter;
-        setSessions((previous) => (filterChanged ? page.data : mergeSessionPage(page.data, previous)));
-        setNextSessionCursor(page.next_cursor);
-        setResumeToken(page.resume_token ?? null);
-        setSelectedId((previous) =>
-          filterChanged && !page.data.some((session) => session.id === previous)
-            ? (page.data[0]?.id ?? null)
-            : (previous ?? page.data[0]?.id ?? null)
+        const previous = sessionsRef.current.filter((session) => sessionMatchesFilter(session, filter));
+        const previousById = new Map(previous.map((session) => [session.id, session]));
+        const currentPage = page.data.flatMap((session) => {
+          const changedSinceRead =
+            (sessionVersions.current.get(session.id) ?? 0) > (versionsAtStart.get(session.id) ?? 0);
+          const resolved = changedSinceRead ? previousById.get(session.id) : session;
+          return resolved !== undefined && sessionMatchesFilter(resolved, filter) ? [resolved] : [];
+        });
+        const resolvedDuringRequest = sessionsRef.current.filter(
+          (session) =>
+            sessionMatchesFilter(session, filter) &&
+            (appliedDetailVersions.current.get(session.id) ?? 0) > (appliedVersionsAtStart.get(session.id) ?? 0)
         );
+        const next = sortSessions(
+          mergeSessionPage(resolvedDuringRequest, filterChanged ? currentPage : mergeSessionPage(currentPage, previous))
+        );
+        replaceSessions(next);
+        setNextSessionCursor(page.next_cursor);
+        setResumeToken((existing) => existing ?? page.resume_token ?? null);
+        setSelectedId((previous) =>
+          filterChanged && !next.some((session) => session.id === previous)
+            ? (next[0]?.id ?? null)
+            : (previous ?? next[0]?.id ?? null)
+        );
+        setSessionError(null);
       })
       .catch((reason: unknown) => {
-        if (current) setSessionError(errorMessage(reason));
+        if (current && !controller.signal.aborted) setSessionError(errorMessage(reason));
       })
       .finally(() => {
-        if (current) setLoadingSessions(false);
+        if (current && !controller.signal.aborted) setLoadingSessions(false);
       });
     return () => {
       current = false;
+      controller.abort();
     };
-  }, [filter, refreshCount]);
+  }, [filter, sessionReload, replaceSessions]);
 
   useEffect(() => {
     if (resumeToken === null) return;
     const watch = watchSessions(resumeToken);
-    const refresh = (): void => setRefreshCount((count) => count + 1);
+    const recoverMalformedFrame = (): void => {
+      setSessionError("The live update stream sent an invalid change. Reloading the loaded session list.");
+      resetHandlerRef.current();
+    };
+    const changed = (event: Event): void => {
+      if (!(event instanceof MessageEvent)) {
+        recoverMalformedFrame();
+        return;
+      }
+      try {
+        const payload: unknown = JSON.parse(event.data);
+        if (
+          typeof payload !== "object" ||
+          payload === null ||
+          !Array.isArray((payload as { session_ids?: unknown }).session_ids)
+        ) {
+          recoverMalformedFrame();
+          return;
+        }
+        const ids = (payload as { session_ids: unknown[] }).session_ids.filter(
+          (sessionId): sessionId is string => typeof sessionId === "string" && sessionId.length > 0
+        );
+        if (ids.length !== (payload as { session_ids: unknown[] }).session_ids.length) {
+          recoverMalformedFrame();
+          return;
+        }
+        changedHandlerRef.current(ids);
+      } catch {
+        recoverMalformedFrame();
+      }
+    };
+    const reset = (): void => resetHandlerRef.current();
     setWatchStatus("connecting");
     watch.onopen = () => setWatchStatus("connected");
     watch.onerror = () => setWatchStatus("reconnecting");
-    watch.addEventListener("changed", refresh);
-    watch.addEventListener("reset", refresh);
-    return () => watch.close();
+    watch.addEventListener("changed", changed);
+    watch.addEventListener("reset", reset);
+    return () => {
+      watch.removeEventListener("changed", changed);
+      watch.removeEventListener("reset", reset);
+      watch.close();
+    };
   }, [resumeToken]);
+
+  useEffect(
+    () => () => {
+      olderSessionsRequest.current?.abort();
+      eventCatchupJob.current?.controller.abort();
+      eventCatchupJob.current = null;
+      for (const controller of detailRequests.current.values()) controller.abort();
+      detailRequests.current.clear();
+    },
+    []
+  );
 
   useEffect(() => {
     let current = true;
@@ -1322,10 +1660,9 @@ export function SessionViewer(): JSX.Element {
     loadedEventsSession.current = null;
     eventHistory.current = [];
     pendingTranscriptScroll.current = null;
-    pendingEventRefresh.current = null;
+    if (pendingEventRefresh.current !== selectedId) pendingEventRefresh.current = null;
     olderPageRequest.current?.abort();
     olderPageRequest.current = null;
-    eventLoadRefreshCount.current = refreshCountRef.current;
     followTail.current = true;
     setLoadingEvents(true);
     setLoadingMoreEvents(false);
@@ -1334,7 +1671,7 @@ export function SessionViewer(): JSX.Element {
     setHasMoreEvents(false);
     setEventError(null);
     const controller = new AbortController();
-    void listSessionEvents(selectedId, undefined, "desc", controller.signal)
+    void retryTransient(() => listSessionEvents(selectedId, undefined, "desc", controller.signal), controller.signal)
       .then((page) => {
         if (!current || loadedSession.current !== selectedId) return;
         const merged = mergeSessionEvents([], page.data);
@@ -1348,11 +1685,11 @@ export function SessionViewer(): JSX.Element {
         setHasMoreEvents(page.has_more);
         if (pendingEventRefresh.current === selectedId) {
           pendingEventRefresh.current = null;
-          setEventRefreshToken((token) => token + 1);
+          requestEventCatchupRef.current(selectedId);
         }
       })
       .catch((reason: unknown) => {
-        if (current) setEventError(errorMessage(reason));
+        if (current && !controller.signal.aborted) setEventError(errorMessage(reason));
       })
       .finally(() => {
         if (current) setLoadingEvents(false);
@@ -1363,71 +1700,16 @@ export function SessionViewer(): JSX.Element {
     };
   }, [selectedId]);
 
-  useEffect(() => {
-    if (selectedId === null) return;
-    if (loadedEventsSession.current !== selectedId) {
-      if (refreshCount > eventLoadRefreshCount.current) pendingEventRefresh.current = selectedId;
-      return;
-    }
-    let current = true;
-    const controller = new AbortController();
-    setEventError(null);
-    void (async () => {
-      try {
-        const newestPage = await listSessionEvents(selectedId, undefined, "desc", controller.signal);
-        if (!current || loadedSession.current !== selectedId) return;
-        const previousNewest = eventHistory.current.at(-1);
-        const catchUpEvents: SessionEvent[] = [];
-        if (previousNewest !== undefined) {
-          let cursor = previousNewest.event_id;
-          while (true) {
-            const page = await listSessionEvents(selectedId, cursor, "asc", controller.signal);
-            if (!current || loadedSession.current !== selectedId) return;
-            const previousCursor = cursor;
-            if (page.data.length > 0) {
-              catchUpEvents.push(...page.data);
-              if (page.last_id === null) throw new Error("The event page omitted its cursor.");
-              cursor = page.last_id;
-            }
-            if (!page.has_more) break;
-            if (page.data.length === 0 || page.last_id === null || page.last_id === previousCursor) {
-              throw new Error("The event history cursor did not advance.");
-            }
-          }
-        }
-        if (!current || loadedSession.current !== selectedId) return;
-        const merged = mergeSessionEvents(eventHistory.current, [...newestPage.data, ...catchUpEvents]);
-        if (merged !== eventHistory.current) {
-          if (followTail.current) {
-            pendingTranscriptScroll.current = { kind: "tail", sessionId: selectedId };
-          } else {
-            captureScrollAnchor(selectedId);
-          }
-          eventHistory.current = merged;
-          setEvents(merged);
-        }
-        if (previousNewest === undefined) {
-          setNextEventCursor(newestPage.has_more ? newestPage.last_id : null);
-          setHasMoreEvents(newestPage.has_more);
-        }
-      } catch (reason) {
-        if (current && loadedSession.current === selectedId) setEventError(errorMessage(reason));
-      }
-    })();
-    return () => {
-      current = false;
-      controller.abort();
-    };
-  }, [captureScrollAnchor, eventRefreshToken, refreshCount, selectedId]);
-
   const visibleSessions = useMemo(() => {
     const needle = search.trim().toLowerCase();
+    const matchingStatus = sessions.filter((session) => sessionMatchesFilter(session, filter));
     return needle === ""
-      ? sessions
-      : sessions.filter((session) => JSON.stringify(session).toLowerCase().includes(needle));
-  }, [search, sessions]);
+      ? matchingStatus
+      : matchingStatus.filter((session) => JSON.stringify(session).toLowerCase().includes(needle));
+  }, [filter, search, sessions]);
 
-  const selectedSession = sessions.find((session) => session.id === selectedId) ?? null;
+  const selectedSession =
+    sessions.find((session) => session.id === selectedId && sessionMatchesFilter(session, filter)) ?? null;
   const transcript = useMemo(() => foldSessionEvents(events), [events]);
   const rows = useMemo(() => groupToolActivity(transcript), [transcript]);
   const watchLabel =
@@ -1435,21 +1717,43 @@ export function SessionViewer(): JSX.Element {
 
   const loadMoreSessions = useCallback(async (): Promise<void> => {
     if (nextSessionCursor === null || loadingMoreSessions) return;
+    const controller = new AbortController();
+    olderSessionsRequest.current?.abort();
+    olderSessionsRequest.current = controller;
+    const requestedFilter = filter;
+    const versionsAtStart = new Map(sessionVersions.current);
     setLoadingMoreSessions(true);
     setSessionError(null);
     try {
-      const page = await listSessions(filter === "all" ? ALL_STATUSES : [filter], nextSessionCursor);
-      setSessions((previous) => {
-        const seen = new Set(previous.map((session) => session.id));
-        return [...previous, ...page.data.filter((session) => !seen.has(session.id))];
+      const page = await retryTransient(
+        () =>
+          listSessions(
+            requestedFilter === "all" ? ALL_STATUSES : [requestedFilter],
+            nextSessionCursor,
+            controller.signal
+          ),
+        controller.signal
+      );
+      if (controller.signal.aborted || filterRef.current !== requestedFilter) return;
+      const previous = sessionsRef.current.filter((session) => sessionMatchesFilter(session, requestedFilter));
+      const previousById = new Map(previous.map((session) => [session.id, session]));
+      const currentPage = page.data.flatMap((session) => {
+        const changedSinceRead =
+          (sessionVersions.current.get(session.id) ?? 0) > (versionsAtStart.get(session.id) ?? 0);
+        const resolved = changedSinceRead ? previousById.get(session.id) : session;
+        return resolved !== undefined && sessionMatchesFilter(resolved, requestedFilter) ? [resolved] : [];
       });
+      replaceSessions(sortSessions(mergeSessionPage(currentPage, previous)));
       setNextSessionCursor(page.next_cursor);
     } catch (reason) {
-      setSessionError(errorMessage(reason));
+      if (!controller.signal.aborted) setSessionError(errorMessage(reason));
     } finally {
-      setLoadingMoreSessions(false);
+      if (olderSessionsRequest.current === controller) {
+        olderSessionsRequest.current = null;
+        setLoadingMoreSessions(false);
+      }
     }
-  }, [filter, loadingMoreSessions, nextSessionCursor]);
+  }, [filter, loadingMoreSessions, nextSessionCursor, replaceSessions]);
 
   const loadMoreEvents = useCallback(async (): Promise<void> => {
     const sessionId = selectedId;
@@ -1536,9 +1840,6 @@ export function SessionViewer(): JSX.Element {
                 onClick={toggleSidebar}
               >
                 {isMobile ? "Session list" : sidebarVisible ? "Hide session list" : "Show session list"}
-              </Button>
-              <Button variant="default" size="compact-xs" onClick={() => setRefreshCount((count) => count + 1)}>
-                Refresh
               </Button>
             </Group>
           </Group>

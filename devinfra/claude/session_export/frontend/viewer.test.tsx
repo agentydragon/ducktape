@@ -5,7 +5,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { listSessionEvents, listSessions, watchSessions } from "./api";
+import { getSession, listSessionEvents, listSessions, watchSessions } from "./api";
 import { SessionViewer } from "./viewer";
 import {
   longCommandActivityDetail,
@@ -19,6 +19,7 @@ import {
 
 vi.mock("./api", () => ({
   ApiError: class extends Error {},
+  getSession: vi.fn(),
   listSessionEvents: vi.fn(),
   listSessions: vi.fn(),
   watchSessions: vi.fn(),
@@ -110,7 +111,32 @@ afterEach(async () => {
     delete (window as unknown as { matchMedia?: typeof window.matchMedia }).matchMedia;
   else Object.defineProperty(window, "matchMedia", originalMatchMedia);
   vi.unstubAllGlobals();
+  vi.useRealTimers();
   vi.clearAllMocks();
+});
+
+it("recovers an initial session-list network failure without a refresh control", async () => {
+  vi.useFakeTimers();
+  vi.mocked(listSessions)
+    .mockRejectedValueOnce(new TypeError("temporary network failure"))
+    .mockResolvedValueOnce({ data: [session], next_cursor: null, resume_token: null });
+  vi.mocked(listSessionEvents).mockResolvedValue({ data: [], has_more: false, first_id: null, last_id: null });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(500));
+  expect(listSessions).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain(session.title);
+  expect([...container.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Refresh")).toBe(
+    false
+  );
 });
 
 it("keeps the selected session when the session list is hidden and shown", async () => {
@@ -307,7 +333,7 @@ it("opens the mobile session drawer and keeps the chosen session after it closes
   );
 });
 
-it("retains session and transcript DOM, scroll and disclosure across watch refreshes", async () => {
+it("applies committed session and transcript changes without restarting the watch", async () => {
   const stream = new EventTarget() as EventTarget & {
     close: () => void;
     onopen: (() => void) | null;
@@ -318,6 +344,7 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
   stream.onerror = null;
   vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: "watch-1" });
+  vi.mocked(getSession).mockResolvedValue({ session: { ...session, title: "Renamed live session", status: "paused" } });
   const refreshedToolCall = {
     ...toolCall,
     payload: {
@@ -363,7 +390,9 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
   await act(async () => control.click());
   expect(control.getAttribute("aria-expanded")).toBe("true");
 
-  await act(async () => stream.dispatchEvent(new Event("changed")));
+  await act(async () =>
+    stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [session.id] }) }))
+  );
   expect(finishRefresh).toBeDefined();
   expect(container.querySelector('[data-fold-kind="message"]')).toBe(article);
   expect(container.querySelector('[data-fold-kind="tool-run"]')).toBe(toolRun);
@@ -371,6 +400,8 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
   expect(container.querySelector('[aria-label="Session transcript"] .mantine-ScrollArea-viewport')).toBe(viewport);
   expect(viewport.scrollTop).toBe(100);
   expect(control.getAttribute("aria-expanded")).toBe("true");
+  await vi.waitFor(() => expect(container?.querySelector("h4")?.textContent).toBe("Renamed live session"));
+  expect(container.querySelector('[aria-label="Session list"]')?.textContent).toContain("paused");
   await act(async () =>
     finishRefresh?.({
       data: [second, refreshedToolCall, first],
@@ -385,6 +416,213 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
   expect(control.getAttribute("aria-expanded")).toBe("true");
   expect(container.textContent).toContain("src/updated.py");
   expect(listSessionEvents).toHaveBeenLastCalledWith(session.id, "event-2", "asc", expect.any(AbortSignal));
+  expect(getSession).toHaveBeenCalledWith(session.id, expect.any(AbortSignal));
+  expect(listSessions).toHaveBeenCalledTimes(1);
+  expect(watchSessions).toHaveBeenCalledTimes(1);
+  expect([...container.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Refresh")).toBe(
+    false
+  );
+});
+
+it("updates an older loaded session into and out of the active filter across a stale page response", async () => {
+  const olderArchived = { ...session, id: "session-old", title: "Older loaded session", status: "archived" };
+  const olderActive = { ...olderArchived, title: "Renamed older session from live feed", status: "active" };
+  const olderPaused = { ...olderActive, status: "paused" };
+  const newSession = { ...session, id: "session-new", title: "Brand new session from live feed", status: "active" };
+  const stream = new EventTarget() as EventTarget & {
+    close: () => void;
+    onopen: (() => void) | null;
+    onerror: (() => void) | null;
+  };
+  stream.close = vi.fn();
+  stream.onopen = null;
+  stream.onerror = null;
+  vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
+  let finishActiveFilter: ((page: Awaited<ReturnType<typeof listSessions>>) => void) | undefined;
+  vi.mocked(listSessions).mockImplementation((statuses, cursor) => {
+    if (cursor !== undefined) {
+      return Promise.resolve({ data: [olderArchived], next_cursor: null, resume_token: "watch-1" });
+    }
+    if (statuses.length === 1 && statuses[0] === "active") {
+      return new Promise((resolve) => {
+        finishActiveFilter = resolve;
+      });
+    }
+    return Promise.resolve({ data: [session], next_cursor: "older-sessions", resume_token: "watch-1" });
+  });
+  vi.mocked(listSessionEvents).mockResolvedValue({ data: [], has_more: false, first_id: null, last_id: null });
+  vi.mocked(getSession)
+    .mockResolvedValueOnce({ session: olderActive })
+    .mockResolvedValueOnce({ session: olderPaused })
+    .mockResolvedValueOnce({ session: newSession });
+
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await vi.waitFor(() => expect(container?.textContent).toContain(session.title));
+  const loadMore = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Load more sessions")
+  )!;
+  await act(async () => loadMore.click());
+  await vi.waitFor(() => expect(container?.textContent).toContain(olderArchived.title));
+
+  const statusLabel = [...container.querySelectorAll("label")].find((label) => label.textContent?.trim() === "Status")!;
+  const statusInput = document.getElementById(statusLabel.htmlFor) as HTMLInputElement;
+  await act(async () => statusInput.click());
+  const activeOption = await vi.waitFor(() => {
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (candidate) => candidate.textContent?.trim() === "Active"
+    );
+    expect(option).toBeDefined();
+    return option!;
+  });
+  await act(async () => activeOption.click());
+  await vi.waitFor(() => expect(finishActiveFilter).toBeDefined());
+
+  await act(async () =>
+    stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [olderArchived.id] }) }))
+  );
+  await vi.waitFor(() => expect(container?.textContent).toContain(olderActive.title));
+  await act(async () => finishActiveFilter?.({ data: [], next_cursor: null, resume_token: "watch-1" }));
+  expect(container?.querySelector('#session-sidebar button[aria-pressed="true"]')?.textContent).toContain(
+    olderActive.title
+  );
+
+  const search = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "renamed older");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(container.querySelector('#session-sidebar button[aria-pressed="true"]')?.textContent).toContain(
+    olderActive.title
+  );
+
+  await act(async () =>
+    stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [olderArchived.id] }) }))
+  );
+  await vi.waitFor(() => expect(getSession).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() =>
+    expect(container?.querySelector("#session-sidebar button")?.textContent).not.toContain(olderActive.title)
+  );
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [newSession.id] }) }))
+  );
+  await vi.waitFor(() => expect(container?.textContent).toContain(newSession.title));
+  expect(watchSessions).toHaveBeenCalledTimes(1);
+});
+
+it("coalesces a burst of selected-session changes without abandoning an in-flight catch-up", async () => {
+  const third = assistantEvent(4);
+  const stream = new EventTarget() as EventTarget & {
+    close: () => void;
+    onopen: (() => void) | null;
+    onerror: (() => void) | null;
+  };
+  stream.close = vi.fn();
+  stream.onopen = null;
+  stream.onerror = null;
+  vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
+  vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: "watch-1" });
+  vi.mocked(getSession).mockResolvedValue({ session });
+  let finishFirstCatchup: ((page: Awaited<ReturnType<typeof listSessionEvents>>) => void) | undefined;
+  let eventReads = 0;
+  vi.mocked(listSessionEvents).mockImplementation((_sessionId, cursor, order) => {
+    eventReads += 1;
+    if (eventReads === 1)
+      return Promise.resolve({ data: [first], has_more: false, first_id: first.event_id, last_id: first.event_id });
+    if (eventReads === 2) {
+      return new Promise((resolve) => {
+        finishFirstCatchup = resolve;
+      });
+    }
+    if (cursor === first.event_id) {
+      return Promise.resolve({ data: [second], has_more: false, first_id: second.event_id, last_id: second.event_id });
+    }
+    if (order === "desc") {
+      return Promise.resolve({
+        data: [third, second, first],
+        has_more: false,
+        first_id: third.event_id,
+        last_id: first.event_id,
+      });
+    }
+    return Promise.resolve({ data: [third], has_more: false, first_id: third.event_id, last_id: third.event_id });
+  });
+
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await vi.waitFor(() => expect(container?.textContent).toContain("First message"));
+  const changedFrame = (): MessageEvent =>
+    new MessageEvent("changed", { data: JSON.stringify({ session_ids: [session.id] }) });
+  await act(async () => stream.dispatchEvent(changedFrame()));
+  await vi.waitFor(() => expect(finishFirstCatchup).toBeDefined());
+  await act(async () => stream.dispatchEvent(changedFrame()));
+  await act(async () =>
+    finishFirstCatchup?.({ data: [second, first], has_more: false, first_id: second.event_id, last_id: first.event_id })
+  );
+
+  await vi.waitFor(() => expect(container?.textContent).toContain("Message 4"));
+  expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(3);
+  expect(eventReads).toBe(5);
+  expect(listSessions).toHaveBeenCalledTimes(1);
+  expect(watchSessions).toHaveBeenCalledTimes(1);
+});
+
+it("aborts per-session live detail reads when the viewer unmounts", async () => {
+  const stream = new EventTarget() as EventTarget & {
+    close: () => void;
+    onopen: (() => void) | null;
+    onerror: (() => void) | null;
+  };
+  stream.close = vi.fn();
+  stream.onopen = null;
+  stream.onerror = null;
+  vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
+  vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: "watch-1" });
+  vi.mocked(listSessionEvents).mockResolvedValue({ data: [], has_more: false, first_id: null, last_id: null });
+  let detailSignal: AbortSignal | undefined;
+  vi.mocked(getSession).mockImplementation((_sessionId, signal) => {
+    detailSignal = signal;
+    return new Promise(() => {});
+  });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
+  await vi.waitFor(() => expect(watchSessions).toHaveBeenCalledTimes(1));
+  await act(async () =>
+    stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [session.id] }) }))
+  );
+  await vi.waitFor(() => expect(detailSignal).toBeDefined());
+  await act(async () => root?.unmount());
+  root = null;
+  expect(detailSignal?.aborted).toBe(true);
+  expect(stream.close).toHaveBeenCalledTimes(1);
 });
 
 it("loads newest events first, prepends older pages without duplication, and folds tool results across the boundary", async () => {
@@ -478,6 +716,9 @@ it("catches up every page after a reconnect without dropping the selected older 
   stream.onopen = null;
   stream.onerror = null;
   vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
+  vi.mocked(getSession).mockImplementation(async (sessionId) => ({
+    session: sessionId === olderSession.id ? olderSession : session,
+  }));
   vi.mocked(listSessions)
     .mockResolvedValueOnce({ data: [session], next_cursor: "older-sessions", resume_token: "watch-1" })
     .mockResolvedValueOnce({ data: [olderSession], next_cursor: null, resume_token: "watch-1" })
@@ -518,6 +759,9 @@ it("catches up every page after a reconnect without dropping the selected older 
   Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 400 });
   viewport.scrollTop = 100;
   await act(async () => viewport.dispatchEvent(new Event("scroll")));
+  stream.onerror?.();
+  expect(container.textContent).toContain("Reconnecting…");
+  stream.onopen?.();
   await act(async () => stream.dispatchEvent(new Event("reset")));
 
   await vi.waitFor(() => expect(container?.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(350));
@@ -538,6 +782,10 @@ it("catches up every page after a reconnect without dropping the selected older 
     [olderSession.id, "event-1200", "asc"],
   ]);
   expect(container.textContent).not.toContain("Could not load transcript");
+  expect(getSession).toHaveBeenCalledWith(session.id, expect.any(AbortSignal));
+  expect(getSession).toHaveBeenCalledWith(olderSession.id, expect.any(AbortSignal));
+  expect(listSessions).toHaveBeenCalledTimes(3);
+  expect(watchSessions).toHaveBeenCalledTimes(1);
 });
 
 it("keeps older-page pagination available when the newest loaded page contains only suppressed events", async () => {
