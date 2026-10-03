@@ -26,3 +26,12 @@ and setup libraries with the repository's lint/type aspects.
 The identity endpoint is a TokenReview fixture, not the production egress gateway.
 These results do not establish credential substitution, CONNECT/TLS, runner gRPC,
 persistent state recovery, guest resource isolation, or an actual admission outage.
+
+After stop/start, the recreated relay's request was reviewed with the new Pod UID
+`01ef282b-ed21-4f28-b632-119c9d3a5e8a`. The disposable namespace, policy, ESO store,
+reviewer role/binding, and named registry reader role/binding were removed after
+these probes; namespace deletion completed. No persistent user disks were involved.
+
+The move into `cluster/cdk8s/agentplane/kubevirt_experiment/` produced byte-identical
+manifests. [Moved-package tests and library checks](https://app.buildbuddy.io/invocation/1c522e22-48b0-4ea9-85b3-45bad4883964)
+also passed.
