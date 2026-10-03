@@ -104,6 +104,7 @@ in
   # two separately sized persistent disks below.
   virtualisation.diskSize = 8 * 1024;
   boot.kernelModules = [ "xfs" ];
+  boot.kernelParams = [ "console=ttyS0,115200n8" ];
 
   users.groups.${agentGroup} = {
     gid = 1000;
@@ -228,6 +229,7 @@ in
     unitConfig.DefaultDependencies = false;
     path = [
       pkgs.coreutils
+      pkgs.diffutils
       pkgs.e2fsprogs
       pkgs.gnugrep
       pkgs.xfsprogs
@@ -253,6 +255,7 @@ in
     before = [ "agentplane-runner.service" ];
     path = [
       pkgs.acl
+      pkgs.bash
       pkgs.coreutils
       pkgs.shadow
       pkgs.util-linux
