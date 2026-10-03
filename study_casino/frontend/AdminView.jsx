@@ -64,6 +64,7 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
   };
 
   const prizes = targetState?.prizes ?? [];
+  const prizeLog = targetState?.prize_log ?? [];
   const balance = targetState?.balance ?? { credits_millis: 0, tokens: 0 };
 
   return (
@@ -92,6 +93,50 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
           </span>
         )}
       </div>
+
+      {selected && (
+        <>
+          <SectionTitle>Redemption price history</SectionTitle>
+          <div className="panel" style={{ padding: 0, marginBottom: 32 }}>
+            {!targetState ? (
+              <div style={{ padding: 12, color: COLORS.creamDim, fontSize: 13 }}>Loading history…</div>
+            ) : prizeLog.length === 0 ? (
+              <div style={{ padding: 12, color: COLORS.creamDim, fontSize: 13 }}>
+                No redeemed prizes in this user's history.
+              </div>
+            ) : (
+              prizeLog.map((p, i) => (
+                <div
+                  key={p.id}
+                  style={{
+                    padding: "12px 18px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    borderBottom: i < prizeLog.length - 1 ? "1px solid rgba(212,165,72,0.12)" : "none",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 15, color: COLORS.cream }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: COLORS.creamDim, marginTop: 2 }}>
+                      {new Date(p.at_ms).toLocaleString([], {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </div>
+                  </div>
+                  <div className="mono" style={{ fontSize: 14, color: COLORS.gold }}>
+                    {p.cost.toLocaleString()} tokens
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
 
       <SectionTitle>Existing prizes</SectionTitle>
       <div
