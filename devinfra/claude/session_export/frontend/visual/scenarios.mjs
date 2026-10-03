@@ -44,7 +44,7 @@ const MARKDOWN_READY = [
   '[data-message-role="user"] .agentplane-markdown table',
   '[data-message-role="assistant"] .agentplane-markdown h2',
   '[data-message-role="assistant"] .agentplane-markdown a[href^="https://"]',
-  '[data-message-role="assistant"] .agentplane-markdown pre',
+  '[data-message-role="assistant"] .agentplane-markdown .agentplane-code-block .cm-editor',
 ];
 
 const NOISY_READY = ['#app[data-noisy-ready="true"]'];
