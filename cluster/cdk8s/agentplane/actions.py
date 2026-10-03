@@ -5,6 +5,7 @@ objects (staging's policy sets, testing's MCP fixtures) come from `Environment.e
 
 from __future__ import annotations
 
+import json
 from urllib.parse import urlsplit
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -30,8 +31,9 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.action_service.main import CONFIG_FILE_ENV, Settings
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import database, llm_ingress
+from cluster.cdk8s.agentplane import database, llm_ingress, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -197,6 +199,9 @@ class Actions(Construct):
     def _container_env(self) -> dict[str, EnvValue]:
         env = self._database_env()
         namespace = self.env.namespace
+        env[env_name(Settings, "reader_accounts")] = EnvValue.from_value(
+            json.dumps([ServiceAccountRef(namespace=namespace, name=notifications.NAME).model_dump()])
+        )
         if self.env.actions.web_push_secret_name is not None:
             env[env_name(Settings, "web_push", "private_key_pem")] = (
                 SecretRef(namespace=namespace, name=self.env.actions.web_push_secret_name)
@@ -345,6 +350,7 @@ class Actions(Construct):
             endpoint_selector=self.service.pods.selector,
             ingress=[
                 IngressRule.from_gateway(self.service.pod_port),
+                notifications.service(namespace).pods.admit(self.service.pod_port),
                 # egress.py and app.py import this module, so their Pods are named here.
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels(namespace, "agentplane-egress"), ports=[self.service.pod_port]

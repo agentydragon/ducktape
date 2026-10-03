@@ -40,11 +40,38 @@ def test_forgejo_password_has_one_reader_and_exact_source_access() -> None:
         "haku-mail-token",
         "buildbuddy-api-key",
         "plaid-pgweb-auth",
+        "public-coder-haku-console",
+        "public-coder-clickhouse",
+        "public-coder-matrix",
+        "brave-search",
     }
     assert secrets["haku-forgejo-git"]["spec"]["data"] == [
         {"secretKey": "password", "remoteRef": {"key": "haku-forgejo-git", "property": "password"}}
     ]
     assert not any(obj["kind"] == "Secret" for obj in objects)
+
+
+def test_openclaw_sources_are_exact_and_do_not_depend_on_iron_mirrors() -> None:
+    chart = Cdk8sTesting.chart()
+    add_staging_egress_credentials(chart, namespace="agentplane-staging", credentials_namespace=STAGING_NAMESPACE)
+    objects = Cdk8sTesting.synth(chart)
+    roles = {
+        obj["metadata"]["namespace"]: obj
+        for obj in objects
+        if obj["kind"] == "Role" and obj["metadata"]["name"].startswith("agentplane-public-coder-")
+    }
+    assert set(roles) == {"authentik", "clickhouse", "matrix"}
+    for namespace, secret in [
+        ("authentik", "haku-console-public-coder-agent"),
+        ("clickhouse", "clickhouse-public-coder-credentials"),
+        ("matrix", "public-coder-agent-matrix-bot-password"),
+    ]:
+        assert roles[namespace]["rules"] == [
+            {"apiGroups": [""], "resources": ["secrets"], "resourceNames": [secret], "verbs": ["get"]}
+        ]
+    assert not any(
+        obj["kind"] == "Role" and obj["metadata"].get("namespace") == "public-coder-agent" for obj in objects
+    )
 
 
 if __name__ == "__main__":

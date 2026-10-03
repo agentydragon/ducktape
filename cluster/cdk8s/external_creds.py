@@ -65,7 +65,13 @@ CREDENTIALS = (
     Credential(
         secret_file="brave-search-api-key.sops.yaml",
         secret_name="brave-search-api-key",
-        consumers=(ApprovedConsumer("public-coder-agent", "brave-search-api-key-public-coder-agent-reader"),),
+        consumers=(
+            ApprovedConsumer("public-coder-agent", "brave-search-api-key-public-coder-agent-reader"),
+            ApprovedConsumer(
+                "agentplane-staging-egress-credentials",
+                "brave-search-api-key-agentplane-staging-egress-credentials-reader",
+            ),
+        ),
     ),
     Credential(
         secret_file="coinbase-api-credentials.sops.yaml",

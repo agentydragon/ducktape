@@ -47,6 +47,8 @@ class EgressProps:
     # mounts the ConfigMap by the same name.
     ca_secret_name: str
     credentials_namespace: str
+    # Static relay clients outside the runner namespace; admission is not an egress grant.
+    external_workload_namespaces: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

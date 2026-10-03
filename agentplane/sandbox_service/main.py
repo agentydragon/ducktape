@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     agent_instructions: str | None = None
     agent_egress_api_url: str | None = None
     agent_actions_service_url: str | None = None
+    agent_notifications_service_url: str | None = None
     lifecycle_timeout_s: float = Field(default=300, gt=0)
     default_policies: list[str] = Field(default_factory=list)
     vm_templates: dict[str, VmTemplate] = Field(default_factory=dict)
@@ -80,6 +81,7 @@ async def serve(settings: Settings) -> None:
         settings.agent_instructions,
         egress_api_url=settings.agent_egress_api_url,
         actions_service_url=settings.agent_actions_service_url,
+        notifications_service_url=settings.agent_notifications_service_url,
     )
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:

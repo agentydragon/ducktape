@@ -24,7 +24,7 @@ from agentplane.action_service.models import (
     ExecutionResult,
     ExecutionState,
     OperatorPrincipal,
-    Principal,
+    ReadPrincipal,
     Verdict,
 )
 from agentplane.action_service.service import ActionService
@@ -44,7 +44,7 @@ class ObservedService(ActionService):
         super().__init__(store, catalog, {})
         self.reads: asyncio.Queue[ActionRequestView] = asyncio.Queue()
 
-    async def get(self, request_id: UUID, principal: Principal) -> ActionRequestView:
+    async def get(self, request_id: UUID, principal: ReadPrincipal) -> ActionRequestView:
         view = await super().get(request_id, principal)
         self.reads.put_nowait(view)
         return view

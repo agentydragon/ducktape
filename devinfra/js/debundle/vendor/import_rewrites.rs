@@ -48,7 +48,7 @@ impl VendorImportRewrites {
                     local_id,
                     IdentRewriteTarget::Member {
                         namespace: namespace.clone(),
-                        upstream_export,
+                        property_path: upstream_export.split('.').map(str::to_owned).collect(),
                         chunk_id: chunk,
                         chunk_export,
                     },
@@ -119,14 +119,14 @@ impl VendorImportRewrites {
                 package,
                 facade_app_path,
                 namespace,
-                upstream_export,
+                property_path,
             } => {
                 let source = facade_source(&facade_app_path);
                 self.body_rewrites.insert(
                     local_id,
                     IdentRewriteTarget::Member {
                         namespace: namespace.clone(),
-                        upstream_export,
+                        property_path,
                         chunk_id: chunk,
                         chunk_export,
                     },
@@ -209,10 +209,11 @@ impl DeferredImport {
 
 #[derive(Debug, Clone)]
 pub enum IdentRewriteTarget {
-    /// kind=member: rewrite `<local>` references to `<namespace>.<upstream_export>`.
+    /// Rewrite `<local>` references to property access rooted at `<namespace>`.
     Member {
         namespace: String,
-        upstream_export: String,
+        /// Member paths have one segment per dot; named exports have one literal segment.
+        property_path: Vec<String>,
         chunk_id: ChunkId,
         chunk_export: String,
     },
@@ -278,18 +279,20 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
         let (chunk_id, chunk_export) = match target {
             IdentRewriteTarget::Member {
                 namespace,
-                upstream_export,
+                property_path,
                 chunk_id,
                 chunk_export,
             } => {
-                *expr = Expr::Member(MemberExpr {
-                    span: DUMMY_SP,
-                    obj: Box::new(Expr::Ident(Ident::new_no_ctxt(
-                        namespace.clone().into(),
-                        DUMMY_SP,
-                    ))),
-                    prop: member_property(upstream_export),
-                });
+                *expr = property_path.iter().fold(
+                    Expr::Ident(Ident::new_no_ctxt(namespace.clone().into(), DUMMY_SP)),
+                    |obj, segment| {
+                        Expr::Member(MemberExpr {
+                            span: DUMMY_SP,
+                            obj: Box::new(obj),
+                            prop: member_property(segment),
+                        })
+                    },
+                );
                 (*chunk_id, chunk_export)
             }
             IdentRewriteTarget::Rename {
@@ -327,7 +330,7 @@ mod tests {
         let facade = || VendorImportAction::FacadeMember {
             package: "pkg".into(),
             namespace: "facade_ns".into(),
-            upstream_export: "value".into(),
+            property_path: vec!["value".into()],
             facade_app_path: "facades/pkg.js".into(),
         };
         let mut rewrites = VendorImportRewrites::default();

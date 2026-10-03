@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -55,6 +56,21 @@ def test_staging_exposes_only_the_shared_cimd_path(agentplane_manifests: dict[st
     paths = {match["path"]["value"] for rule in route["spec"]["rules"] for match in rule["matches"]}
     assert "/oauth/client-metadata.json" in paths
     assert not any(path.startswith("/oauth/client-metadata/") for path in paths)
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_cross_owner_reader_is_explicit_and_json_encoded(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    deployment = one(
+        doc
+        for doc in agentplane_manifests[namespace]
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "agentplane-actions"
+    )
+    container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
+    readers = one(item for item in container["env"] if item["name"] == "AGENTPLANE_ACTIONS_READER_ACCOUNTS")
+    assert json.loads(readers["value"]) == [{"namespace": namespace, "name": "agentplane-notifications"}]
+    assert not any(arg.startswith("--reader-accounts") for arg in container["args"])
 
 
 if __name__ == "__main__":

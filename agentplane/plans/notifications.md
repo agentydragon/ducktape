@@ -1,6 +1,7 @@
 # Standalone subscriptions and notifications service
 
-Status: **design decisions and implementation plan, not a shipped service.** This refines `ING`
+Status: **Actions-first implementation in source; not yet rolled out.** See the
+[service API, limits, authorization, and recovery contract](../notification_service/README.md). This refines `ING`
 (the Event & Notification Hub) in [the task DAG](task_dag.md#ing--event--notification-hub).
 The first implementation follows Actions; GitHub and automatic lifecycle integration come later.
 Endpoint/tool names below illustrate the intended operations, not an existing wire API.
@@ -91,10 +92,13 @@ matching runner. Finalize the qualification contract before implementing storage
 
 Record the authenticated creator separately from the owning account/session. Destination access does
 not grant source access: the Action provider also needs an authorized way to read the selected request.
-Current Action caller-own access is ServiceAccount-based, so do not assume that the subscriptions
-service's own workload identity can read another caller's requests. Choose a trusted delegation or
-source-access mechanism before wiring this integration; do not solve it with unrestricted operator
-reads. Recheck access as source authority or runner bindings are revoked or retired.
+V1 explicitly trusts the notification ServiceAccount with read-only access to all Actions through
+the existing request/list/events APIs. No delegated-owner parameters or separate service endpoint
+are needed. This is a read-only allowlist, not an operator identity or permission to submit, cancel,
+decide, or execute Actions. Ordinary caller-own access remains ServiceAccount-scoped. Notifications
+must verify the source request's owner against the authenticated subscriber before accepting a
+subscription and when polling; its broad read authority is not inherited by agents. Recheck runner
+bindings as they are revoked or retired. Finer-grained service read grants can follow later.
 
 Cross-account delivery is out of scope for v1 and needs an explicit policy. Product Thread ownership
 and an app Thread-to-session mapping are not prerequisites for notification ownership or routing.

@@ -171,6 +171,15 @@ subscribes before rechecking durable state and releases registrations on every e
 listener fails bounded waits explicitly until the listener is restarted; it never falls back to
 timed queries. The consumer owns listener startup/shutdown, separate from the dispatch coordinator.
 
+### Trusted read-only services
+
+`reader_accounts` (empty by default) allows named workload ServiceAccounts to read all Actions
+through the existing request list/detail/events REST endpoints. Ordinary callers remain owner-scoped.
+Service readers receive the request's `caller` for ownership checks; argument redaction remains in
+place. This identity is accepted only by those read handlers, not submission, cancellation, operator
+APIs, or MCP authentication. Notifications uses this permission and verifies source ownership before
+exposing Action events to a subscriber. No delegated-owner field or alternate service endpoint exists.
+
 ## Generic MCP frontend
 
 The same service process serves stateless Streamable HTTP at `/mcp`. The FastAPI lifespan starts

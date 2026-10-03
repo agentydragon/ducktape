@@ -13,7 +13,6 @@ from typing import Any, cast
 from cdk8s import ApiObject
 from cdk8s_plus_34 import Service
 
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from x.ssh_mcp_server.server import SshSettings
@@ -33,7 +32,8 @@ CONFIG_DIR = "/etc/ssh-mcp"
 
 DEVBOX_HOST_KEY = "ssh_keys/public-coder-devbox-host.pub"
 AGENT_DOWNSTREAM_KEY = "ssh_keys/public-coder-agent-devbox.pub"
-NEBULA_KNOWN_HOSTS = f"{HAND_WRITTEN_ROOT}/ssh-mcp/known_hosts"
+NEBULA_SUFFIX = ".nebula.allegedly.works"
+NEBULA_HOST_KEY = "ssh_keys/{name}-host-ed25519.pub"
 
 _WYRM2 = "wyrm2.nebula.allegedly.works"
 _RUGGED = "rugged.nebula.allegedly.works"
@@ -61,10 +61,15 @@ class SshMcpConfig:
     @property
     def nebula_hostnames(self) -> tuple[str, ...]:
         """Unique mesh hostnames in the SSH target roster, preserving target order."""
-        suffix = ".nebula.allegedly.works"
-        return tuple(
-            dict.fromkeys(target.host.removesuffix(suffix) for target in self.targets if target.host.endswith(suffix))
+        return _nebula_hostnames(self.targets)
+
+
+def _nebula_hostnames(targets: tuple[Target, ...]) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            target.host.removesuffix(NEBULA_SUFFIX) for target in targets if target.host.endswith(NEBULA_SUFFIX)
         )
+    )
 
 
 def _targets(devbox_host: str) -> tuple[Target, ...]:
@@ -88,6 +93,11 @@ def _read_input(relative: str) -> str:
     return get_required_path(own_repo_rlocation(relative)).read_text()
 
 
+def _host_key(relative: str) -> str:
+    key_type, key, *_comment = _read_input(relative).split()
+    return f"{key_type} {key}"
+
+
 def load(devbox_service: Service) -> SshMcpConfig:
     """Read canonical key inputs and derive the SSH endpoint from its cdk8s Service."""
     service = cast(dict[str, Any], ApiObject.of(devbox_service).to_json())
@@ -106,9 +116,9 @@ def load(devbox_service: Service) -> SshMcpConfig:
     }
     SshSettings.model_validate(settings)
     host_key = f"{key_type} {key}"
-    known_hosts = _read_input(NEBULA_KNOWN_HOSTS).rstrip()
-    if known_hosts:
-        known_hosts += "\n"
+    known_hosts = "".join(
+        f"{name}{NEBULA_SUFFIX} {_host_key(NEBULA_HOST_KEY.format(name=name))}\n" for name in _nebula_hostnames(targets)
+    )
     known_hosts += f"{devbox_host} {host_key}\n"
     agent_downstream_key = _read_input(AGENT_DOWNSTREAM_KEY)
     return SshMcpConfig(

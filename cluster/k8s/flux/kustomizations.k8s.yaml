@@ -3495,6 +3495,10 @@ spec:
       kind: Database
       name: egress
       namespace: agentplane-testing
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: notifications
+      namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-electric
@@ -3518,6 +3522,10 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-actions
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-notifications
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
@@ -3622,6 +3630,133 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, Actions, app, runner template, and operator RBAC.
+  name: agentplane-staging
+  namespace: ducktape-flux
+spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: agentplane-crds
+      namespace: ducktape-flux
+    - name: agent-sandbox-controller
+      namespace: ducktape-flux
+    - name: cert-manager-trust
+      namespace: ducktape-flux
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
+      kind: Database
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: agentplane-staging
+    - apiVersion: v1
+      kind: Namespace
+      name: agentplane-staging-egress-credentials
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: postgres
+      namespace: agentplane-staging
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: actions
+      namespace: agentplane-staging
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: egress
+      namespace: agentplane-staging
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: notifications
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-electric
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-llm-ingress
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-egress
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-sandbox-service
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-app
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-actions
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-notifications
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: agentplane-egress-root-ca
+      namespace: agentplane-staging
+    - apiVersion: trust.cert-manager.io/v1alpha1
+      kind: Bundle
+      name: agentplane-egress-ca
+    - apiVersion: trust.cert-manager.io/v1alpha1
+      kind: Bundle
+      name: agentplane-staging-egress-upstream-ca
+    - apiVersion: v1
+      kind: ConfigMap
+      name: agentplane-egress-ca
+      namespace: agentplane-staging
+    - apiVersion: v1
+      kind: ConfigMap
+      name: agentplane-staging-egress-upstream-ca
+      namespace: agentplane-staging
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: public-coder-haku-console
+      namespace: agentplane-staging-egress-credentials
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: public-coder-clickhouse
+      namespace: agentplane-staging-egress-credentials
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: public-coder-matrix
+      namespace: agentplane-staging-egress-credentials
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: brave-search
+      namespace: agentplane-staging-egress-credentials
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: agentplane-staging-session-secret
+      namespace: agentplane-staging
+  interval: 10m
+  path: ./cluster/k8s/agentplane-staging
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: agentplane-staging
+    namespace: ducktape-flux
+  timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: OpenClaw coder agent namespace, application, Iron proxy and SSH bastion; devbox and backups reconcile separately.
   name: public-coder-agent-app
   namespace: ducktape-flux
@@ -3639,6 +3774,8 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: sshpiper-crds
+      namespace: ducktape-flux
+    - name: agentplane-staging
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
@@ -3698,109 +3835,6 @@ spec:
     namespace: ducktape-flux
   timeout: 30m
   wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    description: Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, Actions, app, runner template, and operator RBAC.
-  name: agentplane-staging
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: agentplane-crds
-      namespace: ducktape-flux
-    - name: agent-sandbox-controller
-      namespace: ducktape-flux
-    - name: cert-manager-trust
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-  healthCheckExprs:
-    - apiVersion: postgresql.cnpg.io/v1
-      current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
-      kind: Database
-  healthChecks:
-    - apiVersion: v1
-      kind: Namespace
-      name: agentplane-staging
-    - apiVersion: v1
-      kind: Namespace
-      name: agentplane-staging-egress-credentials
-    - apiVersion: postgresql.cnpg.io/v1
-      kind: Cluster
-      name: postgres
-      namespace: agentplane-staging
-    - apiVersion: postgresql.cnpg.io/v1
-      kind: Database
-      name: actions
-      namespace: agentplane-staging
-    - apiVersion: postgresql.cnpg.io/v1
-      kind: Database
-      name: egress
-      namespace: agentplane-staging
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: agentplane-electric
-      namespace: agentplane-staging
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: agentplane-llm-ingress
-      namespace: agentplane-staging
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: agentplane-egress
-      namespace: agentplane-staging
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: agentplane-sandbox-service
-      namespace: agentplane-staging
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: agentplane-app
-      namespace: agentplane-staging
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: agentplane-actions
-      namespace: agentplane-staging
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: agentplane-egress-root-ca
-      namespace: agentplane-staging
-    - apiVersion: trust.cert-manager.io/v1alpha1
-      kind: Bundle
-      name: agentplane-egress-ca
-    - apiVersion: trust.cert-manager.io/v1alpha1
-      kind: Bundle
-      name: agentplane-staging-egress-upstream-ca
-    - apiVersion: v1
-      kind: ConfigMap
-      name: agentplane-egress-ca
-      namespace: agentplane-staging
-    - apiVersion: v1
-      kind: ConfigMap
-      name: agentplane-staging-egress-upstream-ca
-      namespace: agentplane-staging
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: agentplane-staging-session-secret
-      namespace: agentplane-staging
-  interval: 10m
-  path: ./cluster/k8s/agentplane-staging
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: agentplane-staging
-    namespace: ducktape-flux
-  timeout: 10m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

@@ -262,6 +262,16 @@
       "target": "//agentplane/sandbox_service:image",
       "test": "//agentplane/sandbox_service/...",
       "registry": "forgejo"
+    },
+    "agentplane-notification-service": {
+      "target": "//agentplane/notification_service:image",
+      "test": "//agentplane/notification_service/...",
+      "registry": "forgejo"
+    },
+    "agentplane-notification-service-migrate": {
+      "target": "//agentplane/notification_service:migration_image",
+      "test": "//agentplane/notification_service/...",
+      "registry": "forgejo"
     }
   }
 }

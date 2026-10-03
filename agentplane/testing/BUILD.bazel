@@ -7,6 +7,7 @@ package(
         "//agentplane/app:__pkg__",
         "//agentplane/egress:__pkg__",
         "//agentplane/llm_ingress:__pkg__",
+        "//agentplane/notification_service:__pkg__",
         "//agentplane/sandbox_service:__subpackages__",
     ],
 )

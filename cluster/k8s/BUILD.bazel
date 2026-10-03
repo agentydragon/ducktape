@@ -35,16 +35,6 @@ filegroup(
 )
 
 filegroup(
-    name = "ssh_mcp_known_hosts",
-    srcs = ["ssh-mcp/known_hosts"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-        "//cluster/validation:__pkg__",
-    ],
-)
-
-filegroup(
     name = "cluster_all_files",
     srcs = glob(
         ["**"],

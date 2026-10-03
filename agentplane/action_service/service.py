@@ -44,6 +44,7 @@ from agentplane.action_service.models import (
     ProviderOutcome,
     ProviderVerdict,
     ProviderVote,
+    ReadPrincipal,
     UnknownOutcomeReason,
 )
 from agentplane.action_service.policy_evaluation import auto_approvable, resolve_bindings
@@ -391,7 +392,7 @@ class ActionService:
         return subject_view(self._policies, subject, self._clock())
 
     async def list_requests(
-        self, principal: Principal, *, states: tuple[ActionState, ...] = (), idempotency_key: str | None = None
+        self, principal: ReadPrincipal, *, states: tuple[ActionState, ...] = (), idempotency_key: str | None = None
     ) -> list[ActionRequestView]:
         return await self._store.list_requests(principal, states=states, idempotency_key=idempotency_key)
 
@@ -400,14 +401,14 @@ class ActionService:
     ) -> tuple[list[ActionRequestView], str | None]:
         return await self._store.history(principal, limit=limit, cursor=cursor)
 
-    async def get(self, request_id: UUID, principal: Principal) -> ActionRequestView:
+    async def get(self, request_id: UUID, principal: ReadPrincipal) -> ActionRequestView:
         return await self._store.get(request_id, principal)
 
     async def cancel(self, request_id: UUID, principal: Principal) -> CancellationResult:
         return await self._store.cancel(request_id, principal)
 
     async def events(
-        self, request_id: UUID, principal: Principal, *, after_sequence: int = 0, limit: int | None = None
+        self, request_id: UUID, principal: ReadPrincipal, *, after_sequence: int = 0, limit: int | None = None
     ) -> list[ActionEventView]:
         return await self._store.events(request_id, principal, after_sequence=after_sequence, limit=limit)
 

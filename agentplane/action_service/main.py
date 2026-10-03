@@ -44,6 +44,7 @@ from agentplane.action_service.sandbox.inventory import SandboxClients
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
+from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from mcp_infra.exec.kubernetes import KubernetesWebSocketExecRunner
 from util.kubernetes import CustomObjectsClient
@@ -154,6 +155,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8080
     token_audience: str = "agentplane-egress"
+    reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     allowed_service_account_namespaces: frozenset[str] = Field(
         default=frozenset({"agentplane-staging"}),
         description="Kubernetes namespaces whose ServiceAccounts may authenticate sandbox callers and whose "
@@ -321,6 +323,7 @@ async def async_main(settings: Settings) -> None:
             operator_authenticator,
             catalog,
             callers=policy_index,
+            reader_accounts=settings.reader_accounts,
             connections=connections,
             updates=ActionUpdates(settings.database_url),
             enrollments=enrollments if oauth is not None else None,

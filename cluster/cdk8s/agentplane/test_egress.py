@@ -57,7 +57,11 @@ def test_public_internet_is_available_but_never_implicitly_granted(
     assert PUBLIC_INTERNET_POLICY not in config["data"]["config.yaml"]
     for doc in docs:
         if doc["kind"] == "EgressBinding":
-            assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policies"]
+            if namespace == "agentplane-staging" and doc["metadata"]["name"] == "public-coder-openclaw":
+                assert doc["spec"]["subjects"] == [{"namespace": "public-coder-agent", "name": "openclaw"}]
+                assert doc["spec"]["policies"] == ["public-coder-openclaw", PUBLIC_INTERNET_POLICY]
+            else:
+                assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policies"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
@@ -541,6 +545,50 @@ def test_shared_agentplane_operator_access_is_testing_only(
     assert dex_backend["toPorts"] == [
         {"ports": [{"port": "5556", "protocol": "TCP"}], "serverNames": ["agentplane-dex-testing.allegedly.works"]}
     ]
+
+
+def test_static_openclaw_has_only_its_existing_destination_credentials(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    docs = agentplane_manifests["agentplane-staging"]
+    policy = _by_name(docs, "EgressPolicy", "public-coder-openclaw")
+    rules = {r["credentialRef"]["name"]: r for r in policy["spec"]["rules"]}
+    assert set(rules) == {
+        "github-pat",
+        "public-coder-haku-console",
+        "public-coder-clickhouse",
+        "aiquota-read",
+        "brave-search",
+        "public-coder-matrix",
+        "agentplane-workload",
+    }
+    assert rules["public-coder-matrix"] == {
+        "hosts": ["matrix.allegedly.works"],
+        "methods": ["POST"],
+        "paths": ["/_matrix/client/v3/login"],
+        "credentialRef": {"name": "public-coder-matrix"},
+    }
+    assert rules["aiquota-read"]["methods"] == ["GET"]
+    assert rules["aiquota-read"]["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
+    assert rules["public-coder-haku-console"]["hosts"] == ["haku.allegedly.works", "haku-kubeapi.allegedly.works"]
+    assert rules["public-coder-clickhouse"]["clusterInternal"] is True
+    assert rules["agentplane-workload"]["paths"] == ["/v1/rules", "/openapi.json"]
+    assert _by_name(docs, "EgressCredential", "public-coder-matrix")["spec"]["targets"] == [
+        {"method": "jsonField", "field": "password"}
+    ]
+    testing_docs = agentplane_manifests["agentplane-testing"]
+    assert not any(d["metadata"]["name"] == "public-coder-openclaw" for d in testing_docs)
+    for namespace, manifests in agentplane_manifests.items():
+        bundle_name = (
+            staging.ENV.egress.ca_secret_name
+            if namespace == "agentplane-staging"
+            else testing.ENV.egress.ca_secret_name
+        )
+        bundle = _by_name(manifests, "Bundle", bundle_name)
+        expressions = bundle["spec"]["target"]["namespaceSelector"]["matchExpressions"]
+        assert one(expressions)["values"] == (
+            ["agentplane-staging", "public-coder-agent"] if namespace == "agentplane-staging" else [namespace]
+        )
 
 
 if __name__ == "__main__":

@@ -250,6 +250,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     wire.launch_overrides(request),
                     binding=endpoint.binding,
                     platform_instructions=self.resources.platform_instructions,
+                    sandbox_namespace=self.resources.destinations.inventory.namespace,
                 )
                 return await session_lifecycle.open_session(
                     client,

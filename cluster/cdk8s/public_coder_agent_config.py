@@ -21,11 +21,13 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s import (
     agent_access_profiles as access,
     external_creds,
     forgejo_images,
     namespaces,
+    public_coder_egress,
     public_coder_proxy,
     public_coder_sshpiper,
 )
@@ -66,8 +68,8 @@ _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
 _TPM_CODEX_MODEL = _CODEX_BY_ID["gpt-6-astra"]
 _CONFIG_MAP_NAME = "config"
 _NAME = "public-coder-agent"
-NAMESPACE = "public-coder-agent"
-LABELS = {"app.kubernetes.io/name": _NAME}
+NAMESPACE = public_coder_egress.NAMESPACE
+LABELS = public_coder_egress.LABELS
 # The gateway the Authentik outpost proxies to.
 _SERVICE = ServiceRef(
     name=_NAME, port=Port(name="gateway", number=18789), pods=Pods(namespace=NAMESPACE, labels=tuple(LABELS.items()))
@@ -86,7 +88,8 @@ _DIAGNOSTICS_CLAIM_NAME = "public-coder-agent-diagnostics"
 _GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password")
 # Also the Matrix channel's `proxy` in config(): the same proxy performs Matrix login-password
 # substitution.
-_EGRESS_PROXY = public_coder_proxy.PROXY.url
+_EGRESS_PROXY = public_coder_egress.PROXY_URL
+_NO_PROXY = "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
 _KUBECONFIG_CONFIG_MAP_NAME = "kubeconfig"
 # Rendered by the kustomization.yaml's configMapGenerator.
 _SSH_CONFIG_MAP_NAME = "public-coder-agent-ssh"
@@ -185,7 +188,7 @@ def config() -> dict:
         "channels": {
             "matrix": {
                 # MATRIX_PASSWORD is intentionally absent: OpenClaw reads the stable
-                # placeholder from the environment, while iron-proxy swaps the real
+                # placeholder from the environment, while Agentplane egress swaps the real
                 # password only in Matrix's login body. The resulting access token is
                 # cached in the state PVC.
                 "enabled": True,
@@ -253,7 +256,7 @@ def config() -> dict:
                     "config": {
                         "webSearch": {
                             # Brave is bundled and image-pinned; the pod sees only a
-                            # placeholder, which iron-proxy replaces at Brave's API endpoint.
+                            # placeholder, which Agentplane egress replaces at Brave's API endpoint.
                             "apiKey": {"source": "env", "id": "BRAVE_API_KEY"},
                             "mode": "web",
                         }
@@ -323,9 +326,9 @@ def kubeconfig_chart(app: App) -> Chart:
             {"name": "in-cluster", "context": {"cluster": "in-cluster", "namespace": NAMESPACE, "user": "haku-agent"}}
         ],
         "current-context": "in-cluster",
-        # iron-proxy substitutes the original Haku Agent bearer only for the dedicated Haku
+        # Agentplane egress substitutes the original Haku Agent bearer only for the dedicated Haku
         # Kubernetes proxy hostname. No Kubernetes credential enters this container.
-        "users": [{"name": "haku-agent", "user": {"token": public_coder_proxy.HAKU_CONSOLE_TOKEN_PLACEHOLDER}}],
+        "users": [{"name": "haku-agent", "user": {"token": placeholder_of(public_coder_egress.HAKU_CREDENTIAL)}}],
     }
     k8s.KubeConfigMap(
         chart,
@@ -417,25 +420,25 @@ def _openclaw_container() -> k8s.Container:
             # current local-Gateway path can restore ambient values for native GitHub tooling.
             # The proxy still sees only the placeholder and replaces it in scoped outbound
             # Authorization headers. See F7, F10, F16.
-            _env("GITHUB_TOKEN", public_coder_proxy.GITHUB_TOKEN_PLACEHOLDER),
-            _env("GH_PAT", public_coder_proxy.GITHUB_TOKEN_PLACEHOLDER),
+            _env("GITHUB_TOKEN", placeholder_of(public_coder_egress.GITHUB_CREDENTIAL)),
+            _env("GH_PAT", placeholder_of(public_coder_egress.GITHUB_CREDENTIAL)),
             # Non-secret Haku Console bearer placeholder. The real static-Agent credential exists
-            # only in Haku Console and this agent's iron-proxy, which replaces this value only in
+            # only in Haku Console and this agent's Agentplane egress, which replaces this value only in
             # Authorization headers sent to the exact haku.allegedly.works host.
-            _env("HAKU_CONSOLE_TOKEN", public_coder_proxy.HAKU_CONSOLE_TOKEN_PLACEHOLDER),
+            _env("HAKU_CONSOLE_TOKEN", placeholder_of(public_coder_egress.HAKU_CREDENTIAL)),
             # Native ClickHouse reader credentials for normalized and raw AIQuota history. This
-            # is deliberately a non-secret placeholder: the sibling Iron proxy swaps it only
+            # is deliberately a non-secret placeholder: the Agentplane egress gateway swaps it only
             # inside Authorization for the private ClickHouse ClusterIP host.
             _env("CLICKHOUSE_PUBLIC_CODER_USER", client.PUBLIC_CODER_USER),
-            _env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", public_coder_proxy.CLICKHOUSE_PASSWORD_PLACEHOLDER),
-            # This placeholder grants access only when iron-proxy substitutes it for
+            _env("CLICKHOUSE_PUBLIC_CODER_PASSWORD", placeholder_of(public_coder_egress.CLICKHOUSE_CREDENTIAL)),
+            # This placeholder grants access only when Agentplane egress substitutes it for
             # aiquota.allegedly.works' two read-only API paths. The actual shared bearer is
             # mounted only into the proxy container.
-            _env("AIQUOTA_API_BEARER_TOKEN", public_coder_proxy.AIQUOTA_BEARER_PLACEHOLDER),
+            _env("AIQUOTA_API_BEARER_TOKEN", placeholder_of(public_coder_egress.AIQUOTA_CREDENTIAL)),
             # This is likewise an inert placeholder. The real Brave Search API key is mounted only
             # in the egress proxy and substituted solely in X-Subscription-Token requests to
             # api.search.brave.com.
-            _env("BRAVE_API_KEY", public_coder_proxy.BRAVE_API_KEY_PLACEHOLDER),
+            _env("BRAVE_API_KEY", placeholder_of(public_coder_egress.BRAVE_CREDENTIAL)),
             SecretRef(namespace=NAMESPACE, name="litellm-key-public-coder-agent")
             .key("api-key")
             .env_var("OPENCLAW_LITELLM_API_KEY"),
@@ -444,18 +447,22 @@ def _openclaw_container() -> k8s.Container:
             # trusted-proxy local-password fallback instead of proxy identity headers.
             _GATEWAY_PASSWORD.key("password").env_var("OPENCLAW_GATEWAY_PASSWORD"),
             # OpenClaw's password login puts this value in the Matrix JSON body. It is a proxy
-            # placeholder: iron-proxy replaces it with the real controller-owned password only
+            # placeholder: Agentplane egress replaces it with the real controller-owned password only
             # on the Matrix login endpoint.
-            _env("MATRIX_PASSWORD", public_coder_proxy.MATRIX_PASSWORD_PLACEHOLDER),
+            _env("MATRIX_PASSWORD", placeholder_of(public_coder_egress.MATRIX_CREDENTIAL)),
             # Node does not honour proxy environment variables by default.
             _env("NODE_USE_ENV_PROXY", "1"),
             _env("HTTP_PROXY", _EGRESS_PROXY),
             _env("HTTPS_PROXY", _EGRESS_PROXY),
+            # curl deliberately ignores uppercase HTTP_PROXY for plain HTTP (e.g. ClickHouse).
+            _env("http_proxy", _EGRESS_PROXY),
+            _env("https_proxy", _EGRESS_PROXY),
             # LiteLLM is in-cluster and must not go through the proxy. Do not bypass every
             # Service DNS name or the cluster Service CIDR: ClickHouse is intentionally sent
-            # through Iron so its password placeholder cannot reach the ClusterIP service
+            # through Agentplane so its password placeholder cannot reach the ClusterIP service
             # unchanged.
-            _env("NO_PROXY", "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"),
+            _env("NO_PROXY", _NO_PROXY),
+            _env("no_proxy", _NO_PROXY),
             # The proxy terminates TLS, so its root must be trusted. The proxy's trust Bundle is
             # mounted over the system trust store below, which covers every OpenSSL and GnuTLS
             # client at once -- so no per-tool variables are needed.
@@ -501,7 +508,7 @@ def _openclaw_container() -> k8s.Container:
         ),
         volume_mounts=[
             k8s.VolumeMount(name="data", mount_path=f"{_HOME}/.openclaw"),
-            # Kubeconfig with a non-secret placeholder. iron-proxy substitutes the Agent's Haku
+            # Kubeconfig with a non-secret placeholder. Agentplane egress substitutes the Agent's Haku
             # bearer only for haku-kubeapi.allegedly.works; no Kubernetes credential is mounted.
             k8s.VolumeMount(name="kubeconfig", mount_path=f"{_HOME}/.kube", read_only=True),
             # Over the system trust store, not alongside it. The Bundle is built with
@@ -548,6 +555,12 @@ def _deployment(scope: Construct) -> None:
     The cost is losing the operator's autoUpdate and CRD ergonomics. Everything else (image,
     config, state layout) is identical to the operator's shape.
     """
+    k8s.KubeServiceAccount(
+        scope,
+        "openclaw-service-account",
+        metadata=k8s.ObjectMeta(name=public_coder_egress.SERVICE_ACCOUNT, namespace=NAMESPACE),
+        automount_service_account_token=False,
+    )
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -561,6 +574,7 @@ def _deployment(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    service_account_name=public_coder_egress.SERVICE_ACCOUNT,
                     automount_service_account_token=False,
                     security_context=k8s.PodSecurityContext(fs_group=1000),
                     # Keep Public Coder on the worker class that serves its local state PVC; do
@@ -594,8 +608,9 @@ def _deployment(scope: Construct) -> None:
                             ],
                         )
                     ],
-                    containers=[_openclaw_container()],
+                    containers=[_openclaw_container(), public_coder_egress.relay_container()],
                     volumes=[
+                        public_coder_egress.token_volume(),
                         k8s.Volume(
                             name="data",
                             persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_STATE_CLAIM_NAME),
@@ -605,7 +620,7 @@ def _deployment(scope: Construct) -> None:
                         ),
                         k8s.Volume(name="cfg", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP_NAME)),
                         k8s.Volume(
-                            name="trust", config_map=k8s.ConfigMapVolumeSource(name="public-coder-agent-proxy-ca-cert")
+                            name="trust", config_map=k8s.ConfigMapVolumeSource(name=public_coder_egress.CA_BUNDLE_NAME)
                         ),
                         # 0440 rather than 0400: fsGroup makes these root:1000, so owner-only would
                         # be unreadable by the container's own uid. OpenSSH's "unprotected private
@@ -737,12 +752,8 @@ def _network_policies(scope: Construct) -> None:
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="UDP"), _tcp(53)],
                 ),
                 k8s.NetworkPolicyEgressRule(
-                    to=[
-                        k8s.NetworkPolicyPeer(
-                            pod_selector=k8s.LabelSelector(match_labels=public_coder_proxy.PROXY.pods.selector)
-                        )
-                    ],
-                    ports=[_tcp(public_coder_proxy.PROXY.pod_port)],
+                    to=[_peer(public_coder_egress.GATEWAY.pods.namespace, public_coder_egress.GATEWAY.pods.selector)],
+                    ports=[_tcp(public_coder_egress.GATEWAY.pod_port)],
                 ),
                 # `ssh devbox`. Deliberately the piper and not the devbox itself: without a route
                 # to port 22 on the VM, terminating at the piper is the only way through, which is

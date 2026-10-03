@@ -87,10 +87,16 @@ async def kubernetes() -> AsyncIterator[Cluster]:
 
 @asynccontextmanager
 async def authenticated_service(
-    cluster: Cluster, runner_port: int, token_file: Path
+    cluster: Cluster,
+    runner_port: int,
+    token_file: Path,
+    *,
+    manager: ServiceAccountRef | None = None,
+    token: str = "test-app-service-token",
+    audience: str = "test-app-sandbox-service",
+    platform_instructions: str = "Backend guidance for app-launched sessions.",
 ) -> AsyncIterator[SandboxServiceClient]:
-    manager = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-app")
-    token, audience = "test-app-service-token", "test-app-sandbox-service"
+    manager = manager or ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-app")
     await asyncio.to_thread(token_file.write_text, token)
     cluster.fake.tokens[token] = TokenVerdict(
         username=f"system:serviceaccount:{manager.namespace}:{manager.name}",
@@ -107,7 +113,7 @@ async def authenticated_service(
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port),
         provisioning=cluster.provisioning,
         caller_accounts=frozenset({manager}),
-        platform_instructions="Backend guidance for app-launched sessions.",
+        platform_instructions=platform_instructions,
         follow_lease_s=1,
     )
     async with service_client(resources, token_file) as client:

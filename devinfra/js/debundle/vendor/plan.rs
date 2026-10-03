@@ -136,7 +136,10 @@ impl VendorResolutionPlan {
                 package: symbol.package.clone(),
                 facade_app_path: target.facade_app_path.clone(),
                 namespace: target.namespace.clone()?,
-                upstream_export: symbol.upstream_export.clone()?,
+                property_path: upstream_property_path(
+                    symbol.kind,
+                    symbol.upstream_export.as_deref()?,
+                ),
             },
             PartialSwapKind::Namespace | PartialSwapKind::Default => {
                 VendorImportAction::FacadeDefault {
@@ -234,11 +237,20 @@ pub enum VendorImportAction {
         package: String,
         facade_app_path: String,
         namespace: String,
-        upstream_export: String,
+        property_path: Vec<String>,
     },
     /// bundled `kind=namespace|default`:
     /// `import <local> from "<facade>"`.
     FacadeDefault { facade_app_path: String },
+}
+
+/// Resolve spec member paths before AST emission; named exports stay literal.
+pub(crate) fn upstream_property_path(kind: PartialSwapKind, name: &str) -> Vec<String> {
+    if kind == PartialSwapKind::Member {
+        name.split('.').map(str::to_owned).collect()
+    } else {
+        vec![name.to_owned()]
+    }
 }
 
 pub(crate) struct BoundaryRenamePlan {
@@ -848,8 +860,7 @@ fn plan_partial_swaps(
         )?;
 
         // Per-package validation: installed version + upstream subpath
-        // exists + every declared upstream_export is actually a named
-        // export of the upstream subpath.
+        // exists + every referenced root is exported by the upstream subpath.
         let resolve_options = ResolvePartialSwapPackageOptions {
             stage: "apply_partial_vendor_swaps",
             chunk_path,
@@ -887,17 +898,17 @@ fn plan_partial_swaps(
                 if symbol.package != *package_name {
                     continue;
                 }
-                // Only kind=member symbols cite an upstream named
-                // export; kind=namespace/default replace the whole
-                // import with a namespace/default reference, no
-                // member-name lookup needed.
+                // Member paths name an exported root followed by runtime
+                // properties. Named exports use the entire literal name.
                 let Some(upstream_export) = symbol.upstream_export.as_deref() else {
                     continue;
                 };
                 if upstream_has_export_star {
                     continue;
                 }
-                if !upstream_exports.contains(upstream_export) {
+                let property_path = upstream_property_path(symbol.kind, upstream_export);
+                let root_export = &property_path[0];
+                if !upstream_exports.contains(root_export) {
                     bail!(
                         "apply_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` targets {package_name}#{upstream_export} but upstream does not export it (known: [{}])",
                         upstream_exports

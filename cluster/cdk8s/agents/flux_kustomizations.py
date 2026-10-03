@@ -75,6 +75,7 @@ def public_coder_agent_app(
     cert_manager_trust: Kustomization,
     external_secrets_operator: Kustomization,
     sshpiper_crds: Kustomization,
+    agentplane_staging: Kustomization,
 ) -> Kustomization:
     name = "public-coder-agent-app"
     return flux_kustomization(
@@ -88,7 +89,7 @@ def public_coder_agent_app(
         # Admission prerequisites for Certificate, Bundle, ExternalSecret and Pipe resources.
         # Runtime credentials and services can reconcile after the namespace and workloads land.
         depends_on=flux_kustomization_depends_on_many(
-            cert_manager, cert_manager_trust, external_secrets_operator, sshpiper_crds
+            cert_manager, cert_manager_trust, external_secrets_operator, sshpiper_crds, agentplane_staging
         ),
         health_checks=[
             KustomizationSpecHealthChecks(

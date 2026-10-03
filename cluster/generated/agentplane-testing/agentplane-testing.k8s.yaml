@@ -131,6 +131,46 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
+  name: postgres-notifications-generator
+  namespace: agentplane-testing
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-notifications
+  namespace: agentplane-testing
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: postgres-notifications-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-notifications
+    template:
+      data:
+        dbname: notifications
+        host: postgres-rw.agentplane-testing.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://notifications:{{ .password }}@postgres-rw.agentplane-testing.svc:5432/notifications
+        username: notifications
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
   name: postgres-electric-generator
   namespace: agentplane-testing
 spec:
@@ -203,6 +243,11 @@ spec:
           name: postgres-egress
       - ensure: present
         login: true
+        name: notifications
+        passwordSecret:
+          name: postgres-notifications
+      - ensure: present
+        login: true
         name: electric
         passwordSecret:
           name: postgres-electric
@@ -243,6 +288,18 @@ spec:
   databaseReclaimPolicy: delete
   name: egress
   owner: egress
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: notifications
+  namespace: agentplane-testing
+spec:
+  cluster:
+    name: postgres
+  databaseReclaimPolicy: delete
+  name: notifications
+  owner: notifications
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1046,6 +1103,14 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: agentplane-notifications
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
             app.kubernetes.io/instance: forgejo
             app.kubernetes.io/name: forgejo
             k8s:io.kubernetes.pod.namespace: forgejo
@@ -1197,6 +1262,24 @@ spec:
       methods:
         - GET
         - POST
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+    - hosts:
+        - agentplane-notifications.agentplane-testing.svc.cluster.local
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+      paths:
+        - /openapi.json
+        - /v1/providers
+        - /v1/subscriptions
+        - /v1/subscriptions/**
+        - /v1/inboxes
+        - /v1/inboxes/**
       clusterInternal: true
       credentialRef:
         name: agentplane-workload
@@ -1557,8 +1640,11 @@ data:
     caller_accounts:
       - namespace: agentplane-testing
         name: agentplane-app
+      - namespace: agentplane-testing
+        name: agentplane-notifications
     agent_egress_api_url: http://agentplane-egress.agentplane-testing.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
+    agent_notifications_service_url: http://agentplane-notifications.agentplane-testing.svc.cluster.local:8080
     lifecycle_timeout_s: 300
     default_policies:
       - basic
@@ -1732,6 +1818,14 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-notifications
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:
@@ -2859,6 +2953,8 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
+            - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
+              value: '[{"namespace": "agentplane-testing", "name": "agentplane-notifications"}]'
             - name: AGENTPLANE_ACTIONS_CONFIG_FILE
               value: /etc/agentplane-actions/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-action-service:unset
@@ -2940,6 +3036,8 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
+            - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
+              value: '[{"namespace": "agentplane-testing", "name": "agentplane-notifications"}]'
           image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:unset
           imagePullPolicy: Always
           name: migrate
@@ -3118,6 +3216,14 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: agentplane-notifications
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
             app.kubernetes.io/name: agentplane-egress
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
@@ -3127,6 +3233,251 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-notifications
+  namespace: agentplane-testing
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-testing-notifications-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-testing-notifications-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-testing-notifications-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-notifications
+    namespace: agentplane-testing
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-notifications
+  name: agentplane-notifications
+  namespace: agentplane-testing
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-notifications-deployment-c8c45f99
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-notifications
+        cdk8s.io/metadata.addr: agentplane-notifications-deployment-c8c45f99
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: AGENTPLANE_NOTIFICATIONS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-notifications
+            - name: AGENTPLANE_NOTIFICATIONS_NAMESPACE
+              value: agentplane-testing
+            - name: AGENTPLANE_NOTIFICATIONS_ACTIONS_URL
+              value: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
+            - name: AGENTPLANE_NOTIFICATIONS_ACTIONS_TOKEN_FILE
+              value: /var/run/secrets/notifications/actions
+            - name: AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE_TARGET
+              value: agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
+            - name: AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE_TOKEN_FILE
+              value: /var/run/secrets/notifications/sandboxes
+          image: git.allegedly.works/ducktape-ci/agentplane-notification-service:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: notifications
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /var/run/secrets/notifications
+              name: service-tokens
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - env:
+            - name: AGENTPLANE_NOTIFICATIONS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-notifications
+          image: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate:unset
+          imagePullPolicy: Always
+          name: migrate
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-notifications
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: service-tokens
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 3600
+                  path: actions
+              - serviceAccountToken:
+                  audience: agentplane-sandbox-service
+                  expirationSeconds: 3600
+                  path: sandboxes
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-notifications
+  name: agentplane-notifications
+  namespace: agentplane-testing
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-notifications-deployment-c8c45f99
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-notifications
+  namespace: agentplane-testing
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-actions
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-sandbox-service
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: postgres
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-notifications
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:

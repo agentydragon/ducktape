@@ -10,7 +10,7 @@ from more_itertools import one
 
 from agentplane.sandbox_service.kubevirt import VmTemplate
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s.agentplane import app, sandbox_service, staging
+from cluster.cdk8s.agentplane import app, notifications, sandbox_service, staging
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -56,7 +56,10 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     assert backend_config["kubernetes_binding_cleanup_namespaces"] == sorted(
         backend_config["kubernetes_binding_cleanup_namespaces"]
     )
-    assert backend_config["caller_accounts"] == [{"namespace": namespace, "name": app.NAME}]
+    assert backend_config["caller_accounts"] == [
+        {"namespace": namespace, "name": app.NAME},
+        {"namespace": namespace, "name": notifications.NAME},
+    ]
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
     assert runner_policy["ingress"] == [
         {
@@ -143,6 +146,43 @@ def test_vm_catalog_requires_pinned_relay_image() -> None:
                 )
             },
         )
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_notifications_have_no_app_or_direct_runner_dependency(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    def resource(kind: str, name: str) -> dict[str, Any]:
+        return one(
+            doc for doc in agentplane_manifests[namespace] if doc["kind"] == kind and doc["metadata"]["name"] == name
+        )
+
+    pod = resource("Deployment", notifications.NAME)["spec"]["template"]["spec"]
+    assert pod["serviceAccountName"] == notifications.NAME
+    tokens = one(volume for volume in pod["volumes"] if volume["name"] == "service-tokens")
+    assert {source["serviceAccountToken"]["audience"] for source in tokens["projected"]["sources"]} == {
+        "agentplane-egress",
+        sandbox_service.TOKEN_AUDIENCE,
+    }
+    for container in pod["containers"] + pod["initContainers"]:
+        database = one(item for item in container["env"] if item["name"] == "AGENTPLANE_NOTIFICATIONS_DATABASE_URL")
+        assert database["valueFrom"]["secretKeyRef"] == {"name": "postgres-notifications", "key": "uri"}
+    role = resource("ClusterRole", f"{namespace}-notifications-token-reviewer")
+    assert role["rules"] == [
+        {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
+    ]
+    policy = resource("CiliumNetworkPolicy", notifications.NAME)["spec"]
+    assert not any(
+        port["port"] == "7000"
+        for rule in policy["egress"]
+        for ports in rule.get("toPorts", [])
+        for port in ports["ports"]
+    )
+    assert not any(
+        target["matchLabels"].get("k8s:app.kubernetes.io/name") == app.NAME
+        for rule in policy["egress"]
+        for target in rule.get("toEndpoints", [])
+    )
 
 
 if __name__ == "__main__":

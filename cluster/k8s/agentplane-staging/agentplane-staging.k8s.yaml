@@ -131,6 +131,46 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
+  name: postgres-notifications-generator
+  namespace: agentplane-staging
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-notifications
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: postgres-notifications-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-notifications
+    template:
+      data:
+        dbname: notifications
+        host: postgres-rw.agentplane-staging.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://notifications:{{ .password }}@postgres-rw.agentplane-staging.svc:5432/notifications
+        username: notifications
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
   name: postgres-electric-generator
   namespace: agentplane-staging
 spec:
@@ -203,6 +243,11 @@ spec:
           name: postgres-egress
       - ensure: present
         login: true
+        name: notifications
+        passwordSecret:
+          name: postgres-notifications
+      - ensure: present
+        login: true
         name: electric
         passwordSecret:
           name: postgres-electric
@@ -243,6 +288,18 @@ spec:
   databaseReclaimPolicy: delete
   name: egress
   owner: egress
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: notifications
+  namespace: agentplane-staging
+spec:
+  cluster:
+    name: postgres
+  databaseReclaimPolicy: delete
+  name: notifications
+  owner: notifications
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -774,6 +831,7 @@ spec:
           operator: In
           values:
             - agentplane-staging
+            - public-coder-agent
 ---
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
@@ -807,6 +865,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
+      - public-coder-agent
     projected_token_audiences:
       - https://localhost:7445
 immutable: false
@@ -1052,6 +1111,14 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: agentplane-notifications
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
             app.kubernetes.io/instance: forgejo
             app.kubernetes.io/name: forgejo
             k8s:io.kubernetes.pod.namespace: forgejo
@@ -1214,6 +1281,24 @@ spec:
       methods:
         - GET
         - POST
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+    - hosts:
+        - agentplane-notifications.agentplane-staging.svc.cluster.local
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+      paths:
+        - /openapi.json
+        - /v1/providers
+        - /v1/subscriptions
+        - /v1/subscriptions/**
+        - /v1/inboxes
+        - /v1/inboxes/**
       clusterInternal: true
       credentialRef:
         name: agentplane-workload
@@ -1679,8 +1764,11 @@ data:
     caller_accounts:
       - namespace: agentplane-staging
         name: agentplane-app
+      - namespace: agentplane-staging
+        name: agentplane-notifications
     agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
+    agent_notifications_service_url: http://agentplane-notifications.agentplane-staging.svc.cluster.local:8080
     lifecycle_timeout_s: 300
     default_policies:
       - basic
@@ -2313,6 +2401,14 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-notifications
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -4459,6 +4555,8 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
+            - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
+              value: '[{"namespace": "agentplane-staging", "name": "agentplane-notifications"}]'
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:
@@ -4570,6 +4668,8 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
+            - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
+              value: '[{"namespace": "agentplane-staging", "name": "agentplane-notifications"}]'
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:
@@ -4884,6 +4984,14 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: agentplane-notifications
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
             app.kubernetes.io/name: agentplane-egress
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -4909,6 +5017,265 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: agentplane-actions
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-notifications
+  namespace: agentplane-staging
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-notifications-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-notifications-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-notifications-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-notifications
+    namespace: agentplane-staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-notifications
+  name: agentplane-notifications
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-notifications-deployment-c8c45f99
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-notifications
+        cdk8s.io/metadata.addr: agentplane-notifications-deployment-c8c45f99
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: AGENTPLANE_NOTIFICATIONS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-notifications
+            - name: AGENTPLANE_NOTIFICATIONS_NAMESPACE
+              value: agentplane-staging
+            - name: AGENTPLANE_NOTIFICATIONS_ACTIONS_URL
+              value: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_NOTIFICATIONS_ACTIONS_TOKEN_FILE
+              value: /var/run/secrets/notifications/actions
+            - name: AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE_TARGET
+              value: agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE_TOKEN_FILE
+              value: /var/run/secrets/notifications/sandboxes
+          image: git.allegedly.works/ducktape-ci/agentplane-notification-service:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: notifications
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /var/run/secrets/notifications
+              name: service-tokens
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - env:
+            - name: AGENTPLANE_NOTIFICATIONS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-notifications
+          image: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate:unset
+          imagePullPolicy: Always
+          name: migrate
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-notifications
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: service-tokens
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 3600
+                  path: actions
+              - serviceAccountToken:
+                  audience: agentplane-sandbox-service
+                  expirationSeconds: 3600
+                  path: sandboxes
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-notifications
+  name: agentplane-notifications
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-notifications-deployment-c8c45f99
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-notifications
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-actions
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-sandbox-service
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: postgres
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-notifications
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agentplane-notifications
+  namespace: agentplane-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-notifications
 ---
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
@@ -7205,3 +7572,417 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-egress
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-public-coder-haku-console-reader
+  namespace: authentik
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-console-public-coder-agent
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-public-coder-haku-console-reader
+  namespace: authentik
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-public-coder-haku-console-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-public-coder-haku-console-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: authentik
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: public-coder-haku-console
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: haku-console-public-coder-agent
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-public-coder-haku-console-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: public-coder-haku-console
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: public-coder-haku-console
+  namespace: agentplane-staging
+spec:
+  description: Public coder's existing static-Agent Haku Console bearer, also used by its Kubernetes authorization proxy. No change of Haku identity or approval policy.
+  source:
+    secretRef:
+      name: public-coder-haku-console
+      key: token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-public-coder-clickhouse-reader
+  namespace: clickhouse
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - clickhouse-public-coder-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-public-coder-clickhouse-reader
+  namespace: clickhouse
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-public-coder-clickhouse-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-public-coder-clickhouse-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: clickhouse
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: public-coder-clickhouse
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: clickhouse-public-coder-credentials
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-public-coder-clickhouse-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: public-coder-clickhouse
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: public-coder-clickhouse
+  namespace: agentplane-staging
+spec:
+  description: The existing read-only ClickHouse public_coder_analytics password. Present as the Basic password with that username.
+  source:
+    secretRef:
+      name: public-coder-clickhouse
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-public-coder-matrix-reader
+  namespace: matrix
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - public-coder-agent-matrix-bot-password
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-public-coder-matrix-reader
+  namespace: matrix
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-public-coder-matrix-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-public-coder-matrix-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: matrix
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: public-coder-matrix
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: public-coder-agent-matrix-bot-password
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-public-coder-matrix-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: public-coder-matrix
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: public-coder-matrix
+  namespace: agentplane-staging
+spec:
+  description: The existing public-coder Matrix bot login password, only in the exact login password field. Login responses can contain session tokens; this does not hide those from the client.
+  source:
+    secretRef:
+      name: public-coder-matrix
+      key: password
+  targets:
+    - field: password
+      method: jsonField
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: brave-search
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: brave-search-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: brave-search
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: brave-search
+  namespace: agentplane-staging
+spec:
+  description: The shared Brave Search API key, substituted only at Brave's API in X-Subscription-Token.
+  source:
+    secretRef:
+      name: brave-search
+      key: api-key
+  targets:
+    - header: X-Subscription-Token
+      method: wholeValue
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: public-coder-openclaw
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - github.com
+        - api.github.com
+        - codeload.github.com
+      credentialRef:
+        name: github-pat
+    - hosts:
+        - haku.allegedly.works
+        - haku-kubeapi.allegedly.works
+      credentialRef:
+        name: public-coder-haku-console
+    - hosts:
+        - clickhouse.clickhouse.svc.cluster.local
+      clusterInternal: true
+      credentialRef:
+        name: public-coder-clickhouse
+    - hosts:
+        - aiquota.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /v1/quotas
+        - /v1/providers/*/raw
+      credentialRef:
+        name: aiquota-read
+    - hosts:
+        - api.search.brave.com
+      credentialRef:
+        name: brave-search
+    - hosts:
+        - matrix.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /_matrix/client/v3/login
+      credentialRef:
+        name: public-coder-matrix
+    - hosts:
+        - agentplane-egress.agentplane-staging.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /v1/rules
+        - /openapi.json
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressBinding
+metadata:
+  name: public-coder-openclaw
+  namespace: agentplane-staging
+spec:
+  subjects:
+    - namespace: public-coder-agent
+      name: openclaw
+  policies:
+    - public-coder-openclaw
+    - public-internet
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: public-coder-openclaw
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            clickhouse.altinity.com/app: chop
+            clickhouse.altinity.com/chi: clickhouse
+            clickhouse.altinity.com/namespace: clickhouse
+            clickhouse.altinity.com/ready: "yes"
+            k8s:io.kubernetes.pod.namespace: clickhouse
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: public-coder-agent
+            io.cilium.k8s.policy.serviceaccount: openclaw
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: public-coder-openclaw
+  namespace: clickhouse
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/instance: clickhouse
+      app.kubernetes.io/name: clickhouse
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP

@@ -1732,7 +1732,7 @@ struct PartialSwapKindFixtureArgs<'a> {
     caller_source: &'a str,
     upstream_source: &'a str,
     chunk_export: &'a str,
-    /// Required for `kind: named`. None for `namespace` / `default`.
+    /// Required for `kind: named` and `member`. None for `namespace` / `default`.
     upstream_export: Option<&'a str>,
 }
 
@@ -1750,7 +1750,11 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
         &format!("megachunk {:?} swap fixture", args.kind),
         &[(
             args.package_name,
-            partial_package(args.package_version, args.subpath, None),
+            partial_package(
+                args.package_version,
+                args.subpath,
+                (args.kind == PartialSwapKind::Member).then_some("Upstream"),
+            ),
         )],
         &[(
             args.chunk_export,
@@ -2639,7 +2643,7 @@ fn module_default_wrapper_aliases_reserved_string_and_colliding_names() {
 
 #[test]
 fn partial_swap_preserves_external_names_for_imports_and_reexports() {
-    for upstream_export in ["class", "x-y", "quote'and\"slash\\"] {
+    for upstream_export in ["class", "x-y", "path.value", "quote'and\"slash\\"] {
         let name = serde_json::to_string(upstream_export).unwrap();
         let upstream = format!("const value = 7; export {{ value as {name} }};");
         let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
@@ -2752,4 +2756,73 @@ fn partial_swap_preserves_residual_dependency_without_its_ast() {
     let app = ws.out_root.join("app");
     install_node_module(&app, "lib", "1.0.0", upstream);
     assert_node_output(&app.join("app/entry.js"), "upstream:helper\n", "");
+}
+
+#[test]
+fn partial_member_swap_preserves_dotted_upstream_paths() {
+    let upstream = "export const convert = { nested: { 'read-value': () => 7 } };";
+    let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
+        kind: PartialSwapKind::Member,
+        package_name: "lib",
+        package_version: "1.0.0",
+        subpath: "index.js",
+        chunk_source: "export const a = () => 7;",
+        caller_source: "import { a } from '../megachunk/entry.js'; console.log(a());",
+        upstream_source: upstream,
+        chunk_export: "a",
+        upstream_export: Some("convert.nested.read-value"),
+    });
+    assert_success(&fixture.result);
+    let app = emitted_app_root(&fixture);
+    install_node_module(&app, "lib", "1.0.0", upstream);
+    assert_node_output(&app.join("static/app/entry.js"), "7\n", "");
+}
+
+#[test]
+fn bundled_member_swap_preserves_dotted_upstream_paths() {
+    assert_bundled_dotted_export(PartialSwapKind::Member, "7\n");
+}
+
+#[test]
+fn bundled_named_swap_preserves_literal_dotted_exports() {
+    assert_bundled_dotted_export(PartialSwapKind::Named, "11\n");
+}
+
+fn assert_bundled_dotted_export(kind: PartialSwapKind, expected: &str) {
+    let (ws, bundle_path) = setup_bundled_partial_swap(
+        "vendor-dotted-member-",
+        "lib.js",
+        "export const Lib = { convert: { nested: { 'read-value': () => 7 } }, 'convert.nested.read-value': () => 11 };",
+        &[
+            ("static/megachunk.js", "export const a = () => 7;"),
+            (
+                "static/app.js",
+                "import { a } from '../megachunk/entry.js'; console.log(a());",
+            ),
+        ],
+    );
+    let package = ws.write_upstream_package(
+        "upstream/lib",
+        "lib",
+        "1.0.0",
+        "index.js",
+        "export const convert = { nested: { 'read-value': () => 7 } }; const literal = () => 11; export { literal as 'convert.nested.read-value' };",
+    );
+    let vendor = bundled_vendor(
+        "dotted member path",
+        &bundle_path,
+        &[(
+            "lib",
+            bundled_package("1.0.0", "index.js", "Lib", Some("Upstream")),
+        )],
+        &[(
+            "a",
+            swap_symbol("lib", kind, Some("convert.nested.read-value"), None),
+        )],
+    );
+    let spec = build_bundled_partial_swap_spec(&ws, json!({"static/megachunk.js": vendor}), None);
+    let path = ws.root.path().join("spec.yaml");
+    write_yaml_file(&path, &spec);
+    assert_success(&run_debundler(&path, &[("lib", &package)]));
+    assert_node_output(&ws.out_root.join("app/static/app/entry.js"), expected, "");
 }

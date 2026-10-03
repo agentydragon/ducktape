@@ -172,6 +172,7 @@ py_library(
     data = ["agent_instructions.j2"],  # keep: backend-owned operational prompt template
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/notification_service:instructions",
         "//util/bazel:runfiles",
         "@pypi//jinja2",
     ],

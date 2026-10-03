@@ -30,7 +30,7 @@ POSTGRES_PORT = 5432
 
 # The two logical databases each service owns on the shared Cluster; the initdb-owned
 # "app"/trajectory database needs no Database/role of its own.
-_ROLE_NAMES = ["actions", "egress"]
+_ROLE_NAMES = ["actions", "egress", "notifications"]
 _ELECTRIC_ROLE = "electric"
 
 

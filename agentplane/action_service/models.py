@@ -36,9 +36,19 @@ class OperatorPrincipal(BaseModel):
     subject: str = Field(min_length=1)
 
 
-# The two identities this service serves. Which one a principal is *is* its role, so nothing carries
-# a role flag beside a subject that may or may not fit it; readers dispatch with `isinstance`.
+# Identities that can author Actions and their audit events. A service reader is deliberately
+# excluded: read authority must not become mutation authority or an invented operator identity.
 type Principal = CallerPrincipal | OperatorPrincipal
+
+
+@dataclass(frozen=True)
+class ServiceReaderPrincipal:
+    """An allowlisted workload with cross-owner read access, never mutation authority."""
+
+    account: ServiceAccountRef
+
+
+type ReadPrincipal = Principal | ServiceReaderPrincipal
 
 
 def operator_or_none(issuer: str | None, subject: str | None) -> OperatorPrincipal | None:
@@ -279,7 +289,9 @@ class ActionRequestView(BaseModel):
     description: str | None = Field(
         description="The caller-authored added detail, projected unchanged; absent when the caller supplied none."
     )
-    caller: ServiceAccountRef | None = Field(description="Who submitted it; operator-only.")
+    caller: ServiceAccountRef | None = Field(
+        description="Who submitted it; available to operators and trusted service readers."
+    )
     external_grant: ExternalGrantProvenance | None = None
     state: ActionState
     version: int

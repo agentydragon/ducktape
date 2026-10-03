@@ -1,0 +1,19 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+filegroup(
+    name = "files",
+    srcs = [
+        "env.py",
+        "//agentplane/notification_service/migrations/versions:0001_notifications.py",
+    ],
+    visibility = ["//agentplane/notification_service:__pkg__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    deps = [
+        "//agentplane/notification_service:db",
+        "@pypi//alembic",
+    ],
+)

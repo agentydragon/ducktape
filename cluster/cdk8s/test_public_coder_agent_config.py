@@ -13,6 +13,7 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
+import yaml
 from cdk8s import (
     App,
     Chart,
@@ -26,6 +27,8 @@ from cluster.cdk8s import (
     aiquota,
     ducktape_flux,
     public_coder_agent_config,
+    public_coder_devbox,
+    public_coder_egress,
     public_coder_proxy,
 )
 from cluster.cdk8s.clickhouse import client, installation
@@ -72,14 +75,7 @@ def app_objects() -> list[dict[str, Any]]:
 
 @pytest.fixture(scope="module")
 def proxy_objects() -> list[dict[str, Any]]:
-    return _synth(
-        lambda app: public_coder_proxy.chart(
-            app,
-            app_namespace=public_coder_agent_config.NAMESPACE,
-            app_labels=public_coder_agent_config.LABELS,
-            aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key,
-        )
-    )
+    return _synth(lambda app: public_coder_proxy.chart(app, aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key))
 
 
 @pytest.fixture(scope="module")
@@ -187,7 +183,9 @@ def test_app_egress_reaches_the_internet_only_through_the_proxy(app_objects: lis
 
 def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
     """ClickHouse stays out of NO_PROXY: only the proxy replaces the app's password placeholder."""
-    container = one(_one(app_objects, "Deployment")["spec"]["template"]["spec"]["containers"])
+    container = one(
+        c for c in _one(app_objects, "Deployment")["spec"]["template"]["spec"]["containers"] if c["name"] == "openclaw"
+    )
     no_proxy = one(entry["value"] for entry in container["env"] if entry["name"] == "NO_PROXY").split(",")
     assert not {client.HTTP.fqdn, client.HTTP.host} & set(no_proxy)
 
@@ -212,6 +210,88 @@ def test_public_coder_never_exceeds_haku(
     assert public_coder_role_refs
     for role_ref in public_coder_role_refs:
         assert subjects_by_role_ref[role_ref] >= _HAKU_SUBJECTS, role_ref
+
+
+def test_openclaw_uses_relay_without_receiving_its_token(app_objects: list[dict[str, Any]]) -> None:
+    pod = _one(app_objects, "Deployment")["spec"]["template"]["spec"]
+    assert pod["serviceAccountName"] == "openclaw"
+    assert pod["automountServiceAccountToken"] is False
+    account = _one(app_objects, "ServiceAccount", "openclaw")
+    assert account["automountServiceAccountToken"] is False
+    relay = one(c for c in pod["containers"] if c["name"] == "egress-sidecar")
+    assert relay["volumeMounts"] == [
+        {"name": "agentplane-egress-token", "mountPath": "/var/run/agentplane-egress", "readOnly": True}
+    ]
+    assert {e["name"] for e in relay["env"]} == {
+        "AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST",
+        "AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT",
+        "AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE",
+    }
+    for container in pod["initContainers"] + [c for c in pod["containers"] if c != relay]:
+        assert "agentplane-egress-token" not in {v["name"] for v in container["volumeMounts"]}
+    token = one(v for v in pod["volumes"] if v["name"] == "agentplane-egress-token")
+    assert token["projected"] == {
+        "defaultMode": 0o440,
+        "sources": [
+            {"serviceAccountToken": {"audience": "agentplane-egress", "expirationSeconds": 600, "path": "token"}}
+        ],
+    }
+    assert {
+        v["name"]: v["persistentVolumeClaim"]["claimName"] for v in pod["volumes"] if "persistentVolumeClaim" in v
+    } == {"data": "public-coder-agent-state-v2", "diagnostics": "public-coder-agent-diagnostics"}
+    trust = one(v for v in pod["volumes"] if v["name"] == "trust")
+    assert trust["configMap"]["name"] == "agentplane-egress-ca"
+    container = one(c for c in pod["containers"] if c["name"] == "openclaw")
+    env = {e["name"]: e.get("value") for e in container["env"]}
+    assert (
+        env.items()
+        >= {
+            "GH_PAT": "agentplane-credential-github-pat",
+            "GITHUB_TOKEN": "agentplane-credential-github-pat",
+            "HAKU_CONSOLE_TOKEN": "agentplane-credential-public-coder-haku-console",
+            "CLICKHOUSE_PUBLIC_CODER_PASSWORD": "agentplane-credential-public-coder-clickhouse",
+            "AIQUOTA_API_BEARER_TOKEN": "agentplane-credential-aiquota-read",
+            "BRAVE_API_KEY": "agentplane-credential-brave-search",
+            "MATRIX_PASSWORD": "agentplane-credential-public-coder-matrix",
+            "HTTP_PROXY": "http://127.0.0.1:3128",
+            "HTTPS_PROXY": "http://127.0.0.1:3128",
+            "http_proxy": "http://127.0.0.1:3128",
+            "https_proxy": "http://127.0.0.1:3128",
+        }.items()
+    )
+    assert public_coder_agent_config.config()["channels"]["matrix"]["proxy"] == env["HTTPS_PROXY"]
+    assert env["no_proxy"] == env["NO_PROXY"]
+
+
+def test_openclaw_cannot_dial_iron_or_clickhouse_directly(app_objects: list[dict[str, Any]]) -> None:
+    rules = _one(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
+    assert {p["port"] for r in rules for p in r["ports"]} == {53, 8888, 2222, 4000}
+    gateway = one(r for r in rules if r["ports"] == [{"port": 8888, "protocol": "TCP"}])
+    assert gateway["to"] == [
+        {
+            "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "agentplane-staging"}},
+            "podSelector": {"matchLabels": public_coder_egress.GATEWAY.pods.selector},
+        }
+    ]
+
+
+def test_iron_only_admits_the_vm(proxy_objects: list[dict[str, Any]]) -> None:
+    ingress = _one(proxy_objects, "CiliumNetworkPolicy", "allow-public-coder-agent-proxy-ingress")["spec"]["ingress"]
+    source = one(one(ingress)["fromEndpoints"])["matchLabels"]
+    assert source == {
+        "k8s:io.kubernetes.pod.namespace": "public-coder-agent",
+        **{f"k8s:{key}": value for key, value in public_coder_devbox.SSH.pods.selector.items()},
+    }
+
+
+def test_kubeconfig_retains_haku_identity_over_the_relay() -> None:
+    config_map = _one(_synth(public_coder_agent_config.kubeconfig_chart), "ConfigMap", "kubeconfig")
+    config = yaml.safe_load(config_map["data"]["config"])
+    cluster = one(config["clusters"])["cluster"]
+    assert cluster["server"] == "https://haku-kubeapi.allegedly.works"
+    assert cluster["proxy-url"] == "http://127.0.0.1:3128"
+    assert cluster["certificate-authority"] == "/etc/ssl/certs/ca-certificates.crt"
+    assert one(config["users"])["user"] == {"token": "agentplane-credential-public-coder-haku-console"}
 
 
 if __name__ == "__main__":

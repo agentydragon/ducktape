@@ -52,7 +52,9 @@ from agentplane.action_service.models import (
     Principal,
     ProviderVerdict,
     ProviderVote,
+    ReadPrincipal,
     ReconciliationSource,
+    ServiceReaderPrincipal,
     UnknownOutcomeReason,
     Verdict,
     operator_or_none,
@@ -499,7 +501,7 @@ class ActionStore:
             return await self._view(session, row, principal)
 
     async def list_requests(
-        self, principal: Principal, *, states: Sequence[ActionState] = (), idempotency_key: str | None = None
+        self, principal: ReadPrincipal, *, states: Sequence[ActionState] = (), idempotency_key: str | None = None
     ) -> list[ActionRequestView]:
         query = select(ActionRequestRow).order_by(ActionRequestRow.created_at.desc())
         if isinstance(principal, CallerPrincipal):
@@ -542,7 +544,7 @@ class ActionStore:
             )
             return [await self._view(session, row, principal) for row in page], next_cursor
 
-    async def get(self, request_id: UUID, principal: Principal) -> ActionRequestView:
+    async def get(self, request_id: UUID, principal: ReadPrincipal) -> ActionRequestView:
         async with self._sessions() as session:
             row = await session.get(ActionRequestRow, request_id)
             if row is None or not _may_read(row, principal):
@@ -550,7 +552,7 @@ class ActionStore:
             return await self._view(session, row, principal)
 
     async def events(
-        self, request_id: UUID, principal: Principal, *, after_sequence: int = 0, limit: int | None = None
+        self, request_id: UUID, principal: ReadPrincipal, *, after_sequence: int = 0, limit: int | None = None
     ) -> list[ActionEventView]:
         """`after_sequence` is the last sequence the caller already has; polling it back is a no-op."""
         async with self._sessions() as session:
@@ -885,7 +887,7 @@ class ActionStore:
     async def _grant_authorized(self, session: AsyncSession, grant: ExternalGrantProvenance) -> bool:
         return self._external_grants is not None and await self._external_grants.authorize_action(session, grant)
 
-    async def _view(self, session: AsyncSession, row: ActionRequestRow, principal: Principal) -> ActionRequestView:
+    async def _view(self, session: AsyncSession, row: ActionRequestRow, principal: ReadPrincipal) -> ActionRequestView:
         decision = await session.scalar(select(DecisionRow).where(DecisionRow.request_id == row.id))
         execution = await session.scalar(select(ExecutionRow).where(ExecutionRow.request_id == row.id))
         operator = isinstance(principal, OperatorPrincipal)
@@ -896,7 +898,9 @@ class ActionStore:
             arguments=row.arguments if operator else _redact(row.arguments),
             title=row.title,
             description=row.description,
-            caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name) if operator else None,
+            caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name)
+            if isinstance(principal, (OperatorPrincipal, ServiceReaderPrincipal))
+            else None,
             external_grant=ExternalGrantProvenance.model_validate(row.external_grant)
             if row.external_grant is not None
             else None,
@@ -909,15 +913,15 @@ class ActionStore:
         )
 
 
-def _is_caller(row: ActionRequestRow, principal: Principal) -> bool:
+def _is_caller(row: ActionRequestRow, principal: ReadPrincipal) -> bool:
     return isinstance(principal, CallerPrincipal) and (row.caller_namespace, row.caller_name) == (
         principal.account.namespace,
         principal.account.name,
     )
 
 
-def _may_read(row: ActionRequestRow, principal: Principal) -> bool:
-    return isinstance(principal, OperatorPrincipal) or _is_caller(row, principal)
+def _may_read(row: ActionRequestRow, principal: ReadPrincipal) -> bool:
+    return isinstance(principal, (OperatorPrincipal, ServiceReaderPrincipal)) or _is_caller(row, principal)
 
 
 def _record_event(

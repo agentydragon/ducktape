@@ -371,10 +371,10 @@ def _service(scope: Construct) -> None:
     )
 
 
-def _ingress_policy(scope: Construct, app_namespace: str, app_labels: dict[str, str]) -> None:
+def _ingress_policy(scope: Construct) -> None:
     """The proxy confers every credential it mediates to callers that present the corresponding
-    non-secret placeholder. Keep that capability reachable only from the two intended clients:
-    the OpenClaw Agent pod and its KubeVirt devbox. In particular, namespace co-tenancy is not
+    non-secret placeholder. Keep that capability reachable only from the KubeVirt devbox.
+    OpenClaw has migrated to Agentplane egress. In particular, namespace co-tenancy is not
     authority to use this Service, and the metrics port remains closed until a reviewed scraper
     needs it."""
     NetworkPolicy(
@@ -384,7 +384,6 @@ def _ingress_policy(scope: Construct, app_namespace: str, app_labels: dict[str, 
         endpoint_selector=PROXY.pods.selector,
         ingress=[
             IngressRule.from_endpoints(
-                _endpoint(app_namespace, app_labels),
                 _endpoint(public_coder_devbox.SSH.pods.namespace, public_coder_devbox.SSH.pods.selector),
                 ports=[PROXY.pod_port],
             )
@@ -439,23 +438,17 @@ def _egress_policy(scope: Construct) -> None:
     )
 
 
-def chart(app: App, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: SecretKey) -> Chart:
-    """`app_namespace` and `app_labels` are the OpenClaw Agent pod's: public_coder_agent_config
-    exports them, and imports this module for the proxy's address. `aiquota_bearer` is the
-    mirror aiquota writes into this namespace."""
+def chart(app: App, *, aiquota_bearer: SecretKey) -> Chart:
+    """Iron remains the devbox proxy; OpenClaw uses Agentplane egress."""
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _external_secrets(chart)
     _ca(chart)
     _deployment(chart, _config_map(chart), aiquota_bearer)
     _service(chart)
-    _ingress_policy(chart, app_namespace, app_labels)
+    _ingress_policy(chart)
     _egress_policy(chart)
     return chart
 
 
-def write_manifests(root: Path, *, app_namespace: str, app_labels: dict[str, str], aiquota_bearer: SecretKey) -> None:
-    write_charts(
-        root,
-        OUTPUT_DIR,
-        lambda app: chart(app, app_namespace=app_namespace, app_labels=app_labels, aiquota_bearer=aiquota_bearer),
-    )
+def write_manifests(root: Path, *, aiquota_bearer: SecretKey) -> None:
+    write_charts(root, OUTPUT_DIR, lambda app: chart(app, aiquota_bearer=aiquota_bearer))

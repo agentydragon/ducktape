@@ -72,6 +72,7 @@ from agentplane.action_service.models import (
     CancellationResult,
     DecisionInput,
     OperatorPrincipal,
+    ServiceReaderPrincipal,
 )
 from agentplane.action_service.oauth import ActionsOAuthProxy
 from agentplane.action_service.policy_informer import PolicyIndex
@@ -134,6 +135,10 @@ def _callers(request: Request) -> PolicyIndex:
     return cast(PolicyIndex, request.app.state.callers)
 
 
+def _reader_accounts(request: Request) -> frozenset[ServiceAccountRef]:
+    return cast(frozenset[ServiceAccountRef], request.app.state.reader_accounts)
+
+
 async def _try_workload(
     request: Request, authenticator: WorkloadPrincipalAuthenticator, callers: PolicyIndex
 ) -> CallerPrincipal | None:
@@ -158,6 +163,23 @@ async def _workload(
     if caller is None:
         # Deliberately the authenticator's own generic refusal: which account was presented is not
         # the caller's to learn from the difference.
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"}
+        )
+    return caller
+
+
+async def _reader(
+    request: Request,
+    authenticator: Annotated[WorkloadPrincipalAuthenticator, Depends(_workload_authenticator)],
+    callers: Annotated[PolicyIndex, Depends(_callers)],
+    reader_accounts: Annotated[frozenset[ServiceAccountRef], Depends(_reader_accounts)],
+) -> CallerPrincipal | ServiceReaderPrincipal:
+    workload = await authenticator(request)
+    if workload.account in reader_accounts:
+        return ServiceReaderPrincipal(account=workload.account)
+    caller = callers.admit(workload.account)
+    if caller is None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"}
         )
@@ -219,6 +241,7 @@ def create_app(
     mcp_linkage: McpLinkageAuthority | None = None,
     direct_wait_seconds: float,
     max_wait_seconds: float,
+    reader_accounts: frozenset[ServiceAccountRef] = frozenset(),
 ) -> FastAPI:
     verifier = CallerTokenVerifier(workload_resolver, callers=callers, oauth=oauth)
     mcp_app = create_server(
@@ -239,6 +262,7 @@ def create_app(
 
     app = FastAPI(title="Agentplane Action Service", version="v1", lifespan=lifespan)
     app.state.action_service = service
+    app.state.reader_accounts = reader_accounts
     app.state.workload_authenticator = WorkloadPrincipalAuthenticator(workload_resolver)
     app.state.callers = callers
     app.state.operator_authenticator = operator_authenticator
@@ -336,7 +360,7 @@ def create_app(
 
     @app.get("/v1/action-requests", response_model=list[ActionRequestView])
     async def list_own_requests(
-        principal: Annotated[CallerPrincipal, Depends(_workload)],
+        principal: Annotated[CallerPrincipal | ServiceReaderPrincipal, Depends(_reader)],
         action_service: Annotated[ActionService, Depends(_service)],
         state_filter: Annotated[list[ActionState] | None, Query(alias="state")] = None,
         idempotency_key: Annotated[str | None, Query(description=IDEMPOTENCY_KEY_FILTER)] = None,
@@ -348,7 +372,7 @@ def create_app(
     @app.get("/v1/action-requests/{request_id}", response_model=ActionRequestView)
     async def get_own_request(
         request_id: UUID,
-        principal: Annotated[CallerPrincipal, Depends(_workload)],
+        principal: Annotated[CallerPrincipal | ServiceReaderPrincipal, Depends(_reader)],
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> ActionRequestView:
         return await action_service.get(request_id, principal)
@@ -364,11 +388,12 @@ def create_app(
     @app.get("/v1/action-requests/{request_id}/events", response_model=list[ActionEventView])
     async def own_events(
         request_id: UUID,
-        principal: Annotated[CallerPrincipal, Depends(_workload)],
+        principal: Annotated[CallerPrincipal | ServiceReaderPrincipal, Depends(_reader)],
         action_service: Annotated[ActionService, Depends(_service)],
-        after_sequence: Annotated[int, Query(ge=0)] = 0,
+        after_sequence: Annotated[int, Query(ge=0, le=2**31 - 1)] = 0,
+        limit: Annotated[int | None, Query(ge=1, le=128)] = None,
     ) -> list[ActionEventView]:
-        return await action_service.events(request_id, principal, after_sequence=after_sequence)
+        return await action_service.events(request_id, principal, after_sequence=after_sequence, limit=limit)
 
     # Catalog discovery: the reviewed, config-driven ActionGroup/Action universe. Read-only, and the
     # same for every caller, so it carries no owner-scoping unlike the ActionRequest surface above.
