@@ -36,7 +36,7 @@ pub use manifests::*;
 pub use output_imports::{
     MaterializedOutputChunkIndex, bundled_facade_import_source, resolve_partial_swap_import_target,
 };
-use plan::ChunkBundledPartialSwapPlan;
+use plan::{ChunkBundledPartialSwapPlan, upstream_property_path};
 pub use plan::{
     VendorImportAction, VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan,
 };
@@ -195,7 +195,7 @@ fn seed_bundled_partial_swap_self_rewrites(
                     local_id.clone(),
                     IdentRewriteTarget::Member {
                         namespace: local.clone(),
-                        upstream_export: upstream_export.to_string(),
+                        property_path: upstream_property_path(target.kind, upstream_export),
                         chunk_id: caller_chunk_id,
                         chunk_export: chunk_export.clone(),
                     },
@@ -580,7 +580,7 @@ export { b as beta };
                 sa_id,
                 IdentRewriteTarget::Member {
                     namespace: "__debundle_bps_l3".to_string(),
-                    upstream_export: "DiagLogLevel".to_string(),
+                    property_path: vec!["DiagLogLevel".to_string()],
                     chunk_id: ChunkId(0),
                     chunk_export: "l3".to_string(),
                 },

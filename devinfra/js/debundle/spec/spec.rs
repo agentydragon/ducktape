@@ -650,7 +650,9 @@ pub enum PartialSwapKind {
     /// Per-symbol member-access rewrite (zod-style). Emits one
     /// `import * as <namespace> from "<package>"` per file that uses
     /// the package and rewrites each `<local_binding>(...)` reference
-    /// to `<namespace>.<upstream_export>(...)`.
+    /// to `<namespace>.<upstream_export>(...)`. Dots in `upstream_export`
+    /// separate nested properties; each segment is emitted as a safe
+    /// property access. In contrast, `kind: named` uses a literal export name.
     #[default]
     Member,
     /// Whole-namespace import. The chunk's export is itself the
