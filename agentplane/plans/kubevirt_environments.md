@@ -84,15 +84,36 @@ specification, not a PodSpec with an arbitrary `containers` list. KubeVirt docum
 [Istio sidecars](https://kubevirt.io/user-guide/network/istio_service_mesh/), which establishes the
 general composition, but does not implement our relay injection or token mounts.
 
-Proposed mechanism: a narrowly scoped Pod admission webhook for Agentplane-managed KubeVirt
-launcher Pods. It injects the relay, resource budget, readiness probe, projected token volume, and
-proxy-only mounts before Pod creation. Select the managed namespace and launcher labels; additionally
+The platform proof must select the integration mechanism; a custom admission webhook is not a
+requirement. Prefer reusing existing declarative admission machinery if it can enforce the full
+identity/mount contract. The repo already owns Kyverno
+[proxy injection policies](../../cluster/cdk8s/kyverno/proxy_injection.py); these currently inject
+environment and CA configuration, not our launcher sidecar or credentials. Extend that machinery with
+a separately scoped policy rather than assuming a new Agentplane admission server is necessary.
+
+| Mechanism                                            | Fit and unresolved work                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Existing Kyverno admission                           | Can mutate the launcher Pod to add the relay and projected volumes. Still uses an admission webhook, but the existing Kyverno service owns it. Prove live owner/SA verification using API context and narrowly scoped reader RBAC, reinvocation, admission ordering and failure behavior.                                                 |
+| Kubernetes `MutatingAdmissionPolicy`                 | Runs CEL mutation in the API server, with no webhook service. Check the cluster's API/version/feature-gate support. It cannot simply perform arbitrary live VMI/VM reads like a webhook; require a separately enforced trusted mapping from controller-created VM intent to Pod identity.                                                 |
+| KubeVirt hook sidecar plus declarative admission     | KubeVirt creates the hook container; our wrapper implements the handshake and runs the relay. Admission supplies identity and token mounts omitted by the hook schema. Viable if KubeVirt lifecycle integration is useful; never inject a second relay through the admission policy.                                                      |
+| Native KubeVirt extension with no admission mutation | Would need supported launcher ServiceAccount selection and proxy-only projected volumes as well as container creation. Those are not supplied by the v1.8.2 hook API. An upstream enhancement or maintained KubeVirt patch is an explicit option, with API/upgrade maintenance cost; implementing only the hook protocol is insufficient. |
+| Per-environment companion proxy Pod                  | Avoids changing the launcher Pod. Requires a private guest-to-proxy route with enforced environment identity and coupled revocation/lifecycle; the authenticated Pod is now the proxy Pod. Revisit those contracts before choosing it.                                                                                                    |
+
+[Kubernetes admission policy](https://kubernetes.io/docs/reference/access-authn-authz/mutating-admission-policy/)
+and [Kyverno API context](https://kyverno.io/docs/policy-types/cluster-policy/external-data-sources/#variables-from-kubernetes-api-server-calls)
+describe the declarative mechanisms. Their availability and suitability here still need proof.
+A dedicated webhook remains a fallback if the required live verification cannot be expressed safely
+in the existing policy engine; accepting KubeVirt-specific integration is not itself a reason to
+operate a new service.
+
+Whichever mechanism owns Pod mutation, it supplies the relay, resource budget, readiness probe,
+projected token volume and proxy-only mounts before Pod creation. Select the managed namespace and launcher labels; additionally
 verify the controller owner UID against a live VMI and its managed VM, approved template, and recorded
 ServiceAccount. Labels or caller-supplied annotations alone cannot select an identity. Reject
 inconsistent preexisting relay/token configuration; reinvocation must be idempotent. Restrict who can
 create Pods or mutate these VMs/VMIs and use admission validation for the final invariants.
 
-The injector sets the launcher's `serviceAccountName`, disables token automount, and ensures no
+The Pod mutation sets the launcher's `serviceAccountName`, disables token automount, and ensures no
 automounted token or projected credential is available to `compute`, disk helpers, or guest volumes.
 In v1.8.2 the [launcher renderer](https://github.com/kubevirt/kubevirt/blob/v1.8.2/pkg/virt-controller/services/template.go)
 normally derives the account from a VMI `serviceAccount` volume and enables automount. That volume
@@ -100,9 +121,10 @@ normally derives the account from a VMI `serviceAccount` volume and enables auto
 so it is unsuitable here. Mutating the generated Pod's identity without that volume needs a real
 pinned-version proof, including admission ordering and resulting mounts.
 
-Use `failurePolicy: Fail` only within the selected admission scope, with the injector independently
-deployable and replicated. A missing injector blocks new VM launches; it does not take down running
-VMs or unrelated Pods. Verify sidecar restart and termination behavior against KubeVirt's launcher
+Fail closed only within the selected admission scope. Any webhook implementation uses a replicated
+service; reuse Kyverno's existing ownership when choosing Kyverno. Admission unavailability blocks
+new matching VM launches; it does not terminate running VMs. Prove the configured failure scope does
+not block unrelated Pods. Verify sidecar restart and termination behavior against KubeVirt's launcher
 monitoring before choosing ordinary versus Kubernetes native sidecar lifecycle. Never patch a live
 launcher to add containers.
 
@@ -116,13 +138,14 @@ any advertised callbacks, with coordinated startup/shutdown. No-op domain hooks 
 relay that does not alter the guest, but do not provide its token volume. The pinned
 [`HookSidecar` schema](https://github.com/kubevirt/kubevirt/blob/v1.8.2/pkg/hooks/hooks.go) exposes
 ConfigMap/PVC mounts, not arbitrary projected ServiceAccount-token volumes: the wrapper alone does
-not complete this design. Pod admission injection avoids the hook handshake and supplies the required
-mounts in one place; its cost is operating and validating that admission service.
+not complete this design. The protocol implementation is bounded integration work, not a reason to
+reject the hook route. Direct Pod admission injection is another option: it supplies both container
+and mounts without the handshake.
 
 Current upstream docs deprecate it in v1.9. The new
 [Plugins API](https://kubevirt.io/user-guide/cluster_admin/plugins/) starts in v1.9 alpha and still
-uses admission for sidecar injection. Neither is a reason to couple this relay to domain hooks or
-upgrade the cluster as a prerequisite.
+uses a `MutatingAdmissionPolicy` or webhook for sidecar injection. It can package a KubeVirt
+integration after an upgrade, but does not independently solve Pod mutation or token projection.
 
 ### Guest-to-relay routing
 
@@ -247,7 +270,8 @@ contract work can proceed in parallel with the platform proof; only integration 
 | Guest resource isolation | Enforced aggregate harness budgets and runner launch/fencing integration. Force memory, process and disk exhaustion; prove runner/journal survival and truthful harness failure. Tool-only survival is a separately measured capability.                                                                                                                                                                                               |
 | Lifecycle acceptance     | Both harnesses through real LLM ingress and Action Service; stop/start, Pod replacement, proxy restart/token rotation, guest crash, runner crash, image change, deletion/export, and negative access. Confirm stable environment identity, changed incarnation identity, retained Events, and no invented or duplicate command effects.                                                                                                |
 
-The platform proof must test webhook outage/reinvocation, missing/expired tokens, replacement Pods,
+The platform proof must test admission failure/reinvocation and, if used, hook discovery/shutdown,
+missing/expired tokens, replacement Pods,
 forged environment labels, and attempts to reach another environment's relay/control port. Verify
 revocation using actual TokenReview semantics; deletion must not be described as instantaneous token
 invalidation without measurement. Inspect rendered credentials/mounts without logging bearer values.
