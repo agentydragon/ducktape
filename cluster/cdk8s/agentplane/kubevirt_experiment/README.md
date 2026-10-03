@@ -4,37 +4,20 @@ This directory contains opt-in platform admission and disposable KubeVirt experi
 runner guest CLI uses direct, UID-checked KubeVirt operations; it does not enable VM environments
 in staging/testing or add a production Sandbox Service provider, app API, or proto kind.
 
-## What this establishes
+## Code map and boundary
 
-`//cluster/cdk8s/agentplane/kubevirt_experiment:policy` injects the existing relay into KubeVirt's
-launcher Pod, with rotating projected tokens mounted only by the relay. CREATE
-admission checks the actual KubeVirt controller caller, live Pod → VMI → VM UIDs,
-managed VM label, approved template, and VM-owned ServiceAccount. UPDATE admission
-also rejects token mounts in compute, init, and ephemeral containers. API lookup
-errors fail admission. Strategic merge is idempotent under webhook reinvocation.
+- [`policy.py`](policy.py): launcher admission and relay token mounts.
+- [`setup.py`](setup.py): disposable namespace, quotas, ESO pull secret, and synthetic gateway.
+- [`vm.py`](vm.py): Fedora and runner VM fixtures.
+- [`token_review_gateway.py`](token_review_gateway.py) and
+  [`runtime_model_gateway.py`](runtime_model_gateway.py): synthetic relay destinations.
 
-The constructor takes approved template names, relay image and central proxy host.
-Namespaces must be dedicated to Agentplane-managed VMs with respect to their KubeVirt
-workloads: every `kubevirt.io=virt-launcher` Pod there is checked. The platform must
-restrict direct Pod/VM/VMI writes separately; labels and owner references alone do
-not establish authority. The production provider must create the VM halted, provision
-its owned account and grants, and only then start it.
-
-This prototype uses KubeVirt's masquerade guest gateway (`10.0.2.1`) for the relay.
-Only guest SSH (diagnostics) and port 7000 are forwarded. The launcher NetworkPolicy
-allows DNS and the synthetic gateway, and admits port 7000 only from that gateway's
-Pod label. A real deployment must replace that caller selector with Sandbox Service.
-SSH is accessed by localhost-only Kubernetes port forwarding during the experiment.
-
-The default `token_review_gateway.py` checks Kubernetes TokenReview and returns only the reviewed
-account/Pod identity. The runner experiment can instead use the deterministic
-[`runtime_model_gateway.py`](runtime_model_gateway.py). Neither implements the production egress
-gateway's credential policies, destination authorization, TLS interception, or CONNECT protocol.
-Passing either experiment is not full egress acceptance.
-
-Runner VM inputs, lifecycle commands, probes, and cleanup are in the concise
-[`runtime acceptance guide`](runtime_acceptance.md); guest build and measured runtime findings are
-in [`runtime.md`](runtime.md).
+Use a dedicated namespace for these KubeVirt workloads and separately restrict direct Pod/VM/VMI
+writes; labels and owner references alone do not establish authority. Neither gateway implements
+production credential substitution, destination authorization, TLS interception, or CONNECT.
+Runner inputs, commands, probes, and cleanup are in the
+[`runtime acceptance guide`](runtime_acceptance.md); guest build and measured findings are in
+[`runtime.md`](runtime.md).
 
 ## Reproduce
 
