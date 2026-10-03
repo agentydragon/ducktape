@@ -975,7 +975,7 @@ fn patch_plan_rows(
     source_root: Option<&Path>,
     propose: Option<&ProposalsReport>,
 ) -> Result<Vec<PatchPlanRow>> {
-    let binding_to_owner = binding_to_owner(graph)?;
+    let binding_to_owners = binding_to_owners(graph);
     let unit_by_owner = unit_by_owner(graph);
     let unit_by_id: BTreeMap<String, &AtomicUnitReport> = graph
         .atomic_graph
@@ -1016,8 +1016,8 @@ fn patch_plan_rows(
             let mut requested_owner_ids = BTreeSet::<String>::new();
             let mut unknown_binding_ids = Vec::<String>::new();
             for binding in &requested_binding_ids {
-                if let Some(owner_id) = binding_to_owner.get(binding) {
-                    requested_owner_ids.insert(owner_id.clone());
+                if let Some(owner_ids) = binding_to_owners.get(binding) {
+                    requested_owner_ids.extend(owner_ids.iter().cloned());
                 } else {
                     unknown_binding_ids.push(binding.clone());
                 }
@@ -1143,32 +1143,23 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
     Ok(sets)
 }
 
-/// Map each declared (minified) binding name to its owner id.
+/// Map each declared (minified) binding name to all owner ids that declare it.
 ///
-/// A binding name declared by two distinct owners would make every
-/// binding-keyed claim ambiguous. Owner graphs are built from
-/// per-chunk top-level scopes, where binding ids are unique — a
-/// duplicate means a malformed/merged report, so it surfaces as an
-/// error rather than silently keeping the last writer. This mirrors
-/// `resolve_binding_owners`, which returns all matches so callers can
-/// see the ambiguity.
-fn binding_to_owner(graph: &OwnerGraphReport) -> Result<BTreeMap<String, String>> {
+/// A repeated top-level `var` is one binding with several declaration sites,
+/// and the owner graph retains each site as an owner node. Binding-keyed claims
+/// therefore cover every matching owner so a co-declaration atomic unit is
+/// reported complete; the selector resolver uses the first site as its single
+/// placement representative.
+fn binding_to_owners(graph: &OwnerGraphReport) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::new();
     for node in &graph.nodes {
         for binding in &node.declared_bindings {
-            if let Some(existing) = out.insert(binding.binding.to_string(), node.id.clone())
-                && existing != node.id
-            {
-                bail!(
-                    "malformed owner graph: binding {:?} declared by multiple owners \
-                     ({existing}, {})",
-                    binding.binding,
-                    node.id,
-                );
-            }
+            out.entry(binding.binding.to_string())
+                .or_insert_with(Vec::new)
+                .push(node.id.clone());
         }
     }
-    Ok(out)
+    out
 }
 
 fn unit_by_owner(graph: &OwnerGraphReport) -> BTreeMap<String, String> {
@@ -1385,12 +1376,12 @@ fn resolve_module_path_owner_ids(
         bail!("module {module_path:?} has no members or anonymous_statements; nothing to describe");
     }
 
-    let binding_to_owner = binding_to_owner(graph)?;
+    let binding_to_owners = binding_to_owners(graph);
     let mut owner_ids = BTreeSet::<String>::new();
     let mut unknown_binding_ids = Vec::<String>::new();
     for binding in &claims.bindings {
-        if let Some(owner_id) = binding_to_owner.get(binding) {
-            owner_ids.insert(owner_id.clone());
+        if let Some(binding_owner_ids) = binding_to_owners.get(binding) {
+            owner_ids.extend(binding_owner_ids.iter().cloned());
         } else {
             unknown_binding_ids.push(binding.clone());
         }
@@ -1423,8 +1414,8 @@ fn resolve_module_path_owner_ids(
         index,
     )?;
     for binding in &resolved.bindings {
-        if let Some(owner_id) = binding_to_owner.get(binding) {
-            owner_ids.insert(owner_id.clone());
+        if let Some(binding_owner_ids) = binding_to_owners.get(binding) {
+            owner_ids.extend(binding_owner_ids.iter().cloned());
         } else {
             unknown_binding_ids.push(binding.clone());
         }

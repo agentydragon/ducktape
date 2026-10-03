@@ -343,7 +343,7 @@ pub(super) const AUTO_GROWN_EXPORT_CONTRIBUTOR: &str = "auto-grown residual expo
 /// The entry-side facts `auto_grown_residual_exports` consults; see
 /// `LowerChunkSpecFacts` and `lower_chunk` for the field provenance.
 pub(super) struct ExportGrowthFacts<'a> {
-    pub(super) declaration_by_name: &'a HashMap<Id, usize>,
+    pub(super) declaration_by_name: &'a HashMap<Id, Vec<usize>>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
     pub(super) pre_existing_entry_exports: &'a HashSet<Id>,
     /// ORIGINAL (pre-rename) names declared at the top level of the

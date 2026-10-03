@@ -201,6 +201,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "repeated_var_purity_test",
+    size = "small",
+)
+
+debundle_e2e_test(
     name = "repeated_var_loop_test",
     size = "small",
 )

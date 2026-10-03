@@ -9,7 +9,7 @@ mod chunk_constraining_module_edges_tests {
     use crate::graph::*;
     use crate::ids::{LogicalModuleIndex, ModuleId};
     use crate::partition::Partition;
-    use crate::{AnalysisHints, OwnerGraph, OwnerId, StatementOrdinal, facts::analyze_chunk};
+    use crate::{AnalysisHints, OwnerGraph, OwnerId, facts::analyze_chunk};
 
     fn module_id(index: usize) -> ModuleId {
         ModuleId(LogicalModuleIndex(index))
@@ -24,21 +24,21 @@ mod chunk_constraining_module_edges_tests {
         build_owner_graph_with(&parse_facts(source), Default::default()).unwrap()
     }
 
-    /// Strict mapping: two top-level statements declaring the same
-    /// binding (legal JS) must error instead of silently letting the
-    /// last declaration win — last-insert-wins drops every edge into
-    /// the earlier owner.
     #[test]
-    fn duplicate_top_level_declarations_error() {
-        let err =
-            build_owner_graph_with(&parse_facts("var x = 1;\nvar x = 2;\n"), Default::default())
-                .unwrap_err();
-        assert_eq!(err.binding.as_ref(), "x");
-        assert_eq!(err.first, StatementOrdinal(0));
-        assert_eq!(err.second, StatementOrdinal(1));
-        assert!(
-            err.to_string().contains("duplicate top-level declaration"),
-            "{err}"
+    fn repeated_vars_retain_and_join_both_declaration_owners() {
+        let graph = parse_and_build("var x = 1;\nvar x = 2;\n");
+        assert_eq!(graph.num_nodes(), 2);
+        for node in graph.iter_nodes() {
+            assert!(node.declared.iter().any(|id| id.0 == "x"));
+        }
+        let co_declarations: BTreeSet<_> = graph
+            .iter_edges()
+            .filter(|edge| edge.reason.kind == DepKind::CoDeclaration)
+            .map(|edge| (edge.from, edge.to))
+            .collect();
+        assert_eq!(
+            co_declarations,
+            BTreeSet::from([(OwnerId(0), OwnerId(1)), (OwnerId(1), OwnerId(0)),])
         );
     }
 

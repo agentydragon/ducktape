@@ -17,13 +17,8 @@ pub use spec::OwnerGraphOptions;
 use super::edge::{EdgeReason, OwnerEdge, OwnerEdgeId};
 use super::owner_graph::{OwnerGraph, OwnerId, OwnerNode};
 
-/// Two distinct top-level statements declare the same binding
-/// (`var x = 1; var x = 2;` — legal JS, but the owner graph models
-/// each binding as having exactly one owning statement). Letting the
-/// last declaration win would silently drop every edge into the
-/// earlier owner, so the earlier statement could be ordered after its
-/// readers. Rejecting the chunk is the accepted over-restriction
-/// (<docs/design.md> "Soundness over completeness").
+/// Multiple declarations of one binding are supported only when every site
+/// declares `var`. Other duplicate declaration shapes remain rejected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DuplicateTopLevelDeclaration {
     pub binding: swc_atoms::Atom,
@@ -36,9 +31,7 @@ impl fmt::Display for DuplicateTopLevelDeclaration {
         write!(
             f,
             "duplicate top-level declaration of binding `{}`: statements #{} and #{} both \
-             declare it; the owner graph requires a single owning statement per binding. \
-             Rewrite the chunk so the binding is declared once (e.g. merge the declarations \
-             or rename one of them).",
+             declare it; only repeated `var` declarations are supported.",
             self.binding, self.first.0, self.second.0,
         )
     }
@@ -58,17 +51,14 @@ pub fn build_owner_graph_with(
     facts: &[StatementFacts],
     options: OwnerGraphOptions,
 ) -> Result<OwnerGraph, DuplicateTopLevelDeclaration> {
-    let mut binding_owner = HashMap::<Id, OwnerId>::new();
+    let mut declaration_sites = BTreeMap::<Id, Vec<OwnerId>>::new();
     let mut nodes = Vec::<OwnerNode>::with_capacity(facts.len());
     for stmt in facts {
         for binding in &stmt.declared {
-            if let Some(prev) = binding_owner.insert(binding.clone(), OwnerId(stmt.ordinal.0)) {
-                return Err(DuplicateTopLevelDeclaration {
-                    binding: binding.0.clone(),
-                    first: StatementOrdinal(prev.0),
-                    second: stmt.ordinal,
-                });
-            }
+            declaration_sites
+                .entry(binding.clone())
+                .or_default()
+                .push(OwnerId(stmt.ordinal.0));
         }
         let id = OwnerId(stmt.ordinal.0);
         nodes.push(OwnerNode {
@@ -81,9 +71,46 @@ pub fn build_owner_graph_with(
         });
     }
 
+    // Keep every declaration site. A representative is only an address for a
+    // binding; the co-declaration edges below make all sites inseparable.
+    let binding_owner: HashMap<Id, OwnerId> = declaration_sites
+        .iter()
+        .map(|(binding, sites)| (binding.clone(), sites[0]))
+        .collect();
+    let mut shared_vars = BTreeSet::new();
+    for (binding, sites) in &declaration_sites {
+        if sites.len() > 1 {
+            for &owner in sites {
+                if !facts[owner.0].var_declared.contains(binding) {
+                    return Err(DuplicateTopLevelDeclaration {
+                        binding: binding.0.clone(),
+                        first: StatementOrdinal(sites[0].0),
+                        second: StatementOrdinal(sites[1].0),
+                    });
+                }
+            }
+            shared_vars.insert(binding.clone());
+        }
+    }
+
     // Collect (from, to, reason) triples; the final `edges` Vec is
     // sorted at the end so `OwnerEdgeId` indices are stable.
     let mut raw_edges = Vec::<(OwnerId, OwnerId, EdgeReason)>::new();
+    for binding in &shared_vars {
+        let sites = &declaration_sites[binding];
+        for &owner in &sites[1..] {
+            raw_edges.push((
+                owner,
+                sites[0],
+                EdgeReason::co_declaration(StatementOrdinal(owner.0), binding.clone()),
+            ));
+            raw_edges.push((
+                sites[0],
+                owner,
+                EdgeReason::co_declaration(StatementOrdinal(sites[0].0), binding.clone()),
+            ));
+        }
+    }
     // Look-aside table for "what statement owns this OwnerId" — shared
     // by the direct eager-read filter below and by
     // `promote_at_init_calls` (which builds its own local copy; the
@@ -101,9 +128,9 @@ pub fn build_owner_graph_with(
     // no init-order constraint to record, and emitting an `EagerUse`
     // edge would manufacture a cross-module constraint no realizable
     // trace demands. Same rule as the FnDecl exclusion in
-    // `promote_at_init_calls`. Other declared kinds (VarDecl,
-    // ClassDecl) are TDZ-locked until their statement runs, so their
-    // cross-module reads stay constrained.
+    // `promote_at_init_calls`. Other declaration kinds retain eager
+    // constraints: lexical declarations have a TDZ, while var initializers
+    // change an already-hoisted cell whose value reads must observe in order.
     let target_is_hoisted = |id: &Id| -> bool {
         binding_owner
             .get(id)
@@ -220,7 +247,46 @@ pub fn build_owner_graph_with(
     // resolve to chunk-declared bindings are followed; indirect
     // calls (`const g = f; g()`), method calls (`obj.method()`), and
     // dynamic dispatch are conservatively unmodelled.
-    promote_at_init_calls(facts, &binding_owner, &mut raw_edges);
+    promote_at_init_calls(facts, &binding_owner, &shared_vars, &mut raw_edges);
+
+    // Initializers and eager observations of shared var cells must retain their
+    // order even when the expressions are pure. Include promoted reads from
+    // at-init calls, not just syntactically direct reads.
+    let mut accesses: BTreeMap<Id, BTreeSet<OwnerId>> = shared_vars
+        .iter()
+        .map(|binding| (binding.clone(), BTreeSet::new()))
+        .collect();
+    for stmt in facts {
+        for binding in stmt
+            .reads
+            .eager
+            .iter()
+            .chain(&stmt.rebinds.eager)
+            .chain(&stmt.var_initializers)
+        {
+            if let Some(owners) = accesses.get_mut(binding) {
+                owners.insert(OwnerId(stmt.ordinal.0));
+            }
+        }
+    }
+    for (from, _, reason) in &raw_edges {
+        if reason.kind == super::DepKind::EagerUse
+            && let Some(binding) = reason.binding()
+            && let Some(owners) = accesses.get_mut(binding)
+        {
+            owners.insert(*from);
+        }
+    }
+    for owners in accesses.values() {
+        let owners: Vec<_> = owners.iter().copied().collect();
+        for pair in owners.windows(2) {
+            raw_edges.push((
+                pair[1],
+                pair[0],
+                EdgeReason::sequenced(StatementOrdinal(pair[1].0)),
+            ));
+        }
+    }
 
     emit_s_chain(facts, options, &mut raw_edges);
 
@@ -375,6 +441,7 @@ fn emit_s_chain(
 fn promote_at_init_calls(
     facts: &[StatementFacts],
     binding_owner: &HashMap<Id, OwnerId>,
+    shared_vars: &BTreeSet<Id>,
     raw_edges: &mut Vec<(OwnerId, OwnerId, EdgeReason)>,
 ) {
     let mut stmt_by_owner: BTreeMap<OwnerId, &StatementFacts> = BTreeMap::new();
@@ -399,7 +466,8 @@ fn promote_at_init_calls(
     let resolvable_callee = |id: &Id| -> Option<OwnerId> {
         let owner = binding_owner.get(id)?;
         let stmt = stmt_by_owner.get(owner)?;
-        (stmt.declares_direct_function && !rebound.contains(id)).then_some(*owner)
+        (stmt.declares_direct_function && !rebound.contains(id) && !shared_vars.contains(id))
+            .then_some(*owner)
     };
 
     // 1. Build the call graph: owner → owner edges for each
@@ -748,6 +816,14 @@ impl UnresolvedCallFallback {
         for stmt in facts {
             let owner = OwnerId(stmt.ordinal.0);
             read_graph.add_node(owner);
+            for binding in &stmt.declared {
+                if let Some(&representative) = binding_owner.get(binding)
+                    && representative != owner
+                {
+                    read_graph.add_edge(owner, representative, ());
+                    read_graph.add_edge(representative, owner, ());
+                }
+            }
             for id in stmt.reads.eager.iter().chain(stmt.reads.lazy.iter()) {
                 if let Some(&target) = binding_owner.get(id) {
                     read_graph.add_edge(owner, target, ());

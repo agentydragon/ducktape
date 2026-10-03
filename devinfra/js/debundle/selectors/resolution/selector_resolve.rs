@@ -51,6 +51,7 @@ struct Places {
     owner_by_body: BTreeMap<usize, OwnerId>,
     owner_by_body_and_binding: BTreeMap<(usize, String), OwnerId>,
     /// Each top-level binding name's declaring statements, with their kind.
+    /// Repeated `var` declarations intentionally retain every site here.
     declarations: BTreeMap<String, Vec<(OwnerId, StatementKind)>>,
 }
 
@@ -1167,11 +1168,15 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     .get(local)
                     .and_then(|name| places.declarations.get(name).map(|owners| (name, owners)))
                     .into_iter()
-                    .flat_map(|(name, owners)| {
-                        owners
+                    .filter_map(|(name, declarations)| {
+                        // A repeated `var` has several syntactic declaration
+                        // sites but one binding. Use its first source-order
+                        // owner as the placement representative; the owner
+                        // graph co-locates every other site with it.
+                        declarations
                             .iter()
-                            .filter(|(_, kind)| *kind != StatementKind::Import)
-                            .map(move |(owner, _)| Place {
+                            .find(|(_, kind)| *kind != StatementKind::Import)
+                            .map(|(owner, _)| Place {
                                 owner: *owner,
                                 binding: Some(name.clone()),
                             })
@@ -1589,16 +1594,18 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 };
                 let places = declarations
                     .get(pin.name.as_str())
-                    .into_iter()
-                    .flatten()
-                    .filter(|(_, kind)| {
-                        pin.kind
-                            .is_none_or(|pinned| statement_kind_for_spec(pinned) == *kind)
+                    .and_then(|declarations| {
+                        let has_matching_site = declarations.iter().any(|(_, kind)| {
+                            pin.kind
+                                .is_none_or(|pinned| statement_kind_for_spec(pinned) == *kind)
+                        });
+                        has_matching_site.then(|| declarations.first()).flatten()
                     })
                     .map(|(owner, _)| Place {
                         owner: *owner,
                         binding: Some(pin.name.clone()),
                     })
+                    .into_iter()
                     .collect();
                 Some((*target, places))
             })
@@ -2227,7 +2234,7 @@ fn member_place(
     matched: &source_match::ResolvedMemberBinding,
 ) -> Result<Place> {
     let binding = matched.binding_name.clone();
-    let owner = places
+    let matched_owner = places
         .owner_by_body_and_binding
         .get(&(body_idx, binding.clone()))
         .copied()
@@ -2237,6 +2244,12 @@ fn member_place(
                  map to an owner-graph node"
             )
         })?;
+    let owner = places
+        .declarations
+        .get(&binding)
+        .and_then(|declarations| declarations.first())
+        .map(|(owner, _)| *owner)
+        .unwrap_or(matched_owner);
     Ok(Place {
         owner,
         binding: Some(binding),
@@ -2456,28 +2469,27 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     let structural = &chunk.structural;
     let module = chunk.module;
     let mut store = SelectorFactStore::default();
-    let binding_owner = structural
+    // A repeated `var` is one selector binding with several syntactic
+    // declaration sites. Use its first source-order owner for binding lookup,
+    // matching the owner graph's representative after CoDeclaration edges
+    // have made the sites inseparable. Relational facts below remain attached
+    // to their actual statement owners, because different bindings declared
+    // in one statement can have different repeated-site histories.
+    let mut binding_owner = HashMap::<swc_ecma_ast::Id, OwnerId>::new();
+    for statement in &structural.per_statement {
+        for binding in &statement.declared {
+            binding_owner
+                .entry(binding.clone())
+                .or_insert(OwnerId(statement.ordinal.0));
+        }
+    }
+    let hoisted_functions = structural
         .per_statement
         .iter()
-        .flat_map(|statement| {
-            statement
-                .declared
-                .iter()
-                .map(|binding| (binding.clone(), OwnerId(statement.ordinal.0)))
-        })
-        .collect::<HashMap<_, _>>();
-    let kind_by_owner = structural
-        .per_statement
-        .iter()
-        .map(|statement| (OwnerId(statement.ordinal.0), statement.kind))
-        .collect::<HashMap<_, _>>();
-    let is_hoisted = |id: &swc_ecma_ast::Id| {
-        binding_owner
-            .get(id)
-            .and_then(|owner| kind_by_owner.get(owner))
-            .is_some_and(|kind| *kind == StatementKind::FnDecl)
-    };
-
+        .filter(|statement| statement.kind == StatementKind::FnDecl)
+        .flat_map(|statement| statement.declared.iter().cloned())
+        .collect::<BTreeSet<_>>();
+    let is_hoisted = |id: &swc_ecma_ast::Id| hoisted_functions.contains(id);
     for statement in &structural.per_statement {
         let owner = OwnerId(statement.ordinal.0);
         store.push(SelectorFact::Owner {
@@ -2531,10 +2543,10 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
                     .map(|binding| (binding, DepKind::DeferredRebind)),
             );
         for (binding, edge_kind) in references {
-            if binding_owner
-                .get(binding)
-                .is_some_and(|target_owner| *target_owner != owner)
-            {
+            let Some(&target_owner) = binding_owner.get(binding) else {
+                continue;
+            };
+            if target_owner != owner {
                 store.push(SelectorFact::OwnerReferencesBinding {
                     owner,
                     binding: binding.0.as_str().to_string(),

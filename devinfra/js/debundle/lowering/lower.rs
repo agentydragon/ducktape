@@ -78,7 +78,7 @@ pub(super) struct LowerChunkContext<'a> {
 pub(super) struct LowerChunkAst<'a> {
     pub(super) runtime_ast: &'a ParsedJsModule,
     pub(super) declarations: &'a [TopLevelDecl],
-    pub(super) declaration_by_name: &'a HashMap<Id, usize>,
+    pub(super) declaration_by_name: &'a HashMap<Id, Vec<usize>>,
     pub(super) chunk_top_level_mark: swc_common::Mark,
 }
 

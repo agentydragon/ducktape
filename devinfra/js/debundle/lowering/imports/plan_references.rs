@@ -170,7 +170,7 @@ pub(crate) fn plan_module_reference_needs<'a>(
     module_index: usize,
     body_facts: &ModuleBodyFacts,
     factorization: &ChunkFactorization,
-    declaration_by_name: &HashMap<Id, usize>,
+    declaration_by_name: &HashMap<Id, Vec<usize>>,
     binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &HashMap<Id, EntryExport>,
     runtime_imports: RuntimeImportLookup<'a>,

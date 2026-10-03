@@ -16,6 +16,20 @@ candidates. In a tree spec, each module tree names the chunk its modules are
 scoped to; several trees may name the same chunk, and their modules then share
 it as if authored in one tree.
 
+## Repeated `var` declarations
+
+Repeated declarations of the same module-scoped `var` denote one binding.
+Selecting or renaming that binding applies to every declaration site, including
+sites inside top-level control flow. A structural selector may identify it from
+any of those sites. Its declarations must share one output module; initializers,
+reads, and mutations retain their observable order. A bare redeclaration does
+not reset the binding. Other duplicate declaration combinations remain unsupported.
+Owner-based relational selectors inspect facts on each statement site; they do
+not union those facts across all redeclarations. Binding selectors canonicalize
+to the first declaration site, so relations composed with them cannot inspect
+later sites' facts. Control-flow statements containing `var` move intact; all
+bindings they declare must be assigned to the same destination.
+
 ## Matching
 
 Only the shape matcher decides where a `source_match` template matches. A

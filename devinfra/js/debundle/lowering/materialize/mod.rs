@@ -453,6 +453,7 @@ pub(super) fn finish_logical_chunk(
     if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
         builder.synthesize_mini_factors(&precomputed, &runtime_ast.module.body, target_dir)?;
     }
+    builder.route_nested_var_statements(&runtime_ast.module.body, &declarations)?;
     if let Some(report) = builder.selector_outcome_report()
         && let Some(report_out_dir) = report_emission.rejection_dir()
     {

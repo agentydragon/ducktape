@@ -68,6 +68,9 @@ impl EdgeRole {
 ///   are read-only in the importing module; same-destination writes
 ///   are represented only at owner level and don't become module
 ///   imports.
+/// - `CoDeclaration` is emitted in both directions between statements
+///   declaring the same `var` binding. A split therefore forms a forbidden
+///   constraining cycle; these edges express placement equality.
 /// - `Sequenced` contributes to `S` and constrains
 ///   realizability because source-order side effects require a
 ///   topological order.
@@ -122,6 +125,14 @@ impl EdgeReason {
     pub(crate) fn deferred_rebind(so: StatementOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::DeferredRebind,
+            statement_ordinal: so,
+            binding: Some(b),
+            role: EdgeRole::Direct,
+        }
+    }
+    pub(crate) fn co_declaration(so: StatementOrdinal, b: Id) -> Self {
+        Self {
+            kind: DepKind::CoDeclaration,
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
@@ -242,6 +253,10 @@ pub enum DepKind {
     DeferredRebind,
     #[strum(message = "side-effect")]
     Sequenced,
+    /// Two statements declare the same module-scoped var binding. Emitted in
+    /// both directions to require one destination without rewriting the AST.
+    #[strum(message = "shared var declaration")]
+    CoDeclaration,
     #[strum(message = "local-effect")]
     LocalEffect,
 }

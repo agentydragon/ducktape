@@ -16,6 +16,8 @@
 //!   directions (declarer and assigner of a mutable binding must
 //!   co-locate — ESM imports are read-only whenever the write
 //!   fires, init-time or later).
+//! * `CoDeclaration`: add both directions (all declaration sites of one
+//!   module-scoped var binding share a destination).
 //! * `LocalEffect`: add both directions (target-local mutation must
 //!   co-locate with its target owner).
 //! * `Sequenced`: add `u → v`. Co-location is only forced when
@@ -94,7 +96,8 @@ pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
             DepKind::EagerRebind
             | DepKind::LazyRebind
             | DepKind::DeferredRebind
-            | DepKind::LocalEffect => {
+            | DepKind::LocalEffect
+            | DepKind::CoDeclaration => {
                 g_atomic.add_edge(edge.from, edge.to, ());
                 g_atomic.add_edge(edge.to, edge.from, ());
             }

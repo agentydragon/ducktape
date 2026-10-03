@@ -356,6 +356,9 @@ fn edge_weight(kind: DepKind) -> u32 {
         DepKind::Sequenced => 2,
         DepKind::LazyUse | DepKind::LazyRebind | DepKind::DeferredRebind => 1,
         DepKind::LocalEffect => 2,
+        // Repeated var sites must be placed together, but their edge is
+        // placement-only and carries no additional merge preference.
+        DepKind::CoDeclaration => 1,
     }
 }
 

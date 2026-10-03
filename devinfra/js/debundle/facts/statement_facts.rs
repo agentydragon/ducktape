@@ -52,6 +52,10 @@ pub struct StatementFacts {
     pub ordinal: StatementOrdinal,
     pub source_location: Option<SourceLocation>,
     pub declared: BTreeSet<Id>,
+    /// Module-scoped bindings declared with `var`, including inside control flow.
+    pub var_declared: BTreeSet<Id>,
+    /// Actual initializer writes; a bare `var x;` does not reset x.
+    pub var_initializers: BTreeSet<Id>,
     /// Identifier reads, bucketed by syntactic position.
     pub reads: PositionBucketed<BTreeSet<Id>>,
     /// Rebinding writes, bucketed by syntactic position. Member
@@ -139,12 +143,18 @@ impl StatementFacts {
     /// Per-statement (writes, reads) cell summary used by the
     /// dataflow-aware S-chain emission in `graph/` and the vendor
     /// strip's swap-privacy gate. Derived on demand: the
-    /// `Binding`-cell half restates `declared` / `reads.eager` /
-    /// `rebinds.eager`; only the `GlobalProp` half (`global_writes` /
+    /// `Binding`-cell half combines declaration initialization, eager reads,
+    /// and rebinds. Bare `var` redeclarations are not writes; `var_initializers`
+    /// records their actual initialization sites. The `GlobalProp` half (`global_writes` /
     /// `global_reads`) is stored state.
     pub fn effects(&self) -> StatementEffectSummary {
         let mut writes = BTreeSet::<EffectCell>::new();
-        for name in self.declared.iter().chain(self.rebinds.eager.iter()) {
+        for name in self
+            .declared
+            .difference(&self.var_declared)
+            .chain(self.var_initializers.iter())
+            .chain(self.rebinds.eager.iter())
+        {
             writes.insert(EffectCell::Binding(name.clone()));
         }
         for key in &self.global_writes {
@@ -240,6 +250,10 @@ pub struct StructuralStatementFacts {
     pub source_location: Option<SourceLocation>,
     pub kind: StatementKind,
     pub declared: BTreeSet<Id>,
+    /// Module-scoped bindings declared with `var`, including inside control flow.
+    pub var_declared: BTreeSet<Id>,
+    /// Actual initializer writes; a bare `var x;` does not reset x.
+    pub var_initializers: BTreeSet<Id>,
     pub reads: PositionBucketed<BTreeSet<Id>>,
     pub rebinds: PositionBucketed<BTreeSet<Id>>,
     pub calls: PositionBucketed<BTreeSet<Id>>,

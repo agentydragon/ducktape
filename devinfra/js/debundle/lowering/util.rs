@@ -156,6 +156,10 @@ pub(super) fn render_atomic_unit_cause_guidance(conflicts: &[AtomicUnitConflict]
                  (for example a TypeScript decorator application on a class prototype); \
                  the mutating statement and target binding must materialize together. "
             }
+            DepKind::CoDeclaration => {
+                "Shared var declaration: all source statements that declare the same `var` \
+                 binding must materialize in one module. "
+            }
             DepKind::LazyUse => continue,
         });
     }

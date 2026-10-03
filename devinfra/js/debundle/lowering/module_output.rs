@@ -52,7 +52,7 @@ pub(super) struct ModuleEmissionInputs<'a> {
     pub(super) plan: &'a ModulePlan,
     pub(super) naturalized: NaturalizedModuleBody,
     pub(super) factorization: &'a ChunkFactorization,
-    pub(super) declaration_by_name: &'a HashMap<Id, usize>,
+    pub(super) declaration_by_name: &'a HashMap<Id, Vec<usize>>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,
     pub(super) entry_exports_by_original_local: &'a HashMap<Id, EntryExport>,

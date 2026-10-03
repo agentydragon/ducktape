@@ -106,6 +106,16 @@ where
                 ordinal: StatementOrdinal(ordinal),
                 source_location,
                 kind,
+                var_declared: collector
+                    .var_declared
+                    .intersection(&declared)
+                    .cloned()
+                    .collect(),
+                var_initializers: collector
+                    .var_initializers
+                    .intersection(&declared)
+                    .cloned()
+                    .collect(),
                 declared,
                 reads: collector.reads,
                 rebinds: collector.rebinds,
@@ -168,6 +178,15 @@ where
         detect_redundant_purity_hints(&body, &shadowed, &hints.declared_pure);
     let redundant_pure_member_hints =
         detect_redundant_pure_member_hints(&hints.declared_pure_members);
+    let mut seen_vars = BTreeSet::new();
+    let mut shared_vars = BTreeSet::new();
+    for stmt in &per_statement {
+        for binding in &stmt.var_declared {
+            if !seen_vars.insert(binding.clone()) {
+                shared_vars.insert(binding.clone());
+            }
+        }
+    }
     let facts = body
         .iter()
         .zip(per_statement)
@@ -180,6 +199,7 @@ where
                 hints,
                 &graph,
                 &local_effect_context,
+                &shared_vars,
             );
             // Resolve any reason spans on `fact.purity` to
             // SourceLocations using the same per-chunk line index.
@@ -248,12 +268,15 @@ fn assemble_statement_facts(
     hints: &AnalysisHints,
     graph: &ChunkCodeGraph,
     local_effect_context: &local_effects::LocalEffectContext,
+    shared_vars: &BTreeSet<Id>,
 ) -> StatementFacts {
     let StructuralStatementFacts {
         ordinal,
         source_location,
         kind,
         declared,
+        var_declared,
+        var_initializers,
         reads,
         rebinds,
         calls,
@@ -268,7 +291,7 @@ fn assemble_statement_facts(
         dataflow_summarizable,
     } = structural;
     let local_effects = collect_local_effects(item, shadowed, hints, graph, local_effect_context);
-    let purity = item_purity(
+    let mut purity = item_purity(
         item,
         kind,
         shadowed,
@@ -276,6 +299,13 @@ fn assemble_statement_facts(
         graph,
         !local_effects.is_empty(),
     );
+    if !var_initializers.is_disjoint(shared_vars) {
+        purity = purity.worst(Purity::from_reason_with_detail(
+            PurityRule::AssignOrUpdate,
+            item.span(),
+            "initializer writes a shared var binding".to_string(),
+        ));
+    }
     // Opaque at-init calls: a call/new the purity classifier can't
     // prove Pure may touch any cell (I/O like `console.log`, global
     // props written inside callee bodies, indirect eval) — the
@@ -336,6 +366,8 @@ fn assemble_statement_facts(
         ordinal,
         source_location,
         declared,
+        var_declared,
+        var_initializers,
         reads,
         rebinds,
         local_effects,

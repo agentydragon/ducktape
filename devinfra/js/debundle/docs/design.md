@@ -48,6 +48,26 @@ owners with the same destination yields a module dep graph; the
 validator checks that this quotient graph admits an ESM evaluation
 order observationally equivalent to the input.
 
+## Shared `var` declaration sites
+
+A module-scoped `var` has one binding cell and can have several declaration
+sites, including loop heads and conditional blocks. Statement facts retain each
+site's declared binding identity, its `var` kind, and its initializer writes.
+Bare redeclarations are not runtime writes. Binding lookup uses the first site
+as a representative only after collecting and validating every site.
+
+`CoDeclaration` edges join the representative and every other site in both
+directions. The atomic graph and both realizability gates therefore require all
+sites to share one destination. The original AST statements remain intact and
+are emitted once in source order; assigning the binding claims every site.
+
+Initializers of shared bindings participate in side-effect ordering even when
+their expressions are pure. Additional source-order edges sequence eager reads,
+writes, and promoted at-init observations of each shared cell, including pure
+read expressions. This prevents moving an observer across a later initializer.
+Unresolved-call analysis joins all declaration sites when following possible
+function values. Value-specific purity inference must account for all sites.
+
 ## Soundness over completeness
 
 The debundler's contract: **any spec the validator accepts must emit a

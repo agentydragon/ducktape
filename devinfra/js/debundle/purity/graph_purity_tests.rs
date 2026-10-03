@@ -314,6 +314,59 @@ fn plain_data_var_multi_decl_with_one_non_plain_init_is_not_tracked() {
 }
 
 #[test]
+fn plain_data_var_repeated_accessor_initializer_is_rejected_in_either_order() {
+    let accessor_first = "var X = { get a() { return 1; } }; var X = { a: 1 };";
+    let accessor_last = "var X = { a: 1 }; var X = { get a() { return 1; } };";
+
+    assert!(!is_plain_data(accessor_first, "X"));
+    assert!(!is_plain_data(accessor_last, "X"));
+}
+
+#[test]
+fn plain_data_var_comma_decl_checks_every_initializer() {
+    // Comma-list declarators share one module binding just like
+    // separate `var` statements. A later call can replace the first
+    // plain value with an accessor-bearing object.
+    assert!(!is_plain_data("var X = { a: 1 }, X = io();", "X"));
+}
+
+#[test]
+fn plain_data_var_direct_declaration_still_scans_pattern_expressions() {
+    // The declaration's computed key captures X even though this var
+    // declarator itself has no simple binding candidate.
+    assert!(!is_plain_data(
+        "var X = { a: 1 }; var { [capture(X)]: y } = object;",
+        "X"
+    ));
+}
+
+#[test]
+fn plain_data_var_nested_block_reinitializer_disqualifies_value_inference() {
+    let src = r#"
+    var X = { a: 1 };
+    if (condition) {
+        var X = { get a() { globalThis.touched = true; return 2; } };
+    }
+    const read = () => X.a;
+"#;
+
+    assert!(!is_plain_data(src, "X"));
+    assert_eq!(fn_purity(src, "read"), Some(false));
+}
+
+#[test]
+fn plain_data_var_for_of_rebind_disqualifies_value_inference() {
+    let src = r#"
+    var X = { a: 1 };
+    for (var X of values) { break; }
+    const read = () => X.a;
+"#;
+
+    assert!(!is_plain_data(src, "X"));
+    assert_eq!(fn_purity(src, "read"), Some(false));
+}
+
+#[test]
 fn plain_data_var_member_write_disqualifies() {
     // Same write-scan rule as let/const — `X.k = v` in any
     // chunk body disqualifies.

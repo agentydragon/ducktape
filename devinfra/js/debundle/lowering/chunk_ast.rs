@@ -25,7 +25,11 @@ pub(super) struct TopLevelDecl {
 pub(super) struct ChunkAstAnalysis {
     pub(super) runtime_import_facts: RuntimeImportFacts,
     pub(super) declarations: Vec<TopLevelDecl>,
-    pub(super) declaration_by_name: HashMap<Id, usize>,
+    /// Every source statement that declares a top-level binding, in source order.
+    /// `var` may redeclare the same hygienic Id at several sites; consumers that
+    /// need one owner choose a representative explicitly instead of losing the
+    /// earlier sites to `HashMap::collect`'s last-write behavior.
+    pub(super) declaration_by_name: HashMap<Id, Vec<usize>>,
     /// Sibling sets for top-level destructuring declarators only.
     /// For a destructuring declarator like `const { x, y } = obj`
     /// both `x` and `y` map to the set `{x, y}`. Plain
@@ -93,14 +97,15 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
             &mut pre_existing_public_export_names,
         );
     }
-    let declaration_by_name = declarations
-        .iter()
-        .flat_map(|decl| {
-            decl.bindings
-                .iter()
-                .map(|(_, id)| (id.clone(), decl.ordinal))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut declaration_by_name = HashMap::<Id, Vec<usize>>::new();
+    for decl in &declarations {
+        for (_, id) in &decl.bindings {
+            declaration_by_name
+                .entry(id.clone())
+                .or_default()
+                .push(decl.ordinal);
+        }
+    }
     ChunkAstAnalysis {
         runtime_import_facts: RuntimeImportFacts { imports },
         declarations,
@@ -142,14 +147,19 @@ pub(super) fn record_destructure_sibling_groups(
     }
 }
 
-/// The top-level statement that declares `binding`: its entry in
-/// `declaration_by_name`, or else the import that binds it.
+/// The first top-level statement that declares `binding`, or else the import
+/// that binds it. The full source-ordered declaration-site list stays in
+/// `declaration_by_name`; this helper returns one representative for diagnostics
+/// whose wire format names a single declaration.
 pub(super) fn binding_declaration(
     body: &[ModuleItem],
-    declaration_by_name: &HashMap<Id, usize>,
+    declaration_by_name: &HashMap<Id, Vec<usize>>,
     binding: &Id,
 ) -> Result<Declaration> {
-    let owner = match declaration_by_name.get(binding) {
+    let owner = match declaration_by_name
+        .get(binding)
+        .and_then(|sites| sites.first())
+    {
         Some(&ordinal) => ordinal,
         None => body
             .iter()

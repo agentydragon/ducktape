@@ -26,6 +26,8 @@ use super::*;
 ///   the call graph, not via per-statement syntactic checks.
 #[derive(Default)]
 pub(crate) struct StatementFactsCollector {
+    pub(crate) var_declared: BTreeSet<Id>,
+    pub(crate) var_initializers: BTreeSet<Id>,
     pub(crate) reads: PositionBucketed<BTreeSet<Id>>,
     pub(crate) rebinds: PositionBucketed<BTreeSet<Id>>,
     pub(crate) calls: PositionBucketed<BTreeSet<Id>>,
@@ -505,6 +507,20 @@ impl TargetAccessRecorder for StatementFactsCollector {
 }
 
 impl Visit for StatementFactsCollector {
+    fn visit_var_decl(&mut self, node: &VarDecl) {
+        if self.lazy_depth == 0 && node.kind == VarDeclKind::Var {
+            for decl in &node.decls {
+                self.var_declared
+                    .extend(binding_targets::binding_names(&decl.name));
+                if decl.init.is_some() {
+                    self.var_initializers
+                        .extend(binding_targets::binding_names(&decl.name));
+                }
+            }
+        }
+        node.visit_children_with(self);
+    }
+
     fn visit_ident(&mut self, node: &Ident) {
         self.record_read(&node.to_id());
     }
@@ -609,8 +625,14 @@ impl Visit for StatementFactsCollector {
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        if let ForHead::Pat(pattern) = &node.left {
-            record_pat_write(pattern, self);
+        match &node.left {
+            ForHead::Pat(pattern) => record_pat_write(pattern, self),
+            ForHead::VarDecl(var) => {
+                for decl in &var.decls {
+                    record_pat_write(&decl.name, self);
+                }
+            }
+            ForHead::UsingDecl(_) => {}
         }
         node.left.visit_with(self);
         node.right.visit_with(self);
@@ -618,8 +640,14 @@ impl Visit for StatementFactsCollector {
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        if let ForHead::Pat(pattern) = &node.left {
-            record_pat_write(pattern, self);
+        match &node.left {
+            ForHead::Pat(pattern) => record_pat_write(pattern, self),
+            ForHead::VarDecl(var) => {
+                for decl in &var.decls {
+                    record_pat_write(&decl.name, self);
+                }
+            }
+            ForHead::UsingDecl(_) => {}
         }
         node.left.visit_with(self);
         node.right.visit_with(self);

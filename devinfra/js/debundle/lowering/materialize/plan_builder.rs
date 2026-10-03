@@ -72,7 +72,7 @@ pub(super) struct ChunkPlan {
 /// Per-explicit-request inputs the builder reads but does not own.
 pub(super) struct ExplicitRequestContext<'a> {
     pub(super) body: &'a [ModuleItem],
-    pub(super) declaration_by_name: &'a HashMap<Id, usize>,
+    pub(super) declaration_by_name: &'a HashMap<Id, Vec<usize>>,
     pub(super) chunk_top_level_mark: swc_common::Mark,
     pub(super) target_dir: &'a str,
     pub(super) chunk_id: &'a str,
@@ -405,7 +405,7 @@ impl ChunkPlanBuilder {
         &self,
         explicit_requests: &[LogicalRequest],
         chunk_top_level_mark: swc_common::Mark,
-        declaration_by_name: &HashMap<Id, usize>,
+        declaration_by_name: &HashMap<Id, Vec<usize>>,
     ) -> SelectorModules {
         let mut resolved_members = Vec::with_capacity(explicit_requests.len());
         let modules = explicit_requests
@@ -469,7 +469,7 @@ impl ChunkPlanBuilder {
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
         body: &[ModuleItem],
-        declaration_by_name: &HashMap<Id, usize>,
+        declaration_by_name: &HashMap<Id, Vec<usize>>,
     ) -> Result<()> {
         self.outcomes.list_templates(resolution.templates);
         // Recorded last, once every claim is in.
@@ -631,7 +631,7 @@ impl ChunkPlanBuilder {
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
         body: &[ModuleItem],
-        declaration_by_name: &HashMap<Id, usize>,
+        declaration_by_name: &HashMap<Id, Vec<usize>>,
     ) -> Result<()> {
         let binding_id = top_level_id(binding, chunk_top_level_mark);
         if !declaration_by_name.contains_key(&binding_id) {
@@ -842,6 +842,80 @@ impl ChunkPlanBuilder {
                     .insert(id.clone(), BindingKind::Owned { module });
             }
         }
+    }
+
+    /// A nested `var` is declared by its enclosing top-level control-flow
+    /// statement. Unlike a direct `var` declaration, that statement cannot be
+    /// split out of the entry body while leaving the surrounding control flow
+    /// behind. Route it whole only when all of its bindings and any anonymous
+    /// statement claim already agree on one destination.
+    pub(super) fn route_nested_var_statements(
+        &mut self,
+        body: &[ModuleItem],
+        declarations: &[TopLevelDecl],
+    ) -> Result<()> {
+        for decl in declarations {
+            let Some(ModuleItem::Stmt(statement)) = body.get(decl.ordinal) else {
+                continue;
+            };
+            // Direct variable declarations can be split by declarator in the
+            // emitter. `TopLevelDecl`s for other direct declaration kinds do
+            // not represent hoisted nested vars either.
+            if matches!(statement, Stmt::Decl(_)) {
+                continue;
+            }
+
+            let assigned_destinations = decl
+                .bindings
+                .iter()
+                .filter_map(|(_, id)| self.binding_assignment.get(id).copied())
+                .chain(
+                    self.anonymous_ordinal_assignment
+                        .get(&decl.ordinal)
+                        .copied(),
+                )
+                .collect::<BTreeSet<_>>();
+            if assigned_destinations.is_empty() {
+                continue;
+            }
+            let missing_bindings = decl
+                .bindings
+                .iter()
+                .filter(|(_, id)| !self.binding_assignment.contains_key(id))
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>();
+            if !missing_bindings.is_empty() {
+                bail!(
+                    "top-level control-flow statement at body index {} also declares unassigned \
+                     bindings ({}); assign them to the same module before extracting the statement",
+                    decl.ordinal,
+                    missing_bindings.join(", "),
+                );
+            }
+            if assigned_destinations.len() > 1 {
+                let destinations = assigned_destinations
+                    .iter()
+                    .map(|index| self.module_plans[*index].id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                bail!(
+                    "top-level control-flow statement at body index {} declares bindings assigned \
+                     to different modules ({destinations}); assign all nested var bindings to one module",
+                    decl.ordinal,
+                );
+            }
+
+            let destination = *assigned_destinations
+                .first()
+                .expect("assigned_destinations is nonempty");
+            self.anonymous_ordinal_assignment
+                .insert(decl.ordinal, destination);
+            let plan = &mut self.module_plans[destination];
+            plan.anonymous_statement_ordinals.push(decl.ordinal);
+            plan.anonymous_statement_ordinals.sort_unstable();
+            plan.anonymous_statement_ordinals.dedup();
+        }
+        Ok(())
     }
 
     /// Residual sweep: route every chunk top-level binding the spec

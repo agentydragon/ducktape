@@ -89,7 +89,36 @@ pub(crate) fn collect_plain_data_bindings(
         shadowing_scopes: Vec::new(),
     };
     for item in body {
-        item.as_module_item().visit_with(&mut scanner);
+        let module_item = item.as_module_item();
+        match module_item {
+            // Direct chunk-top var initializers were all checked above.
+            // Walk each expression so references to OTHER candidates
+            // still participate in the escape scan, but leave these
+            // known rebinds out of the nested-var disqualification path.
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.kind == VarDeclKind::Var => {
+                for decl in &var.decls {
+                    decl.name.visit_with(&mut scanner);
+                    if let Some(init) = decl.init.as_deref() {
+                        init.visit_with(&mut scanner);
+                    }
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                if let Decl::Var(var) = &export.decl
+                    && var.kind == VarDeclKind::Var
+                {
+                    for decl in &var.decls {
+                        decl.name.visit_with(&mut scanner);
+                        if let Some(init) = decl.init.as_deref() {
+                            init.visit_with(&mut scanner);
+                        }
+                    }
+                } else {
+                    module_item.visit_with(&mut scanner);
+                }
+            }
+            _ => module_item.visit_with(&mut scanner),
+        }
     }
     let disqualified = scanner.disqualified;
     candidates
@@ -567,6 +596,14 @@ impl PlainDataWriteScanner<'_> {
         }
     }
 
+    fn disqualify_var_pattern(&mut self, pat: &Pat) {
+        let mut names = BTreeSet::new();
+        self.collect_shadowed_by_pat(pat, &mut names);
+        for name in names {
+            self.disqualify_if_candidate(&name);
+        }
+    }
+
     /// If `expr` is a member access whose receiver is a candidate Ident,
     /// disqualify that candidate. Handles plain Member and OptChain Member
     /// receivers, walking through `Paren` wrappers.
@@ -597,6 +634,43 @@ impl PlainDataWriteScanner<'_> {
 }
 
 impl Visit for PlainDataWriteScanner<'_> {
+    fn visit_var_decl(&mut self, node: &VarDecl) {
+        if node.kind == VarDeclKind::Var {
+            for decl in &node.decls {
+                if decl.init.is_some() {
+                    // A nested block/loop var initializer may replace a
+                    // PlainData binding with any runtime value. Direct
+                    // chunk-top var initializers are visited as expressions
+                    // by `collect_plain_data_bindings` only after every init
+                    // has passed the shape check.
+                    self.disqualify_var_pattern(&decl.name);
+                }
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        if let ForHead::VarDecl(var) = &node.left {
+            for decl in &var.decls {
+                // The loop assigns the enumerated key into the binding each
+                // iteration even though the declarator has no initializer.
+                self.disqualify_var_pattern(&decl.name);
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        if let ForHead::VarDecl(var) = &node.left {
+            for decl in &var.decls {
+                // The loop assigns each yielded value into the binding.
+                self.disqualify_var_pattern(&decl.name);
+            }
+        }
+        node.visit_children_with(self);
+    }
+
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
         match &node.left {
             // `X.k = …` / `X[k] = …` — member write. Disqualify
