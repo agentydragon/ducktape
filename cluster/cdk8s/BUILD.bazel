@@ -1564,9 +1564,11 @@ py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     data = [
-        "//cluster/k8s:ssh_mcp_known_hosts",
+        "//ssh_keys:atlas-host-ed25519.pub",
         "//ssh_keys:public-coder-agent-devbox.pub",
         "//ssh_keys:public-coder-devbox-host.pub",
+        "//ssh_keys:rugged-host-ed25519.pub",
+        "//ssh_keys:wyrm2-host-ed25519.pub",
     ],
     visibility = [
         "//cluster/cdk8s:__subpackages__",
