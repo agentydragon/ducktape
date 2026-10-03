@@ -191,9 +191,7 @@ class SessionsApi:
 
     async def _sessions_page(self, *, limit: int, cursor: str | None = None) -> SessionsPage:
         # Claude Code Web's generic session-list client opts in to routine runs explicitly.
-        response = await self._get(
-            "/v1/code/sessions", limit=limit, cursor=cursor, include_trigger_sessions="true"
-        )
+        response = await self._get("/v1/code/sessions", limit=limit, cursor=cursor, include_trigger_sessions="true")
         return SessionsPage.model_validate_json(response.content)
 
     async def list_sessions(self) -> AsyncIterator[SessionSummary]:
