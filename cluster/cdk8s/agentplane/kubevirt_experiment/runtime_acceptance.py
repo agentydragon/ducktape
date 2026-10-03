@@ -281,7 +281,7 @@ def _template(args: argparse.Namespace) -> VmTemplate:
         "llm_base_url": args.llm_base_url,
         "proxy_url": args.proxy_url,
         "model_context_windows": dict(args.model_context_window),
-        "ca_bundle": args.ca_bundle_file.read_text(),
+        "ca_bundle_config_map": args.ca_bundle_config_map,
         "kubernetes_host": args.kubernetes_host,
         "kubernetes_credential_name": args.kubernetes_credential_name,
     }
@@ -292,7 +292,7 @@ def _validated_template(values: dict[str, object]) -> VmTemplate:
     try:
         return VmTemplate.model_validate(values)
     except ValidationError as error:
-        # Pydantic's default exception includes supplied values, including the CA bundle.
+        # Keep supplied configuration values out of validation errors.
         details = "; ".join(
             f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
             for item in error.errors(include_input=False, include_context=False, include_url=False)
@@ -866,7 +866,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--image-pull-secret", required=True)
     create_parser.add_argument("--llm-base-url", required=True)
     create_parser.add_argument("--proxy-url", required=True)
-    create_parser.add_argument("--ca-bundle-file", required=True, type=Path)
+    create_parser.add_argument("--ca-bundle-config-map", required=True)
     create_parser.add_argument("--kubernetes-host", required=True)
     create_parser.add_argument("--kubernetes-credential-name", required=True)
     create_parser.add_argument("--template", default="prototype")

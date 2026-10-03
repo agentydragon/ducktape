@@ -55,7 +55,7 @@ class VmTemplate(BaseModel):
     llm_base_url: str = Field(min_length=1)
     proxy_url: str = Field(min_length=1)
     model_context_windows: dict[str, Annotated[int, Field(gt=0)]] = Field(default_factory=dict)
-    ca_bundle: str = Field(min_length=1)
+    ca_bundle_config_map: str = Field(min_length=1)
     kubernetes_host: str = Field(min_length=1)
     kubernetes_credential_name: str = Field(min_length=1)
 

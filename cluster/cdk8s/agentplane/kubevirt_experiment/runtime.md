@@ -15,13 +15,20 @@ build without the override uses the repository's pinned wheel, which may predate
 the guest entry points during development.
 
 The guest uses EFI with Secure Boot disabled, an ephemeral root containerDisk,
-and three virtio disks:
+and the following virtio disks:
 
-| Disk serial         | Contents                                                           | Guest use                                                                              |
-| ------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `agentplane-config` | ConfigMap files `config.json`, `ca-certificates.crt`, `kubeconfig` | Copied to `/run/agentplane`; contains public configuration and credential placeholders |
-| `state`             | Retained XFS filesystem, label `APSTATE`                           | `/state`; runner journals and quota-limited native histories                           |
-| `workspace`         | Retained ext4 filesystem, label `APWORKSPACE`                      | `/workspace`; checkouts, home, and tool caches                                         |
+| Disk serial         | Contents                                                                   | Guest use                                                                              |
+| ------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `agentplane-config` | ConfigMap files `config.json`, `kubeconfig`                                | Copied to `/run/agentplane`; contains public configuration and credential placeholders |
+| `agentplane-trust`  | trust-manager ConfigMap files `ca-certificates.crt`, `ca-certificates.p12` | Copied to `/run/agentplane`; shared PEM and passwordless PKCS#12 trust stores          |
+| `state`             | Retained XFS filesystem, label `APSTATE`                                   | `/state`; runner journals and quota-limited native histories                           |
+| `workspace`         | Retained ext4 filesystem, label `APWORKSPACE`                              | `/workspace`; checkouts, home, and tool caches                                         |
+
+The approved template's `ca_bundle_config_map` names the existing trust-manager
+output in the VM namespace. The guest uses its PEM bundle unchanged and gives Java
+its passwordless PKCS#12 store, without rebuilding either at boot. Both files must
+be nonempty for startup to proceed. ConfigMap disks are boot snapshots: stop/start
+the VM after a bundle update, including CA rotation.
 
 The guest validates schema version 1 before preparing disks. Formatting requires
 explicit `format_blank_disks` authorization, no filesystem signatures, and a

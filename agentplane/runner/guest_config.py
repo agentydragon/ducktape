@@ -117,7 +117,9 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
         "REQUESTS_CA_BUNDLE": str(CA_BUNDLE),
         "NODE_EXTRA_CA_CERTS": str(CA_BUNDLE),
         "PIP_CERT": str(CA_BUNDLE),
-        "JAVA_TOOL_OPTIONS": "-Djavax.net.ssl.trustStore=/run/agentplane/java-cacerts -Djavax.net.ssl.trustStorePassword=changeit",
+        "JAVA_TOOL_OPTIONS": (
+            "-Djavax.net.ssl.trustStore=/run/agentplane/ca-certificates.p12 -Djavax.net.ssl.trustStoreType=PKCS12"
+        ),
         "KUBECONFIG": str(KUBECONFIG),
     }
     return RunnerConfig(

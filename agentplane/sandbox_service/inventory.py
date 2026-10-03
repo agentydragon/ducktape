@@ -296,6 +296,7 @@ class SandboxInventory:
             {"name": "state", "disk": {"bus": "virtio"}, "serial": "state"},
             {"name": "workspace", "disk": {"bus": "virtio"}, "serial": "workspace"},
             {"name": "config", "disk": {"bus": "virtio"}, "serial": "agentplane-config"},
+            {"name": "trust", "disk": {"bus": "virtio"}, "serial": "agentplane-trust"},
         ]
         body = {
             "apiVersion": KUBEVIRT_API_VERSION,
@@ -359,6 +360,7 @@ class SandboxInventory:
                                 "persistentVolumeClaim": {"claimName": vm_aux_name(name, "workspace")},
                             },
                             {"name": "config", "configMap": {"name": vm_aux_name(name, "config")}},
+                            {"name": "trust", "configMap": {"name": template.ca_bundle_config_map}},
                         ],
                     },
                 },
@@ -555,7 +557,6 @@ class SandboxInventory:
         }
         expected = {
             "config.json": json.dumps(config, separators=(",", ":")),
-            "ca-certificates.crt": template.ca_bundle,
             "kubeconfig": json.dumps(kubeconfig, separators=(",", ":")),
         }
         try:

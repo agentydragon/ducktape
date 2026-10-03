@@ -84,7 +84,7 @@ def test_vm_catalog_emits_admission_and_launcher_fence_together() -> None:
         storage_class="test-local-storage",
         llm_base_url="http://llm.test",
         proxy_url="http://10.0.2.2:3128",
-        ca_bundle="PUBLIC CA",
+        ca_bundle_config_map="test-egress-ca",
         kubernetes_host="kubernetes.test",
         kubernetes_credential_name="test-credential",
     )
@@ -140,7 +140,7 @@ def test_vm_catalog_requires_pinned_relay_image() -> None:
                     storage_class="test-local-storage",
                     llm_base_url="http://llm.test",
                     proxy_url="http://10.0.2.2:3128",
-                    ca_bundle="PUBLIC CA",
+                    ca_bundle_config_map="test-egress-ca",
                     kubernetes_host="kubernetes.test",
                     kubernetes_credential_name="test-credential",
                 )

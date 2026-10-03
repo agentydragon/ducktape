@@ -9,7 +9,7 @@ test production credential substitution, destination authorization, TLS intercep
 
 ## Prepare a disposable namespace
 
-Run from the Nix devshell with fresh namespace, digest-pinned images, and public CA bundle.
+Run from the Nix devshell with fresh namespace, digest-pinned images, and a trust-manager CA ConfigMap.
 `agentplane-workload` is a placeholder credential name; provide no credential values.
 
 ```bash
@@ -19,7 +19,7 @@ out=/tmp/agentplane-vm-runtime-setup
 relay_image='git.allegedly.works/ducktape-ci/agentplane-egress-sidecar@sha256:<relay-digest>'
 runner_image='git.allegedly.works/ducktape-ci/agentplane-runner-vm@sha256:<runner-digest>'
 node=ovh-ns103711
-public_ca=/path/to/public-ca.crt
+trust_config_map=prototype-egress-ca
 
 bb run //cluster/cdk8s/agentplane/kubevirt_experiment:main -- --namespace "$ns" \
   --relay-image "$relay_image" --proxy-host "prototype-gateway.$ns.svc.cluster.local" \
@@ -29,6 +29,21 @@ kubectl apply -f "$out/launcher-admission.k8s.yaml"
 
 The render creates the gateway, TokenReview permission, policy, ESO reader, and pull-secret
 reference. Wait for ESO to create `forgejo-images-creds`; it never prints the registry credential.
+
+For the HTTP model fixture, copy a snapshot of the existing public trust-manager
+output into the disposable namespace. Preserve `binaryData`, which contains the
+PKCS#12 store. Do not copy the CA's Secret or private key.
+
+```bash
+kubectl get configmap agentplane-testing-egress-ca -n agentplane-testing -o json \
+  | jq --arg name "$trust_config_map" --arg namespace "$ns" \
+    '{apiVersion, kind, metadata: {name: $name, namespace: $namespace}, data, binaryData}' \
+  | kubectl apply -f -
+```
+
+A real gateway run needs the bundle for that gateway's interception CA. The VM
+requires both `ca-certificates.crt` and `ca-certificates.p12`; it does not generate
+missing trust-store files. Stop/start a VM to consume updated ConfigMap contents.
 
 ## Create and probe the guest
 
@@ -40,7 +55,7 @@ bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- crea
   --namespace "$ns" --name runner-runtime --image "$runner_image" \
   --storage-class local-path-ovh-hdd --image-pull-secret forgejo-images-creds \
   --llm-base-url http://model.invalid --proxy-url http://10.0.2.1:3128 \
-  --ca-bundle-file "$public_ca" --kubernetes-host kubernetes.default.svc \
+  --ca-bundle-config-map "$trust_config_map" --kubernetes-host kubernetes.default.svc \
   --kubernetes-credential-name agentplane-workload \
   --node-selector "kubernetes.io/hostname=$node"
 ```
