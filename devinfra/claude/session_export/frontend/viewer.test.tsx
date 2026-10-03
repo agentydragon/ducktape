@@ -211,9 +211,7 @@ it("shows signed narration as prose while ordinary thinking remains collapsed", 
 
   await vi.waitFor(() => expect(container?.querySelector('[data-fold-kind="narration"]')).not.toBeNull());
   const narration = container.querySelector<HTMLElement>('[data-fold-kind="narration"]')!;
-  expect(narration.querySelector(".agentplane-markdown p")?.textContent).toBe(
-    "The format note is clear; I’ll verify its example next."
-  );
+  expect(narration.textContent?.trim()).toBe("The format note is clear; I’ll verify its example next.");
   expect(narration.querySelector(".agentplane-markdown strong")?.textContent).toBe("clear");
   expect(narration.closest("details, summary, button, article")).toBeNull();
   expect(narration.dataset.historySequences).toBe("801");
