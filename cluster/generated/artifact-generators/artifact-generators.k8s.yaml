@@ -138,8 +138,8 @@ spec:
       name: kyverno-policies
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/agentplane-crds/**"
-          to: "@artifact/cluster/generated/agentplane-crds/"
+        - from: "@repo/agentplane/crds/manifests/**"
+          to: "@artifact/agentplane/crds/manifests/"
       name: agentplane-crds
       originRevision: "@repo"
     - copy:

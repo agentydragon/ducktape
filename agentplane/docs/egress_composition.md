@@ -4,8 +4,8 @@ How `EgressPolicy`, `EgressBinding` and the ServiceAccounts workloads run as com
 decision: the arity between
 them, what that makes reusable, and what follows from a rule language with no way to express
 exclusion. The proxy that enforces the result is <../egress/SPEC.md>; the kinds are
-<../crds/crd-egresspolicies.yaml> and
-<../crds/crd-egressbindings.yaml>.
+<../crds/manifests/crd-egresspolicies.yaml> and
+<../crds/manifests/crd-egressbindings.yaml>.
 
 ## The shape
 

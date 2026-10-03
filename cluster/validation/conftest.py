@@ -19,7 +19,7 @@ def k8s_dir() -> Path:
 
 @pytest.fixture(scope="session")
 def repo_root(k8s_dir: Path) -> Path:
-    """The runfiles checkout both manifest roots sit in (cluster/cdk8s/manifest_roots.py)."""
+    """The runfiles checkout all Flux manifest roots sit in (cluster/cdk8s/manifest_roots.py)."""
     return k8s_dir.parents[1]
 
 

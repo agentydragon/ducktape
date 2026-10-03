@@ -1,5 +1,5 @@
 """Ergonomic wrapper for Agentplane's own `ActionPolicySet` CRD
-(agentplane/crds/crd-actionpolicysets.yaml), following cdk8s-plus's own construction
+(agentplane/crds/manifests/crd-actionpolicysets.yaml), following cdk8s-plus's own construction
 pattern: a class named after the kind, and a named `@staticmethod` factory group for
 `autoApproveIf`'s real variant shapes.
 """

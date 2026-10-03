@@ -1,5 +1,5 @@
 # Generic, cluster-topology-free cdk8s wrapper constructors for Agentplane's own CRDs
-# (agentplane/crds/crd-*.yaml). These CRDs are first-party (unlike every other provider under
+# (agentplane/crds/manifests/crd-*.yaml). These CRDs are first-party (unlike every other provider under
 # cluster/cdk8s/providers/), so their cdk8s_import declarations stay colocated with their
 # authoritative YAML source under //agentplane/crds -- see that package's BUILD.bazel header --
 # and this package only depends on those targets.

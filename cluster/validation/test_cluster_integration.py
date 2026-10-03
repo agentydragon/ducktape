@@ -1,4 +1,4 @@
-"""Integration tests: validate the real manifest trees (cluster/k8s, cluster/generated) via pure analysis.
+"""Integration tests: validate the real manifest trees via pure analysis.
 
 Tests that parse the cluster kustomization tree and check structural invariants
 (no orphaned files, valid dependencies, health checks on controller resources).

@@ -1,24 +1,15 @@
-"""Agentplane's own CRDs, copied verbatim from `agentplane/crds`, where
+"""Agentplane's own CRDs, authored in the directory Flux packages directly.
 `bb run //agentplane/crds:generate_bin` keeps their derived subject schemas current."""
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from cdk8s import Chart
 
 from agentplane.crds.generate import CRD_FILES, CRDS_DIR
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.generation import copy_source_file
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "agentplane-crds"
-OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
-
-
-def copy_crds(root: Path) -> list[str]:
-    """Copy each CRD into `OUTPUT_DIR`; return the names its `kustomization.yaml` lists."""
-    return [copy_source_file(root, OUTPUT_DIR, (CRDS_DIR / name).as_posix()) for name in CRD_FILES]
+OUTPUT_DIR = CRDS_DIR.as_posix()
 
 
 def agentplane_crds(chart: Chart, directory: RenderedDirectory) -> Kustomization:

@@ -1,5 +1,5 @@
 """Ergonomic wrapper for Agentplane's own `EgressBinding` CRD
-(agentplane/crds/crd-egressbindings.yaml): a class named after the kind, following
+(agentplane/crds/manifests/crd-egressbindings.yaml): a class named after the kind, following
 cdk8s-plus's own construction pattern. Every keyword is an `EgressBindingSpec` field under its own
 name and type; this wrapper adds no ducktape-specific policy.
 """

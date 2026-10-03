@@ -1,5 +1,5 @@
 """Ergonomic wrapper for Agentplane's own `EgressCredential` CRD
-(agentplane/crds/crd-egresscredentials.yaml), following cdk8s-plus's own
+(agentplane/crds/manifests/crd-egresscredentials.yaml), following cdk8s-plus's own
 construction pattern: a class named after the kind, and a named `@staticmethod` factory group for
 `source`'s real variant shapes.
 """

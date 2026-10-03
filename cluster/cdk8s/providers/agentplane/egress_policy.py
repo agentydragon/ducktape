@@ -1,5 +1,5 @@
 """Ergonomic wrapper for Agentplane's own `EgressPolicy` CRD
-(agentplane/crds/crd-egresspolicies.yaml): a class named after the kind, following
+(agentplane/crds/manifests/crd-egresspolicies.yaml): a class named after the kind, following
 cdk8s-plus's own construction pattern.
 
 The schema has exactly one shape for a rule: `hosts` plus ordinary optional fields

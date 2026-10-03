@@ -178,8 +178,8 @@ CRD's generic wrapper modules; keep upstream CRD source pins in `MODULE.bazel`. 
 providers are
 `//cluster/cdk8s/providers/{agent_sandbox,cert_manager,cilium,clickhouse,cnpg,external_secrets,external_snapshotter,flux,gateway_api,grafana_operator,keda,kubevirt,kyverno,prometheus_operator,redis_operator,seaweedfs,source_watcher,tofu_controller,volsync}`.
 `//agentplane/crds` declares the imports of Agentplane's first-party CRDs beside their
-YAML; `providers/agentplane` holds only their wrappers, and `agentplane_crds.py` copies the
-YAML into `cluster/generated/agentplane-crds` for Flux.
+YAML; `providers/agentplane` holds only their wrappers, and `agentplane_crds.py` points Flux
+at the same authored directory under `agentplane/crds/manifests`.
 
 The `source_watcher` import extracts `ArtifactGenerator` from the CRD bundle in
 `cluster/k8s/flux/flux-system/gotk-components.yaml`, keeping the binding aligned with the
