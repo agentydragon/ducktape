@@ -2010,6 +2010,7 @@ data:
           - github-clone
           - github-actions-logs
           - buildbuddy
+        action_policy_sets: []
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
