@@ -20,6 +20,7 @@ spec:
     - cluster/k8s/
     - cluster/generated/
     - cluster/parked/
+    - agentplane/crds/manifests/
     - cluster/charts/browsertrix/
     - haku/x/dispatch/deploy/
     - haku/runtime/x/managed_agent/self_hosted/deploy/

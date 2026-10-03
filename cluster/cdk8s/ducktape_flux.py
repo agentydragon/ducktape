@@ -57,6 +57,7 @@ def chart(app: App) -> Chart:
             f"{HAND_WRITTEN_ROOT}/",
             f"{GENERATED_ROOT}/",
             f"{PARKED_ROOT}/",
+            "agentplane/crds/manifests/",
             "cluster/charts/browsertrix/",
             "haku/x/dispatch/deploy/",
             "haku/runtime/x/managed_agent/self_hosted/deploy/",
