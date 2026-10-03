@@ -140,6 +140,11 @@ check UID, selected template, state schema, halted run strategy, and VMI absence
 halt is specific to this acceptance fixture. Normal lifecycle operations use provider suspend and
 resume; `stop-start` exercises that path.
 
+If an acceptance run stopped after suspension, `resume --namespace "$ns" --name
+"$vm" --uid "$vm_uid"` continues through the provider after the VMI is fully gone.
+The helper waits for raw VMI deletion, rather than treating a terminating VMI as
+absent, and retries resource-version conflicts on resume.
+
 ## Cleanup
 
 Save evidence first. Halt the VM and wait for VMI deletion. VM deletion retains its DataVolumes/PVCs;
