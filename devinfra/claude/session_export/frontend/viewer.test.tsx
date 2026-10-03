@@ -38,6 +38,7 @@ const secondSession = {
   id: "session-2",
   title: "Selected after toggling",
   updated_at: "2026-01-02T00:00:00Z",
+  last_event_at: "2025-12-31T00:00:00Z",
 };
 const first = {
   event_id: "event-1",
@@ -163,9 +164,14 @@ it("keeps the selected session when the session list is hidden and shown", async
   );
   await vi.waitFor(() => expect(container?.querySelector("#session-sidebar")).not.toBeNull());
 
-  const secondRow = [...container.querySelectorAll<HTMLButtonElement>("#session-sidebar button[aria-pressed]")].find(
-    (button) => button.textContent?.includes(secondSession.title)
-  )!;
+  const secondRow = await vi.waitFor(() => {
+    const row = [
+      ...(container?.querySelectorAll<HTMLButtonElement>("#session-sidebar button[aria-pressed]") ?? []),
+    ].find((button) => button.textContent?.includes(secondSession.title));
+    expect(row).toBeDefined();
+    expect(row?.getAttribute("aria-pressed")).toBe("false");
+    return row!;
+  });
   await act(async () => secondRow.click());
   await vi.waitFor(() => expect(container?.textContent).toContain("Selected after toggling"));
 
@@ -325,9 +331,14 @@ it("opens the mobile session drawer and keeps the chosen session after it closes
   await act(async () => toggle.click());
   await vi.waitFor(() => expect(document.body.querySelector("#session-sidebar-mobile")).not.toBeNull());
 
-  const secondRow = [
-    ...document.body.querySelectorAll<HTMLButtonElement>("#session-sidebar-mobile button[aria-pressed]"),
-  ].find((button) => button.textContent?.includes(secondSession.title))!;
+  const secondRow = await vi.waitFor(() => {
+    const row = [
+      ...document.body.querySelectorAll<HTMLButtonElement>("#session-sidebar-mobile button[aria-pressed]"),
+    ].find((button) => button.textContent?.includes(secondSession.title));
+    expect(row).toBeDefined();
+    expect(row?.getAttribute("aria-pressed")).toBe("false");
+    return row!;
+  });
   await act(async () => secondRow.click());
   await vi.waitFor(() => expect(container?.textContent).toContain("Selected after toggling"));
   expect(container.querySelector('button[aria-controls="session-sidebar-mobile"]')?.getAttribute("aria-expanded")).toBe(
