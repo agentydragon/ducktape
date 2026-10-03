@@ -461,9 +461,9 @@ disclosures, visible running/failure state, and stable expansion/scroll behavior
 Events arrive. Preserve timeline order and Raw evidence. Add behavioral and visual
 coverage of the reviewed cases, including reload and reconnect.
 
-Reasoning and tool arguments and output already load on demand (`LazyBody` in
-`projected_session.tsx`); compact rows keep that loading and explicitly distinguish unloaded,
-streaming, empty, and unavailable details.
+A folded run mounts none of its rows, and a tool row reads its arguments for its one-line
+summary and its output only once opened; compact rows keep that loading and explicitly
+distinguish unloaded, streaming, empty, and unavailable details.
 
 ### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
 

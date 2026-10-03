@@ -469,20 +469,23 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 run = page.locator(f'[data-thread-anchor="{reasoning.cursor}"]')
                 await expect(page.locator(f'[data-thread-anchor="{tool.cursor}"]')).to_have_count(0)
                 await run.get_by_text("1 tool call, 1 reasoning step", exact=True).click()
-                await run.locator("summary", has_text="Arguments").click()
-                await expect(run.get_by_text("{", exact=True)).to_be_visible()
+                # A tool call is one line of its arguments; opened, it shows them as they stream in.
+                tool_line = run.locator("details.agentplane-step-details", has_text="test-tool")
+                await tool_line.locator("summary").click()
+                arguments = tool_line.locator(".agentplane-code-block")
+                await expect(arguments.get_by_text("{", exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"path":')
                     )
                 )
-                await expect(run.get_by_text('{"path":', exact=True)).to_be_visible()
+                await expect(arguments.get_by_text('{"path":', exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"value"}')
                     )
                 )
-                await expect(run.get_by_text('{"path":"value"}', exact=True)).to_be_visible()
+                await expect(arguments.get_by_text('{"path":"value"}', exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         item_completed=event_pb2.ItemCompleted(
@@ -490,9 +493,8 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                         )
                     )
                 )
-                await run.locator("summary", has_text="Output").click()
-                await expect(run.get_by_text("On-demand tool output", exact=True)).to_be_visible()
-                reasoning_details = run.locator("details.agentplane-step-details")
+                await expect(tool_line.get_by_text("On-demand tool output", exact=True)).to_be_visible()
+                reasoning_details = run.locator("details.agentplane-step-details", has_text="Reasoning")
                 await expect(reasoning_details).to_be_visible()
                 await reasoning_details.locator("summary").click()
                 expanded_reasoning = reasoning_details.locator(":scope > .agentplane-markdown")

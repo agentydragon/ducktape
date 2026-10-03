@@ -113,6 +113,13 @@
   display: none;
 }
 
+/* The row's evidence icon is pinned to its card's corner, so the line stops short of it rather than
+   running under it. The disclosed content below keeps the full width. */
+.agentplane-step-details > summary,
+.agentplane-step-static {
+  padding-inline-end: 1.5rem;
+}
+
 .agentplane-step-trailing {
   display: inline-flex;
   flex: none;

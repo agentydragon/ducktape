@@ -1340,6 +1340,82 @@ function standaloneReasoningRows(threadId: string, longPreview: boolean): Record
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+/** The command Codex records for a script it ran through a shell: the argv, joined, with the script
+ * double-quoted. */
+function codexShellCommand(script: string): string {
+  return `/bin/bash -lc "${script.replace(/["\\$`]/g, "\\$&")}"`;
+}
+
+const LONG_QUERY_SCRIPT = [
+  `curl -sS -u 'test-user:test-credential' --data-urlencode "query=WITH latest AS (SELECT DISTINCT ON (account_id, security_id) account_id, security_id, institution_value, captured_at FROM holding_snapshots ORDER BY account_id, security_id, captured_at DESC, id DESC)`,
+  `SELECT l.institution_name, a.name AS account, s.name AS security, round(sum(h.institution_value)::numeric, 2) AS market_value FROM latest h JOIN accounts a ON a.account_id = h.account_id JOIN links l ON l.item_id = a.item_id LEFT JOIN securities s ON s.security_id = h.security_id GROUP BY 1, 2, 3 ORDER BY market_value DESC" http://test-pgweb.example/api/query`,
+].join(" ");
+
+const LONG_SCRIPT = [
+  "set -euo pipefail",
+  ...Array.from({ length: 16 }, (_, index) => `echo "step ${index + 1}: $(date -Is)" >> /tmp/test-progress.log`),
+  "tail -n 3 /tmp/test-progress.log",
+].join("\n");
+
+/** Shell tool calls in the shapes the two harnesses record them: Claude's `Bash` with the model's
+ * description, a script past the input's cap, and Codex's joined `bash -lc` command with output past
+ * the output's. Neighbouring reasoning keeps them one run. */
+function shellCallRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(60, null),
+    entity(
+      "confirmed_input",
+      "user-1",
+      4,
+      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
+      {
+        thread_id: threadId,
+        turn_id: "turn-visual",
+        input_ref: payload(4, "user-1", "confirmed_input", "Check the containers and the holdings."),
+      }
+    ),
+    item(10, "claude-bash", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Bash",
+      arguments: JSON.stringify({
+        command: "docker ps --all --format 'table {{.Names}}\\t{{.Status}}'",
+        description: "List every container and its status",
+      }),
+      output: "NAMES\tSTATUS\ntest-web\tUp 3 hours\ntest-db\tUp 3 hours (healthy)",
+    }),
+    item(20, "r-1", ItemKind.REASONING, "The containers are up, so the holdings query is next.", { threadId }),
+    item(30, "codex-command", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "commandExecution",
+      arguments: JSON.stringify({ command: codexShellCommand(LONG_QUERY_SCRIPT), cwd: "/test-workspace" }),
+      output: JSON.stringify(
+        Array.from({ length: 24 }, (_, index) => ({
+          institution_name: "Test Bank",
+          account: `Test Account ${index + 1}`,
+          market_value: (1000 - index * 17.5).toFixed(2),
+        })),
+        null,
+        2
+      ),
+    }),
+    item(40, "claude-script", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Bash",
+      arguments: JSON.stringify({ command: LONG_SCRIPT, timeout: 120000 }),
+      output: "step 14\nstep 15\nstep 16",
+      failed: true,
+    }),
+    item(50, "claude-streaming", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Bash",
+      arguments: '{"command": "bazel test //agentplane/...", "descri',
+      complete: false,
+    }),
+    item(60, "m-1", ItemKind.ASSISTANT_TEXT, "The holdings query returned 24 rows.", { threadId }),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
 function recoveryRows(threadId: string): Record<string, unknown>[] {
   const rows =
     scenario.recovery === "tools"
@@ -1413,6 +1489,7 @@ function recoveryRows(threadId: string): Record<string, unknown>[] {
 
 function threadEntityRows(threadId: string): Record<string, unknown>[] {
   if (scenario.recovery) return recoveryRows(threadId);
+  if (scenario.shellCalls) return shellCallRows(threadId);
   if (scenario.endedAttachment) return endedAttachmentRows(threadId);
   if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
   if (scenario.interleavedEvents) return interleavedRows(threadId);
@@ -2152,7 +2229,9 @@ function openRun(summaries: HTMLElement[]): void {
 if (scenario.openReasoning) {
   const openReasoning = new MutationObserver(() => {
     const summaries = [...document.querySelectorAll("summary")];
-    const step = document.querySelector<HTMLElement>("details.agentplane-step-details > summary");
+    const step = [...document.querySelectorAll<HTMLElement>("details.agentplane-step-details > summary")].find(
+      (candidate) => candidate.querySelector(".agentplane-step-title")?.textContent === "Reasoning"
+    );
     if (!step) {
       openRun(summaries);
       return;
@@ -2175,15 +2254,32 @@ if (scenario.openSetup) {
   openSetup.observe(document, { childList: true, subtree: true });
 }
 
-if (scenario.openToolPayloads) {
-  const unopened = new Set(["Arguments", "Output"]);
-  const openToolPayloads = new MutationObserver(() => {
+/** Opens each folded tool-call line inside the run, which mounts only once the run is open. */
+function openToolLines(): void {
+  for (const step of document.querySelectorAll<HTMLElement>("details.agentplane-step-details > summary")) {
+    const details = step.parentElement;
+    if (
+      details instanceof HTMLDetailsElement &&
+      !details.open &&
+      step.querySelector(".agentplane-step-title")?.textContent !== "Reasoning"
+    )
+      step.click();
+  }
+}
+
+if (scenario.openRun) {
+  const openFoldedRun = new MutationObserver(() => {
     const summaries = [...document.querySelectorAll("summary")];
     openRun(summaries);
-    for (const summary of summaries) {
-      if (unopened.delete(summary.textContent ?? "")) summary.click();
-    }
-    if (unopened.size === 0) openToolPayloads.disconnect();
+    if (document.querySelector("details.agentplane-step-details")) openFoldedRun.disconnect();
+  });
+  openFoldedRun.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openToolPayloads) {
+  const openToolPayloads = new MutationObserver(() => {
+    openRun([...document.querySelectorAll("summary")]);
+    openToolLines();
   });
   openToolPayloads.observe(document, { childList: true, subtree: true });
 }
@@ -2193,16 +2289,16 @@ if (scenario.openRecoveryDetails) {
     const summaries = [...document.querySelectorAll("summary")];
     openRun(summaries);
     for (const summary of summaries) {
-      const text = summary.textContent ?? "";
       const details = summary.parentElement;
       if (
         details instanceof HTMLDetailsElement &&
         !details.open &&
-        (text.includes("not retained in model context") || text === "Continuation output" || text === "Output")
+        summary.textContent?.includes("not retained in model context")
       ) {
         summary.click();
       }
     }
+    openToolLines();
   });
   openRecovery.observe(document, { childList: true, subtree: true });
 }

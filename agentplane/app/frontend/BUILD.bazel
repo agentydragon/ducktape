@@ -1106,6 +1106,7 @@ vitest_bin.vitest_test(
         ":client_test",
         ":connections_test",
         ":consent_test",
+        "//agentplane/app/frontend/threads:command_calls_test",
         "//agentplane/app/frontend/threads:history_rows_test",
         ":json_view_test",
         ":live_stream_test",

@@ -1098,8 +1098,9 @@ describe("recovery presentation", () => {
       { "test-entity-1:output": "aborted" }
     );
     expect(container.querySelector('[aria-label="Revised for continuation"]')).not.toBeNull();
+    await toggle(container.querySelector("summary")!);
     expect(container.textContent).toContain("Recovery content does not establish a tool execution outcome.");
-    await disclose(container, "Continuation output");
+    expect(container.textContent).toContain("Continuation output");
     expect(container.textContent).toContain("aborted");
     expect(container.querySelector('[aria-label="Succeeded"]')).toBeNull();
     expect(container.querySelector('[aria-label="Failed"]')).toBeNull();
@@ -1123,7 +1124,6 @@ describe("recovery presentation", () => {
     await disclose(container, "Bash: discarded context (not retained in model context)");
     expect(container.textContent).toContain("does not undo tool side effects");
     expect(container.querySelector('[aria-label="Succeeded"]')).not.toBeNull();
-    await disclose(container, "Output");
     expect(container.textContent).toContain("Created report.txt");
   });
 
@@ -1147,34 +1147,149 @@ describe("recovery presentation", () => {
   });
 });
 
+function toolEntity(toolName: string): ThreadEntity {
+  return entity(
+    "item",
+    {
+      kind: ItemKind.TOOL_CALL,
+      tool_name: toolName,
+      completion: "tool",
+      tool_succeeded: true,
+      recovery: null,
+      recovery_reason: "",
+    },
+    { argumentsRef: reference("test-tool", "arguments"), outputRef: reference("test-tool", "output") }
+  );
+}
+
+/** A completed tool call whose arguments and output are the given values. */
+function renderTool(toolName: string, args: unknown, output = "test-output"): Promise<HTMLDivElement> {
+  return renderCard(toolEntity(toolName), {
+    "test-tool:arguments": JSON.stringify(args),
+    "test-tool:output": output,
+  });
+}
+
+const lineOf = (container: HTMLElement): string | undefined =>
+  container.querySelector(".agentplane-step-preview")?.textContent ?? undefined;
+
+describe("tool call rows", () => {
+  const COMMAND = "docker ps --all\n  --format '{{.Names}}'";
+
+  it("folds a Claude Bash call to the line the model wrote for it, and draws nothing else", async () => {
+    const container = await renderTool("Bash", { command: COMMAND, description: "List every container" });
+    expect(container.querySelector(".agentplane-step-title")?.textContent).toBe("Bash");
+    expect(lineOf(container)).toBe("List every container");
+    expect(container.querySelector(".agentplane-code-block")).toBeNull();
+    expect(container.textContent).not.toContain("test-output");
+  });
+
+  it("folds a Bash call with no description to its command on one line", async () => {
+    const container = await renderTool("Bash", { command: COMMAND });
+    expect(lineOf(container)).toBe("docker ps --all --format '{{.Names}}'");
+  });
+
+  it("folds Codex's command to the script it ran, without the shell that ran it", async () => {
+    const container = await renderTool("commandExecution", {
+      command: String.raw`/bin/bash -lc "echo \"test-script\""`,
+      cwd: "/test-workspace",
+    });
+    expect(container.querySelector(".agentplane-step-title")?.textContent).toBe("Shell");
+    expect(lineOf(container)).toBe('echo "test-script"');
+  });
+
+  it("opens to the command as shell and the output, with the model's reason and how it ran", async () => {
+    const container = await renderTool(
+      "Bash",
+      { command: COMMAND, description: "List every container", timeout: 5000 },
+      "test-container\n"
+    );
+    await toggle(container.querySelector("summary")!);
+    expect(container.textContent).toContain("List every container");
+    expect(container.textContent).toContain("Timeout 5000 ms");
+    const [command, output] = [...container.querySelectorAll(".agentplane-code-block")].map((block) =>
+      [...block.querySelectorAll(".cm-line")].map((line) => line.textContent ?? "").join("\n")
+    );
+    expect(command).toBe(COMMAND);
+    expect(output).toBe("test-container");
+    expect(container.textContent).not.toContain('"command"');
+  });
+
+  it("shows the JSON a command call holds in place of the command while Raw is on", async () => {
+    const container = await renderTool("Bash", { command: "ls", description: "List files" });
+    await toggle(container.querySelector("summary")!);
+    const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const firstBlock = () => container.querySelector(".agentplane-code-block")?.textContent;
+    expect(firstBlock()).toBe("ls");
+
+    await act(async () => raw.click());
+    expect(firstBlock()).toContain('"command":"ls"');
+    expect(firstBlock()).toContain('"description":"List files"');
+
+    await act(async () => raw.click());
+    expect(firstBlock()).toBe("ls");
+  });
+
+  it("folds any other tool to its arguments' JSON, which is all it can open to", async () => {
+    const container = await renderTool("Read", { file_path: "test-file" });
+    expect(container.querySelector(".agentplane-step-title")?.textContent).toBe("Read");
+    expect(lineOf(container)).toBe('{"file_path":"test-file"}');
+    await toggle(container.querySelector("summary")!);
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+  });
+
+  it("draws a Bash call it could not show whole as its JSON, with nothing to switch", async () => {
+    const container = await renderTool("Bash", { command: "ls", test_extra: true });
+    await toggle(container.querySelector("summary")!);
+    expect(container.querySelector(".agentplane-code-block")?.textContent).toContain('"test_extra":true');
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+  });
+
+  it("keeps a call's open state and Raw where the reader left them when its row leaves the DOM", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    mounted.push({ root, container });
+    const bodies = new Map([
+      ["test-tool:arguments", JSON.stringify({ command: "ls" })],
+      ["test-tool:output", "test-output"],
+    ]);
+    // One provider throughout, as the thread has: only the row mounts and unmounts.
+    const show = (visible: boolean) =>
+      act(async () =>
+        root.render(
+          <MantineProvider env="test">
+            <ThreadSyncContext.Provider value={serving(bodies)}>
+              <RetainedDisclosureProvider>
+                {visible && <EntityCard threadId="test-thread" entity={toolEntity("Bash")} live={false} />}
+              </RetainedDisclosureProvider>
+            </ThreadSyncContext.Provider>
+          </MantineProvider>
+        )
+      );
+    await show(true);
+    await toggle(container.querySelector("summary")!);
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+
+    await show(false);
+    expect(container.querySelector("details")).toBeNull();
+    await show(true);
+    expect(container.querySelector("details")?.open).toBe(true);
+    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
+  });
+});
+
 describe("EntityCard", () => {
   it("renders a tool call's JSON arguments highlighted and its plain output verbatim, both as code", async () => {
-    const container = await renderCard(
-      entity(
-        "item",
-        {
-          kind: ItemKind.TOOL_CALL,
-          tool_name: "Bash",
-          completion: "",
-          tool_succeeded: true,
-          recovery: null,
-          recovery_reason: "",
-        },
-        { argumentsRef: reference("test-tool", "arguments"), outputRef: reference("test-tool", "output") }
-      ),
-      { "test-tool:arguments": '{"command": "ls", "timeout": 30}', "test-tool:output": PROSE }
-    );
+    const container = await renderTool("Read", { file_path: "test-file", limit: 30 }, PROSE);
+    await toggle(container.querySelector("summary")!);
 
-    const args = (await disclose(container, "Arguments")).querySelector(".agentplane-code-block");
-    expect(args?.querySelector(".cm-editor")).not.toBeNull();
-    expect(args?.textContent).toContain('"command": "ls"');
-    expect(args?.textContent).toContain('"timeout": 30');
-
-    const output = (await disclose(container, "Output")).querySelector(".agentplane-code-block");
-    expect([...(output?.querySelectorAll(".cm-line") ?? [])].map((line) => line.textContent ?? "").join("\n")).toBe(
-      PROSE
-    );
-    expect(output?.querySelector("strong, li")).toBeNull();
+    const [args, output] = container.querySelectorAll(".agentplane-code-block");
+    expect(args.querySelector(".cm-editor")).not.toBeNull();
+    expect(args.textContent).toContain('"file_path":"test-file"');
+    expect(args.textContent).toContain('"limit":30');
+    expect([...output.querySelectorAll(".cm-line")].map((line) => line.textContent ?? "").join("\n")).toBe(PROSE);
+    expect(output.querySelector("strong, li")).toBeNull();
   });
 
   it("renders the assistant's text as Markdown", async () => {
