@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act, type ReactNode } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { mount } from "../testing";
 import { renderPreview } from "./entry";
@@ -26,10 +26,12 @@ async function drawn(node: ReactNode | null): Promise<HTMLDivElement> {
 /** The labels of the output streams shown, in order, with each one's text. */
 function streams(container: HTMLElement): Array<[string, string]> {
   return [...container.querySelectorAll(".agentplane-code-block-block")].map((block) => [
-    block.previousElementSibling?.textContent ?? "",
+    block.closest("[data-clamped]")?.parentElement?.previousElementSibling?.textContent ?? "",
     [...block.querySelectorAll(".cm-line")].map((line) => line.textContent ?? "").join("\n"),
   ]);
 }
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("ssh exec arguments", () => {
   it("shows the target as user@host and the command as text, never as markup", async () => {
@@ -86,18 +88,14 @@ describe("ssh exec result", () => {
     expect(streams(container)).toEqual([["stdout · truncated by the server", "test-output"]]);
   });
 
-  it("shows a long stream's first lines until asked for all of them", async () => {
-    const lines = Array.from({ length: 45 }, (_, index) => `test-line-${index + 1}`);
-    const container = await drawn(
-      renderResultPreview(execResultPreview, { ...VALUE, stdout: `${lines.join("\n")}\n` })
-    );
-    expect(streams(container)[0][1]).toBe(lines.slice(0, 20).join("\n"));
-    const more = container.querySelector("button");
-    expect(more?.textContent).toBe("Show all 45 lines");
-    expect(more?.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => more?.click());
-    expect(streams(container)[0][1]).toBe(lines.join("\n"));
-    expect(more?.textContent).toBe("Show the first 20 lines");
+  it("clips a stream taller than its cap behind a button that shows all of it", async () => {
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(10_000);
+    const container = await drawn(renderResultPreview(execResultPreview, VALUE));
+    const showAll = [...container.querySelectorAll("button")].find((button) => button.textContent === "Show all");
+    expect(container.querySelector('[data-clamped="true"]')).not.toBeNull();
+    await act(async () => showAll?.click());
+    expect(container.querySelector('[data-clamped="true"]')).toBeNull();
+    expect(container.textContent).toContain("Show less");
   });
 
   it("says when the command wrote nothing", async () => {

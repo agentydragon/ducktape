@@ -248,6 +248,46 @@ ts_library(
     ],
 )
 
+# A height-capped block whose clipped bottom shows the rest, and the shell command and output views
+# built on it that the SSH `exec` Action and the thread's shell tool calls share.
+ts_library(
+    name = "clamped_block",
+    srcs = ["clamped_block.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "clamped_block_test",
+    testonly = True,
+    srcs = ["clamped_block.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_testing",
+        ":clamped_block",
+        "//:node_modules/@types/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "command_view",
+    srcs = ["command_view.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":clamped_block",
+        ":code_block",
+        ":json_view",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
 ts_library(
     name = "actions_call_tool_result",
     srcs = ["actions/call_tool_result.tsx"],
@@ -308,6 +348,7 @@ ts_library(
         ":actions_rendering_entry",
         ":actions_rendering_result_entry",
         ":code_block",
+        ":command_view",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -1061,6 +1102,7 @@ vitest_bin.vitest_test(
         ":actions_history_test",
         ":actions_requests_test",
         ":actions_call_tool_result_test",
+        ":clamped_block_test",
         ":client_test",
         ":connections_test",
         ":consent_test",
