@@ -48,7 +48,10 @@ py_library(
 py_library(
     name = "inventory",
     srcs = ["inventory.py"],
-    visibility = ["//agentplane/sandbox_service:__subpackages__"],
+    visibility = [
+        "//agentplane/sandbox_service:__subpackages__",
+        "//cluster/cdk8s/agentplane/kubevirt_experiment:__pkg__",
+    ],
     deps = [
         ":binding_storage",
         ":kubernetes_views",
@@ -374,7 +377,10 @@ proto_library(
 
 py_proto_library_with_mypy_stubs(
     name = "protocol_pb2",
-    visibility = ["//agentplane:__subpackages__"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane/kubevirt_experiment:__pkg__",
+    ],
     deps = [":protocol_proto"],
 )
 
@@ -663,7 +669,10 @@ py_library(
 py_library(
     name = "kubevirt_contract",
     srcs = ["kubevirt_contract.py"],
-    visibility = ["//agentplane:__subpackages__"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane/kubevirt_experiment:__pkg__",
+    ],
 )
 
 py_test(
@@ -673,6 +682,7 @@ py_test(
         ":conftest",
         ":destinations",
         ":inventory",
+        ":kubernetes_views",
         ":kubevirt",
         ":models",
         "//:conftest",

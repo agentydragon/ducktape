@@ -653,6 +653,8 @@ class SandboxInventory:
 
     async def finish_provisioning(self, sandbox: Sandbox) -> None:
         vm = await self._vm(sandbox.name) if environment_kind(sandbox.kind) == EnvironmentKind.KUBEVIRT else None
+        if vm is not None and vm.metadata.uid != sandbox.uid:
+            raise SandboxNotFoundError(sandbox.name)
         await self._patch(
             sandbox.name,
             {
@@ -660,26 +662,18 @@ class SandboxInventory:
                     "uid": str(sandbox.uid),
                     **({"resourceVersion": vm.metadata.resource_version} if vm is not None else {}),
                     "annotations": {PROVISIONING_ANNOTATION: None},
-                }
+                },
+                # Keep the durable provisioning intent until starting the VM also succeeds.
+                # Separate patches can lose the retry intent when a controller status update
+                # conflicts with the runStrategy change.
+                **(
+                    {"spec": {"runStrategy": "Always"}}
+                    if vm is not None
+                    and vm.metadata.annotations.get(VM_DESIRED_MODE_ANNOTATION) == OperatingMode.RUNNING
+                    else {}
+                ),
             },
             kind=sandbox.kind,
-        )
-        if vm is not None:
-            await self._resume_vm_if_desired(sandbox.name, sandbox.uid)
-
-    async def _resume_vm_if_desired(self, name: str, uid: str) -> None:
-        vm = await self._vm(name)
-        if vm.metadata.uid != uid:
-            raise SandboxNotFoundError(name)
-        if vm.metadata.annotations.get(VM_DESIRED_MODE_ANNOTATION) != OperatingMode.RUNNING:
-            return
-        await self._patch(
-            name,
-            {
-                "metadata": {"uid": uid, "resourceVersion": vm.metadata.resource_version},
-                "spec": {"runStrategy": "Always"},
-            },
-            kind=EnvironmentKind.KUBEVIRT,
         )
 
     async def binding(self, name: str, *, kind: str = "") -> SandboxBinding | None:

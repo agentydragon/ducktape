@@ -19,6 +19,7 @@ py_binary(
     name = "main",
     srcs = ["main.py"],
     data = [
+        "runtime_model_gateway.py",
         "token_review_gateway.py",
         "@nodejs_linux_amd64//:bin/node",
     ],
@@ -30,6 +31,30 @@ py_binary(
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
     ],
+)
+
+py_binary(
+    name = "runtime_acceptance",
+    srcs = ["runtime_acceptance.py"],
+    deps = [
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:inventory",
+        "//agentplane/sandbox_service:kubevirt",
+        "//agentplane/sandbox_service:kubevirt_contract",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "runtime_model_gateway",
+    srcs = ["runtime_model_gateway.py"],
 )
 
 py_library(

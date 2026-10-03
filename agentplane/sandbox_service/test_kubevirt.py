@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.kubernetes_views import PROVISIONING_ANNOTATION
 from agentplane.sandbox_service.kubevirt import VmTemplate
 from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination
@@ -155,6 +156,30 @@ async def test_vm_destination_rejects_forged_vmi_owner_uid() -> None:
     resolver = DestinationResolver(inventory, cast(k8s_client.CoreV1Api, core), 7000)
     with pytest.raises(DestinationUnavailableError):
         await resolver.resolve(destination)
+
+
+async def test_vm_finishes_provisioning_and_starts_in_one_patch() -> None:
+    custom, core = FakeCustomObjectsApi(), FakeCoreV1Api()
+    inventory = SandboxInventory(
+        namespace=NAMESPACE,
+        custom_objects=cast(CustomObjectsClient, custom),
+        core_v1=cast(k8s_client.CoreV1Api, core),
+        vm_templates={"test-vm": _template()},
+    )
+    view = await inventory.create(
+        CreateSandboxRequest(slug="test-env", template="test-vm", kind="kubevirt"),
+        annotations={PROVISIONING_ANNOTATION: '{"policies":[],"action_policy_sets":[]}'},
+    )
+    assert await inventory.ensure_vm_dependencies(view)
+    custom.patches.clear()
+    await inventory.finish_provisioning(view)
+    assert len(custom.patches) == 1
+    plural, name, patch = custom.patches[0]
+    assert (plural, name) == ("virtualmachines", view.name)
+    assert patch["metadata"]["annotations"][PROVISIONING_ANNOTATION] is None
+    assert patch["spec"]["runStrategy"] == "Always"
+    assert patch["metadata"]["uid"] == view.uid
+    assert "resourceVersion" in patch["metadata"]
 
 
 if __name__ == "__main__":
