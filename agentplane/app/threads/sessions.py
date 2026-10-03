@@ -7,6 +7,9 @@ from agentplane.sandbox_service.client import Runner, SandboxServiceClient
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
 
+# gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//types_protobuf
+
 
 class SandboxNotReachableError(Exception):
     def __init__(self, name: str) -> None:

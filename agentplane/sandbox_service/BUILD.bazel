@@ -282,9 +282,11 @@ py_test(
         "//agentplane:subjects",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
+        "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 
@@ -596,8 +598,10 @@ py_test(
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//util:kubernetes",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 

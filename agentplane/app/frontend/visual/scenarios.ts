@@ -639,14 +639,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     element: "#app",
     route: SUSPENDED_SANDBOX_SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
-    readySelectors: ["::-p-text(Last observed Sandbox state)", '[data-thread-anchor="34"]'],
+    readySelectors: ["::-p-text(Last observed Sandbox and Pod)", '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   session_suspended_sandbox_phone: {
     element: "#app",
     route: SUSPENDED_SANDBOX_SESSION_ROUTE,
     viewport: PHONE,
-    readySelectors: ["::-p-text(Last observed Sandbox state)", '[data-thread-anchor="34"]'],
+    readySelectors: ["::-p-text(Last observed Sandbox and Pod)", '[data-thread-anchor="34"]'],
     captureViewport: true,
   },
   // The sandbox inventory the controls wait on has stopped moving, on a running sandbox: the header's

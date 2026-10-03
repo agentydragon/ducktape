@@ -142,7 +142,7 @@ def _pod(pod: k8s_client.V1Pod, *, api_client: k8s_client.ApiClient) -> SandboxP
         namespace=pod.metadata.namespace or "",
         uid=pod.metadata.uid or "",
         deleting=pod.metadata.deletion_timestamp is not None,
-        **({"node_name": pod.spec.node_name} if pod.spec is not None and pod.spec.node_name is not None else {}),
+        node_name=pod.spec.node_name if pod.spec is not None else None,
         owner_references=[
             OwnerReference(
                 api_version=owner.api_version or "",

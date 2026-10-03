@@ -136,18 +136,20 @@ class LiveIndex:
     changes: Changes = field(default_factory=Changes)
 
     def sandbox_views(self) -> list[SandboxView]:
+        # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
+        api_client = self.core_v1.api_client  # type: ignore[attr-defined]
         return [
             http_sandbox_view(view)
-            for view in sandbox_views(self.sandboxes.values(), self.pods.values(), api_client=self.core_v1.api_client)
+            for view in sandbox_views(self.sandboxes.values(), self.pods.values(), api_client=api_client)
         ]
 
     def sandbox_view(self, name: str) -> SandboxView | None:
         raw = self.sandboxes.get(name)
-        return (
-            None
-            if raw is None
-            else http_sandbox_view(sandbox_view(raw, self.pods.get(name), api_client=self.core_v1.api_client))
-        )
+        if raw is None:
+            return None
+        # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
+        api_client = self.core_v1.api_client  # type: ignore[attr-defined]
+        return http_sandbox_view(sandbox_view(raw, self.pods.get(name), api_client=api_client))
 
     def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return matching_bindings(

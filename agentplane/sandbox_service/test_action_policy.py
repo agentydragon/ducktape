@@ -11,6 +11,9 @@ from agentplane.sandbox_service.protocol_pb2 import Sandbox, ServiceAccount
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, action_policy_set
 from util.kubernetes import CustomObjectsClient
 
+# gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//types_protobuf
+
 LIVE = Sandbox(name="live", uid="test-live-uid", service_account=ServiceAccount(namespace=NAMESPACE, name="live"))
 READS = {"type": "exact_actions", "actions": {"github": ["search_code", "get_file_contents"]}}
 

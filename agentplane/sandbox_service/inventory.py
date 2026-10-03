@@ -105,13 +105,15 @@ class SandboxInventory:
             ),
             self._core_v1.list_namespaced_pod(self._namespace),
         )
-        return sandbox_views(
-            _ResourceList.model_validate(sandboxes_page).items, pods.items, api_client=self._core_v1.api_client
-        )
+        # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
+        api_client = self._core_v1.api_client  # type: ignore[attr-defined]
+        return sandbox_views(_ResourceList.model_validate(sandboxes_page).items, pods.items, api_client=api_client)
 
     async def get(self, name: str) -> Sandbox:
         sandbox = await self._sandbox(name)
-        return sandbox_view(sandbox, await self._pod(name), api_client=self._core_v1.api_client)
+        # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
+        api_client = self._core_v1.api_client  # type: ignore[attr-defined]
+        return sandbox_view(sandbox, await self._pod(name), api_client=api_client)
 
     async def create(
         self,
@@ -185,7 +187,9 @@ class SandboxInventory:
                 }
             },
         )
-        return sandbox_view(sandbox, None, api_client=self._core_v1.api_client)
+        # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
+        api_client = self._core_v1.api_client  # type: ignore[attr-defined]
+        return sandbox_view(sandbox, None, api_client=api_client)
 
     async def pending_grants(self, name: str) -> LaunchGrants | None:
         raw = (await self._sandbox(name)).metadata.annotations.get(PROVISIONING_ANNOTATION)

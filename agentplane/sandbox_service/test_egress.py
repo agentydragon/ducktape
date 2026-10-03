@@ -25,6 +25,9 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.subjects import ServiceAccountRef
 
+# gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//types_protobuf
+
 LIVE = ServiceAccountRef(namespace=NAMESPACE, name="live")
 OTHER = ServiceAccountRef(namespace=NAMESPACE, name="other")
 LIVE_SANDBOX = Sandbox(
