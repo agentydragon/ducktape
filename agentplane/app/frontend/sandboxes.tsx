@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import { type JSX, useEffect, useState } from "react";
+import { type JSX, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { readiness } from "./actions/policy";
@@ -152,6 +152,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string, kind: SandboxKi
   const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPreset = searchParams.get(PRESET_PARAM);
+  const handledPreset = useRef<string | null>(null);
 
   /** Fill the form from a preset, or clear what one filled; every launch field stays editable. */
   function pickPreset(preset: SandboxPresetView | null): void {
@@ -182,9 +183,21 @@ export function SandboxList({ onOpen }: { onOpen: (name: string, kind: SandboxKi
 
   // The URL names a preset the form has not taken yet: once the catalog is here, take it.
   useEffect(() => {
-    if (requestedPreset === null || requestedPreset === selectedPreset) return;
+    if (requestedPreset === null) {
+      handledPreset.current = null;
+      return;
+    }
+    // A local form change can clear a preset and its URL parameter in separate React updates. Do
+    // not reapply the old URL value in the render between those updates.
+    if (requestedPreset === selectedPreset || requestedPreset === handledPreset.current) {
+      handledPreset.current = requestedPreset;
+      return;
+    }
     const preset = presets.find((candidate) => candidate.name === requestedPreset);
-    if (preset) pickPreset(preset);
+    if (preset) {
+      handledPreset.current = requestedPreset;
+      pickPreset(preset);
+    }
   }, [requestedPreset, selectedPreset, presets]);
 
   useEffect(() => {

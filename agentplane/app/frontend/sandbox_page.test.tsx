@@ -9,6 +9,7 @@ import { afterAll, afterEach, expect, it, vi } from "vitest";
 import type { SandboxKind, SandboxView, ThreadView } from "./client";
 import type { Live, SandboxSnapshot } from "./live";
 import { SandboxPage } from "./sandbox_page";
+import { TopbarContext } from "./topbar";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -24,6 +25,7 @@ const live = vi.hoisted(
           name: "startup-test",
           uid: "00000000-0000-4000-8000-000000000001",
           kind: "agent_sandbox",
+          template: "agentplane-runner",
           state: "running",
           created_at: "2026-01-01T00:00:00Z",
           operating_mode: "Running",
@@ -110,6 +112,8 @@ async function render(
     throw new Error(`Unexpected request: ${request.method} ${path}`);
   });
   container = document.createElement("div");
+  const topbarTitle = document.createElement("div");
+  container.append(topbarTitle);
   document.body.append(container);
   root = createRoot(container);
   const onOpenThread = vi.fn();
@@ -117,7 +121,9 @@ async function render(
     root.render(
       <MantineProvider env="test">
         <MemoryRouter>
-          <SandboxPage name="startup-test" kind={kind} onBack={vi.fn()} onOpenThread={onOpenThread} />
+          <TopbarContext.Provider value={{ title: topbarTitle, actions: null }}>
+            <SandboxPage name="startup-test" kind={kind} onBack={vi.fn()} onOpenThread={onOpenThread} />
+          </TopbarContext.Provider>
         </MemoryRouter>
       </MantineProvider>
     )
@@ -261,7 +267,7 @@ it("shows KubeVirt status and supported operations without presenting a missing 
     reason: null,
     message: null,
   };
-  await render(async () => Response.json([]));
+  await render(async () => Response.json([]), undefined, "kubevirt");
   const statusTab = [...container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')].find(
     (tab) => tab.textContent === "Status"
   );

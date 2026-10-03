@@ -18,6 +18,7 @@ function sandboxView(name: string, overrides: Partial<SandboxView> = {}): Sandbo
     kubernetes_grant_error: null,
     deleting: false,
     ...overrides,
+    template: overrides.template ?? "agentplane-runner",
   };
 }
 

@@ -45,6 +45,8 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
     kubernetes_grant_error: null,
     deleting: false,
     ...overrides,
+    kind: overrides.kind ?? "agent_sandbox",
+    template: overrides.template ?? "agentplane-runner",
   };
 }
 
@@ -60,6 +62,7 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbo
     harness_state: "HARNESS_STATE_UNSPECIFIED",
     feed_status: "active",
     ...overrides,
+    sandbox_kind: overrides.sandbox_kind ?? "agent_sandbox",
   };
 }
 
