@@ -199,18 +199,24 @@ def client(
         yield test_client
 
 
-def test_list_reports_state(client: TestClient) -> None:
+def test_list_reports_separate_resource_statuses(client: TestClient) -> None:
     response = client.get("/sandboxes")
 
     assert response.status_code == 200
-    assert {row["name"]: row["state"] for row in response.json()} == {"live": "running", "fresh": "waiting_for_pod"}
+    rows = {row["name"]: row for row in response.json()}
+    assert rows["live"]["operating_mode"] == "Running"
+    assert rows["live"]["pod"]["status"]["phase"] == "Running"
+    assert rows["fresh"]["operating_mode"] == "Running"
+    assert rows["fresh"]["pod"] is None
 
 
 def test_get_returns_the_row_or_404(client: TestClient) -> None:
     row = client.get("/sandboxes/live").json()
 
-    assert (row["state"], row["pod"]["ip"]) == ("running", "10.0.0.7")
-    assert row["pod"]["containers"][0]["state"] == "running"
+    assert row["operating_mode"] == "Running"
+    assert row["pod"]["name"] == "live"
+    assert row["pod"]["status"]["podIP"] == "10.0.0.7"
+    assert row["pod"]["status"]["containerStatuses"][0]["state"] == {"running": {}}
     assert client.get("/sandboxes/nope").status_code == 404
 
 
@@ -220,7 +226,8 @@ def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCust
     assert response.status_code == 201
     row = response.json()
     assert row["name"].startswith("demo-")
-    assert row["state"] == "waiting_for_pod"
+    assert row["operating_mode"] == "Running"
+    assert row["pod"] is None
     assert ("sandboxes", row["name"]) in custom_objects.objects
     # Nothing was picked, so nothing may leave it.
     assert client.get(f"/sandboxes/{row['name']}/egress").json() == []
@@ -479,9 +486,9 @@ def test_create_rejects_invalid_requests(client: TestClient, custom_objects: Fak
 
 def test_suspend_resume_apply_in_order(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
     assert client.post("/sandboxes/live/suspend").status_code == 204
-    assert client.get("/sandboxes/live").json()["state"] == "suspended"
+    assert client.get("/sandboxes/live").json()["operating_mode"] == "Suspended"
     assert client.post("/sandboxes/live/resume").status_code == 204
-    assert client.get("/sandboxes/live").json()["state"] == "running"
+    assert client.get("/sandboxes/live").json()["operating_mode"] == "Running"
     assert custom_objects.objects[("sandboxes", "live")]["spec"]["operatingMode"] == "Running"
     assert client.post("/sandboxes/nope/suspend").status_code == 404
 
@@ -1196,11 +1203,12 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
         # Neither thread's feed has attached; the sidebar's per-thread status dot reads this as gray.
         assert {row["harness_state"] for row in default_body["threads"]} == {"HARNESS_STATE_UNSPECIFIED"}
         assert set(default_body["sandboxes"]) == {"live", "test-provisioning"}
-        assert default_body["sandboxes"]["test-provisioning"]["state"] == "waiting_for_pod"
-        assert (default_body["sandboxes"]["live"]["name"], default_body["sandboxes"]["live"]["state"]) == (
-            "live",
-            "running",
-        )
+        assert default_body["sandboxes"]["test-provisioning"]["operating_mode"] == "Running"
+        assert default_body["sandboxes"]["test-provisioning"]["pod"] is None
+        live_sandbox = default_body["sandboxes"]["live"]
+        assert live_sandbox["name"] == "live"
+        assert live_sandbox["operating_mode"] == "Running"
+        assert live_sandbox["pod"]["status"]["phase"] == "Running"
 
         all_body = (await http.get("/threads/with-sandboxes", params={"include_archived": "true"})).json()
         all_thread_ids = {row["id"] for row in all_body["threads"]}
