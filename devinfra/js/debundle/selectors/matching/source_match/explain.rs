@@ -151,6 +151,22 @@ pub fn explain_range(
         ));
     }
 
+    // Group candidate enumeration lists all placements before the traced
+    // comparison. Bound top-level hole placements before entering that path.
+    let holes = parsed
+        .body()
+        .iter()
+        .filter(|item| module_item_list_hole_name(item).is_some())
+        .count();
+    let placement_bound = (0..holes).fold(1usize, |bound, _| {
+        bound.saturating_mul(selected.len().saturating_add(1))
+    });
+    if kind == ExplainRangeKind::BindingGroup && placement_bound > 50_000 {
+        return RangeExplanation::limited(
+            "top-level hole placements exceed the local group-enumeration limit",
+        );
+    }
+
     let mut multiple_group_alignments = false;
     let authoritative = match kind {
         ExplainRangeKind::Member => {
