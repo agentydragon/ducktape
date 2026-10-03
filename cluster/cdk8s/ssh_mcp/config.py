@@ -34,7 +34,6 @@ DEVBOX_HOST_KEY = "ssh_keys/public-coder-devbox-host.pub"
 AGENT_DOWNSTREAM_KEY = "ssh_keys/public-coder-agent-devbox.pub"
 NEBULA_SUFFIX = ".nebula.allegedly.works"
 NEBULA_HOST_KEY = "ssh_keys/{name}-host-ed25519.pub"
-KNOWN_HOSTS_HEADER = "# Captured Nebula host keys for ssh-mcp; recapture and review after host-side rotation.\n"
 
 _WYRM2 = "wyrm2.nebula.allegedly.works"
 _RUGGED = "rugged.nebula.allegedly.works"
@@ -117,7 +116,7 @@ def load(devbox_service: Service) -> SshMcpConfig:
     }
     SshSettings.model_validate(settings)
     host_key = f"{key_type} {key}"
-    known_hosts = KNOWN_HOSTS_HEADER + "".join(
+    known_hosts = "".join(
         f"{name}{NEBULA_SUFFIX} {_host_key(NEBULA_HOST_KEY.format(name=name))}\n" for name in _nebula_hostnames(targets)
     )
     known_hosts += f"{devbox_host} {host_key}\n"
