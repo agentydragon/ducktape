@@ -22,6 +22,5 @@ python.pkgs.buildPythonApplication {
   ];
   pythonImportsCheck = [
     "agentplane.runner.main"
-    "agentplane.runner.guest_config"
   ];
 }

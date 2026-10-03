@@ -17,11 +17,11 @@ the guest entry points during development.
 The guest uses EFI with Secure Boot disabled, an ephemeral root containerDisk,
 and three virtio disks:
 
-| Disk serial | Contents | Guest use |
-| --- | --- | --- |
+| Disk serial         | Contents                                                           | Guest use                                                                              |
+| ------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
 | `agentplane-config` | ConfigMap files `config.json`, `ca-certificates.crt`, `kubeconfig` | Copied to `/run/agentplane`; contains public configuration and credential placeholders |
-| `state` | Retained XFS filesystem, label `APSTATE` | `/state`; runner journals and quota-limited native histories |
-| `workspace` | Retained ext4 filesystem, label `APWORKSPACE` | `/workspace`; checkouts, home, and tool caches |
+| `state`             | Retained XFS filesystem, label `APSTATE`                           | `/state`; runner journals and quota-limited native histories                           |
+| `workspace`         | Retained ext4 filesystem, label `APWORKSPACE`                      | `/workspace`; checkouts, home, and tool caches                                         |
 
 The guest validates schema version 1 before preparing disks. Formatting requires
 explicit `format_blank_disks` authorization, no filesystem signatures, and a
@@ -33,6 +33,16 @@ formatting it.
 The runner listens on port 7000. Only that port is forwarded by the production VM
 template. The guest has no SSH server. The relay remains outside the guest, reached
 through `http://10.0.2.1:3128`; projected Kubernetes tokens stay in the relay.
+
+## Build evidence
+
+On 2026-10-03, a local Nix build completed package import checks and produced the
+containerDisk archive at `/nix/store/xrglvry0mw2y2pm5yxgf0mkvvx14infq-agentplane-runner-vm.tar.gz`
+(1.6 GiB). It used the runner wheel downloaded from
+[BuildBuddy invocation `4dc32950-b4e6-5e94-a71b-dfe6a33e648d`](https://app.buildbuddy.io/invocation/4dc32950-b4e6-5e94-a71b-dfe6a33e648d).
+This verifies package import and image assembly, not guest boot or runtime behavior.
+Archive inspection found one layer containing only `./disk/disk.qcow2` (owner
+UID/GID 107, size 4,725,407,744 bytes) and no dangling Nix-store symlink.
 
 ## Boundaries to exercise
 

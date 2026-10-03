@@ -134,14 +134,23 @@ in
   fileSystems."/state" = {
     device = stateDevice;
     fsType = "xfs";
-    options = [ "noatime" "nodev" "nosuid" "prjquota" ];
+    options = [
+      "noatime"
+      "nodev"
+      "nosuid"
+      "prjquota"
+    ];
     autoFormat = false;
     autoResize = false;
   };
   fileSystems."/workspace" = {
     device = workspaceDevice;
     fsType = "ext4";
-    options = [ "noatime" "nodev" "nosuid" ];
+    options = [
+      "noatime"
+      "nodev"
+      "nosuid"
+    ];
     autoFormat = false;
     autoResize = false;
   };
@@ -149,9 +158,19 @@ in
   systemd.services.agentplane-config = {
     description = "Read the Agentplane public guest configuration disk";
     wantedBy = [ "local-fs.target" ];
-    before = [ "agentplane-disk-prepare.service" "agentplane-runner.service" "local-fs.target" ];
-    after = [ "systemd-remount-fs.service" "systemd-udev-trigger.service" ];
-    path = [ pkgs.coreutils pkgs.util-linux ];
+    before = [
+      "agentplane-disk-prepare.service"
+      "agentplane-runner.service"
+      "local-fs.target"
+    ];
+    after = [
+      "systemd-remount-fs.service"
+      "systemd-udev-trigger.service"
+    ];
+    path = [
+      pkgs.coreutils
+      pkgs.util-linux
+    ];
     unitConfig.DefaultDependencies = false;
     serviceConfig = {
       Type = "oneshot";
@@ -197,8 +216,15 @@ in
     description = "Format only authorized blank Agentplane persistent disks";
     requires = [ "agentplane-config.service" ];
     after = [ "agentplane-config.service" ];
-    before = [ "state.mount" "workspace.mount" "local-fs.target" ];
-    requiredBy = [ "state.mount" "workspace.mount" ];
+    before = [
+      "state.mount"
+      "workspace.mount"
+      "local-fs.target"
+    ];
+    requiredBy = [
+      "state.mount"
+      "workspace.mount"
+    ];
     unitConfig.DefaultDependencies = false;
     path = [
       pkgs.coreutils
@@ -216,10 +242,22 @@ in
 
   systemd.services.agentplane-storage = {
     description = "Set Agentplane persistent storage boundaries";
-    requires = [ "state.mount" "workspace.mount" ];
-    after = [ "state.mount" "workspace.mount" ];
+    requires = [
+      "state.mount"
+      "workspace.mount"
+    ];
+    after = [
+      "state.mount"
+      "workspace.mount"
+    ];
     before = [ "agentplane-runner.service" ];
-    path = [ pkgs.acl pkgs.coreutils pkgs.shadow pkgs.util-linux pkgs.xfsprogs ];
+    path = [
+      pkgs.acl
+      pkgs.coreutils
+      pkgs.shadow
+      pkgs.util-linux
+      pkgs.xfsprogs
+    ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
@@ -258,7 +296,12 @@ in
     requires = [ "agentplane-config.service" ];
     after = [ "agentplane-config.service" ];
     before = [ "agentplane-runner.service" ];
-    path = [ pkgs.coreutils pkgs.findutils pkgs.gawk pkgs.jdk ];
+    path = [
+      pkgs.coreutils
+      pkgs.findutils
+      pkgs.gawk
+      pkgs.jdk
+    ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
@@ -305,7 +348,11 @@ in
       "workspace.mount"
       "network.target"
     ];
-    path = [ agentplaneRunner pkgs.coreutils pkgs.systemd ];
+    path = [
+      agentplaneRunner
+      pkgs.coreutils
+      pkgs.systemd
+    ];
     environment = {
       HOME = "/workspace/home";
       ANTHROPIC_AUTH_TOKEN = "agentplane-credential-agentplane-workload";
@@ -329,15 +376,26 @@ in
       # Only signal the runner first so its shutdown drains native processes while their inherited
       # state-owner descriptor remains open. systemd escalates to the whole unit after 25 seconds.
       KillMode = "mixed";
-      CapabilityBoundingSet = [ "CAP_KILL" "CAP_SETGID" "CAP_SETUID" ];
-      AmbientCapabilities = [ "CAP_KILL" "CAP_SETGID" "CAP_SETUID" ];
+      CapabilityBoundingSet = [
+        "CAP_KILL"
+        "CAP_SETGID"
+        "CAP_SETUID"
+      ];
+      AmbientCapabilities = [
+        "CAP_KILL"
+        "CAP_SETGID"
+        "CAP_SETUID"
+      ];
       NoNewPrivileges = true;
       LockPersonality = true;
       ProtectKernelModules = true;
       ProtectKernelLogs = true;
       PrivateTmp = true;
       ProtectSystem = "strict";
-      ReadWritePaths = [ "/state" "/workspace" ];
+      ReadWritePaths = [
+        "/state"
+        "/workspace"
+      ];
       TemporaryFileSystem = [ "/tmp:rw,size=1G,nr_inodes=100000,mode=1777" ];
     };
   };

@@ -15,6 +15,10 @@ use nix::sys::prctl::set_pdeathsig;
 use nix::sys::signal::{SigSet, SigmaskHow, Signal, killpg};
 use nix::unistd::{Pid, alarm, getppid};
 
+mod pid_line;
+
+use pid_line::format_pid_line;
+
 fn signal_group(leader: Pid, signal: Signal) -> Result<()> {
     match killpg(leader, signal) {
         Ok(()) | Err(Errno::ESRCH) => Ok(()),
@@ -66,22 +70,6 @@ fn move_child_into_cgroup(cgroup_procs_fd: RawFd) -> std::io::Result<()> {
         return Err(std::io::Error::last_os_error());
     }
     Ok(())
-}
-
-fn format_pid_line(pid: u32) -> ([u8; 12], usize) {
-    let mut digits = [0u8; 12];
-    let mut start = digits.len() - 1;
-    digits[start] = b'\n';
-    let mut remaining = pid;
-    loop {
-        start -= 1;
-        digits[start] = b'0' + (remaining % 10) as u8;
-        remaining /= 10;
-        if remaining == 0 {
-            break;
-        }
-    }
-    (digits, start)
 }
 
 #[repr(C)]
@@ -242,19 +230,6 @@ fn supervise(
     Ok(status
         .code()
         .unwrap_or_else(|| 128 + status.signal().expect("reaped harness has an exit status")))
-}
-
-#[cfg(test)]
-#[test]
-fn pid_line_keeps_the_final_digit_before_the_newline() {
-    for (pid, expected) in [
-        (3, b"3\n".as_slice()),
-        (123, b"123\n"),
-        (u32::MAX, b"4294967295\n"),
-    ] {
-        let (buffer, start) = format_pid_line(pid);
-        assert_eq!(&buffer[start..], expected);
-    }
 }
 
 fn main() {

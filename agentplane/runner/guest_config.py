@@ -56,7 +56,9 @@ class GuestConfig(BaseModel):
 
     @field_validator("format_blank_disks")
     @classmethod
-    def unique_format_authorizations(cls, value: list[Literal["state", "workspace"]]) -> list[Literal["state", "workspace"]]:
+    def unique_format_authorizations(
+        cls, value: list[Literal["state", "workspace"]]
+    ) -> list[Literal["state", "workspace"]]:
         if len(value) != len(set(value)):
             raise ValueError("format_blank_disks must not contain duplicate disk names")
         return value

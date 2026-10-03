@@ -89,8 +89,8 @@ jobs:
           test -z "${remainder:-}"
           output="$RUNNER_TEMP/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl"
           artifact_name="$(bbapi artifact --kind build list "$invocation_id" --json | \
-            jq -er '[.[] | select(.label == "//agentplane/runner:runner_wheel" and \
-              (.name | endswith("agentplane_runner-0.1.0-py3-none-linux_x86_64.whl")))] | \
+            jq -er '[.[] | select(.label == "//agentplane/runner:runner_wheel" and
+              (.name | endswith("agentplane_runner-0.1.0-py3-none-linux_x86_64.whl")))] |
               if length == 1 then .[0].name else error("expected one runner wheel build output") end')"
           bbapi artifact --kind build download "$invocation_id" \
             "//agentplane/runner:runner_wheel/$artifact_name" --output "$output"
@@ -117,7 +117,7 @@ jobs:
           echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare non-deployable prototype image artifact
-        if: github.ref_name != 'devel'
+        if: inputs.build_runner_wheel && github.ref_name != 'devel'
         shell: bash
         run: |
           set -euo pipefail
@@ -131,7 +131,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload non-deployable prototype image artifact
-        if: github.ref_name != 'devel'
+        if: inputs.build_runner_wheel && github.ref_name != 'devel'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.image_name }}-${{ github.sha }}

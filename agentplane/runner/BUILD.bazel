@@ -162,7 +162,10 @@ py_library(
 
 rust_binary(
     name = "harness_supervisor",
-    srcs = ["harness_supervisor.rs"],
+    srcs = [
+        "harness_supervisor.rs",
+        "pid_line.rs",
+    ],
     edition = "2024",
     deps = [
         "@crates//:anyhow",
@@ -173,7 +176,10 @@ rust_binary(
 
 rust_test(
     name = "test_harness_supervisor_pid_format",
-    srcs = ["harness_supervisor.rs", "harness_supervisor_test.rs"],
+    srcs = [
+        "harness_supervisor_test.rs",
+        "pid_line.rs",
+    ],
     crate_root = "harness_supervisor_test.rs",
     edition = "2024",
     deps = [
@@ -209,6 +215,7 @@ py_library(
         ":claude",
         ":codex",
         ":config",
+        ":harness_process",
         ":initialization",
         ":journal",
         ":session",
@@ -434,7 +441,10 @@ py_test(
 py_package(
     name = "runner_pkg",
     packages = ["agentplane"],
-    deps = [":guest_config", ":main"],
+    deps = [
+        ":guest_config",
+        ":main",
+    ],
 )
 
 py_wheel(
@@ -506,7 +516,9 @@ py_test(
     name = "test_guest_config",
     srcs = ["test_guest_config.py"],
     deps = [
+        ":conftest",
         ":guest_config",
+        "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

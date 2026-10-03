@@ -48,7 +48,7 @@ class HarnessProcess:
     async def start(self) -> None:
         report_reader, report_writer = os.pipe()
         os.set_inheritable(report_writer, True)
-        supervisor_command = [_SUPERVISOR, "--native-pid-fd", str(report_writer)]
+        supervisor_command = [str(_SUPERVISOR), "--native-pid-fd", str(report_writer)]
         try:
             if self.process_isolation is not None:
                 self._cgroup_path = await asyncio.to_thread(self.process_isolation.create_process_group)
