@@ -74,16 +74,19 @@ function decodeUtf8Field(bytes: Uint8Array, fieldNumber: bigint): string | undef
 /** Read the type marker from Claude's nested base64 protobuf signature. */
 export function decodeNarrationSignatureType(signature: unknown): string | undefined {
   if (typeof signature !== "string" || signature === "") return undefined;
+  let binary: string;
   try {
-    const binary = atob(signature);
-    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-    const payload = readBytesField(bytes, NARRATION_SIGNATURE_OUTER_FIELD);
-    if (payload === undefined) return undefined;
-    const nested = readBytesField(payload, NARRATION_SIGNATURE_PAYLOAD_FIELD);
-    return nested === undefined ? undefined : decodeUtf8Field(nested, NARRATION_SIGNATURE_TYPE_FIELD);
-  } catch {
-    return undefined;
+    binary = atob(signature);
+  } catch (error) {
+    // An invalid optional signature is ordinary thinking; unrelated decoder errors should surface.
+    if (error instanceof DOMException && error.name === "InvalidCharacterError") return undefined;
+    throw error;
   }
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const payload = readBytesField(bytes, NARRATION_SIGNATURE_OUTER_FIELD);
+  if (payload === undefined) return undefined;
+  const nested = readBytesField(payload, NARRATION_SIGNATURE_PAYLOAD_FIELD);
+  return nested === undefined ? undefined : decodeUtf8Field(nested, NARRATION_SIGNATURE_TYPE_FIELD);
 }
 
 export function isNarrationSignature(signature: unknown): boolean {

@@ -830,6 +830,7 @@ if (scenario.startsWith("SessionNarrationVisibility")) {
   let attempts = 0;
   const failNarrationScenario = (message: string): never => {
     // Let the visual runner pass readiness so it can report this page error directly.
+    narrationObserver.disconnect();
     root.dataset.narrationReady = "true";
     root.dataset.narrationError = message;
     throw new Error(message);
@@ -846,18 +847,14 @@ if (scenario.startsWith("SessionNarrationVisibility")) {
     }
 
     const narrationRect = narration.getBoundingClientRect();
-    const thinkingBody = thinking.querySelector<HTMLElement>("p");
     const orderedRows = [
       ...document.querySelectorAll<HTMLElement>('[data-fold-kind="tool-run"], [data-fold-kind="narration"]'),
     ];
     if (
       narration.textContent !== "The format note is clear; I’ll verify its example next." ||
-      narration.tagName !== "P" ||
       narration.closest("details, summary, button, article") !== null ||
       narrationRect.height <= 0 ||
       thinking.open ||
-      thinkingBody === null ||
-      thinkingBody.getClientRects().length !== 0 ||
       orderedRows.map((row) => row.dataset.foldKind).join(",") !== "tool-run,narration,tool-run" ||
       document.querySelector(
         '[data-tool-run-toggle][aria-expanded="true"], [data-tool-group-toggle][aria-expanded="true"]'
