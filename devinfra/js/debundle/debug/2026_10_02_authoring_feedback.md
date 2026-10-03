@@ -16,63 +16,16 @@ From the repository's Nix devshell, following its Bazel execution instructions:
 ```sh
 bbr test \
   //devinfra/js/debundle/e2e:authoring_feedback_repro_test \
-  //devinfra/js/debundle/e2e:duplicate_top_level_declaration_test \
   --test_output=all --test_arg=--nocapture
 ```
 
-The [synthetic reproducers](../e2e/authoring_feedback_repro_test.rs) drive the
-real CLI using the existing fixture harness. They are tagged `manual` because
-they characterize current limitations: **passing means the limitation was
-reproduced**, not that the requested feature exists. Convert their assertions
-to the desired contract when implementing a request. The existing repeated
-declaration test is an additional independent reproduction for R3.
-
-The remaining characterization case covers R4; the existing
-repeated-declaration suite covers R3 and scope separation. The original
-validation run passed on the revision above.
+The [synthetic reproducer](../e2e/authoring_feedback_repro_test.rs) drives the
+real CLI using the existing fixture harness. It is tagged `manual` because it
+characterizes the current limitation: **passing means the limitation was
+reproduced**, not that the requested feature exists. Convert its assertions to
+the desired contract when implementing the request. The original validation
+run passed on the revision above.
 [BuildBuddy run and test output](https://app.buildbuddy.io/invocation/c6245dea-5f4a-40f2-a051-15ea9873c85f).
-
-## R3 — Support valid repeated top-level `var` declarations
-
-**Type:** JavaScript coverage feature request. **Priority:** medium.
-
-**Impact observed:** a duplicate-top-level-binding rejection blocked a
-full-corpus run. The exact original declaration combination has not been
-established here; this report deliberately makes the narrower, independently
-reproducible claim below.
-
-**Minimal valid JavaScript module:**
-
-```js
-var counter = 1;
-var counter = 2;
-console.log(counter);
-export { counter };
-```
-
-Select `counter` into a logical module with `selector.binding.name: counter`.
-Current analysis rejects the chunk with:
-
-```text
-duplicate top-level declaration of binding `counter`
-```
-
-The existing
-[`duplicate_top_level_var_declaration_is_rejected`](../e2e/duplicate_top_level_declaration_test.rs)
-uses the same minimal language construct with synthetic string values.
-
-**Requested behavior:** represent one binding's multiple declaration sites
-without losing either initializer or changing their order. Preserve the
-binding's import/export identity when splitting a chunk containing this form.
-
-**Acceptance:** input and emitted entry both print `2`; an additional case
-with a read between initializers preserves both observable values. Invalid
-lexical redeclarations must remain rejected.
-
-**Correctness boundary:** the current rejection is deliberate fail-closed
-behavior. Simply allowing a later declaration to overwrite the earlier owner
-mapping is not a solution. Duplicate function declarations are not evidence
-for this request, because their legality depends on parse context.
 
 ## R4 — Allow explicit, scope-aware names for parameters and locals
 
