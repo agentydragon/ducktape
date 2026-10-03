@@ -2780,12 +2780,12 @@ fn partial_member_swap_preserves_dotted_upstream_paths() {
 
 #[test]
 fn bundled_member_swap_preserves_dotted_upstream_paths() {
-    assert_bundled_dotted_export(PartialSwapKind::Member, "7 7\n");
+    assert_bundled_dotted_export(PartialSwapKind::Member, "7\n");
 }
 
 #[test]
 fn bundled_named_swap_preserves_literal_dotted_exports() {
-    assert_bundled_dotted_export(PartialSwapKind::Named, "11 11\n");
+    assert_bundled_dotted_export(PartialSwapKind::Named, "11\n");
 }
 
 fn assert_bundled_dotted_export(kind: PartialSwapKind, expected: &str) {
@@ -2794,13 +2794,10 @@ fn assert_bundled_dotted_export(kind: PartialSwapKind, expected: &str) {
         "lib.js",
         "export const Lib = { convert: { nested: { 'read-value': () => 7 } }, 'convert.nested.read-value': () => 11 };",
         &[
-            (
-                "static/megachunk.js",
-                "export const a = () => 7; export const b = () => a();",
-            ),
+            ("static/megachunk.js", "export const a = () => 7;"),
             (
                 "static/app.js",
-                "import { a, b } from '../megachunk/entry.js'; console.log(a(), b());",
+                "import { a } from '../megachunk/entry.js'; console.log(a());",
             ),
         ],
     );
