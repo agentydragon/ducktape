@@ -716,5 +716,6 @@ py_library(
     deps = [
         ":models",
         "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
     ],
 )
