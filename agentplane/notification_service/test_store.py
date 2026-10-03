@@ -127,7 +127,8 @@ async def test_concurrent_sources_allocate_one_committed_prefix(store: Store) ->
     assert page.inbox.acknowledged == 0
 
 
-async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store) -> None:
+@pytest.mark.parametrize("baseline", [0, 100_000])
+async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store, baseline: int) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
     claim = await store.claim()
     assert claim is not None
@@ -136,9 +137,26 @@ async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store
     await store.record(claim, source, events(1))
     notice = await store.notice(claim)
     assert notice is not None
+    boundary = event_log_pb2.EventEntry(cursor=baseline)
+    if baseline:
+        # Unattempted notices, including ones partially replayed by the old worker, can skip
+        # unrelated history. Recovery checks the exact persisted boundary before continuing.
+        await store.receipt(claim, notice, event_log_pb2.EventEntry(cursor=1))
+        await store.checkpoint_before_attempt(claim, notice, boundary)
+        await store.receipt(claim, notice, boundary)
+        with pytest.raises(ConflictError):
+            await store.checkpoint_before_attempt(claim, notice, boundary)
+        persisted = await store.notice(claim, prepare=False)
+        assert persisted is not None
+        assert persisted.runner_cursor == baseline
+        assert not persisted.attempted
     assert await store.attempt(claim, notice)
+    with pytest.raises(ConflictError):
+        await store.checkpoint_before_attempt(claim, notice, event_log_pb2.EventEntry(cursor=baseline + 100))
+    with pytest.raises(ConflictError):
+        await store.receipt(claim, notice, event_log_pb2.EventEntry(cursor=baseline + 2))
     admission = event_log_pb2.EventEntry(
-        cursor=1,
+        cursor=baseline + 1,
         event=event_pb2.Event(
             command_admitted=event_pb2.CommandAdmitted(
                 command=command_pb2.Command(
@@ -153,7 +171,7 @@ async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store
     assert page.notice.admitted
     assert not page.notice.confirmed
     confirmation = event_log_pb2.EventEntry(
-        cursor=2,
+        cursor=baseline + 2,
         event=event_pb2.Event(
             harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
                 origin_command_ids=["coalesced-other", str(notice.command_id)]
@@ -167,7 +185,9 @@ async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store
     assert page.notice.confirmed
     assert page.inbox.acknowledged == 0
     assert await store.notice(claim) is None
-    changed = event_log_pb2.EventEntry(cursor=2, event=event_pb2.Event(harness_exited=event_pb2.HarnessExited()))
+    changed = event_log_pb2.EventEntry(
+        cursor=baseline + 2, event=event_pb2.Event(harness_exited=event_pb2.HarnessExited())
+    )
     with pytest.raises(ConflictError):
         await store.receipt(claim, notice, changed)
 

@@ -102,7 +102,7 @@ flowchart TB
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
-    SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
+    SANDBOX_VM_ISOLATION["Deferred platform proof<br/>selectable KubeVirt execution environments<br/>guest runner, launcher proxy, resource isolation"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_LAZY_HISTORY["Deferred desire D6<br/>bound browser cache after loading<br/>long content remains on demand"]:::future
@@ -857,28 +857,20 @@ evidence without blocking ordinary messaging and UI work.
 
 ### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
 
-**Deferred investigation:** evaluate running harnesses and agent-controlled tools in
-VMs or microVMs to contain resource exhaustion, especially an agent workload OOM-killing
-its own runner/Pod. Revisit the [runtime isolation decision](../docs/adr_sandbox_proxy_gateway.md#not-firecrackerkatagvisor-immediately)
-for availability as well as container escape. Verify the suggested Claude Code Web
-comparison before using it as evidence; no runtime is selected by this task. In-container
-alternatives and each harness's interception points are compared in
-[harness tool memory isolation](../docs/harness_tool_memory_isolation.md).
+**Deferred platform proof:** the [KubeVirt environment plan](kubevirt_environments.md)
+recommends an explicit creation-time `agent_sandbox` / `kubevirt` choice, with the runner
+baked into the guest and the token-holding relay outside it in the launcher Pod. Sandbox
+Service owns both providers; harness selection is independent. Presets prefill editable
+kind/template fields. No existing environment conversion or live migration is implied.
+The selected v1 approach uses existing Kyverno admission to inject the relay and private
+token mounts; the first implementation step is a disposable VM proof on the pinned stack.
 
-If implemented, make the Sandbox implementation an explicit creation-time choice,
-retaining container-backed Sandboxes alongside VM-backed ones, not a global replacement
-or a harness-specific choice. Presets only prefill this individually editable field.
-Expose unsupported capabilities honestly; a creation-time selection does not promise
-live migration between implementations.
-
-Define where the runner, journal, proxy, and untrusted processes live and which memory
-budgets protect them. A VM label alone is not an OOM guarantee: account for guest,
-hypervisor/container, and host limits and reserve resources for the control plane.
-Compare failure containment, startup overhead, storage retention, suspend/resume,
-network/egress enforcement, debugging, and cluster support. Acceptance must force guest
-memory exhaustion and process loss, then prove the claimed control/journal survival,
-truthful failure reporting, and recovery without invented or duplicated command effects.
-This investigation does not block current container correctness work.
+This node gates the pinned-version proof of sidecar admission, proxy-only token mounts,
+guest routing, storage and resource containment. The plan owns the proposed implementation
+slices and acceptance matrix; expand those into DAG nodes when scheduled. VM isolation alone
+does not guarantee runner survival: prove guest cgroup budgets, retained journal recovery,
+truthful failure reporting and no invented or duplicated effects. This deferred track does
+not block current container correctness work or ordinary Sandbox Service extraction.
 
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
 

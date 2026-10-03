@@ -1,38 +1,39 @@
-# Runner VM acceptance helper
+# Runner VM acceptance
 
-Use [`runtime_acceptance.py`](runtime_acceptance.py) with one disposable guest through
-`SandboxInventory` and a localhost runner gRPC port-forward. Record evidence in
-[`agentplane/debug/kubevirt/`](../../../../agentplane/debug/kubevirt/).
+Use [`runtime_acceptance.py`](runtime_acceptance.py) for the disposable guest lifecycle. Its
+KubeVirt operations are fixture-local; it does not call the production Sandbox Service. Read
+VM, VMI, and Pod identity plus raw `.status` with `inspect`.
 
-The fixture returns deterministic Claude/Codex text through the configured proxy. It does **not**
-test production credential substitution, destination authorization, TLS interception, or CONNECT.
+## Inputs and setup
 
-## Prepare a disposable namespace
+Use a unique `agentplane-vm-prototype-*` namespace, digest-pinned relay and runner images, a
+storage class and node that can run the VM, and an ESO-created `forgejo-images-creds` Secret.
+The trust ConfigMap must contain `ca-certificates.crt` and passwordless `ca-certificates.p12`.
+The guest kubeconfig has no credential; this fixture does not test guest Kubernetes access.
 
-Run from the Nix devshell with fresh namespace, digest-pinned images, and a trust-manager CA ConfigMap.
-`agentplane-workload` is a placeholder credential name; provide no credential values.
+Set these values from the image build and the cluster's existing trust-manager Bundle:
 
 ```bash
-suffix=replace-with-unique-id
-ns="agentplane-vm-prototype-runtime-$suffix"
-out=/tmp/agentplane-vm-runtime-setup
-relay_image='git.allegedly.works/ducktape-ci/agentplane-egress-sidecar@sha256:<relay-digest>'
-runner_image='git.allegedly.works/ducktape-ci/agentplane-runner-vm@sha256:<runner-digest>'
+relay_image='git.allegedly.works/ducktape-ci/agentplane-egress-sidecar@sha256:<digest>'
+runner_image='git.allegedly.works/ducktape-ci/agentplane-runner-vm@sha256:<digest>'
+replacement_image='git.allegedly.works/ducktape-ci/agentplane-runner-vm@sha256:<replacement-digest>'
+trust_config_map=agentplane-vm-trust
 node=ovh-ns103711
-trust_config_map=prototype-egress-ca
+```
 
+Render the admission policy and deterministic model fixture, then apply the generated file:
+
+```bash
+ns=agentplane-vm-prototype-runtime-$(date +%s)
+out=/tmp/agentplane-vm-runtime-setup
 bb run //cluster/cdk8s/agentplane/kubevirt_experiment:main -- --namespace "$ns" \
   --relay-image "$relay_image" --proxy-host "prototype-gateway.$ns.svc.cluster.local" \
-  --outdir "$out" --setup --model-fixture --memory-quota 24Gi --cpu-quota 8
+  --outdir "$out" --setup --model-fixture
 kubectl apply -f "$out/launcher-admission.k8s.yaml"
 ```
 
-The render creates the gateway, TokenReview permission, policy, ESO reader, and pull-secret
-reference. Wait for ESO to create `forgejo-images-creds`; it never prints the registry credential.
-
-For the HTTP model fixture, copy a snapshot of the existing public trust-manager
-output into the disposable namespace. Preserve `binaryData`, which contains the
-PKCS#12 store. Do not copy the CA's Secret or private key.
+Copy the existing public trust-manager ConfigMap output into the namespace. Preserve `binaryData`
+for the PKCS#12 file; do not copy its Secret or private key.
 
 ```bash
 kubectl get configmap agentplane-testing-egress-ca -n agentplane-testing -o json \
@@ -41,129 +42,80 @@ kubectl get configmap agentplane-testing-egress-ca -n agentplane-testing -o json
   | kubectl apply -f -
 ```
 
-A real gateway run needs the bundle for that gateway's interception CA. The VM
-requires both `ca-certificates.crt` and `ca-certificates.p12`; it does not generate
-missing trust-store files. Stop/start a VM to consume updated ConfigMap contents.
+## Create and exercise
 
-## Create and probe the guest
-
-`create` uses the provider path and immediately prints the VM name and UID. Defaults are 4 vCPUs,
-10 GiB memory, 20 GiB state, and 40 GiB workspace; adjust node and storage class for the cluster.
+Create emits JSON lines for VM creation and readiness. Save the created VM identity; its status is
+raw KubeVirt status. The VM starts only after blank-disk ownership/input checks so
+WaitForFirstConsumer storage can bind through the VMI.
 
 ```bash
-bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- create \
-  --namespace "$ns" --name runner-runtime --image "$runner_image" \
-  --storage-class local-path-ovh-hdd --image-pull-secret forgejo-images-creds \
-  --llm-base-url http://model.invalid --proxy-url http://10.0.2.1:3128 \
-  --ca-bundle-config-map "$trust_config_map" --kubernetes-host kubernetes.default.svc \
-  --kubernetes-credential-name agentplane-workload \
-  --node-selector "kubernetes.io/hostname=$node"
+create_output=$(bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- create \
+  --namespace "$ns" --name runner --image "$runner_image" \
+  --storage-class local-path-ovh-hdd --llm-base-url http://model.invalid \
+  --proxy-url http://10.0.2.1:3128 --ca-bundle-config-map "$trust_config_map" \
+  --kubernetes-host kubernetes.default.svc --node-selector "kubernetes.io/hostname=$node")
+printf '%s\n' "$create_output"
+vm=$(jq -rs 'map(select(.action == "created"))[-1].vm.identity.name' <<<"$create_output")
+vm_uid=$(jq -rs 'map(select(.action == "created"))[-1].vm.identity.uid' <<<"$create_output")
 ```
 
-After readiness, run the printed port-forward in another terminal:
+Run the printed port-forward in another terminal. `initialize` verifies the guest RPC and retires
+the one-shot disk-format permission after success.
 
 ```bash
-vm='<created VM name>'
-vm_uid='<created VM UID>'
 target=localhost:17000
-bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- initialize --namespace "$ns" --name "$vm" --target "$target"
-```
-
-`initialize` calls `ListSessions`, reports UID/GID and cgroup membership, writes a workspace
-checksum, and proves `/state/sessions` and cgroup controls are not writable. It does not read
-`memory.max`; capture effective limits through privileged QGA read-only inspection. Save
-`WORKSPACE_SHA256` as `workspace_sha`.
-
-## Native turns and stop/start recovery
-
-Run both native harnesses; save each JSON result's `session_id`, `source_id`, `after_cursor`, and
-`recovery_marker` for recovery.
-
-```bash
-bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- session --target "$target" --harness claude --model claude-3-7-sonnet-20250219
-bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- session --target "$target" --harness codex --model gpt-5-codex
-```
-
-Each turn should return `MARKER_SAVED`. Stop fully and restart through the provider; the helper
-waits for the old VMI to disappear and prints the new port-forward command:
-
-```bash
+bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- inspect \
+  --namespace "$ns" --name "$vm"
+bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- initialize \
+  --namespace "$ns" --name "$vm" --uid "$vm_uid" --target "$target"
+session_output=$(bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- session \
+  --target "$target" --harness claude --model claude-3-7-sonnet-20250219)
+printf '%s\n' "$session_output"
+session_id=$(jq -r '.session_id' <<<"$session_output")
+source_id=$(jq -r '.source_id' <<<"$session_output")
+after_cursor=$(jq -r '.after_cursor' <<<"$session_output")
+recovery_marker=$(jq -r '.recovery_marker' <<<"$session_output")
 bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- stop-start \
   --namespace "$ns" --name "$vm"
 ```
 
-Forward the new Pod and run `recover` for each saved session, using its JSON fields. Example:
+After `stop-start`, forward the new launcher Pod, then verify continuation:
 
 ```bash
 bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- recover \
-  --target "$target" --session-id '<session_id>' --source-id '<source_id>' \
-  --after-cursor '<after_cursor>' --recovery-marker '<recovery_marker>'
+  --target "$target" --session-id "$session_id" --source-id "$source_id" \
+  --after-cursor "$after_cursor" --recovery-marker "$recovery_marker"
 ```
 
-Recovery checks the same source ID, contiguous cursors, `HarnessStarted.resumed`, and recalled
-marker. Verify the initialized workspace file after restart with a fresh setup session:
+`setup-probe` reports validated markers and byte counts, not script output:
 
 ```bash
-cat >workspace-hash.sh <<'EOF'
-sha256sum /workspace/agentplane-vm-acceptance/probe.txt | awk '{print "WORKSPACE_SHA256=" $1}'
-EOF
+printf 'printf "SETUP_PROBE_OK\\n"\n' >/tmp/agentplane-vm-setup-probe.sh
 bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- setup-probe \
-  --target "$target" --harness claude --model claude-3-7-sonnet-20250219 \
-  --setup-script-file workspace-hash.sh --expect-marker "WORKSPACE_SHA256=$workspace_sha"
+  --target "$target" --harness codex --model gpt-5-codex \
+  --setup-script-file /tmp/agentplane-vm-setup-probe.sh --expect-output SETUP_PROBE_OK
 ```
 
-## Bounded setup probes
+For interruption recovery, use `resume --namespace "$ns" --name "$vm" --uid "$vm_uid"` after
+the exact VMI has been deleted.
 
-Use a new session ID for each probe. The helper records only validated markers for memory, CPU,
-pids, native-history/workspace quota and usage, `QUOTA_RESULT`, and `WORKSPACE_SHA256`. It reports
-the session ID before opening the stream and output byte counts, never raw script output. It calls
-`ListSessions` and verifies the journal's terminal setup state after every setup; errors include
-the exit code and validated markers.
-
-For an expected memory-pressure failure, a script may exceed the per-session memory limit and be
-killed by the cgroup. The runner must remain responsive; use `--expect-failure` rather than pinning
-an initial signal or exit code:
-
-```bash
-bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- setup-probe \
-  --target "$target" --harness claude --model claude-3-7-sonnet-20250219 \
-  --setup-script-file /path/to/bounded-memory-pressure.sh --expect-failure
-```
-
-For the XFS project-quota probe, verify the 7 GiB allocation succeeds and the 9 GiB allocation
-fails with `ENOSPC`; print `QUOTA_RESULT=ENOSPC` and return zero, then pass
-`--expect-marker QUOTA_RESULT=ENOSPC`. `EDQUOT` is also an allowed filesystem result. Use fresh
-sessions to test workspace and native-history quotas separately; requested sizes alone prove no
-quota behavior.
-
-## Replace the image while halted
-
-This fixture keeps desired-mode `RUNNING`: halt this VM, wait for VMI deletion, call
-`replace-image` through the selected provider template, then `provision` to await readiness:
+Root replacement requires the VM UID, `runStrategy: Halted`, and no VMI; it patches only the root
+containerDisk image. Halt and wait for VMI deletion before calling it:
 
 ```bash
 kubectl -n "$ns" patch vm "$vm" --type=merge -p '{"spec":{"runStrategy":"Halted"}}'
 kubectl -n "$ns" wait --for=delete "vmi/$vm" --timeout=10m
-bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- replace-image --namespace "$ns" \
-  --name "$vm" --uid "$vm_uid" --template prototype \
-  --image 'git.allegedly.works/ducktape-ci/agentplane-runner-vm@sha256:<replacement-digest>'
-bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- provision --namespace "$ns" --name "$vm" --uid "$vm_uid"
+bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- replace-image \
+  --namespace "$ns" --name "$vm" --uid "$vm_uid" --image "$replacement_image"
+bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- resume \
+  --namespace "$ns" --name "$vm" --uid "$vm_uid"
 ```
 
-`replace-image` reads the stored template, changes only the digest, and relies on the provider to
-check UID, selected template, state schema, halted run strategy, and VMI absence. This manual
-halt is specific to this acceptance fixture. Normal lifecycle operations use provider suspend and
-resume; `stop-start` exercises that path.
+## Cleanup and limits
 
-If an acceptance run stopped after suspension, `resume --namespace "$ns" --name
-"$vm" --uid "$vm_uid"` continues through the provider after the VMI is fully gone.
-The helper waits for raw VMI deletion, rather than treating a terminating VMI as
-absent, and retries resource-version conflicts on resume.
-
-## Cleanup
-
-Save evidence first. Halt the VM and wait for VMI deletion. VM deletion retains its DataVolumes/PVCs;
-remove both explicitly before deleting the namespace and cluster-scoped resources:
+VM deletion leaves state/workspace DataVolumes and PVCs. Delete them only after saving evidence and
+deciding their data is disposable, then delete the namespace and experiment's cluster-scoped
+policy, secret store, reviewer role/binding, and Forgejo reader role/binding.
 
 ```bash
 kubectl -n "$ns" patch vm "$vm" --type=merge -p '{"spec":{"runStrategy":"Halted"}}'
@@ -177,3 +129,9 @@ kubectl delete clustersecretstore "kubernetes-$ns-secret-store" --ignore-not-fou
 kubectl delete clusterrole,clusterrolebinding "$ns-reviewer" --ignore-not-found
 kubectl -n forgejo-images delete role,rolebinding "$ns-reader" --ignore-not-found
 ```
+
+The direct driver and trust-store boot path have not yet been rerun live; recorded evidence uses an
+earlier driver and image. The model fixture returns deterministic text and uses TokenReview for the
+relay identity. It does not validate production credential substitution, destination authorization,
+TLS interception, or CONNECT. Recorded runtime findings and measured limits are in
+[`agentplane/debug/kubevirt/runtime-20261003.md`](../../../../agentplane/debug/kubevirt/runtime-20261003.md).

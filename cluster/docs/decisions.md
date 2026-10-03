@@ -307,7 +307,8 @@ See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
   operator could not be egress-confined (`docs/personal_agents/findings/` F3). OpenClaw
   as an agent runtime is alive: `public-coder-agent` (the reference agent — its own
   OpenClaw build, `git.allegedly.works/ducktape-ci/public-coder-agent`, plain Deployment,
-  `sandbox.mode: "off"`) and `haku-openclaw-spike` (its own OpenClaw build) run today.
+  `sandbox.mode: "off"`) remains active. The separate `haku-openclaw-spike` was later
+  retired; see [Haku OpenClaw spike retirement](#haku-openclaw-spike-retirement).
   The former `openclaw-gateway` and `openclaw-sandbox` namespaces were retired after their
   retained credentials moved to `agents/shared-secrets`; see
   <../archive/2026_08_openclaw_namespace_retirement.md>.
@@ -489,4 +490,40 @@ zero Pod quota and deny-all egress instead of an active compute lane. Shared age
 roles and credential delivery remain active. Disable only Claude's proxy injection
 and retire its traffic-viewer SSO. Haku's proxy/CI/apps, public coder's workloads and
 proxy, and the shared sandbox controller used by Agentplane remain unchanged.
-Public coder's Iron-to-Agentplane migration is a separate change.
+Public coder's Iron-to-Agentplane migration is a separate change, now partially deployed
+as recorded below.
+
+## Remaining agent proxy migrations (2026-10-03)
+
+The selected direction is **Agentplane egress**, not adopting Iron as a new Haku Console
+adapter. [#5140](https://github.com/agentydragon/ducktape/issues/5140) owns the remaining
+consumer inventory and retirement checklist.
+[#5306](https://github.com/agentydragon/ducktape/issues/5306) retains the historical Iron
+adapter investigation; carry forward relevant security/protocol requirements rather
+than treating that proposal as the implementation plan.
+
+- **Public-coder OpenClaw:** preparation #8849 and cutover #8850 are merged. The
+  [cutover runbook](public_coder_openclaw_egress.md) records healthy Pod/Flux observations,
+  the reported offline session-database migration prerequisite, and the outstanding
+  acceptance checks. [#8857](https://github.com/agentydragon/ducktape/issues/8857) tracks
+  completion; readiness alone does not prove working sessions or credential substitution.
+- **Public-coder devbox:** stays on Iron, with its storage, credentials, proxy aliases
+  and trust intact. [#8856](https://github.com/agentydragon/ducktape/issues/8856) owns the
+  VM-compatible relay/identity design and migration. Do not assume KubeVirt needs a
+  hook/webhook before evaluating a supported placement and lifecycle.
+- **Other Haku sandbox/CI/egress consumers:** require fresh inventory and an explicit
+  keep/migrate/consolidate/park decision under #5140. The public-coder migration does
+  not authorize deleting them. Previously retired/parked workloads above stay retired;
+  retain generators and the `claude-sandbox` identity/credential home.
+
+Gateways may have upstream egress that sandboxed workloads must not have. Preserve
+Cilium/network-policy confinement, per-workload identity, scoped credential substitution
+and fail-closed behavior regardless of relay topology. Placement in staging egress
+infrastructure does not grant staging application/operator access.
+
+Remove Iron workloads and obsolete service, credential-mirror, trust, injection, RBAC
+and network-policy wiring only after the last consumer **and rollback dependency** are
+gone. Preserve shared/canonical credentials and obtain specific approval for any further
+PVC/data loss. Verify live Flux pruning/resource removal instead of equating a manifest
+change with decommissioning. Record changing task status in the linked issues rather
+than duplicating their checklists here.

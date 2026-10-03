@@ -65,28 +65,40 @@ class Service:
         return await self.store.subscribe(principal, body)
 
     async def deliver(self, claim: Inbox, runner: Runner, notice: Notice) -> None:
+        # TODO: Observe command-scoped admission/delivery outcomes through Sandbox Service,
+        # resumable by command ID, rather than checkpointing the shared conversation journal.
         attachment = await runner.attach(claim.session_id, after_cursor=max(0, notice.runner_cursor - 1))
         try:
             if attachment.attached.last_cursor < notice.runner_cursor:
                 raise ConflictError("runner cursor regressed")
-            # Replay the boundary and all known receipts before considering a retry. Bound each
-            # catch-up step; large journals make progress across claims, without monopolizing workers.
+            # Verify the durable boundary before advancing, including after a worker restart.
             copied = notice.runner_cursor
-            for _ in range(128):
-                if copied >= attachment.attached.last_cursor and (
-                    not notice.runner_cursor or copied > notice.runner_cursor
-                ):
-                    break
-                if not attachment.attached.last_cursor:
-                    break
-                try:
+            try:
+                if copied:
+                    await self.store.receipt(claim, notice, await attachment.next_entry())
+                if not notice.attempted and attachment.attached.last_cursor > copied:
+                    # No command can precede the durable attempt marker. Skip unrelated history,
+                    # but retain the exact tail entry to verify continuity on an uncertain retry.
+                    baseline = attachment.attached.last_cursor
+                    attachment.cancel()
+                    attachment = await runner.attach(claim.session_id, after_cursor=baseline - 1)
+                    if attachment.attached.last_cursor < baseline:
+                        raise ConflictError("runner cursor regressed")
                     entry = await attachment.next_entry()
-                except StreamClosedError as failure:
-                    raise ConflictError("runner history ended before its promised cursor") from failure
-                await self.store.receipt(claim, notice, entry)
-                copied = entry.cursor
-                if copied >= attachment.attached.last_cursor:
-                    break
+                    if entry.cursor != baseline:
+                        raise ConflictError("runner history has a gap")
+                    await self.store.checkpoint_before_attempt(claim, notice, entry)
+                    copied = baseline
+                # Catch up only since the checkpoint, with bounded work per claim. Never skip
+                # history after an attempt: it may contain a lost admission or confirmation.
+                for _ in range(128):
+                    if copied >= attachment.attached.last_cursor:
+                        break
+                    entry = await attachment.next_entry()
+                    await self.store.receipt(claim, notice, entry)
+                    copied = entry.cursor
+            except StreamClosedError as failure:
+                raise ConflictError("runner history ended before its promised cursor") from failure
             if copied < attachment.attached.last_cursor:
                 return
             # Re-read durable receipt state. An admitted command with no confirmation is uncertain,

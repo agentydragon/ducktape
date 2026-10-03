@@ -474,3 +474,5 @@ debundle_e2e_test(
         "@crates//:tempfile",
     ],
 )
+
+debundle_e2e_test(name = "initializer_placement_test")

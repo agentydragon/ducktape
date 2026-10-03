@@ -392,6 +392,19 @@ class Store:
             inbox.covered = inbox.last_cursor
             return row
 
+    async def checkpoint_before_attempt(self, claim: Inbox, notice: Notice, entry: event_log_pb2.EventEntry) -> None:
+        async with self.sessions.begin() as session:
+            await self.fenced(session, claim)
+            row = await session.get(Notice, claim.id)
+            assert row is not None
+            assert row.command_id == notice.command_id
+            if row.attempted:
+                raise ConflictError("cannot skip runner history after a delivery attempt")
+            if entry.cursor <= row.runner_cursor:
+                raise ConflictError("initial checkpoint must advance the runner cursor")
+            row.runner_cursor = entry.cursor
+            row.runner_entry = entry.SerializeToString(deterministic=True)
+
     async def attempt(self, claim: Inbox, notice: Notice) -> bool:
         async with self.sessions.begin() as session:
             inbox = await self.fenced(session, claim)

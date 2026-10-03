@@ -42,7 +42,10 @@ are outside transactions. They poll canonical Actions history (bounded pages of 
 terminal requests; no second Action queue or retry of Action execution is introduced. Errors of a
 source subscription and delivery errors are exposed separately. Polling rechecks source ownership.
 
-Before submitting a notice, persist its command ID, exact input, and coverage boundary. Replays
+Before submitting a notice, persist its command ID, exact input, and coverage boundary. Before the
+first delivery attempt, checkpoint the current runner journal tail instead of replaying unrelated
+session history. Persist the exact boundary entry, then the attempt marker, before sending the command.
+A crash before that marker allows a newer initial checkpoint; after it, never skip entries. Replays
 verify the last committed runner entry before advancing. A lost command response reuses the same ID;
 `CommandAdmitted` is not delivery. `HarnessUserMessageConfirmed.origin_command_ids` supplies causal
 confirmation, including coalesced inputs. Failed/no-op/unconfirmed commands are not confirmed receipts.
@@ -83,6 +86,12 @@ workflow builds/publishes the server and migration images; Flux must select both
 happens the new Deployment cannot become ready. Then verify the migration init container, `/readyz`,
 and an Action subscription through a newly opened harness. Existing sessions need no migration and
 keep their original prompt. No live migration/reset is part of this PR.
+
+TODO: Add command-scoped delivery tracking through Sandbox Service, backed by the runner's existing
+canonical command/events. Notifications needs admission, harness confirmation, and failure outcomes
+for its own command ID, not conversation content. It should be possible to resume observing that ID
+after a disconnect without maintaining a notification-owned runner-journal checkpoint. The tail
+checkpoint above is the bounded-scope fix for now; this follow-up adds no second event authority.
 
 Deferred: GitHub/webhooks, automatic subscriptions, cross-account delivery, per-thread credentials,
 notification-triggered provisioning/resume, and proper runner RPC authentication/TLS.

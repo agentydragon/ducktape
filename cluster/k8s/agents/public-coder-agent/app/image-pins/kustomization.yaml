@@ -4,4 +4,4 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20260924234050-4819c98 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   - name: git.allegedly.works/ducktape-ci/public-coder-agent
-    newTag: devel-20261003080046-422b3e2 # {"$imagepolicy": "flux-system:public-coder-agent:tag"}
+    newTag: devel-20261003082807-82f0720 # {"$imagepolicy": "flux-system:public-coder-agent:tag"}

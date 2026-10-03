@@ -9,7 +9,7 @@ from cluster.cdk8s.external_secrets.single_secret_store import single_secret_sto
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 
 
-def setup(scope: Construct, namespace: str, *, memory_quota: str = "8Gi", cpu_quota: int = 4) -> None:
+def setup(scope: Construct, namespace: str, *, memory_quota: str = "24Gi", cpu_quota: int = 8) -> None:
     if not namespace.startswith("agentplane-vm-prototype-"):
         raise ValueError("Prototype namespace must start with agentplane-vm-prototype-")
     k8s.KubeNamespace(scope, "namespace", metadata=k8s.ObjectMeta(name=namespace))

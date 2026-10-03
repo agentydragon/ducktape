@@ -232,6 +232,20 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             after_cursor=0,
                         )
                         initial = await model.request()
+                    # Real native journal longer than a worker replay batch. First delivery must
+                    # not spend claims scanning it, even when the admission response is lost.
+                    history_cursor = 0
+                    for index in range(130):
+                        receipt = await native.command(
+                            "notifications",
+                            command_pb2.Command(
+                                command_id=f"old-{index}",
+                                interrupt_turn=command_pb2.InterruptTurn(turn_id="nonexistent-turn"),
+                            ),
+                            after_cursor=history_cursor,
+                        )
+                        history_cursor = receipt.cursor
+                    assert history_cursor > 128
                     original = Runner.command
                     lost = False
 
@@ -239,6 +253,8 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         self: Runner, session_id: str, command: command_pb2.Command, *, after_cursor: int
                     ) -> event_log_pb2.EventEntry:
                         nonlocal lost
+                        if command.HasField("submit_input"):
+                            assert after_cursor >= history_cursor
                         receipt = await original(self, session_id, command, after_cursor=after_cursor)
                         if not lost and command.HasField("submit_input"):
                             lost = True

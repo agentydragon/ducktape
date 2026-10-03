@@ -36,25 +36,19 @@ py_binary(
 py_binary(
     name = "runtime_acceptance",
     srcs = ["runtime_acceptance.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":vm",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:client",
         "//agentplane/runner:protocol_pb2",
-        "//agentplane/sandbox_service:inventory",
-        "//agentplane/sandbox_service:kubevirt",
-        "//agentplane/sandbox_service:kubevirt_contract",
-        "//agentplane/sandbox_service:protocol_pb2",
         "//util:kubernetes",
+        "@pypi//cdk8s",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
-        "@pypi//pydantic",
     ],
-)
-
-py_library(
-    name = "runtime_model_gateway",
-    srcs = ["runtime_model_gateway.py"],
 )
 
 py_library(
