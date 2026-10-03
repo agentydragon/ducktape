@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
+from agentplane.app.sandbox_models import parse_sandbox_kind
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import Event, EventLog, FeedState, Thread
 from agentplane.app.threads.view.views import ThreadView
@@ -138,7 +139,7 @@ def _view(
     harness_state = attachment.harness_state if attachment is not None else protocol_pb2.HARNESS_STATE_UNSPECIFIED
     return ThreadView(
         id=log.id,
-        sandbox_kind=log.sandbox_kind,
+        sandbox_kind=parse_sandbox_kind(log.sandbox_kind),
         sandbox=log.sandbox,
         session_id=log.session_id,
         harness=log.harness,

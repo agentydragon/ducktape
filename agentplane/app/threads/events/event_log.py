@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
+from agentplane.app.sandbox_models import SandboxKind, parse_sandbox_kind
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
 from agentplane.app.threads.models import Event, EventLog, FeedState
 from agentplane.protocol import event_log_pb2
@@ -66,7 +67,7 @@ class RunnerSession:
     """The runner session a log copies, which is where its thread's commands go."""
 
     sandbox: str
-    sandbox_kind: str
+    sandbox_kind: SandboxKind
     session_id: str
 
 
@@ -124,7 +125,11 @@ class EventLogStore:
                     select(EventLog.sandbox, EventLog.sandbox_kind, EventLog.session_id).where(EventLog.id == thread_id)
                 )
             ).one_or_none()
-            return None if log is None else RunnerSession(log.sandbox, log.sandbox_kind, log.session_id)
+            return (
+                None
+                if log is None
+                else RunnerSession(log.sandbox, parse_sandbox_kind(log.sandbox_kind), log.session_id)
+            )
 
     async def last_cursor(self, thread_id: UUID) -> int:
         async with self._sessions() as session:

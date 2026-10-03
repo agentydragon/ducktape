@@ -40,6 +40,7 @@ def test_sandbox_preset_expands_to_fields_the_operator_can_set_individually(pres
     assert view.model_dump() == {
         "name": "public-coder",
         "title": "Public coder",
+        "kind": "agent_sandbox",
         "template": "runner",
         "policies": ["github-agentydragon-agent"],
         "action_policy_sets": [],

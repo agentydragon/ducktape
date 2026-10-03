@@ -162,7 +162,7 @@ def settings(
                     GITHUB_ACTIONS_LOGS_POLICY,
                     BUILDBUDDY_POLICY,
                 ],
-                **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
+                action_policy_sets=action_policy_sets or [],
                 thread_preset=_THREAD_PRESET_PUBLIC_CODER_CODEX,
                 bootstrap=(
                     "marker=/state/workspaces/.agentplane-public-coder-ready\n"

@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
+from agentplane.app.sandbox_models import SandboxKind
 from agentplane.app.threads.events import event_log, ingestion_lease
 from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
@@ -267,7 +268,7 @@ class Ingester:
         self._event_logs = event_logs
         self._ingestion = ingestion
         self._feeds: dict[tuple[str, str, str], Feed] = {}
-        self._leases: dict[tuple[str, str], IngestionLease] = {}
+        self._leases: dict[tuple[SandboxKind, str], IngestionLease] = {}
         self._changed = asyncio.Event()
         self._reconcile_lock = asyncio.Lock()
         self._coordinator: asyncio.Task[None] | None = None
@@ -302,7 +303,7 @@ class Ingester:
                 for identity in sorted(running):
                     tasks.create_task(self._reconcile_sandbox(identity))
 
-    async def _reconcile_sandbox(self, identity: tuple[str, str]) -> None:
+    async def _reconcile_sandbox(self, identity: tuple[SandboxKind, str]) -> None:
         sandbox_kind, sandbox = identity
         try:
             async with asyncio.timeout(10):
@@ -369,7 +370,7 @@ class Ingester:
                 "sandbox %s/%s ingestion reconciliation failed; will retry", sandbox_kind, sandbox, exc_info=True
             )
 
-    async def _release(self, identity: tuple[str, str]) -> None:
+    async def _release(self, identity: tuple[SandboxKind, str]) -> None:
         for key in [key for key in self._feeds if key[:2] == identity]:
             await self._feeds.pop(key).close()
         await self._ingestion.release(self._leases.pop(identity))

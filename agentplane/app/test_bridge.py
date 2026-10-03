@@ -37,6 +37,7 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.sandbox_models import SandboxKind
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore, FeedError
 from agentplane.app.threads.events.stream import follow
@@ -1382,7 +1383,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     discovered = asyncio.Event()
     running = runners.running
 
-    def observed_running() -> set[str]:
+    def observed_running() -> set[tuple[SandboxKind, str]]:
         discovered.set()
         return running()
 

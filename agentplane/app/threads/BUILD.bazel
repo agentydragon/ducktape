@@ -19,6 +19,7 @@ py_library(
     deps = [
         ":sessions",
         "//agentplane/app:database_updates",
+        "//agentplane/app:sandbox_models",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/events:ingestion_lease",
         "//agentplane/app/threads/view:fold",
@@ -92,6 +93,7 @@ py_library(
     deps = [
         ":models",
         "//agentplane/app:database_updates",
+        "//agentplane/app:sandbox_models",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:views",
         "//agentplane/runner:protocol_pb2",

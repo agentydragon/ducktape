@@ -176,6 +176,15 @@ SandboxKind = Literal["agent_sandbox", "kubevirt"]
 SandboxCapability = Literal["pod_exec", "stop_start", "live_migration", "ram_suspend"]
 
 
+def parse_sandbox_kind(value: str) -> SandboxKind:
+    """Validate a provider identity read from persistent storage."""
+    if value == "agent_sandbox":
+        return "agent_sandbox"
+    if value == "kubevirt":
+        return "kubevirt"
+    raise ValueError(f"unknown sandbox kind {value!r}")
+
+
 class SandboxTemplateView(BaseModel):
     """An available launch template, tagged with the provider and actions it supports."""
 

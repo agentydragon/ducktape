@@ -27,6 +27,7 @@ from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, r
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.sandbox_models import SandboxKind
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
@@ -526,7 +527,11 @@ def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assemb
     setup_scripts: list[str | None] = []
 
     async def open_session(
-        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
+        name: str,
+        session_id: str,
+        spec: dict[str, object],
+        setup_script: str | None = None,
+        kind: SandboxKind = "agent_sandbox",
     ) -> protocol_pb2.Attached:
         calls.append(("open", spec))
         setup_scripts.append(setup_script)
@@ -577,7 +582,11 @@ def test_direct_session_launch_leaves_platform_instructions_to_service(
     captured: list[dict[str, object]] = []
 
     async def open_session(
-        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
+        name: str,
+        session_id: str,
+        spec: dict[str, object],
+        setup_script: str | None = None,
+        kind: SandboxKind = "agent_sandbox",
     ) -> protocol_pb2.Attached:
         captured.append(spec)
         return protocol_pb2.Attached(session_id=session_id)
@@ -601,7 +610,11 @@ def test_service_launch_failure_preserves_uncertainty(
     status_code: int,
 ) -> None:
     async def failed_open(
-        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
+        name: str,
+        session_id: str,
+        spec: dict[str, object],
+        setup_script: str | None = None,
+        kind: SandboxKind = "agent_sandbox",
     ) -> protocol_pb2.Attached:
         raise error_type("test upstream failure")
 
@@ -877,6 +890,7 @@ def test_presets_publish_editable_sandbox_and_session_defaults(client: TestClien
         {
             "name": "public-coder",
             "title": "Public coder",
+            "kind": "agent_sandbox",
             "template": "agentplane-test-runner",
             "policies": ["github"],
             "action_policy_sets": ["github-reads"],
@@ -1120,7 +1134,9 @@ async def test_a_running_thread_cannot_be_archived(
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = await event_logs.open("live", "s-1", spec)
 
-    async def running_sessions(_sandbox: str) -> list[protocol_pb2.SessionSummary]:
+    async def running_sessions(
+        _sandbox: str, _kind: SandboxKind = "agent_sandbox"
+    ) -> list[protocol_pb2.SessionSummary]:
         return [
             protocol_pb2.SessionSummary(session_id="s-1", spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING)
         ]
