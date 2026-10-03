@@ -44,6 +44,11 @@ This verifies package import and image assembly, not guest boot or runtime behav
 Archive inspection found one layer containing only `./disk/disk.qcow2` (owner
 UID/GID 107, size 4,725,407,744 bytes) and no dangling Nix-store symlink.
 
+The subsequent [live runner experiment](../../../../agentplane/debug/kubevirt/runtime-20261003.md)
+records the corrected OCI image, boot failures and fixes, actual native CLI turns,
+effective resource limits, pressure probes, and retained-state recovery evidence.
+Keep those results separate from the broader acceptance checklist below.
+
 ## Boundaries to exercise
 
 The service runs as UID 1001. Native harnesses, initialization, and setup scripts
