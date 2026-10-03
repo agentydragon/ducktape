@@ -757,6 +757,7 @@ if (scenario.startsWith("SessionLiveUpdates")) {
   class FixtureEventSource extends EventTarget {
     onopen: ((this: EventSource, event: Event) => unknown) | null = null;
     onerror: ((this: EventSource, event: Event) => unknown) | null = null;
+    onmessage: ((this: EventSource, event: MessageEvent) => unknown) | null = null;
     readonly url: string;
     readonly withCredentials = false;
     readonly CONNECTING = 0;
@@ -767,10 +768,11 @@ if (scenario.startsWith("SessionLiveUpdates")) {
     constructor(url: string) {
       super();
       this.url = url;
-      liveEventSource = this as unknown as EventSource;
+      const eventSource = this as unknown as EventSource;
+      liveEventSource = eventSource;
       window.setTimeout(() => {
         this.readyState = 1;
-        this.onopen?.(new Event("open"));
+        eventSource.onopen?.(new Event("open"));
       }, 0);
     }
 
