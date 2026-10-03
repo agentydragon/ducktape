@@ -13,6 +13,7 @@ from typing import Any, cast
 import httpx
 import pytest
 from google.protobuf.timestamp_pb2 import Timestamp
+from kubernetes_asyncio.client import CoreV1Api
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -335,7 +336,7 @@ def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
 @pytest.fixture
 def live_index(core_v1: FakeCoreV1Api) -> LiveIndex:
     """An index nothing is watching: the fixtures that need one drive it themselves."""
-    return LiveIndex(stale_after_seconds=90, core_v1=core_v1)
+    return LiveIndex(stale_after_seconds=90, core_v1=cast(CoreV1Api, core_v1))
 
 
 @pytest.fixture

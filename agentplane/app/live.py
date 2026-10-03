@@ -27,13 +27,14 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any
 
 import httpx
 import httpx2
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client
+from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.action_service.policies import resources as policy_resources
@@ -66,11 +67,6 @@ PODS_PLURAL = "pods"
 # Seconds of silence after which a health frame goes out anyway, so a tab learns its stream has
 # gone stale without waiting for a change that is never coming, and proxies keep the stream open.
 HEALTH_INTERVAL_S = 15
-
-
-class _CoreV1Api(Protocol):
-    @property
-    def api_client(self) -> k8s_client.ApiClient: ...
 
 
 class WatchHealth(BaseModel):
@@ -124,7 +120,7 @@ class LiveIndex:
     """
 
     stale_after_seconds: float
-    core_v1: _CoreV1Api
+    core_v1: CoreV1Api
     sandboxes: dict[str, object] = field(default_factory=dict)
     pods: dict[str, k8s_client.V1Pod] = field(default_factory=dict, repr=False)
     bindings: dict[str, object] = field(default_factory=dict)
@@ -189,7 +185,7 @@ def watch_for(
     index: LiveIndex,
     *,
     custom_objects: CustomObjectsClient,
-    core_v1: _CoreV1Api,
+    core_v1: CoreV1Api,
     namespace: str,
     sandbox_namespace: str,
     resync_seconds: int,
