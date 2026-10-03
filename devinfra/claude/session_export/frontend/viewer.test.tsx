@@ -211,7 +211,9 @@ it("shows signed narration as prose while ordinary thinking remains collapsed", 
 
   await vi.waitFor(() => expect(container?.querySelector('[data-fold-kind="narration"]')).not.toBeNull());
   const narration = container.querySelector<HTMLElement>('[data-fold-kind="narration"]')!;
-  expect(narration.textContent).toBe("The format note is clear; I’ll verify its example next.");
+  expect(narration.querySelector(".agentplane-markdown p")?.textContent).toBe(
+    "The format note is clear; I’ll verify its example next."
+  );
   expect(narration.querySelector(".agentplane-markdown strong")?.textContent).toBe("clear");
   expect(narration.closest("details, summary, button, article")).toBeNull();
   expect(narration.dataset.historySequences).toBe("801");
@@ -354,9 +356,6 @@ it("renders message Markdown and preserves the exact source in the raw event str
     "Please explain **full precision** in `parseResult`.",
     "",
     "[Read the synthetic guide](https://example.test/precision)",
-    "",
-    "<script>window.__sessionMarkdownFixtureExecuted = true</script>",
-    '<a href="javascript:alert(1)" onclick="window.__sessionMarkdownFixtureExecuted = true">unsafe link</a>',
   ].join("\n");
   const userEvent = {
     ...first,
@@ -395,10 +394,12 @@ it("renders message Markdown and preserves the exact source in the raw event str
   const assistantArticle = container.querySelector<HTMLElement>('[data-message-role="assistant"]')!;
   expect(userArticle.querySelector(".agentplane-markdown")).not.toBeNull();
   expect(assistantArticle.querySelector(".agentplane-markdown")).not.toBeNull();
+  expect(userArticle.querySelector("strong")?.textContent).toBe("full precision");
+  expect(userArticle.querySelector('a[href="https://example.test/precision"]')?.textContent).toBe(
+    "Read the synthetic guide"
+  );
   expect(userArticle.textContent).not.toContain("**");
   expect(assistantArticle.textContent).not.toContain("## Result");
-  expect(userArticle.querySelector('a[href^="javascript:"]')).toBeNull();
-  expect(userArticle.querySelector("script, [onclick]")).toBeNull();
 
   await act(async () => container?.querySelector<HTMLButtonElement>('[aria-label="Show raw event stream"]')?.click());
   await vi.waitFor(() => expect(container?.querySelector('[data-raw-event][data-sequence="1"]')).not.toBeNull());

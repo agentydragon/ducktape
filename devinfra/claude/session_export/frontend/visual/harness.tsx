@@ -1024,7 +1024,8 @@ if (scenario.startsWith("SessionNarrationVisibility")) {
       ...document.querySelectorAll<HTMLElement>('[data-fold-kind="tool-run"], [data-fold-kind="narration"]'),
     ];
     if (
-      narration.textContent !== "The format note is clear; I’ll verify its example next." ||
+      narration.querySelector(".agentplane-markdown p")?.textContent !==
+        "The format note is clear; I’ll verify its example next." ||
       narration.querySelector(".agentplane-markdown strong")?.textContent !== "clear" ||
       narration.closest("details, summary, button, article") !== null ||
       narrationRect.height <= 0 ||
