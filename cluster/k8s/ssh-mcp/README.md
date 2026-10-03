@@ -63,8 +63,9 @@ separate-Secret pattern as the devbox pair: `ssh-mcp-keys-atlas`
 (`keys-atlas.sops.yaml`). `atlas` is a Nebula mesh peer like `wyrm2`/`rugged`
 (reached over the same `hostAliases` pinning), but unlike them it is not a registered
 Kubernetes node (`nebula-mesh.json`: `role: "non-k8s"`), so it needs its own network
-selector shape — see below. Its SSH host key has not yet been captured, so the target is
-wired but stays unverified/fail-closed until an `atlas` entry is added to `known_hosts`.
+selector shape — see below. Its ed25519 host key is captured in `known_hosts`, read over Nebula from `wyrm2`
+(`SHA256:i5/IGBGAxy9yVZ8ECr5fdwsrLSKaLsxVuVp30pQXCuk`; `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`
+on atlas shows the same). Without that entry the target fails closed.
 
 ## Network path
 
@@ -80,9 +81,8 @@ cluster DNS resolves them the way a host on the mesh does — hence entities + h
 never gets the host/remote-node identity the entities rule relies on; a plain `toCIDR` rule
 naming its Nebula IP is the selector for a genuinely external destination. Unlike the
 entities rule (proven by the working `wyrm2` targets), the `toCIDR` rule for `atlas` is
-**unverified against the live cluster** — it has not yet been exercised because `atlas`'s
-host key is not yet captured (see above), so no connection through it has actually been
-attempted.
+**unverified against the live cluster** until the first `atlas` connection through it
+succeeds.
 
 Rendered configuration and policy tests prove wiring only — not secret reconciliation,
 network reachability, or successful SSH execution.
