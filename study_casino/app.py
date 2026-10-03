@@ -10,6 +10,7 @@ Wire surface:
   POST /actions/convert                 — credits → tokens
   POST /actions/prize/create            — add to user prize catalog (admin-only)
   POST /actions/prize/delete            — remove from user prize catalog (admin-only)
+  POST /actions/prize/update            — rename or reprice a catalog entry (admin-only)
   POST /actions/prize/redeem            — spend tokens to redeem a prize (caller redeems own)
   POST /actions/changelog/ack           — advance the caller's changelog read cursor
   POST /actions/import / reset          — bulk replace / wipe state (snapshot saved)
@@ -75,6 +76,8 @@ from study_casino.actions import (
     PrizeDeleteResult,
     PrizeRedeemRequest,
     PrizeRedeemResult,
+    PrizeUpdateRequest,
+    PrizeUpdateResult,
     ResetRequest,
     ResetResult,
     RouletteActionResult,
@@ -606,6 +609,37 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             )
 
         return await commit_action(username=owner, body=body, action_type="prize.delete", mutator=mutate)
+
+    @app.post("/actions/prize/update")
+    async def update_prize(
+        body: PrizeUpdateRequest, username: Annotated[str, Depends(current_user_dep)]
+    ) -> ActionResponse:
+        owner = resolve_prize_owner(username, body.target_user)
+
+        def mutate(s: Session, _now_ms: int) -> ActionMutation:
+            row = s.get(PrizeRow, (owner, body.prize_id))
+            if row is None:
+                raise ActionRejectedError("prize", "prize not found")
+            previous_name = row.name
+            previous_cost = row.cost
+            row.name = body.name
+            row.cost = body.cost
+            return ActionMutation(
+                result=PrizeUpdateResult(
+                    prize_id=body.prize_id, name=row.name, cost=row.cost, user=owner, updated=True
+                ),
+                details={
+                    "prize_id": body.prize_id,
+                    "previous_name": previous_name,
+                    "previous_cost": previous_cost,
+                    "name": row.name,
+                    "cost": row.cost,
+                    "target_user": owner,
+                    "by": username,
+                },
+            )
+
+        return await commit_action(username=owner, body=body, action_type="prize.update", mutator=mutate)
 
     @app.post("/actions/prize/redeem")
     async def redeem_prize(

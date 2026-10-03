@@ -226,6 +226,18 @@ export function useCasino() {
       ...(targetUser ? { target_user: targetUser } : {}),
     });
 
+  const editPrize = (id, name, cost, targetUser = null) => {
+    const normalizedName = name.trim();
+    if (!id || !normalizedName || !Number.isInteger(cost) || cost <= 0) return;
+    return casinoSync.postAction("/actions/prize/update", {
+      client_action_id: newActionId("prize.update"),
+      prize_id: id,
+      name: normalizedName,
+      cost,
+      ...(targetUser ? { target_user: targetUser } : {}),
+    });
+  };
+
   const convertToTokens = (amount) => {
     const n = Math.max(0, Math.floor(amount));
     if (n <= 0 || n > credits) return;
@@ -339,6 +351,7 @@ export function useCasino() {
     redeemPrize,
     addPrize,
     deletePrize,
+    editPrize,
     convertToTokens,
     spinSlots,
     spinRoulette,

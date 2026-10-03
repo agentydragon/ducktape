@@ -207,6 +207,7 @@ export default function StudyCasino() {
     redeemPrize,
     addPrize,
     deletePrize,
+    editPrize,
     convertToTokens,
     spinSlots,
     spinRoulette,
@@ -499,7 +500,7 @@ export default function StudyCasino() {
           />
         )}
         {view === "admin" && isAdmin && (
-          <AdminView addPrize={addPrize} deletePrize={deletePrize} ownUsername={username} />
+          <AdminView addPrize={addPrize} deletePrize={deletePrize} editPrize={editPrize} ownUsername={username} />
         )}
         {view === "stats" && (
           <StatsView

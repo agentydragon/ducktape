@@ -3,13 +3,17 @@ import React, { useEffect, useState, useCallback } from "react";
 import { COLORS, ErrorBanner, SectionTitle, fmtCredits, fmtHoursMin } from "./shared.jsx";
 import { fetchAdminUsers, fetchAdminUserState, useSyncStatus } from "./sync.js";
 
-export function AdminView({ addPrize, deletePrize, ownUsername }) {
+export function AdminView({ addPrize, deletePrize, editPrize, ownUsername }) {
   const [users, setUsers] = useState([]);
   const [selected, setSelected] = useState(null);
   const [targetState, setTargetState] = useState(null);
   const [error, setError] = useState(null);
   const [newName, setNewName] = useState("");
   const [newCost, setNewCost] = useState("");
+  const [editingPrizeId, setEditingPrizeId] = useState(null);
+  const [editingName, setEditingName] = useState("");
+  const [editingCost, setEditingCost] = useState("");
+  const [savingPrizeId, setSavingPrizeId] = useState(null);
   const syncStatus = useSyncStatus();
   const offline = syncStatus.kind === "offline";
 
@@ -59,8 +63,43 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
   };
 
   const handleDelete = async (prizeId) => {
+    if (editingPrizeId === prizeId) {
+      setEditingPrizeId(null);
+      setEditingName("");
+      setEditingCost("");
+    }
     await deletePrize(prizeId, selected);
     refreshTargetState();
+  };
+
+  const startEditing = (prize) => {
+    setEditingPrizeId(prize.id);
+    setEditingName(prize.name);
+    setEditingCost(String(prize.cost));
+    setError(null);
+  };
+
+  const cancelEditing = () => {
+    setEditingPrizeId(null);
+    setEditingName("");
+    setEditingCost("");
+  };
+
+  const handleEdit = async (prize) => {
+    const name = editingName.trim();
+    const cost = Number(editingCost);
+    if (!name || !Number.isInteger(cost) || cost <= 0 || !selected) return;
+
+    setSavingPrizeId(prize.id);
+    try {
+      await editPrize(prize.id, name, cost, selected);
+      cancelEditing();
+      await refreshTargetState();
+    } catch (e) {
+      setError(`Failed to update prize: ${e.message}`);
+    } finally {
+      setSavingPrizeId(null);
+    }
   };
 
   const prizes = targetState?.prizes ?? [];
@@ -77,7 +116,15 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
         <span style={{ color: COLORS.creamDim, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase" }}>
           Managing prizes for
         </span>
-        <select value={selected ?? ""} onChange={(e) => setSelected(e.target.value || null)}>
+        <select
+          value={selected ?? ""}
+          disabled={savingPrizeId !== null}
+          onChange={(e) => {
+            cancelEditing();
+            setTargetState(null);
+            setSelected(e.target.value || null);
+          }}
+        >
           {users.length === 0 && <option value="">(no users yet)</option>}
           {users.map((u) => (
             <option key={u} value={u}>
@@ -139,6 +186,9 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
       )}
 
       <SectionTitle>Existing prizes</SectionTitle>
+      <div style={{ color: COLORS.creamDim, fontSize: 12, marginBottom: 16 }}>
+        Name and price edits apply to future redemptions; past history keeps its recorded values.
+      </div>
       <div
         style={{
           display: "grid",
@@ -163,7 +213,7 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
           >
             <button
               onClick={() => handleDelete(p.id)}
-              disabled={offline}
+              disabled={offline || savingPrizeId !== null}
               style={{
                 position: "absolute",
                 top: 6,
@@ -180,19 +230,81 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
             >
               ×
             </button>
-            <div className="display-font" style={{ fontSize: 17, color: COLORS.cream, marginBottom: 8, minHeight: 44 }}>
-              {p.name}
-            </div>
-            <div
-              style={{
-                fontSize: 12,
-                color: COLORS.creamDim,
-                letterSpacing: "0.15em",
-                textTransform: "uppercase",
-              }}
-            >
-              {p.cost.toLocaleString()} tokens · {fmtHoursMin(p.cost * 60)}
-            </div>
+            {editingPrizeId === p.id ? (
+              <>
+                <input
+                  aria-label={`Name for ${p.name}`}
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  maxLength={120}
+                  disabled={savingPrizeId === p.id}
+                  style={{ width: "100%", marginBottom: 8 }}
+                />
+                <input
+                  aria-label={`Token cost for ${p.name}`}
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={editingCost}
+                  onChange={(e) => setEditingCost(e.target.value)}
+                  disabled={savingPrizeId === p.id}
+                  style={{ width: "100%", marginBottom: 8 }}
+                />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => handleEdit(p)}
+                    disabled={
+                      offline ||
+                      savingPrizeId === p.id ||
+                      !editingName.trim() ||
+                      !Number.isInteger(Number(editingCost)) ||
+                      Number(editingCost) <= 0 ||
+                      (editingName.trim() === p.name && Number(editingCost) === p.cost)
+                    }
+                    style={{ padding: "6px 12px", fontSize: 11 }}
+                  >
+                    {savingPrizeId === p.id ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={cancelEditing}
+                    disabled={savingPrizeId === p.id}
+                    style={{ padding: "6px 12px", fontSize: 11 }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div
+                  className="display-font"
+                  style={{ fontSize: 17, color: COLORS.cream, marginBottom: 8, minHeight: 44 }}
+                >
+                  {p.name}
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: COLORS.creamDim,
+                    letterSpacing: "0.15em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {p.cost.toLocaleString()} tokens · {fmtHoursMin(p.cost * 60)}
+                </div>
+                <button
+                  className="btn"
+                  onClick={() => startEditing(p)}
+                  disabled={offline || savingPrizeId !== null}
+                  aria-label={`Edit ${p.name}`}
+                  style={{ padding: "6px 12px", fontSize: 11, marginTop: 12 }}
+                >
+                  Edit
+                </button>
+              </>
+            )}
           </div>
         ))}
       </div>

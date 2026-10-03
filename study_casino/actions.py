@@ -93,6 +93,16 @@ class PrizeDeleteResult(BaseModel):
     user: str
 
 
+class PrizeUpdateResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prize_id: str
+    name: str
+    cost: int
+    user: str
+    updated: Literal[True]
+
+
 class PrizeRedeemResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -165,6 +175,7 @@ ActionResult = (
     | ConvertResult
     | PrizeCreateResult
     | PrizeDeleteResult
+    | PrizeUpdateResult
     | PrizeRedeemResult
     | ChangelogAckResult
     | ImportResult
@@ -245,6 +256,18 @@ class PrizeDeleteRequest(ActionRequest):
         min_length=1,
         max_length=64,
         description="If set, delete from this user's catalog. The caller must be an admin.",
+    )
+
+
+class PrizeUpdateRequest(ActionRequest):
+    prize_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=120)
+    cost: int = Field(gt=0)
+    target_user: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="If set, update a prize in this user's catalog. The caller must be an admin.",
     )
 
 
