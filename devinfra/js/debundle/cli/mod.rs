@@ -19,7 +19,7 @@ use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
 
 use crate::bindings_commands::BindingsNs;
 use crate::gate::{GateArgs, run_gate_cli};
-use crate::inspection_commands::{DescribeArgs, ShowSourceArgs};
+use crate::inspection_commands::{DescribeArgs, InspectSourceArgs, ShowSourceArgs};
 use crate::modules_commands::ModulesNs;
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
 use crate::spec_commands::SpecNs;
@@ -83,6 +83,9 @@ enum DebundleCommand {
     /// declaration order.
     #[command(name = "show-source")]
     ShowSource(ShowSourceArgs),
+    /// Pretty-print parsed top-level source items with source spans and indices.
+    #[command(name = "inspect-source")]
+    InspectSource(InspectSourceArgs),
     /// List SCCs in the module-quotient graph.
     Scc(SccArgs),
     /// List the module-quotient neighbors of a binding's owner.
@@ -120,6 +123,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::GraphSummary(args) => inspection_commands::run_graph_summary(args),
         DebundleCommand::Describe(args) => inspection_commands::run_describe(args),
         DebundleCommand::ShowSource(args) => inspection_commands::run_show_source(args),
+        DebundleCommand::InspectSource(args) => inspection_commands::run_inspect_source(args),
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),
         DebundleCommand::Spec(args) => spec_commands::run(args),

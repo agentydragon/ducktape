@@ -1,6 +1,6 @@
 //! Graph/source inspection commands and their ID resolution and rendering.
 use crate::emit_report;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use peel::propose::DEFAULT_SIZE_CAP_LINES;
 use peel::{
@@ -8,6 +8,9 @@ use peel::{
     SelectionKind, SourceSliceArgs, UnitsArgs, run_explain_report, run_graph_summary_report,
     run_patch_plan_report, run_source_slice_report, run_units_report,
 };
+use selector_codemod::source_input::resolve_chunk_source_file;
+use serde::Serialize;
+use source_inspection::{PreparedSource, StatementRange, StatementRow};
 use spec_modules::{collect_module_files, module_path_from_file};
 use std::path::PathBuf;
 
@@ -72,6 +75,46 @@ pub(super) struct ShowSourceArgs {
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
+}
+
+/// Args for `debundle inspect-source`.
+#[derive(Debug, ClapArgs)]
+pub(super) struct InspectSourceArgs {
+    /// Read this JavaScript source file directly.
+    #[arg(long = "source-file", conflicts_with = "chunk")]
+    pub source_file: Option<PathBuf>,
+
+    /// Root used with `--chunk` to resolve a source file.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
+
+    /// Source path relative to `--source-root`, e.g. `static/index.js`.
+    #[arg(long)]
+    pub chunk: Option<PathBuf>,
+
+    /// Select one zero-based statement index or an inclusive `START..END` range.
+    #[arg(long, conflicts_with = "around_binding")]
+    pub statements: Option<StatementRange>,
+
+    /// Select the unique top-level item declaring this binding.
+    #[arg(long)]
+    pub around_binding: Option<String>,
+
+    /// Number of neighboring top-level items to show on each side of the binding.
+    #[arg(long = "context-statements", default_value_t = 2)]
+    pub context_statements: usize,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
+}
+
+#[derive(Debug, Serialize)]
+struct InspectSourceReport {
+    source_file: String,
+    total_statements: usize,
+    index_basis: &'static str,
+    statements: Vec<StatementRow>,
 }
 
 /// Dispatch an `<id>` argument into the [`SelectionKind`] it names. Module
@@ -170,6 +213,64 @@ pub(super) fn run_show_source(args: ShowSourceArgs) -> Result<()> {
         render_source_slice_text,
         "writing show-source output",
     )
+}
+
+pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
+    if args.statements.is_some() && args.around_binding.is_some() {
+        bail!("use either --statements or --around-binding, not both");
+    }
+    let source_file = resolve_chunk_source_file(
+        args.source_file.as_deref(),
+        args.source_root.as_deref(),
+        args.chunk.as_deref(),
+    )?;
+    let source = PreparedSource::load(&source_file)?;
+    let statements = match args.around_binding.as_deref() {
+        Some(binding) => source.statement_rows_around_binding(binding, args.context_statements)?,
+        None => source.statement_rows(args.statements)?,
+    };
+    let report = InspectSourceReport {
+        source_file: source.path().display().to_string(),
+        total_statements: source.statement_count(),
+        index_basis: "zero-based raw parsed Module.body index; not an owner ID",
+        statements,
+    };
+    emit_report(
+        args.format,
+        &report,
+        render_inspect_source_text,
+        "writing inspect-source output",
+    )
+}
+
+fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
+    out.push_str(&format!(
+        "{} top-level statement(s) in {}\nIndex: {}\n",
+        report.total_statements, report.source_file, report.index_basis
+    ));
+    for statement in &report.statements {
+        let bindings = if statement.bindings.is_empty() {
+            "none".to_string()
+        } else {
+            statement.bindings.join(", ")
+        };
+        out.push_str(&format!(
+            "\nbody[{}] bytes={}..{} location={}:{}..{}:{} bindings=[{}]\n",
+            statement.index,
+            statement.byte_start,
+            statement.byte_end,
+            statement.start_line,
+            statement.start_column,
+            statement.end_line,
+            statement.end_column,
+            bindings,
+        ));
+        for line in statement.pretty_source.lines() {
+            out.push_str("  ");
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
 }
 
 fn render_units_text(report: &peel::UnitsReport, out: &mut String) {

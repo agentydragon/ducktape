@@ -91,6 +91,9 @@ Cheat sheet of the most-used commands:
 - `debundle describe <id>` / `debundle show-source <id>` — graph +
   source context for any binding / module path or `logical:N` module id /
   atom / owner / proposal / diagnostic ID.
+- `debundle inspect-source` — pretty-print parsed top-level source items
+  with stable raw indices, original byte spans, source locations, and bindings;
+  it does not load a spec or owner graph.
 - `debundle bindings comment <sym>` / `debundle modules comment <module>` —
   edit `comment:` fields (see "Comments" below).
 

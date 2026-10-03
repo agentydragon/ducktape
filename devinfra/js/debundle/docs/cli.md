@@ -20,7 +20,7 @@ as the rest of ducktape.
   `spec synthesize-selectors` with `--apply`
 - Read-only queries: `bindings list`, `modules {list,propose}`,
   `spec {stats,selector-debt,match-selector,validate}`, `atoms`, `coverage`,
-  `graph-summary`, `describe <id>`, `show-source <id>`, `scc`,
+  `graph-summary`, `describe <id>`, `show-source <id>`, `inspect-source`, `scc`,
   `cluster <sym>`, `gate {list,describe,cut}`
 
 Renaming or disabling a module is a plain `mv` of its YAML file, not a
@@ -192,6 +192,34 @@ process (<selector_resolution.md> § The solver) — in `run`, `validate`, and i
 the edit gate, `describe` and `peel` when they resolve source claims. The
 binary needs nothing beside it. `match-selector` and `synthesize-selectors`
 resolve one selector at a time and never solve.
+
+### Inspecting source without a spec
+
+`debundle inspect-source` parses one JavaScript source file with the same SWC
+parser used by `spec match-selector`, then prints selected raw top-level module
+items in readable form:
+
+```sh
+debundle inspect-source --source-file app.js
+debundle inspect-source --source-root extracted --chunk static/app.js \
+  --statements 12..16 --format json
+debundle inspect-source --source-file app.js --around-binding XOe
+```
+
+`--statements` accepts one zero-based index or an inclusive `START..END`
+range. With no selector it prints every item. `--around-binding NAME` locates
+the unique top-level item that declares that name and includes two neighboring
+items on each side by default; set `--context-statements` to change that count.
+The range and binding options are mutually exclusive. A missing or repeated
+top-level declaration is an error.
+
+The labels are raw parsed `Module.body` indices. They use the same `body[N]`
+coordinate that structural selectors report, but they are not owner IDs and do
+not require a spec or owner graph. Each result includes its half-open UTF-8
+byte span in the original file, one-based byte line/columns (end exclusive),
+declared top-level binding names, the original source slice in JSON, and the
+pretty-printed AST item. Text is the interactive default; pipes default to
+JSON, and `--format` can select either explicitly.
 
 ### Selector outcomes
 

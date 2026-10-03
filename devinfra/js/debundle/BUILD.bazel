@@ -39,6 +39,21 @@ rust_test(
 )
 
 rust_library(
+    name = "source_inspection",
+    srcs = ["source_inspection.rs"],
+    crate_root = "source_inspection.rs",
+    edition = "2024",
+    deps = [
+        ":binding_targets",
+        ":js_ast",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_library(
     name = "source_match_holes",
     srcs = ["selectors/matching/source_match_holes.rs"],
     crate_root = "selectors/matching/source_match_holes.rs",
@@ -949,6 +964,7 @@ rust_library(
         ":selector_outcome",
         ":selector_resolve",
         ":source_match",
+        ":source_inspection",
         ":spec",
         ":spec_modules",
         ":spec_stats",
