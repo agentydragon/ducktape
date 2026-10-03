@@ -111,7 +111,7 @@ function second() { return "shared"; }
                 .iter()
                 .map(|selector| selector["logical_module"].as_str().unwrap())
                 .collect::<Vec<_>>(),
-            ["hall/one", "hall/two", "hall/three"],
+            ["hall/one", "hall/three", "hall/two"],
             "{record:#}"
         );
         assert_eq!(
