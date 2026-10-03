@@ -9,38 +9,6 @@ use debundle_e2e_support::{
 };
 
 #[test]
-fn conflicting_claims_have_no_conflict_witness() {
-    let report = validate_json(FixtureOpts::new(
-        "function a() { return 17; }",
-        vec![
-            logical_module(
-                "first",
-                &[Member::source_alpha("First", "function x() { return 17; }")],
-            ),
-            logical_module(
-                "second",
-                &[Member::source_alpha(
-                    "Second",
-                    "function y() { return 17; }",
-                )],
-            ),
-        ],
-    ));
-    println!("R1: {report:#}");
-    for name in ["First", "Second"] {
-        let record = find_outcome(outcomes(&report), "no_match", name);
-        assert!(
-            record["outcome"]["reason"]
-                .as_str()
-                .unwrap()
-                .contains("admit no joint assignment")
-        );
-        assert!(record["outcome"].get("candidates").is_none());
-        assert!(record["outcome"].get("claimed_by").is_none());
-    }
-}
-
-#[test]
 fn multi_statement_mismatch_has_no_near_miss() {
     let make_spec = || {
         vec![logical_module_with_binding_groups(

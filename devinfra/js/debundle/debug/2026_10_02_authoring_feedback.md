@@ -27,64 +27,10 @@ reproduced**, not that the requested feature exists. Convert their assertions
 to the desired contract when implementing a request. The existing repeated
 declaration test is an additional independent reproduction for R3.
 
-Validation: **passed**, six tests across the two targets on the revision above.
-The three new characterization cases reproduced R1, R2, and R4; the existing
-repeated-declaration suite reproduced R3 and checked scope separation.
+The remaining characterization cases cover R2 and R4; the existing
+repeated-declaration suite covers R3 and scope separation. The original
+validation run passed on the revision above; CI validates the updated branch.
 [BuildBuddy run and test output](https://app.buildbuddy.io/invocation/c6245dea-5f4a-40f2-a051-15ea9873c85f).
-
-## R1 — Identify the selectors responsible for an infeasible group
-
-**Type:** diagnostic feature request. **Priority:** high.
-
-**Impact observed:** after several spec edits, a contradictory pair can make a
-large connected selector group report `no_match`. Authors have to remove
-module files in a scratch tree and bisect to discover the actual conflict.
-
-**Minimal source:**
-
-```js
-function a() {
-  return 17;
-}
-```
-
-Two separate module specs each claim this same function:
-
-```yaml
-# first.yaml
-source_matches:
-  - match: "function x() { return 17; }"
-    bindings: [{ local: x, name: First }]
-```
-
-```yaml
-# second.yaml
-source_matches:
-  - match: "function y() { return 17; }"
-    bindings: [{ local: y, name: Second }]
-```
-
-**Current behavior:** both exports report `no_match` with the reason
-`selectors that interact with this one admit no joint assignment`. The outcome
-does not name the competing claim or candidate declaration. The two-selector
-case is easy to inspect manually; the same output becomes unhelpful inside a
-large group. Separate groups are already isolated correctly.
-
-**Requested behavior:** report a conflict witness containing the module/export
-identities and source declaration they compete for. Distinguish this from a
-selector with no syntactic candidates. For more complicated contradictions,
-identify the affected group and say when a smaller witness is unavailable.
-
-**Acceptance:** the example reports `First` versus `Second`, both targeting
-`a`; an unrelated resolved selector remains unaffected. Add a connected-group
-case proving that every member is not mislabeled as independently broken.
-
-**Implementation constraint:** this is already on the
-[active queue](../TODO.md#automation-product-flows-over-the-solver).
-[Assumption-core localization](../docs/selector_resolution.md#rejected-localizing-a-contradiction-with-assumption-cores)
-was measured and rejected for excessive model-loading cost. Prefer a bounded
-explanation from candidate sets for simple collisions; this request does not
-propose reinstating that expensive solver path.
 
 ## R2 — Explain where a multi-statement selector stops matching
 
