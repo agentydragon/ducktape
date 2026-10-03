@@ -239,8 +239,32 @@ struct MatchSelectorArgs {
 
     /// The candidate `source_match` `match` text to test. Matched under
     /// the public alpha-equivalent identifier policy.
-    #[arg(long = "match")]
-    pub match_source: String,
+    #[arg(
+        long = "match",
+        conflicts_with = "selector",
+        required_unless_present = "selector"
+    )]
+    pub match_source: Option<String>,
+
+    /// Authored entry: FILE.yaml#/source_matches/INDEX or /anonymous_statements/INDEX.
+    #[arg(long, requires = "explain")]
+    pub selector: Option<String>,
+
+    /// Read --selector '#/JSON/Pointer' from this YAML file, without resolving its spec.
+    #[arg(long, requires = "selector")]
+    pub spec: Option<PathBuf>,
+
+    /// Compare only the selected range. Does not solve ownership or other spec constraints.
+    #[arg(long, requires = "statements")]
+    pub explain: bool,
+
+    /// Inclusive zero-based source statement range, as printed by inspect-source.
+    #[arg(long, requires = "explain")]
+    pub statements: Option<source_inspection::StatementRange>,
+
+    /// Use anonymous-statement sequence semantics for an inline --match.
+    #[arg(long, requires = "explain", conflicts_with_all = ["selector", "target_binding"])]
+    pub anonymous: bool,
 
     /// Probe one selector-local binding when the match declares more than one
     /// binding. YAML claim projection lives in `source_matches[].bindings[]`.
@@ -249,7 +273,7 @@ struct MatchSelectorArgs {
 
     /// Skip holing-slack analysis (report the outcome only). Slack is
     /// computed by default when the selector pins a unique target.
-    #[arg(long = "no-slack")]
+    #[arg(long = "no-slack", conflicts_with = "explain")]
     pub no_slack: bool,
 
     /// Output format. Default `text` on tty, `json` on pipe.
@@ -279,11 +303,31 @@ fn run_synthesize_selectors_cmd(args: SelectorCodemodArgs) -> Result<()> {
 }
 
 fn run_match_selector_cmd(args: MatchSelectorArgs) -> Result<()> {
+    if args.explain {
+        let config = crate::selector_explanation::ExplanationConfig {
+            source_file: args.source_file,
+            source_root: args.source_root,
+            chunk: args.chunk,
+            match_source: args.match_source,
+            selector: args.selector,
+            spec_file: args.spec,
+            target_binding: args.target_binding,
+            anonymous: args.anonymous,
+            statements: args.statements.context("--explain requires --statements")?,
+        };
+        let report = crate::selector_explanation::explain(&config)?;
+        return emit_report(
+            args.format,
+            &report,
+            crate::selector_explanation::render,
+            "writing selector explanation",
+        );
+    }
     let report = run_match_selector(&MatchSelectorConfig {
         source_file: args.source_file,
         source_root: args.source_root,
         chunk: args.chunk,
-        match_source: args.match_source,
+        match_source: args.match_source.context("--match is required")?,
         target_binding: args.target_binding,
         check_slack: !args.no_slack,
     })?;

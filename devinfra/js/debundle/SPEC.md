@@ -56,6 +56,19 @@ operators, member property names, object keys and tree structure are
 significant. Relational selectors (`cross_ref`, `reads_member`, …) match through
 facts derived from the chunk, not through templates.
 
+## Local selector explanations
+
+`inspect-source` labels the parsed file's top-level statements and original
+locations. `spec match-selector --explain --statements` compares one inline or
+authored selector against the entire selected range using its structural
+matching semantics. It reports a local match, mismatch, unsupported comparison,
+or diagnostic limit. An inconclusive comparison is not a mismatch.
+
+This operation does not establish uniqueness, enforce ownership/all-different,
+or resolve references to other spec exports. Loading a selector from a spec
+preserves its matching mode and claimed bindings without solving other entries.
+Local match results are distinct from resolved assignment outcomes.
+
 ## Assignment
 
 Every chunk's entities form one program. Each entity takes exactly one of its

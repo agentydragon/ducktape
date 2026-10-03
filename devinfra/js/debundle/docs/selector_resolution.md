@@ -22,6 +22,11 @@ per entity. Every command that resolves selectors calls it, directly or as
 A command that needs a selector unique on its own resolves it as a spec of one
 entity: its outcome is then its own candidates' verdict.
 
+`spec match-selector --explain --statements` is a local structural comparison,
+not a resolve. It uses the matcher directly on the explicitly selected range
+and cannot certify a unique or globally valid assignment. See
+<debugging_selectors.md> for the inspection and explanation workflow.
+
 ## Inside the resolve
 
 The resolve is two halves, so `run` can do the first per chunk in parallel:

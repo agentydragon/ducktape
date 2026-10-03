@@ -11,6 +11,8 @@ mod bindings_commands;
 mod inspection_commands;
 mod modules_commands;
 mod spec_commands;
+mod selector_input;
+mod selector_explanation;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
