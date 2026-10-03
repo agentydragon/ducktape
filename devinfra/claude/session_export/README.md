@@ -96,6 +96,7 @@ managing pairing/status, for a deployment where nothing can listen on the loopba
 The session transcript groups adjacent tool work behind short disclosures, keeps messages visible, and collapses
 thinking and successful turn metadata. Small chronological event strips between transcript rows provide every loaded
 record, including runner/hook traffic: click a dot for an event or a short batch, or the event count for the whole strip.
+Routine sessions appear in the activity-sorted session list with a **Routine run** badge and the routine ID.
 The **Events** button opens all loaded events together. Both inspectors filter by kind/subtype or search complete
 event data; expand a row for its full JSON envelope and payload. Load older events to inspect additional history.
 The sync follows recently active sessions over the server's event streams between cycles ([docs/sync.md](docs/sync.md)

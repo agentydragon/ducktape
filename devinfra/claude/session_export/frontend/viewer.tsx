@@ -60,6 +60,12 @@ import {
 type StatusFilter = "all" | "active" | "paused" | "archived";
 type WatchStatus = "connecting" | "connected" | "reconnecting";
 const ALL_STATUSES = ["active", "paused", "archived"];
+const ROUTINE_SESSION_ORIGINS = new Set([
+  "force_run_trigger",
+  "scheduled_trigger",
+  "fire_routine",
+  "github_webhook_trigger",
+]);
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_DEFAULT_WIDTH = 300;
@@ -207,6 +213,17 @@ function sessionSubtitle(session: SessionSummary): string {
   return [repository, branch].filter((value): value is string => value !== null).join(" · ") || session.id;
 }
 
+function sessionRoutineId(session: SessionSummary): string | null {
+  const triggerId = (session as SessionSummary & { trigger_id?: unknown }).trigger_id;
+  return typeof triggerId === "string" && triggerId.length > 0 ? triggerId : null;
+}
+
+function isRoutineSession(session: SessionSummary): boolean {
+  if (sessionRoutineId(session) !== null) return true;
+  const origin = (session as SessionSummary & { origin?: unknown }).origin;
+  return typeof origin === "string" && ROUTINE_SESSION_ORIGINS.has(origin);
+}
+
 function statusColor(status: string): "green" | "yellow" | "gray" {
   if (status === "active") return "green";
   if (status === "paused") return "yellow";
@@ -222,6 +239,8 @@ function SessionRow({
   selected: boolean;
   onSelect: () => void;
 }): JSX.Element {
+  const routineId = sessionRoutineId(session);
+  const routineSession = routineId !== null || isRoutineSession(session);
   return (
     <NavLink
       component="button"
@@ -240,6 +259,11 @@ function SessionRow({
             <Badge size="xs" variant="light" color={statusColor(session.status)}>
               {session.status}
             </Badge>
+            {routineSession && (
+              <Badge size="xs" variant="light" color="violet">
+                Routine run
+              </Badge>
+            )}
             <Text component="time" size="xs" c="dimmed" dateTime={session.updated_at}>
               {new Date(session.updated_at).toLocaleDateString()}
             </Text>
@@ -247,6 +271,11 @@ function SessionRow({
           <Text size="xs" c="dimmed" ff="monospace" truncate>
             {sessionSubtitle(session)}
           </Text>
+          {routineId !== null && (
+            <Text size="xs" c="dimmed" ff="monospace" truncate>
+              Routine {routineId}
+            </Text>
+          )}
         </Stack>
       }
     />
@@ -1948,6 +1977,11 @@ export function SessionViewer(): JSX.Element {
                       <Badge variant="light" color={statusColor(selectedSession.status)}>
                         {selectedSession.status}
                       </Badge>
+                      {isRoutineSession(selectedSession) && (
+                        <Badge variant="light" color="violet">
+                          Routine run
+                        </Badge>
+                      )}
                       <Button
                         variant={showRawEvents ? "light" : "subtle"}
                         size="compact-xs"

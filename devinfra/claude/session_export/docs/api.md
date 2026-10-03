@@ -67,7 +67,10 @@ when it does not), whether the old refresh token stays valid after a rotation, a
 
 ## List sessions
 
-`GET /v1/code/sessions?limit=100&cursor=<next_cursor>` → `{data, next_cursor?, resume_token}`.
+`GET /v1/code/sessions?limit=100&cursor=<next_cursor>&include_trigger_sessions=true` →
+`{data, next_cursor?, resume_token}`. Claude Code Web exposes this opt-in on its generic session-list helper; the
+sync passes it to discover routine runs. Its response effect has not been independently probed. List items retain
+`trigger_id` and `origin` when present.
 
 - `next_cursor` is absent on the last page. The cursor is opaque (base64).
 - Without a `statuses` filter the list includes archived sessions; statuses seen: `active`, `archived`. The web UI
