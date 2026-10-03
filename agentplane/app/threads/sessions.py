@@ -4,6 +4,7 @@ from agentplane.app.changes import Changes
 from agentplane.app.live import LiveIndex
 from agentplane.app.sandbox_models import SandboxKind
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
+from agentplane.sandbox_service.kind import to_wire
 from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
 
@@ -39,7 +40,7 @@ class SandboxSessions:
             owner=ServiceAccount(namespace=view.service_account.namespace, name=view.service_account.name),
             sandbox=view.name,
             sandbox_uid=str(view.uid),
-            kind=view.kind,
+            kind=to_wire(view.kind),
         )
         if str(view.uid) not in self._clients:
             self._clients[str(view.uid)] = self._service.runner(destination)

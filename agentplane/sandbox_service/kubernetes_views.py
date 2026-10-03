@@ -10,6 +10,7 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from agentplane.sandbox_service.binding_storage import read_binding
+from agentplane.sandbox_service.kind import to_wire
 from agentplane.sandbox_service.kubernetes_grants import DnsName, KubernetesGrant
 from agentplane.sandbox_service.models import OperatingMode, ProvisioningState
 from agentplane.sandbox_service.protocol_pb2 import (
@@ -101,7 +102,7 @@ def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None) -> Sandbox:
     return Sandbox(
         name=sandbox.metadata.name,
         uid=sandbox.metadata.uid,
-        kind="agent_sandbox",
+        kind=to_wire("agent_sandbox"),
         template=sandbox.metadata.annotations.get(TEMPLATE_ANNOTATION, ""),
         capabilities=["pod_exec", "stop_start"],
         state=_state(sandbox, pod),

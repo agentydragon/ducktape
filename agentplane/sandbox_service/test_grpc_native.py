@@ -39,6 +39,7 @@ TOKEN = "test-native-grpc-token"
 AUDIENCE = "test-native-grpc"
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
 DESTINATION = SandboxDestination(
+    kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX,
     owner=protocol_pb2.ServiceAccount(namespace=OWNER.namespace, name=OWNER.name),
     sandbox=SANDBOX,
     sandbox_uid=SANDBOX_UID,

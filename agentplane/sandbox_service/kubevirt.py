@@ -12,6 +12,7 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.sandbox_service.binding_storage import read_binding
+from agentplane.sandbox_service.kind import to_wire
 from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_ANNOTATION,
     KUBERNETES_GRANTS_ERROR_ANNOTATION,
@@ -164,7 +165,7 @@ def vm_view(vm: VmResource, vmi: VmiResource | None, pod: k8s_client.V1Pod | Non
     return Sandbox(
         name=meta.name,
         uid=meta.uid,
-        kind=EnvironmentKind.KUBEVIRT,
+        kind=to_wire(EnvironmentKind.KUBEVIRT),
         template=annotations.get(VM_TEMPLATE_ANNOTATION, ""),
         capabilities=["stop_start"],
         state=state,

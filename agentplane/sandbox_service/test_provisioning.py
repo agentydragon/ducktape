@@ -133,6 +133,7 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
         CreateSandboxRequest(
             slug="test",
             template=TEMPLATE,
+            kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX,
             action_policy_sets=["test-actions"],
             kubernetes_grants=["test-read"],
             bootstrap="printf ready",
@@ -157,7 +158,12 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
     assert await api.list_templates() == [TEMPLATE]
     with pytest.raises(RunnerError):
         await api.delete(view.name)
-    stale = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=str(uuid4()))
+    stale = SandboxDestination(
+        owner=view.service_account,
+        sandbox=view.name,
+        sandbox_uid=str(uuid4()),
+        kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX,
+    )
     for operation in (api.stub.SuspendSandbox, api.stub.ResumeSandbox, api.stub.DeleteSandbox):
         with pytest.raises(ServiceError) as rejected:
             await api.unary(operation, protocol_pb2.SandboxRequest(destination=stale))
@@ -171,17 +177,23 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
 @pytest.mark.parametrize(
     "spec",
     [
-        CreateSandboxRequest(template=TEMPLATE),
-        CreateSandboxRequest(slug="Bad_Name", template=TEMPLATE),
-        CreateSandboxRequest(slug="a" * 58, template=TEMPLATE),
-        CreateSandboxRequest(slug="test"),
-        CreateSandboxRequest(slug="test", template=TEMPLATE, bootstrap="x" * 65_537),
+        CreateSandboxRequest(template=TEMPLATE, kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX),
+        CreateSandboxRequest(slug="Bad_Name", template=TEMPLATE, kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX),
+        CreateSandboxRequest(slug="a" * 58, template=TEMPLATE, kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX),
+        CreateSandboxRequest(slug="test", kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX),
         CreateSandboxRequest(
-            slug="test", template=TEMPLATE, session_defaults=protocol_pb2.SessionDefaults(setup_script="x" * 65_537)
+            slug="test", template=TEMPLATE, kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX, bootstrap="x" * 65_537
         ),
         CreateSandboxRequest(
             slug="test",
             template=TEMPLATE,
+            kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX,
+            session_defaults=protocol_pb2.SessionDefaults(setup_script="x" * 65_537),
+        ),
+        CreateSandboxRequest(
+            slug="test",
+            template=TEMPLATE,
+            kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX,
             session_defaults=protocol_pb2.SessionDefaults(harness=runner_pb2.HARNESS_UNSPECIFIED),
         ),
     ],
@@ -212,7 +224,11 @@ async def test_partial_create_recovers_from_kubernetes_state_without_app(case: C
     with pytest.raises(k8s_client.ApiException):
         await case.service.create(
             CreateSandboxRequest(
-                slug="test", template=TEMPLATE, action_policy_sets=["test-actions"], kubernetes_grants=["test-read"]
+                slug="test",
+                template=TEMPLATE,
+                kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX,
+                action_policy_sets=["test-actions"],
+                kubernetes_grants=["test-read"],
             )
         )
     (view,) = await case.service.inventory.list_sandboxes()
@@ -236,7 +252,12 @@ async def test_foreign_binding_is_not_overwritten_and_provisioning_stays_pending
     case.custom.fail_plural = "actionpolicybindings"
     with pytest.raises(k8s_client.ApiException):
         await case.service.create(
-            CreateSandboxRequest(slug="test", template=TEMPLATE, action_policy_sets=["test-actions"])
+            CreateSandboxRequest(
+                slug="test",
+                template=TEMPLATE,
+                kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX,
+                action_policy_sets=["test-actions"],
+            )
         )
     (view,) = await case.service.inventory.list_sandboxes()
     binding = next(value for (kind, _), value in case.custom.objects.items() if kind == "egressbindings")
@@ -255,14 +276,18 @@ async def test_authorization_precedes_creation(api: SandboxServiceClient, cluste
         audiences=(AUDIENCE,),
     )
     with pytest.raises(ServiceError) as rejected:
-        await api.create(CreateSandboxRequest(slug="test", template=TEMPLATE))
+        await api.create(
+            CreateSandboxRequest(slug="test", template=TEMPLATE, kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX)
+        )
     assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
     assert not case.core.service_accounts
     assert not await case.service.inventory.list_sandboxes()
 
 
 async def test_manual_egress_grants_cross_the_service_boundary(api: SandboxServiceClient, case: Case) -> None:
-    view = await api.create(CreateSandboxRequest(slug="test", template=TEMPLATE))
+    view = await api.create(
+        CreateSandboxRequest(slug="test", template=TEMPLATE, kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX)
+    )
     name = await api.grant_egress(view, ["test-basic"])
     assert name in {
         binding.name

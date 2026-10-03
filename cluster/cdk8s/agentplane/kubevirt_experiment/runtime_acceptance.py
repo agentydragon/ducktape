@@ -27,7 +27,7 @@ from agentplane.sandbox_service.kubevirt_contract import (
     VM_TEMPLATE_CONFIG_ANNOTATION,
     VMIS_PLURAL,
 )
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox
+from agentplane.sandbox_service.protocol_pb2 import ENVIRONMENT_KIND_KUBEVIRT, CreateSandboxRequest, Sandbox
 from util.kubernetes import CustomObjectsClient
 
 _NAMESPACE_PREFIX = "agentplane-vm-prototype-"
@@ -311,7 +311,10 @@ async def create(args: argparse.Namespace) -> None:
     ):
         deadline = asyncio.get_running_loop().time() + args.timeout
         created = await _within(
-            inventory.create(CreateSandboxRequest(slug=args.name, template=args.template, kind="kubevirt")), deadline
+            inventory.create(
+                CreateSandboxRequest(slug=args.name, template=args.template, kind=ENVIRONMENT_KIND_KUBEVIRT)
+            ),
+            deadline,
         )
         print(
             json.dumps(

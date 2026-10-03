@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service import protocol_pb2
+from agentplane.sandbox_service.kind import from_wire, to_wire
 from agentplane.sandbox_service.kubernetes_grants import (
     ClusterRoleRef,
     DnsName,
@@ -229,9 +230,7 @@ class SandboxView(BaseModel):
 
 def sandbox_view(value: protocol_pb2.Sandbox) -> SandboxView:
     data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-    # Older persisted Sandboxes and Sandbox Service versions have no provider identity yet.
-    if not data.get("kind"):
-        data["kind"] = "agent_sandbox"
+    data["kind"] = from_wire(value.kind).value
     data.setdefault("template", "")
     data.setdefault("capabilities", [])
     data.setdefault("kubernetes_grant_error", None)
@@ -242,4 +241,8 @@ def sandbox_view(value: protocol_pb2.Sandbox) -> SandboxView:
 
 
 def create_request(value: NewSandbox) -> protocol_pb2.CreateSandboxRequest:
-    return ParseDict(value.model_dump(mode="json", exclude_none=True), protocol_pb2.CreateSandboxRequest())
+    request = ParseDict(
+        value.model_dump(mode="json", exclude_none=True, exclude={"kind"}), protocol_pb2.CreateSandboxRequest()
+    )
+    request.kind = to_wire(value.kind)
+    return request

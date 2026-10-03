@@ -80,6 +80,7 @@ py_library(
         "//agentplane/sandbox_service:action_policy_views",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:egress_views",
+        "//agentplane/sandbox_service:kind",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//agentplane/sandbox_service:models",
         "@pypi//fastapi",
@@ -1312,6 +1313,7 @@ py_library(
     deps = [
         "//agentplane:subjects",
         "//agentplane/runner:harness",
+        "//agentplane/sandbox_service:kind",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:protocol_pb2",

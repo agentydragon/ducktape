@@ -6,8 +6,9 @@ from ipaddress import ip_address
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.kind import from_wire
 from agentplane.sandbox_service.kubevirt import pod_owned_by_vmi
-from agentplane.sandbox_service.models import EnvironmentKind, ProvisioningState, SandboxNotFoundError, environment_kind
+from agentplane.sandbox_service.models import EnvironmentKind, ProvisioningState, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination
 from util.agent_sandbox import SANDBOX_API
 
@@ -31,7 +32,7 @@ class DestinationResolver:
     async def resolve(self, destination: SandboxDestination) -> RunnerEndpoint:
         if not all((destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)):
             raise ValueError("Sandbox name, UID, and owner are required")
-        kind = environment_kind(destination.kind)
+        kind = from_wire(destination.kind)
         view = await self.inventory.get(destination.sandbox, kind=kind)
         if view.uid != destination.sandbox_uid or view.service_account != destination.owner:
             raise SandboxNotFoundError(destination.sandbox)

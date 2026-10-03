@@ -44,6 +44,7 @@ TOKEN = "test-grpc-token"
 AUDIENCE = "test-sandbox-service"
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
 DESTINATION = SandboxDestination(
+    kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX,
     owner=protocol_pb2.ServiceAccount(namespace=OWNER.namespace, name=OWNER.name),
     sandbox=SANDBOX,
     sandbox_uid=SANDBOX_UID,
@@ -421,7 +422,10 @@ async def test_unlisted_callers_rejected_before_lookup(
     async with service_client(configured, token_file) as remote:
         for call, request in (
             (remote.stub.ListSandboxes, Empty()),
-            (remote.stub.GetSandbox, protocol_pb2.GetSandboxRequest(name=SANDBOX)),
+            (
+                remote.stub.GetSandbox,
+                protocol_pb2.GetSandboxRequest(name=SANDBOX, kind=protocol_pb2.ENVIRONMENT_KIND_AGENT_SANDBOX),
+            ),
             (remote.stub.CreateSandbox, protocol_pb2.CreateSandboxRequest()),
             (remote.stub.SuspendSandbox, protocol_pb2.SandboxRequest(destination=DESTINATION)),
             (remote.stub.ResumeSandbox, protocol_pb2.SandboxRequest(destination=DESTINATION)),

@@ -80,7 +80,7 @@ export function ConfirmDelete({
       <Stack>
         <Text size="sm">
           {kind === "kubevirt"
-            ? "The virtual machine and its disks go with the sandbox, and everything written on them."
+            ? "The virtual machine is deleted. Its state and workspace disks stay in place for recovery."
             : "The Pod and its volume go with the sandbox, and everything written on it."}{" "}
           Threads already recorded outlive it.
         </Text>

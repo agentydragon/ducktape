@@ -181,7 +181,8 @@ Illustrative creation:
   "destination_ref": {
     "namespace": "agentplane-staging",
     "name": "sandbox-example",
-    "uid": "e03c0724-03c2-4d97-a45c-47fdc87eeb16"
+    "uid": "e03c0724-03c2-4d97-a45c-47fdc87eeb16",
+    "kind": "agent_sandbox"
   },
   "session_id": "session-123",
   "client_key": "follow-action-456",

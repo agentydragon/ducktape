@@ -14,7 +14,7 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_views import PROVISIONING_ANNOTATION
 from agentplane.sandbox_service.kubevirt import VmTemplate
 from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination
+from agentplane.sandbox_service.protocol_pb2 import ENVIRONMENT_KIND_KUBEVIRT, CreateSandboxRequest, SandboxDestination
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 from util.kubernetes import CustomObjectsClient
 
@@ -49,11 +49,11 @@ async def test_vm_starts_only_after_dependencies_and_retains_disks_on_delete() -
         vm_templates=catalog,
     )
     view = await inventory.create(
-        CreateSandboxRequest(slug="test-env", template="test-vm", kind="kubevirt"),
+        CreateSandboxRequest(slug="test-env", template="test-vm", kind=ENVIRONMENT_KIND_KUBEVIRT),
         annotations={"agentplane.allegedly.works/pending-launch-grants": '{"policies":[],"action_policy_sets":[]}'},
     )
     vm = custom.objects[("virtualmachines", view.name)]
-    assert view.kind == "kubevirt"
+    assert view.kind == ENVIRONMENT_KIND_KUBEVIRT
     assert vm["spec"]["runStrategy"] == "Halted"
     domain = vm["spec"]["template"]["spec"]["domain"]
     assert domain["firmware"]["bootloader"]["efi"]["secureBoot"] is False
@@ -129,7 +129,9 @@ async def test_vm_destination_rejects_forged_vmi_owner_uid() -> None:
         core_v1=cast(k8s_client.CoreV1Api, core),
         vm_templates={"test-vm": _template()},
     )
-    view = await inventory.create(CreateSandboxRequest(slug="test-env", template="test-vm", kind="kubevirt"))
+    view = await inventory.create(
+        CreateSandboxRequest(slug="test-env", template="test-vm", kind=ENVIRONMENT_KIND_KUBEVIRT)
+    )
     vm = custom.objects[("virtualmachines", view.name)]
     vm["spec"]["runStrategy"] = "Always"
     custom.objects[("virtualmachineinstances", view.name)] = {
@@ -151,7 +153,7 @@ async def test_vm_destination_rejects_forged_vmi_owner_uid() -> None:
         "status": {"phase": "Running"},
     }
     destination = SandboxDestination(
-        owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid, kind="kubevirt"
+        owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid, kind=ENVIRONMENT_KIND_KUBEVIRT
     )
     resolver = DestinationResolver(inventory, cast(k8s_client.CoreV1Api, core), 7000)
     with pytest.raises(DestinationUnavailableError):
@@ -167,7 +169,7 @@ async def test_vm_finishes_provisioning_and_starts_in_one_patch() -> None:
         vm_templates={"test-vm": _template()},
     )
     view = await inventory.create(
-        CreateSandboxRequest(slug="test-env", template="test-vm", kind="kubevirt"),
+        CreateSandboxRequest(slug="test-env", template="test-vm", kind=ENVIRONMENT_KIND_KUBEVIRT),
         annotations={PROVISIONING_ANNOTATION: '{"policies":[],"action_policy_sets":[]}'},
     )
     assert await inventory.ensure_vm_dependencies(view)

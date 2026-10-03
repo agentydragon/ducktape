@@ -25,8 +25,7 @@ class EnvironmentKind(StrEnum):
 
 
 def environment_kind(value: str) -> EnvironmentKind:
-    # Empty is the wire default of pre-kind container destinations and persisted staging rows.
-    return EnvironmentKind(value or EnvironmentKind.AGENT_SANDBOX)
+    return EnvironmentKind(value)
 
 
 class InventoryError(Exception):

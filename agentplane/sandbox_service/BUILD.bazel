@@ -54,6 +54,7 @@ py_library(
     ],
     deps = [
         ":binding_storage",
+        ":kind",
         ":kubernetes_views",
         ":kubevirt",
         ":kubevirt_contract",
@@ -122,6 +123,7 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":inventory",
+        ":kind",
         ":kubevirt",
         ":models",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -184,6 +186,7 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":instructions",
+        ":kind",
         ":models",
         "//agentplane/runner:client",
         "//agentplane/runner:errors",
@@ -211,6 +214,7 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":action_policy_views",
+        ":kind",
         ":kubevirt_contract",
         ":models",
         ":owned_binding",
@@ -227,6 +231,7 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":egress_views",
+        ":kind",
         ":kubevirt_contract",
         ":models",
         ":owned_binding",
@@ -246,6 +251,7 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":inventory",
+        ":kind",
         ":kubevirt_contract",
         ":models",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -275,6 +281,7 @@ py_library(
         ":binding_storage",
         ":egress",
         ":inventory",
+        ":kind",
         ":kubernetes_bindings",
         ":kubernetes_grants",
         ":kubernetes_views",
@@ -407,6 +414,7 @@ py_library(
     srcs = ["client.py"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        ":kind",
         ":models",
         ":wire",
         "//agentplane/protocol:command_pb2",
@@ -429,6 +437,7 @@ py_library(
         ":command_relay",
         ":destinations",
         ":egress_views",
+        ":kind",
         ":models",
         ":provisioning",
         ":session_lifecycle",
@@ -589,6 +598,7 @@ py_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         ":binding_storage",
+        ":kind",
         ":kubernetes_grants",
         ":models",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -657,6 +667,7 @@ py_library(
     ],
     deps = [
         ":binding_storage",
+        ":kind",
         ":kubernetes_views",
         ":kubevirt_contract",
         ":models",
@@ -695,5 +706,15 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "kind",
+    srcs = ["kind.py"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        ":models",
+        "//agentplane/sandbox_service:protocol_pb2",
     ],
 )

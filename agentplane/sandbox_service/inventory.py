@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.egress.resources import placeholder_of
 from agentplane.sandbox_service.binding_storage import read_binding
+from agentplane.sandbox_service.kind import from_wire, to_wire
 from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_ERROR_ANNOTATION,
     KUBERNETES_GRANTS_READY_ANNOTATION,
@@ -138,11 +139,13 @@ class SandboxInventory:
 
     async def list_template_descriptors(self) -> list[TemplateDescriptor]:
         containers = [
-            TemplateDescriptor(name=name, kind=EnvironmentKind.AGENT_SANDBOX, capabilities=["pod_exec", "stop_start"])
+            TemplateDescriptor(
+                name=name, kind=to_wire(EnvironmentKind.AGENT_SANDBOX), capabilities=["pod_exec", "stop_start"]
+            )
             for name in await self.list_templates()
         ]
         vms = [
-            TemplateDescriptor(name=name, kind=EnvironmentKind.KUBEVIRT, capabilities=["stop_start"])
+            TemplateDescriptor(name=name, kind=to_wire(EnvironmentKind.KUBEVIRT), capabilities=["stop_start"])
             for name in sorted(self._vm_templates)
         ]
         return [*containers, *vms]
@@ -179,7 +182,7 @@ class SandboxInventory:
             virtual_machines.append(vm_view(vm, vmi, matching[0] if len(matching) == 1 else None))
         return [*containers, *virtual_machines]
 
-    async def get(self, name: str, *, kind: str = "") -> Sandbox:
+    async def get(self, name: str, *, kind: str = "agent_sandbox") -> Sandbox:
         if environment_kind(kind) == EnvironmentKind.KUBEVIRT:
             vm = await self._vm(name)
             try:
@@ -205,7 +208,7 @@ class SandboxInventory:
         annotations: dict[str, str] | None = None,
         finalizers: list[str] | None = None,
     ) -> Sandbox:
-        if environment_kind(spec.kind) == EnvironmentKind.KUBEVIRT:
+        if from_wire(spec.kind) == EnvironmentKind.KUBEVIRT:
             return await self._create_vm(spec, annotations=annotations, finalizers=finalizers)
         template = _Template.model_validate(
             await self._custom_objects.get_namespaced_custom_object(
@@ -405,7 +408,7 @@ class SandboxInventory:
         return vm_view(vm, None, None)
 
     async def ensure_vm_dependencies(self, sandbox: Sandbox) -> bool:
-        if environment_kind(sandbox.kind) != EnvironmentKind.KUBEVIRT:
+        if from_wire(sandbox.kind) != EnvironmentKind.KUBEVIRT:
             return True
         vm = await self._vm(sandbox.name)
         template = VmTemplate.model_validate_json(vm.metadata.annotations[VM_TEMPLATE_CONFIG_ANNOTATION])
@@ -647,13 +650,13 @@ class SandboxInventory:
                 raise ValueError(f"DataVolume {name} failed to initialize")
         return True
 
-    async def pending_grants(self, name: str, *, kind: str = "") -> LaunchGrants | None:
+    async def pending_grants(self, name: str, *, kind: str = "agent_sandbox") -> LaunchGrants | None:
         resource = await self._resource(name, kind)
         raw = resource.metadata.annotations.get(PROVISIONING_ANNOTATION)
         return LaunchGrants.model_validate_json(raw) if raw is not None else None
 
     async def finish_provisioning(self, sandbox: Sandbox) -> None:
-        vm = await self._vm(sandbox.name) if environment_kind(sandbox.kind) == EnvironmentKind.KUBEVIRT else None
+        vm = await self._vm(sandbox.name) if from_wire(sandbox.kind) == EnvironmentKind.KUBEVIRT else None
         if vm is not None and vm.metadata.uid != sandbox.uid:
             raise SandboxNotFoundError(sandbox.name)
         await self._patch(
@@ -674,17 +677,17 @@ class SandboxInventory:
                     else {}
                 ),
             },
-            kind=sandbox.kind,
+            kind=from_wire(sandbox.kind),
         )
 
-    async def binding(self, name: str, *, kind: str = "") -> SandboxBinding | None:
+    async def binding(self, name: str, *, kind: str = "agent_sandbox") -> SandboxBinding | None:
         raw = (await self._resource(name, kind)).metadata.annotations.get(SANDBOX_BINDING_ANNOTATION)
         if raw is None:
             return None
         return read_binding(raw)
 
     async def set_kubernetes_grants_status(
-        self, name: str, *, ready: bool, error: str | None = None, kind: str = ""
+        self, name: str, *, ready: bool, error: str | None = None, kind: str = "agent_sandbox"
     ) -> None:
         """Record provisioning so a runner cannot start before requested bindings exist."""
         await self._patch(
@@ -700,7 +703,7 @@ class SandboxInventory:
             kind=kind,
         )
 
-    async def remove_finalizer(self, name: str, finalizer: str, *, kind: str = "") -> None:
+    async def remove_finalizer(self, name: str, finalizer: str, *, kind: str = "agent_sandbox") -> None:
         sandbox = await self._resource(name, kind)
         if finalizer in sandbox.metadata.finalizers:
             await self._patch(
@@ -709,13 +712,13 @@ class SandboxInventory:
                 kind=kind,
             )
 
-    async def suspend(self, name: str, *, uid: str | None = None, kind: str = "") -> None:
+    async def suspend(self, name: str, *, uid: str | None = None, kind: str = "agent_sandbox") -> None:
         await self._set_operating_mode(name, OperatingMode.SUSPENDED, uid=uid, kind=kind)
 
-    async def resume(self, name: str, *, uid: str | None = None, kind: str = "") -> None:
+    async def resume(self, name: str, *, uid: str | None = None, kind: str = "agent_sandbox") -> None:
         await self._set_operating_mode(name, OperatingMode.RUNNING, uid=uid, kind=kind)
 
-    async def delete(self, name: str, *, uid: str | None = None, kind: str = "") -> None:
+    async def delete(self, name: str, *, uid: str | None = None, kind: str = "agent_sandbox") -> None:
         """Delete a suspended Sandbox; the controller removes its Pod and PVC, and with them
         everything on the volume. A running one is refused, so the irreversible step is a
         deliberate second one for a browser and for an agent calling the API alike."""
@@ -796,7 +799,7 @@ class SandboxInventory:
         return await self.get(name, kind=EnvironmentKind.KUBEVIRT)
 
     async def _set_operating_mode(
-        self, name: str, mode: OperatingMode, *, uid: str | None = None, kind: str = ""
+        self, name: str, mode: OperatingMode, *, uid: str | None = None, kind: str = "agent_sandbox"
     ) -> None:
         sandbox = await self._resource(name, kind)
         if uid is not None and sandbox.metadata.uid != uid:
@@ -826,7 +829,7 @@ class SandboxInventory:
             patch = {"metadata": {"uid": str(sandbox.metadata.uid)}, "spec": {"operatingMode": mode}}
         await self._patch(name, patch, kind=kind)
 
-    async def _patch(self, name: str, patch: dict[str, object], *, kind: str = "") -> None:
+    async def _patch(self, name: str, patch: dict[str, object], *, kind: str = "agent_sandbox") -> None:
         await self._custom_objects.patch_namespaced_custom_object(
             *(("kubevirt.io", "v1") if environment_kind(kind) == EnvironmentKind.KUBEVIRT else SANDBOX_API),
             self._namespace,

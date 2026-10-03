@@ -38,12 +38,17 @@ message ServiceAccount {
   string name = 2;
 }
 
+enum EnvironmentKind {
+  ENVIRONMENT_KIND_UNSPECIFIED = 0;
+  ENVIRONMENT_KIND_AGENT_SANDBOX = 1;
+  ENVIRONMENT_KIND_KUBEVIRT = 2;
+}
+
 message SandboxDestination {
   ServiceAccount owner = 1;
   string sandbox = 2;
   string sandbox_uid = 3;
-  // Empty only for legacy container destinations; new callers send the immutable kind.
-  string kind = 4;
+  EnvironmentKind kind = 4;
 }
 
 message SessionDestination {
@@ -59,7 +64,7 @@ message ReplaceVmImageRequest {
 message SessionRequest { SessionDestination destination = 1; }
 message GetSandboxRequest {
   string name = 1;
-  string kind = 2;
+  EnvironmentKind kind = 2;
 }
 
 message OpenSessionRequest {
@@ -118,7 +123,7 @@ message CreateSandboxRequest {
   repeated string kubernetes_grants = 5;
   SessionDefaults session_defaults = 6;
   string bootstrap = 7;
-  string kind = 8;
+  EnvironmentKind kind = 8;
 }
 
 // Kubernetes names/status vocabulary is preserved, not recast as runner state.
@@ -183,7 +188,7 @@ message Sandbox {
   optional string kubernetes_grant_error = 12;
   bool deleting = 13;
   PodStatus pod = 14;
-  string kind = 15;
+  EnvironmentKind kind = 15;
   string template = 16;
   repeated string capabilities = 17;
   VirtualMachineStatus vm = 18;
@@ -191,7 +196,7 @@ message Sandbox {
 message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }
 message TemplateDescriptor {
   string name = 1;
-  string kind = 2;
+  EnvironmentKind kind = 2;
   repeated string capabilities = 3;
 }
 message ListTemplatesResponse {

@@ -94,6 +94,7 @@ from agentplane.sandbox_service.egress_views import (
     PolicyView,
     UnknownPolicyError,
 )
+from agentplane.sandbox_service.kind import from_wire
 from agentplane.sandbox_service.kubernetes_grants import (
     DuplicateKubernetesGrantError,
     KubernetesGrant,
@@ -244,7 +245,7 @@ async def list_templates(inventory: Inventory) -> list[SandboxTemplateView]:
     """Available templates, their environment kind, and the operations each supports."""
     return [
         SandboxTemplateView(
-            name=template.name or "", kind=template.kind or "agent_sandbox", capabilities=list(template.capabilities)
+            name=template.name or "", kind=from_wire(template.kind).value, capabilities=list(template.capabilities)
         )
         for template in await inventory.list_template_descriptors()
     ]
@@ -718,7 +719,9 @@ async def list_threads_with_sandboxes(
 ) -> ThreadsWithSandboxes:
     """Visible Threads newest first, joined with the complete Sandbox inventory."""
     thread_views = await store.list_threads(include_archived=include_archived)
-    sandboxes = {f"{view.kind}/{view.name}": sandbox_view(view) for view in await inventory.list_sandboxes()}
+    sandboxes = {
+        f"{from_wire(view.kind).value}/{view.name}": sandbox_view(view) for view in await inventory.list_sandboxes()
+    }
     return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
 
 

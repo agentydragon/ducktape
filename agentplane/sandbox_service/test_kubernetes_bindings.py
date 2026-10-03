@@ -32,7 +32,7 @@ from agentplane.sandbox_service.kubernetes_grants import (
 )
 from agentplane.sandbox_service.kubernetes_views import KUBERNETES_GRANTS_ANNOTATION, sandbox_view
 from agentplane.sandbox_service.models import ProvisioningState
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, ResolvedGrant
+from agentplane.sandbox_service.protocol_pb2 import ENVIRONMENT_KIND_AGENT_SANDBOX, CreateSandboxRequest, ResolvedGrant
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
@@ -53,7 +53,9 @@ async def _sandbox(
 ) -> tuple[str, list[ResolvedGrant]]:
     selected = resolve_grants(names, catalog)
     view = await inventory.create(
-        CreateSandboxRequest(slug="haku", template=TEMPLATE, kubernetes_grants=names),
+        CreateSandboxRequest(
+            slug="haku", template=TEMPLATE, kind=ENVIRONMENT_KIND_AGENT_SANDBOX, kubernetes_grants=names
+        ),
         annotations={
             KUBERNETES_GRANTS_ANNOTATION: json.dumps(
                 [MessageToDict(grant, preserving_proto_field_name=True) for grant in selected]
