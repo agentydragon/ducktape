@@ -305,6 +305,7 @@ py_test(
     size = "medium",
     srcs = ["test_cluster_integration.py"],
     data = [
+        "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_bootstrap_files",
@@ -312,7 +313,6 @@ py_test(
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
-        "//agentplane/crds:manifests",
         "@multitool//tools/kustomize",
     ],
     deps = [

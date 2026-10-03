@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from cdk8s import Chart
 
-from agentplane.crds.generate import CRD_FILES, CRDS_DIR
+from agentplane.crds.generate import CRDS_DIR
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 
 NAME = "agentplane-crds"

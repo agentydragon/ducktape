@@ -1863,13 +1863,13 @@ py_test(
     # the whole generated root, which the test holds closed. cluster_all_files' glob stops at
     # sub-package boundaries.
     data = [
+        "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
         "//cluster:parked_generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
-        "//agentplane/crds:manifests",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
