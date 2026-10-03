@@ -19,8 +19,14 @@ from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.kubevirt import VmTemplate
-from agentplane.sandbox_service.kubevirt_contract import VM_TEMPLATE_ANNOTATION, VM_TEMPLATE_CONFIG_ANNOTATION
+from agentplane.sandbox_service.kubevirt import VmiResource, VmTemplate, controller_owned_by
+from agentplane.sandbox_service.kubevirt_contract import (
+    KUBEVIRT_API_VERSION,
+    VM_KIND,
+    VM_TEMPLATE_ANNOTATION,
+    VM_TEMPLATE_CONFIG_ANNOTATION,
+    VMIS_PLURAL,
+)
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox
 from util.kubernetes import CustomObjectsClient
 
@@ -193,6 +199,43 @@ async def _finish_provisioning(inventory: SandboxInventory, name: str, uid: str,
                 raise
             if asyncio.get_running_loop().time() >= deadline:
                 raise TimeoutError(f"VM {name!r} kept conflicting while provisioning") from error
+            await asyncio.sleep(min(2, _remaining(deadline)))
+
+
+async def _owned_vmi(custom_objects: CustomObjectsClient, namespace: str, name: str, vm_uid: str) -> VmiResource | None:
+    group, version = KUBEVIRT_API_VERSION.split("/", maxsplit=1)
+    try:
+        raw = await custom_objects.get_namespaced_custom_object(group, version, namespace, VMIS_PLURAL, name)
+    except k8s_client.ApiException as error:
+        if error.status == 404:
+            return None
+        raise
+    vmi = VmiResource.model_validate(raw)
+    if not controller_owned_by(vmi.metadata, api_version=KUBEVIRT_API_VERSION, kind=VM_KIND, name=name, uid=vm_uid):
+        raise RuntimeError(f"VMI {name!r} is not owned by VM UID {vm_uid}")
+    return vmi
+
+
+async def _wait_vmi_absent(
+    custom_objects: CustomObjectsClient, namespace: str, name: str, vm_uid: str, *, deadline: float
+) -> None:
+    while asyncio.get_running_loop().time() < deadline:
+        if await _within(_owned_vmi(custom_objects, namespace, name, vm_uid), deadline) is None:
+            return
+        await asyncio.sleep(min(2, _remaining(deadline)))
+    raise TimeoutError(f"VMI for {name!r} did not disappear within the remaining deadline")
+
+
+async def _resume_with_retry(inventory: SandboxInventory, name: str, uid: str, *, deadline: float) -> None:
+    while True:
+        try:
+            await _within(inventory.resume(name, uid=uid, kind="kubevirt"), deadline)
+            return
+        except k8s_client.ApiException as error:
+            if error.status != 409:
+                raise
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError(f"VM {name!r} kept conflicting while resuming") from error
             await asyncio.sleep(min(2, _remaining(deadline)))
 
 
@@ -696,19 +739,14 @@ async def setup_probe(args: argparse.Namespace) -> None:
 
 async def stop_start(args: argparse.Namespace) -> None:
     deadline = asyncio.get_running_loop().time() + args.timeout
-    async with _inventory(args.namespace, kubeconfig=args.kubeconfig) as (inventory, core, _custom_objects):
+    async with _inventory(args.namespace, kubeconfig=args.kubeconfig) as (inventory, core, custom_objects):
         before = await _within(inventory.get(args.name, kind="kubevirt"), deadline)
-        old_vmi = await _within(inventory.current_vm_instance(args.name, before.uid), deadline)
+        old_vmi = await _within(_owned_vmi(custom_objects, args.namespace, args.name, before.uid), deadline)
         if old_vmi is None:
             raise RuntimeError(f"VM {args.name!r} must be running before the stop/start cycle")
         await _within(inventory.suspend(args.name, uid=before.uid, kind="kubevirt"), deadline)
-        while asyncio.get_running_loop().time() < deadline:
-            if await _within(inventory.current_vm_instance(args.name, before.uid), deadline) is None:
-                break
-            await asyncio.sleep(min(5, _remaining(deadline)))
-        else:
-            raise TimeoutError(f"old VMI for {args.name!r} did not disappear within {args.timeout}s")
-        await _within(inventory.resume(args.name, uid=before.uid, kind="kubevirt"), deadline)
+        await _wait_vmi_absent(custom_objects, args.namespace, args.name, before.uid, deadline=deadline)
+        await _resume_with_retry(inventory, args.name, before.uid, deadline=deadline)
         after, pod = await _wait_ready(inventory, core, args.name, timeout_s=_remaining(deadline))
         if after.vm.vmi_uid == old_vmi.metadata.uid:
             raise RuntimeError("stop/start returned the original VMI UID")
@@ -720,6 +758,40 @@ async def stop_start(args: argparse.Namespace) -> None:
                     "name": args.name,
                     "old_vmi_uid": old_vmi.metadata.uid,
                     "new_vmi_uid": after.vm.vmi_uid,
+                    "launcher_pod": pod.metadata.name if pod.metadata is not None else None,
+                    "port_forward": _port_forward(args.namespace, pod),
+                },
+                sort_keys=True,
+            )
+        )
+
+
+async def resume_vm(args: argparse.Namespace) -> None:
+    deadline = asyncio.get_running_loop().time() + args.timeout
+    async with _inventory(args.namespace, kubeconfig=args.kubeconfig) as (inventory, core, custom_objects):
+        before = await _within(inventory.get(args.name, kind="kubevirt"), deadline)
+        if before.uid != args.uid:
+            raise ValueError(f"VM {args.name!r} UID does not match --uid")
+        current_vmi = await _within(_owned_vmi(custom_objects, args.namespace, args.name, before.uid), deadline)
+        if current_vmi is not None:
+            raise RuntimeError(f"VM {args.name!r} still has VMI {current_vmi.metadata.uid}")
+        print(
+            json.dumps(
+                {"action": "resuming_vm", "namespace": args.namespace, "name": before.name, "vm_uid": before.uid},
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        await _resume_with_retry(inventory, args.name, before.uid, deadline=deadline)
+        ready, pod = await _wait_ready(inventory, core, args.name, timeout_s=_remaining(deadline))
+        print(
+            json.dumps(
+                {
+                    "action": "resumed",
+                    "namespace": args.namespace,
+                    "name": ready.name,
+                    "vm_uid": ready.uid,
+                    "vmi_uid": ready.vm.vmi_uid,
                     "launcher_pod": pod.metadata.name if pod.metadata is not None else None,
                     "port_forward": _port_forward(args.namespace, pod),
                 },
@@ -880,6 +952,14 @@ def build_parser() -> argparse.ArgumentParser:
     restart_parser.add_argument("--timeout", type=float, default=900)
     _add_kubeconfig(restart_parser)
     restart_parser.set_defaults(handler=stop_start)
+
+    resume_parser = commands.add_parser("resume", help="resume a suspended VM through the provider")
+    resume_parser.add_argument("--namespace", required=True)
+    resume_parser.add_argument("--name", required=True)
+    resume_parser.add_argument("--uid", required=True, help="the VM UID printed by create")
+    resume_parser.add_argument("--timeout", type=float, default=900)
+    _add_kubeconfig(resume_parser)
+    resume_parser.set_defaults(handler=resume_vm)
 
     recover_parser = commands.add_parser("recover", help="verify native continuation after stop/start")
     recover_parser.add_argument("--target", type=_localhost_target, required=True)
