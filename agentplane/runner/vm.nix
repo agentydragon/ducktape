@@ -13,11 +13,11 @@
 }:
 let
   configDevice = "/dev/disk/by-id/virtio-agentplane-config";
+  trustDevice = "/dev/disk/by-id/virtio-agentplane-trust";
   stateDevice = "/dev/disk/by-id/virtio-state";
   workspaceDevice = "/dev/disk/by-id/virtio-workspace";
   runtimeDir = "/run/agentplane";
   sourceDir = "${runtimeDir}/config-source";
-  publicCa = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   agentGroup = "agentplane";
   serviceGroup = "agentplane-runner";
   agentUser = "runner";
@@ -157,7 +157,7 @@ in
   };
 
   systemd.services.agentplane-config = {
-    description = "Read the Agentplane public guest configuration disk";
+    description = "Read the Agentplane public configuration and trust disks";
     wantedBy = [ "local-fs.target" ];
     before = [
       "agentplane-disk-prepare.service"
@@ -185,29 +185,28 @@ in
         if mountpoint -q "${sourceDir}"; then umount "${sourceDir}"; fi
       }
       trap cleanup EXIT
-      mounted=0
-      for _ in $(seq 1 60); do
-        if [ -b "${configDevice}" ] && mount -o ro,nosuid,nodev,noexec "${configDevice}" "${sourceDir}" 2>/dev/null; then
-          mounted=1
-          break
+      copy_disk() {
+        local device="$1" mounted=0
+        shift
+        for _ in $(seq 1 60); do
+          if [ -b "$device" ] && mount -o ro,nosuid,nodev,noexec "$device" "${sourceDir}" 2>/dev/null; then
+            mounted=1
+            break
+          fi
+          sleep 1
+        done
+        if [ "$mounted" -ne 1 ]; then
+          echo "KubeVirt read-only Agentplane disk missing at $device" >&2
+          return 1
         fi
-        sleep 1
-      done
-      if [ "$mounted" -ne 1 ]; then
-        echo "KubeVirt read-only Agentplane config disk missing at ${configDevice}" >&2
-        exit 1
-      fi
-      for file in config.json ca-certificates.crt kubeconfig; do
-        test -s "${sourceDir}/$file" || { echo "Agentplane config disk is missing $file" >&2; exit 1; }
-      install -m0644 "${sourceDir}/$file" "${runtimeDir}/$file"
-      done
-      install -m0644 "${sourceDir}/ca-certificates.crt" "${runtimeDir}/proxy-ca.crt"
-      cat "${publicCa}" > "${runtimeDir}/ca-bundle.crt.tmp"
-      printf '\n' >> "${runtimeDir}/ca-bundle.crt.tmp"
-      cat "${runtimeDir}/proxy-ca.crt" >> "${runtimeDir}/ca-bundle.crt.tmp"
-      chmod 0644 "${runtimeDir}/ca-bundle.crt.tmp"
-      mv "${runtimeDir}/ca-bundle.crt.tmp" "${runtimeDir}/ca-certificates.crt"
-      umount "${sourceDir}"
+        for file in "$@"; do
+          test -s "${sourceDir}/$file" || { echo "Agentplane disk is missing $file" >&2; return 1; }
+          install -m0644 "${sourceDir}/$file" "${runtimeDir}/$file"
+        done
+        umount "${sourceDir}"
+      }
+      copy_disk "${configDevice}" config.json kubeconfig
+      copy_disk "${trustDevice}" ca-certificates.crt ca-certificates.p12
       rmdir "${sourceDir}"
       trap - EXIT
     '';
@@ -293,59 +292,17 @@ in
     '';
   };
 
-  systemd.services.agentplane-trust = {
-    description = "Build the Agentplane Java trust store from the public guest CA bundle";
-    wantedBy = [ "multi-user.target" ];
-    requires = [ "agentplane-config.service" ];
-    after = [ "agentplane-config.service" ];
-    before = [ "agentplane-runner.service" ];
-    path = [
-      pkgs.coreutils
-      pkgs.findutils
-      pkgs.gawk
-      pkgs.jdk
-    ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = ''
-      set -euo pipefail
-      store="${runtimeDir}/java-cacerts"
-      cert_dir="${runtimeDir}/java-certs"
-      rm -f "$store"
-      mkdir -p "$cert_dir"
-      awk -v out="$cert_dir" '
-        /BEGIN CERTIFICATE/ { n++; file = sprintf("%s/cert-%03d.pem", out, n) }
-        file != "" { print > file }
-        /END CERTIFICATE/ { close(file); file = "" }
-      ' "${runtimeDir}/ca-certificates.crt"
-      test -n "$(find "$cert_dir" -type f -name '*.pem' -print -quit)" || {
-        echo "Agentplane proxy CA bundle contains no PEM certificates" >&2
-        exit 1
-      }
-      for cert in "$cert_dir"/*.pem; do
-        keytool -importcert -noprompt -storepass changeit \
-          -alias "agentplane-ca-$(basename "$cert" .pem)" -keystore "$store" -file "$cert"
-      done
-      rm -rf "$cert_dir"
-      chmod 0644 "$store"
-    '';
-  };
-
   systemd.services.agentplane-runner = {
     description = "Agentplane native harness runner";
     wantedBy = [ "multi-user.target" ];
     requires = [
       "agentplane-config.service"
-      "agentplane-trust.service"
       "agentplane-storage.service"
       "state.mount"
       "workspace.mount"
     ];
     after = [
       "agentplane-config.service"
-      "agentplane-trust.service"
       "agentplane-storage.service"
       "state.mount"
       "workspace.mount"
