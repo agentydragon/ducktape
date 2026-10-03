@@ -22,6 +22,8 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [Profiles](profiles.md) — broader capability profiles remain deferred
+- [KubeVirt execution environments](kubevirt_environments.md) — selectable VM environments, guest runner,
+  launcher proxy, resource isolation, persistent state and implementation gates
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
 - [Sandbox Service](sandbox_service.md) — extract independent sandbox lifecycle/session access before
   notification v1; [discovery/access notes](runner_discovery.md) retain network-policy access and the runner-auth TODO
