@@ -14,6 +14,7 @@
           "description": "Rules are alternatives; a request matching any one of them is allowed.",
           "type": "array",
           "minItems": 1,
+          "maxItems": 256,
           "items": {
             "type": "object",
             "required": [
@@ -30,8 +31,10 @@
                 "description": "Exact lowercase hostnames, or `*.` followed by a domain to match every subdomain of it (not the domain itself), or `*` for any public destination. Blanket rules cannot set credentialRef or clusterInternal; they do not bypass authentication, bindings, method/path checks or address filtering.",
                 "type": "array",
                 "minItems": 1,
+                "maxItems": 256,
                 "items": {
                   "type": "string",
+                  "maxLength": 256,
                   "pattern": "^(\\*|(\\*\\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*)$"
                 }
               },

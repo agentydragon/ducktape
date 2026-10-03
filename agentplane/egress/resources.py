@@ -210,8 +210,9 @@ class CredentialRef(_Wire):
 
 
 class Rule(_Wire):
-    hosts: list[str] = Field(
+    hosts: list[Annotated[str, Field(max_length=256)]] = Field(
         min_length=1,
+        max_length=256,
         description="Exact hosts, `*.` suffix wildcards (`*.github.com`), or `*` for any public destination.",
     )
     methods: list[str] | None = Field(default=None, description="HTTP methods; absent admits any.")
@@ -234,7 +235,7 @@ class Rule(_Wire):
 
 
 class PolicySpec(_Wire):
-    rules: list[Rule]
+    rules: list[Rule] = Field(max_length=256)
 
 
 class EgressPolicy(_Wire):
