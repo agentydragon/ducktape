@@ -76,6 +76,58 @@ def test_generated_root_holds_only_generated_files(generated: Path, checkout: Pa
     )
 
 
+def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(generated: Path) -> None:
+    documents = [
+        document
+        for path in generated.rglob("*.yaml")
+        for document in yaml.safe_load_all(path.read_text())
+        if isinstance(document, dict)
+    ]
+    source = next(
+        document
+        for document in documents
+        if document["kind"] == "GitRepository"
+        and document["metadata"].get("name") == "ducktape"
+        and document["metadata"].get("namespace") == "ducktape-flux"
+    )
+    sparse_roots = tuple(path.strip("/") for path in source["spec"].get("sparseCheckout", []))
+    generator = next(
+        document
+        for document in documents
+        if document["kind"] == "ArtifactGenerator"
+        and document["metadata"].get("name") == "ducktape-artifacts"
+        and document["metadata"].get("namespace") == "ducktape-flux"
+    )
+    repo_aliases = {
+        artifact_source["alias"]
+        for artifact_source in generator["spec"]["sources"]
+        if artifact_source["kind"] == "GitRepository"
+        and artifact_source["name"] == "ducktape"
+        and artifact_source.get("namespace", "ducktape-flux") == "ducktape-flux"
+    }
+    assert repo_aliases, "ducktape-artifacts must read the ducktape GitRepository"
+
+    missing: list[str] = []
+    for artifact in generator["spec"]["artifacts"]:
+        for copy in artifact["copy"]:
+            alias, separator, pattern = copy["from"].removeprefix("@").partition("/")
+            if alias not in repo_aliases or not separator:
+                continue
+            literal_parts = []
+            for part in pattern.split("/"):
+                if any(character in part for character in "*?[{"):
+                    break
+                literal_parts.append(part)
+            required_root = "/".join(literal_parts)
+            if not any(required_root == root or required_root.startswith(f"{root}/") for root in sparse_roots):
+                missing.append(f"{artifact['name']}: {copy['from']}")
+
+    assert not missing, (
+        "ducktape ArtifactGenerator copy sources must be covered by the ducktape GitRepository sparseCheckout:\n"
+        + "\n".join(missing)
+    )
+
+
 def test_no_image_automation_markers(generated: Path) -> None:
     # cdk8s can't emit YAML comments, so this should be unreachable -- but if it ever did,
     # Flux's image-automation bot would silently fight the generator for ownership of the
