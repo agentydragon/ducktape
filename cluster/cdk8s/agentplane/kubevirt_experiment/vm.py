@@ -5,7 +5,7 @@ from cdk8s_plus_34 import k8s
 from constructs import Construct
 from kubevirt_virtualmachine_crds.io import kubevirt as vm
 
-from cluster.cdk8s.agentplane.kubevirt_proxy import MANAGED_LABEL, SERVICE_ACCOUNT_ANNOTATION
+from cluster.cdk8s.agentplane.kubevirt_experiment.policy import MANAGED_LABEL, SERVICE_ACCOUNT_ANNOTATION
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 
 

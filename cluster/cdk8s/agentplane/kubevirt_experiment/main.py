@@ -5,9 +5,9 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s.agentplane.kubevirt_prototype_setup import gateway, setup
-from cluster.cdk8s.agentplane.kubevirt_prototype_vm import prototype_vm
-from cluster.cdk8s.agentplane.kubevirt_proxy import KubeVirtProxyPolicy
+from cluster.cdk8s.agentplane.kubevirt_experiment.policy import KubeVirtProxyPolicy
+from cluster.cdk8s.agentplane.kubevirt_experiment.setup import gateway, setup
+from cluster.cdk8s.agentplane.kubevirt_experiment.vm import prototype_vm
 from util.bazel.runfiles import get_required_path
 
 
@@ -30,7 +30,7 @@ def main() -> None:
         gateway(
             chart,
             args.namespace,
-            get_required_path("_main/agentplane/debug/kubevirt/token_review_gateway.py").read_text(),
+            get_required_path("_main/cluster/cdk8s/agentplane/kubevirt_experiment/token_review_gateway.py").read_text(),
         )
     KubeVirtProxyPolicy(
         chart,

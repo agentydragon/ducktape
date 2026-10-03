@@ -2,7 +2,7 @@
 
 Environment: disposable `agentplane-vm-prototype-20261003`; KubeVirt v1.8.2,
 Kyverno v1.19.1, KVM worker `ovh-ns103711`. Existing Agentplane namespaces and
-existing VMs were untouched. Guest root image is pinned in the reproduction guide.
+existing VMs were untouched. Guest root image is pinned in the [reproduction guide](../../../cluster/cdk8s/agentplane/kubevirt_experiment/README.md).
 
 | Probe                            | Observed result                                                                                                                                                                                                         |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

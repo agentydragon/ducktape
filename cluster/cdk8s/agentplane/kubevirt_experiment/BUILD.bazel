@@ -1,0 +1,77 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//cluster/cdk8s/agentplane:__pkg__"])
+
+py_library(
+    name = "policy",
+    srcs = ["policy.py"],
+    deps = [
+        "//cluster/cdk8s/providers/kyverno:cluster_policy",
+        "//cluster/cdk8s/providers/kyverno:clusterpolicy",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_binary(
+    name = "main",
+    srcs = ["main.py"],
+    data = [
+        "token_review_gateway.py",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":policy",
+        ":setup",
+        ":vm",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "setup",
+    srcs = ["setup.py"],
+    deps = [
+        "//cluster/cdk8s/external_secrets:single_secret_store",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "vm",
+    srcs = ["vm.py"],
+    deps = [
+        ":policy",
+        "//cluster/cdk8s/providers/kubevirt:virtual_machine",
+        "//cluster/cdk8s/providers/kubevirt:virtualmachine",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_policy",
+    srcs = ["test_policy.py"],
+    data = [
+        "@multitool//tools/kyverno",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":policy",
+        "//cluster/validation/kyverno:apply",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

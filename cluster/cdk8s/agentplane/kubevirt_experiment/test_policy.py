@@ -8,7 +8,7 @@ import pytest_bazel
 import yaml
 from cdk8s import App, Chart, Testing as CdkTesting
 
-from cluster.cdk8s.agentplane.kubevirt_proxy import (
+from cluster.cdk8s.agentplane.kubevirt_experiment.policy import (
     CONTROLLER_USERNAME,
     MANAGED_LABEL,
     SERVICE_ACCOUNT_ANNOTATION,

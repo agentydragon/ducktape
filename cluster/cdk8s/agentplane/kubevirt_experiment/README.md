@@ -6,7 +6,7 @@ and Sandbox Service integration are separate changes.
 
 ## What this establishes
 
-`//cluster/cdk8s/agentplane:kubevirt_proxy` injects the existing relay into KubeVirt's
+`//cluster/cdk8s/agentplane/kubevirt_experiment:policy` injects the existing relay into KubeVirt's
 launcher Pod, with rotating projected tokens mounted only by the relay. CREATE
 admission checks the actual KubeVirt controller caller, live Pod → VMI → VM UIDs,
 managed VM label, approved template, and VM-owned ServiceAccount. UPDATE admission
@@ -43,7 +43,7 @@ ns=agentplane-vm-prototype-20261003
 relay=git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:devel-20260924234050-4819c98
 guest=quay.io/containerdisks/fedora@sha256:33d4d276fc28e2141632bc8aed32b1c62a5870bc13ae2e02c75dd0bec8f79cee
 ssh-keygen -t ed25519 -N '' -f /tmp/agentplane-vm-prototype-key
-bb run //cluster/cdk8s/agentplane:kubevirt_prototype -- \
+bb run //cluster/cdk8s/agentplane/kubevirt_experiment:main -- \
   --namespace "$ns" --relay-image "$relay" \
   --proxy-host "prototype-gateway.$ns.svc.cluster.local" \
   --outdir /tmp/agentplane-vm-setup --setup
@@ -51,7 +51,7 @@ kubectl apply -f /tmp/agentplane-vm-setup/launcher-admission.k8s.yaml
 
 # Repeat for vm-a and vm-b. The first render creates the halted VM.
 name=vm-a
-bb run //cluster/cdk8s/agentplane:kubevirt_prototype -- \
+bb run //cluster/cdk8s/agentplane/kubevirt_experiment:main -- \
   --namespace "$ns" --relay-image "$relay" \
   --proxy-host "prototype-gateway.$ns.svc.cluster.local" \
   --outdir "/tmp/agentplane-$name" --vm-name "$name" \
@@ -101,10 +101,10 @@ rm /tmp/agentplane-vm-prototype-key /tmp/agentplane-vm-prototype-key.pub
 
 ## Checks and limits
 
-Run `bbr test //cluster/cdk8s/agentplane:test_kubevirt_proxy` for real Kyverno CLI
+Run `bbr test //cluster/cdk8s/agentplane/kubevirt_experiment:test_policy` for real Kyverno CLI
 mutation/reinvocation and negative admission checks. The test mocks API responses;
 it still executes the UID, account, caller, and mount predicates. Live evidence is
-recorded in [the experiment log](evidence.md).
+recorded in [the experiment log](../../../../agentplane/debug/kubevirt/evidence.md).
 
 An admission-service outage remains a separate isolated-control-plane experiment:
 this work does not stop shared Kyverno to test `failurePolicy: Fail`. Production
