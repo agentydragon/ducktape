@@ -187,6 +187,12 @@ const markdownEventPage: SessionEventPage = {
               "| --- | ---: |",
               "| Parsed | `12.3456` |",
               "| Display | `12.35` |",
+              "",
+              "<script>window.__sessionMarkdownFixtureExecuted = true</script>",
+              '<img src="x" onerror="window.__sessionMarkdownFixtureExecuted = true">',
+              '<a href="javascript:alert(1)" onclick="window.__sessionMarkdownFixtureExecuted = true">unsafe raw link</a>',
+              "[unsafe Markdown link](javascript:alert(1))",
+              "[unsafe data link](data:text/html,alert(1))",
             ].join("\n"),
           },
         ],
@@ -997,6 +1003,34 @@ if (scenario.startsWith("SessionEventVisibility")) {
     window.setTimeout(assertSuppressedEventContent, 20);
   };
   window.setTimeout(assertSuppressedEventContent, 0);
+}
+
+if (scenario.startsWith("SessionMarkdown")) {
+  let attempts = 0;
+  const verifyMarkdownSanitization = (): void => {
+    const userMarkdown = document.querySelector<HTMLElement>('[data-message-role="user"] .agentplane-markdown');
+    const assistantMarkdown = document.querySelector<HTMLElement>(
+      '[data-message-role="assistant"] .agentplane-markdown'
+    );
+    if (userMarkdown === null || assistantMarkdown === null) {
+      attempts += 1;
+      if (attempts >= 300) throw new Error("Markdown fixture messages did not mount");
+      window.setTimeout(verifyMarkdownSanitization, 20);
+      return;
+    }
+
+    const markdownRoots = [userMarkdown, assistantMarkdown];
+    const unsafeElement = markdownRoots.some((markdown) => markdown.querySelector("script, img, [onclick], [onerror]"));
+    const unsafeLink = markdownRoots
+      .flatMap((markdown) => [...markdown.querySelectorAll<HTMLAnchorElement>("a")])
+      .some((link) => /^(javascript|data):/i.test(link.getAttribute("href") ?? ""));
+    const fixtureWindow = window as typeof window & { __sessionMarkdownFixtureExecuted?: boolean };
+    if (unsafeElement || unsafeLink || fixtureWindow.__sessionMarkdownFixtureExecuted !== undefined)
+      throw new Error("Markdown fixture retained executable HTML or an unsafe URL");
+
+    root.dataset.markdownSanitized = "true";
+  };
+  window.setTimeout(verifyMarkdownSanitization, 0);
 }
 
 if (scenario.startsWith("SessionNarrationVisibility")) {

@@ -39,6 +39,7 @@ const LOCAL_COMMAND_READY = [
   '[data-fold-kind="status"]',
 ];
 const MARKDOWN_READY = [
+  '#app[data-markdown-sanitized="true"]',
   '[aria-label="Session history"]',
   '[data-message-role="user"] .agentplane-markdown ul',
   '[data-message-role="user"] .agentplane-markdown table',
