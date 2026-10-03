@@ -1176,7 +1176,10 @@ rust_library(
 # chunk in, one outcome per entity out.
 rust_library(
     name = "selector_resolve",
-    srcs = ["selectors/resolution/selector_resolve.rs"],
+    srcs = [
+        "selectors/resolution/selector_conflict.rs",
+        "selectors/resolution/selector_resolve.rs",
+    ],
     crate_root = "selectors/resolution/selector_resolve.rs",
     edition = "2024",
     deps = [
@@ -1194,6 +1197,14 @@ rust_library(
         "@crates//:rayon",
         "@crates//:swc_ecma_ast",
     ],
+)
+
+rust_test(
+    name = "selector_conflict_test",
+    size = "small",
+    srcs = ["selectors/resolution/selector_conflict.rs"],
+    crate_root = "selectors/resolution/selector_conflict.rs",
+    edition = "2024",
 )
 
 rust_library(

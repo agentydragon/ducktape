@@ -55,7 +55,7 @@ fn malformed_manual_claim_edits_are_refused_before_unassigning() {
         (
             "const alpha = 1; const beta = 2; const gamma = 3;",
             "source_matches: [{match: 'const x = 1;', bindings: [{local: x, name: X}]}, {match: 'const y = 1;', bindings: [{local: y, name: Y}]}]",
-            "admit no joint assignment",
+            "participates in ownership conflict",
         ),
         (
             r#"import { dep } from "external"; const gamma = 3;"#,

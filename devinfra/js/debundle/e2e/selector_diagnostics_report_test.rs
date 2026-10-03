@@ -207,22 +207,40 @@ export { alphaOne, betaOne, gammaOne };
     )
 }
 
-/// Each pair is its own contradiction: both of its selectors are `no_match`
-/// with the joint-assignment reason, and neither pair takes down the other or
+/// Each pair is its own contradiction: both of its selectors are `unsatisfiable`
+/// with its ownership witness, and neither pair takes down the other or
 /// the independent selector.
 #[test]
-fn keep_going_reports_every_selector_of_an_infeasible_pair_as_no_match() {
+fn keep_going_reports_every_selector_of_an_infeasible_pair_with_a_witness() {
     let rejected = run_dry_run_rejection_fixture(infeasible_pairs_fixture());
     let outcomes = read_selector_outcomes(&rejected.report_root);
     for export_name in ["AlphaLeft", "AlphaRight", "BetaLeft", "BetaRight"] {
-        let record = find_outcome(&outcomes, "no_match", export_name);
-        let reason = record["outcome"]["reason"].as_str().unwrap_or_default();
-        assert!(reason.contains("admit no joint assignment"), "{record:#}");
+        let record = find_outcome(&outcomes, "unsatisfiable", export_name);
+        assert_eq!(
+            record["outcome"]["witness"]["selectors"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            record["outcome"]["witness"]["owners"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         assert!(
             record["outcome"].get("nearest_unclaimed").is_none(),
             "{record:#}"
         );
-        assert!(rejected.stderr.contains(reason), "{}", rejected.stderr);
+        assert!(
+            rejected
+                .stderr
+                .contains("participates in ownership conflict"),
+            "{}",
+            rejected.stderr
+        );
     }
     let duplicate = outcomes
         .iter()
@@ -234,7 +252,7 @@ fn keep_going_reports_every_selector_of_an_infeasible_pair_as_no_match() {
 
 #[test]
 fn fail_fast_stops_at_the_first_infeasible_selector() {
-    assert_fail_fast_stops_at_first_outcome(infeasible_pairs_fixture, "no_match");
+    assert_fail_fast_stops_at_first_outcome(infeasible_pairs_fixture, "unsatisfiable");
 }
 
 /// Two selectors, each matching two identical functions of its own.

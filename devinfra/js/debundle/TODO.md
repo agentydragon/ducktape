@@ -81,19 +81,12 @@ in <docs/selector_resolution.md> § Interactive budget.
    binding of one matched context into one logical module. Design a form for
    one matched context whose bindings land in different modules, without
    repeating the selector body.
-4. **Explain unsatisfiable selector groups.** An infeasible group makes every
-   selector in it `no_match` with one fixed reason (<docs/selector_resolution.md>
-   § Unsatisfiable programs), so an author cannot tell which selectors clash.
-   Name them without the solver: once the plain solve has proved infeasibility
-   (milliseconds), explain it from the candidate sets in Rust. A Hall violator
-   (k targets whose candidate places number fewer than k) should cover the usual
-   authoring error, two selectors claiming one declaration; check that against
-   real infeasible groups, and keep the group-level message for infeasibility
-   that comes from relations. Assumption-core localization in the solver is
-   rejected (<docs/selector_resolution.md> § Rejected: localizing a contradiction
-   with assumption cores). The solver-level `ClaimOutcome` has no conflict
-   variant: `conflict` is produced by reference narrowing before the solve, so
-   explaining an infeasible group adds a solver-level variant and its match arms.
+4. **Explain remaining relational contradictions.** Infeasible groups now
+   report ownership witnesses from original candidate domains when available.
+   For groups that need relational propagation to explain the failure, retain
+   premises with domain reductions before attributing a smaller conflict.
+   Assumption-core localization remains rejected for its measured cost
+   (<docs/selector_resolution.md> § Unsatisfiable programs).
 
 ### Test infrastructure
 

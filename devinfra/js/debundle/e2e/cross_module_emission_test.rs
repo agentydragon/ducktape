@@ -396,7 +396,7 @@ export { RuntimeCatalog };
     expect_rejection_containing_all(
         opts,
         &[
-            "admit no joint assignment",
+            "participates in ownership conflict",
             "catalog/primary",
             "as `PrimaryCatalog`",
             "source_matches[].bindings[`K`]",
@@ -448,8 +448,8 @@ export { RuntimeCatalog };
     let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "2 selector outcome(s): no_match=2",
-        "admit no joint assignment",
+        "2 selector outcome(s): unsatisfiable=2",
+        "participates in ownership conflict",
         "catalog/primary",
         "catalog/duplicate",
     ] {
@@ -490,8 +490,8 @@ export { RuntimeCatalog };
     let rejected = run_dry_run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     for required in [
-        "2 selector outcome(s): no_match=2",
-        "admit no joint assignment",
+        "2 selector outcome(s): unsatisfiable=2",
+        "participates in ownership conflict",
         "as `PrimaryCatalog`",
         "source_matches[].bindings[`K`]",
         "as `DuplicateCatalog`",

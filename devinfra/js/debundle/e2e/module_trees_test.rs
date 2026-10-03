@@ -133,17 +133,18 @@ fn trees_sharing_a_chunk_claim_one_place() {
     assert_eq!(
         modules_and_kinds,
         [
-            (json!("provider"), json!("no_match")),
-            (json!("provider_copy"), json!("no_match")),
+            (json!("provider"), json!("unsatisfiable")),
+            (json!("provider_copy"), json!("unsatisfiable")),
         ],
         "{outcomes:#?}"
     );
     for record in &outcomes {
-        assert!(
-            record["outcome"]["reason"]
-                .as_str()
-                .is_some_and(|reason| reason.contains("admit no joint assignment")),
-            "{record:#}"
+        assert_eq!(
+            record["outcome"]["witness"]["selectors"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
         );
     }
     assert_eq!(

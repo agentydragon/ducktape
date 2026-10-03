@@ -455,3 +455,12 @@ debundle_e2e_test(
     name = "bindings_assign_cli_test",
     deps = ["@crates//:serde_yaml"],
 )
+
+debundle_e2e_test(
+    name = "selector_conflict_witness_test",
+    size = "small",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)

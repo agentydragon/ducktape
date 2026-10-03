@@ -8,6 +8,8 @@
 //! the rest from their own candidates. Semantics:
 //! <docs/selector_resolution.md>.
 
+mod selector_conflict;
+
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -22,9 +24,9 @@ use selector_ir::{
 };
 use selector_ir_lowering::{MemberSelectorProgramBuilder, MemberSelectorSpecRef};
 use selector_outcome::{
-    Candidate, Differentiator, Entity, EntityRef, FreeIdentifier, IdentifierMeaning,
-    MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome, Placement, ResolvedBy, SelectorKind,
-    SelectorOutcome, TemplateIdentifiers,
+    Candidate, ConflictOwner, Differentiator, Entity, EntityRef, FreeIdentifier, IdentifierMeaning,
+    MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome, OwnershipConflict, Placement, ResolvedBy,
+    SelectorKind, SelectorOutcome, TemplateIdentifiers,
 };
 use selector_runtime::solve_global_selector_program;
 use shape_index::ShapeIndex;
@@ -221,6 +223,9 @@ struct Projected {
     references: Vec<Reference>,
     /// Distinct rows its selector matched before any reference narrowed them.
     unreferenced_rows: usize,
+    /// Domains before any other spec entity narrowed the matcher rows.
+    /// A Hall witness on these supersets needs no relational premises.
+    original_owners: Vec<BTreeMap<OwnerId, BTreeSet<String>>>,
 }
 
 /// A spec entity a template names, as a column of the naming entity's rows.
@@ -611,11 +616,7 @@ fn add_nearest_unclaimed(
         .filter(|body_idx| !claimed.contains(body_idx))
         .collect::<Vec<_>>();
     for entity in &mut resolution.outcomes {
-        let Outcome::NoMatch {
-            nearest_unclaimed,
-            reason: None,
-        } = &mut entity.outcome.outcome
-        else {
+        let Outcome::NoMatch { nearest_unclaimed } = &mut entity.outcome.outcome else {
             continue;
         };
         let module = &modules[entity.module];
@@ -1460,6 +1461,19 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     })
                     .collect(),
                 unreferenced_rows,
+                original_owners: (0..entity.rows[0].places.len())
+                    .map(|position| {
+                        let mut owners = BTreeMap::<OwnerId, BTreeSet<String>>::new();
+                        for row in &entity.rows {
+                            let place = &row.places[position];
+                            owners
+                                .entry(place.owner)
+                                .or_default()
+                                .extend(place.binding.clone());
+                        }
+                        owners
+                    })
+                    .collect(),
             });
             let table = distinct
                 .iter()
@@ -1654,6 +1668,7 @@ impl Projection {
         result: &SolverResult,
     ) -> Result<Resolution> {
         let resolved_by = self.resolved_by(result);
+        let mut unsatisfiable = self.unsatisfiable_outcomes(chunk.module, result)?;
         let Self {
             ids,
             mut outcomes,
@@ -1671,6 +1686,9 @@ impl Projection {
                     binding: None,
                     resolved_by: how_resolved(&resolved_by, target),
                 },
+                Some(ClaimOutcome::Unsatisfiable { .. }) => unsatisfiable
+                    .remove(&target)
+                    .expect("every infeasible target has a group diagnostic"),
                 Some(outcome) => claim_outcome(module, outcome)?,
                 None => bail!(
                     "logical_module {}: global selector solver returned no outcome for anonymous \
@@ -1701,6 +1719,9 @@ impl Projection {
                         resolved_by: how_resolved(&resolved_by, target),
                     }
                 }
+                Some(ClaimOutcome::Unsatisfiable { .. }) => unsatisfiable
+                    .remove(&target)
+                    .expect("every infeasible target has a group diagnostic"),
                 Some(outcome) => claim_outcome(module, outcome)?,
                 None => bail!(
                     "logical_module {}: global selector solver returned no outcome for selector \
@@ -1721,6 +1742,104 @@ impl Projection {
             outcomes,
             templates,
         })
+    }
+
+    /// Explain only already-proven infeasible groups. The candidate graph is
+    /// a relaxation of the CSP: success proves nothing about satisfiability,
+    /// but a deficient subset is a sufficient ownership contradiction.
+    fn unsatisfiable_outcomes(
+        &self,
+        module: &Module,
+        result: &SolverResult,
+    ) -> Result<BTreeMap<SelectorTargetId, Outcome>> {
+        let mut outcomes = BTreeMap::new();
+        if !result
+            .claims
+            .iter()
+            .any(|claim| matches!(claim.outcome, ClaimOutcome::Unsatisfiable { .. }))
+        {
+            return Ok(outcomes);
+        }
+        let original = self
+            .projected
+            .iter()
+            .flat_map(|entity| entity.targets.iter().copied().zip(&entity.original_owners))
+            .collect::<BTreeMap<_, _>>();
+        for group in self.interacting_groups() {
+            if !group.iter().any(|target| {
+                matches!(
+                    result.outcome_for(*target),
+                    Some(ClaimOutcome::Unsatisfiable { .. })
+                )
+            }) {
+                continue;
+            }
+            let mut witness = None;
+            // Use exactly the IR's exclusivity classes. In particular, do not
+            // turn the members of one binding group into competing claims.
+            for distinct in &self.program.all_different {
+                let targets = distinct
+                    .iter()
+                    .filter(|target| group.contains(target) && original.contains_key(target))
+                    .copied()
+                    .collect::<Vec<_>>();
+                // Unknown relational domains are omitted. Proving a known
+                // subset contradictory is sound; guessing their domains is not.
+                let domains = targets
+                    .iter()
+                    .map(|target| {
+                        original[target]
+                            .keys()
+                            .map(|owner| owner.0)
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                let Some(deficient) = selector_conflict::deficient_set(&domains) else {
+                    continue;
+                };
+                let selectors = deficient
+                    .iter()
+                    .map(|index| target_entity_ref(&self.program.targets[targets[*index].0]))
+                    .collect();
+                let mut owners = BTreeMap::<OwnerId, BTreeSet<String>>::new();
+                for index in deficient {
+                    for (owner, bindings) in original[&targets[index]] {
+                        owners
+                            .entry(*owner)
+                            .or_default()
+                            .extend(bindings.iter().cloned());
+                    }
+                }
+                let owners = owners
+                    .into_iter()
+                    .map(|(owner, bindings)| {
+                        Ok(ConflictOwner {
+                            owner: owner.0,
+                            statement: body_index_for_statement_ordinal(&module.body, owner.0)
+                                .context("conflict owner has no source statement")?,
+                            bindings: bindings.into_iter().collect(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                witness = Some(OwnershipConflict { selectors, owners });
+                break;
+            }
+            let diagnostic = Outcome::Unsatisfiable {
+                group: target_entity_ref(
+                    &self.program.targets[group.first().expect("nonempty group").0],
+                ),
+                witness,
+            };
+            for target in group {
+                if matches!(
+                    result.outcome_for(target),
+                    Some(ClaimOutcome::Unsatisfiable { .. })
+                ) {
+                    outcomes.insert(target, diagnostic.clone());
+                }
+            }
+        }
+        Ok(outcomes)
     }
 
     /// How each resolved projected target was made unique, where not by its
@@ -2240,10 +2359,9 @@ fn claim_candidate(module: &Module, claim: &ResolvedClaim) -> Result<Candidate> 
 fn claim_outcome(module: &Module, outcome: &ClaimOutcome) -> Result<Outcome> {
     Ok(match outcome {
         ClaimOutcome::NoMatch => Outcome::no_match(),
-        ClaimOutcome::Unsatisfiable { reason } => Outcome::NoMatch {
-            nearest_unclaimed: Vec::new(),
-            reason: Some(reason.clone()),
-        },
+        ClaimOutcome::Unsatisfiable { .. } => {
+            unreachable!("infeasible groups are diagnosed with their projection")
+        }
         ClaimOutcome::Ambiguous {
             candidates,
             candidates_truncated,

@@ -206,6 +206,23 @@ impl Differentiator {
     }
 }
 
+/// A sufficient (not necessarily minimal) all-different contradiction.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct OwnershipConflict {
+    pub selectors: Vec<EntityRef>,
+    /// One entry per distinct owner, including every candidate of the witness.
+    pub owners: Vec<ConflictOwner>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ConflictOwner {
+    /// Post-split owner ordinal used by the constraint program.
+    pub owner: usize,
+    /// Original source body index; several declarators can share it.
+    pub statement: usize,
+    pub bindings: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Outcome {
@@ -220,11 +237,14 @@ pub enum Outcome {
         /// first.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         nearest_unclaimed: Vec<NearMiss>,
-        /// Set when the selector matches places but the entities solved
-        /// together with it admit no joint assignment, which of them are at
-        /// fault not being determined; then `nearest_unclaimed` is empty.
+    },
+    /// The group admits no joint assignment. A witness names only a proven
+    /// conflicting subset; other members remain blocked, not resolved.
+    Unsatisfiable {
+        /// Canonical first entity identifies this chunk-local group.
+        group: EntityRef,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        reason: Option<String>,
+        witness: Option<OwnershipConflict>,
     },
     Ambiguous {
         candidates: Vec<Candidate>,
@@ -288,6 +308,7 @@ pub enum ResolvedBy {
 pub enum OutcomeKind {
     Resolved,
     NoMatch,
+    Unsatisfiable,
     Ambiguous,
     Conflict,
     TooBroad,
@@ -312,6 +333,7 @@ impl OutcomeKind {
         match self {
             Self::Resolved => "resolved",
             Self::NoMatch => "no_match",
+            Self::Unsatisfiable => "unsatisfiable",
             Self::Ambiguous => "ambiguous",
             Self::Conflict => "conflict",
             Self::TooBroad => "too_broad",
@@ -332,7 +354,6 @@ impl Outcome {
     pub fn no_match() -> Self {
         Self::NoMatch {
             nearest_unclaimed: Vec::new(),
-            reason: None,
         }
     }
 
@@ -361,6 +382,7 @@ impl Outcome {
         match self {
             Self::Resolved { .. } => OutcomeKind::Resolved,
             Self::NoMatch { .. } => OutcomeKind::NoMatch,
+            Self::Unsatisfiable { .. } => OutcomeKind::Unsatisfiable,
             Self::Ambiguous { .. } => OutcomeKind::Ambiguous,
             Self::Conflict { .. } => OutcomeKind::Conflict,
             Self::TooBroad { .. } => OutcomeKind::TooBroad,
@@ -386,7 +408,7 @@ impl Outcome {
 
     /// `statements` says the entity claims statements rather than
     /// declarations (an anonymous statement).
-    fn describe(&self, statements: bool) -> String {
+    fn describe(&self, statements: bool, placement: Option<&Placement>) -> String {
         let places = if statements {
             "top-level statement"
         } else {
@@ -420,10 +442,45 @@ impl Outcome {
                     ),
                 }
             }
-            Self::NoMatch {
-                reason: Some(reason),
-                ..
-            } => reason.clone(),
+            Self::Unsatisfiable { group, witness } => match witness {
+                Some(witness) => {
+                    let participates = placement.is_some_and(|placement| {
+                        witness.selectors.iter().any(|selector| {
+                            selector.logical_module == placement.logical_module
+                                && selector.entity == placement.entity
+                        })
+                    });
+                    let role = if participates {
+                        "participates in ownership conflict"
+                    } else {
+                        "blocked by ownership conflict"
+                    };
+                    let owners = witness
+                        .owners
+                        .iter()
+                        .map(|owner| {
+                            format!(
+                                "owner {} at body[{}] ({})",
+                                owner.owner,
+                                owner.statement,
+                                owner.bindings.join(", ")
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    format!(
+                        "{role}: {} distinct claims ({}) have only {} candidate owners: {owners}",
+                        witness.selectors.len(),
+                        render_refs(&witness.selectors),
+                        witness.owners.len()
+                    )
+                }
+                None => format!(
+                    "joint assignment infeasible in group anchored by {}; no smaller ownership witness \
+                    found within diagnostic limits (relational contradictions may remain)",
+                    render_refs(std::slice::from_ref(group))
+                ),
+            },
             Self::NoMatch {
                 nearest_unclaimed, ..
             } if nearest_unclaimed.is_empty() => {
@@ -579,7 +636,11 @@ impl SelectorOutcome {
                 }
             }
         }
-        let _ = write!(line, ": {}", self.outcome.describe(statements));
+        let _ = write!(
+            line,
+            ": {}",
+            self.outcome.describe(statements, self.placement.as_ref())
+        );
         if let Some(preview) = &self.selector_preview {
             let _ = write!(line, " -- selector: {preview}");
         }

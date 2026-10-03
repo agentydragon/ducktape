@@ -195,16 +195,35 @@ place might share the anchor, so none is given.
 ## Unsatisfiable programs
 
 A contradiction stays inside its group, since each group is its own solve.
-A group's program is unsatisfiable when compile-time presolve proves it
-(`all_different` propagates fixed values and a relation table narrows both of
-its variables until a domain or table is empty) or CP-SAT proves it
-infeasible (`selector_backend_solver::solve_with_backend`). Every target of
-the group then comes out `no_match` with one fixed `reason`: two or more of the
-group's selectors claim the same place or contradict a relation, and which ones
-is not determined. Other groups resolve as usual.
+The compiler's domain/table simplification or CP-SAT can prove infeasibility.
+Every target of that group then reports `unsatisfiable`, identified by the
+canonical first entity in `group`, rather than a syntactic `no_match`.
 
-A `conflict` outcome is not a solver result: an entity whose rows all disagree
-with a reference is rejected before the solve (§ Template references).
+The shared resolver explains already-proven failures from the original matcher
+candidate domains, retained **before template references narrow them**. For
+each IR `all_different` constraint, use its actual representative targets
+(one per ownership class); omit relational targets whose original domains are
+unknown. A known subset can prove a contradiction without guessing the rest.
+These domains over-approximate the full constraints: a failed matching proves
+infeasibility, but a successful matching says nothing about the full CSP.
+
+`selector_conflict.rs` first detects colliding singleton claims, then uses
+iterative augmenting paths to find a maximum bipartite matching. Alternating
+reachability from unmatched claims yields a set of claims with fewer candidate
+owners than claims (a Hall witness). The report includes those selectors and
+their complete owner union; other members of the group are described as blocked.
+The witness is sufficient, deterministic, and not necessarily minimal. No extra
+CSP solve is performed and diagnostic results never alter solver acceptance.
+
+The diagnostic graph is capped at 256 claims, 25,600 edges, and 1,000,000 edge
+visits. Hitting a bound discards the tentative explanation. Relational
+contradictions and contradictions requiring reference-driven narrowing may also
+have no ownership witness; they retain a group-level explanation. In particular,
+using a propagated singleton without its premises could falsely implicate a
+smaller subset, so narrowed candidate domains are never used here.
+
+`conflict` remains the separate pre-solve outcome for an entity whose rows all
+disagree with a template reference (§ Template references).
 
 ### Rejected: localizing a contradiction with assumption cores
 
