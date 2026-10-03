@@ -11,8 +11,8 @@ pairing controls. The root URL `/` redirects to `/sessions`.
 ## Sessions page
 
 The read-only session browser filters by status, searches loaded session summaries, and shows selected session events
-in chronological order. Routine runs appear in the same activity-sorted list with a **Routine run** badge and their
-routine ID. It reads the local PostgreSQL mirror through the Claude Code-shaped routes below.
+in chronological order. Summaries identified as routine runs by `trigger_id` or `origin` are marked **Routine run**
+with the routine ID when available. It reads the local PostgreSQL mirror through the Claude Code-shaped routes below.
 
 ## Sync page
 

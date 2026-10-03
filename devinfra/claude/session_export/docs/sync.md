@@ -36,9 +36,9 @@ there).
 
 ## A cycle
 
-1. List every session, including routine runs via `include_trigger_sessions=true`, and upsert its metadata. The whole
-   list is read each time (about 16 requests per 1,500 sessions) rather than stopping at the first unchanged session:
-   a cycle that died partway leaves older sessions behind a newer one that is level.
+1. List every session, requesting routine runs with `include_trigger_sessions=true`, and upsert its metadata. The
+   whole list is read each time (about 16 requests per 1,500 sessions) rather than stopping at the first unchanged
+   session: a cycle that died partway leaves older sessions behind a newer one that is level.
 2. A session is behind when `synced_last_event_at` differs from the `last_event_at` just listed.
 3. For each behind session, read events after the resume point and store them page by page. The resume point is the
    newest stored `sequence_num`, or just before the earliest event that had `received_at` but no `processed_at` when
