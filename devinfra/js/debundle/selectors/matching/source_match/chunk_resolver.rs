@@ -274,7 +274,7 @@ fn matching_body_indices(
 /// the single-declarator needle against this *is* the per-declarator match: a
 /// needle that matches one declarator of a multi-declarator owner is a real match
 /// a whole-statement match would miss.
-fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarator) -> ModuleItem {
+pub(super) fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarator) -> ModuleItem {
     let mut cloned = item.clone();
     match &mut cloned {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var.decls = vec![declarator.clone()],

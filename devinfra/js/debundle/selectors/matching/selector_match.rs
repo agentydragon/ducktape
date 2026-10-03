@@ -22,7 +22,9 @@
 //! is not encoded as solver constraints: <docs/selector_resolution.md>
 //! § Rejected: tree matching as solver constraints.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::rc::Rc;
 
 use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use regex::Regex;
@@ -57,6 +59,59 @@ pub struct Matched<T> {
 pub enum Mode {
     Exact,
     AlphaAll,
+}
+
+/// A failure observed by the actual structural matcher on the best explored
+/// branch. Node IDs are relative to the two statement fact projections.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraceCategory {
+    Shape,
+    Literal,
+    Binding,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraceFailure {
+    pub needle_statement_index: usize,
+    pub subject_statement_index: usize,
+    pub needle_node: NodeId,
+    pub subject_node: NodeId,
+    pub category: TraceCategory,
+    pub reason: String,
+    /// Comparisons reached along this branch; used to prefer a deeper failure.
+    pub progress: usize,
+}
+
+#[derive(Default)]
+struct FailureTrace {
+    best: Option<TraceFailure>,
+    steps: usize,
+    limited: bool,
+}
+
+impl FailureTrace {
+    fn record(&mut self, failure: TraceFailure) {
+        if self.best.as_ref().is_none_or(|best| {
+            (failure.needle_statement_index, failure.progress)
+                > (best.needle_statement_index, best.progress)
+        }) {
+            self.best = Some(failure);
+        }
+    }
+}
+
+const DIAGNOSTIC_STEP_LIMIT: usize = 50_000;
+const DIAGNOSTIC_DEPTH_LIMIT: usize = 256;
+const DIAGNOSTIC_LIMIT_REASON: &str = "diagnostic comparison budget reached";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExactRangeMatch {
+    pub matched: bool,
+    /// One subject position per needle statement; holes have no position.
+    pub alignment: Vec<Option<usize>>,
+    pub free_bindings: BTreeMap<String, String>,
+    pub failure: Option<TraceFailure>,
+    pub diagnostic_limited: bool,
 }
 
 /// An invariant token — a label `homo` always compares **exactly**, even in
@@ -137,6 +192,12 @@ struct Bindings<'f> {
     /// root-frame binding: <docs/selector_resolution.md> § "Rejected: binding
     /// free template names in the root frame".
     free_seen: BTreeMap<String, Option<String>>,
+    /// Present only for an explicitly requested explanation. Clones share the
+    /// recorder while retaining independent alpha state for backtracking.
+    trace: Option<Rc<RefCell<FailureTrace>>>,
+    statement_index: usize,
+    subject_statement_index: usize,
+    progress: usize,
 }
 
 impl<'f> Bindings<'f> {
@@ -146,7 +207,59 @@ impl<'f> Bindings<'f> {
             in_var_decl: false,
             free,
             free_seen: BTreeMap::new(),
+            trace: None,
+            statement_index: 0,
+            subject_statement_index: 0,
+            progress: 0,
         }
+    }
+
+    fn with_trace(free: &'f BTreeSet<String>, trace: Rc<RefCell<FailureTrace>>) -> Self {
+        let mut bindings = Self::new(free);
+        bindings.trace = Some(trace);
+        bindings
+    }
+
+    fn fail(
+        &self,
+        needle_node: NodeId,
+        subject_node: NodeId,
+        category: TraceCategory,
+        reason: impl FnOnce() -> String,
+    ) {
+        if let Some(trace) = &self.trace {
+            trace.borrow_mut().record(TraceFailure {
+                needle_statement_index: self.statement_index,
+                subject_statement_index: self.subject_statement_index,
+                needle_node,
+                subject_node,
+                category,
+                reason: reason(),
+                progress: self.progress,
+            });
+        }
+    }
+
+    fn step(&mut self) -> Result<(), Unsupported> {
+        if let Some(trace) = &self.trace {
+            let mut trace = trace.borrow_mut();
+            if trace.steps >= DIAGNOSTIC_STEP_LIMIT {
+                trace.limited = true;
+                return Err(Unsupported {
+                    reason: DIAGNOSTIC_LIMIT_REASON,
+                });
+            }
+            trace.steps += 1;
+            self.progress = self.progress.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    fn expected_ident(&self, needle: &str) -> Option<&str> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.forward.get(needle).map(String::as_str))
     }
 
     fn push_scope(&mut self, kind: FrameKind) {
@@ -442,6 +555,43 @@ impl Index {
     fn super_class_of(&self, id: NodeId) -> Option<NodeId> {
         self.super_class.get(id as usize).copied().flatten()
     }
+}
+
+/// Conservative size gate for the diagnostic API before it invokes the normal
+/// member candidate resolver, whose matching search is intentionally unbounded.
+/// This gate is never used by ordinary selector resolution.
+pub fn diagnostic_shape_bounded(index: &Index) -> bool {
+    const MAX_DEPTH: usize = 64;
+    const MAX_HOLES: usize = 6;
+    const MAX_HOLE_LIST: usize = 16;
+    let mut holes = 0;
+    for (parent, children) in index.children.iter().enumerate() {
+        let kind = index.kind_of(parent as NodeId);
+        let count = children
+            .iter()
+            .filter(|&&child| {
+                is_run_hole_carrier(index, kind, child)
+                    || is_floating_declarator(index, kind, child)
+            })
+            .count();
+        holes += count;
+        if holes > MAX_HOLES || (count > 0 && children.len() > MAX_HOLE_LIST) {
+            return false;
+        }
+    }
+    let mut stack: Vec<_> = index.roots.iter().map(|&root| (root, 0)).collect();
+    while let Some((node, depth)) = stack.pop() {
+        if depth > MAX_DEPTH {
+            return false;
+        }
+        stack.extend(
+            index
+                .children_of(node)
+                .iter()
+                .map(|&child| (child, depth + 1)),
+        );
+    }
+    true
 }
 
 /// Read surface over a built [`Index`] for the fact-based near-miss diagnostics
@@ -845,6 +995,7 @@ fn homo(
     mode: Mode,
     bindings: &mut Bindings,
 ) -> Result<bool, Unsupported> {
+    bindings.step()?;
     let nkind = needle.kind_of(nid);
 
     // Single-node hole (expression / pattern / statement position): matches any
@@ -861,11 +1012,17 @@ fn homo(
     // structure. Checked before the kind comparison (the needle is a `Call`, the
     // subject a `StrLit`).
     if regex_predicate_pattern(needle, nid).is_some() {
-        return Ok(subject.kind_of(sid) == NodeKind::StrLit
+        let matched = subject.kind_of(sid) == NodeKind::StrLit
             && match (needle.predicate_regex.get(&nid), subject.str_lit_of(sid)) {
                 (Some(re), Some(value)) => re.is_match(value),
                 _ => false,
+            };
+        if !matched {
+            bindings.fail(nid, sid, TraceCategory::Literal, || {
+                "string does not satisfy the selector regex".into()
             });
+        }
+        return Ok(matched);
     }
 
     // Shorthand ⟷ explicit same-name property equivalence (object literals and
@@ -881,18 +1038,36 @@ fn homo(
         shorthand_property_view(subject, sid),
     ) {
         if n_prop.key != s_prop.key {
+            bindings.fail(nid, sid, TraceCategory::Literal, || {
+                format!(
+                    "property key {:?} differs from {:?}",
+                    n_prop.key, s_prop.key
+                )
+            });
             return Ok(false);
         }
-        return Ok(if n_prop.is_binding {
+        let matched = if n_prop.is_binding {
             bindings.match_binding(n_prop.value_ident, s_prop.value_ident, mode)
         } else {
             bindings.match_ref(n_prop.value_ident, s_prop.value_ident, mode)
-        });
+        };
+        if !matched {
+            bindings.fail(nid, sid, TraceCategory::Binding, || {
+                format!(
+                    "identifier {:?} cannot bind to {:?}",
+                    n_prop.value_ident, s_prop.value_ident
+                )
+            });
+        }
+        return Ok(matched);
     }
 
     // Structural equality: kind, then non-identifier labels (always exact),
     // then the identifier label (exact or alpha-bound), then children.
     if nkind != subject.kind_of(sid) {
+        bindings.fail(nid, sid, TraceCategory::Shape, || {
+            format!("expected {nkind:?}, found {:?}", subject.kind_of(sid))
+        });
         return Ok(false);
     }
     if needle.str_lit_of(nid) != subject.str_lit_of(sid)
@@ -902,6 +1077,37 @@ fn homo(
         || needle.operator_of(nid) != subject.operator_of(sid)
         || needle.regex_of(nid) != subject.regex_of(sid)
     {
+        bindings.fail(nid, sid, TraceCategory::Literal, || {
+            if needle.str_lit_of(nid) != subject.str_lit_of(sid) {
+                return format!(
+                    "string literal {} differs from {}",
+                    brief_label(needle.str_lit_of(nid)),
+                    brief_label(subject.str_lit_of(sid))
+                );
+            }
+            if needle.num_lit_of(nid) != subject.num_lit_of(sid) {
+                return format!(
+                    "number literal {} differs from {}",
+                    brief_label(needle.num_lit_of(nid)),
+                    brief_label(subject.num_lit_of(sid))
+                );
+            }
+            if needle.prop_name_of(nid) != subject.prop_name_of(sid) {
+                return format!(
+                    "property {} differs from {}",
+                    brief_label(needle.prop_name_of(nid)),
+                    brief_label(subject.prop_name_of(sid))
+                );
+            }
+            if needle.operator_of(nid) != subject.operator_of(sid) {
+                return format!(
+                    "operator {} differs from {}",
+                    brief_label(needle.operator_of(nid)),
+                    brief_label(subject.operator_of(sid))
+                );
+            }
+            "an invariant literal differs".into()
+        });
         return Ok(false);
     }
     match (needle.ident_of(nid), subject.ident_of(sid)) {
@@ -916,11 +1122,26 @@ fn homo(
                 bindings.match_ref(n, s, mode)
             };
             if !consistent {
+                bindings.fail(nid, sid, TraceCategory::Binding, || {
+                    match bindings.expected_ident(n) {
+                        Some(expected) => {
+                            format!(
+                                "identifier {n:?} previously bound to {expected:?}, found {s:?}"
+                            )
+                        }
+                        None => format!("identifier {n:?} cannot bind to {s:?}"),
+                    }
+                });
                 return Ok(false);
             }
         }
         (None, None) => {}
-        _ => return Ok(false),
+        _ => {
+            bindings.fail(nid, sid, TraceCategory::Shape, || {
+                "identifier presence differs".into()
+            });
+            return Ok(false);
+        }
     }
 
     // A `Class` node's superclass (`extends`) is a separate relation, not a child
@@ -935,7 +1156,12 @@ fn homo(
                 }
             }
             (None, None) => {}
-            _ => return Ok(false),
+            _ => {
+                bindings.fail(nid, sid, TraceCategory::Shape, || {
+                    "class superclass presence differs".into()
+                });
+                return Ok(false);
+            }
         }
     }
 
@@ -970,6 +1196,20 @@ fn homo(
     result
 }
 
+fn brief_label(label: Option<&str>) -> String {
+    match label {
+        Some(value) => {
+            let prefix: String = value.chars().take(80).collect();
+            if value.chars().count() > 80 {
+                format!("{prefix:?}…")
+            } else {
+                format!("{prefix:?}")
+            }
+        }
+        None => "<absent>".into(),
+    }
+}
+
 /// A named function/class expression's name is bound in its own frame, visible
 /// only inside the expression: `const f = function g() { g(); }` does not see an
 /// outer `g`. Children are `[name?, function-or-class]`.
@@ -983,6 +1223,9 @@ fn match_named_expression(
 ) -> Result<bool, Unsupported> {
     let (nkids, skids) = (needle.children_of(nid), subject.children_of(sid));
     if nkids.len() != skids.len() {
+        bindings.fail(nid, sid, TraceCategory::Shape, || {
+            format!("expected {} children, found {}", nkids.len(), skids.len())
+        });
         return Ok(false);
     }
     let (Some((&nbody, nname)), Some((&sbody, sname))) = (nkids.split_last(), skids.split_last())
@@ -993,6 +1236,9 @@ fn match_named_expression(
         match (needle.ident_of(nname), subject.ident_of(sname)) {
             (Some(n), Some(s)) if !is_single_node_hole(needle, nname) => {
                 if !bindings.match_binding(n, s, mode) {
+                    bindings.fail(nname, sname, TraceCategory::Binding, || {
+                        format!("identifier {n:?} cannot bind to {s:?}")
+                    });
                     return Ok(false);
                 }
             }
@@ -1024,6 +1270,9 @@ fn match_children(
     let nprefix = prefix.min(nchildren.len());
     let sprefix = prefix.min(schildren.len());
     if nprefix != sprefix {
+        bindings.fail(nid, sid, TraceCategory::Shape, || {
+            "required child prefix differs".into()
+        });
         return Ok(false);
     }
     for i in 0..nprefix {
@@ -1040,6 +1289,9 @@ fn match_children(
         return match_list_with_holes(needle, nlist, subject, slist, nkind, mode, bindings);
     }
     if nlist.len() != slist.len() {
+        bindings.fail(nid, sid, TraceCategory::Shape, || {
+            format!("expected {} children, found {}", nlist.len(), slist.len())
+        });
         return Ok(false);
     }
     for (nc, sc) in nlist.iter().zip(slist) {
@@ -1663,6 +1915,123 @@ fn is_module_stmt_list_hole(index: &Index) -> bool {
     index.kind_of(root) == NodeKind::ExprStmt && {
         let kids = index.children_of(root);
         kids.len() == 1 && node_ident_hole(index, kids[0], STMT_LIST_HOLE_KEYWORD)
+    }
+}
+
+/// Match the caller's entire selected range, including any statements absorbed
+/// by top-level `STMT_LIST` holes. This is a diagnostic-only entry point: it
+/// calls the same `homo` relation and carries the same alpha state across every
+/// statement. Unlike the resolver's candidate enumeration, neither end may
+/// silently float outside the supplied range.
+pub fn explain_exact_range_indexed(
+    needle: &[Index],
+    subject: &[Index],
+    mode: Mode,
+    free: &BTreeSet<String>,
+) -> Result<ExactRangeMatch, Unsupported> {
+    for item in needle.iter().filter(|item| !is_module_stmt_list_hole(item)) {
+        if let Some(reason) = unsupported_needle_construct(item) {
+            return Err(Unsupported { reason });
+        }
+    }
+    let trace = Rc::new(RefCell::new(FailureTrace::default()));
+    let mut bindings = Bindings::with_trace(free, Rc::clone(&trace));
+    let mut alignment = vec![None; needle.len()];
+    // An all-hole template has no pin, as in match_top_level_sequence_indexed.
+    let mut range = ExactRangeContext {
+        needle,
+        subject,
+        mode,
+        alignment: &mut alignment,
+    };
+    let matched = if needle.iter().any(|item| !is_module_stmt_list_hole(item)) {
+        match range.place(0, 0, &mut bindings) {
+            Ok(matched) => matched,
+            Err(err) => {
+                if trace.borrow().limited {
+                    false
+                } else {
+                    return Err(err);
+                }
+            }
+        }
+    } else {
+        false
+    };
+    let trace = trace.borrow();
+    Ok(ExactRangeMatch {
+        matched,
+        alignment: if matched { alignment } else { Vec::new() },
+        free_bindings: if matched {
+            bindings.free_bindings()
+        } else {
+            BTreeMap::new()
+        },
+        failure: if matched { None } else { trace.best.clone() },
+        diagnostic_limited: !matched && trace.limited,
+    })
+}
+
+struct ExactRangeContext<'a> {
+    needle: &'a [Index],
+    subject: &'a [Index],
+    mode: Mode,
+    alignment: &'a mut [Option<usize>],
+}
+
+impl ExactRangeContext<'_> {
+    fn place(
+        &mut self,
+        needle_pos: usize,
+        subject_pos: usize,
+        bindings: &mut Bindings<'_>,
+    ) -> Result<bool, Unsupported> {
+        bindings.step()?;
+        if needle_pos == self.needle.len() {
+            return Ok(subject_pos == self.subject.len());
+        }
+        if needle_pos >= DIAGNOSTIC_DEPTH_LIMIT {
+            if let Some(trace) = &bindings.trace {
+                trace.borrow_mut().limited = true;
+            }
+            return Err(Unsupported {
+                reason: DIAGNOSTIC_LIMIT_REASON,
+            });
+        }
+        if is_module_stmt_list_hole(&self.needle[needle_pos]) {
+            for next_subject in subject_pos..=self.subject.len() {
+                let snapshot = bindings.clone();
+                if self.place(needle_pos + 1, next_subject, bindings)? {
+                    return Ok(true);
+                }
+                *bindings = snapshot;
+            }
+            return Ok(false);
+        }
+        let (Some(item), Some(candidate)) =
+            (self.needle.get(needle_pos), self.subject.get(subject_pos))
+        else {
+            return Ok(false);
+        };
+        let (Some(&needle_root), Some(&subject_root)) =
+            (item.roots.first(), candidate.roots.first())
+        else {
+            return Ok(false);
+        };
+        bindings.statement_index = needle_pos;
+        bindings.subject_statement_index = subject_pos;
+        if !homo(
+            item,
+            needle_root,
+            candidate,
+            subject_root,
+            self.mode,
+            bindings,
+        )? {
+            return Ok(false);
+        }
+        self.alignment[needle_pos] = Some(subject_pos);
+        self.place(needle_pos + 1, subject_pos + 1, bindings)
     }
 }
 

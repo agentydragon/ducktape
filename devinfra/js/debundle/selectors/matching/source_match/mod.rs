@@ -18,6 +18,7 @@
 //! - `free_identifiers` — a template's free (referenced, undeclared) names.
 //! - `anonymous_statement` — anonymous source-match statement validation.
 //! - `holes` — local hole-keyword dispatch over AST nodes.
+//! - `explain` — one explicit source range against one parsed selector.
 
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
@@ -62,6 +63,7 @@ mod anonymous_statement;
 mod binding_resolution;
 pub mod chunk_resolver;
 mod declared_bindings;
+mod explain;
 mod fact_near_miss;
 mod free_identifiers;
 mod holes;
@@ -76,6 +78,10 @@ pub(crate) use declared_bindings::*;
 pub(crate) use holes::*;
 // Public API for selector parsing, normalization, and diagnostics.
 pub use binding_resolution::source_match_claim_member_selectors;
+pub use explain::{
+    ExplainRangeKind, RangeExplanation, RangeExplanationStatus, RangeFailure, RangeFailureCategory,
+    explain_range,
+};
 pub use fact_near_miss::{fact_near_misses, fact_source_match_body_debt};
 pub use free_identifiers::{free_identifiers, template_free_identifiers};
 pub use parse_validate::parse_selector_module;
