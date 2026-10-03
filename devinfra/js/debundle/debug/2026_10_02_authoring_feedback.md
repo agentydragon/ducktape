@@ -1,0 +1,226 @@
+# Debundle authoring feedback: unresolved requests
+
+Collected 2026-10-02 from Claude Code Web debundling work. Evaluated against
+Ducktape `cb5ef4b52a75b39ec7e6f3611fefe4128135a863`, with only the report and
+synthetic reproduction harness added. All examples below were invented from
+scratch; they contain no upstream application source or session data.
+
+These are **feature requests / usability limitations**, not confirmed new
+miscompilation bugs. Rejected input is distinguished from incorrect output.
+The list contains only outstanding work.
+
+## Reproduction
+
+From the repository's Nix devshell, following its Bazel execution instructions:
+
+```sh
+bbr test \
+  //devinfra/js/debundle/e2e:authoring_feedback_repro_test \
+  //devinfra/js/debundle/e2e:duplicate_top_level_declaration_test \
+  --test_output=all --test_arg=--nocapture
+```
+
+The [synthetic reproducers](../e2e/authoring_feedback_repro_test.rs) drive the
+real CLI using the existing fixture harness. They are tagged `manual` because
+they characterize current limitations: **passing means the limitation was
+reproduced**, not that the requested feature exists. Convert their assertions
+to the desired contract when implementing a request. The existing repeated
+declaration test is an additional independent reproduction for R3.
+
+Validation: **passed**, six tests across the two targets on the revision above.
+The three new characterization cases reproduced R1, R2, and R4; the existing
+repeated-declaration suite reproduced R3 and checked scope separation.
+[BuildBuddy run and test output](https://app.buildbuddy.io/invocation/c6245dea-5f4a-40f2-a051-15ea9873c85f).
+
+## R1 — Identify the selectors responsible for an infeasible group
+
+**Type:** diagnostic feature request. **Priority:** high.
+
+**Impact observed:** after several spec edits, a contradictory pair can make a
+large connected selector group report `no_match`. Authors have to remove
+module files in a scratch tree and bisect to discover the actual conflict.
+
+**Minimal source:**
+
+```js
+function a() {
+  return 17;
+}
+```
+
+Two separate module specs each claim this same function:
+
+```yaml
+# first.yaml
+source_matches:
+  - match: "function x() { return 17; }"
+    bindings: [{ local: x, name: First }]
+```
+
+```yaml
+# second.yaml
+source_matches:
+  - match: "function y() { return 17; }"
+    bindings: [{ local: y, name: Second }]
+```
+
+**Current behavior:** both exports report `no_match` with the reason
+`selectors that interact with this one admit no joint assignment`. The outcome
+does not name the competing claim or candidate declaration. The two-selector
+case is easy to inspect manually; the same output becomes unhelpful inside a
+large group. Separate groups are already isolated correctly.
+
+**Requested behavior:** report a conflict witness containing the module/export
+identities and source declaration they compete for. Distinguish this from a
+selector with no syntactic candidates. For more complicated contradictions,
+identify the affected group and say when a smaller witness is unavailable.
+
+**Acceptance:** the example reports `First` versus `Second`, both targeting
+`a`; an unrelated resolved selector remains unaffected. Add a connected-group
+case proving that every member is not mislabeled as independently broken.
+
+**Implementation constraint:** this is already on the
+[active queue](../TODO.md#automation-product-flows-over-the-solver).
+[Assumption-core localization](../docs/selector_resolution.md#rejected-localizing-a-contradiction-with-assumption-cores)
+was measured and rejected for excessive model-loading cost. Prefer a bounded
+explanation from candidate sets for simple collisions; this request does not
+propose reinstating that expensive solver path.
+
+## R2 — Explain where a multi-statement selector stops matching
+
+**Type:** diagnostic feature request. **Priority:** high.
+
+**Impact observed:** complex helper extractions failed without enough detail
+to distinguish a mistaken selector from a matcher defect. This was especially
+costly around multiple declarations and comma expressions. Those failures do
+not, by themselves, establish incorrect matching.
+
+**Minimal source and selector:**
+
+```js
+// Source
+const a = 7;
+const b = 9;
+
+// Selector, claiming lower and upper
+const lower = 7;
+const upper = 8;
+```
+
+**Current behavior:** each claimed export gets `no_match`, without a
+`nearest_unclaimed` candidate or mismatch reason. Changing the source's `9`
+to `8` resolves the selector; the reproducer includes this control.
+
+**Requested behavior:** offer the candidate statement range and the first
+incompatible location, e.g. second declaration, initializer literal
+`expected 8, found 9`. Extend the explanation to identifier-binding conflicts,
+parameter patterns, and list-hole boundaries as supported cases are added.
+Heuristic candidate ranking must not change exact matching semantics.
+
+**Acceptance:** this example points to the second initializer, with source
+and selector locations; the matching control produces no error. Keep the
+explanation bounded for large chunks.
+
+**Existing boundary:**
+[near-miss diagnostics](../docs/selector_resolution.md#nearest-unclaimed)
+currently score single-statement templates. This is an extension of that
+capability, already anticipated in the selector diagnostics queue in
+[TODO.md](../TODO.md#automation-product-flows-over-the-solver).
+
+## R3 — Support valid repeated top-level `var` declarations
+
+**Type:** JavaScript coverage feature request. **Priority:** medium.
+
+**Impact observed:** a duplicate-top-level-binding rejection blocked a
+full-corpus run. The exact original declaration combination has not been
+established here; this report deliberately makes the narrower, independently
+reproducible claim below.
+
+**Minimal valid JavaScript module:**
+
+```js
+var counter = 1;
+var counter = 2;
+console.log(counter);
+export { counter };
+```
+
+Select `counter` into a logical module with `selector.binding.name: counter`.
+Current analysis rejects the chunk with:
+
+```text
+duplicate top-level declaration of binding `counter`
+```
+
+The existing
+[`duplicate_top_level_var_declaration_is_rejected`](../e2e/duplicate_top_level_declaration_test.rs)
+uses the same minimal language construct with synthetic string values.
+
+**Requested behavior:** represent one binding's multiple declaration sites
+without losing either initializer or changing their order. Preserve the
+binding's import/export identity when splitting a chunk containing this form.
+
+**Acceptance:** input and emitted entry both print `2`; an additional case
+with a read between initializers preserves both observable values. Invalid
+lexical redeclarations must remain rejected.
+
+**Correctness boundary:** the current rejection is deliberate fail-closed
+behavior. Simply allowing a later declaration to overwrite the earlier owner
+mapping is not a solution. Duplicate function declarations are not evidence
+for this request, because their legality depends on parse context.
+
+## R4 — Allow explicit, scope-aware names for parameters and locals
+
+**Type:** readability / spec-authoring feature request. **Priority:** medium.
+
+**Impact observed:** naming extracted functions still leaves substantial
+minified dataflow inside them. An engineer reading a recovered fold or
+dispatcher must repeatedly infer what parameters and intermediates represent.
+
+**Minimal source:**
+
+```js
+function a(b) {
+  return b + 2;
+}
+```
+
+The spec claims the function as `addTwo` using:
+
+```js
+function selected(amount) {
+  return amount + 2;
+}
+```
+
+**Current behavior:** the emitted function is `addTwo(b)` and still reads `b`.
+The readable `amount` in the selector is an alpha-matching placeholder, not
+an authored local rename. The reproducer also executes the emitted module to
+confirm its behavior is correct.
+
+**Requested behavior:** an explicit opt-in spec annotation for selected
+parameters/locals, anchored to lexical binding identity inside a resolved
+function. It should survive upstream minifier renaming. Do not automatically
+adopt every selector placeholder: many are intentionally generic or describe
+matching context rather than the variable's meaning.
+
+**Acceptance:** an authored `amount` name appears in the output and all uses;
+shadowed bindings and same-spelling parameters in other functions remain
+independent; collisions are diagnosed or safely resolved; Node behavior is
+unchanged. Function/compiler control-flow simplification is a separate feature.
+
+**Existing capability:** debundle already performs some heuristic local
+naturalization and safely renames top-level claimed bindings. See
+[the current spec fields](../spec/spec.rs) and
+[scope-local naturalization coverage](../e2e/naturalize_cross_scope_params_test.rs).
+The gap is author-controlled semantic names for locals not inferable by those
+heuristics, not a claim that local naturalization is entirely absent.
+
+## Evidence still needed before filing additional bugs
+
+- The unfinished classifier selectors need a control that demonstrates valid
+  supported syntax matching the intended declarations but being rejected.
+  There is no verified matcher bug from that extraction in this report.
+- Native solver abort/OOM reports need a captured failure and a reduced model
+  before attributing them to a debundle defect. No minimal crash reproducer
+  was recovered, so no crash bug is asserted here.

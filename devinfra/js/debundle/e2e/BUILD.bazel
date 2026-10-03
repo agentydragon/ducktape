@@ -5,6 +5,14 @@ package(default_testonly = True)
 
 # End-to-end tests treating the debundler as a black-box binary.
 
+# Characterizes limitations described in debug/2026_10_02_authoring_feedback.md.
+# Explicit invocation only: these are report reproducers, not desired behavior.
+debundle_e2e_test(
+    name = "authoring_feedback_repro_test",
+    tags = ["manual"],
+    deps = ["@crates//:serde_json"],
+)
+
 rust_library(
     name = "support",
     srcs = [
