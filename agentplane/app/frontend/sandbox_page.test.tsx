@@ -113,9 +113,10 @@ async function render(
   });
   container = document.createElement("div");
   const topbarTitle = document.createElement("div");
-  container.append(topbarTitle);
+  const content = document.createElement("div");
+  container.append(topbarTitle, content);
   document.body.append(container);
-  root = createRoot(container);
+  root = createRoot(content);
   const onOpenThread = vi.fn();
   await act(async () =>
     root.render(
@@ -239,7 +240,7 @@ it("shows the selected Kubernetes grant scope, role, and application error", asy
   ];
   (live.snapshot.sandbox as SandboxView).kubernetes_grants_ready = false;
   (live.snapshot.sandbox as SandboxView).kubernetes_grant_error = "binding controller is waiting";
-  await render(async () => Response.json([]), undefined, "kubevirt");
+  await render(async () => Response.json([]));
   const statusTab = [...container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')].find(
     (tab) => tab.textContent === "Status"
   );
