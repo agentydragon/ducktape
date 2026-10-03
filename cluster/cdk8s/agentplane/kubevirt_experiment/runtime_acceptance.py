@@ -36,7 +36,7 @@ _SETUP_MARKERS = {
     "NATIVE_HISTORY_USED_BYTES": re.compile(r"[0-9]+"),
     "WORKSPACE_QUOTA_BYTES": re.compile(r"[0-9]+"),
     "WORKSPACE_USED_BYTES": re.compile(r"[0-9]+"),
-    "QUOTA_RESULT": re.compile(r"EDQUOT|OK"),
+    "QUOTA_RESULT": re.compile(r"EDQUOT|ENOSPC|OK"),
     "WORKSPACE_SHA256": re.compile(r"[a-f0-9]{64}"),
 }
 _PROBE_SCRIPT = f"""\
@@ -144,7 +144,9 @@ async def _launcher_pod(
     vmi = await inventory.current_vm_instance(name, uid)
     if vmi is None:
         return None
-    pods = await core.list_namespaced_pod(inventory.namespace, label_selector=f"kubevirt.io/domain={name}")
+    pods = await core.list_namespaced_pod(
+        inventory.namespace, label_selector=f"kubevirt.io/created-by={vmi.metadata.uid}"
+    )
     matching = [
         pod
         for pod in pods.items
@@ -568,12 +570,15 @@ async def setup_probe(args: argparse.Namespace) -> None:
     session_id = args.session_id or f"vm-probe-{uuid4().hex[:16]}"
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", session_id):
         raise ValueError("--session-id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+    print(json.dumps({"action": "setup_probe_started", "session_id": session_id}, sort_keys=True), flush=True)
     script = args.setup_script_file.read_text()
     if not script or len(script.encode()) > 65_536:
         raise ValueError("setup script must contain 1..65536 UTF-8 bytes")
     workdir = f"{_SESSION_ROOT}/setup/{session_id}"
     deadline = asyncio.get_running_loop().time() + args.timeout
     runner = RunnerClient(args.target, capture_history=True)
+    attachment = None
+    stream_drained = False
     try:
         await _within(runner.list_sessions(), deadline)
         attachment = await _within(
@@ -590,20 +595,36 @@ async def setup_probe(args: argparse.Namespace) -> None:
             deadline,
         )
         async with asyncio.timeout(_remaining(deadline)):
-            async with attachment:
-                finished = await attachment.until(
-                    lambda entry: entry.event.WhichOneof("observation") in {"setup_finished", "setup_interrupted"},
+            finished = await attachment.until(
+                lambda entry: entry.event.WhichOneof("observation") in {"setup_finished", "setup_interrupted"},
+                timeout_s=_remaining(deadline),
+            )
+            terminal_kind = finished.event.WhichOneof("observation")
+            exit_code = finished.event.setup_finished.exit_code if terminal_kind == "setup_finished" else None
+            if terminal_kind == "setup_finished" and exit_code == 0:
+                launch = await attachment.until(
+                    lambda entry: entry.event.WhichOneof("observation") in {"harness_started", "harness_launch_failed"},
                     timeout_s=_remaining(deadline),
                 )
-                terminal_kind = finished.event.WhichOneof("observation")
-                exit_code = finished.event.setup_finished.exit_code if terminal_kind == "setup_finished" else None
-                entries = list(attachment.seen)
+                if launch.event.WhichOneof("observation") == "harness_started":
+                    await _within(attachment.detach(), deadline)
+                else:
+                    await _within(attachment.drain_until_end(), deadline)
+                    stream_drained = True
+            else:
+                # Failed and interrupted setup streams close on their own. Drain through EOF before
+                # exiting so Attachment cleanup cannot race a Detach write with the server close.
+                await _within(attachment.drain_until_end(), deadline)
+                stream_drained = True
+            if not stream_drained:
+                await _within(attachment.drain_until_end(), deadline)
+                stream_drained = True
+            entries = list(attachment.seen)
         summaries = await _within(runner.list_sessions(), deadline)
     finally:
+        if attachment is not None and not stream_drained:
+            attachment.cancel()
         await runner.close()
-    summary = next((item for item in summaries if item.session_id == session_id), None)
-    if summary is None:
-        raise RuntimeError("runner did not retain the setup probe session")
     stdout = b"".join(
         entry.event.setup_output.stdout
         for entry in entries
@@ -617,26 +638,33 @@ async def setup_probe(args: argparse.Namespace) -> None:
         and entry.event.setup_output.WhichOneof("stream") == "stderr"
     )
     output = stdout + stderr
-    if args.expect_output is not None and args.expect_output.encode() not in output:
-        raise RuntimeError("setup probe did not emit the requested evidence marker")
     markers = _safe_setup_markers(output)
+    details = (
+        f"session_id={session_id}, terminal={terminal_kind}, exit_code={exit_code}, "
+        f"stdout_bytes={len(stdout)}, stderr_bytes={len(stderr)}, markers={markers}"
+    )
+    summary = next((item for item in summaries if item.session_id == session_id), None)
+    if summary is None:
+        raise RuntimeError(f"runner did not retain the setup probe session; {details}")
+    if args.expect_output is not None and args.expect_output.encode() not in output:
+        raise RuntimeError(f"setup probe did not emit the requested evidence marker; {details}")
     for expectation in args.expect_marker:
         key, separator, value = expectation.partition("=")
         validator = _SETUP_MARKERS.get(key)
         if not separator or validator is None or not validator.fullmatch(value):
             raise ValueError("--expect-marker must use an allowed marker and valid value")
         if markers.get(key) != value:
-            raise RuntimeError(f"setup probe did not emit expected marker {key}")
+            raise RuntimeError(f"setup probe did not emit expected marker {key}; {details}")
     if args.expect_failure:
         if terminal_kind == "setup_interrupted":
             if summary.setup_state != protocol_pb2.SETUP_STATE_INTERRUPTED:
-                raise RuntimeError("ListSessions did not report the interrupted setup probe")
+                raise RuntimeError(f"ListSessions did not report the interrupted setup probe; {details}")
         elif exit_code == 0:
-            raise RuntimeError("setup probe was expected to fail but exited successfully")
+            raise RuntimeError(f"setup probe was expected to fail but exited successfully; {details}")
     elif terminal_kind != "setup_finished":
-        raise RuntimeError("setup probe was interrupted before it reported an exit status")
+        raise RuntimeError(f"setup probe was interrupted before it reported an exit status; {details}")
     elif exit_code != args.expected_exit_code:
-        raise RuntimeError(f"setup probe exited with {exit_code}; expected {args.expected_exit_code}")
+        raise RuntimeError(f"setup probe exited with {exit_code}; expected {args.expected_exit_code}; {details}")
     expected_setup_state = (
         protocol_pb2.SETUP_STATE_INTERRUPTED
         if terminal_kind == "setup_interrupted"
@@ -645,7 +673,7 @@ async def setup_probe(args: argparse.Namespace) -> None:
         else protocol_pb2.SETUP_STATE_SUCCEEDED
     )
     if summary.setup_state != expected_setup_state:
-        raise RuntimeError("ListSessions did not report the setup probe's terminal state")
+        raise RuntimeError(f"ListSessions did not report the setup probe's terminal state; {details}")
     print(
         json.dumps(
             {

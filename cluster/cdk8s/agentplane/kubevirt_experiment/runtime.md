@@ -59,6 +59,9 @@ These are configured limits; confirm their effective values inside a booted gues
 
 ## Live acceptance
 
+Use the [runtime acceptance helper runbook](runtime_acceptance.md) for the repeatable
+provider, RPC, native-session, recovery, probe, replacement, and cleanup commands.
+
 Use a disposable namespace, fresh disks, and a digest-pinned image built from the
 PR revision. Increase the small Fedora experiment's resource quota for this guest.
 Do not attach an existing environment's state. Use the provider's create path so
