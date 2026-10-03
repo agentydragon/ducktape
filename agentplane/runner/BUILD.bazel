@@ -92,6 +92,7 @@ py_library(
     visibility = [
         "//agentplane/runner:__subpackages__",
         "//agentplane/sandbox_service:__subpackages__",
+        "//cluster/cdk8s/agentplane/kubevirt_experiment:__pkg__",
     ],
     deps = [
         ":errors",

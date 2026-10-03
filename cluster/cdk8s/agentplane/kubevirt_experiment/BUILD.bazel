@@ -19,6 +19,7 @@ py_binary(
     name = "main",
     srcs = ["main.py"],
     data = [
+        "runtime_model_gateway.py",
         "token_review_gateway.py",
         "@nodejs_linux_amd64//:bin/node",
     ],
@@ -29,6 +30,24 @@ py_binary(
         ":vm",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
+    ],
+)
+
+py_binary(
+    name = "runtime_acceptance",
+    srcs = ["runtime_acceptance.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":vm",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
+        "//util:kubernetes",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
     ],
 )
 

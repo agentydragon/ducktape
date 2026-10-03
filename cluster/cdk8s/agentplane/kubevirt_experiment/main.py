@@ -18,6 +18,9 @@ def main() -> None:
     parser.add_argument("--proxy-host", required=True)
     parser.add_argument("--outdir", required=True)
     parser.add_argument("--setup", action="store_true")
+    parser.add_argument("--memory-quota", default="24Gi")
+    parser.add_argument("--cpu-quota", type=int, default=8)
+    parser.add_argument("--model-fixture", action="store_true")
     parser.add_argument("--vm-name")
     parser.add_argument("--vm-uid")
     parser.add_argument("--guest-image")
@@ -26,11 +29,14 @@ def main() -> None:
     app = App(outdir=args.outdir)
     chart = Chart(app, "launcher-admission", disable_resource_name_hashes=True)
     if args.setup:
-        setup(chart, args.namespace)
+        setup(chart, args.namespace, memory_quota=args.memory_quota, cpu_quota=args.cpu_quota)
         gateway(
             chart,
             args.namespace,
-            get_required_path("_main/cluster/cdk8s/agentplane/kubevirt_experiment/token_review_gateway.py").read_text(),
+            get_required_path(
+                "_main/cluster/cdk8s/agentplane/kubevirt_experiment/"
+                + ("runtime_model_gateway.py" if args.model_fixture else "token_review_gateway.py")
+            ).read_text(),
         )
     KubeVirtProxyPolicy(
         chart,

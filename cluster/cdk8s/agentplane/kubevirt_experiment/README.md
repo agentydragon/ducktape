@@ -1,8 +1,8 @@
 # KubeVirt launcher prototype
 
-This is PR 1 of the VM environment stack: opt-in platform admission and a disposable
-experiment. It does not enable VM environments in staging/testing. The guest runtime
-and Sandbox Service integration are separate changes.
+This directory contains opt-in platform admission and disposable KubeVirt experiments. The
+runner guest CLI uses direct, UID-checked KubeVirt operations; it does not enable VM environments
+in staging/testing or add a production Sandbox Service provider, app API, or proto kind.
 
 ## What this establishes
 
@@ -26,10 +26,15 @@ allows DNS and the synthetic gateway, and admits port 7000 only from that gatewa
 Pod label. A real deployment must replace that caller selector with Sandbox Service.
 SSH is accessed by localhost-only Kubernetes port forwarding during the experiment.
 
-The synthetic `token_review_gateway.py` checks Kubernetes TokenReview and returns
-only the reviewed account/Pod identity. It does **not** implement the production
-egress gateway's credential policies, destination authorization, TLS interception,
-or CONNECT protocol. Passing this experiment is not full egress acceptance.
+The default `token_review_gateway.py` checks Kubernetes TokenReview and returns only the reviewed
+account/Pod identity. The runner experiment can instead use the deterministic
+[`runtime_model_gateway.py`](runtime_model_gateway.py). Neither implements the production egress
+gateway's credential policies, destination authorization, TLS interception, or CONNECT protocol.
+Passing either experiment is not full egress acceptance.
+
+Runner VM inputs, lifecycle commands, probes, and cleanup are in the concise
+[`runtime acceptance guide`](runtime_acceptance.md); guest build and measured runtime findings are
+in [`runtime.md`](runtime.md).
 
 ## Reproduce
 
@@ -106,8 +111,7 @@ mutation/reinvocation and negative admission checks. The test mocks API response
 it still executes the UID, account, caller, and mount predicates. Live evidence is
 recorded in [the experiment log](../../../../agentplane/debug/kubevirt/evidence.md).
 
-An admission-service outage remains a separate isolated-control-plane experiment:
-this work does not stop shared Kyverno to test `failurePolicy: Fail`. Production
-credential substitution/CONNECT and runner gRPC need the subsequent integration
-acceptance. Persistent disk recovery, guest OOM budgets, and image replacement belong
-to the next two PRs. Nothing here promises live migration or node-loss recovery.
+This does not stop shared Kyverno to test `failurePolicy: Fail`, or exercise production
+credential substitution/CONNECT. The runner acceptance guide exercises gRPC, native-session
+recovery, setup probes, stop/start, and root-image replacement on a disposable guest. Nothing here
+promises live migration or node-loss recovery.
