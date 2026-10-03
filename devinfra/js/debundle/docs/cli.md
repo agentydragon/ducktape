@@ -483,3 +483,12 @@ both member and source-match bindings; module edits address the top-level
   consume.
 - `selectors.md` / `spec_editing.md` — selector authoring and spec-editing
   workflows.
+
+## Explain a selector at a known source range
+
+`spec match-selector --explain --statements START..END` performs a local
+structural comparison using the labels from `inspect-source`. Supply `--match`
+inline or `--selector 'modules/file.yaml#/source_matches/0'` to read an authored
+entry. This mode does not run the whole-spec solver, establish uniqueness, or
+check external reference identities. The debugging workflow and address syntax
+are in <debugging_selectors.md>.

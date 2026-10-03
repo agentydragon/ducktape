@@ -101,6 +101,13 @@ pub fn explain_range(
     };
     let free = free_identifiers(&needle_indices);
     let mode = selector_mode(parsed.selector());
+    if let Some(target) = parsed.selector().target_binding.as_ref()
+        && free.contains(target)
+    {
+        return RangeExplanation::unsupported(format!(
+            "target `{target}` is a free reference whose declaration cannot be checked locally; use --anonymous with the inline pattern to compare only its use-site shape"
+        ));
+    }
     // The member candidate resolver is the production matcher and has no work
     // budget. Constrain this diagnostic API before entering it. The limits do
     // not affect normal selector resolution.
@@ -108,7 +115,9 @@ pub fn explain_range(
     const MAX_RANGE_NODES: usize = 2_048;
     const MAX_RANGE_DECLARATORS: usize = 32;
     if needle_indices.len() > MAX_RANGE_STATEMENTS || selected.len() > MAX_RANGE_STATEMENTS {
-        return RangeExplanation::limited("selected range exceeds the statement limit");
+        return RangeExplanation::limited(format!(
+            "selector or selected source exceeds {MAX_RANGE_STATEMENTS} statements"
+        ));
     }
     let subject_indices = match selected.iter().map(index_item).collect::<Result<Vec<_>>>() {
         Ok(indices) => indices,
@@ -120,7 +129,9 @@ pub fn explain_range(
         .map(selector_match::Index::node_count)
         .sum();
     if nodes > MAX_RANGE_NODES {
-        return RangeExplanation::limited("selected range exceeds the node limit");
+        return RangeExplanation::limited(format!(
+            "selector plus selected source exceeds {MAX_RANGE_NODES} matcher nodes"
+        ));
     }
     if needle_indices
         .iter()
@@ -135,7 +146,9 @@ pub fn explain_range(
         .map(|var| var.decls.len())
         .sum();
     if declarators > MAX_RANGE_DECLARATORS {
-        return RangeExplanation::limited("selected range exceeds the declarator limit");
+        return RangeExplanation::limited(format!(
+            "selected source exceeds {MAX_RANGE_DECLARATORS} declarators"
+        ));
     }
 
     let mut multiple_group_alignments = false;

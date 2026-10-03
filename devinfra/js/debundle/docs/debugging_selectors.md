@@ -73,7 +73,9 @@ search module roots. `--match` and `--selector` are mutually exclusive.
 Check the printed selector and source range first. The explanation uses the
 same structural matcher and preserves identifier mappings across the selected
 statements. Literal/shape/binding failures identify the involved statements;
-complex alternative placements may produce a coarser explanation. A diagnostic
+complex alternative placements may produce a coarser explanation. A reported
+branch failure is an observed comparison on an explored alignment, not a claim
+that this comparison alone excludes every alignment. A diagnostic
 work limit or unsupported shape is inconclusive, not proof of a mismatch.
 
 A local match means the shape matches here. It does **not** establish uniqueness
@@ -82,6 +84,9 @@ resolve references to other spec exports, or validate extraction order. Free
 template identifiers are listed explicitly as external constraints not checked
 by this command. Their local alpha mappings are not a proof of global identity.
 Loading an entry from a spec does not load other selectors into a solve.
+A claimed target that is itself a free reference requires locating a declaration
+outside the pattern; this returns `unsupported`. Use an inline `--anonymous`
+pattern to inspect just the use-site shape.
 
 After fixing the local shape, use ordinary `spec match-selector` to probe a
 candidate across the source, and `spec validate` for references and joint
