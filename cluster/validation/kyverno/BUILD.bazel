@@ -6,6 +6,7 @@ py_library(
     name = "apply",
     testonly = True,
     srcs = ["apply.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//util/bazel:runfiles",
         "@pypi//pyyaml",

@@ -1,0 +1,6 @@
+# gazelle:ignore
+
+exports_files(
+    ["token_review_gateway.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+)
