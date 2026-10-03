@@ -214,7 +214,7 @@ export const narrationSessionEvents: SessionEvent[] = [
           },
           {
             type: "thinking",
-            thinking: "The format note is clear; I’ll verify its example next.",
+            thinking: "The format note is **clear**; I’ll verify its example next.",
             signature: syntheticNarrationSignature,
           },
           {
@@ -223,7 +223,7 @@ export const narrationSessionEvents: SessionEvent[] = [
             name: "Read",
             input: { file_path: "docs/sample-format.md" },
           },
-          { type: "thinking", thinking: "Keep this internal note folded." },
+          { type: "thinking", thinking: "Keep this **internal note** folded." },
           { type: "text", text: "The sample format check passes." },
         ],
       },

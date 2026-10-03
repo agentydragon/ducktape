@@ -206,6 +206,8 @@ const markdownEventPage: SessionEventPage = {
               "",
               "Long reference: https://example.test/precision/analysis/parsed-value/retain-every-decimal-place/format-only-at-the-final-display-boundary/line-breaks-must-occur-inside-this-long-address",
               "",
+              `Unbroken value: ${"0123456789abcdef".repeat(8)}`,
+              "",
               "```ts",
               "export const display = parsed.toFixed(2);",
               "```",
@@ -1023,9 +1025,11 @@ if (scenario.startsWith("SessionNarrationVisibility")) {
     ];
     if (
       narration.textContent !== "The format note is clear; I’ll verify its example next." ||
+      narration.querySelector(".agentplane-markdown strong")?.textContent !== "clear" ||
       narration.closest("details, summary, button, article") !== null ||
       narrationRect.height <= 0 ||
       thinking.open ||
+      thinking.querySelector(".agentplane-markdown strong")?.textContent !== "internal note" ||
       orderedRows.map((row) => row.dataset.foldKind).join(",") !== "tool-run,narration,tool-run" ||
       document.querySelector(
         '[data-tool-run-toggle][aria-expanded="true"], [data-tool-group-toggle][aria-expanded="true"]'

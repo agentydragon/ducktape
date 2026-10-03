@@ -212,6 +212,7 @@ it("shows signed narration as prose while ordinary thinking remains collapsed", 
   await vi.waitFor(() => expect(container?.querySelector('[data-fold-kind="narration"]')).not.toBeNull());
   const narration = container.querySelector<HTMLElement>('[data-fold-kind="narration"]')!;
   expect(narration.textContent).toBe("The format note is clear; I’ll verify its example next.");
+  expect(narration.querySelector(".agentplane-markdown strong")?.textContent).toBe("clear");
   expect(narration.closest("details, summary, button, article")).toBeNull();
   expect(narration.dataset.historySequences).toBe("801");
 
@@ -223,11 +224,13 @@ it("shows signed narration as prose while ordinary thinking remains collapsed", 
   expect(thinking.open).toBe(false);
   expect(thinking.querySelector("summary")?.textContent).toBe("Thinking");
   expect(thinking.textContent).toContain("Keep this internal note folded.");
+  expect(thinking.querySelector(".agentplane-markdown strong")?.textContent).toBe("internal note");
   await act(async () => {
     thinking.open = true;
   });
   expect(thinking.open).toBe(true);
   expect(thinking.textContent).toContain("Keep this internal note folded.");
+  expect(thinking.querySelector(".agentplane-markdown strong")?.textContent).toBe("internal note");
 });
 
 it("clamps pointer and keyboard resizing and restores the width after collapsing", async () => {
