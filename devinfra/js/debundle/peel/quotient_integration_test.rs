@@ -2,7 +2,7 @@
 //! renderer-over-quotient. Fixtures seed quotients through the
 //! test-only constructors in `quotient::testing`.
 
-use analysis::{AtomicUnitEdgeReport, DepKind, OwnerGraphReport};
+use analysis::{DepKind, OwnerGraphReport};
 use report_fixtures::{
     active_owner, atomic_edge, atomic_unit_for, claims, graph_of, no_claims, owner_edge,
     residual_owner, singleton_graph,
@@ -773,162 +773,6 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
 // pinpointing the rejected pair.
 
 #[test]
-fn unification_rejects_cyclic_atomic_reachability_with_diagnostic() {
-    // Pass 3 contracts atomic-DAG edges one at a time. A constraining
-    // cycle among residual owners alone yields no rejection: the
-    // contractions collapse it into one residual class and same-class
-    // edges are skipped silently.
-    //
-    // The cyclic-rejection diagnostic fires when a pre-existing spec
-    // module closes the cycle. So the fixture pins one binding to a
-    // spec module, leaving two residuals that would close a cycle
-    // through it:
-    //   - Foo lives in spec module mod_alpha.
-    //   - Bar, Helper are residual.
-    //   - Bar reads Foo (Bar → Foo, constraining).
-    //   - Helper reads Bar (Helper → Bar, constraining).
-    //   - Foo reads Helper (Foo → Helper, constraining).
-    // Atomic-DAG edges:
-    //   atomic_edge:a (atomic:bar → atomic:foo)      // Bar reads Foo
-    //   atomic_edge:b (atomic:foo → atomic:helper)   // Foo reads Helper
-    //   atomic_edge:c (atomic:helper → atomic:bar)   // Helper reads Bar
-    // Only `atomic_edge:b` and `atomic_edge:c` have a residual
-    // target (Helper / Bar are residual; Foo is active so
-    // `atomic_edge:a` is skipped by pass-3's `target has residual`
-    // filter).
-    // Pass 3 in id-lex order:
-    //   atomic_edge:b: contract class(Foo) (= mod_alpha class) with
-    //     class(Helper). Singleton Helper → no pre-merge cycle. The
-    //     merge would set up Foo+Helper in one class; Bar still
-    //     reads Foo (Bar's only edge), Helper still reads Bar (now
-    //     Foo+Helper → Bar). New cross-class edges:
-    //       Bar → Foo+Helper (constraining, via Bar reads Foo)
-    //       Foo+Helper → Bar (constraining, via Helper reads Bar)
-    //     That's a 2-class SCC. The gate rejects.
-    //   atomic_edge:c: same situation by symmetry — would close a
-    //     2-class cycle.
-    // The diagnostic must name the rejected edge + pair.
-    let foo = active_owner("owner:foo", 1, &["Foo"], 5, "mod_alpha");
-    let bar = residual_owner("owner:bar", 2, &["Bar"], 5);
-    let helper = residual_owner("owner:helper", 3, &["Helper"], 5);
-    let edges = vec![
-        // Bar reads Foo
-        owner_edge("edge:0", "owner:bar", "owner:foo", DepKind::EagerUse, true),
-        // Foo reads Helper
-        owner_edge(
-            "edge:1",
-            "owner:foo",
-            "owner:helper",
-            DepKind::EagerUse,
-            true,
-        ),
-        // Helper reads Bar
-        owner_edge(
-            "edge:2",
-            "owner:helper",
-            "owner:bar",
-            DepKind::EagerUse,
-            true,
-        ),
-    ];
-    let report = graph_of(
-        vec![foo.clone(), bar.clone(), helper.clone()],
-        edges,
-        vec![
-            atomic_unit_for("atomic:foo", &[&foo]),
-            atomic_unit_for("atomic:bar", &[&bar]),
-            atomic_unit_for("atomic:helper", &[&helper]),
-        ],
-        vec![
-            // atomic_edge:a — Bar reads Foo (target active, skipped
-            // by pass 3's residual-target filter).
-            AtomicUnitEdgeReport {
-                id: "atomic_edge:a".to_string(),
-                source: "atomic:bar".to_string(),
-                target: "atomic:foo".to_string(),
-                edge_kinds: vec![DepKind::EagerUse],
-                owner_edge_ids: vec!["edge:0".to_string()],
-                constrains_init_order: true,
-            },
-            // atomic_edge:b — Foo reads Helper (target residual).
-            AtomicUnitEdgeReport {
-                id: "atomic_edge:b".to_string(),
-                source: "atomic:foo".to_string(),
-                target: "atomic:helper".to_string(),
-                edge_kinds: vec![DepKind::EagerUse],
-                owner_edge_ids: vec!["edge:1".to_string()],
-                constrains_init_order: true,
-            },
-            // atomic_edge:c — Helper reads Bar (target residual).
-            AtomicUnitEdgeReport {
-                id: "atomic_edge:c".to_string(),
-                source: "atomic:helper".to_string(),
-                target: "atomic:bar".to_string(),
-                edge_kinds: vec![DepKind::EagerUse],
-                owner_edge_ids: vec!["edge:2".to_string()],
-                constrains_init_order: true,
-            },
-        ],
-    );
-    // Spec module mod_alpha contains Foo. The propose entry
-    // point derives spec_modules from the owner destinations, so
-    // the active owner above is already registered as mod_alpha.
-    let result = propose(&report, &claims(&[("Foo", "mod_alpha")]), 10_000).unwrap();
-
-    // (a) No proposal should bundle Foo with Helper or Bar — the
-    // cycle prevents merging Foo's class with Helper's class
-    // through the pass-3 atomic-DAG-reachability contraction.
-    let foo_extension = result
-        .proposals
-        .iter()
-        .find(|p| p.extends_module_id.as_deref() == Some("mod_alpha"));
-    if let Some(p) = foo_extension {
-        assert!(
-            !p.extension_owner_ids.contains(&"owner:helper".to_string())
-                && !p.extension_owner_ids.contains(&"owner:bar".to_string()),
-            "mod_alpha extension must NOT include Helper or Bar: {p:?}",
-        );
-    }
-
-    // (b) The seed rejections must include an AtomicReachability
-    // entry naming the rejected edge + pair.
-    let reachability_rejections: Vec<&SeedContractionRejected> = result
-        .seed_rejections
-        .iter()
-        .filter(|r| matches!(r, SeedContractionRejected::AtomicReachability { .. }))
-        .collect();
-    assert!(
-        !reachability_rejections.is_empty(),
-        "expected at least one AtomicReachability rejection, got: {:?}",
-        result.seed_rejections,
-    );
-    // At least one rejection must name a (Foo, Helper) or
-    // (Helper, Bar) or (Foo, Bar) pair (the cycle-closing edges).
-    let pinpoints_cycle = reachability_rejections.iter().any(|r| {
-        if let SeedContractionRejected::AtomicReachability {
-            rejected_pair,
-            cycle,
-            ..
-        } = r
-        {
-            !cycle.is_empty()
-                && (rejected_pair.0 == "owner:foo"
-                    || rejected_pair.1 == "owner:foo"
-                    || rejected_pair.0 == "owner:bar"
-                    || rejected_pair.1 == "owner:bar"
-                    || rejected_pair.0 == "owner:helper"
-                    || rejected_pair.1 == "owner:helper")
-        } else {
-            false
-        }
-    });
-    assert!(
-        pinpoints_cycle,
-        "AtomicReachability rejection must pinpoint a cycle-closing pair with cycle evidence: {reachability_rejections:?}",
-    );
-}
-
-#[test]
 fn pass3_diagnostic_walk_never_commits_a_merge() {
     // Invariant guard for the pass-3 diagnostic walk in
     // `build_seed_quotient`. After the fixed-point contraction loop
@@ -950,12 +794,13 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
     // (`check_merge_preconditions` / `would_be_cycles_after_contract`)
     // prevent.
     //
-    // Fixture mirrors the cycle in
-    // `unification_rejects_cyclic_atomic_reachability_with_diagnostic`:
-    // residual Bar / Helper and active Foo (in spec module mod_alpha)
-    // form a constraining 3-cycle; pass-3's atomic-DAG-reachability
+    // Fixture: residual Bar / Helper and active Foo (in spec module
+    // mod_alpha) form a constraining 3-cycle (Bar reads Foo, Foo reads
+    // Helper, Helper reads Bar); pass-3's atomic-DAG-reachability
     // contraction rejects the cycle-closing edges, driving the
-    // diagnostic walk.
+    // diagnostic walk. A constraining cycle among residual owners alone
+    // yields no rejection: the contractions collapse it into one
+    // residual class and same-class edges are skipped silently.
     let foo = active_owner("owner:foo", 1, &["Foo"], 5, "mod_alpha");
     let bar = residual_owner("owner:bar", 2, &["Bar"], 5);
     let helper = residual_owner("owner:helper", 3, &["Helper"], 5);
@@ -1008,9 +853,18 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
     // merged by the diagnostic walk. Each pivot pair stays in a
     // distinct class.
     for r in &reachability_rejections {
-        let SeedContractionRejected::AtomicReachability { rejected_pair, .. } = r else {
+        let SeedContractionRejected::AtomicReachability {
+            rejected_pair,
+            cycle,
+            ..
+        } = r
+        else {
             unreachable!("filtered to AtomicReachability above");
         };
+        assert!(
+            !cycle.is_empty(),
+            "AtomicReachability rejection must carry cycle evidence: {r:?}"
+        );
         let (src_owner, tgt_owner) = rejected_pair;
         let src_idx = q
             .owner_idx_of(src_owner)
@@ -1025,6 +879,10 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
              {src_owner} and {tgt_owner}; they must remain in distinct classes",
         );
     }
+
+    // `propose` surfaces the seed rejections, cycle evidence included.
+    let proposed = propose(&report, &claims(&[("Foo", "mod_alpha")]), 10_000).unwrap();
+    assert_eq!(proposed.seed_rejections, rejected);
 }
 
 // ---------- Planner gate ≡ materializer gate. ----------
