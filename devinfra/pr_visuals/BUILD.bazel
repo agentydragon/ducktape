@@ -110,7 +110,6 @@ py_test(
         ":pull_request",
         "//:conftest",
         "//devinfra/ci:invocation_ids",
-        "//util:visual_diff",
         "//util:visual_review",
         "@pypi//botocore",
         "@pypi//pillow",

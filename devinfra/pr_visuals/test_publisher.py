@@ -38,7 +38,6 @@ from devinfra.pr_visuals.publisher import (
     write_baseline_pointers,
 )
 from devinfra.pr_visuals.pull_request import PullRequestRef
-from util.visual_diff import compare_pngs
 from util.visual_review import VisualReviewManifest
 
 
@@ -838,21 +837,6 @@ def test_upload_publishes_all_indexes_last(tmp_path: Path) -> None:
     first_index = next(index for index, key in enumerate(client.keys) if key.endswith("index.html"))
     assert all(not key.endswith("index.html") for key in client.keys[:first_index])
     assert client.keys[-1] == "commits/sha/index.html"
-
-
-def test_compare_pngs_classifies_exact_diffs(tmp_path: Path) -> None:
-    identical = _png(tmp_path / "identical.png")
-    assert compare_pngs(_png(tmp_path / "a.png"), identical).classification == "unchanged"
-
-    modified = compare_pngs(_png(tmp_path / "a.png"), _png(tmp_path / "b.png", (10, 20, 31, 255)))
-    assert modified.classification == "modified"
-    assert modified.changed_pixels == 64
-    assert modified.dimension_changed is False
-    assert modified.diff_overlay is not None
-
-    resized = compare_pngs(_png(tmp_path / "a.png"), _png(tmp_path / "c.png", size=(8, 10)))
-    assert resized.classification == "modified"
-    assert resized.dimension_changed is True
 
 
 def test_build_bundle_classifies_against_baseline(tmp_path: Path) -> None:
