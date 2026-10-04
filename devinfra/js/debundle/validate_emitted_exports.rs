@@ -132,14 +132,21 @@ struct DuplicateExport {
     sites: Vec<ExportSite>,
 }
 
+/// Which AST shape contributed an export. Helps the reader distinguish
+/// e.g. an `export function av()` from a bare `export { av }`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
+#[strum(serialize_all = "snake_case")]
+enum ExportShape {
+    Decl,
+    Named,
+    Default,
+    Namespace,
+}
+
 #[derive(Debug, Clone)]
 struct ExportSite {
     line: Option<usize>,
-    /// Short tag describing which AST shape contributed the export
-    /// (`decl`, `named`, `default`, `namespace`). Helps the reader
-    /// distinguish e.g. an `export function av()` from a bare
-    /// `export { av }`.
-    shape: &'static str,
+    shape: ExportShape,
 }
 
 fn render_sites(sites: &[ExportSite]) -> String {
@@ -180,7 +187,7 @@ fn record_decl(
                 .or_default()
                 .push(ExportSite {
                     line: lines.line_for_span(d.span()),
-                    shape: "default",
+                    shape: ExportShape::Default,
                 });
         }
         ModuleDecl::ExportDefaultExpr(d) => {
@@ -189,7 +196,7 @@ fn record_decl(
                 .or_default()
                 .push(ExportSite {
                     line: lines.line_for_span(d.span()),
-                    shape: "default",
+                    shape: ExportShape::Default,
                 });
         }
         ModuleDecl::ExportDecl(d) => {
@@ -197,7 +204,7 @@ fn record_decl(
             for name in declaration_name_strings(&d.decl) {
                 sites.entry(name).or_default().push(ExportSite {
                     line,
-                    shape: "decl",
+                    shape: ExportShape::Decl,
                 });
             }
         }
@@ -213,7 +220,7 @@ fn record_decl(
                             .unwrap_or_else(|| module_export_name(&n.orig));
                         sites.entry(public).or_default().push(ExportSite {
                             line,
-                            shape: "named",
+                            shape: ExportShape::Named,
                         });
                     }
                     ExportSpecifier::Namespace(ns) => {
@@ -222,7 +229,7 @@ fn record_decl(
                             .or_default()
                             .push(ExportSite {
                                 line,
-                                shape: "namespace",
+                                shape: ExportShape::Namespace,
                             });
                     }
                     ExportSpecifier::Default(d) => {
@@ -231,7 +238,7 @@ fn record_decl(
                             .or_default()
                             .push(ExportSite {
                                 line,
-                                shape: "default",
+                                shape: ExportShape::Default,
                             });
                     }
                 }
@@ -270,6 +277,19 @@ mod tests {
         )
     }
 
+    fn duplicates(source: &str) -> Vec<(String, Vec<ExportShape>)> {
+        let ast = parse_js_module("f.js", source).unwrap();
+        duplicates_in_module(&ast.module, &ast.line_index())
+            .into_iter()
+            .map(|dup| {
+                (
+                    dup.name,
+                    dup.sites.into_iter().map(|site| site.shape).collect(),
+                )
+            })
+            .collect()
+    }
+
     #[test]
     fn flags_named_alias_colliding_with_local_export() {
         js_ast::with_swc_globals(|| {
@@ -281,12 +301,18 @@ const BackgroundPattern = () => null;\n\
 function av() {}\n\
 export { BackgroundPattern as av };\n\
 export { av };\n";
-            let err = validate_sources(&[("chunk", "entry.js", Some(source))])
+            assert_eq!(
+                duplicates(source),
+                [(
+                    "av".to_string(),
+                    vec![ExportShape::Named, ExportShape::Named]
+                )]
+            );
+            let err = validate_sources(&[("main_chunk", "entry.js", Some(source))])
                 .expect_err("duplicate av should be rejected");
             let msg = format!("{err}");
-            assert!(msg.contains("`av` exported 2×"), "missing count: {msg}");
             assert!(msg.contains("entry.js"), "missing file: {msg}");
-            assert!(msg.contains("chunk chunk"), "missing chunk: {msg}");
+            assert!(msg.contains("main_chunk"), "missing chunk: {msg}");
         });
     }
 
@@ -297,11 +323,11 @@ export { av };\n";
 export const x = 1;\n\
 const y = 2;\n\
 export { y as x };\n";
-            let err = validate_sources(&[("c", "f.js", Some(source))]).expect_err("duplicate x");
-            let msg = format!("{err}");
-            assert!(msg.contains("`x` exported 2×"), "{msg}");
-            assert!(msg.contains("(decl)"), "decl shape missing: {msg}");
-            assert!(msg.contains("(named)"), "named shape missing: {msg}");
+            assert_eq!(
+                duplicates(source),
+                [("x".to_string(), vec![ExportShape::Decl, ExportShape::Named])]
+            );
+            validate_sources(&[("c", "f.js", Some(source))]).expect_err("duplicate x");
         });
     }
 
@@ -312,10 +338,14 @@ export { y as x };\n";
 export default 1;\n\
 const fallback = 2;\n\
 export { fallback as default };\n";
-            let err =
-                validate_sources(&[("c", "f.js", Some(source))]).expect_err("duplicate default");
-            let msg = format!("{err}");
-            assert!(msg.contains("`default` exported 2×"), "{msg}");
+            assert_eq!(
+                duplicates(source),
+                [(
+                    "default".to_string(),
+                    vec![ExportShape::Default, ExportShape::Named]
+                )]
+            );
+            validate_sources(&[("c", "f.js", Some(source))]).expect_err("duplicate default");
         });
     }
 

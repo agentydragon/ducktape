@@ -318,6 +318,7 @@ rust_library(
         ":binding_targets",
         ":js_ast",
         "@crates//:anyhow",
+        "@crates//:strum",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
     ],
