@@ -56,7 +56,8 @@ import {
   useProjectedCommands,
 } from "./thread_commands";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
-import { HistoryTrace, LayoutSettle, type FollowReason } from "./history_trace";
+import { historyTrace, LayoutSettle, type FollowReason } from "./history_trace";
+import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
@@ -253,11 +254,12 @@ function VirtualizedHistory({
   // Whether the end of the history is on screen, so the reader can see it is not following it.
   const [endVisible, setEndVisible] = useState(true);
   const atBottom = useRef(true);
-  const [trace] = useState(() => new HistoryTrace());
   const layoutSettle = useRef<LayoutSettle | null>(null);
   const lastTotalSize = useRef(0);
-  // Each row's last measured height, to tell a row's first reading from a resize of it.
+  // Each row's last measured height, to tell a row's first reading from a resize of it, and what
+  // the virtualizer laid each unmeasured row out with.
   const measuredHeights = useRef(new Map<string, number>());
+  const estimatedHeights = useRef(new Map<string, { height: number; remembered: boolean }>());
   const previousScrollTop = useRef(0);
   // Every bottom the viewport has had since the last scroll event or content resize was handled.
   // A return to the bottom lands on whichever one was current when it ran; a card can grow in
@@ -318,7 +320,7 @@ function VirtualizedHistory({
   const setFollowing = (following: boolean, reason: FollowReason) => {
     if (atBottom.current === following) return;
     atBottom.current = following;
-    trace.record({ kind: "follow", following, reason });
+    historyTrace.record({ kind: "follow", following, reason });
     publishMode();
   };
   const layoutChanged = () => layoutSettle.current?.changed();
@@ -346,7 +348,13 @@ function VirtualizedHistory({
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => viewport.current,
-    estimateSize: () => ESTIMATED_ROW_HEIGHT,
+    estimateSize: (index) => {
+      const key = rowKey(rows[index]);
+      const remembered = rememberedRowHeight(threadId, viewport.current?.clientWidth ?? 0, key);
+      const height = remembered ?? ESTIMATED_ROW_HEIGHT;
+      estimatedHeights.current.set(key, { height, remembered: remembered !== undefined });
+      return height;
+    },
     getItemKey: (index) => rowKey(rows[index]),
     measureElement: (element) => {
       const measured = element.getBoundingClientRect().height;
@@ -355,14 +363,16 @@ function VirtualizedHistory({
         const key = rowKey(row);
         const previous = measuredHeights.current.get(key);
         if (previous === undefined || Math.abs(previous - measured) >= 1) {
-          trace.record({
+          historyTrace.record({
             kind: "measure",
             key,
-            estimate: previous ?? ESTIMATED_ROW_HEIGHT,
+            estimate: previous ?? estimatedHeights.current.get(key)?.height ?? ESTIMATED_ROW_HEIGHT,
             measured,
             first: previous === undefined,
+            remembered: previous === undefined && estimatedHeights.current.get(key)?.remembered === true,
           });
           measuredHeights.current.set(key, measured);
+          rememberRowHeight(threadId, viewport.current?.clientWidth ?? 0, key, measured);
         }
       }
       return measured;
@@ -428,7 +438,7 @@ function VirtualizedHistory({
       : undefined;
     if (first && firstRow) {
       readingAnchor.current = { key: rowKey(firstRow), offset: first.getBoundingClientRect().top - viewportTop };
-      trace.record({ kind: "anchor", ...readingAnchor.current });
+      historyTrace.record({ kind: "anchor", ...readingAnchor.current });
     }
   };
   const restoreAnchor = (anchor: { key: string; offset: number }, awaitMeasurement = false) => {
@@ -447,7 +457,7 @@ function VirtualizedHistory({
       return correction;
     };
     const correction = correctFromDom();
-    trace.record({ kind: "restore", key: anchor.key, correction });
+    historyTrace.record({ kind: "restore", key: anchor.key, correction });
     if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
     // Waiting for measurement assumes the row is mounted and in place. One scrolled to by its
     // estimate needs the frames, whose pending state keeps a clamped scroll from reading as the bottom.
@@ -470,18 +480,20 @@ function VirtualizedHistory({
     if (!element) return;
     const settle = new LayoutSettle(restoringScroll, (settled) => {
       element.dataset.layoutSettled = String(settled);
-      trace.record({ kind: "settled", settled });
+      historyTrace.record({ kind: "settled", settled });
     });
     layoutSettle.current = settle;
     element.dataset.layoutSettled = "false";
     publishMode();
-    window.agentplaneHistoryTrace = () => trace.events();
+    window.agentplaneHistoryTrace = () => historyTrace.events();
+    window.agentplaneHistoryEstimateErrors = () => historyTrace.estimateErrors();
     return () => {
       settle.dispose();
       layoutSettle.current = null;
       delete window.agentplaneHistoryTrace;
+      delete window.agentplaneHistoryEstimateErrors;
     };
-  }, [trace]);
+  }, []);
   useLayoutEffect(() => {
     const element = viewport.current;
     const firstKey = rows[0] ? rowKey(rows[0]) : null;
@@ -500,7 +512,7 @@ function VirtualizedHistory({
         // effect below, once this commit lands) before restoreAnchor ever runs for it -- rather
         // than letting restoreAnchor guess via estimateSize now and chase a correction once the
         // real heights are known.
-        trace.record({ kind: "prepend", added });
+        historyTrace.record({ kind: "prepend", added });
         setPageOverscan((current) => Math.max(current, added));
         setPagePrepended((current) => current + 1);
       } else {
@@ -539,7 +551,7 @@ function VirtualizedHistory({
       // that grows the last card, before the browser dispatches its scroll event. Preserve that
       // user choice across the resize without interpreting arbitrary layout movement as intent.
       const pinned = followPreviousBottom(element) || atBottom.current;
-      trace.record({ kind: "resize", scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, pinned });
+      historyTrace.record({ kind: "resize", scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, pinned });
       if (pinned) element.scrollTop = element.scrollHeight;
       // Content can resize while a wheel, touch, or key scroll is still settling. Its
       // measured rows do not describe the reader's final position yet; scrollend will
@@ -587,7 +599,7 @@ function VirtualizedHistory({
     const element = viewport.current;
     if (!element) return;
     const onScrollEnd = () => {
-      trace.record({
+      historyTrace.record({
         kind: "scrollend",
         restoring: restoringAnchor.current !== null,
         capturing: captureNextScroll.current,
@@ -668,7 +680,7 @@ function VirtualizedHistory({
           clickedAt.current = element.scrollTop;
         }
         captureReadingAnchor(element);
-        trace.record({
+        historyTrace.record({
           kind: "click",
           scrollTop: element.scrollTop,
           scrollHeight: element.scrollHeight,
@@ -680,7 +692,12 @@ function VirtualizedHistory({
         if (element.scrollTop !== clickedAt.current) clickedAt.current = null;
         const followed = followPreviousBottom(element);
         recentBottoms.current = [element.scrollHeight - element.clientHeight];
-        trace.record({ kind: "scroll", scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, followed });
+        historyTrace.record({
+          kind: "scroll",
+          scrollTop: element.scrollTop,
+          scrollHeight: element.scrollHeight,
+          followed,
+        });
         if (followed) {
           previousScrollTop.current = element.scrollTop;
           return;
@@ -705,7 +722,7 @@ function VirtualizedHistory({
         // where they were reading before, not where this gesture has since taken them.
         captureReadingAnchor(element);
         if (element.scrollTop < loadOlderWithin(element)) {
-          trace.record({ kind: "load-older" });
+          historyTrace.record({ kind: "load-older" });
           history.loadOlder();
         }
       }}

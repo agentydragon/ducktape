@@ -1159,6 +1159,7 @@ vitest_bin.vitest_test(
         ":inline_code_test",
         "//agentplane/app/frontend/threads:command_calls_test",
         "//agentplane/app/frontend/threads:history_rows_test",
+        "//agentplane/app/frontend/threads:history_sizes_test",
         "//agentplane/app/frontend/threads:history_trace_test",
         ":json_view_test",
         ":live_stream_test",

@@ -295,6 +295,36 @@ async def test_switching_threads_starts_at_each_threads_tail(
         await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
 
 
+async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
+    page: Page,
+    db_url: str,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    electric: ElectricService,
+    certificate: BrowserCertificate,
+) -> None:
+    """The history lays an unmeasured row out at a flat guess; one it has read before, at the height
+    it read. Rows read on a thread's first visit are laid out at those heights on the return."""
+    threads, _ = await _seed_navigation_threads(event_logs, ingestion, store)
+    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
+    async with (
+        app_process(
+            db_url, runner_port=0, frontend_directory=directory, sandbox_present=False, electric_url=electric.url
+        ) as app,
+        http2_proxy(app.url, certificate) as ingress,
+    ):
+        await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
+        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
+        for number in (1, 0):
+            await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
+            await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible()
+        errors = await page.evaluate("() => window.agentplaneHistoryEstimateErrors?.() ?? []")
+        remembered = [entry["error"] for entry in errors if entry["remembered"]]
+        assert remembered, "no row on the return was laid out from what the first visit read"
+        assert max(abs(error) for error in remembered) <= 2, remembered
+
+
 def _older_page_bound(request: Request) -> int | None:
     """The `entity_index` a read of the page before the oldest row held is bounded by; None for any other request."""
     body = request.post_data or ""

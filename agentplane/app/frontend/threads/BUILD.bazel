@@ -23,6 +23,23 @@ ts_library(
 )
 
 ts_library(
+    name = "history_sizes",
+    srcs = ["history_sizes.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "history_sizes_test",
+    testonly = True,
+    srcs = ["history_sizes.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_sizes",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "history_trace",
     srcs = ["history_trace.ts"],
     tsconfig = TSCONFIG,
@@ -101,6 +118,7 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":history_rows",
+        ":history_sizes",
         ":history_trace",
         ":projected_session_css",
         ":retained_disclosures",
