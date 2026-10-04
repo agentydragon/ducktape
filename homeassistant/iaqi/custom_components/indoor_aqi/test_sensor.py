@@ -1,91 +1,18 @@
 """Tests for the Indoor AQI sensor component."""
 
-import logging
 from datetime import UTC, datetime, timedelta
-from logging.handlers import MemoryHandler
 
 import pytest
 import pytest_bazel
-from custom_components.indoor_aqi.sensor import _LOGGER, IndoorAQISensor, compute_iaqi
+from custom_components.indoor_aqi.sensor import IndoorAQISensor, compute_iaqi
 from hamcrest import assert_that, close_to, contains_inanyorder, has_entries
-from hamcrest.core.base_matcher import BaseMatcher
 
 from homeassistant.const import STATE_UNAVAILABLE
-
-
-class LogEntryContaining(BaseMatcher):
-    """Matcher for log entries containing specific text."""
-
-    def __init__(self, text):
-        self.text = text
-
-    def _matches(self, item):
-        if not item:
-            return False
-        if not hasattr(item[0], "getMessage"):
-            return False
-        return self.text in item[0].getMessage()
-
-    def describe_to(self, description):
-        description.append_text(f'a log entry containing "{self.text}"')
-
-    def describe_mismatch(self, item, mismatch_description):
-        if not item:
-            mismatch_description.append_text("was empty log buffer")
-        elif not hasattr(item[0], "getMessage"):
-            mismatch_description.append_text("was not a log entry")
-        else:
-            mismatch_description.append_text(f'was "{item[0].getMessage()}"')
-
-
-class EmptyLogBuffer(BaseMatcher):
-    """Matcher for empty log buffer."""
-
-    def _matches(self, item):
-        return not item
-
-    def describe_to(self, description):
-        description.append_text("an empty log buffer")
-
-    def describe_mismatch(self, item, mismatch_description):
-        if item:
-            mismatch_description.append_text(f"had {len(item)} entries")
-
-
-def log_containing(text):
-    """Returns a matcher for log entries containing the specified text."""
-    return LogEntryContaining(text)
-
-
-def empty_log():
-    """Returns a matcher for empty log buffer."""
-    return EmptyLogBuffer()
 
 
 @pytest.fixture
 def now():
     return datetime.now(UTC)
-
-
-@pytest.fixture
-def memory_handler():
-    """Create a memory handler to capture log messages."""
-    # Create a memory handler that stores log records in memory
-    handler = MemoryHandler(capacity=100)  # Store up to 100 log records
-
-    # Save the original handlers
-    original_handlers = _LOGGER.handlers.copy()
-    original_level = _LOGGER.level
-
-    # Configure the logger to use our memory handler and ensure WARNING level is enabled
-    _LOGGER.setLevel(logging.WARNING)
-    _LOGGER.handlers = [handler]
-
-    yield handler
-
-    # Clean up: restore original handlers and level
-    _LOGGER.handlers = original_handlers
-    _LOGGER.setLevel(original_level)
 
 
 @pytest.mark.parametrize(
@@ -184,7 +111,7 @@ async def test_sensor_error_handling(hass, now):
     )
 
 
-async def test_partial_data_log_on_change(hass, memory_handler, now):
+async def test_partial_data_log_on_change(hass, caplog, now):
     """Test that partial data is logged when the set of sensors with errors changes."""
     # First update - CO2 and PM25 are working, VOC is unavailable
     hass.states.async_set("sensor.co2", "800", {"unit_of_measurement": "ppm", "last_updated": now})
@@ -202,31 +129,28 @@ async def test_partial_data_log_on_change(hass, memory_handler, now):
         stale_time=timedelta(hours=1),
     )
 
-    buffer = memory_handler.buffer
-
     # First update - VOC unavailable
     sensor.update()
-    assert_that(buffer, log_containing("partial data"))
-    buffer.clear()
+    assert "partial data" in caplog.text
+    caplog.clear()
 
     # Second update - same state, no log expected
     sensor.update()
-    assert_that(buffer, empty_log())
+    assert not caplog.records
 
     # Third update - PM25 becomes unavailable
     hass.states.async_set("sensor.pm25", STATE_UNAVAILABLE, {"last_updated": now})
     sensor.update()
-    assert_that(buffer, log_containing("Newly unavailable: pm25"))
-    buffer.clear()
+    assert "Newly unavailable: pm25" in caplog.text
+    caplog.clear()
 
     # Fourth update - PM25 back to normal, VOC still unavailable
     hass.states.async_set("sensor.pm25", "30", {"unit_of_measurement": "μg/m³", "last_updated": now})
     sensor.update()
-    assert_that(buffer, log_containing("Newly available: pm25"))
-    buffer.clear()
+    assert "Newly available: pm25" in caplog.text
 
 
-async def test_log_after_hour_unchanged(hass, memory_handler, now):
+async def test_log_after_hour_unchanged(hass, caplog, freezer, now):
     """Test that partial data is logged again after an hour even if unchanged."""
     # Setup - CO2 working, VOC unavailable
     hass.states.async_set("sensor.co2", "800", {"unit_of_measurement": "ppm", "last_updated": now})
@@ -239,27 +163,23 @@ async def test_log_after_hour_unchanged(hass, memory_handler, now):
         name="Test AQI",
         unique_id="test_aqi",
         sensor_map={"co2": "sensor.co2", "voc": "sensor.voc"},
-        stale_time=timedelta(hours=1),
+        # Longer than the jump below, so the CO2 reading is not stale by then.
+        stale_time=timedelta(hours=2),
     )
-
-    buffer = memory_handler.buffer
 
     # First update - VOC unavailable
     sensor.update()
-    assert_that(buffer, log_containing("partial data"))
-    buffer.clear()
+    assert "partial data" in caplog.text
+    caplog.clear()
 
     # Second update - same state, no log expected
     sensor.update()
-    assert_that(buffer, empty_log())
+    assert not caplog.records
 
-    # Instead of patching datetime, just manually adjust the timestamp
-    # Set last log time back by an hour to simulate passage of time
-    sensor._last_log_time = now - timedelta(hours=1, minutes=1)
-
-    # Update again - should log since it's been over an hour
+    # Update again after more than an hour - should log
+    freezer.tick(timedelta(hours=1, minutes=1))
     sensor.update()
-    assert_that(buffer, log_containing("partial data"))
+    assert "partial data" in caplog.text
 
 
 if __name__ == "__main__":
