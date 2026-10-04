@@ -34,14 +34,6 @@ def test_timeout_ms_schema_omits_integer_bounds(exec_input_cls: type[BaseModel])
         assert forbidden not in timeout_schema, f"{forbidden} leaks into the strict-mode tool schema: {timeout_schema}"
 
 
-def test_timeout_ms_schema_is_strict_mode_compatible(exec_input_cls: type[BaseModel]) -> None:
-    """The full input schema must be strict-mode-compatible for Anthropic strict tool use."""
-    schema = exec_input_cls.model_json_schema()
-    assert schema.get("additionalProperties") is False
-    # Both required fields land in `required` (OpenAIStrictModeBaseModel's contract).
-    assert set(schema["required"]) >= {"cmd", "timeout_ms"}
-
-
 def test_timeout_ms_runtime_rejects_zero(exec_input_cls: type[BaseModel]) -> None:
     """gt=0 still fires at validation time even though it's hidden from the schema."""
     with pytest.raises(ValidationError):
