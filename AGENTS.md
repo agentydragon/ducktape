@@ -93,7 +93,7 @@ by a PR that makes the controller own the state.
 ## CI Configuration
 
 All CI runs through GitHub Actions → `bbr` (BuildBuddy RBE); no `buildbuddy.yaml`.
-`.github/workflows/ci.yml` orchestrates bazel-ci → release/push-images/props-images;
+`.github/workflows/ci.yml` orchestrates bazel-ci → release/push-images;
 pre-commit, ansible-lint, nix-attic-push, container-images, rbe-container-image, and
 openclaw-image trigger independently. Adding or publishing a container image:
 <cluster/docs/container-images.md>.
@@ -358,9 +358,10 @@ if __name__ == "__main__":
 or the RBE container image.
 
 **Docker tests**: use the `py_test` macro from `//devinfra/python:defs.bzl` (not raw
-`@rules_python`) with `requires_docker = True` — it handles `env_inherit`, tags, and
-Docker exec properties. They run on RBE (§ Bazel Commands); missing local Docker is
-never a reason to skip or stub.
+`@rules_python`) with `requires_docker = True` — it adds the `requires_docker` tag and
+points testcontainers' Ryuk at the repo's preloaded image; the Docker daemon itself comes
+from `init-dockerd` on `//:rbe_linux_x64`, for every RBE action. They run on RBE
+(§ Bazel Commands); missing local Docker is never a reason to skip or stub.
 
 **Undeclared test outputs for log capture**: write diagnostics (container logs, HAR
 dumps) via `util.testing.undeclared_outputs.undeclared_outputs_dir()`, not

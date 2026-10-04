@@ -750,7 +750,6 @@ consumers are listed here rather than discovered later:
 - **One more iron-proxy listener it hosts**: `haku-openclaw-spike-proxy` for
   `haku-openclaw-spike` -- the second OpenClaw deployment, after public-coder.
 
-`cluster/validation/kyverno/test_proxy_injection.py` asserts that wiring, and
 `cluster/cdk8s/haku_egress_proxy.py` and `egress_fences.py` generate the proxy and its fence.
 Deleting this namespace because this entry says "retire the old proxy" would remove the fence in
 front of Haku's sandbox and CI.

@@ -24,7 +24,7 @@ The `.ambr` files must be in the test target's `data` attribute.
 
 ## Updating snapshots
 
-### RBE (preferred — works for Docker tests)
+### RBE (works for Docker tests)
 
 ```bash
 # 1. Run with --snapshot-update and toplevel download
@@ -42,17 +42,6 @@ cp bazel-testlogs/path/to/snapshot_test/test.outputs/snapshot_test.ambr \
 **Why not `bbr`?** It appends `--config=rbe` after user args, so
 `--remote_download_outputs=toplevel` gets overridden by `--remote_download_minimal`.
 Use `bb test --config=rbe` directly for flag ordering control.
-
-### Local (simpler, no copy step)
-
-Local execution creates runfiles as symlinks into the source tree. Syrupy
-writes through the symlink directly — no copy step needed. Use `bb test`
-(the binary runs locally, build actions use RBE):
-
-```bash
-bb test //path/to:snapshot_test \
-  --test_arg=--snapshot-update --nocache_test_results
-```
 
 ## How it works
 

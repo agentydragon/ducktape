@@ -28,7 +28,7 @@ Lives at <https://casino.allegedly.works>.
 | `conftest.py`                          | Postgres testcontainer fixture (per-test isolated database)                                        |
 | `test_store.py`                        | SqlStore: idempotency, snapshots, validators                                                       |
 | `test_app.py`                          | HTTP-surface coverage of every action + `/state` + `/ws`                                           |
-| `tests/test_e2e_browser.py`            | Real-Playwright browser smoke (sync ok, state 5xx → offline)                                       |
+| `test_e2e_browser.py`                  | Real-Playwright browser smoke (sync ok, state 5xx → offline)                                       |
 | `frontend/study_casino.jsx`            | App shell: header, nav, offline banner, view routing                                               |
 | `frontend/shared.jsx`                  | Shared constants (`COLORS`, `SUBJECTS`), components (`SectionTitle`, `StatCard`, `WinBurst`, etc.) |
 | `frontend/StudyView.jsx`               | Study timer and session list                                                                       |

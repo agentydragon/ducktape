@@ -55,9 +55,10 @@ ingress identity. The trust and policy must stay paired: trusting the pod CIDR
 without the identity-aware network fence would let another cluster workload
 forge the source address in a PROXY header.
 
-Validation pins the DaemonSet's public-node selector and host port, the
-internal-only Service shape, the Stalwart trusted proxy range, and the network
-policy relationship. The namespace explicitly uses privileged Pod Security
-admission because the baseline profile rejects all host ports; the regression
-test couples that exception to the required `hostPort: 25`. Do not weaken the
-SPF gate to accommodate source NAT.
+`cluster/k8s/haku/mailbox/` carries the DaemonSet's public-node selector and host
+port, the internal-only Service shape, the Stalwart trusted proxy range, and the
+network policy relationship; `//cluster/validation:test_mailbox_smtp_ingress` ties the
+ingress proxy config to the backend Service. The namespace explicitly uses privileged
+Pod Security admission because the baseline profile rejects all host ports;
+`cluster/cdk8s/haku/mailbox.py` comments pair that exception with the required
+`hostPort: 25`. Do not weaken the SPF gate to accommodate source NAT.
