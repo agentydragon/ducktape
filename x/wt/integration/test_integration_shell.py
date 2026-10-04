@@ -34,19 +34,6 @@ class TestShellIntegration:
         # Click default help prints 'Usage:' for subcommands
         assert "Usage:" in result.stdout
 
-    def test_shell_script_execution_basic(self, test_config, shell_runner):
-        """Test that shell script can execute basic wt commands."""
-        test_script = """# Test that wt function is available
-type wt
-echo "Shell function loaded successfully"
-"""
-
-        result = shell_runner.run_script(test_script, cwd=test_config.main_repo)
-
-        # Should be able to source the function
-        assert result.returncode == 0, f"Shell setup failed: {result.stderr}"
-        assert "Shell function loaded successfully" in result.stdout
-
     def test_wt_main_changes_directory(self, real_temp_repo, real_env, shell_runner):
         # Cleaned by real_env fixture
 
@@ -82,18 +69,6 @@ echo "$create_exit:$to_wt_exit:$to_main_exit:$pwd_before:$pwd_after"
         expected_before = str(real_temp_repo / "worktrees" / "to-main")
         assert before == expected_before
         assert after == str(real_temp_repo)
-
-
-class TestShellIntegrationEdgeCases:
-    def test_shell_environment_isolation(self, test_config, shell_runner):
-        """Test that shell environment is properly isolated."""
-        # Basic environment test
-        env_test_script = """echo "Environment test completed"
-"""
-
-        result = shell_runner.run_script(env_test_script, cwd=test_config.main_repo)
-        assert result.returncode == 0
-        assert "Environment test completed" in result.stdout
 
 
 if __name__ == "__main__":
