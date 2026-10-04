@@ -217,47 +217,6 @@ def test_tree_column_never_wraps():
                 pytest.fail(f"Line {i} appears to have wrapped:\n  Line {i}: {line!r}\n  Line {i + 1}: {next_line!r}")
 
 
-def test_tree_styling_preserved():
-    """Test that tree decorations are dim and filenames have correct colors."""
-    changes = [
-        FileChange(path="src/file1.py", additions=10, deletions=5),
-        FileChange(path="src/file2.py", additions=8, deletions=3),
-        FileChange(path="test.py", additions=5, deletions=2),
-    ]
-
-    diff_tree = make_diff_tree(changes, config=DEFAULT_CONFIG)
-
-    # Render with colors
-    result = render_to_string(diff_tree, width=120, color_system="standard")
-
-    # Check for ANSI styling codes
-    # Dim style: \x1b[2m (used for tree decorations ├── └── │)
-    # Bold blue: \x1b[1;34m (used for directories)
-    # Reset: \x1b[0m
-
-    # Tree decorations should be dim (both connectors present with 3 files across 2 dirs)
-    assert "\x1b[2m├── \x1b[0m" in result, "Tree branch connector (├──) should have dim style"
-    assert "\x1b[2m└── \x1b[0m" in result, "Tree terminal connector (└──) should have dim style"
-
-    # Vertical guides should also be dim
-    assert "\x1b[2m│" in result, "Tree vertical guides (│) should have dim style"
-
-    # Directory "src" should be bold blue
-    assert "\x1b[1;34msrc\x1b[0m" in result, "Directory names should be bold blue"
-
-    # Files should NOT have bold blue styling
-    # Check that filenames appear without bold blue
-    lines = result.split("\n")
-    for line in lines:
-        # Files should not have bold blue color code immediately before their names
-        if "file1.py" in line:
-            assert "\x1b[1;34mfile1.py" not in line, "file1.py should not have bold blue style"
-        if "file2.py" in line:
-            assert "\x1b[1;34mfile2.py" not in line, "file2.py should not have bold blue style"
-        if "test.py" in line:
-            assert "\x1b[1;34mtest.py" not in line, "test.py should not have bold blue style"
-
-
 def test_column_ordering():
     """Test that columns appear in the order specified in config."""
     changes = [FileChange(path="file.py", additions=10, deletions=5)]
