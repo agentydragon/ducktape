@@ -141,6 +141,28 @@
   padding-inline-end: 1.5rem;
 }
 
+/* A streaming step breathes, as its status in the line; one that stopped short is blue and still. */
+.agentplane-step-title--streaming {
+  animation: agentplane-step-breathe 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentplane-step-title--streaming {
+    animation: none;
+  }
+}
+
+@keyframes agentplane-step-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
 .agentplane-step-trailing {
   display: inline-flex;
   flex: none;

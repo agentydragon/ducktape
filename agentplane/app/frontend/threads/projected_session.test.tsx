@@ -862,7 +862,7 @@ function serving(bodies: ReadonlyMap<string, string>): ThreadSync {
   };
 }
 
-async function renderCard(card: ThreadEntity, bodies: Record<string, string>): Promise<HTMLDivElement> {
+async function renderCard(card: ThreadEntity, bodies: Record<string, string>, live = false): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -874,7 +874,7 @@ async function renderCard(card: ThreadEntity, bodies: Record<string, string>): P
           <RetainedDisclosureProvider>
             {/* The history's row carries the anchor; a card renders inside it. */}
             <div data-thread-anchor={card.cursor.toString()}>
-              <EntityCard threadId="test-thread" entity={card} live={false} />
+              <EntityCard threadId="test-thread" entity={card} live={live} />
             </div>
           </RetainedDisclosureProvider>
         </ThreadSyncContext.Provider>
@@ -1273,6 +1273,42 @@ describe("tool call rows", () => {
     expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("red");
     expect(container.querySelector('[aria-label="Failed"]')).not.toBeNull();
   });
+
+  it.each([
+    [true, "Streaming", true],
+    [false, "Incomplete", false],
+  ])(
+    "marks a call still unfinished (live: %s) by a blue title while folded, and by a badge once opened",
+    async (live, label, breathes) => {
+      const container = await renderCard(
+        entity(
+          "item",
+          {
+            kind: ItemKind.TOOL_CALL,
+            tool_name: "Bash",
+            completion: null,
+            tool_succeeded: null,
+            recovery: null,
+            recovery_reason: "",
+          },
+          { outputRef: reference("test-tool", "output") }
+        ),
+        { "test-tool:output": "test-partial" },
+        live
+      );
+      const title = () => container.querySelector(".agentplane-step-title")!;
+      expect(title().getAttribute("style")).toContain("blue");
+      expect(title().getAttribute("title")).toBe(label);
+      // Only a call something is working on breathes.
+      expect(title().classList.contains("agentplane-step-title--streaming")).toBe(breathes);
+      expect(container.querySelector(`[aria-label="${label}"]`)).toBeNull();
+
+      await toggle(container.querySelector("summary")!);
+      expect(title().getAttribute("style")).not.toContain("blue");
+      expect(title().classList.contains("agentplane-step-title--streaming")).toBe(false);
+      expect(container.querySelector(`[aria-label="${label}"]`)).not.toBeNull();
+    }
+  );
 
   it("leaves a call that went well in the dimmed title every line has", async () => {
     const container = await renderTool("Bash", { command: "ls" });

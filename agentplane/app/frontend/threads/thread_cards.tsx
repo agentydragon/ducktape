@@ -11,7 +11,7 @@ import { oneLine, parseCommandCall } from "./command_calls";
 import { lifecyclePresentation } from "./history_rows";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
 import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
-import { StepLine } from "./step_line";
+import { StepLine, type StepMark } from "./step_line";
 import { useThreadSync, type Payload, type PayloadRef, type ThreadEntity } from "./thread_sync";
 
 type ItemState = Extract<ThreadEntity["state"], { kind: number }>;
@@ -371,7 +371,15 @@ function ToolCard({
   const disclosable =
     entity.argumentsRef !== null || entity.outputRef !== null || entity.textRef !== null || state.recovery !== null;
   const opened = open && disclosable;
-  const failed = state.tool_succeeded === false;
+  // How a folded line shows what the badges below show once it is open.
+  const mark: StepMark | undefined =
+    state.tool_succeeded === false
+      ? "failed"
+      : state.completion === null && state.recovery === null
+        ? live
+          ? "streaming"
+          : "incomplete"
+        : undefined;
   return (
     <OptionalPayload reference={entity.argumentsRef}>
       {(args) => {
@@ -438,7 +446,7 @@ function ToolCard({
           <CollapsibleCard open={opened} stableInlineSize>
             <StepLine
               title={call?.label ?? (state.tool_name || "tool")}
-              failed={failed && !opened}
+              mark={opened ? undefined : mark}
               preview={
                 args &&
                 (argumentsBody === null ? (
@@ -451,7 +459,7 @@ function ToolCard({
                   </Text>
                 ))
               }
-              trailing={<ItemStatus items={[entity]} live={live} omitFailed={!opened} />}
+              trailing={<ItemStatus items={[entity]} live={live} titleMarked={!opened} />}
               aside={
                 args?.error && (
                   <button className="agentplane-step-retry" onClick={args.retry} type="button">
@@ -603,12 +611,12 @@ export function EntityCard({
 export function ItemStatus({
   items,
   live,
-  omitFailed = false,
+  titleMarked = false,
 }: {
   items: ThreadEntity[];
   live: boolean;
-  /** Leave out the Failed badge, for a line that shows failure another way. */
-  omitFailed?: boolean;
+  /** Leave out the Failed and Streaming/Incomplete badges, for a line whose title shows them. */
+  titleMarked?: boolean;
 }): JSX.Element {
   const states = items.flatMap((item) => ("kind" in item.state ? [item.state] : []));
   const unfinished = states.some((state) => state.completion === null && state.recovery === null);
@@ -616,7 +624,7 @@ export function ItemStatus({
   const recoveries = [...new Set(states.flatMap((state) => (state.recovery === null ? [] : [state.recovery])))];
   return (
     <>
-      {unfinished && (
+      {!titleMarked && unfinished && (
         <Badge role="img" aria-label={live ? "Streaming" : "Incomplete"}>
           {live ? "Streaming" : "Incomplete"}
         </Badge>
@@ -639,7 +647,7 @@ export function ItemStatus({
           Succeeded
         </Badge>
       )}
-      {!omitFailed && states.some((state) => state.tool_succeeded === false) && (
+      {!titleMarked && states.some((state) => state.tool_succeeded === false) && (
         <Badge color="red" role="img" aria-label="Failed">
           Failed
         </Badge>

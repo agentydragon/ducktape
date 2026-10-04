@@ -1,6 +1,16 @@
 import { Text } from "@mantine/core";
 import type { JSX, ReactNode, Ref } from "react";
 
+/** How a step stands, as its title shows it while the step is folded. A streaming step breathes; an
+ * incomplete one, which nothing is working on, does not. */
+export type StepMark = "failed" | "streaming" | "incomplete";
+
+const MARKS: Record<StepMark, { color: string; label: string }> = {
+  failed: { color: "red", label: "Failed" },
+  streaming: { color: "blue", label: "Streaming" },
+  incomplete: { color: "blue", label: "Incomplete" },
+};
+
 /** One step of a run (a reasoning step, a tool call) as a single line: a title, a one-line preview
  * of what is behind it, and, when there is something to disclose, a disclosure that opens it below.
  * The preview gives way to the content once it is open, as the content then says it in full.
@@ -10,7 +20,7 @@ export function StepLine({
   title,
   preview,
   previewRef,
-  failed = false,
+  mark,
   trailing,
   aside,
   controls,
@@ -22,8 +32,7 @@ export function StepLine({
   title: string;
   preview: ReactNode;
   previewRef?: Ref<HTMLDivElement>;
-  /** The step failed: its title in red, which is how a folded line shows it. */
-  failed?: boolean;
+  mark?: StepMark;
   /** Kept on the line when open, after the preview: a step's status. */
   trailing?: ReactNode;
   /** Beside the line, outside its disclosure. */
@@ -41,9 +50,9 @@ export function StepLine({
     <div className="agentplane-step-summary">
       <Text
         component="span"
-        className="agentplane-step-title"
-        c={failed ? "red" : "dimmed"}
-        title={failed ? "Failed" : undefined}
+        className={`agentplane-step-title${mark === "streaming" ? " agentplane-step-title--streaming" : ""}`}
+        c={mark ? MARKS[mark].color : "dimmed"}
+        title={mark && MARKS[mark].label}
       >
         {title}
       </Text>
