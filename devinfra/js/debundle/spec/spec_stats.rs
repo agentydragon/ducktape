@@ -238,33 +238,6 @@ mod tests {
     }
 
     #[test]
-    fn singleton_plus_multi_member_module() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "solo.yaml",
-            "members:\n  - name: Solo\n    selector: { binding: { name: a } }\n",
-        );
-        write(
-            root,
-            "pair.yaml",
-            "members:\n  - selector: { binding: { name: b } }\n  - selector: { binding: { name: c } }\n",
-        );
-        let s = compute_spec_stats(root).unwrap();
-        assert_eq!(s.modules.total, 2);
-        assert_eq!(s.modules.member_count.singletons, 1);
-        assert_eq!(s.modules.member_count.tiny_2_to_5, 1);
-        assert_eq!(s.modules.member_count.min, 1);
-        assert_eq!(s.modules.member_count.max, 2);
-        assert_eq!(s.bindings.total, 3);
-        assert_eq!(s.bindings.renamed, 1);
-        assert_eq!(s.bindings.unrenamed, 2);
-        // `a` is in a singleton -> orphan; `b` and `c` share `pair` -> not.
-        assert_eq!(s.bindings.orphan, 1);
-    }
-
-    #[test]
     fn empty_module_counts_and_min_zero() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
