@@ -17,15 +17,3 @@ class LocationAnchor(BaseModel):
     note: str | None = Field(default=None, description="Optional per-location note (e.g. 'definition site')")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBCriticSubmitPayload(BaseModel):
-    """Database representation of critic submit payload.
-
-    Issues are stored in normalized reported_issues table, not here.
-    Access via critic_run.reported_issues ORM relationship.
-    """
-
-    notes_md: str | None = Field(default=None, description="Optional Markdown notes")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)

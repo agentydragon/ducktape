@@ -35,15 +35,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, rela
 from sqlalchemy.types import TypeDecorator
 
 from openai_utils.api_shape import LLMApiShape
-from props.core.agent_types import (
-    AgentType,
-    CriticDevImproveTypeConfig,
-    CriticDevOptimizeTypeConfig,
-    CriticTypeConfig,
-    FreeformTypeConfig,
-    GraderTypeConfig,
-    TypeConfig,
-)
+from props.core.agent_types import AgentType, CriticDevImproveTypeConfig, CriticTypeConfig, GraderTypeConfig, TypeConfig
 from props.core.ids import SnapshotSlug, _SnapshotSlugBase
 from props.core.models.examples import ExampleKind
 from props.core.splits import Split
@@ -269,28 +261,6 @@ class Snapshot(Base):
             raise RuntimeError("Model not bound to session")
         return session.execute(select(cls).where(cls.slug == slug)).scalar_one_or_none()
 
-    @classmethod
-    def get_by_split(cls, split: str) -> list[Snapshot]:
-        session = Session.object_session(cls)
-        if session is None:
-            raise RuntimeError("Model not bound to session")
-        return list(session.execute(select(cls).where(cls.split == split)).scalars().all())
-
-    def files_with_issues(self) -> set[Path]:
-        tp_files = {
-            range_orm.file_path
-            for tp in self.true_positives
-            for occurrence in tp.occurrences
-            for range_orm in occurrence.ranges
-        }
-        fp_files = {
-            range_orm.file_path
-            for fp in self.false_positives
-            for occurrence in fp.occurrences
-            for range_orm in occurrence.ranges
-        }
-        return tp_files | fp_files
-
 
 class TruePositive(Base):
     """True positive (expected findings).
@@ -329,13 +299,6 @@ class TruePositive(Base):
         return session.execute(
             select(cls).where(cls.snapshot_slug == snapshot_slug, cls.tp_id == tp_id)
         ).scalar_one_or_none()
-
-    @classmethod
-    def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[TruePositive]:
-        session = Session.object_session(cls)
-        if session is None:
-            raise RuntimeError("Model not bound to session")
-        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())
 
 
 class FalsePositive(Base):
@@ -376,13 +339,6 @@ class FalsePositive(Base):
         return session.execute(
             select(cls).where(cls.snapshot_slug == snapshot_slug, cls.fp_id == fp_id)
         ).scalar_one_or_none()
-
-    @classmethod
-    def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[FalsePositive]:
-        session = Session.object_session(cls)
-        if session is None:
-            raise RuntimeError("Model not bound to session")
-        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())
 
 
 class TruePositiveOccurrenceORM(Base):
@@ -1281,10 +1237,6 @@ class ParetoFrontierByExample(Base):
         return _WinningDefinitionListAdapter.validate_python(self._winning_definitions_raw)
 
     @property
-    def winning_image_digests(self) -> list[str]:
-        return [w.image_digest for w in self.winning_definitions]
-
-    @property
     def best_mean_credit(self) -> float:
         return self.winning_definitions[0].credit_stats.mean
 
@@ -1520,13 +1472,3 @@ class AgentRun(Base):
         if isinstance(self.type_config, CriticDevImproveTypeConfig):
             return self.type_config
         raise ValueError(f"Expected CriticDevImproveTypeConfig, got {type(self.type_config).__name__}")
-
-    def critic_dev_optimize_config(self) -> CriticDevOptimizeTypeConfig:
-        if isinstance(self.type_config, CriticDevOptimizeTypeConfig):
-            return self.type_config
-        raise ValueError(f"Expected CriticDevOptimizeTypeConfig, got {type(self.type_config).__name__}")
-
-    def freeform_config(self) -> FreeformTypeConfig:
-        if isinstance(self.type_config, FreeformTypeConfig):
-            return self.type_config
-        raise ValueError(f"Expected FreeformTypeConfig, got {type(self.type_config).__name__}")
