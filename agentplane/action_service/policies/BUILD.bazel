@@ -111,7 +111,6 @@ py_test(
         "//agentplane/action_service:conftest",
         "//agentplane/action_service/github_policy:visibility",
         "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -120,11 +119,6 @@ py_test(
     name = "test_resources",
     srcs = ["test_resources.py"],
     deps = [
-        ":argument_schema",
-        ":exact_actions",
-        ":github_public_repository",
-        ":github_repository",
-        ":home_assistant_entity_control",
         ":resources",
         "//:conftest",
         "//agentplane:subjects",

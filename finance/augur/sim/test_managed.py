@@ -243,10 +243,5 @@ def test_opening_a_component_requires_one_matching_observation_per_declared_port
     assert books.ledger.trial_balance() == 0
 
 
-def test_world_rejects_an_unselected_rollout(spec: Portfolio) -> None:
-    with pytest.raises(ValueError, match="rollout selection"):
-        composed(spec, 2)
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

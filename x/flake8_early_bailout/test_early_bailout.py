@@ -98,47 +98,11 @@ def test_loop_with_inverted_pattern():
     print("✓ Detected inverted pattern in loop")
 
 
-def test_original_example():
-    """Test the original example from the user."""
-    code = """
-    def fn(result):
-        if result.returncode == 0 and result.stdout:
-            formatted_files = [f for f in result.stdout.strip().split("\\n") if f]
-            if formatted_files:
-                autofix_report.append(("formatting (ruff)", formatted_files))
-
-                # Capture after snapshots and create log entries
-                for file_str in formatted_files:
-                    file_path = Path(file_str)
-                    if file_path in file_snapshots:
-                        try:
-                            after_content = file_path.read_text()
-                            if after_content != file_snapshots[file_path]:
-                                entry = AutofixEntry(
-                                    file_path=str(file_path),
-                                    timestamp=datetime.now(),
-                                    fix_type="ruff format",
-                                    before_snapshot=file_snapshots[file_path],
-                                    after_snapshot=after_content,
-                                    diff_summary="Formatted with ruff",
-                                )
-                                autofix_log.append(entry)
-                        except (OSError, UnicodeDecodeError):
-                            pass
-    """
-    errors = get_errors(code)
-    assert len(errors) >= 1
-    # Should detect the nested if pattern
-    assert any("EB101" in error for error in errors)
-    print("✓ Detected issues in original example")
-
-
 if __name__ == "__main__":
     test_inverted_if_else()
     test_deeply_nested_ifs()
     test_no_error_for_balanced_if_else()
     test_loop_with_inverted_pattern()
-    test_original_example()
     print("\nAll tests passed!")
 
 

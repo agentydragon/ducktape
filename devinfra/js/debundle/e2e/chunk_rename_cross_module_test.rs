@@ -15,7 +15,7 @@ use debundle_e2e_support::*;
 
 #[test]
 fn chunk_rename_propagates_into_peeled_module_body() {
-    // Fixture mirrors `purity_test::chunk_rename_with_purity_pure_propagates_to_call_classifier`'s shape:
+    // Fixture:
     //   - vendor.js exports a function `f`.
     //   - entry imports `f as cx`.
     //   - `const a = (() => 1)();` -- pure-by-IIFE, stays in residual

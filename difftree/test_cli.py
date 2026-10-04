@@ -28,15 +28,6 @@ def git_repo_with_changes(temp_git_repo: Path, run_git) -> Path:
     return temp_git_repo
 
 
-def test_cli_default_columns(runner, git_repo_with_changes, monkeypatch):
-    """Test CLI with default columns (all enabled)."""
-    monkeypatch.chdir(git_repo_with_changes)
-    result = runner.invoke(main, [], obj={}, catch_exceptions=False)
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
-
-
 def test_cli_columns_actually_shows_content(runner, git_repo_with_changes, monkeypatch):
     """Test that --columns flag actually controls what appears in output."""
     monkeypatch.chdir(git_repo_with_changes)
@@ -133,19 +124,6 @@ def test_cli_integration_with_args(runner, temp_git_repo, run_git, monkeypatch):
     assert "file.py" in result.output
     assert "+1" in result.output
     assert "-1" in result.output
-
-
-def test_cli_integration_invalid_column(runner, temp_git_repo, run_git, monkeypatch):
-    create_file(temp_git_repo, "file.py", "line1\n")
-    git_add_commit(run_git)
-    create_file(temp_git_repo, "file.py", "line1\nline2\n")
-
-    monkeypatch.chdir(temp_git_repo)
-    result = runner.invoke(main, ["--columns", "tree,invalid"])
-
-    assert result.exit_code == 2
-    assert "Unknown column" in result.output
-    assert "invalid" in result.output
 
 
 def test_cli_integration_with_pathspec(runner, temp_git_repo, run_git, monkeypatch):

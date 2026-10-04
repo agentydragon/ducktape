@@ -22,7 +22,6 @@ py_test(
         ":visibility",
         "//:conftest",
         "//agentplane/action_service:conftest",
-        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

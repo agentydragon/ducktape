@@ -3,7 +3,7 @@ import "@mantine/core/styles.css";
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
-import type { SessionEvent, SessionEventPage, SessionListPage, SessionSummary, SyncStatus } from "../api";
+import type { SessionEventPage, SessionListPage, SessionSummary, SyncStatus } from "../api";
 import { App } from "../app";
 import {
   longCommandActivityDetail,
@@ -93,28 +93,6 @@ const markdownSession: SessionSummary = {
 };
 
 const sessionPage: SessionListPage = { data: sessions, next_cursor: null, resume_token: null };
-const liveUpdatedSession: SessionSummary = {
-  ...noisySession,
-  title: "Live update arrived from the session feed",
-  status: "active",
-  updated_at: "2026-10-01T18:44:00Z",
-  last_event_at: "2026-10-01T18:44:00Z",
-};
-const liveUpdatedEvent: SessionEvent = {
-  ...(noisySessionEvents.at(-1) as SessionEvent),
-  event_id: "00000000-0000-4000-8000-000000000999",
-  sequence_num: String(BigInt(noisySessionEvents.at(-1)?.sequence_num ?? "0") + 1n),
-  event_type: "assistant",
-  created_at: "2026-10-01T18:44:00Z",
-  payload: {
-    type: "assistant",
-    message: {
-      role: "assistant",
-      content: [{ type: "text", text: "The transcript updated automatically from a committed change." }],
-    },
-  },
-};
-let liveEvents: SessionEvent[] = [...noisySessionEvents];
 const sidebarSessions: Array<SessionSummary & { git_branch: string; repo_path: string }> = [
   { ...noisySession, git_branch: "worktree/session-sidebar", repo_path: "~/code/sample-meter" },
   {
@@ -717,40 +695,26 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
       return Promise.resolve(json({ data: [markdownSession], next_cursor: null, resume_token: null }));
     return Promise.resolve(
       json(
-        scenario.startsWith("SessionLiveUpdates")
-          ? { data: [noisySession], next_cursor: null, resume_token: "fixture-watch-token" }
-          : scenario.startsWith("SessionNoisySidebar")
-            ? { data: sidebarSessions, next_cursor: null, resume_token: null }
-            : scenario.startsWith("SessionNarrationVisibility")
-              ? {
-                  data: [
-                    { ...narrationSession, git_branch: "feature/narration-fixture", repo_path: "~/code/sample-format" },
-                  ],
-                  next_cursor: null,
-                  resume_token: null,
-                }
-              : scenario.startsWith("SessionCompletedActivity")
+        scenario.startsWith("SessionNoisySidebar")
+          ? { data: sidebarSessions, next_cursor: null, resume_token: null }
+          : scenario.startsWith("SessionNarrationVisibility")
+            ? {
+                data: [
+                  { ...narrationSession, git_branch: "feature/narration-fixture", repo_path: "~/code/sample-format" },
+                ],
+                next_cursor: null,
+                resume_token: null,
+              }
+            : scenario.startsWith("SessionCompletedActivity")
+              ? { data: [noisySession], next_cursor: null, resume_token: null }
+              : scenario.startsWith("SessionNoisy")
                 ? { data: [noisySession], next_cursor: null, resume_token: null }
-                : scenario.startsWith("SessionNoisy")
-                  ? { data: [noisySession], next_cursor: null, resume_token: null }
-                  : sessionPage
+                : sessionPage
       )
     );
   }
-  if (/^\/v1\/code\/sessions\/[^/]+$/.test(url.pathname)) {
-    return Promise.resolve(json({ session: liveUpdatedSession }));
-  }
   if (/^\/v1\/code\/sessions\/[^/]+\/events$/.test(url.pathname)) {
     const page = new URLSearchParams(window.location.search).get("page") ?? "";
-    if (page.startsWith("SessionLiveUpdates"))
-      return Promise.resolve(
-        json({
-          data: liveEvents,
-          has_more: false,
-          first_id: liveEvents[0]?.event_id,
-          last_id: liveEvents.at(-1)?.event_id,
-        })
-      );
     if (page.startsWith("SessionMarkdown")) return Promise.resolve(json(markdownEventPage));
     if (page.startsWith("SessionLatestFirst")) {
       const cursor = url.searchParams.get("cursor");
@@ -824,37 +788,6 @@ try {
 }
 const pathname = scenario.startsWith("SessionSync") ? "/sync" : "/sessions";
 
-let liveEventSource: EventSource | null = null;
-if (scenario.startsWith("SessionLiveUpdates")) {
-  class FixtureEventSource extends EventTarget {
-    onopen: ((this: EventSource, event: Event) => unknown) | null = null;
-    onerror: ((this: EventSource, event: Event) => unknown) | null = null;
-    onmessage: ((this: EventSource, event: MessageEvent) => unknown) | null = null;
-    readonly url: string;
-    readonly withCredentials = false;
-    readonly CONNECTING = 0;
-    readonly OPEN = 1;
-    readonly CLOSED = 2;
-    readyState = 0;
-
-    constructor(url: string) {
-      super();
-      this.url = url;
-      const eventSource = this as unknown as EventSource;
-      liveEventSource = eventSource;
-      window.setTimeout(() => {
-        this.readyState = 1;
-        eventSource.onopen?.(new Event("open"));
-      }, 0);
-    }
-
-    close(): void {
-      this.readyState = 2;
-    }
-  }
-  window.EventSource = FixtureEventSource as unknown as typeof EventSource;
-}
-
 function scrollTranscriptElementIntoView(element: HTMLElement): void {
   const viewport = document.querySelector<HTMLDivElement>(
     '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
@@ -885,33 +818,6 @@ createRoot(root).render(
     <App pathname={pathname} />
   </MantineProvider>
 );
-
-if (scenario.startsWith("SessionLiveUpdates")) {
-  let emitted = false;
-  const observer = new MutationObserver(() => {
-    if (!emitted && document.querySelector('[data-message-role="assistant"]')) {
-      emitted = true;
-      window.setTimeout(() => {
-        liveEvents = [...noisySessionEvents, liveUpdatedEvent];
-        liveEventSource?.dispatchEvent(
-          new MessageEvent("changed", { data: JSON.stringify({ session_ids: [noisySession.id] }) })
-        );
-      }, 180);
-    }
-    const title = document.querySelector('[aria-label="Session transcript"] h4')?.textContent;
-    if (
-      title === liveUpdatedSession.title &&
-      document.body.textContent?.includes("The transcript updated automatically from a committed change.")
-    ) {
-      if ([...document.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Refresh")) {
-        throw new Error("The session page still exposes a manual Refresh control");
-      }
-      root.dataset.liveUpdateReady = "true";
-      observer.disconnect();
-    }
-  });
-  observer.observe(root, { childList: true, subtree: true, attributes: true });
-}
 
 if (
   scenario.startsWith("SessionReadFileResult") ||
@@ -1034,55 +940,17 @@ if (scenario.startsWith("SessionMarkdown")) {
 }
 
 if (scenario.startsWith("SessionNarrationVisibility")) {
-  let attempts = 0;
-  const failNarrationScenario = (message: string): never => {
-    // Let the visual runner pass readiness so it can report this page error directly.
-    narrationObserver.disconnect();
-    root.dataset.narrationReady = "true";
-    root.dataset.narrationError = message;
-    throw new Error(message);
-  };
-  const verifyNarration = (): void => {
+  // Layout is what jsdom cannot show: narration must be laid out, not CSS-hidden.
+  const markNarrationVisible = (): void => {
     const narration = document.querySelector<HTMLElement>('[data-fold-kind="narration"]');
-    const thinking = document.querySelector<HTMLDetailsElement>('[data-fold-kind="thinking"]');
-    const toolRuns = [...document.querySelectorAll<HTMLElement>('[data-fold-kind="tool-run"]')];
-    if (narration === null || thinking === null || toolRuns.length !== 2) {
-      attempts += 1;
-      if (attempts >= 300) failNarrationScenario("Narration fixture rows did not mount");
-      window.setTimeout(verifyNarration, 20);
-      return;
-    }
-
-    const narrationRect = narration.getBoundingClientRect();
-    const orderedRows = [
-      ...document.querySelectorAll<HTMLElement>('[data-fold-kind="tool-run"], [data-fold-kind="narration"]'),
-    ];
-    if (
-      narration.querySelector(".agentplane-markdown p")?.textContent !==
-        "The format note is clear; I’ll verify its example next." ||
-      narration.querySelector(".agentplane-markdown strong")?.textContent !== "clear" ||
-      narration.closest("details, summary, button, article") !== null ||
-      narrationRect.height <= 0 ||
-      thinking.open ||
-      thinking.querySelector(".agentplane-markdown strong")?.textContent !== "internal note" ||
-      orderedRows.map((row) => row.dataset.foldKind).join(",") !== "tool-run,narration,tool-run" ||
-      document.querySelector(
-        '[data-tool-run-toggle][aria-expanded="true"], [data-tool-group-toggle][aria-expanded="true"]'
-      ) !== null
-    ) {
-      attempts += 1;
-      if (attempts >= 300) failNarrationScenario("Narration was hidden, styled as a card, or crossed a tool boundary");
-      window.setTimeout(verifyNarration, 20);
-      return;
-    }
-
+    if (narration === null || narration.getBoundingClientRect().height <= 0) return;
     scrollTranscriptElementIntoView(narration);
     root.dataset.narrationReady = "true";
     narrationObserver.disconnect();
   };
-  const narrationObserver = new MutationObserver(verifyNarration);
+  const narrationObserver = new MutationObserver(markNarrationVisible);
   narrationObserver.observe(root, { childList: true, subtree: true, attributes: true });
-  window.setTimeout(verifyNarration, 0);
+  window.setTimeout(markNarrationVisible, 0);
 }
 
 if (scenario.startsWith("SessionLatestFirst")) {

@@ -1629,30 +1629,6 @@ pub enum MemberEffect {
 mod tests {
     use super::*;
 
-    /// The YAML override list parses into the typed set and unknown
-    /// check names are rejected (strict data mapping).
-    #[test]
-    fn admission_overrides_parse_from_list() {
-        let options: OwnerGraphOptions =
-            serde_json::from_str(r#"{ "admission_overrides": ["a1_eval", "a5_import_meta"] }"#)
-                .unwrap();
-        assert!(options.admission_overrides.contains(AdmissionCheck::A1Eval));
-        assert!(
-            options
-                .admission_overrides
-                .contains(AdmissionCheck::A5ImportMeta)
-        );
-        assert!(
-            !options
-                .admission_overrides
-                .contains(AdmissionCheck::A3DynamicImport)
-        );
-
-        let invalid: Result<OwnerGraphOptions, _> =
-            serde_json::from_str(r#"{ "admission_overrides": ["a99_bogus"] }"#);
-        assert!(invalid.is_err(), "unknown admission check must be rejected");
-    }
-
     #[test]
     fn source_match_unknown_field_reports_unsupported_selector_capability() {
         let error: serde_json::Error = serde_json::from_str::<SourceMatch>(

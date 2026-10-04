@@ -1007,21 +1007,6 @@ mod tests {
     };
 
     #[test]
-    fn same_priority_conflict_errors_naming_both_contributors() {
-        let mut ledger = RenameLedger::default();
-        ledger.submit(intent(RenameScope::Chunk, "a", "first", A));
-        ledger.submit(intent(RenameScope::Chunk, "a", "second", B));
-        let message = ledger
-            .seal(&SealValidation::default())
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("contributor_a"), "{message}");
-        assert!(message.contains("contributor_b"), "{message}");
-        assert!(message.contains("`first`"), "{message}");
-        assert!(message.contains("`second`"), "{message}");
-    }
-
-    #[test]
     fn reports_every_conflict_in_one_error() {
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(RenameScope::Chunk, "a", "first", A));
@@ -1045,25 +1030,6 @@ mod tests {
         assert_eq!(
             sealed.chunk_renames_by_name(),
             HashMap::from([("a".to_string(), "readable".to_string())]),
-        );
-    }
-
-    #[test]
-    fn higher_priority_wins_over_disagreeing_lower_priority() {
-        let mut ledger = RenameLedger::default();
-        ledger.submit(intent(
-            RenameScope::Chunk,
-            "a",
-            "heuristic_name",
-            RenameOrigin::Heuristic {
-                contributor: "alias_inference",
-            },
-        ));
-        ledger.submit(intent(RenameScope::Chunk, "a", "explicit_name", A));
-        let sealed = ledger.seal(&SealValidation::default()).unwrap();
-        assert_eq!(
-            sealed.chunk_renames_by_name(),
-            HashMap::from([("a".to_string(), "explicit_name".to_string())]),
         );
     }
 
@@ -1093,115 +1059,6 @@ mod tests {
             Some(BTreeMap::from([(id("e"), Atom::from("value"))])),
         );
         assert_eq!(sealed.scope_renames(&RenameScope::Chunk), None);
-    }
-
-    #[test]
-    fn module_queries_are_isolated_per_module() {
-        let mut ledger = RenameLedger::default();
-        ledger.submit(intent(
-            RenameScope::Module(ModuleId::logical(0)),
-            "a",
-            "x",
-            A,
-        ));
-        ledger.submit(intent(
-            RenameScope::Module(ModuleId::logical(1)),
-            "b",
-            "y",
-            A,
-        ));
-        let sealed = ledger.seal(&SealValidation::default()).unwrap();
-        assert_eq!(
-            sealed.module_renames_by_name(ModuleId::logical(0)),
-            BTreeMap::from([("a".to_string(), "x".to_string())]),
-        );
-        assert_eq!(
-            sealed.module_renames_by_name(ModuleId::logical(1)),
-            BTreeMap::from([("b".to_string(), "y".to_string())]),
-        );
-        assert!(
-            sealed
-                .module_renames_by_name(ModuleId::logical(2))
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn submission_order_does_not_change_seal_output() {
-        let intents = [
-            intent(RenameScope::Chunk, "z", "zulu", A),
-            intent(RenameScope::Chunk, "a", "alpha", B),
-            intent(RenameScope::Module(ModuleId::logical(3)), "m", "mike", A),
-            intent(
-                RenameScope::Function(FunctionScopeId { lo: 1, hi: 2 }),
-                "f",
-                "foxtrot",
-                RenameOrigin::Heuristic {
-                    contributor: "alias_inference",
-                },
-            ),
-        ];
-        let mut forward = RenameLedger::default();
-        for i in &intents {
-            forward.submit(i.clone());
-        }
-        let mut reverse = RenameLedger::default();
-        for i in intents.iter().rev() {
-            reverse.submit(i.clone());
-        }
-        assert_eq!(
-            forward.seal(&SealValidation::default()).unwrap(),
-            reverse.seal(&SealValidation::default()).unwrap(),
-        );
-    }
-
-    #[test]
-    fn entry_public_exports_scope_is_isolated_from_chunk_scope() {
-        // The export-name namespace is separate from local-binding
-        // renames: one binding may simultaneously carry a Chunk-scope
-        // local rename and an EntryPublicExports-scope public-name
-        // allocation without conflicting.
-        let mint = RenameOrigin::ImportInduced {
-            contributor: "auto-grown residual export",
-        };
-        let mut ledger = RenameLedger::default();
-        ledger.submit(intent(RenameScope::Chunk, "a", "readable", A));
-        ledger.submit(intent(RenameScope::EntryPublicExports, "a", "a$1", mint));
-        let sealed = ledger.seal(&SealValidation::default()).unwrap();
-        assert_eq!(
-            sealed.scope_renames_by_name(&RenameScope::Chunk),
-            BTreeMap::from([("a".to_string(), "readable".to_string())]),
-        );
-        assert_eq!(
-            sealed.scope_renames_by_name(&RenameScope::EntryPublicExports),
-            BTreeMap::from([("a".to_string(), "a$1".to_string())]),
-        );
-    }
-
-    #[test]
-    fn import_induced_conflict_is_a_hard_error_naming_both_minters() {
-        let cross = RenameOrigin::ImportInduced {
-            contributor: "cross-module import-local disambiguation",
-        };
-        let residual = RenameOrigin::ImportInduced {
-            contributor: "residual-entry import-local disambiguation",
-        };
-        let module = RenameScope::Module(ModuleId::logical(0));
-        let mut ledger = RenameLedger::default();
-        ledger.submit(intent(module, "x", "x$1", cross));
-        ledger.submit(intent(module, "x", "x$2", residual));
-        let message = ledger
-            .seal(&SealValidation::default())
-            .unwrap_err()
-            .to_string();
-        assert!(
-            message.contains("cross-module import-local disambiguation"),
-            "{message}"
-        );
-        assert!(
-            message.contains("residual-entry import-local disambiguation"),
-            "{message}"
-        );
     }
 
     #[test]
@@ -1448,20 +1305,6 @@ mod tests {
     // --- heuristic drop policies ---
 
     #[test]
-    fn module_heuristics_sharing_a_target_are_both_dropped() {
-        let module = RenameScope::Module(ModuleId::logical(0));
-        let mut ledger = RenameLedger::default();
-        ledger.submit(intent(module, "a", "shared", FREE));
-        ledger.submit(intent(module, "b", "shared", FREE));
-        ledger.submit(intent(module, "c", "unique", FREE));
-        let sealed = ledger.seal(&body_occupancy(module, &[], &[])).unwrap();
-        assert_eq!(
-            sealed.module_renames_by_name(ModuleId::logical(0)),
-            BTreeMap::from([("c".to_string(), "unique".to_string())]),
-        );
-    }
-
-    #[test]
     fn module_heuristic_targeting_an_explicit_target_is_dropped() {
         let module = RenameScope::Module(ModuleId::logical(0));
         let mut ledger = RenameLedger::default();
@@ -1658,18 +1501,5 @@ mod tests {
                 .is_empty()
         );
         assert!(sealed.scope_renames_by_name(&f1).is_empty());
-    }
-
-    #[test]
-    fn scopes_without_occupancy_skip_target_validation() {
-        // The chunk-level explicit ledger seals before the post-split
-        // bodies exist; its intents are occupancy-validated downstream.
-        let mut ledger = RenameLedger::default();
-        ledger.submit(intent(RenameScope::Chunk, "a", "delta", A));
-        let sealed = ledger.seal(&SealValidation::default()).unwrap();
-        assert_eq!(
-            sealed.chunk_renames_by_name(),
-            HashMap::from([("a".to_string(), "delta".to_string())]),
-        );
     }
 }

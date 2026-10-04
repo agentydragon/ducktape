@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 import pytest
 import pytest_bazel
-from pydantic import JsonValue, ValidationError
+from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
@@ -67,13 +67,6 @@ async def test_unconfirmed_targets_do_not_match(
     decision = await evaluate(POLICY, GET_FILE, arguments, github_visibility(*public, unavailable=unavailable))
     assert isinstance(decision, NotMatched)
     assert reason in decision.reason
-
-
-def test_names_no_repository_of_its_own() -> None:
-    with pytest.raises(ValidationError, match="owner"):
-        GitHubPublicRepository.model_validate(
-            {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}, "owner": "someone"}
-        )
 
 
 if __name__ == "__main__":

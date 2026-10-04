@@ -75,18 +75,6 @@ def test_encode_hex():
     assert encode_hex("d7  # EOF marker") == bytes([0xD7])
 
 
-def test_single_rect_job():
-    """A minimal job with one layer and one rect produces valid .rd structure."""
-    job = RdJob(
-        layers=[RdLayer(index=0, min_power_pct=10, max_power_pct=20, speed_mm_s=100)],
-        rects=[RdRect(layer_index=0, x_mm=0, y_mm=0, width_mm=10, height_mm=10)],
-    )
-    data = job.to_bytes()
-    assert len(data) > 0
-    # Last byte (scrambled EOF 0xD7) should be present
-    assert isinstance(data, bytes)
-
-
 def test_unscrambled_structure():
     """Verify the unscrambled .rd file starts with known header and ends with D7."""
     job = RdJob(

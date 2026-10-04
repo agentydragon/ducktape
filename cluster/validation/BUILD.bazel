@@ -201,11 +201,9 @@ py_test(
 py_test(
     name = "test_flux",
     srcs = ["test_flux.py"],
-    data = ["testdata/valid/flux-kustomization.yaml"],
     deps = [
         ":flux",
         ":flux_bootstrap_auth",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

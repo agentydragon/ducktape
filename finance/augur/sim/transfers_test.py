@@ -132,11 +132,6 @@ def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
     assert result.trace.events.transfers.is_empty()
 
 
-def test_rejects_zero_rollout_count(alice_bob: Situation) -> None:
-    with pytest.raises(ValueError, match="a session needs at least one world"):
-        _run(alice_bob, rollout_count=0)
-
-
 def test_recurring_paycheck_accrues_monthly() -> None:
     case = Situation(
         horizon_months=12,

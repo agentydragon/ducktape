@@ -11,17 +11,17 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, 
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
-from agentplane.notification_service.actions import SourceNotOwnedError
 from agentplane.notification_service.models import (
     Acknowledge,
     InboxPage,
     InboxView,
-    ProviderView,
+    SourceView,
     Subscribe,
     SubscriptionUpdate,
     SubscriptionView,
 )
 from agentplane.notification_service.service import DestinationRejectedError, Service
+from agentplane.notification_service.sources.actions import SourceNotOwnedError
 from agentplane.notification_service.store import ConflictError, NotFoundError, QuotaError
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
@@ -61,10 +61,10 @@ async def health() -> dict[str, str]:
     return {"status": "alive"}
 
 
-@router.get("/v1/providers")
-async def providers(caller: Caller) -> dict[str, ProviderView]:
+@router.get("/v1/sources")
+async def sources(caller: Caller) -> dict[str, SourceView]:
     return {
-        "actions": ProviderView(
+        "actions": SourceView(
             subscription_schema=Subscribe.model_json_schema(), content="ActionEventView: sequence, state, at, actor"
         )
     }

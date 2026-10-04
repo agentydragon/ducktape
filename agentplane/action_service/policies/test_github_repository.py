@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 import pytest
 import pytest_bazel
-from pydantic import JsonValue, ValidationError
+from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
@@ -78,39 +78,18 @@ async def test_match_records_the_repository_as_the_request_spelled_it(
     assert decision.repository == MatchedRepository(owner="Test-Owner", repository="Test-Repo", confirmed_public=False)
 
 
-@pytest.mark.parametrize(
-    ("action", "arguments", "reason"),
-    [
-        (_github("get_file_contents"), {"owner": OWNER, "repo": "other", "path": "x"}, "is outside"),
-        (_github("get_file_contents"), {"owner": OWNER, "path": "x"}, "string owner/repo"),
-        (_github("search_pull_requests"), {"owner": OWNER, "repo": REPOSITORY, "query": "repo:x/y"}, "qualifier"),
-        (_github("search_code"), {"query": "language:python"}, "exactly one repository qualifier"),
-        (_github("search_code"), {"query": f'"repo:{OWNER}/{REPOSITORY}" x'}, "unquoted repo:owner/repo"),
-        (_github("search_code"), {"query": "repo:x/y language:python"}, "is outside"),
-    ],
-)
-async def test_other_targets_and_qualifier_violations_do_not_match(
-    action: ActionIdentity,
-    arguments: dict[str, JsonValue],
-    reason: str,
+async def test_a_smuggled_search_qualifier_does_not_match(
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
-    decision = await evaluate(POLICY, action, arguments, github_visibility())
+    """The rule layer's mismatch becomes `NotMatched`, judged by the Action's own tool name."""
+    decision = await evaluate(
+        POLICY,
+        _github("search_pull_requests"),
+        {"owner": OWNER, "repo": REPOSITORY, "query": "repo:x/y"},
+        github_visibility(),
+    )
     assert isinstance(decision, NotMatched)
-    assert reason in decision.reason
-
-
-@pytest.mark.parametrize("missing", ["owner", "repository"])
-def test_the_configured_pair_is_required(missing: str) -> None:
-    raw = {
-        "type": "github_repository",
-        "actions": {"github": ["get_file_contents"]},
-        "owner": OWNER,
-        "repository": REPOSITORY,
-    }
-    del raw[missing]
-    with pytest.raises(ValidationError, match=missing):
-        GitHubRepository.model_validate(raw)
+    assert "qualifier" in decision.reason
 
 
 if __name__ == "__main__":

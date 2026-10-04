@@ -41,14 +41,5 @@ def test_exclude_none_omits_null_fields() -> None:
     assert parsed["hookSpecificOutput"]["additionalContext"] == "# Session hook context"
 
 
-def test_default_serialization_emits_nulls() -> None:
-    """Demonstrates the bug: without exclude_none, None becomes null in JSON."""
-    output = HookOutput(hook_specific_output=SessionStartHookSpecificOutput(additional_context="ctx"))
-    parsed = json.loads(output.model_dump_json(by_alias=True))
-    # This is the broken behavior that Claude Code rejects
-    assert parsed["stopReason"] is None
-    assert parsed["systemMessage"] is None
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

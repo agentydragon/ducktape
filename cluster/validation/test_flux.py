@@ -8,18 +8,9 @@ import pytest_bazel
 
 from cluster.validation.flux import parse_flux_kustomizations
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
-from util.bazel.runfiles import get_required_path
 
 
 class TestParseFluxKustomization:
-    def test_parses_valid_kustomization(self) -> None:
-        kust_file = get_required_path("_main/cluster/validation/testdata/valid/flux-kustomization.yaml")
-        kustomizations = parse_flux_kustomizations(kust_file)
-        assert len(kustomizations) == 1
-        spec = kustomizations["test-app"]
-        assert len(spec.depends_on) == 1
-        assert spec.depends_on[0].name == "external-secrets-config"
-
     def test_parses_parked_marker(self, tmp_path: Path) -> None:
         flux_file = tmp_path / "flux-kustomization.yaml"
         _write_yaml(

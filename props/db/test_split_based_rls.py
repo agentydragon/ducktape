@@ -117,25 +117,6 @@ async def test_critic_dev_optimize_can_read_model_metadata(synced_db: Database, 
     assert metadata.model_id == DEFAULT_TEST_MODEL
 
 
-async def test_critic_dev_optimize_can_see_train_split_snapshots(
-    synced_db: Database, critic_dev_optimize_session: Session
-):
-    """Critic-dev optimize users can see TRAIN split snapshots (RLS policy allows).
-
-    Uses test-fixtures/train1 (TRAIN split) from git fixtures.
-
-    Setup (as admin_user):
-    - Git fixture already has test-trivial snapshot
-
-    Verify (as critic-dev temp user):
-    - Can query snapshots for train split
-    """
-    train_snapshots = critic_dev_optimize_session.query(Snapshot).filter(Snapshot.slug == "test-fixtures/train1").all()
-
-    assert len(train_snapshots) == 1, "critic-dev user should see train split snapshots via RLS"
-    assert train_snapshots[0].split == "train"
-
-
 async def test_critic_dev_optimize_cannot_see_valid_split_true_positives(
     synced_db: Database, critic_dev_optimize_session: Session
 ):

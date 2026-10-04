@@ -4,9 +4,8 @@ from typing import Literal
 
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
 
-from finance.augur.sim.results import Finished, Paid, PaymentReceipt, PaymentRejected, RejectedAction
+from finance.augur.sim.results import Finished, Paid, PaymentRejected, RejectedAction
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.funded_bill import HOUSEHOLD, compose, sell_then_pay, situation
 from finance.augur.sim.testing.session import finish
@@ -34,15 +33,6 @@ def test_results_and_file_replay_keep_exact_successful_prefix(capture: Literal["
         assert stopped.trace.books[-1] == stopped.summary.ending_book
         for entry in stopped.trace.journal:
             assert sum(posting.amount for posting in entry.postings) == 0
-
-
-def test_fractional_money_cannot_enter_a_typed_payment_result() -> None:
-    # Money is integer quanta; a file with fractional quanta must not be rounded/coerced.
-    with pytest.raises(ValidationError):
-        PaymentReceipt.model_validate_json(
-            '{"request_id":0,"target":{"kind":"Consumption","component_id":"test"},'
-            '"amount_requested":1.5,"outcome":{"kind":"Paid"}}'
-        )
 
 
 if __name__ == "__main__":

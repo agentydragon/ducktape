@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import httpx
+from collections.abc import Callable
+
 import pytest
 import pytest_bazel
 
@@ -75,25 +76,13 @@ def test_fixed_repository_mismatches(tool_name: str, arguments: dict[str, object
     assert reason in decision.reason
 
 
-def _visibility(*public: tuple[str, str], unavailable: bool = False) -> RepositoryVisibilityService:
-    """Stands in for GitHub's unauthenticated repository endpoint: 200 for `public`, else 404."""
-    confirmed = {(owner.casefold(), repository.casefold()) for owner, repository in public}
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        if unavailable:
-            return httpx.Response(500)
-        _, _, owner, repository = request.url.path.split("/", 3)
-        if (owner.casefold(), repository.casefold()) in confirmed:
-            return httpx.Response(200, json={"private": False})
-        return httpx.Response(404)
-
-    http_client = httpx.AsyncClient(base_url="https://github-api.test", transport=httpx.MockTransport(handler=handle))
-    return RepositoryVisibilityService(http_client, ttl_seconds=3600.0)
-
-
-async def test_public_repository_matches_a_confirmed_public_target() -> None:
+async def test_public_repository_matches_a_confirmed_public_target(
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
     decision = await evaluate_public_repository(
-        "get_file_contents", {"owner": OWNER, "repo": REPOSITORY, "path": "README.md"}, _visibility((OWNER, REPOSITORY))
+        "get_file_contents",
+        {"owner": OWNER, "repo": REPOSITORY, "path": "README.md"},
+        github_visibility((OWNER, REPOSITORY)),
     )
     assert decision == RepositoryMatch(
         target=TargetRepository(owner=OWNER, repository=REPOSITORY),
@@ -102,36 +91,44 @@ async def test_public_repository_matches_a_confirmed_public_target() -> None:
     )
 
 
-async def test_public_repository_code_search_confirms_the_qualifier_repository() -> None:
+async def test_public_repository_code_search_confirms_the_qualifier_repository(
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
     decision = await evaluate_public_repository(
-        "search_code", {"query": f"repo:{OWNER}/{REPOSITORY} language:python"}, _visibility((OWNER, REPOSITORY))
+        "search_code", {"query": f"repo:{OWNER}/{REPOSITORY} language:python"}, github_visibility((OWNER, REPOSITORY))
     )
     assert isinstance(decision, RepositoryMatch)
     assert decision.explanation == f"reviewed code search targets confirmed-public repository {OWNER}/{REPOSITORY}"
 
 
-async def test_public_repository_refuses_an_unconfirmed_target() -> None:
+async def test_public_repository_refuses_an_unconfirmed_target(
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
     decision = await evaluate_public_repository(
-        "issue_read", {"owner": "someone", "repo": "private-thing", "issue_number": 1}, _visibility()
+        "issue_read", {"owner": "someone", "repo": "private-thing", "issue_number": 1}, github_visibility()
     )
     assert decision == RepositoryMismatch("repository someone/private-thing is not confirmed public")
 
 
-async def test_public_repository_fails_closed_when_the_check_is_unavailable() -> None:
+async def test_public_repository_fails_closed_when_the_check_is_unavailable(
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
     decision = await evaluate_public_repository(
         "get_file_contents",
         {"owner": OWNER, "repo": REPOSITORY, "path": "README.md"},
-        _visibility((OWNER, REPOSITORY), unavailable=True),
+        github_visibility((OWNER, REPOSITORY), unavailable=True),
     )
     assert decision == RepositoryMismatch(f"could not confirm {OWNER}/{REPOSITORY} is public")
 
 
-async def test_public_repository_rejects_a_smuggled_qualifier_before_looking_up_anything() -> None:
+async def test_public_repository_rejects_a_smuggled_qualifier_before_looking_up_anything(
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
     """owner/repo names a confirmed-public repository, but the query's own `repo:` would target another."""
     decision = await evaluate_public_repository(
         "search_pull_requests",
         {"owner": OWNER, "repo": REPOSITORY, "query": "repo:someone/private-thing is:open"},
-        _visibility((OWNER, REPOSITORY)),
+        github_visibility((OWNER, REPOSITORY)),
     )
     assert isinstance(decision, RepositoryMismatch)
     assert "repository qualifier" in decision.reason

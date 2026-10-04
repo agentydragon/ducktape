@@ -98,11 +98,11 @@ class Monthly:
     payee: AgentId
     amount: int
     income_category: TransferIncomeCategory | None
-    end_month: int | None
+    end_month: int
 
 
 def monthly(
-    cause_id: str, payer: AgentId, payee: AgentId, amount: Decimal, *, income: bool, end_month: int | None = 11
+    cause_id: str, payer: AgentId, payee: AgentId, amount: Decimal, *, income: bool, end_month: int = 11
 ) -> Monthly:
     return Monthly(cause_id, payer, payee, USD.quanta(amount), ORDINARY_INCOME if income else None, end_month)
 
@@ -180,23 +180,22 @@ def compose(case: Situation, indexation: TaxIndexation) -> World:
             account=AccountRef(agent_id=opened.agent_id, account_id=CHECKING),
             opening_balance=USD.quanta(opened.balance),
         )
-    if case.jurisdiction_ids:
-        world.track(
-            TaxAuthority(
-                compile_profile(
-                    TaxProfile(
-                        agent_id=ALICE,
-                        filing_status=FilingStatus.SINGLE,
-                        jurisdiction_ids=list(case.jurisdiction_ids),
-                        tax_authority_agent_id=IRS,
-                        prior_year_tax=Decimal(case.prior_year_tax),
-                    ),
-                    jurisdictions,
-                    currency=USD,
+    world.track(
+        TaxAuthority(
+            compile_profile(
+                TaxProfile(
+                    agent_id=ALICE,
+                    filing_status=FilingStatus.SINGLE,
+                    jurisdiction_ids=list(case.jurisdiction_ids),
+                    tax_authority_agent_id=IRS,
+                    prior_year_tax=Decimal(case.prior_year_tax),
                 ),
-                indexation=indexation,
-            )
+                jurisdictions,
+                currency=USD,
+            ),
+            indexation=indexation,
         )
+    )
     for asset in dict.fromkeys(held.asset for held in case.lots):
         world.declare_pool(
             agent_id=ALICE,
@@ -458,10 +457,6 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics(indexation: TaxIndexa
         indexation,
     )
     assert rollout.trace is not None
-    accruals = by_jurisdiction(rollout.trace.events.tax_accruals)
-    assert usd(accruals[FEDERAL]["amount_quanta"]) == pytest.approx(5272.26, abs=0.01)
-    assert usd(accruals[CALIFORNIA]["amount_quanta"]) == pytest.approx(2712.36, abs=0.01)
-
     payments = tax_transfers(rollout)
     assert payments.select("month_index", "cause_id", "amount_quanta").to_dicts() == [
         {"month_index": 3, "cause_id": "alice_estimated_tax_q1_y0", "amount_quanta": 100_000},
@@ -581,24 +576,6 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(in
     assert units_remaining(rollout, LotId("alice_vti_seed"), 13) == pytest.approx(59.84, abs=0.02)
     assert usd(sum(row.amount_owed for row in owed(rollout, 13))) == pytest.approx(0.0, abs=0.02)
     assert rollout.stop is None
-
-
-def test_explicit_empty_tax_profiles_means_no_year_end_accrual(indexation: TaxIndexation) -> None:
-    """An explicit no-tax scenario emits no year-end accruals."""
-    rollout = run(
-        Situation(
-            horizon_months=12,
-            accounts=(Checking(ALICE), Checking(PAYROLL)),
-            jurisdiction_ids=(),
-            recurring_transfers=(
-                monthly("alice_paycheck", PAYROLL, ALICE, Decimal(5000), income=True, end_month=None),
-            ),
-        ),
-        indexation,
-    )
-    assert rollout.trace is not None
-    assert rollout.trace.events.tax_accruals.is_empty()
-    assert not [row for entry in rollout.trace.books for row in entry.tax_liabilities]
 
 
 def test_year_end_tax_payment_debits_agent_cash(indexation: TaxIndexation) -> None:

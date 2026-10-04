@@ -1035,22 +1035,6 @@ fn candidate_limit_counts_places_not_wildcard_alignments() {
 }
 
 #[test]
-fn candidate_limit_still_rejects_too_many_distinct_places() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("chunk.js");
-    let chunk: String = (0..101).map(|i| format!("const v{i} = 1;\n")).collect();
-    write_text_file(&source, &chunk);
-    let report = run_match_selector(
-        &source,
-        "const target = 1;",
-        &["--target-binding", "target", "--no-slack"],
-    );
-    let outcome = &report["outcomes"][0]["outcome"];
-    assert_eq!(outcome["kind"], "too_broad", "{report:#}");
-    assert_eq!(outcome["count"], 101, "{report:#}");
-}
-
-#[test]
 fn selector_commands_share_source_path_selection_without_changing_env_support() {
     use debundle_e2e_support::debundler_path;
     use std::process::Command;

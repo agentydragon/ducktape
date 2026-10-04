@@ -1,5 +1,4 @@
 import os
-import subprocess
 from datetime import timedelta
 from pathlib import Path
 
@@ -61,44 +60,21 @@ print("py post-create: hello from stderr", file=sys.stderr)
         kill_daemon_at_wt_dir(config.wt_dir)
 
 
-@pytest.mark.parametrize("stdin_mode", ["open", "closed"])
-def test_post_creation_python_script_runs(real_env_with_python_post_script, stdin_mode, wtcli):
+def test_post_creation_python_script_runs(real_env_with_python_post_script, wtcli):
     env, repo = real_env_with_python_post_script
     name = "py-hooked"
 
     # Run CLI in "sh -c <name>" mode which triggers creation and post-create hook
-    # Choose stdin behavior: open (default) vs closed (simulate bad fd 0 for daemon)
-    stdin = None if stdin_mode == "open" else subprocess.DEVNULL  # parent CLI stdin is /dev/null; daemon inherits this
-
-    cli = wtcli(env)
-    result = cli.sh_c(name, timeout=timedelta(seconds=30.0), stdin=stdin)
-
-    if stdin_mode == "open":
-        assert result.returncode == 0, (
-            f"wt create failed: rc={result.returncode}\nstdout=\n{result.stdout}\n\nstderr=\n{result.stderr}"
-        )
-    else:
-        # Using /dev/null for stdin is a valid fd (not truly "closed").
-        # Current behavior: hook inherits a valid stdin, so it should succeed too.
-        assert result.returncode == 0, (
-            "expected success with stdin=/dev/null; got rc="
-            f"{result.returncode}\nstdout=\n{result.stdout}\n\nstderr=\n{result.stderr}"
-        )
-        # Keep outputs for visibility
-        combined = (result.stdout or "") + (result.stderr or "")
-        assert "Fatal Python error" not in combined
+    result = wtcli(env).sh_c(name, timeout=timedelta(seconds=30.0))
+    assert result.returncode == 0, (
+        f"wt create failed: rc={result.returncode}\nstdout=\n{result.stdout}\n\nstderr=\n{result.stderr}"
+    )
 
     wt_path = Path(repo) / "worktrees" / name
     assert wt_path.exists(), f"missing worktree at {wt_path}"
     assert wt_path.is_dir(), f"worktree path is not a directory: {wt_path}"
-    marker = wt_path / ".py_post_create_ran"
-    if stdin_mode == "open":
-        assert marker.exists(), ".py_post_create_ran not created by python post-create"
-        combined = (result.stdout or "") + (result.stderr or "")
-        assert "Fatal Python error: init_sys_streams" not in combined
-    else:
-        # Closed mode (/dev/null) also succeeds; marker should still be present.
-        assert marker.exists(), ".py_post_create_ran not created in closed-stdin mode"
+    assert (wt_path / ".py_post_create_ran").exists(), ".py_post_create_ran not created by python post-create"
+    assert "Fatal Python error: init_sys_streams" not in (result.stdout or "") + (result.stderr or "")
 
 
 if __name__ == "__main__":

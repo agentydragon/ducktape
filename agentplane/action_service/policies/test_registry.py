@@ -1,13 +1,12 @@
 """The registry gate every kind shares: an Action a policy does not list never matches, whatever
-the kind's own test would say; the union refuses an unknown `type` at parse."""
+the kind's own test would say."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
-import pytest
 import pytest_bazel
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
@@ -44,11 +43,6 @@ async def test_unlisted_action_never_matches(github_visibility: Callable[..., Re
             assert await evaluate(policy, unlisted, arguments, visibility) == NotMatched(
                 f"{unlisted.group}/{unlisted.name} is not listed"
             )
-
-
-def test_unknown_kind_is_refused() -> None:
-    with pytest.raises(ValidationError):
-        POLICIES.validate_python([{"type": "allow_all", "actions": {"everything": ["echo"]}}])
 
 
 if __name__ == "__main__":

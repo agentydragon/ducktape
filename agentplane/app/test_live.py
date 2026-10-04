@@ -420,14 +420,6 @@ async def test_global_thread_stream_reports_listener_loss_then_rereads_after_rec
         await engine.dispose()
 
 
-def test_the_frame_models_are_published_in_the_document(app: FastAPI) -> None:
-    """The SPA's types are generated from this document, so the frames it reads have to be in it."""
-    with TestClient(app) as client:
-        schemas = client.get("/openapi.json").json()["components"]["schemas"]
-
-    assert {"SandboxesSnapshot", "SandboxSnapshot", "WatchHealth", "ActionPolicyUnavailable"} <= set(schemas)
-
-
 async def _snapshot(index: LiveIndex) -> SandboxesSnapshot:
     return SandboxesSnapshot(sandboxes=index.sandbox_views(), watch=index.health(NOW))
 

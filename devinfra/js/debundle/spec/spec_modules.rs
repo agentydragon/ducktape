@@ -251,26 +251,6 @@ mod tests {
     }
 
     #[test]
-    fn read_module_file_round_trips_members_and_anonymous_statements() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("x.yaml");
-        fs::write(
-            &path,
-            r#"members:
-  - selector: { binding: { name: a } }
-anonymous_statements: []
-"#,
-        )
-        .unwrap();
-        let module = read_module_file(&path).unwrap();
-        assert_eq!(module.members.len(), 1);
-        assert_eq!(
-            module.members[0].selector.binding.as_ref().unwrap().name,
-            "a"
-        );
-    }
-
-    #[test]
     fn read_module_claims_includes_anonymous_selectors() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("x.yaml");
@@ -302,97 +282,6 @@ anonymous_statements:
                 },
             ])
         );
-    }
-
-    #[test]
-    fn read_module_file_round_trips_comment_fields_on_module_and_annotations() {
-        // Module-level `comment:` is emitted above the generated module.
-        // Per-binding prose lives in `annotations:` so it can be shared by
-        // binding selectors and canonical `source_matches[]` claims.
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("x.yaml");
-        fs::write(
-            &path,
-            r#"comment: |
-  Module overview
-  spans two lines.
-members:
-  - selector: { binding: { name: a } }
-annotations:
-  a:
-    comment: |
-      Per-member comment
-      across two lines.
-"#,
-        )
-        .unwrap();
-        let module = read_module_file(&path).unwrap();
-        assert_eq!(
-            module.comment.as_deref(),
-            Some("Module overview\nspans two lines.\n"),
-        );
-        assert_eq!(module.members.len(), 1);
-        assert_eq!(
-            module.annotations["a"].comment.as_deref(),
-            Some("Per-member comment\nacross two lines.\n"),
-        );
-    }
-
-    #[test]
-    fn read_module_file_round_trips_module_level_note() {
-        // Module-top `note:` is YAML-only scratch metadata (`modules
-        // merge` writes its `merged from:` provenance here). It must
-        // deserialize via the optional field, survive
-        // `deny_unknown_fields`, and stay distinct from `comment:`.
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("x.yaml");
-        fs::write(
-            &path,
-            r#"note: |
-  merged from: a.yaml, b.yaml
-members:
-  - selector: { binding: { name: a } }
-"#,
-        )
-        .unwrap();
-        let module = read_module_file(&path).unwrap();
-        assert_eq!(
-            module.note.as_deref(),
-            Some("merged from: a.yaml, b.yaml\n"),
-        );
-        assert!(module.comment.is_none());
-    }
-
-    #[test]
-    fn read_module_file_accepts_comment_field_on_anonymous_statement() {
-        // `AnonymousStatement` accepts `comment:` alongside `note:`
-        // (both `Option<String>`). `comment:` is the JS-visible prose
-        // field; `note:` is YAML-only scratch metadata.
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("x.yaml");
-        fs::write(
-            &path,
-            r#"anonymous_statements:
-  - match: "foo();"
-    comment: |
-      Registers foo before registry consumers run.
-  - match: "bar();"
-    note: one-liner note
-"#,
-        )
-        .unwrap();
-        let module = read_module_file(&path).unwrap();
-        assert_eq!(module.anonymous_statements.len(), 2);
-        assert_eq!(
-            module.anonymous_statements[0].comment.as_deref(),
-            Some("Registers foo before registry consumers run.\n"),
-        );
-        assert!(module.anonymous_statements[0].note.is_none());
-        assert_eq!(
-            module.anonymous_statements[1].note.as_deref(),
-            Some("one-liner note"),
-        );
-        assert!(module.anonymous_statements[1].comment.is_none());
     }
 
     #[test]

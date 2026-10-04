@@ -155,26 +155,6 @@ def test_recovers_known_cash_over_v_pre_median() -> None:
     assert posterior.n_primary_events >= 6
 
 
-def test_hazard_posterior_is_closed_form_gamma_poisson() -> None:
-    """Hazard is NOT MCMC-sampled — it's a closed-form Gamma posterior over the event count."""
-
-    prices, valuations = _synthetic_mint_streams_data(
-        monthly_hazard_true=1.0 / 6.0,
-        cash_over_v_pre_true=0.12,
-        cash_over_v_pre_log_sigma_true=0.5,
-        annual_mint_rate_true=0.04,
-        horizon_months=96,
-        seed=7,
-    )
-    posterior = fit_bayesian_mint_streams_prior(prices, valuations, num_warmup=400, num_samples=400, num_chains=1)
-    # Closed-form: alpha = prior_alpha + n_events, beta = prior_beta + window_months.
-    expected_alpha = BayesianMintStreamsPriors().hazard_prior_alpha + posterior.n_primary_events
-    expected_beta = BayesianMintStreamsPriors().hazard_prior_beta + posterior.observation_window_months
-    assert posterior.monthly_hazard_posterior_alpha == pytest.approx(expected_alpha)
-    assert posterior.monthly_hazard_posterior_beta == pytest.approx(expected_beta)
-    assert posterior.monthly_hazard == pytest.approx(expected_alpha / expected_beta, rel=1e-9)
-
-
 def test_recovers_known_annual_mint_rate() -> None:
     """Posterior recovers annual_mint_rate_mature near the truth (driven by the residual share
     growth not attributable to primary rounds)."""

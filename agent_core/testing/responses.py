@@ -40,8 +40,8 @@ class ResponsesFactory(ItemFactory):
     """Convenience adapter response builders bound to a model name.
 
     Provides methods to build mock ResponsesResult objects for testing.
-    For MCP-aware methods (mcp_tool_call, docker_exec, mounted_tool_call),
-    use MCPResponsesFactory from agent_core.testing.mcp.responses.
+    For the MCP-aware method mcp_tool_call, use MCPResponsesFactory from
+    agent_core.testing.mcp.responses.
     """
 
     def __init__(self, model: str):

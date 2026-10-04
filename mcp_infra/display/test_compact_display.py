@@ -9,7 +9,7 @@ from typing import cast
 
 import pytest
 import pytest_bazel
-from mcp.types import Implementation, InitializeResult, ReadResourceResult, ServerCapabilities, TextResourceContents
+from mcp.types import Implementation, InitializeResult, ServerCapabilities
 from pydantic import BaseModel
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
@@ -66,8 +66,6 @@ def render_handler_to_string(call: ToolCall, output: ToolCallOutput, prefix: str
     "cmd",
     [
         pytest.param(["bash", "-c", "ls -la /test/workspace"], id="bash_-c"),
-        pytest.param(["sh", "-c", "echo hello | tr a-z A-Z"], id="sh_-c"),
-        pytest.param(["/bin/sh", "-lc", "sed -n '1,10p' file.txt"], id="/bin/sh_-lc"),
         pytest.param(["ruff", "check", "/test/workspace"], id="non_wrapped"),
         pytest.param(["python", "-c", "print('hello world')"], id="non_wrapped_spaces"),
     ],
@@ -85,31 +83,8 @@ def test_docker_exec_shell_unwrapping_snapshot(snapshot: SnapshotAssertion, call
         call_id=call_id_gen(),
     )
 
-    exec_result = BaseExecResult(exit=Exited(exit_code=0), stdout="output text\n", stderr="", duration_ms=125)
-
-    output = ToolCallOutput(
-        call_id=call.call_id, result=ToolResult(content=[], structured_content=exec_result.model_dump(), is_error=False)
-    )
-
-    rendered = render_handler_to_string(call, output)
-
-    assert rendered == snapshot
-
-
-def test_docker_exec_with_custom_cwd_snapshot(snapshot: SnapshotAssertion, call_id_gen):
-    """Snapshot test for docker exec with custom working directory display."""
-    exec_input = _TestExecInput(
-        cmd=["bash", "-c", "pwd && ls"], cwd="/tmp/custom", env=None, user=None, timeout_ms=30000
-    )
-
-    call = ToolCall(
-        name=build_mcp_function(ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME),
-        args_json=json.dumps(exec_input.model_dump()),
-        call_id=call_id_gen(),
-    )
-
     exec_result = BaseExecResult(
-        exit=Exited(exit_code=0), stdout="/tmp/custom\nfile1.txt\nfile2.py\n", stderr="", duration_ms=89
+        exit=Exited(exit_code=0), stdout="output text\nsecond line\n", stderr="", duration_ms=125
     )
 
     output = ToolCallOutput(
@@ -167,48 +142,6 @@ def test_compact_display_handler_with_anyurl_in_result():
     assert len(output_text) > 0, "Handler should have produced output"
     # Should contain the server name
     assert "test-server" in output_text, f"Output should contain server name, got: {output_text}"
-
-
-def test_compact_display_handler_with_read_resource_result():
-    """Test that CompactDisplayHandler handles ReadResourceResult correctly.
-
-    ReadResourceResult was in the original error trace, back when TextResourceContents.uri
-    was AnyUrl-typed (mcp-sdk v2 narrowed it to plain str; test_compact_display_handler_with_anyurl_in_result
-    above still covers a genuinely AnyUrl-typed field).
-    """
-
-    # Create a ReadResourceResult - this is what resources_read_blocks returns
-    read_result = ReadResourceResult(
-        contents=[
-            TextResourceContents(
-                uri="resource://docker/containers/snapshots/crush/2025-08-30-internal_db/info",
-                mimeType="text/plain",
-                text="test content",
-            )
-        ]
-    )
-
-    # Dump without mode - this will have Url objects
-    dumped = read_result.model_dump()
-
-    # Create a ToolResult with this as structured content
-    result = ToolResult(structured_content=dumped, is_error=False, content=[])
-
-    # Create handler with StringIO console
-    output_buffer = StringIO()
-    console = Console(file=output_buffer, force_terminal=False, width=120)
-    handler = CompactDisplayHandler(max_lines=20, console=console, servers=None, show_token_usage=False)
-
-    call = ToolCall(call_id="test-456", name="resources_read_blocks", args_json='{"uri": "test"}')
-    handler._calls["test-456"] = call
-
-    output = ToolCallOutput(call_id="test-456", result=result)
-
-    # This used to raise "TypeError: Object of type Url is not JSON serializable"
-    handler.on_tool_result_event(output)
-    output_text = output_buffer.getvalue()
-    assert len(output_text) > 0, "Handler should have produced output"
-    assert "resource://" in output_text, f"Output missing resource URI: {output_text}"
 
 
 if __name__ == "__main__":

@@ -6,7 +6,6 @@ before the kill is preserved in the undeclared outputs.
 """
 
 import threading
-from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
 
@@ -50,6 +49,3 @@ class LoggedContainer(DockerContainer):
         # After stop() kills the container, the log stream ends and the thread exits.
         if self._log_thread:
             self._log_thread.join(timeout=3)
-
-
-LoggedContainerFactory = Callable[..., LoggedContainer]

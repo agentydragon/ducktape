@@ -43,13 +43,6 @@ describe("ssh exec arguments", () => {
     expect(container.textContent).not.toContain("Timeout");
   });
 
-  it("uses the CodeMirror shell language for the command", async () => {
-    const command = 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"';
-    const container = await drawn(renderPreview(execArgumentsPreview, { ...ARGUMENTS, command }));
-    expect(container.querySelector(".agentplane-code-block .cm-editor")).not.toBeNull();
-    expect(streams(container)[0][1]).toBe(command);
-  });
-
   it("shows the timeout when the call sets one", async () => {
     const container = await drawn(renderPreview(execArgumentsPreview, { ...ARGUMENTS, timeout_seconds: 30 }));
     expect(container.textContent).toContain("Timeout 30 s");

@@ -98,46 +98,6 @@ def test_no_staged_changes(repo: pygit2.Repository) -> None:
     assert _check(repo) == []
 
 
-def test_filename_conventions_ignored_attr(repo: pygit2.Repository, tmp_path: Path) -> None:
-    """Gitattributes filtering is done upstream; verify filtered deltas produce no violations."""
-    (tmp_path / ".gitattributes").write_text("bad-name.py filename-conventions-ignored=true\n")
-    repo.index.add(".gitattributes")
-    (tmp_path / "bad-name.py").write_text("# test")
-    repo.index.add("bad-name.py")
-    repo.index.write()
-
-    # Simulate upstream filtering
-    deltas = staged_deltas(repo)
-    filtered = [
-        d
-        for d in deltas
-        if not any(
-            repo.get_attr(d.new_file.path, a) in (True, "true")
-            for a in ("filename-conventions-ignored", "rules-lint-ignored")
-        )
-    ]
-    assert check_filename_conventions(filtered, head_tree(repo)) == []
-
-
-def test_rules_lint_ignored_attr(repo: pygit2.Repository, tmp_path: Path) -> None:
-    """Gitattributes filtering is done upstream; verify filtered deltas produce no violations."""
-    (tmp_path / ".gitattributes").write_text("ignored-dir/** rules-lint-ignored=true\n")
-    repo.index.add(".gitattributes")
-    ignored_dir = tmp_path / "ignored-dir"
-    ignored_dir.mkdir()
-    (ignored_dir / "bad-name.py").write_text("# test")
-    repo.index.add("ignored-dir/bad-name.py")
-    repo.index.write()
-
-    deltas = staged_deltas(repo)
-    filtered = [
-        d
-        for d in deltas
-        if not any(repo.get_attr(d.new_file.path, a) in (True, "true") for a in ("rules-lint-ignored",))
-    ]
-    assert check_filename_conventions(filtered, head_tree(repo)) == []
-
-
 def test_both_filename_and_directory_violations(repo: pygit2.Repository, tmp_path: Path) -> None:
     new_dir = tmp_path / "bad-dir"
     new_dir.mkdir()

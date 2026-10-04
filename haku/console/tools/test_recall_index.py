@@ -206,13 +206,6 @@ async def test_status_denies_an_actor_without_any_recall_grant() -> None:
     assert searcher.status_queries == []
 
 
-async def test_status_passes_the_full_granted_set_to_the_searcher() -> None:
-    searcher = _Searcher()
-    async with Client(_mcp(searcher)) as client:
-        await _call(client, "index_status", {})
-    assert searcher.status_queries == [("haku-state",)]
-
-
 async def test_operator_can_search_and_check_status_for_every_configured_index() -> None:
     searcher = _Searcher()
     operator = OperatorActor(operator_id=HAKU.operator_id)

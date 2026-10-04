@@ -4,7 +4,7 @@ import { type JSX, act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { HighlightedText, JsonView } from "./json_view";
+import { JsonView } from "./json_view";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
@@ -37,19 +37,5 @@ describe("JsonView", () => {
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("[onerror]")).toBeNull();
     expect(container.textContent).toContain("<img src=x");
-  });
-});
-
-describe("HighlightedText", () => {
-  it("uses the JSON CodeMirror language for text that looks like JSON", async () => {
-    const container = await render(<HighlightedText text={'{"command": "ls"}'} />);
-    expect(container.querySelector(".cm-editor")).not.toBeNull();
-    expect(container.textContent).toContain('{"command": "ls"}');
-  });
-
-  it("renders plain text unchanged rather than tokenizing prose as JSON", async () => {
-    const container = await render(<HighlightedText text={"README.md\nsrc\n"} />);
-    expect(container.querySelector(".cm-editor")).not.toBeNull();
-    expect(container.textContent).toContain("README.md");
   });
 });

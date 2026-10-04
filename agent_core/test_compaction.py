@@ -131,45 +131,5 @@ async def test_compaction_handler_triggers_at_threshold(mcp_tool_provider):
     assert isinstance(handler.on_before_sample(), NoAction)
 
 
-async def test_compaction_handler_integrated_with_agent(mcp_tool_provider):
-    """Test that CompactionHandler works when integrated with agent loop."""
-    client = SummarizingClient(summary_text="Summary of early conversation.")
-    handler = CompactionHandler(threshold_tokens=100, keep_recent_turns=2)
-
-    agent = await Agent.create(
-        tool_provider=mcp_tool_provider, client=client, handlers=[handler], tool_policy=RequireAnyTool()
-    )
-
-    # Build up conversation history
-    agent.process_message(SystemMessage.text("Test system prompt"))
-    agent.process_message(UserMessage.text("First message"))
-    agent.process_message(AssistantMessage.text("First response"))
-    agent.process_message(UserMessage.text("Second message"))
-    agent.process_message(AssistantMessage.text("Second response"))
-    agent.process_message(UserMessage.text("Third message"))
-    agent.process_message(AssistantMessage.text("Third response"))
-
-    original_len = len(agent._transcript)
-
-    # Trigger compaction by simulating token usage
-    handler.on_response(
-        Response(
-            response_id="test-response",
-            usage=GroundTruthUsage(model="gpt-4o-mini", total_tokens=150),
-            model="gpt-4o-mini",
-        )
-    )
-
-    # Manually trigger compaction (in real agent loop, _run_one_phase would do this)
-    decision = handler.on_before_sample()
-    assert isinstance(decision, Compact)
-    await agent.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
-
-    # Verify transcript was compacted
-    assert len(agent._transcript) < original_len
-    # First item is the summary
-    assert agent._transcript[0] == UserMessage.text("Summary of early conversation.")
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

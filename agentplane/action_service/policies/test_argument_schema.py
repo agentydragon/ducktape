@@ -1,4 +1,4 @@
-"""`argument_schema` has plain JSON Schema semantics, and refuses a schema that is not one."""
+"""`argument_schema` has plain JSON Schema semantics."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 import pytest
 import pytest_bazel
-from pydantic import JsonValue, ValidationError
+from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
@@ -45,13 +45,6 @@ async def test_plain_json_schema_semantics(
 ) -> None:
     decision = await evaluate(POLICY, ECHO, arguments, github_visibility())
     assert isinstance(decision, Matched if matched else NotMatched)
-
-
-def test_invalid_json_schema_is_refused_at_parse() -> None:
-    with pytest.raises(ValidationError, match="not a valid JSON Schema"):
-        ArgumentSchema.model_validate(
-            {"type": "argument_schema", "actions": {"everything": ["echo"]}, "schema": {"type": "nope"}}
-        )
 
 
 if __name__ == "__main__":

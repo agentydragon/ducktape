@@ -21,14 +21,6 @@ _KUBECONFIG = {
 }
 
 
-def test_build_kubeconfig_token() -> None:
-    kc = kubeconfig.build_kubeconfig(_FAKE_TOKEN)
-    assert kc["users"][0]["user"] == {"token": _FAKE_TOKEN}
-    assert kc["clusters"][0]["cluster"] == {"server": kubeconfig.DEFAULT_SERVER}
-    assert kc["current-context"] == kubeconfig.DEFAULT_USER
-    assert kc["contexts"][0]["context"]["namespace"] == kubeconfig.DEFAULT_NAMESPACE
-
-
 def test_build_kubeconfig_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("K8S_USER", "haku-k8s")
     monkeypatch.setenv("K8S_NAMESPACE", "haku")

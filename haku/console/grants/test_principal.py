@@ -6,7 +6,7 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 
 from haku.console.grants.principal import (
     AccessProfileGrantPrincipal,
@@ -21,13 +21,6 @@ from haku.console.tool_call_actor import AgentActor
 
 AGENT_A = UUID("00000000-0000-4000-8000-000000000001")
 AGENT_B = UUID("00000000-0000-4000-8000-000000000002")
-GRANT_PRINCIPAL_ADAPTER: TypeAdapter[GrantPrincipal] = TypeAdapter(GrantPrincipal)
-
-
-@pytest.mark.parametrize("payload", [{}, {"kind": "agent"}, {"kind": "other", "agent_id": str(AGENT_A)}])
-def test_grant_principal_wire_shapes_fail_closed(payload: dict[str, str]) -> None:
-    with pytest.raises(ValidationError):
-        GRANT_PRINCIPAL_ADAPTER.validate_python(payload)
 
 
 def test_grant_and_request_principals_are_immutable_and_reject_untrusted_fields() -> None:

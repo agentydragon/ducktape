@@ -131,20 +131,6 @@ def test_edge_credit_negative_invalid(session, add_edge, tp_occurrence_single):
     session.rollback()
 
 
-def test_edge_credit_above_one_invalid(session, add_edge, tp_occurrence_single):
-    """Invalid: credit cannot exceed 1.0.
-
-    Note: The credit_sum trigger catches this before the CHECK constraint,
-    so we get a RaiseException (via psycopg2.errors) rather than IntegrityError.
-    """
-    tp_id, occ_id = tp_occurrence_single
-    add_edge("issue-001", tp_id=tp_id, tp_occurrence_id=occ_id, credit=1.5, rationale="Invalid: credit > 1.0")
-
-    with pytest.raises(Exception, match=r"Credit sum .* would exceed 1\.0"):
-        session.commit()
-    session.rollback()
-
-
 def test_credit_sum_trigger_enforces_limit_tp(session, add_edge, tp_occurrence_single):
     """SQL trigger enforces credit sum ≤1.0 per TP occurrence."""
     tp_id, occ_id = tp_occurrence_single

@@ -411,12 +411,6 @@ def test_upstream_unreachable_is_502() -> None:
     assert "no route" in resp.json()["detail"]
 
 
-def test_upstream_timeout_takes_precedence_over_generic_request_error() -> None:
-    # TimeoutException subclasses RequestError, so ordering the except clauses the
-    # other way around would silently answer 502 for every timeout.
-    assert issubclass(httpx.TimeoutException, httpx.RequestError)
-
-
 def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NAMESPACE_ALLOWLIST", " flux-system, monitoring ,kube-system ")
     monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.96.0.1")

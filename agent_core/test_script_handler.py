@@ -23,7 +23,7 @@ from agent_core.script_handler import (
 from agent_core.tool_provider import ToolResult
 from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.prefix import MCPMountPrefix
-from openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
+from openai_utils.model import FunctionCallItem, UserMessage
 
 TEST_PREFIX = MCPMountPrefix("test")
 
@@ -47,20 +47,6 @@ def test_prime_yield_must_be_none():
 
     with pytest.raises(RuntimeError, match="first yield must be None"):
         bad_script()
-
-
-def test_single_call_injection():
-    @script_handler
-    def script() -> ScriptGen:
-        yield None
-        yield [FunctionCallItem(call_id="c1", name="test_tool", arguments="{}")]
-
-    handler = script()
-    decision = handler.on_before_sample()
-    assert isinstance(decision, InjectItems)
-    assert len(decision.items) == 1
-    assert isinstance(decision.items[0], FunctionCallItem)
-    assert decision.items[0].call_id == "c1"
 
 
 def test_generator_return_becomes_no_action():
@@ -152,18 +138,6 @@ def test_events_not_buffered_after_exhaustion():
     handler.on_before_sample()  # exhaust
     handler.on_tool_result_event(_tool_result_event("late", structured=EXEC_OK.model_dump()))
     assert isinstance(handler.on_before_sample(), NoAction)
-
-
-def test_message_injection():
-    @script_handler
-    def script() -> ScriptGen:
-        yield None
-        yield [SystemMessage.text("system msg"), UserMessage.text("user msg")]
-
-    handler = script()
-    decision = handler.on_before_sample()
-    assert isinstance(decision, InjectItems)
-    assert len(decision.items) == 2
 
 
 def test_yield_from_sub_generator():

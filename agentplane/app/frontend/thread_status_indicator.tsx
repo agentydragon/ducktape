@@ -4,9 +4,9 @@ import type { JSX } from "react";
 
 import { MarkGlyph } from "./mark_glyph";
 import { THREAD_STATUS_MARKS, type ThreadStatusKind } from "./status_mark";
-import "./thread_status_dot.css";
+import "./thread_status_indicator.css";
 
-export function ThreadStatusDot({
+export function ThreadStatusIndicator({
   kind,
   label,
   size = "regular",
@@ -23,7 +23,7 @@ export function ThreadStatusDot({
         aria-label={label}
         title={label}
         tabIndex={0}
-        className="agentplane-thread-status-dot"
+        className="agentplane-thread-status-indicator"
         data-status={kind}
       >
         <MarkGlyph mark={THREAD_STATUS_MARKS[kind]} size={size} />

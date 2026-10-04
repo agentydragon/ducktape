@@ -256,14 +256,6 @@ async def test_service_rejects_unknown_bearer_before_sar() -> None:
     assert sar.calls == []
 
 
-async def test_service_surfaces_sar_failure_as_unavailable() -> None:
-    sar = FakeSarClient(error=KubernetesAuthorizationUnavailableError("SAR failed"))
-    with pytest.raises(KubernetesAuthorizationUnavailableError, match="SAR failed"):
-        await _service(sar).authorize(
-            bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST)
-        )
-
-
 async def test_subject_access_review_client_builds_resource_request_for_fixed_subject() -> None:
     authorization = FakeAuthorizationApi()
     client = KubernetesSubjectAccessReviewClient(

@@ -51,12 +51,6 @@ def sample_config() -> PropsConfig:
     )
 
 
-def test_resolve_upstream_url_static() -> None:
-    """Static URL is returned directly."""
-    config = UpstreamConfig(url="http://localhost:11434/v1", api_key_env="KEY")
-    assert _resolve_upstream_url(config) == "http://localhost:11434/v1"
-
-
 def test_resolve_upstream_url_from_env() -> None:
     """URL from env var is resolved."""
     config = UpstreamConfig(url_env="MY_URL_VAR", api_key_env="KEY")

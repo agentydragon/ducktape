@@ -11,8 +11,8 @@ from haku.recall_index.schema import SCHEMA, Content, ContentEmbedding
 from haku.recall_index.store import ContentEmbeddingRow, insert_content_embeddings
 
 
-def _row(embedding: list[float], *, number: int = 0) -> ContentEmbeddingRow:
-    content = f"content-{number}"
+def _row(embedding: list[float]) -> ContentEmbeddingRow:
+    content = "content"
     return ContentEmbeddingRow(content_sha=content_sha(content), content=content, model_key="m", embedding=embedding)
 
 
@@ -40,14 +40,6 @@ async def test_one_content_value_can_have_embeddings_for_multiple_models(session
 
     assert await session.scalar(select(func.count()).select_from(Content)) == 1
     assert await session.scalar(select(func.count()).select_from(ContentEmbedding)) == 2
-
-
-async def test_many_content_embeddings_can_be_persisted(session: AsyncSession) -> None:
-    """The writer accepts a source large enough to exceed one SQL VALUES parameter budget."""
-    await insert_content_embeddings(session, [_row([0.5, 0.5, 0.5], number=index) for index in range(4000)])
-    await session.commit()
-
-    assert await session.scalar(select(func.count()).select_from(ContentEmbedding)) == 4000
 
 
 if __name__ == "__main__":

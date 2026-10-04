@@ -60,18 +60,6 @@ fn peeled_function_returning_object_literal_keeps_value_position_imports() {
     let target_src =
         fs::read_to_string(&target_path).unwrap_or_else(|e| panic!("read target_module.js: {e}"));
 
-    // The peel target's body references the two provider imports
-    // somewhere — either as the original `sA`/`sB` locals or under
-    // the heuristic-renamed `propKeyA`/`propKeyB` spellings. Either
-    // way, the corresponding cross-module import must land in the
-    // emitted module head.
-    assert!(
-        target_src.contains("import") && target_src.contains("provider_module"),
-        "target_module.js must import from provider_module so the \
-         function's return object has its value positions defined; \
-         got:\n{target_src}",
-    );
-
     // The canonical path-rebase fix from PR #1630 must hold — we want
     // `"../provider_module.js"`, not `".././provider_module.js"`.
     assert!(

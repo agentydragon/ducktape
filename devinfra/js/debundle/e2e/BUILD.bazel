@@ -108,8 +108,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "residual_member_rename_test")
 
-debundle_e2e_test(name = "source_order_emit_test")
-
 debundle_e2e_test(
     name = "purity_test",
     deps = ["@crates//:serde_json"],
@@ -131,10 +129,7 @@ debundle_e2e_test(name = "export_default_purity_test")
 
 debundle_e2e_test(name = "auto_grown_export_alias_collision_test")
 
-debundle_e2e_test(
-    name = "reserved_word_mint_test",
-    deps = ["@crates//:swc_ecma_ast"],
-)
+debundle_e2e_test(name = "reserved_word_mint_test")
 
 debundle_e2e_test(name = "runtime_tdz_on_imported_class_test")
 

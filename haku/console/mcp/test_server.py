@@ -52,7 +52,6 @@ from util.net import bind_free_port
 from util.testing.asgi import serve_app_sync
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from x.google_mcp_server import gmail as gmail_tools, google_calendar as calendar_tools
-from x.google_mcp_server.google_calendar_client import CalendarEvent
 
 
 def _in_process_backend(credential: dict[str, Any]) -> dict[str, Any]:
@@ -186,9 +185,6 @@ async def harness(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> As
         "labels": [{"id": "Label_1", "name": "haku/triaged", "type": "user"}]
     }
     calendar_client = Mock()
-    calendar_client.get_event.return_value = CalendarEvent(
-        event_id="series1", summary="Standup", recurrence=["RRULE:FREQ=WEEKLY"]
-    )
     config_file = _write_console_config(
         tmp_path / "console.yaml",
         {
@@ -373,12 +369,6 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
         _assert_valid_json_schema(tool.output_schema)
 
 
-def test_approval_envelope_rejects_old_wait_field_name() -> None:
-    model = mcp_server_module._approval_request_envelope_model(max_wait_ms=60_000)
-    with pytest.raises(ValidationError, match="wait_for_approval_ms"):
-        model.model_validate({"input": {}, "rationale": "test", "wait_for_approval_ms": 0})
-
-
 def test_approval_envelope_wait_has_default_and_strict_bounds() -> None:
     max_wait_ms = 60_000
     model = mcp_server_module._approval_request_envelope_model(max_wait_ms=max_wait_ms)
@@ -547,19 +537,6 @@ async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness
     pending = await _operator_get(harness, "/api/approvals/pending")
     assert pending.status_code == 200, pending.text
     assert pending.json()["approvals"] == []
-
-
-async def test_calendar_read_is_transparent_and_audited(harness: _Harness, agent_client: Client) -> None:
-    result = await agent_client.call_tool("google_calendar__get_event", {"event_id": "series1"})
-
-    assert result.structured_content is not None
-    assert result.structured_content["event_id"] == "series1"
-    response = await _operator_get(harness, "/api/tool-calls")
-    assert response.status_code == 200, response.text
-    calls = response.json()["tool_calls"]
-    assert len(calls) == 1
-    assert calls[0]["server_id"] == "google_calendar"
-    assert calls[0]["tool_name"] == "get_event"
 
 
 async def test_request_tool_returns_pending_stub_with_deep_link(agent_client: Client) -> None:

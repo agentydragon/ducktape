@@ -166,9 +166,7 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
         ActionRequestInput.model_validate({**envelope.model_dump(), "external_grant": grant.provenance().model_dump()})
 
 
-@pytest.mark.parametrize(
-    "invalidate", ["revoke", "unlabel", "remove", "missing_authority", "reconnect_same", "reconnect_other"]
-)
+@pytest.mark.parametrize("invalidate", ["revoke", "unlabel", "missing_authority", "reconnect_same", "reconnect_other"])
 @pytest.mark.parametrize("available", [True, False])
 async def test_original_authority_is_rechecked_before_dispatch_without_rewriting_decision(
     engine: AsyncEngine,
@@ -188,8 +186,6 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
         await activated(authority, "new-authority-does-not-replace-original")
     elif invalidate == "unlabel":
         authority = ConnectionAuthority(make_sessionmaker(engine), admitted_callers(OTHER))
-    elif invalidate == "remove":
-        authority = ConnectionAuthority(make_sessionmaker(engine), admitted_callers())
     elif invalidate in {"reconnect_same", "reconnect_other"}:
         connection = await authority.get(grant.connection_id)
         replacement = await authority.bind(

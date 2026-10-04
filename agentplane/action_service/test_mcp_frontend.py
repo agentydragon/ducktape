@@ -20,7 +20,7 @@ from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
+from kubernetes_asyncio.client import AuthenticationV1Api
 from mcp.types import CallToolResult, ContentBlock, ImageContent, TextContent
 from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -162,8 +162,6 @@ class Frontend:
     app: FastAPI
     store: ActionStore
     service: ActionService
-    authentication: AsyncMock
-    core: AsyncMock
     updates: ActionUpdates
     tokens: dict[str, WorkloadPrincipal]
 
@@ -225,7 +223,6 @@ async def _serve(
 ) -> AsyncIterator[Frontend]:
     tokens = {f"test-token-{label}": sandbox(label) for label in ("a", "b", "elsewhere")}
     authentication = AsyncMock(spec=AuthenticationV1Api)
-    core = AsyncMock(spec=CoreV1Api)
 
     async def review(body: k8s_client.V1TokenReview) -> k8s_client.V1TokenReview:
         identity = tokens.get(body.spec.token)
@@ -262,7 +259,7 @@ async def _serve(
     )
     try:
         async with lifespan_in_own_task(app):
-            yield Frontend(app, store, service, authentication, core, updates, tokens)
+            yield Frontend(app, store, service, updates, tokens)
     finally:
         await service.close()
 

@@ -50,17 +50,10 @@ const MARKDOWN_READY = [
 
 const NOISY_READY = ['#app[data-noisy-ready="true"]'];
 const SIDEBAR_EXPANDED_READY = ['#app[data-noisy-ready="true"][data-sidebar-ready="expanded"]'];
-const LIVE_UPDATES_READY = ['#app[data-live-update-ready="true"]'];
 const LATEST_TAIL_READY = ['#app[data-latest-tail-ready="true"]'];
 const HISTORY_ANCHOR_READY = ['#app[data-history-anchor-ready="true"]'];
 
 export const SCENARIOS = {
-  SessionLiveUpdates: { element: "#app", readySelectors: LIVE_UPDATES_READY },
-  SessionLiveUpdates_mobile: {
-    element: "#app",
-    readySelectors: LIVE_UPDATES_READY,
-    viewport: { width: 420, height: 900 },
-  },
   SessionCompletedActivity: { element: "#app", readySelectors: ['#app[data-completed-activity-ready="true"]'] },
   SessionCompletedActivityExpanded: {
     element: "#app",

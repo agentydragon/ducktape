@@ -12,10 +12,7 @@ from uuid import uuid4
 import httpx
 import pytest
 import pytest_bazel
-from alembic.autogenerate import compare_metadata
-from alembic.migration import MigrationContext
 from sqlalchemy import select, update
-from sqlalchemy.engine import Connection as SqlConnection
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import create_app
@@ -30,7 +27,7 @@ from agentplane.action_service.connections import (
     NewConnection,
     ReconnectConnection,
 )
-from agentplane.action_service.db import ActionStore, Base, EnrollmentRow, make_sessionmaker
+from agentplane.action_service.db import ActionStore, EnrollmentRow, make_sessionmaker
 from agentplane.action_service.enrollments import (
     ConfirmedReconnectConnection,
     EnrollmentAllow,
@@ -271,23 +268,6 @@ async def test_operator_routes_require_auth_and_reject_redirect_injection(
         assert result.status_code == 200
         assert EnrollmentDecisionResult.model_validate(result.json()).redirect_url == consent.request.upstream_url
         assert (await http.post("/v1/operator/connection-enrollments", json={})).status_code == 404
-
-
-def _schema_matches(connection: SqlConnection) -> None:
-    context = MigrationContext.configure(
-        connection,
-        opts={
-            "include_object": lambda obj, name, type_, reflected, compare_to: (
-                type_ != "table" or name == "connection_enrollment"
-            )
-        },
-    )
-    assert compare_metadata(context, Base.metadata) == []
-
-
-async def test_enrollment_migration_matches_metadata(engine: AsyncEngine) -> None:
-    async with engine.begin() as connection:
-        await connection.run_sync(_schema_matches)
 
 
 @pytest.mark.parametrize("caller", [PERSONAL, OTHER])

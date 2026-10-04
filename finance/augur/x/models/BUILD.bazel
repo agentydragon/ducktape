@@ -602,12 +602,10 @@ py_test(
     deps = [
         ":conftest",
         ":independent",
-        ":provider_config",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

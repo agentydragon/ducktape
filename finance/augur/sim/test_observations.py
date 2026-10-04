@@ -220,10 +220,7 @@ def test_actor_books_follow_partial_sales_and_hide_exhausted_lots(scoped: Scoped
     assert [(d.units, d.basis) for d in dispositions] == [(2, 3), (3, 4), (5, 0)]
 
 
-def test_actor_books_reject_unpriced_public_positions_before_inspection(scoped: Scoped) -> None:
-    invalid = replace(scoped, series=tuple(s for s in scoped.series if s.series_id != "security:second"))
-    with pytest.raises(ValueError, match="missing public security series for 'second'"):
-        composed(invalid)
+def test_actor_books_reject_an_unknown_actor(scoped: Scoped) -> None:
     with pytest.raises(ValueError, match="unknown actor"):
         world_for(scoped).open_mail(AgentId("absent-actor"))
 

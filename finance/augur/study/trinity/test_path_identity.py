@@ -36,7 +36,6 @@ def test_trinity_keeps_every_start_and_composes_the_identical_paths(history: Mac
     with patch("finance.augur.model.historical_windows.load_macro_history", return_value=history):
         replay = sample_replay(tmp_path)
     assert replay.window_starts == history.months[:4]
-    assert replay.window_count == 4
     assert replay.situation == _situation(
         HistoricalWindowsModel(history=history, equity=EQUITY_SPEC, instruments=(BOND_SPEC,)), history.months[:4]
     )

@@ -6,8 +6,8 @@ files under cluster/k8s (committed because Flux reads them from git), this is a
 compile-time codegen dependency -- outputs are pure build artifacts, never committed.
 
 "Generated bindings load and synthesize under Bazel" is a property of this mechanism,
-not of any one CRD -- proven once by //cluster/cdk8s/providers/flux:test_kustomization_import.
-A caller importing another CRD doesn't need its own copy of that smoke test.
+not of any one CRD -- every Flux synth (//cluster/cdk8s:test_flux) proves it.
+A caller importing another CRD doesn't need its own smoke test.
 """
 
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
