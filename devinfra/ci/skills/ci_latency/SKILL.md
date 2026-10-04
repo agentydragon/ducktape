@@ -39,6 +39,44 @@ completed analysis**. Do not publish a new history entry unless it contains a
 substantive reviewed narrative and supporting evidence; when access is missing,
 report the limitation rather than create a plausible-looking report.
 
+## Finish the investigation and test the recommendation
+
+Do the investigative work implied by your findings before handing over the report.
+“Reduce fixed overhead,” “optimize caching,” and “investigate failure recovery” are
+objectives or unfinished work, not concrete recommendations. If an important finding
+still leads to wording like that, drill into the available logs, attempts, profiles,
+workflow implementation and dependency graph until you can explain the mechanism
+and propose a specific change. Do not delegate available analysis back to the user.
+
+A recommendation should identify what to change and where, how that change removes
+observed work or waiting, which workloads benefit, and what coverage or correctness
+must be preserved. Separate implementation proposals from unresolved diagnoses.
+For rerun delays, examine failure logs, attempt metadata and triggering actors;
+do not label an unexplained interval an operator delay or scheduler bottleneck.
+
+When feasible, try the proposed change in a bounded, isolated spike using the
+available tools and credentials. Prefer an experiment that tests its weakest
+assumption: reproduce the failure, change the suspected mechanism, and compare
+behavior on the same input. Use real profilers for performance questions and the
+repository's normal validation tools. Keep production workflows and deployed
+settings unchanged unless their modification is authorized; an analysis request
+can still include reversible local experiments and remote test execution.
+
+Record the hypothesis, source revision, experiment/command, observed result and
+what it does and does not establish in the report or linked supporting evidence.
+A rejected optimization is a useful result. Passing a narrow spike establishes
+only the behavior it exercised; it is not a measured CI speedup. Quantify savings
+from evidence or label them unmeasured. Account for the next-slowest required gate
+before translating one job's improvement into end-to-end feedback savings.
+
+Do not stop at “needs investigation” while the needed evidence or experiment is
+available. If further progress requires unavailable logs, permissions, an external
+service change or a disproportionate experiment, name that specific boundary,
+what you already tried, and the smallest next step that would resolve it. Do not
+invent a root cause or a saving to make the report look complete. The final report
+should leave the user decisions to make, rather than routine investigative work
+that the agent could have completed.
+
 ## Collect and reproduce
 
 Scripts are relative to this skill directory. Run from a named-branch Ducktape
