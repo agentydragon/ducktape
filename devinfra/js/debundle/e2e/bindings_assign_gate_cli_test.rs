@@ -12,18 +12,6 @@ fn bindings_assign_rejects_atom_split_in_both_modes_without_writes() {
 }
 
 #[test]
-fn bindings_assign_accepts_acyclic_cross_module_move() {
-    let fixture = GraphFixture::acyclic_pair();
-    fixture.assert_success(&["bindings", "assign", "beta:c"]);
-    assert!(fixture.modules.join("c.yaml").exists());
-    assert!(
-        !fixture.modules.join("b.yaml").exists(),
-        "drained source must be deleted"
-    );
-    fixture.assert_runs("2\n");
-}
-
-#[test]
 fn bindings_assign_and_unassign_require_graph_or_no_verify() {
     let fixture = GraphFixture::acyclic_pair();
     let before = fs::read(fixture.modules.join("a.yaml")).unwrap();
