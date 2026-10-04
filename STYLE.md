@@ -318,6 +318,19 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
 
 ## Testing
 
+- **Admission: add a test only when some plausible wrong edit would fail it and
+  nothing lower or higher already catches that edit.** Refactors and moves, renames,
+  value and configuration edits, manifest and generated-output changes covered by a
+  snapshot or validator, dependency bumps, deletions, and docs need no new test. A bug
+  fix adds one regression test at the highest level that reproduces the bug, shown to
+  fail without the fix. The PR description names, for each added test, the wrong edit
+  it catches; a test that cannot name one is deleted before review.
+  - **Verify by diff**: a text edit (copy, prompts, messages, docs), rename, value
+    change, or removal is verified by reading the diff and running the existing suite.
+    Never assert that the old text is gone or the new text is present. Update an
+    existing test only when it breaks, and delete it when the only thing it pinned was
+    the text. Exception: text that is itself a contract (a program parses it, an
+    outside protocol holds it, legal or safety wording).
 - **Placement**: tests for `a/b/c.py` go in `a/b/test_c.py`, adjacent to the module.
   Cross-module integration tests get descriptive names
   (`test_agent_mcp_integration.py`).

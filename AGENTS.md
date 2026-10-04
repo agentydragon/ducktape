@@ -238,6 +238,10 @@ targets anyway; a pre-push `bbr test` of the same targets only delays review. Lo
 and anything CI does not cover. Changes that bypass PR checks entirely get validated
 before hand-off.
 
+**A change you can verify by reading the diff gets no new test** — text edits, renames,
+value changes, removals. Check the diff and let CI run the existing suite; rule and
+exception: <STYLE.md> § Testing (Admission).
+
 **Gotcha: `bbr test` on a test target does not lint the libraries it depends on** — the
 mypy/ruff aspects fire only for targets named on the command line. Name changed
 `py_library` targets too:
