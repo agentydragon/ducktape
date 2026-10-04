@@ -4,9 +4,10 @@ import { TEST_REASONING_EFFORTS } from "./test_model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
-import { afterAll, afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
 import type { SandboxView, ThreadView } from "./client";
+import type * as LiveModule from "./live";
 import type { Live, SandboxSnapshot } from "./live";
 import { SandboxPage } from "./sandbox_page";
 
@@ -61,7 +62,7 @@ const live = vi.hoisted(
     }) satisfies Live<SandboxSnapshot>
 );
 vi.mock("./live", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./live")>()),
+  ...(await importOriginal<typeof LiveModule>()),
   useLive: () => live,
 }));
 
@@ -159,6 +160,13 @@ async function choose(label: string, value: string): Promise<void> {
   await act(async () => option.click());
 }
 
+/** The JSON body of the first POST the page made to the sessions endpoint. */
+async function postedBody(sessions: Mock<(request: Request) => Promise<Response>>) {
+  const posted = sessions.mock.calls.find(([request]) => request.method === "POST")?.[0];
+  if (posted === undefined) throw new Error("no POST reached the sessions endpoint");
+  return await posted.json();
+}
+
 it("preserves a Sandbox reasoning default through model loading and submits it on later Thread launch", async () => {
   (live.snapshot.sandbox as SandboxView).binding = {
     bootstrap: "",
@@ -170,9 +178,7 @@ it("preserves a Sandbox reasoning default through model loading and submits it o
   await render(sessions);
   expect(labeledInput("Reasoning effort").value).toBe("high");
   await act(async () => newSession().click());
-  const sent = sessions.mock.calls.find(([request]) => request.method === "POST")?.[0];
-  expect(sent).toBeDefined();
-  expect((await sent?.json()).spec.reasoningEffort).toBe("high");
+  expect((await postedBody(sessions)).spec.reasoningEffort).toBe("high");
 });
 
 it("uses the bound working directory template and setup script for later Threads", async () => {
@@ -190,8 +196,7 @@ it("uses the bound working directory template and setup script for later Threads
   );
   await render(sessions);
   await act(async () => newSession().click());
-  const sent = sessions.mock.calls.find(([request]) => request.method === "POST")?.[0];
-  const body = await sent?.json();
+  const body = await postedBody(sessions);
   expect(body.spec.cwd).toMatch(/^\/state\/custom\/s-[^/]+\/work$/);
   expect(body.setup_script).toBe("printf 'ready\\n'");
 });
@@ -222,8 +227,7 @@ it("lets a later Thread override the Sandbox reasoning default locally", async (
   await render(sessions);
   await choose("Reasoning effort", "medium");
   await act(async () => newSession().click());
-  const sent = sessions.mock.calls.find(([request]) => request.method === "POST")?.[0];
-  expect((await sent?.json()).spec.reasoningEffort).toBe("medium");
+  expect((await postedBody(sessions)).spec.reasoningEffort).toBe("medium");
   expect((live.snapshot.sandbox as SandboxView).binding?.session_defaults?.reasoning_effort).toBe("high");
 });
 

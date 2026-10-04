@@ -326,7 +326,7 @@ function RecoveryNotes({ state, tool }: { state: ItemState; tool: boolean }): JS
     <>
       {state.recovery === RecoveryDisposition.UNKNOWN && (
         <Text size="sm" c="dimmed" mb="xs" style={{ overflowWrap: "anywhere" }}>
-          Whether this content remains in the model's context could not be determined.
+          Whether this content remains in the model&apos;s context could not be determined.
           {state.recovery_reason && ` ${state.recovery_reason}`}
         </Text>
       )}

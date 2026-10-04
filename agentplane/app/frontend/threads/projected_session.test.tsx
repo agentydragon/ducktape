@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandSchema, type Command } from "../../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_pb";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
+import type * as ClientModule from "../client";
 import { command, getThread, models, resumeThread, type SandboxView, type ThreadView } from "../client";
 import { historyRows, rowKey } from "./history_rows";
 import { ThreadsLiveProvider } from "../live";
@@ -32,7 +33,7 @@ import {
 import { TopbarContext } from "../topbar";
 
 vi.mock("../client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../client")>()),
+  ...(await importOriginal<typeof ClientModule>()),
   command: vi.fn(),
   getThread: vi.fn(),
   models: vi.fn(),
@@ -891,10 +892,6 @@ async function renderHistory(
     )
   );
   return [...container.querySelectorAll("section")];
-}
-
-function summaries(element: Element): (string | null)[] {
-  return [...element.querySelectorAll("summary")].map((summary) => summary.textContent);
 }
 
 async function toggle(summary: Element): Promise<void> {

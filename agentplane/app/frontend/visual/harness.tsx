@@ -4,7 +4,7 @@
  * app's client captures the stub) answers API and Electric Shape routes. `EventSource` remains
  * only for the live sandbox, thread, and action-inventory views.
  */
-import "./network";
+import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from "./network";
 import { TEST_REASONING_EFFORTS } from "../test_model_catalog";
 import "@mantine/core/styles.css";
 
@@ -27,7 +27,6 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { electricLive, electricShape, electricSubset, routes, UNANSWERED } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";
