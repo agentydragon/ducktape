@@ -143,6 +143,7 @@ ts_library(
 
 vitest_suite(
     name = "vitest_test",
+    environment = "happy-dom",
     specs = [":api_test"],
 )
 

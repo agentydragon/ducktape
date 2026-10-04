@@ -75,7 +75,7 @@ def vitest_specs(name, specs):
 def vitest_suite(
         name,
         specs,
-        environment = "happy-dom",
+        environment,
         setup_files = [],
         data = [],
         **kwargs):
@@ -86,8 +86,9 @@ def vitest_suite(
         specs: Spec libraries, checked as in `vitest_specs`; labels in other packages are the
             `vitest_specs` groups of subpackages.
         environment: vitest's `environment` for every spec without an `// @vitest-environment`
-            pragma: `node`, `happy-dom` or `jsdom`. A spec's pragma may name another one, whose
-            package must then be in `data`.
+            pragma: `node`, `happy-dom` or `jsdom`. Required: whether a package's specs get a DOM
+            is its own decision, and a default would be wrong for most of them. A spec's pragma
+            may name another one, whose package must then be in `data`.
         setup_files: Files, relative to the package, vitest runs before each spec file.
         data: Further runtime files, such as the packages pragmas select.
         **kwargs: Passed to the test, e.g. `size`, `timeout`, `shard_count`, `tags`, `env`.
