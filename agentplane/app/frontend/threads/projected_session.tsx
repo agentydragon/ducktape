@@ -57,12 +57,16 @@ import {
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusDot } from "../thread_status_dot";
-import { isMoving, THREAD_STATUS_MARKS } from "../status_mark";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary } from "../sandbox_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
-import { installThreadFavicon, type ThreadFaviconPulseEpoch } from "../thread_favicon";
-import { appDocumentTitle, threadDocumentTitle } from "../tab_metadata";
+import { installThreadFavicon } from "../thread_favicon";
+import {
+  appDocumentTitle,
+  CONNECTING_TAB_STATUS,
+  threadDocumentTitle,
+  type ThreadTabTitleStatus,
+} from "../tab_metadata";
 import "./projected_session.css";
 
 /** A run of tool calls and reasoning steps, folded behind its summary until opened. */
@@ -682,14 +686,14 @@ function ProjectedSessionBody({
   thread,
   history,
   available,
-  onStatusLabelChange,
+  onStatusChange,
 }: {
   threadId: string;
   entities: ThreadEntity[];
   thread: ThreadView;
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
   available: boolean;
-  onStatusLabelChange: (label: string) => void;
+  onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
   const sync = useThreadSync().useThread();
@@ -715,11 +719,11 @@ function ProjectedSessionBody({
     threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox),
     snapshotFresh(threadsLive)
   );
-  const pulseEpoch = useRef<ThreadFaviconPulseEpoch>({ current: null });
-  if (isMoving(THREAD_STATUS_MARKS[status.kind])) pulseEpoch.current.current ??= Date.now();
-  else pulseEpoch.current.current = null;
-  useEffect(() => onStatusLabelChange(status.tabLabel), [onStatusLabelChange, status.tabLabel]);
-  useEffect(() => installThreadFavicon(status, pulseEpoch.current), [status.kind]);
+  useEffect(
+    () => onStatusChange({ kind: status.kind, tabLabel: status.tabLabel }),
+    [onStatusChange, status.kind, status.tabLabel]
+  );
+  useEffect(() => installThreadFavicon(status), [status.kind]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   const selectedModel = controls?.applied_model ?? thread.model;
@@ -984,14 +988,14 @@ function SyncedThread({
   thread,
   available,
   inventory,
-  onStatusLabelChange,
+  onStatusChange,
 }: {
   threadId: string;
   thread: ThreadView;
   available: boolean;
   /** The sandbox inventory's stream, which the page's one stale notice covers too. */
   inventory: StreamStatus;
-  onStatusLabelChange: (label: string) => void;
+  onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
@@ -1020,7 +1024,7 @@ function SyncedThread({
         thread={thread}
         history={shown}
         available={available}
-        onStatusLabelChange={onStatusLabelChange}
+        onStatusChange={onStatusChange}
       />
     </>
   );
@@ -1059,7 +1063,7 @@ export function ProjectedSession({
 }): JSX.Element {
   const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
-  const [tabStatus, setTabStatus] = useState("Connecting");
+  const [tabStatus, setTabStatus] = useState(CONNECTING_TAB_STATUS);
   const threadsLive = useRequiredThreadsLive();
   const topbarStatus = threadStatusFromSnapshot(
     threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
@@ -1122,7 +1126,7 @@ export function ProjectedSession({
               thread={thread}
               available={inventoryFresh && sandboxReady(sandbox)}
               inventory={environment.stream}
-              onStatusLabelChange={setTabStatus}
+              onStatusChange={setTabStatus}
             />
           </sync.Thread>
         )}

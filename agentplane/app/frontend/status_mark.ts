@@ -35,11 +35,20 @@ const YELLOW = "#fab005"; // yellow-6
 const RED = "#fa5252"; // red-6
 const GRAY = "#868e96"; // gray-6
 
-export const THREAD_STATUS_MARKS: Record<ThreadStatusKind, StatusMark<ThreadMarkShape>> = {
-  running: { shape: "chevrons", color: GREEN },
-  idle: { shape: "dot", color: BLUE },
-  failed: { shape: "dot", color: RED },
-  inactive: { shape: "dot", color: GRAY },
+/**
+ * A thread's mark, plus the glyph its browser tab title leads with, where there is no color to draw
+ * with. Plain text characters only: ones a platform may draw as emoji (▶, ✕) would not follow the tab's
+ * text color. Filled means live and hollow means not live.
+ */
+export interface ThreadStatusMark extends StatusMark<ThreadMarkShape> {
+  readonly glyph: string;
+}
+
+export const THREAD_STATUS_MARKS: Record<ThreadStatusKind, ThreadStatusMark> = {
+  running: { shape: "chevrons", color: GREEN, glyph: "»" },
+  idle: { shape: "dot", color: BLUE, glyph: "●" },
+  failed: { shape: "dot", color: RED, glyph: "×" },
+  inactive: { shape: "dot", color: GRAY, glyph: "○" },
 };
 
 export const SANDBOX_STATUS_MARKS: Record<SandboxStatusKind, StatusMark> = {
@@ -50,8 +59,5 @@ export const SANDBOX_STATUS_MARKS: Record<SandboxStatusKind, StatusMark> = {
   gone: { shape: "cross", color: GRAY },
 };
 
-/** Whether a mark animates. Reduced-motion preferences are the renderers' to honor. */
-export const isMoving = (mark: StatusMark): boolean => mark.shape === "chevrons";
-
-/** Time for the chevrons to advance one chevron pitch to the right, for the page's CSS animation and the favicon's frames alike. */
+/** Time for the in-page chevrons to advance one chevron pitch to the right. */
 export const CHEVRON_CYCLE_MS = 1_000;

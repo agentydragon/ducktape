@@ -1,4 +1,4 @@
-import type { ThreadStatusKind } from "./status_mark";
+import { THREAD_STATUS_MARKS, type ThreadStatusKind } from "./status_mark";
 
 export const DEFAULT_APP_TITLE = "Agentplane";
 
@@ -27,7 +27,17 @@ export function appDocumentTitle(pathname: string, settingsOpen: boolean): strin
   return DEFAULT_APP_TITLE;
 }
 
-export function threadDocumentTitle(name: string | null | undefined, threadId: string, status: string): string {
+/** What a thread's tab title needs of its status: the kind picks the leading glyph, the label is the text. */
+export type ThreadTabTitleStatus = Pick<ThreadTabStatus, "kind" | "tabLabel">;
+
+export const CONNECTING_TAB_STATUS: ThreadTabTitleStatus = { kind: "inactive", tabLabel: "Connecting" };
+
+/** The glyph leads because a narrow tab truncates the end of a title, and the status label with it. */
+export function threadDocumentTitle(
+  name: string | null | undefined,
+  threadId: string,
+  status: ThreadTabTitleStatus
+): string {
   const identity = name?.trim() || `Thread ${threadId.slice(0, 8)}`;
-  return `${identity} · ${status} — ${DEFAULT_APP_TITLE}`;
+  return `${THREAD_STATUS_MARKS[status.kind].glyph} ${identity} · ${status.tabLabel} — ${DEFAULT_APP_TITLE}`;
 }

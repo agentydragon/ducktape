@@ -49,6 +49,7 @@ ts_library(
     srcs = ["tab_metadata.test.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":status_mark",
         ":tab_metadata",
         "//:node_modules/vitest",
     ],

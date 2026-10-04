@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { appDocumentTitle, threadDocumentTitle } from "./tab_metadata";
+import { THREAD_STATUS_MARKS } from "./status_mark";
+import { appDocumentTitle, CONNECTING_TAB_STATUS, threadDocumentTitle } from "./tab_metadata";
 
 describe("browser tab titles", () => {
   it.each([
@@ -15,8 +16,18 @@ describe("browser tab titles", () => {
     expect(appDocumentTitle(path, settingsOpen)).toBe(expected);
   });
 
-  it("uses the thread name and current status, falling back to a short id", () => {
-    expect(threadDocumentTitle("  Review PR  ", "12345678-0000", "Running")).toBe("Review PR · Running — Agentplane");
-    expect(threadDocumentTitle(null, "12345678-0000", "Connecting")).toBe("Thread 12345678 · Connecting — Agentplane");
+  it("leads with the status glyph, then the thread name and status label, falling back to a short id", () => {
+    expect(threadDocumentTitle("  Review PR  ", "12345678-0000", { kind: "running", tabLabel: "Running" })).toBe(
+      `${THREAD_STATUS_MARKS.running.glyph} Review PR · Running — Agentplane`
+    );
+    expect(threadDocumentTitle(null, "12345678-0000", CONNECTING_TAB_STATUS)).toBe(
+      `${THREAD_STATUS_MARKS.inactive.glyph} Thread 12345678 · Connecting — Agentplane`
+    );
+  });
+
+  it("gives every thread status its own glyph, and never one a platform may draw as emoji", () => {
+    const glyphs = Object.values(THREAD_STATUS_MARKS).map((mark) => mark.glyph);
+    expect(new Set(glyphs).size).toBe(glyphs.length);
+    for (const glyph of glyphs) expect(glyph).not.toMatch(/\p{Emoji_Presentation}|\uFE0F/u);
   });
 });

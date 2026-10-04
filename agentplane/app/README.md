@@ -271,10 +271,14 @@ component. These are operational snapshots, not replacements for a Thread's runn
 Every status indicator is drawn from one table, `frontend/status_mark.ts`, which decides the shape and
 color of each thread and Sandbox status; the in-page glyph (`mark_glyph.tsx`) and the browser-tab
 favicon (`thread_favicon.ts`) only render what it says. A thread shows two green chevrons moving
-left to right while a turn runs, a steady light blue dot when its harness is live and waiting, a red
-dot when its runner feed failed, and a gray dot when nothing is live. A Sandbox shows a light blue
-play icon when its Pod is ready, a yellow clock while it comes up, a gray pause when suspended, a
-red cross when failed, and a gray cross once deleted or ended.
+left to right in the page while a turn runs, a steady light blue dot when its harness is live and
+waiting, a red dot when its runner feed failed, and a gray dot when nothing is live. A Sandbox shows
+a light blue play icon when its Pod is ready, a yellow clock while it comes up, a gray pause when
+suspended, a red cross when failed, and a gray cross once deleted or ended.
+
+The favicon draws the same marks but never moves, and the tab title leads with a plain text glyph for
+the thread's status (`»` running, `●` idle, `○` not live, `×` failed). A favicon is only seen in a
+background tab, where browsers throttle timers, so both change on status events rather than on a clock.
 
 ## Shutdown
 
