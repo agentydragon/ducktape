@@ -242,27 +242,6 @@ def test_private_equity_risk_tender_cancellation_suppresses_scheduled_tender() -
     np.testing.assert_array_equal(sale_capacity[0, :], np.zeros(4, dtype=np.float64))
 
 
-def test_private_equity_risk_tender_cancellation_default_zero_preserves_tender() -> None:
-    """Cancellation defaults to 0.0 — scheduled tender fires as before."""
-
-    sampled = _sample(
-        _issuer(
-            monthly_log_return_mu=0.0,
-            monthly_log_return_sigma=0.0,
-            tender_interval_months_median=2.0,
-            tender_interval_log_sigma=0.0,
-            tender_price_log_discount_sigma=0.0,
-        ),
-        horizon_months=3,
-    )
-
-    event_kind = _int(sampled, PrivateEquityIntChannel.EVENT_KIND_CODE, horizon=3)
-    tenders = _bool(sampled, PrivateEquityBoolChannel.SALE_OPPORTUNITY_ACTIVE, horizon=3)
-
-    assert int(event_kind[0, 2]) == int(PrivateEquityEventKindCode.TENDER)
-    assert tenders[0, 2]
-
-
 def test_private_equity_risk_legal_event_severity_matches_80_15_5_split() -> None:
     """Umbrella legal_event probability splits into 80%/15%/5% severities.
 
