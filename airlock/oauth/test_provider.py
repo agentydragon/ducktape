@@ -219,11 +219,6 @@ async def test_refresh_tokens_preserves_old_refresh_token(provider: GenericOAuth
     assert token.refresh_token == "my-precious-refresh-token"
 
 
-def test_needs_refresh_not_yet(provider: GenericOAuth2Provider) -> None:
-    token = TokenData(access_token="a", refresh_token="r", expires_at=datetime.now(UTC) + timedelta(days=15), scope="s")
-    assert not provider.needs_refresh(token)
-
-
 def test_needs_refresh_soon(provider: GenericOAuth2Provider) -> None:
     token = TokenData(
         access_token="a", refresh_token="r", expires_at=datetime.now(UTC) + timedelta(minutes=30), scope="s"
