@@ -22,7 +22,7 @@ delegation tools.
 ## Wire up Home Assistant entity control
 
 The `home_assistant_entity_control` policy kind (`policies/home_assistant_entity_control.py`) exists
-but no `ActionPolicyBinding` references it, so Home Assistant calls still wait for the operator.
+but no `ActionPolicyBinding` references it, so `ha_call_service` still waits for the operator.
 Wiring it up is for the owner's agents: choose the entities and the services each may use, add an
 `AutoApproveIf` factory in `cluster/cdk8s/providers/agentplane/action_policy_set.py`, and bind the set in
 `cluster/cdk8s/agentplane/actions_staging_policies.py`. First re-check the kind's reviewed argument
