@@ -31,6 +31,8 @@ browser on desktop and phone.
 - **A deliberate scroll** (wheel, drag, keyboard, touch) away from the bottom disengages following
   immediately, without lag or fighting the input.
 - **Returning to the bottom** re-engages following, with the same tolerance as above.
+- **A running thread whose end is off screen** — the reader scrolled up, or opened a row that grew past
+  the view — shows a "Jump to latest" control; one click returns to the end and resumes following.
 - **Scrolling into older messages** keeps the row the reader was viewing in the same place as
   earlier content appears — no blank flash or temporary jump, even in a short thread.
 - **A window/viewport resize** (browser resize, mobile address-bar collapse, orientation change, an

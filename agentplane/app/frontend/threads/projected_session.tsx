@@ -15,6 +15,7 @@ import {
 } from "@mantine/core";
 import { create } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import IconArrowDown from "@tabler/icons-react/dist/esm/icons/IconArrowDown.mjs";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
@@ -252,6 +253,9 @@ function VirtualizedHistory({
   const viewport = useRef<HTMLDivElement>(null);
   const contents = useRef<HTMLDivElement>(null);
   const tailContent = useRef<HTMLDivElement>(null);
+  const endOfHistory = useRef<HTMLDivElement>(null);
+  // Whether the end of the history is on screen, so the reader can see it is not following it.
+  const [endVisible, setEndVisible] = useState(true);
   const atBottom = useRef(true);
   const previousScrollTop = useRef(0);
   // Every bottom the viewport has had since the last scroll event or content resize was handled.
@@ -496,6 +500,26 @@ function VirtualizedHistory({
       mutations.disconnect();
     };
   }, [rows, tail, virtualizer]);
+  useEffect(() => {
+    const element = viewport.current;
+    const end = endOfHistory.current;
+    if (!element || !end) return;
+    // The bottom margin is the slack within which a reader still counts as following.
+    const observer = new IntersectionObserver(([entry]) => setEndVisible(entry.isIntersecting), {
+      root: element,
+      rootMargin: "0px 0px 24px 0px",
+    });
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, []);
+  const jumpToLatest = () => {
+    const element = viewport.current;
+    if (!element) return;
+    atBottom.current = true;
+    clickedAt.current = null;
+    cancelRestoration();
+    element.scrollTop = element.scrollHeight;
+  };
   // The observers above re-subscribe on every render's rows; a restoration in flight outlives that.
   useLayoutEffect(() => cancelRestoration, []);
   useLayoutEffect(() => {
@@ -680,6 +704,34 @@ function VirtualizedHistory({
         })}
       </div>
       {tail && <div ref={tailContent}>{tail}</div>}
+      <div ref={endOfHistory} />
+      {running && !endVisible && (
+        // No height of its own, like the loading indicator: it floats over the rows without moving them.
+        <div
+          style={{
+            position: "sticky",
+            bottom: 0,
+            height: 0,
+            zIndex: 1,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "flex-end",
+            pointerEvents: "none",
+          }}
+        >
+          <Button
+            size="compact-xs"
+            variant="default"
+            radius="xl"
+            mb="xs"
+            leftSection={<IconArrowDown size={14} />}
+            onClick={jumpToLatest}
+            style={{ pointerEvents: "auto" }}
+          >
+            Jump to latest
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1190,11 +1190,23 @@ async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[li
             await streaming
 
 
+async def wheel(page: Page, delta: float) -> None:
+    """One wheel gesture over the history, until it has ended and the app has adopted where it left
+    the reader."""
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await history.hover()
+    gesture = await history.evaluate_handle(
+        "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
+    )
+    await page.mouse.wheel(0, round(delta))
+    async with asyncio.timeout(30):
+        await gesture.evaluate("gesture => gesture.ended")
+    await gesture.dispose()
+
+
 async def read_at(page: Page, target: Locator, fraction: float) -> None:
     """Wheels the history as a reader does until `target` sits `fraction` of the way down it, or the
     history ends, and the gesture has ended, so the app has adopted the place it left the reader at."""
-    history = page.get_by_role("region", name="Thread history", exact=True)
-    await history.hover()
     for _ in range(40):
         # One evaluation, without Locator.evaluate's wait: the virtualizer can unmount the row between
         # looking for it and measuring it.
@@ -1214,13 +1226,7 @@ async def read_at(page: Page, target: Locator, fraction: float) -> None:
         if abs(distance) <= 20:
             await frames(page)
             return
-        gesture = await history.evaluate_handle(
-            "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
-        )
-        await page.mouse.wheel(0, round(distance))
-        async with asyncio.timeout(30):
-            await gesture.evaluate("gesture => gesture.ended")
-        await gesture.dispose()
+        await wheel(page, distance)
     raise AssertionError(f"scrolling never brought {target} to {fraction} of the way down the history")
 
 
@@ -1326,6 +1332,42 @@ async def test_opening_a_call_while_output_streams_in_leaves_the_clicked_line_wh
             await show_all.click()
             await expect(call.get_by_role("button", name="Show less")).to_be_visible()
     assert len(delivered) >= 3, "the tail's output was not arriving while the call was opened"
+
+
+@pytest.mark.parametrize("leaving", ["opening a row", "scrolling up"])
+@pytest.mark.parametrize("phone", [False, True], ids=["desktop", "phone"])
+async def test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it(
+    thread_browser: ThreadBrowser, phone: bool, leaving: str, request: pytest.FixtureRequest
+) -> None:
+    """The thread is running. A reader who has left its end, by scrolling up or by opening a row that
+    grew past the view, is shown that they are not following it; one click returns to the end, and
+    following resumes."""
+    page = thread_browser.page
+    if phone:
+        await page.set_viewport_size({"width": 412, "height": 915})
+    await append_run_among_rows(thread_browser, below=8)
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    jump = page.get_by_role("button", name="Jump to latest")
+    await expect_history_bottom(page)
+    await expect(jump).to_have_count(0)
+
+    if leaving == "opening a row":
+        await history.locator("[data-thread-anchor]").filter(has_text="3 tool calls").locator("summary").first.click()
+    else:
+        await wheel(page, -1500)
+    await expect(jump).to_be_visible()
+    # Events keep arriving; the reader is not carried along.
+    latest = append_items(thread_browser, "arriving", range(3))
+    await expect_projected_cursor(page, latest.cursor)
+    assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 24
+    await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-away.png")
+
+    await jump.click()
+    await expect_history_bottom(page)
+    await expect(jump).to_have_count(0)
+    latest = append_items(thread_browser, "following-again", range(3, 6))
+    await expect_projected_cursor(page, latest.cursor)
+    await expect_history_bottom(page)
 
 
 async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
