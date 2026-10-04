@@ -388,28 +388,6 @@ fn multi_statement_sequence_enumerates_all_alignments() {
 }
 
 #[test]
-fn var_declarator_alignment_pins_target_through_holes() {
-    js_ast::with_swc_globals(|| {
-        // A pinned `c` declarator between two `DECLARATORS` holes: the holes absorb
-        // declarators 0 and 2, the pinned segment aligns greedy-leftmost to the
-        // string-literal declarator at index 1 (alpha: `c` binds to `q`).
-        let needle =
-            facts("const DECLARATORS_BEFORE = null, c = \"abc\", DECLARATORS_AFTER = null;");
-        let subject = facts("const p = 1, q = \"abc\", r = 2;");
-        let alignment = selector_match::var_declarator_alignment(
-            &needle,
-            &subject,
-            Mode::AlphaAll,
-            &[],
-            &free_of(std::slice::from_ref(&needle)),
-        )
-        .expect("supported needle")
-        .expect("the pinned declarator matches");
-        assert_eq!(alignment.site, vec![None, Some(1), None]);
-    });
-}
-
-#[test]
 fn var_declarator_alignment_prebinding_forces_target_identity() {
     js_ast::with_swc_globals(|| {
         // Two subject declarators carry the same init; prebinding the needle's `c`

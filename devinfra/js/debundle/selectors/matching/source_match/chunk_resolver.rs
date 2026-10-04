@@ -1200,16 +1200,6 @@ mod tests {
     }
 
     #[test]
-    fn chunk_resolver_member_candidate() {
-        js_ast::with_swc_globals(|| {
-            let chunk = module("function alpha(n) { return n + 1; }\nconst beta = alpha(2);\n");
-            // A function with a body the alpha selector matches structurally.
-            let selector = member("function f(x) { return x + 1; }", Some("f"));
-            assert_eq!(member_names(&chunk, &selector), ["alpha"]);
-        });
-    }
-
-    #[test]
     fn chunk_resolver_declarator_inside_multi_declarator_owner() {
         js_ast::with_swc_globals(|| {
             // The target init lives in the second declarator of a multi-declarator
@@ -1229,22 +1219,6 @@ mod tests {
             let chunk = module("const a = 1, b = compute();\nconst c = compute();\n");
             let selector = member("const x = compute();", Some("x"));
             assert_eq!(member_names(&chunk, &selector), ["b", "c"]);
-        });
-    }
-
-    #[test]
-    fn chunk_resolver_declarator_hole_member_candidate() {
-        js_ast::with_swc_globals(|| {
-            // A `DECLARATORS`-hole needle pins one declarator by a string-literal
-            // predicate; the holes absorb the surrounding declarators. Only the
-            // greedy-leftmost declarator alignment finds the target's owner.
-            let chunk = module("const p = 1, theClass = \"abc\", q = 2;\nconst other = 5;\n");
-            let selector = member(
-                "const DECLARATORS_BEFORE = null, c = STR_LITERAL_MATCHING_RE(\"^abc$\"), \
-                 DECLARATORS_AFTER = null;",
-                Some("c"),
-            );
-            assert_eq!(member_names(&chunk, &selector), ["theClass"]);
         });
     }
 

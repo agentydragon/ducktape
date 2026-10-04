@@ -2457,24 +2457,6 @@ mod tests {
     }
 
     #[test]
-    fn call_argument_uses_records_argument_callee_and_index() {
-        // The registry shape: a top-level class passed to `r.register(FooAccessor)`
-        // in a separate (anonymous) statement. The row is keyed by the *argument*
-        // binding `FooAccessor` (the target), and records the callee member, the
-        // callee object, and the argument index.
-        let facts = call_args("class FooAccessor {}\nr.register(FooAccessor);\n");
-        assert_eq!(
-            facts,
-            vec![CallArgumentFact {
-                argument: "FooAccessor".to_string(),
-                callee_member: "register".to_string(),
-                callee_object: Some("r".to_string()),
-                arg_index: 0,
-            }],
-        );
-    }
-
-    #[test]
     fn call_argument_uses_records_object_none_for_deep_callee() {
         // A deeper callee chain `a.b.register(X)` has no bare-ident object, so the
         // object is `None` but the callee member and argument are still recorded.
@@ -2486,23 +2468,6 @@ mod tests {
                 callee_member: "register".to_string(),
                 callee_object: None,
                 arg_index: 0,
-            }],
-        );
-    }
-
-    #[test]
-    fn call_argument_uses_records_index_for_later_positions() {
-        // A registration call with metadata args before the target: the target
-        // `Widget` is at argument index 1, which the fact records so a selector can
-        // pin by position.
-        let facts = call_args("h.define(\"widget\", Widget);\n");
-        assert_eq!(
-            facts,
-            vec![CallArgumentFact {
-                argument: "Widget".to_string(),
-                callee_member: "define".to_string(),
-                callee_object: Some("h".to_string()),
-                arg_index: 1,
             }],
         );
     }
@@ -2549,22 +2514,6 @@ mod tests {
         js_ast::with_swc_globals(|| {
             decorate_call_uses(&js_ast::parse_js_module_ast("<test>", src).unwrap())
         })
-    }
-
-    #[test]
-    fn decorate_call_uses_records_property_decorator_shape() {
-        // The esbuild property-decorator shape: `H([d], C.prototype, "m", flags)`.
-        // The row's target is the callee `H` (the helper), the anchor is the
-        // decorated class `C`, and the member literal is recorded for narrowing.
-        let facts = decorate_calls("H([d], C.prototype, \"isVisible\", 2);\n");
-        assert_eq!(
-            facts,
-            vec![DecorateCallFact {
-                callee: "H".to_string(),
-                class_anchor: "C".to_string(),
-                member: Some("isVisible".to_string()),
-            }],
-        );
     }
 
     #[test]

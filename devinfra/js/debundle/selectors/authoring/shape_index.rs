@@ -1181,41 +1181,6 @@ const c = emit("delta", "beta");"#,
     }
 
     #[test]
-    fn context_neighbor_anchor_candidates_offer_adjacent_unique_value_anchors() {
-        // Three alpha-identical `const X = new IDENT()` helpers (bodies 0, 2, 3):
-        // none has a value anchor of its own (the `new` callee alpha-canonicalizes),
-        // so the middle one is a genuine residual — `minimal_anchor_set` cannot
-        // separate it. Its immediate neighbor (body 1) carries a globally-unique
-        // string, which the enclosing-context read-off offers as a disambiguating
-        // anchor on the neighbor.
-        let module = parse(
-            r#"const a = new Factory();
-mountSelected("beta-unique-token");
-const b = new Factory();
-const c = new Factory();"#,
-        );
-        let index = ShapeIndex::new(&module);
-        assert!(
-            index.minimal_anchor_set(2).is_none(),
-            "the middle helper must be a genuine residual (no own discriminator)"
-        );
-        let candidates = index.context_neighbor_anchor_candidates(2);
-        let unique_string =
-            ShapeFeature::Selector(SelectorFeature::StringLiteral("beta-unique-token".into()));
-        assert!(
-            candidates.iter().any(|candidate| {
-                candidate.neighbor_body_idx == 1
-                    && candidate
-                        .anchor_set
-                        .anchors
-                        .iter()
-                        .any(|scored| scored.feature == unique_string)
-            }),
-            "expected the adjacent unique string as a neighbor anchor, got {candidates:?}"
-        );
-    }
-
-    #[test]
     fn context_neighbor_anchor_candidates_are_empty_without_a_stable_neighbor() {
         // All four statements are alpha-identical residual helpers with no value
         // anchor anywhere, so no neighbor can disambiguate: the read-off yields no

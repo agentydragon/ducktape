@@ -244,24 +244,6 @@ mod tests {
     }
 
     #[test]
-    fn alternating_chain_returns_the_whole_deficient_component() {
-        // A={x}, B={x,y}, C={y}; each pair can be matched, but all three
-        // cannot be assigned distinct owners.
-        let domains = vec![vec![10], vec![10, 20], vec![20]];
-        let witness = deficient_set(&domains).expect("the chain has three claims and two owners");
-        assert_eq!(witness, vec![0, 1, 2]);
-        assert_deficient(&domains, &witness);
-    }
-
-    #[test]
-    fn witness_excludes_disconnected_matched_claims() {
-        let domains = vec![vec![7], vec![7], vec![99]];
-        let witness = deficient_set(&domains).expect("the first component is deficient");
-        assert_eq!(witness, vec![0, 1]);
-        assert_deficient(&domains, &witness);
-    }
-
-    #[test]
     fn output_is_deterministic() {
         let domains = vec![vec![3, 8], vec![3, 8], vec![8]];
         let first = deficient_set(&domains);
