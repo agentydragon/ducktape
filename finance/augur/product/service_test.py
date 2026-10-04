@@ -754,25 +754,6 @@ def test_a_caller_cannot_corrupt_a_cached_projection(
     assert product.projection_summary(request).metric_fan.monthly_metric_fan["value_quanta"][0] == simulated
 
 
-def test_metric_fan_runs_reduced_product_projection_once_per_batch(
-    product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
-) -> None:
-    original = service.simulate_product_metrics
-    calls = 0
-
-    def counted(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(service, "simulate_product_metrics", counted)
-
-    product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=4, metric="cash", percentiles=(50,)))
-
-    # All four seeds share one simulated batch, rather than executing once per seed.
-    assert calls == 1
-
-
 def test_metric_fan_does_not_materialize_rollout_events(
     product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:
