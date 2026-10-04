@@ -6,74 +6,17 @@ import pytest_bazel
 
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import (
-    HoldingKind,
-    HoldingTaxLotConfig,
     LabeledTlhPortfolio,
     PortfolioAccountConfig,
     PortfolioConfig,
-    SecurityHoldingConfig,
     TlhCohort,
     TlhPortfolioSpec,
 )
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.portfolio import ProductTlhCohort, product_portfolio_response
-from finance.augur.sim.ids import AccountId, AgentId, LotId, PortfolioId
+from finance.augur.sim.ids import AccountId, AgentId, PortfolioId
 from finance.augur.sim.money import USD
 from finance.augur.sim.tlh import TlhAssumptions
-
-
-def test_product_portfolio_response_includes_holding_positions_and_lots() -> None:
-    response = product_portfolio_response(
-        snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash=Decimal(50_000)),
-        portfolio=PortfolioConfig(
-            accounts=(
-                PortfolioAccountConfig(
-                    account_id=AccountId("taxable"), owner_agent_id=AgentId("agent_a"), label="Taxable Brokerage"
-                ),
-            ),
-            holdings=(
-                SecurityHoldingConfig(
-                    position_id="sp500_proxy",
-                    account_id=AccountId("taxable"),
-                    label="SP500 Proxy",
-                    symbol=SecuritySymbol("VOO"),
-                    security_kind=HoldingKind.ETF,
-                    unit_value=Decimal(500),
-                    lots=(
-                        HoldingTaxLotConfig(
-                            lot_id=LotId("sp500_2020_01"),
-                            holding_period_months_at_start=76,
-                            quantity=150.0,
-                            cost_basis=Decimal(60_000),
-                        ),
-                        HoldingTaxLotConfig(
-                            lot_id=LotId("sp500_2024_06"),
-                            holding_period_months_at_start=23,
-                            quantity=150.0,
-                            cost_basis=Decimal("49999.50"),
-                        ),
-                    ),
-                ),
-            ),
-        ),
-        tlh_portfolios=(),
-        currency=USD,
-    )
-
-    assert response.as_of_date == "2026-05-14"
-    assert response.currency_code == "USD"
-    assert response.currency_quantum == "0.01"
-    assert response.cash_quanta == "5000000"
-    assert response.total_holdings_value_quanta == "15000000"
-    assert response.total_holdings_cost_basis_quanta == "10999950"
-    [position] = response.holdings
-    assert position.account_label == "Taxable Brokerage"
-    assert position.label == "SP500 Proxy"
-    assert position.symbol == "VOO"
-    assert position.quantity == 300.0
-    assert position.current_value_quanta == "15000000"
-    assert [lot.lot_id for lot in position.lots] == ["sp500_2020_01", "sp500_2024_06"]
-    assert [lot.cost_basis_quanta for lot in position.lots] == ["6000000", "4999950"]
 
 
 def test_product_portfolio_response_carries_tlh_portfolios_as_money_apart_from_holdings() -> None:

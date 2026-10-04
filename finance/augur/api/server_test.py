@@ -589,6 +589,7 @@ def test_backend_server_product_rollout_includes_federal_and_california_tax_even
 
     events = detail["rollout"]["events"]
     tax_accruals = [event for event in events if event["kind"] == "tax_accrual"]
+    assert len(tax_accruals) == 2
     assert {event["jurisdiction_id"] for event in tax_accruals} == {"federal_us", "california"}
     assert {event["month_index"] for event in tax_accruals} == {11}
     assert all(int(event["amount_quanta"]) > 0 for event in tax_accruals)

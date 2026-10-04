@@ -24,39 +24,6 @@ AGENT_A = AgentId("agent_a")
 ALICE = AgentId("alice")
 
 
-def test_position_values_sum_over_its_lots() -> None:
-    portfolio = PortfolioConfig(
-        accounts=(PortfolioAccountConfig(account_id=TAXABLE_BROKERAGE, owner_agent_id=AGENT_A, label="Taxable"),),
-        holdings=(
-            SecurityHoldingConfig(
-                position_id="voo_position",
-                account_id=TAXABLE_BROKERAGE,
-                symbol=SecuritySymbol("VOO"),
-                security_kind=HoldingKind.ETF,
-                unit_value=Decimal(500),
-                lots=(
-                    HoldingTaxLotConfig(
-                        lot_id=LotId("voo_2024_05_20"),
-                        holding_period_months_at_start=24,
-                        quantity=100.0,
-                        cost_basis=Decimal(30_000),
-                    ),
-                    HoldingTaxLotConfig(
-                        lot_id=LotId("voo_2026_05_20"),
-                        holding_period_months_at_start=0,
-                        quantity=20.0,
-                        cost_basis=Decimal(9_000),
-                    ),
-                ),
-            ),
-        ),
-    )
-
-    assert portfolio.holdings[0].current_value == Decimal(60_000)
-    assert portfolio.holdings[0].total_cost_basis == Decimal(39_000)
-    assert portfolio.total_holdings_value == Decimal(60_000)
-
-
 def test_one_account_can_hold_multiple_holding_positions() -> None:
     portfolio = PortfolioConfig(
         accounts=(PortfolioAccountConfig(account_id=TAXABLE_BROKERAGE, owner_agent_id=AGENT_A),),

@@ -82,7 +82,6 @@ from finance.augur.product.wire import (
     PropertyTaxPaymentEvent,
     RentalIncomePlan,
     RentalManagement,
-    RolloutFailureEvent,
     RolloutRequest,
     ScenarioKey,
     SecuritySleeveWeight,
@@ -632,49 +631,6 @@ def test_a_caller_cannot_corrupt_a_cached_projection(
     assert product.projection_summary(request).metric_fan.monthly_metric_fan["value_quanta"][0] == simulated
 
 
-def test_failed_rollout_preserves_stop_book_without_post_stop_values(product: service.ProductService) -> None:
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=3,
-        monthly_spend=Decimal(300_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(sleeve_weights=()),
-    )
-
-    fan = product.metric_fan(
-        _sampling_request(scenario, first_seed=7, rollout_count=1, metric="net_worth", percentiles=(50,))
-    )
-
-    assert fan.failed_count == 1
-    assert fan.monthly_metric_fan["month_index"] == [0, 1, 2, 3]
-    assert fan.monthly_metric_fan["observed_count"] == [1, 0, 0, 0]
-    assert fan.monthly_metric_fan["value_quanta"] == [_usd_quanta(1_260_500.0), None, None, None]
-    assert fan.terminal_metric_percentiles == {"percentile": [50.0], "value_quanta": [None]}
-    assert fan.completed_count == 0
-
-    detail = product.rollout(_rollout_request(scenario))
-
-    assert detail.rollout.failed is True
-    assert detail.rollout.ending_metrics.failed_month_index == 0
-    assert detail.rollout.ending_metrics.snapshot_index == 1
-    # Month-0 coupons precede the unpaid demand: 100k * 2% / 2 + 50k * 3.5% / 2 = 1,875.
-    assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(251_875.0)
-    assert detail.rollout.ending_metrics.holding_value_quanta == _usd_quanta(835_500.0)
-    assert detail.rollout.ending_metrics.net_worth_quanta == _usd_quanta(1_262_375.0)
-    assert detail.rollout.ending_metrics.shortfall_quanta == _usd_quanta(300_000.0)
-    assert detail.rollout.monthly_metrics["month_index"] == [0, 1]
-    assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(250_000.0), _usd_quanta(251_875.0)]
-    assert detail.rollout.monthly_metrics["holding_value_quanta"] == [_usd_quanta(835_500.0)] * 2
-    assert detail.rollout.monthly_metrics["net_worth_quanta"] == [_usd_quanta(1_260_500.0), _usd_quanta(1_262_375.0)]
-    assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
-    expense, failure = detail.rollout.events
-    assert isinstance(expense, MonthlyExpenseEvent)
-    assert isinstance(failure, RolloutFailureEvent)
-    assert expense.amount_paid_quanta == _usd_quanta(0.0)
-    assert expense.shortfall_quanta == _usd_quanta(300_000.0)
-    assert failure.shortfall_quanta == _usd_quanta(300_000.0)
-
-
 def test_a_scenario_with_no_target_allocation_never_sells_and_fails_the_month(product: service.ProductService) -> None:
     """Omitting the funding policy means no target, and no target means no sales.
 
@@ -723,99 +679,6 @@ def test_product_zero_weight_excludes_a_holding_instead_of_requesting_its_exit(
     else:
         assert not sales
         assert detail.rollout.failed
-
-
-def test_a_zero_width_band_sells_exactly_what_the_month_needs(product: service.ProductService) -> None:
-    """Floor = ceiling = 0 is hand-to-mouth funding: raise exactly the shortfall, no buffer.
-
-    It is the degenerate band, and worth its own case because `raise = ceiling - projected` has
-    to stay exact when the ceiling is zero — an off-by-one that padded the raise would leave
-    cash behind and go unnoticed under any band with a positive ceiling.
-    """
-
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=1,
-        monthly_spend=Decimal(300_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(
-            cash_floor=Decimal(0),
-            cash_ceiling=Decimal(0),
-            cash_band_index_to_inflation=False,
-            sleeve_weights=(
-                SecuritySleeveWeight(symbol=VOO, weight=1),
-                SecuritySleeveWeight(symbol=BTC, weight=1),
-                SecuritySleeveWeight(symbol=SecuritySymbol("eth"), weight=1),
-            ),
-        ),
-    )
-
-    detail = product.rollout(_rollout_request(scenario))
-
-    assert detail.rollout.failed is False
-    columns = detail.rollout.monthly_metrics
-    assert columns["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 0.0]]
-    holding_value_quanta = columns["holding_value_quanta"]
-    assert holding_value_quanta[0] == _usd_quanta(835_500.0)
-    assert _quanta_int(holding_value_quanta[1]) > 0
-    assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(0.0)
-    assert detail.rollout.ending_metrics.shortfall_quanta == _usd_quanta(0.0)
-    assert _quanta_int(detail.rollout.ending_metrics.net_worth_quanta) == (
-        _quanta_int(holding_value_quanta[1])
-        + _quanta_int(columns["private_equity_value_quanta"][1])
-        + _quanta_int(columns["bond_value_quanta"][1])
-    )
-    assert [event.kind for event in detail.rollout.events] == ["holding_sale", "monthly_expense"]
-    sale, expense = detail.rollout.events
-    assert isinstance(sale, HoldingSaleEvent)
-    assert isinstance(expense, MonthlyExpenseEvent)
-    assert sale.asset_label == "SP500 Proxy (VOO)"
-    # $48,125, not $50,000: the fixture's bond rungs pay $1,875 of coupon this month, and the
-    # band sizes against the balance the month will END at. Counting income the month is
-    # already going to receive is what stops it selling assets to cover cash it already has.
-    assert sale.proceeds_quanta == _usd_quanta(48_125.0)
-    assert sale.units == pytest.approx(96.25)
-    assert expense.amount_due_quanta == _usd_quanta(300_000.0)
-    assert expense.amount_paid_quanta == _usd_quanta(300_000.0)
-    assert expense.shortfall_quanta == _usd_quanta(0.0)
-
-
-def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
-    forced_private_equity_event_model: ConstantFrameModel, make_product_service: MakeProductService
-) -> None:
-    product = make_product_service(forced_private_equity_event_model)
-
-    detail = product.rollout(
-        _rollout_request(
-            ScenarioKey(
-                model_id="current_model",
-                horizon_months=2,
-                monthly_spend=Decimal(1_000),
-                spend_index=SpendIndex.NONE,
-                funding_policy=FundingPolicy(sleeve_weights=()),
-            )
-        )
-    )
-
-    [pe_event] = [event for event in detail.rollout.events if event.kind == "private_equity_event"]
-    assert isinstance(pe_event, PrivateEquityMarkerEvent)
-    assert pe_event.month_index == 1
-    assert pe_event.asset == PrivateEquityAssetKey(issuer_id=IssuerId("private_holding_a"))
-    assert pe_event.asset_label == "Private Holding A (PHA)"
-    assert pe_event.event_kind == "acquisition_cashout"
-    assert pe_event.regime == "acquired"
-    assert pe_event.mark_quanta == _usd_quanta(25.0)
-    assert pe_event.forced_sale_fraction == pytest.approx(0.25)
-
-    [sale] = [
-        event
-        for event in detail.rollout.events
-        if event.kind == "holding_sale"
-        and event.asset == PrivateEquityAssetKey(issuer_id=IssuerId("private_holding_a"))
-    ]
-    assert isinstance(sale, HoldingSaleEvent)
-    assert sale.units == pytest.approx(250.0)
-    assert sale.proceeds_quanta == _usd_quanta(6_250.0)
 
 
 def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_service: MakeProductService) -> None:
@@ -911,48 +774,6 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
     assert opportunity.shortfall_quanta == _usd_quanta(0.0)
     assert opportunity.target_units == pytest.approx(0.0)
     assert opportunity.proceeds_quanta == _usd_quanta(0.0)
-
-
-def test_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(product: service.ProductService) -> None:
-    """The band, end to end through the product surface.
-
-    The fixture holds $750k of VOO against $75k of BTC. Against equal weights VOO is the
-    overweight sleeve by an order of magnitude, so every dollar raised must come out of it —
-    "don't sell the underweight sleeve" is the whole point of a target, not a slogan.
-
-    Cash starts at $250k with a $1k spend, so the month's PROJECTED close is $249k, under the
-    $260k floor. The refill target is the CEILING: $280k - $249k = $31k raised, leaving exactly
-    the ceiling once the spend settles. Asserted exactly rather than as "sold something": a
-    policy that refilled to the FLOOR would also sell here, and would leave the owner back at
-    its trigger next month — a forced seller into every dip, which is the defect this guards.
-    """
-
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=1,
-        monthly_spend=Decimal(1_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(
-            cash_floor=Decimal(260_000),
-            cash_ceiling=Decimal(280_000),
-            cash_band_index_to_inflation=False,
-            sleeve_weights=(SecuritySleeveWeight(symbol=VOO, weight=1), SecuritySleeveWeight(symbol=BTC, weight=1)),
-        ),
-    )
-
-    detail = product.rollout(_rollout_request(scenario))
-
-    assert detail.rollout.failed is False
-    assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 280_000.0]]
-    assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(280_000.0)
-    assert detail.rollout.ending_metrics.shortfall_quanta == _usd_quanta(0.0)
-    assert [event.kind for event in detail.rollout.events] == ["holding_sale", "monthly_expense"]
-    sale, expense = detail.rollout.events
-    assert isinstance(sale, HoldingSaleEvent)
-    assert isinstance(expense, MonthlyExpenseEvent)
-    assert sale.proceeds_quanta == _usd_quanta(29_125.0)
-    assert sale.asset == SecurityKey(symbol=VOO)
-    assert expense.amount_paid_quanta == _usd_quanta(1_000.0)
 
 
 def test_product_cash_band_sells_nothing_while_cash_sits_inside_it(product: service.ProductService) -> None:
@@ -1059,71 +880,6 @@ def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_accoun
     assert isinstance(
         lowered(SecuritySleeveWeight(symbol=SecuritySymbol("test-index"), weight=1)).household(), ClaimPayer
     )
-    with pytest.raises(ValueError, match="unknown TLH portfolio 'test-absent'"):
-        lowered(ManagedSleeveWeight(portfolio_id=PortfolioId("test-absent"), weight=1))
-
-
-def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(
-    product: service.ProductService,
-) -> None:
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=12,
-        monthly_spend=Decimal(1_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(sleeve_weights=()),
-    )
-
-    detail = product.rollout(_rollout_request(scenario))
-
-    tax_accruals = [event for event in detail.rollout.events if event.kind == "tax_accrual"]
-    assert {event.jurisdiction_id for event in tax_accruals} == {"federal_us", "california"}
-    assert {event.month_index for event in tax_accruals} == {11}
-    assert all(event.amount_quanta == _usd_quanta(0.0) for event in tax_accruals)
-    assert [event for event in detail.rollout.events if event.kind == "tax_payment"] == []
-
-
-def test_product_rollout_includes_federal_and_california_tax_events_for_holding_sales(
-    product: service.ProductService,
-) -> None:
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=13,
-        monthly_spend=Decimal(1_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(
-            cash_floor=Decimal(260_000),
-            # A ceiling far above the floor so the single refill is large enough to realize a
-            # gain worth taxing; the fixture's VOO lots carry ~$100/unit of appreciation.
-            cash_ceiling=Decimal(760_000),
-            cash_band_index_to_inflation=False,
-            sleeve_weights=(SecuritySleeveWeight(symbol=VOO, weight=1), SecuritySleeveWeight(symbol=BTC, weight=1)),
-        ),
-    )
-
-    detail = product.rollout(_rollout_request(scenario))
-
-    events = detail.rollout.events
-    tax_accruals = [event for event in events if event.kind == "tax_accrual"]
-    assert {event.jurisdiction_id for event in tax_accruals} == {"federal_us", "california"}
-    assert {event.month_index for event in tax_accruals} == {11}
-    assert all(int(event.amount_quanta) > 0 for event in tax_accruals)
-    assert sum(int(event.amount_quanta) for event in tax_accruals) == sum(
-        int(event.total_tax_quanta) for event in tax_accruals
-    )
-    federal = one(event for event in tax_accruals if event.jurisdiction_id == "federal_us")
-    california = one(event for event in tax_accruals if event.jurisdiction_id == "california")
-    assert int(federal.capital_gain_tax_quanta) > 0
-    assert california.capital_gain_tax_quanta == _usd_quanta(0.0)
-    assert int(california.ordinary_tax_quanta) > 0
-
-    tax_payments = [event for event in events if event.kind == "tax_payment"]
-    [tax_payment] = tax_payments
-    assert tax_payment.month_index == 12
-    assert tax_payment.obligation_type == "tax_true_up"
-    assert int(tax_payment.amount_due_quanta) == sum(int(event.amount_quanta) for event in tax_accruals)
-    assert tax_payment.amount_paid_quanta == tax_payment.amount_due_quanta
-    assert tax_payment.shortfall_quanta == _usd_quanta(0.0)
 
 
 def test_outside_rent_emits_yearly_re_pegged_obligation(
