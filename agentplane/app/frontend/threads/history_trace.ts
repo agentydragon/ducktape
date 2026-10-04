@@ -15,6 +15,7 @@ export type FollowReason =
   | "touch-up"
   | "disclosure-click";
 
+/** Mirrored by the typed events in agentplane/app/testing/history_trace.py. */
 export type HistoryEvent =
   | { kind: "follow"; following: boolean; reason: FollowReason }
   | { kind: "scroll"; scrollTop: number; scrollHeight: number; followed: boolean }

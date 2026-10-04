@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
@@ -32,7 +32,7 @@ from playwright.async_api import (
 from sqlalchemy import select, update
 
 from agentplane.app.database import connect
-from agentplane.app.testing import history_probe
+from agentplane.app.testing import history_probe, history_trace
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
@@ -319,8 +319,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
         for number in (1, 0):
             await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
             await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible()
-        errors = await page.evaluate("() => window.agentplaneHistoryEstimateErrors?.() ?? []")
-        remembered = [entry["error"] for entry in errors if entry["remembered"]]
+        remembered = [entry.error for entry in await history_trace.estimate_errors(page) if entry.remembered]
         assert remembered, "no row on the return was laid out from what the first visit read"
         assert max(abs(error) for error in remembered) <= 2, remembered
 
@@ -1297,8 +1296,9 @@ async def holding_still(page: Page, line: Locator, *, rest_first: bool = True) -
                 rest_first,
             )
     except TimeoutError:
-        trace = format_history_trace((await history_trace(page))[-40:])
-        raise AssertionError(f"{line} never came to rest; the history's last events:\n{trace}") from None
+        raise AssertionError(
+            f"{line} never came to rest; the history's last events:\n{await history_trace.recent(page, 40)}"
+        ) from None
     try:
         yield
         await frames(page)
@@ -1308,7 +1308,10 @@ async def holding_still(page: Page, line: Locator, *, rest_first: bool = True) -
     finally:
         await watch.dispose()
     assert not outcome["detached"], f"{line} left the page"
-    assert outcome["drift"] <= 2, f"{line} moved {outcome['drift']}px from where it was clicked"
+    assert outcome["drift"] <= 2, (
+        f"{line} moved {outcome['drift']}px from where it was clicked; the history's last events:\n"
+        f"{await history_trace.recent(page, 60)}"
+    )
 
 
 def tool_call_in(run: Locator, name: str) -> tuple[Locator, Locator]:
@@ -1467,17 +1470,6 @@ async def wheel_and_capture_anchor_at_scrollend(page: Page, area: Locator, delta
     return anchor
 
 
-async def history_trace(page: Page, since: float = 0.0) -> list[dict[str, Any]]:
-    """The history's flight recorder (history_trace.ts): its scroll and layout decisions since
-    `since`, a `performance.now()` reading, as `{"at", "event"}` records."""
-    events = await page.evaluate("() => window.agentplaneHistoryTrace?.() ?? []")
-    return [entry for entry in events if entry["at"] >= since]
-
-
-def format_history_trace(events: list[dict[str, Any]]) -> str:
-    return "\n".join(f"{entry['at']:9.1f} {json.dumps(entry['event'])}" for entry in events)
-
-
 async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> None:
     try:
         await page.wait_for_function(
@@ -1545,8 +1537,9 @@ async def expect_history_bottom(page: Page) -> None:
             }"""
         )
     except PlaywrightTimeoutError:
-        trace = format_history_trace((await history_trace(page))[-60:])
-        raise AssertionError(f"the history never reached its bottom; its last events:\n{trace}") from None
+        raise AssertionError(
+            f"the history never reached its bottom; its last events:\n{await history_trace.recent(page, 60)}"
+        ) from None
 
 
 @pytest.mark.parametrize("raw", [False, True], ids=["desktop-normal", "phone-raw"])

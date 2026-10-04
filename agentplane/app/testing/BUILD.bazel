@@ -101,3 +101,12 @@ py_library(
         "@pypi//playwright",
     ],
 )
+
+py_library(
+    name = "history_trace",
+    srcs = ["history_trace.py"],
+    deps = [
+        "@pypi//playwright",
+        "@pypi//pydantic",
+    ],
+)
