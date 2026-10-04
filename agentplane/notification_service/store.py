@@ -121,12 +121,12 @@ class Store:
                 raise ConflictError("inbox is retired")
             row = await session.scalar(
                 select(Subscription).where(
-                    Subscription.inbox_id == inbox.id, Subscription.client_key == body.client_key
+                    Subscription.inbox_id == inbox.id, Subscription.idempotency_key == body.idempotency_key
                 )
             )
             if row is not None:
                 if row.creation != body.model_dump(mode="json"):
-                    raise ConflictError("creation key already names another subscription")
+                    raise ConflictError("idempotency key already names another subscription")
                 return SubscriptionView.model_validate(row)
             count = await session.scalar(
                 select(func.count()).select_from(Subscription).where(Subscription.inbox_id == inbox.id)
@@ -137,12 +137,11 @@ class Store:
                 id=uuid4(),
                 inbox_id=inbox.id,
                 request_id=body.request_id,
-                client_key=body.client_key,
+                idempotency_key=body.idempotency_key,
                 creation=body.model_dump(mode="json"),
                 creator=asdict(principal),
                 version=1,
                 after_sequence=body.after_sequence,
-                paused=False,
                 cancelled=False,
                 expires_at=now + timedelta(days=body.lifetime_days),
                 next_poll=now,
@@ -200,7 +199,6 @@ class Store:
             else:
                 if row.version != update.version or row.cancelled:
                     raise ConflictError("subscription version changed or subscription cancelled")
-                row.paused = update.paused
                 row.expires_at = datetime.now(UTC) + timedelta(days=update.lifetime_days)
             row.version += 1
             return SubscriptionView.model_validate(row)
@@ -316,7 +314,6 @@ class Store:
                 .where(
                     Subscription.inbox_id == claim.id,
                     ~Subscription.cancelled,
-                    ~Subscription.paused,
                     Subscription.expires_at > func.now(),
                     Subscription.next_poll <= func.now(),
                 )
@@ -332,7 +329,7 @@ class Store:
             inbox = await self.fenced(session, claim)
             row = await session.get(Subscription, source.id)
             assert row is not None
-            if row.cancelled or row.paused or row.version != source.version or row.expires_at <= datetime.now(UTC):
+            if row.cancelled or row.version != source.version or row.expires_at <= datetime.now(UTC):
                 return
             row.error = error
             row.next_poll = datetime.now(UTC) + timedelta(seconds=30 if error else 5)

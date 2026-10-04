@@ -11,8 +11,8 @@ import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { nix } from "@replit/codemirror-lang-nix";
 import type { Extension } from "@codemirror/state";
 import { Decoration, EditorView, highlightSpecialChars, WidgetType } from "@codemirror/view";
-import { tags } from "@lezer/highlight";
-import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { highlightCode, type Tag, tagHighlighter, tags } from "@lezer/highlight";
+import { type JSX, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import "./code_block.css";
 
@@ -47,17 +47,31 @@ const LANGUAGE_EXTENSIONS: Record<Language, () => Extension> = {
 
 const REGISTERED_LANGUAGES: ReadonlySet<string> = new Set(Object.keys(LANGUAGE_EXTENSIONS));
 
-const CODE_HIGHLIGHT = HighlightStyle.define([
-  { tag: tags.propertyName, color: "var(--agentplane-code-key)" },
-  { tag: tags.string, color: "var(--agentplane-code-string)" },
-  { tag: tags.number, color: "var(--agentplane-code-number)" },
-  { tag: [tags.bool, tags.atom, tags.literal], color: "var(--agentplane-code-literal)" },
-  { tag: [tags.keyword, tags.controlKeyword], color: "var(--agentplane-code-keyword)" },
-  { tag: tags.comment, color: "var(--agentplane-code-comment)", fontStyle: "italic" },
-  { tag: tags.meta, color: "var(--agentplane-code-meta)" },
-  { tag: tags.variableName, color: "var(--agentplane-code-variable)" },
-  { tag: [tags.function(tags.variableName), tags.className], color: "var(--agentplane-code-title)" },
-]);
+// Which colour each kind of token takes, `--agentplane-code-<token>` in code_block.css. One table
+// serves the editor view (as CSS-variable colours) and the inline rendering (as classes).
+const CODE_TOKENS: ReadonlyArray<{ tag: Tag | readonly Tag[]; token: string }> = [
+  { tag: tags.propertyName, token: "key" },
+  { tag: tags.string, token: "string" },
+  { tag: tags.number, token: "number" },
+  { tag: [tags.bool, tags.atom, tags.literal], token: "literal" },
+  { tag: [tags.keyword, tags.controlKeyword], token: "keyword" },
+  { tag: tags.comment, token: "comment" },
+  { tag: tags.meta, token: "meta" },
+  { tag: tags.variableName, token: "variable" },
+  { tag: [tags.function(tags.variableName), tags.className], token: "title" },
+];
+
+const CODE_HIGHLIGHT = HighlightStyle.define(
+  CODE_TOKENS.map(({ tag, token }) => ({
+    tag,
+    color: `var(--agentplane-code-${token})`,
+    ...(token === "comment" && { fontStyle: "italic" }),
+  }))
+);
+
+const INLINE_HIGHLIGHT = tagHighlighter(
+  CODE_TOKENS.map(({ tag, token }) => ({ tag, class: `agentplane-tok-${token}` }))
+);
 
 /** Whether `language` names one of the grammars this widget can highlight. */
 export function isRegisteredLanguage(language: string): language is Language {
@@ -125,7 +139,14 @@ function codePointLabel(code: number): string {
   return CONTROL_NAMES.get(code) ?? `U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
 }
 
-export function renderSpecialChar(code: number, description: string | null, _placeholder: string): HTMLElement {
+interface SpecialCharMarker {
+  className: string;
+  ariaLabel: string;
+  title: string;
+  text: string;
+}
+
+function specialCharMarker(code: number, description: string | null): SpecialCharMarker {
   const codePoint = `U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
   const isBidi = BIDI_CONTROLS.test(String.fromCodePoint(code));
   const isControl = code <= 0x001f || (code >= 0x007f && code <= 0x009f);
@@ -139,11 +160,21 @@ export function renderSpecialChar(code: number, description: string | null, _pla
           ? "paragraph separator"
           : "default-ignorable character";
   const label = codePointLabel(code);
+  return {
+    className: `cm-agentplane-special-char ${isBidi ? "cm-agentplane-special-char-bidi" : isControl ? "cm-agentplane-special-char-control" : "cm-agentplane-special-char-ignorable"}`,
+    ariaLabel: `${kind}: ${description ?? label}, ${codePoint}`,
+    title: `${kind}: ${label} (${codePoint})`,
+    text: `⟦${label}⟧`,
+  };
+}
+
+export function renderSpecialChar(code: number, description: string | null, _placeholder: string): HTMLElement {
+  const { className, ariaLabel, title, text } = specialCharMarker(code, description);
   const marker = document.createElement("span");
-  marker.className = `cm-agentplane-special-char ${isBidi ? "cm-agentplane-special-char-bidi" : isControl ? "cm-agentplane-special-char-control" : "cm-agentplane-special-char-ignorable"}`;
-  marker.setAttribute("aria-label", `${kind}: ${description ?? label}, ${codePoint}`);
-  marker.title = `${kind}: ${label} (${codePoint})`;
-  marker.textContent = `⟦${label}⟧`;
+  marker.className = className;
+  marker.setAttribute("aria-label", ariaLabel);
+  marker.title = title;
+  marker.textContent = text;
   return marker;
 }
 
@@ -314,5 +345,52 @@ export function CodeBlock({
       streamingCursorOffset={streamingCursorOffset}
       presentation={presentation}
     />
+  );
+}
+
+/** `text` as the runs the shell grammar colours, in the classes `INLINE_HIGHLIGHT` gives them. */
+function highlightShell(text: string): Array<{ text: string; classes: string }> {
+  const runs: Array<{ text: string; classes: string }> = [];
+  highlightCode(
+    text,
+    LEGACY_LANGUAGES.bash.parser.parse(text),
+    INLINE_HIGHLIGHT,
+    (code, classes) => runs.push({ text: code, classes }),
+    () => runs.push({ text: " ", classes: "" })
+  );
+  return runs;
+}
+
+/** `text` with each hidden character as the viewer's marker for it. */
+function withMarkers(text: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  let from = 0;
+  for (const match of text.matchAll(VISIBLE_SPECIAL_CHARS)) {
+    parts.push(text.slice(from, match.index));
+    const marker = specialCharMarker(match[0].codePointAt(0)!, null);
+    parts.push(
+      <span key={match.index} className={marker.className} aria-label={marker.ariaLabel} title={marker.title}>
+        {marker.text}
+      </span>
+    );
+    from = match.index + match[0].length;
+  }
+  parts.push(text.slice(from));
+  return parts;
+}
+
+/** Shell as a run of text, highlighted as the viewer highlights it, for a line that cannot afford
+ * an editor view each: a thread's one-line summary of a command. Hidden characters are marked as
+ * in the viewer. Whitespace is the caller's to collapse. */
+export function InlineCode({ text }: { text: string }): JSX.Element {
+  const runs = useMemo(() => highlightShell(text), [text]);
+  return (
+    <code className="agentplane-code-inline">
+      {runs.map((run, index) => (
+        <span key={index} className={run.classes}>
+          {withMarkers(run.text)}
+        </span>
+      ))}
+    </code>
   );
 }

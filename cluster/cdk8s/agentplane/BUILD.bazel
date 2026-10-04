@@ -337,6 +337,7 @@ py_library(
     name = "app_settings",
     srcs = ["app_settings.py"],
     data = [
+        "ducktape_pr_instructions.md",
         "haku_thread_setup.sh",
         "public_coder_instructions.md",
     ],
@@ -373,6 +374,19 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s/litellm:keys",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_prompt_instructions",
+    srcs = ["test_prompt_instructions.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":app_settings",
+        ":staging_config",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

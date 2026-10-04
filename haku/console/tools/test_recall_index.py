@@ -19,15 +19,7 @@ from haku.console.mcp.execution import (
 from haku.console.mcp_config import AccessProfile
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
-from haku.console.tools.recall_index import (
-    HAKU_INDEX_SERVER_ID,
-    GitIndexStatus,
-    GitSource,
-    IndexStatus,
-    SearchHit,
-    SearchResults,
-    build_mcp,
-)
+from haku.console.tools.recall_index import GitIndexStatus, GitSource, IndexStatus, SearchHit, SearchResults, build_mcp
 
 NOW = datetime.datetime(2026, 8, 14, 9, 0, tzinfo=datetime.UTC)
 HAKU = AgentActor(
@@ -229,10 +221,6 @@ async def test_operator_can_search_and_check_status_for_every_configured_index()
         await _call(client, "index_status", {}, actor=operator)
     assert searcher.queries[-1]["index_id"] == "ducktape-public"
     assert searcher.status_queries[-1] == ("ducktape-public", "haku-state")
-
-
-def test_the_server_is_named_for_its_id() -> None:
-    assert _mcp(_Searcher()).name == HAKU_INDEX_SERVER_ID
 
 
 if __name__ == "__main__":

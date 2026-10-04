@@ -46,20 +46,23 @@
   max-width: min(34rem, calc(100% - 6rem));
 }
 
-.agentplane-reasoning-row {
+/* A step of a run (a reasoning step, a tool call) as one line, opening to its content below -- see
+   step_line.tsx. */
+.agentplane-step-row {
+  position: relative;
   display: flex;
   min-width: 0;
   align-items: baseline;
   gap: var(--mantine-spacing-xs);
 }
 
-.agentplane-reasoning-details,
-.agentplane-reasoning-static {
+.agentplane-step-details,
+.agentplane-step-static {
   min-width: 0;
   flex: 1;
 }
 
-.agentplane-reasoning-details > summary {
+.agentplane-step-details > summary {
   display: flex;
   min-width: 0;
   align-items: baseline;
@@ -68,11 +71,11 @@
   list-style: none;
 }
 
-.agentplane-reasoning-details > summary::-webkit-details-marker {
+.agentplane-step-details > summary::-webkit-details-marker {
   display: none;
 }
 
-.agentplane-reasoning-details > summary::before {
+.agentplane-step-details > summary::before {
   flex: none;
   width: 0;
   height: 0;
@@ -81,11 +84,11 @@
   content: "";
 }
 
-.agentplane-reasoning-details[open] > summary::before {
+.agentplane-step-details[open] > summary::before {
   transform: rotate(90deg);
 }
 
-.agentplane-reasoning-summary {
+.agentplane-step-summary {
   display: flex;
   min-width: 0;
   flex: 1;
@@ -94,11 +97,11 @@
   white-space: nowrap;
 }
 
-.agentplane-reasoning-title {
+.agentplane-step-title {
   flex: none;
 }
 
-.agentplane-reasoning-preview {
+.agentplane-step-preview {
   position: relative;
   min-width: 0;
   flex: 1;
@@ -107,15 +110,71 @@
   white-space: nowrap;
 }
 
-.agentplane-reasoning-details[open] > summary .agentplane-reasoning-preview {
+.agentplane-step-details[open] > summary .agentplane-step-preview {
   display: none;
 }
 
-.agentplane-reasoning-preview .agentplane-markdown--single-line {
+/* Controls for the opened content sit at the end of the title line, short of the evidence icon. The
+   line gives them room, and lets its badges wrap rather than run under them. */
+.agentplane-step-controls {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 1.5rem;
+  display: flex;
+  height: 1lh;
+  align-items: center;
+}
+
+.agentplane-step-row:has(> .agentplane-step-controls) > .agentplane-step-details > summary {
+  padding-inline-end: 6rem;
+}
+
+.agentplane-step-details[open] > summary .agentplane-step-summary {
+  flex-wrap: wrap;
+  white-space: normal;
+}
+
+/* The row's evidence icon is pinned to its card's corner, so the line stops short of it rather than
+   running under it. The disclosed content below keeps the full width. */
+.agentplane-step-details > summary,
+.agentplane-step-static {
+  padding-inline-end: 1.5rem;
+}
+
+/* A streaming step breathes, as its status in the line; one that stopped short is blue and still. */
+.agentplane-step-title--streaming {
+  animation: agentplane-step-breathe 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentplane-step-title--streaming {
+    animation: none;
+  }
+}
+
+@keyframes agentplane-step-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.agentplane-step-trailing {
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: var(--mantine-spacing-xs);
+}
+
+.agentplane-step-preview .agentplane-markdown--single-line {
   white-space: inherit;
 }
 
-.agentplane-reasoning-retry {
+.agentplane-step-retry {
   flex: none;
   border: 0;
   padding: 0;

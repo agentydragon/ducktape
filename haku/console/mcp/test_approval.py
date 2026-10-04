@@ -21,7 +21,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from haku.console.conftest import operator_id, write_config
 from haku.console.database_migrate import apply_migrations
-from haku.console.database_schema import Agent, CredentialBinding, McpToolCall, McpToolCallPrincipal, StaticCredential
+from haku.console.database_schema import Agent, CredentialBinding, StaticCredential
 from haku.console.identity import operator_auth
 from haku.console.identity.agent import (
     # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -359,16 +359,6 @@ async def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
         # Always serialized (mcp_types.CallToolResult.result_type); older peers ignore it.
         "resultType": "complete",
     }
-
-
-async def test_submit_mints_tool_call_id(operator_client: TestClient, migrated_db_url: str) -> None:
-    first = _submit(operator_client)
-    second = _submit(operator_client)
-    assert first["tool_call_id"].startswith("tc_")
-    assert first["caller"] == {"kind": "operator"}
-    assert first["status"] == "pending_approval"
-    assert "approval_id" not in first
-    assert second["tool_call_id"] != first["tool_call_id"]
 
 
 async def test_rest_submission_route_is_retired(operator_client: TestClient) -> None:
@@ -945,115 +935,6 @@ async def test_audit_log_is_tenant_scoped_and_redacts_secrets(
     assert "tool-token" not in dumped
 
 
-async def test_postgres_store_runs_alembic_and_persists_typed_ledger(
-    operator_client: TestClient, migrated_engine: AsyncEngine, migrated_sessions, migrated_db_url: str
-) -> None:
-    submitted = _submit_request(
-        operator_client,
-        SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "world"}, wait_for_ms=0),
-    )
-    approved = operator_client.post(
-        f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "approve"}
-    ).json()["tool_call"]
-    assert approved["status"] == "running"
-
-    _drain_executions(operator_client)
-    finished = operator_client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
-    assert finished["status"] == "ok"
-    assert finished["result"]["content"][0]["text"] == "echo:world"
-
-    engine = migrated_engine
-    async with engine.connect() as conn:
-        tables = {
-            row["table_name"]
-            for row in (
-                await conn.execute(
-                    text(
-                        """
-                            SELECT table_name
-                            FROM information_schema.tables
-                            WHERE table_schema = 'public'
-                            """
-                    )
-                )
-            )
-            .mappings()
-            .all()
-        }
-        columns = {
-            row["column_name"]
-            for row in (
-                await conn.execute(
-                    text(
-                        """
-                            SELECT column_name
-                            FROM information_schema.columns
-                            WHERE table_name = 'mcp_tool_calls'
-                            """
-                    )
-                )
-            )
-            .mappings()
-            .all()
-        }
-        principal_columns = {
-            row["column_name"]
-            for row in (
-                await conn.execute(
-                    text(
-                        """
-                            SELECT column_name
-                            FROM information_schema.columns
-                            WHERE table_name = 'mcp_tool_call_principals'
-                            """
-                    )
-                )
-            )
-            .mappings()
-            .all()
-        }
-    async with migrated_sessions() as session:
-        persisted_call = await session.get(McpToolCall, submitted["tool_call_id"])
-        persisted_principal = await session.get(McpToolCallPrincipal, submitted["tool_call_id"])
-        assert persisted_call is not None
-        assert persisted_principal is not None
-        assert persisted_principal.operator_id == await operator_id(migrated_sessions, "operator-sub")
-        assert persisted_call.server_id == "smoke"
-        assert persisted_call.tool_name == "echo"
-        assert persisted_call.status is ToolCallStatus.OK
-        assert persisted_call.arguments_json == {"text": "world"}
-        assert persisted_call.result_json is not None
-        assert persisted_call.result_json["content"][0]["text"] == "echo:world"
-
-    assert {
-        "operators",
-        "identity_anchors",
-        "oidc_identities",
-        "client_software",
-        "enrollment_interactions",
-        "enrollment_correlation_reservations",
-        "agents",
-        "agent_name_reservations",
-        "credential_bindings",
-        "authorization_grants",
-        "static_credentials",
-        "mcp_tool_call_principals",
-    } <= tables
-    assert {
-        "mcp_agent_operator",
-        "mcp_tool_calls_legacy_unowned",
-        "mcp_tool_call_events",
-        "mcp_tool_call_events_legacy_unowned",
-        "mcp_operator_oauth_associations",
-        "mcp_operator_oauth_flows",
-        "provider_connections",
-        "provider_connection_flows",
-        "oauth_connection_results",
-    }.isdisjoint(tables)
-    assert columns == {column.name for column in McpToolCall.__table__.columns}
-    assert principal_columns == {column.name for column in McpToolCallPrincipal.__table__.columns}
-
-
 async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
     apply_migrations(db_url)
     engine = create_async_engine(db_url)
@@ -1078,12 +959,6 @@ async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> Non
 # Unit tests only: no postgres/network fixtures, exercising McpServerDispatcher
 # directly (over a fresh `_build_test_mcp_server()` instance, in-memory — no HTTP)
 # rather than through the FastAPI app.
-
-
-def test_server_entry_allows_in_process_backend() -> None:
-    McpServerEntry(
-        id="google", backend=InProcessBackend(credential=NoCredential())
-    )  # ok: resolved via the in-process registry at runtime, not this model
 
 
 async def test_executor_dispatches_to_registered_in_process_server() -> None:

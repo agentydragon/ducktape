@@ -1,10 +1,29 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-exports_files(["0001_notifications.py"])
+exports_files([
+    "0001_notifications.py",
+    "0002_idempotency_key.py",
+    "0003_remove_pause.py",
+])
 
 py_library(
     name = "0001_notifications",
     srcs = ["0001_notifications.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0002_idempotency_key",
+    srcs = ["0002_idempotency_key.py"],
+    deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0003_remove_pause",
+    srcs = ["0003_remove_pause.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

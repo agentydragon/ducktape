@@ -42,7 +42,6 @@ py_library(
         "//haku/console:tool_call_actor",
         "//haku/console/auto_approval:registry",
         "//haku/console/grants:principal",
-        "//haku/console/grants/kubernetes:authorization_service",
         "@ducktape_haku//haku/console:tool_calls",
     ],
 )
@@ -250,7 +249,6 @@ py_test(
     deps = [
         ":approval",
         ":catalog_reconciler",
-        ":guidance",
         ":reflection_cache",
         ":server",
         ":tool_call_service",

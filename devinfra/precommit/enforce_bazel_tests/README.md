@@ -12,9 +12,9 @@ Bazel source labels, and finds affected test targets through a two-step query:
    filters out files that exist on disk but aren't declared in any BUILD srcs.
 2. **Find affected tests** (~3s warm):
    `kind(".*_test", rdeps(<universe>, set(<labels>)))` with
-   `--universe_scope` excluding broken packages (`x/cotrl`).
-   The `x/` directory is expanded into individual sub-packages so only the
-   broken `x/cotrl` is excluded.
+   `--universe_scope` excluding broken packages (`_EXCLUDED_PACKAGES`). An exclusion
+   naming a sub-package (`x/<pkg>`) expands its parent directory into individual
+   sub-packages, so only that one is excluded.
 
 Then runs `bazel test --check_tests_up_to_date` on the affected targets
 (no execution — just checks the local action cache). Requires
@@ -92,7 +92,7 @@ Detailed profile analysis: <debug/warm_query_profile.md> for the warm path,
 - **`rdeps(//..., ...)` is unusable** (~34s cold) because `//...`
   transitively loads broken external packages (gymnasium).
 - Scoped queries return fewer targets (297/412 vs 305/429) because
-  `_EXCLUDED_PACKAGES` filters out `x/cotrl` and `gnome/gterm_theme`.
+  `_EXCLUDED_PACKAGES` filters out the broken packages.
 
 ## Known issues from development
 

@@ -100,6 +100,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:tab_metadata",
         "//agentplane/app/frontend:thread_status",
@@ -139,6 +140,7 @@ ts_library(
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend:topbar",
@@ -173,20 +175,59 @@ ts_library(
     ],
 )
 
+# The shell tool calls of both harnesses, parsed into one shape for the thread to draw.
+ts_library(
+    name = "command_calls",
+    srcs = ["command_calls.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/zod",
+        "//agentplane/app/frontend:parsed_json",
+    ],
+)
+
+ts_library(
+    name = "command_calls_test",
+    testonly = True,
+    srcs = ["command_calls.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":command_calls",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "step_line",
+    srcs = ["step_line.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
 ts_library(
     name = "thread_cards",
     srcs = ["thread_cards.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":command_calls",
         ":history_rows",
         ":retained_disclosures",
+        ":step_line",
         ":thread_evidence",
         ":thread_sync",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend:clamped_block",
+        "//agentplane/app/frontend:code_block",
+        "//agentplane/app/frontend:command_view",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:markdown",
+        "//agentplane/app/frontend:raw_switch",
         "//agentplane/protocol:event_pb",
     ],
 )

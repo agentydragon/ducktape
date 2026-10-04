@@ -34,7 +34,7 @@ build result before proceeding with deployment. React to useful outcomes, not ev
 
 POST {url}/v1/subscriptions with JSON:
 {{"destination_ref": YOUR_SUPPLIED_DESTINATION_REF, "session_id": YOUR_SUPPLIED_SESSION_ID,
- "client_key": "follow-REAL_REQUEST_ID", "provider": "actions", "request_id": "REAL_REQUEST_ID",
+ "idempotency_key": "follow-REAL_REQUEST_ID", "provider": "actions", "request_id": "REAL_REQUEST_ID",
  "after_sequence": 0, "lifetime_days": 7}}.
 Replace the destination/session values with their supplied JSON values and REAL_REQUEST_ID with the
 returned Action ID; do not invent an Action ID. Retry subscription creation with the identical key/body.

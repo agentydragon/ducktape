@@ -1,5 +1,6 @@
 /** Presentation of Kubernetes' raw Sandbox and Pod status objects. */
 import type { SandboxView } from "./client";
+import type { SandboxStatusKind } from "./status_mark";
 
 type RawObject = Record<string, unknown>;
 
@@ -97,19 +98,19 @@ export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
   );
 }
 
-export function sandboxSummary(sandbox: SandboxView): { label: string; color: string } {
-  if (sandbox.deleting) return { label: "Deleting", color: "gray" };
-  if (sandbox.operating_mode === "Suspended") return { label: "Suspended", color: "gray" };
-  if (sandbox.kubernetes_grant_error) return { label: "Grant error", color: "red" };
+export function sandboxSummary(sandbox: SandboxView): { label: string; kind: SandboxStatusKind } {
+  if (sandbox.deleting) return { label: "Deleting", kind: "gone" };
+  if (sandbox.operating_mode === "Suspended") return { label: "Suspended", kind: "suspended" };
+  if (sandbox.kubernetes_grant_error) return { label: "Grant error", kind: "failed" };
   if (sandbox.launch_grants_pending || !sandbox.kubernetes_grants_ready)
-    return { label: "Applying grants", color: "yellow" };
-  if (!sandbox.pod) return { label: "No Pod", color: "yellow" };
-  if (sandbox.pod.deleting) return { label: "Pod deleting", color: "gray" };
-  if (sandboxReady(sandbox)) return { label: "Pod ready", color: "green" };
+    return { label: "Applying grants", kind: "pending" };
+  if (!sandbox.pod) return { label: "No Pod", kind: "pending" };
+  if (sandbox.pod.deleting) return { label: "Pod deleting", kind: "gone" };
+  if (sandboxReady(sandbox)) return { label: "Pod ready", kind: "ready" };
   const phase = podPhase(sandbox);
-  if (phase === "Failed") return { label: "Pod Failed", color: "red" };
-  if (phase === "Succeeded") return { label: "Pod Succeeded", color: "gray" };
-  return { label: phase ? `Pod ${phase} · not ready` : "Pod status unknown", color: phase ? "yellow" : "gray" };
+  if (phase === "Failed") return { label: "Pod Failed", kind: "failed" };
+  if (phase === "Succeeded") return { label: "Pod Succeeded", kind: "gone" };
+  return { label: phase ? `Pod ${phase} · not ready` : "Pod status unknown", kind: "pending" };
 }
 
 function containerState(

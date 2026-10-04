@@ -576,7 +576,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 # The window reads the bodies of closed disclosures ahead of any opening, and shows none.
                 await closed_disclosures_read.wait()
                 await expect(
-                    page.locator(f'[data-thread-anchor="{reasoning.cursor}"] .agentplane-reasoning-details')
+                    page.locator(f'[data-thread-anchor="{reasoning.cursor}"] .agentplane-step-details')
                 ).to_have_count(0)
                 await expect(page.get_by_text("On-demand tool output", exact=True)).to_have_count(0)
 
@@ -607,20 +607,23 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 run = page.locator(f'[data-thread-anchor="{reasoning.cursor}"]')
                 await expect(page.locator(f'[data-thread-anchor="{tool.cursor}"]')).to_have_count(0)
                 await run.get_by_text("1 tool call, 1 reasoning step", exact=True).click()
-                await run.locator("summary", has_text="Arguments").click()
-                await expect(run.get_by_text("{", exact=True)).to_be_visible()
+                # A tool call is one line of its arguments; opened, it shows them as they stream in.
+                tool_line = run.locator("details.agentplane-step-details", has_text="test-tool")
+                await tool_line.locator("summary").click()
+                arguments = tool_line.locator(".agentplane-code-block")
+                await expect(arguments.get_by_text("{", exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"path":')
                     )
                 )
-                await expect(run.get_by_text('{"path":', exact=True)).to_be_visible()
+                await expect(arguments.get_by_text('{"path":', exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"value"}')
                     )
                 )
-                await expect(run.get_by_text('{"path":"value"}', exact=True)).to_be_visible()
+                await expect(arguments.get_by_text('{"path":"value"}', exact=True)).to_be_visible()
                 source.append(
                     event_pb2.Event(
                         item_completed=event_pb2.ItemCompleted(
@@ -628,9 +631,8 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                         )
                     )
                 )
-                await run.locator("summary", has_text="Output").click()
-                await expect(run.get_by_text("On-demand tool output", exact=True)).to_be_visible()
-                reasoning_details = run.locator("details.agentplane-reasoning-details")
+                await expect(tool_line.get_by_text("On-demand tool output", exact=True)).to_be_visible()
+                reasoning_details = run.locator("details.agentplane-step-details", has_text="Reasoning")
                 await expect(reasoning_details).to_be_visible()
                 await reasoning_details.locator("summary").click()
                 expanded_reasoning = reasoning_details.locator(":scope > .agentplane-markdown")
@@ -1248,11 +1250,10 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
         raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
         await raw_frames.click()
         frames_panel = raw_frames.locator("..")
-        code_view = frames_panel.locator(".agentplane-code-block, .agentplane-code-block-placeholder")
-        await expect(code_view).to_be_attached()
-        # CodeBlock mounts its editor only near the viewport; the mobile disclosure can open
-        # below the visible region after reload, so bring its placeholder into view first.
-        await code_view.scroll_into_view_if_needed()
+        # CodeBlock mounts its editor only near the viewport, replacing its placeholder when it does.
+        # The mobile disclosure can open below the visible region after reload, so scroll the panel
+        # into view -- the placeholder is never the target, as it can be swapped out mid-action.
+        await frames_panel.scroll_into_view_if_needed()
         frame = frames_panel.locator(".agentplane-code-block")
         await expect(frame).to_contain_text("unsafe diagnostic")
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native

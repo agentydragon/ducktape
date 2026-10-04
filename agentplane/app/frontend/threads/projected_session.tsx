@@ -57,6 +57,7 @@ import {
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusDot } from "../thread_status_dot";
+import { isMoving, THREAD_STATUS_MARKS } from "../status_mark";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary } from "../sandbox_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
@@ -698,10 +699,10 @@ function ProjectedSessionBody({
     snapshotFresh(threadsLive)
   );
   const pulseEpoch = useRef<ThreadFaviconPulseEpoch>({ current: null });
-  if (status.pulse) pulseEpoch.current.current ??= Date.now();
+  if (isMoving(THREAD_STATUS_MARKS[status.kind])) pulseEpoch.current.current ??= Date.now();
   else pulseEpoch.current.current = null;
   useEffect(() => onStatusLabelChange(status.tabLabel), [onStatusLabelChange, status.tabLabel]);
-  useEffect(() => installThreadFavicon(status, pulseEpoch.current), [status.color, status.pulse]);
+  useEffect(() => installThreadFavicon(status, pulseEpoch.current), [status.kind]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   const selectedModel = controls?.applied_model ?? thread.model;
@@ -1065,9 +1066,7 @@ export function ProjectedSession({
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
         <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-          {thread && (
-            <ThreadStatusDot color={topbarStatus.color} label={topbarStatus.label} pulse={topbarStatus.pulse} />
-          )}
+          {thread && <ThreadStatusDot kind={topbarStatus.kind} label={topbarStatus.label} />}
           <Box style={{ flex: 1, minWidth: 0 }}>
             <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
           </Box>

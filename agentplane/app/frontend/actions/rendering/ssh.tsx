@@ -1,10 +1,11 @@
 // The `exec` tool of the SSH MCP server (x/ssh_mcp_server/server.py): the call as the operator decides
 // it, the target and the exact command, and what came back, the exit code and the output.
-import { Badge, Button, Group, Stack, Text } from "@mantine/core";
-import { type JSX, useState } from "react";
+import { Badge, Group, Stack, Text } from "@mantine/core";
+import type { JSX } from "react";
 import { z } from "zod";
 
 import { CodeBlock } from "../../code_block";
+import { CommandCallView, OutputBlock } from "../../command_view";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "./entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "./result_entry";
 
@@ -28,20 +29,13 @@ const execResult = z.strictObject({
   stderr_truncated: z.boolean(),
 });
 
-// Past this many lines, an output stream shows its first lines and a button for the rest.
-const COLLAPSED_LINES = 20;
-
 function ExecArguments({ args }: PreviewProps<z.infer<typeof execArguments>>): JSX.Element {
   return (
-    <Stack gap={4}>
-      <CodeBlock text={`${args.user}@${args.host}`} presentation="label" />
-      <CodeBlock text={args.command} language="bash" />
-      {args.timeout_seconds != null && (
-        <Text size="xs" c="dimmed">
-          Timeout {args.timeout_seconds} s
-        </Text>
-      )}
-    </Stack>
+    <CommandCallView
+      target={`${args.user}@${args.host}`}
+      command={args.command}
+      notes={args.timeout_seconds == null ? [] : [`Timeout ${args.timeout_seconds} s`]}
+    />
   );
 }
 
@@ -52,57 +46,27 @@ function ExecResult({ result }: ResultPreviewProps<z.infer<typeof execResult>>):
         <Badge color={result.exit_code === 0 ? "green" : "red"}>Exit {result.exit_code}</Badge>
         <CodeBlock text={`${result.user}@${result.host}`} presentation="muted" />
       </Group>
-      <OutputStream name="stdout" text={result.stdout} truncated={result.stdout_truncated} />
-      <OutputStream name="stderr" text={result.stderr} truncated={result.stderr_truncated} />
+      {/* The server keeps only so many bytes of each stream, and says when it dropped the rest. */}
+      {result.stdout !== "" && (
+        <OutputBlock
+          name="stdout"
+          note={result.stdout_truncated ? "truncated by the server" : undefined}
+          text={result.stdout}
+        />
+      )}
+      {result.stderr !== "" && (
+        <OutputBlock
+          name="stderr"
+          note={result.stderr_truncated ? "truncated by the server" : undefined}
+          text={result.stderr}
+        />
+      )}
       {result.stdout === "" && result.stderr === "" && (
         <Text size="sm" c="dimmed">
           No output.
         </Text>
       )}
     </Stack>
-  );
-}
-
-/** One output stream, as plain text, left out when empty. The server keeps only so many bytes of each,
- * and says when it dropped the rest. */
-function OutputStream({
-  name,
-  text,
-  truncated,
-}: {
-  name: string;
-  text: string;
-  truncated: boolean;
-}): JSX.Element | null {
-  const [expanded, setExpanded] = useState(false);
-  if (text === "") return null;
-  // A final newline ends the last line rather than starting an empty one.
-  const lines = text.replace(/\n$/, "").split("\n");
-  const long = lines.length > COLLAPSED_LINES;
-  return (
-    <div>
-      <Text size="xs" c="dimmed" mb={4}>
-        {name}
-        {truncated && (
-          <Text span size="xs" c="orange">
-            {" "}
-            · truncated by the server
-          </Text>
-        )}
-      </Text>
-      <CodeBlock text={(long && !expanded ? lines.slice(0, COLLAPSED_LINES) : lines).join("\n")} />
-      {long && (
-        <Button
-          variant="subtle"
-          size="compact-xs"
-          mt={4}
-          aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? `Show the first ${COLLAPSED_LINES} lines` : `Show all ${lines.length} lines`}
-        </Button>
-      )}
-    </div>
   );
 }
 

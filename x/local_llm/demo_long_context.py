@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["requests", "tiktoken"]
 # ///
-"""Test vLLM with long context to measure memory and performance.
+"""Demo: send vLLM a long context and report memory and latency.
 
 Uses tiktoken cl100k_base as a reasonable approximation for Qwen tokenization.
 Actual token count is reported by vLLM in the response.

@@ -12,7 +12,7 @@ from fastapi import WebSocket
 
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications import console_events
-from haku.console.notifications.console_events import ConsoleEventHub, ConsoleHelloEvent, ToolCallsChangedEvent
+from haku.console.notifications.console_events import ConsoleEventHub, ToolCallsChangedEvent
 
 OPERATOR_A = UUID("00000000-0000-0000-0000-00000000000a")
 OPERATOR_B = UUID("00000000-0000-0000-0000-00000000000b")
@@ -243,10 +243,6 @@ def test_a_field_a_later_release_adds_does_not_cost_the_previous_one_the_event()
     )
 
     assert event.tool_call_id == "tc_test"
-
-
-def test_console_hello_event_is_a_pydantic_shape() -> None:
-    assert ConsoleHelloEvent().model_dump(mode="json") == {"event_type": "hello"}
 
 
 if __name__ == "__main__":

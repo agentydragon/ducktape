@@ -146,3 +146,144 @@ func TestFilterKind(t *testing.T) {
 		t.Error("an unknown kind must be an error, not an empty result")
 	}
 }
+
+// A sharded target reports one result per shard, each with a test.log of the same name; only the result's id
+// and status tell them apart. Shards count from 1, as they do in real streams. The summary, last, says how
+// many there were.
+const shardedStream = `[
+ {"id":{"testResult":{"label":"//pkg:visual","run":1,"shard":1,"attempt":1}},
+  "testResult":{"status":"PASSED","testActionOutput":[
+    {"name":"test.log","uri":"bytestream://host/blobs/s1/1","digest":"s1","length":"1"},
+    {"name":"test.xml","uri":"bytestream://host/blobs/x1/1","digest":"x1","length":"1"}]}},
+ {"id":{"testResult":{"label":"//pkg:visual","run":1,"shard":2,"attempt":1}},
+  "testResult":{"status":"FAILED","testActionOutput":[
+    {"name":"test.log","uri":"bytestream://host/blobs/s2/1","digest":"s2","length":"1"}]}},
+ {"id":{"testResult":{"label":"//pkg:visual","run":1,"shard":3,"attempt":1}},
+  "testResult":{"status":"PASSED","testActionOutput":[
+    {"name":"test.log","uri":"bytestream://host/blobs/s3/1","digest":"s3","length":"1"}]}},
+ {"id":{"testResult":{"label":"//pkg:other","run":1,"shard":1,"attempt":1}},
+  "testResult":{"status":"PASSED","testActionOutput":[
+    {"name":"test.log","uri":"bytestream://host/blobs/o1/1","digest":"o1","length":"1"}]}},
+ {"id":{"testSummary":{"label":"//pkg:visual"}},
+  "testSummary":{"overallStatus":"FAILED","shardCount":3,"runCount":1}}
+]`
+
+func logsOf(artifacts []artifact, label string) []artifact {
+	var logs []artifact
+	for _, a := range artifacts {
+		if a.Label == label && a.Name == "test.log" {
+			logs = append(logs, a)
+		}
+	}
+	return logs
+}
+
+func describeAll(artifacts []artifact) []string {
+	var described []string
+	for _, a := range artifacts {
+		described = append(described, a.describe())
+	}
+	return described
+}
+
+func TestParseArtifactsKeepsShardsApart(t *testing.T) {
+	// Three logs named alike, which a reader told apart by nothing would take for one.
+	got := describeAll(logsOf(parseOrFail(t, shardedStream), "//pkg:visual"))
+	want := []string{
+		"//pkg:visual (shard 1/3, PASSED)  test.log",
+		"//pkg:visual (shard 2/3, FAILED)  test.log",
+		"//pkg:visual (shard 3/3, PASSED)  test.log",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("log %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestUnshardedTargetsAreNotDescribedAsShards(t *testing.T) {
+	// With no summary there is no shard count, and a lone result has no shard worth naming.
+	other := logsOf(parseOrFail(t, shardedStream), "//pkg:other")
+	if len(other) != 1 || other[0].result() != "" || other[0].describe() != "//pkg:other (PASSED)  test.log" {
+		t.Errorf("got %+v", other)
+	}
+}
+
+func TestFailedMeansAResultThatDidNotPass(t *testing.T) {
+	for status, want := range map[string]bool{
+		"FAILED": true, "TIMEOUT": true, "INCOMPLETE": true, "REMOTE_FAILURE": true,
+		"PASSED": false, "FLAKY": false, "NO_STATUS": false, "": false,
+	} {
+		if got := (artifact{Kind: kindTest, Status: status}).failed(); got != want {
+			t.Errorf("failed() for %q = %v, want %v", status, got, want)
+		}
+	}
+	if (artifact{Kind: kindBuild, Status: "FAILED"}).failed() {
+		t.Error("a build artifact has no test result to have failed")
+	}
+}
+
+func TestFilterResults(t *testing.T) {
+	all := append(parseOrFail(t, besStream), parseOrFail(t, shardedStream)...)
+	if got := filterResults(all, 0, false); len(got) != len(all) {
+		t.Errorf("no filter must keep everything, build artifacts too: %d of %d", len(got), len(all))
+	}
+	second := filterResults(all, 2, false)
+	if len(second) != 1 || second[0].Shard != 2 || second[0].Kind != kindTest {
+		t.Errorf("shard 2 = %+v", second)
+	}
+	failed := filterResults(all, 0, true)
+	if len(failed) != 1 || failed[0].Status != "FAILED" {
+		t.Errorf("failed = %+v", failed)
+	}
+	if got := filterResults(all, 3, true); len(got) != 0 {
+		t.Errorf("shard 3 passed, so it cannot also be the failed one: %+v", got)
+	}
+}
+
+func TestDownloadNamesKeepShardLogsFromOverwritingEachOther(t *testing.T) {
+	arts := parseOrFail(t, shardedStream)
+	names := downloadNames(arts)
+	seen := map[string]bool{}
+	for i, name := range names {
+		if seen[name] {
+			t.Errorf("%q would be written twice", name)
+		}
+		seen[name] = true
+		if arts[i].Name == "test.xml" && name != "test.xml" {
+			t.Errorf("a name nothing else shares stays as it is, got %q", name)
+		}
+	}
+	if !seen["pkg_visual__shard_2_of_3__test.log"] || !seen["pkg_other__test.log"] {
+		t.Errorf("names do not say where each came from: %v", names)
+	}
+}
+
+func TestDownloadNamesLastResortKeepsEveryFile(t *testing.T) {
+	// Nothing about these tells them apart but their prefix, which the name does not carry.
+	arts := []artifact{{Label: "//a:b", Name: "x/out.txt"}, {Label: "//a:b", Name: "y/out.txt"}}
+	if names := downloadNames(arts); names[0] == names[1] {
+		t.Errorf("names collide: %v", names)
+	}
+}
+
+func TestNearArtifacts(t *testing.T) {
+	arts := []artifact{
+		{Label: "//v:visual", Name: "test.outputs/session_recovery_tools_open-actual.png"},
+		{Label: "//v:visual", Name: "test.outputs/session-shell-calls-actual.png"},
+	}
+	// A name guessed with the other of '-' and '_' than the output uses.
+	near := nearArtifacts(arts, "session-recovery-tools-open-actual.png", 5)
+	if len(near) != 1 || near[0].Name != arts[0].Name {
+		t.Errorf("near = %+v", near)
+	}
+	if got := nearArtifacts(arts, "nothing-like-it", 5); len(got) != 0 {
+		t.Errorf("near = %+v", got)
+	}
+	if got := nearArtifacts(arts, "*.png", 5); got != nil {
+		t.Errorf("a glob names what it means: %+v", got)
+	}
+}

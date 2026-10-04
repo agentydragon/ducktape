@@ -8,13 +8,13 @@ This document describes the linting and formatting setup across pre-commit, Baze
 | -------------------------------- | ----------------------- | ------------ | ------------------- |
 | **Python (ruff check)**          | `ruff-check` hook       | default      | Both                |
 | **Python (ruff format)**         | `ruff-format` hook      | N/A          | Pre-commit          |
-| **Python (mypy)**                | -                       | default      | bazel-check         |
-| **JS/TS (eslint)**               | -                       | default      | bazel-check         |
+| **Python (mypy)**                | -                       | default      | bazel-ci            |
+| **JS/TS (eslint)**               | -                       | default      | bazel-ci            |
 | **JS/TS (prettier)**             | `prettier` hook         | N/A          | Pre-commit          |
 | **Starlark (buildifier)**        | `buildifier` hook       | -            | Pre-commit          |
 | **Starlark (buildifier format)** | `buildifier` hook       | N/A          | Pre-commit          |
-| **Rust (clippy)**                | -                       | default      | bazel-check         |
-| **Rust (rustfmt)**               | `fmt` hook              | default      | Both                |
+| **Rust (clippy)**                | -                       | default      | bazel-ci            |
+| **Rust (rustfmt)**               | `rustfmt` hook          | default      | Both                |
 | **Shell (shfmt)**                | `shfmt` hook            | N/A          | Pre-commit          |
 | **Nix (nixfmt)**                 | `nixfmt` hook           | N/A          | Pre-commit          |
 | **Ansible**                      | syntax-check (fast)     | -            | ansible-lint (full) |
@@ -38,13 +38,13 @@ This document describes the linting and formatting setup across pre-commit, Baze
 
 Exclusions are defined in multiple places:
 
-| File                               | Scope                                                |
-| ---------------------------------- | ---------------------------------------------------- |
-| `.pre-commit-config.yaml` (line 3) | Global pre-commit exclusions                         |
-| `.gitattributes`                   | Format/lint exclusions via `rules-lint-ignored=true` |
-| `ruff.toml`                        | Ruff-specific exclusions                             |
-| `mypy.ini`                         | Mypy-specific exclusions                             |
-| `eslint.config.js`                 | ESLint ignores                                       |
+| File                                  | Scope                                                |
+| ------------------------------------- | ---------------------------------------------------- |
+| `.pre-commit-config.yaml` (`exclude`) | Global pre-commit exclusions                         |
+| `.gitattributes`                      | Format/lint exclusions via `rules-lint-ignored=true` |
+| `ruff.toml`                           | Ruff-specific exclusions                             |
+| `mypy.ini`                            | Mypy-specific exclusions                             |
+| `eslint.config.js`                    | ESLint ignores                                       |
 
 Common exclusion patterns (should match across files):
 
@@ -74,18 +74,17 @@ Aspect definitions in `devinfra/lint/linters.bzl`:
 
 ## GitHub CI Workflows
 
-| Workflow           | What Runs                                       |
-| ------------------ | ----------------------------------------------- |
-| `pre-commit.yml`   | `pre-commit run --all-files`                    |
-| `bazel-check.yml`  | `bazel build //...` (lint runs by default)      |
-| `ansible-lint.yml` | Full ansible-lint (thorough mode)               |
-| `bazel-test.yml`   | `bazel test //...` (includes visual regression) |
+| Workflow           | What Runs                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------- |
+| `pre-commit.yml`   | `pre-commit run` on the PR's changed files (`--all-files` on pushes and manual runs)      |
+| `bazel-ci.yml`     | `bazel test`, then `bazel build` (lint runs by default), over the affected targets on PRs |
+| `ansible-lint.yml` | Full ansible-lint (thorough mode)                                                         |
 
 ## Formatting
 
 Formatting is handled by pre-commit hooks (run automatically on `git commit`):
 
-- **prettier** - JS/TS, CSS, HTML, Markdown, YAML, JSON (local node hook)
+- **prettier** - JS/TS, CSS, HTML, Markdown, YAML, JSON (Nix devshell tool)
 - **ruff format** - Python (local Nix devshell tool)
 - **shfmt** - Shell scripts (local Nix devshell tool; `.zsh` is excluded)
 - **buildifier** - Starlark (local Nix devshell tool)
@@ -96,22 +95,22 @@ All hooks respect `.gitattributes` and `.pre-commit-config.yaml` exclusions.
 
 Key hooks in `.pre-commit-config.yaml`:
 
-| Hook                 | Source                | Purpose                           |
-| -------------------- | --------------------- | --------------------------------- |
-| `ruff-check`         | local (Nix devshell)  | Python linting                    |
-| `ruff-format`        | local (Nix devshell)  | Python formatting                 |
-| `buildifier`         | local (Nix devshell)  | Starlark formatting               |
-| `ducktape-precommit` | local (system)        | Filename + frozen-specimen checks |
-| `prettier`           | local (node)          | JS/TS/MD/YAML formatting          |
-| `rustfmt`            | local (system)        | Rust formatting                   |
-| `nixfmt`             | local (static binary) | Nix formatting                    |
-| `markdownlint-cli2`  | local (system)        | Markdown linting                  |
+| Hook                 | Source               | Purpose                           |
+| -------------------- | -------------------- | --------------------------------- |
+| `ruff-check`         | local (Nix devshell) | Python linting                    |
+| `ruff-format`        | local (Nix devshell) | Python formatting                 |
+| `buildifier`         | local (Nix devshell) | Starlark formatting               |
+| `ducktape-precommit` | local (system)       | Filename + frozen-specimen checks |
+| `prettier`           | local (Nix devshell) | JS/TS/MD/YAML formatting          |
+| `rustfmt`            | local (Nix devshell) | Rust formatting                   |
+| `nixfmt`             | local (Nix devshell) | Nix formatting                    |
+| `markdownlint-cli2`  | local (Nix devshell) | Markdown linting                  |
 
-Cluster-specific hooks run only on `cluster/` files:
+Cluster and Terraform hooks run only on their own files:
 
-- `kubeconform` - K8s manifest validation
-- `checkov_diff` - Terraform security analysis
-- `tflint` - Terraform linting
+- `kubeconform` - K8s manifest validation (`cluster/{k8s,generated,parked}`)
+- `checkov_diff` - Terraform security analysis (`cluster/terraform`, `tf`)
+- `tflint` - Terraform linting (`cluster/terraform`, `tf`)
 
 Terraform validation and linting are also covered by Bazel `tf_module` test targets (`rules_tf`).
 

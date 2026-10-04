@@ -5,6 +5,8 @@ filegroup(
     srcs = [
         "env.py",
         "//agentplane/notification_service/migrations/versions:0001_notifications.py",
+        "//agentplane/notification_service/migrations/versions:0002_idempotency_key.py",
+        "//agentplane/notification_service/migrations/versions:0003_remove_pause.py",
     ],
     visibility = ["//agentplane/notification_service:__pkg__"],
 )

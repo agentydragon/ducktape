@@ -153,10 +153,9 @@ access profiles grant no Recall indexes, and no index-maintenance workers run. C
 therefore do not discover or read the retained indexes.
 
 The `sandbox` in-process MCP server is absent from the deployed catalog, along with its
-access-profile grant, `agent_sandbox` configuration, and auto-approval policy. Its implementation is
-parked under <../x/sandbox_mcp/README.md>. The Haku-specific template, warm pool, janitor, and Console
-sandbox Role/RoleBinding have also been removed from active Flux output. The generic Agent Sandbox
-constructs remain for other workspaces.
+access-profile grant, `agent_sandbox` configuration, and auto-approval policy. The Haku-specific
+template, warm pool, janitor, and Console sandbox Role/RoleBinding are gone from Flux output too. The
+generic Agent Sandbox constructs remain for other workspaces.
 
 The trusted frontend resolves opaque IDs by composing ordinary read tools. There are no parallel
 preview-only MCP tools or HTTP routes.

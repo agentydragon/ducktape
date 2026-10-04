@@ -53,8 +53,12 @@ GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 SSH_READS_SET = "ssh-reads"
 
 
-_PUBLIC_CODER_INSTRUCTIONS = (
-    Path(__file__).with_name("public_coder_instructions.md").read_text(encoding="utf-8").strip()
+DUCKTAPE_PR_INSTRUCTIONS = Path(__file__).with_name("ducktape_pr_instructions.md").read_text(encoding="utf-8").strip()
+_PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(
+    [
+        Path(__file__).with_name("public_coder_instructions.md").read_text(encoding="utf-8").strip(),
+        DUCKTAPE_PR_INSTRUCTIONS,
+    ]
 )
 _HAKU_THREAD_SETUP = Path(__file__).with_name("haku_thread_setup.sh").read_text(encoding="utf-8")
 

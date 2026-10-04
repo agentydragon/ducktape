@@ -225,6 +225,7 @@ py_test(
     srcs = ["test_store.py"],
     deps = [
         ":conftest",
+        ":database_migrate",
         ":db",
         ":models",
         ":store",
@@ -235,6 +236,7 @@ py_test(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/workload_auth:principal",
+        "@pypi//alembic",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

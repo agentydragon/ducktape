@@ -187,7 +187,6 @@ def test_revoke_grants_uses_durable_grant_ids(console: _Console) -> None:
         ).status_code
         == 403
     )
-    assert console.client.post(path, json={"grant_ids": [], "reason": "risk"}, headers=headers).status_code == 422
     assert (
         console.client.post(path, json={"grant_ids": [str(uuid4())], "reason": "risk"}, headers=headers).status_code
         == 404

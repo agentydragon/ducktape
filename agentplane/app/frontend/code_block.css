@@ -1,6 +1,7 @@
 /* CodeMirror is the single code-shaped viewer across arguments, results, thread payloads, and
    Markdown fences. Preserve the app's compact monospace blocks while allowing long lines to wrap. */
-.agentplane-code-block {
+.agentplane-code-block,
+.agentplane-code-inline {
   --agentplane-code-key: var(--mantine-color-blue-8);
   --agentplane-code-string: var(--mantine-color-green-9);
   --agentplane-code-number: var(--mantine-color-orange-9);
@@ -10,6 +11,9 @@
   --agentplane-code-comment: var(--mantine-color-gray-6);
   --agentplane-code-meta: var(--mantine-color-gray-7);
   --agentplane-code-title: var(--mantine-color-pink-8);
+}
+
+.agentplane-code-block {
   display: block;
   margin: 0;
   white-space: pre-wrap;
@@ -55,7 +59,8 @@
   color: var(--mantine-color-orange-8);
 }
 
-[data-mantine-color-scheme="dark"] .agentplane-code-block {
+[data-mantine-color-scheme="dark"] .agentplane-code-block,
+[data-mantine-color-scheme="dark"] .agentplane-code-inline {
   --agentplane-code-key: var(--mantine-color-blue-3);
   --agentplane-code-string: var(--mantine-color-green-3);
   --agentplane-code-number: var(--mantine-color-orange-3);
@@ -86,4 +91,46 @@
 .agentplane-code-block-placeholder-muted {
   border: 0;
   background: transparent;
+}
+
+/* Inline code is the same highlight without an editor view: tokens are classed rather than styled. */
+.agentplane-code-inline {
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.agentplane-tok-key {
+  color: var(--agentplane-code-key);
+}
+
+.agentplane-tok-string {
+  color: var(--agentplane-code-string);
+}
+
+.agentplane-tok-number {
+  color: var(--agentplane-code-number);
+}
+
+.agentplane-tok-literal {
+  color: var(--agentplane-code-literal);
+}
+
+.agentplane-tok-keyword {
+  color: var(--agentplane-code-keyword);
+}
+
+.agentplane-tok-comment {
+  color: var(--agentplane-code-comment);
+  font-style: italic;
+}
+
+.agentplane-tok-meta {
+  color: var(--agentplane-code-meta);
+}
+
+.agentplane-tok-variable {
+  color: var(--agentplane-code-variable);
+}
+
+.agentplane-tok-title {
+  color: var(--agentplane-code-title);
 }

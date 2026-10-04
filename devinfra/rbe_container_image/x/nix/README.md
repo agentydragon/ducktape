@@ -22,9 +22,9 @@ or nix-ld — and BuildBuddy's goinit doesn't set these env vars.
 need environment variables: it has compiled-in defaults under
 `/run/current-system/sw/share/nix-ld` and works with an empty environment once that
 directory exists in the image. A dockerTools image built that way now runs
-`bazel test //...` at 25/26 (the Haku sandbox image — see
-<../../../../haku/x/sandbox_mcp/image/README.md>; mechanism in
-<../../../debug/nixos_bazel_bash/README.md> "Issue 4"). Whether that also revives \_this*
+`bazel test //...` at 25/26 (the since-deleted Haku sandbox image, `haku/x/sandbox_mcp/image/` at
+`ca7333002`; mechanism in <../../../debug/nixos_bazel_bash/README.md> "Issue 4"). Whether that
+also revives \_this*
 image under Firecracker is untested — goinit's pivot-root is a separate question from the
 loader — but the stated blocker for the dockerTools variant no longer holds as written.
 

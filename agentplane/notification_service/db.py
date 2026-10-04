@@ -36,16 +36,15 @@ class Inbox(Base):
 
 class Subscription(Base):
     __tablename__ = "subscription"
-    __table_args__ = (UniqueConstraint("inbox_id", "client_key"),)
+    __table_args__ = (UniqueConstraint("inbox_id", "idempotency_key"),)
     id: Mapped[UUID] = mapped_column(primary_key=True)
     inbox_id: Mapped[UUID] = mapped_column(ForeignKey("inbox.id", ondelete="CASCADE"))
     request_id: Mapped[UUID]
-    client_key: Mapped[str]
+    idempotency_key: Mapped[str]
     creation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     creator: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     version: Mapped[int]
     after_sequence: Mapped[int] = mapped_column(BigInteger)
-    paused: Mapped[bool]
     cancelled: Mapped[bool]
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     next_poll: Mapped[datetime] = mapped_column(DateTime(timezone=True))

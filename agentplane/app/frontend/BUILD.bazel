@@ -31,9 +31,16 @@ ts_library(
 )
 
 ts_library(
+    name = "status_mark",
+    srcs = ["status_mark.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "tab_metadata",
     srcs = ["tab_metadata.ts"],
     tsconfig = TSCONFIG,
+    deps = [":status_mark"],
 )
 
 ts_library(
@@ -51,7 +58,10 @@ ts_library(
     name = "thread_tab",
     srcs = ["thread_favicon.ts"],
     tsconfig = TSCONFIG,
-    deps = [":tab_metadata"],
+    deps = [
+        ":status_mark",
+        ":tab_metadata",
+    ],
 )
 
 ts_library(
@@ -248,12 +258,59 @@ ts_library(
     ],
 )
 
+# A height-capped block whose clipped bottom shows the rest, and the shell command and output views
+# built on it that the SSH `exec` Action and the thread's shell tool calls share.
+ts_library(
+    name = "clamped_block",
+    srcs = ["clamped_block.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "clamped_block_test",
+    testonly = True,
+    srcs = ["clamped_block.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_testing",
+        ":clamped_block",
+        "//:node_modules/@types/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "command_view",
+    srcs = ["command_view.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":clamped_block",
+        ":code_block",
+        ":json_view",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "parsed_json",
+    srcs = ["parsed_json.ts"],
+    tsconfig = TSCONFIG,
+)
+
 ts_library(
     name = "actions_call_tool_result",
     srcs = ["actions/call_tool_result.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":json_view",
+        ":parsed_json",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -308,6 +365,7 @@ ts_library(
         ":actions_rendering_entry",
         ":actions_rendering_result_entry",
         ":code_block",
+        ":command_view",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -576,7 +634,10 @@ ts_library(
     name = "sandbox_status",
     srcs = ["sandbox_status.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":status_mark",
+    ],
 )
 
 ts_library(
@@ -596,6 +657,7 @@ ts_library(
         ":lifecycle",
         ":live",
         ":sandbox_status",
+        ":status_mark",
         ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -644,11 +706,39 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":mark_glyph",
+        ":status_mark",
         ":thread_status_dot_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
+)
+
+# Draws any StatusMark in the page; the thread dot and the sidebar's Sandbox icon both use it.
+ts_library(
+    name = "mark_glyph",
+    srcs = [
+        "css.d.ts",
+        "mark_glyph.tsx",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":mark_glyph_css",
+        ":status_mark",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "mark_glyph_css",
+    srcs = ["mark_glyph.css"],
 )
 
 js_library(
@@ -683,8 +773,10 @@ ts_library(
     deps = [
         ":client",
         ":live",
+        ":mark_glyph",
         ":sandbox_status",
         ":sidebar_css",
+        ":status_mark",
         ":stream_status",
         ":thread_groups",
         ":thread_status",
@@ -782,6 +874,7 @@ ts_library(
         ":live",
         ":raw_switch",
         ":sandbox_status",
+        ":status_mark",
         ":stream_status",
         ":topbar",
         "//:node_modules/@bufbuild/protobuf",
@@ -902,6 +995,19 @@ ts_library(
 )
 
 # The JSON and plain-text adapters reuse the shared CodeMirror payload widget.
+ts_library(
+    name = "inline_code_test",
+    testonly = True,
+    srcs = ["inline_code.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_testing",
+        ":code_block",
+        "//:node_modules/@types/react",
+        "//:node_modules/vitest",
+    ],
+)
+
 ts_library(
     name = "json_view",
     srcs = ["json_view.tsx"],
@@ -1061,9 +1167,12 @@ vitest_bin.vitest_test(
         ":actions_history_test",
         ":actions_requests_test",
         ":actions_call_tool_result_test",
+        ":clamped_block_test",
         ":client_test",
         ":connections_test",
         ":consent_test",
+        ":inline_code_test",
+        "//agentplane/app/frontend/threads:command_calls_test",
         "//agentplane/app/frontend/threads:history_rows_test",
         ":json_view_test",
         ":live_stream_test",

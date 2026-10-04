@@ -11,6 +11,10 @@ while every test still passes. Consider generating them from the pydantic models
 the JSON Schema FastMCP publishes as the tool's `inputSchema` and `outputSchema`, converted to zod at
 build time.
 
+The thread's shell tool calls have the same hazard: `threads/command_calls.ts` mirrors Claude Code's
+`Bash` input and the arguments `runner/codex.py` records for `commandExecution` by hand, strictly, so
+a field a harness adds sends every such call to the JSON view while the tests still pass.
+
 ## Thread view UX
 
 - **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`threads/thread_evidence.tsx`, the
@@ -28,9 +32,9 @@ build time.
   "Reasoning" text, no toggle at all), there's no cheap signal to suppress the toggle before the fetch
   resolves; worth figuring out one (e.g. from the fold/view layer) rather than always rendering it optimistically.
 - **Collapsing a long expanded block requires scrolling back up to its toggle**: `RetainedDisclosure`
-  (`threads/retained_disclosures.tsx`) is a plain `<details>`/`<summary>` -- opening a long one (`LazyBody`'s
-  Reasoning/Arguments/Output, or `CollapsibleRows`'s "N tool call(s), N reasoning step(s)" run/lifecycle wrapper,
-  both in `threads/projected_session.tsx`) and scrolling down through its content scrolls the `<summary>` that collapses
+  (`threads/retained_disclosures.tsx`) is a plain `<details>`/`<summary>` -- opening a long one (a tool call or
+  reasoning step's `StepLine`, or `CollapsibleRows`'s "N tool call(s), N reasoning step(s)" run/lifecycle wrapper
+  in `threads/projected_session.tsx`) and scrolling down through its content scrolls the `<summary>` that collapses
   it off the top of the screen, so collapsing means scrolling back up first -- and a long enough run (many tool
   calls and reasoning steps spanning several screens) makes this worse, not just more of the same, since the
   toggle can be scrolled arbitrarily far out of reach. One direction: keep the summary/toggle stuck to the
@@ -50,7 +54,7 @@ build time.
   (`threads/projected_session.css` ~line 40) fills the operator's bubble with `var(--mantine-color-blue-light)`; feedback
   was grey would do, since role already reads from position (right-aligned) without needing a hue. More broadly,
   consider dropping bubble/card chrome across `EntityCard` altogether -- the user bubble's background, and the
-  bordered `Paper` around tool calls and reasoning (`threads/projected_session.tsx` ~line 423) -- and distinguishing rows
+  bordered card an opened tool call or reasoning step gets (`CollapsibleCard` in `threads/thread_cards.tsx`) -- and distinguishing rows
   by their text and a light shade of grey instead, reserving actual color for when it's semantically meaningful
   (as the prominent-lifecycle `Alert color="red"` at ~line 376 and the failed-tool-call `Badge color="red"` at
   ~line 444 already do).
@@ -60,8 +64,9 @@ build time.
 The shared CodeMirror viewer now marks bidi controls, zero-width/default-ignorable characters,
 control characters, and Unicode line separators in code-shaped Action arguments, shell commands,
 results, and fenced Markdown. It keeps the source text intact and distinguishes bidi/control markers
-from quieter formatting markers. Ordinary Action titles and descriptions still render as plain text;
-decide whether they also need inline markers or an approval-card warning.
+from quieter formatting markers. Ordinary Action titles and descriptions still render as plain text, and so do a
+thread tool call's one-line summaries other than a shell command's (the model's description, a
+tool's JSON); decide whether they also need inline markers or an approval-card warning.
 
 ## Durable local storage for thread windows
 

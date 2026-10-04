@@ -19,6 +19,15 @@ An `McpExecutorBinding` group (`mcp_executor.py`) offers every upstream tool as 
 could name tools to hide from discovery and refuse at admission, such as GitHub's Copilot
 delegation tools.
 
+## Wire up Home Assistant entity control
+
+The `home_assistant_entity_control` policy kind (`policies/home_assistant_entity_control.py`) exists
+but no `ActionPolicyBinding` references it, so `ha_call_service` still waits for the operator.
+Wiring it up is for the owner's agents: choose the entities and the services each may use, add an
+`AutoApproveIf` factory in `cluster/cdk8s/providers/agentplane/action_policy_set.py`, and bind the set in
+`cluster/cdk8s/agentplane/actions_staging_policies.py`. First re-check the kind's reviewed argument
+keys against the pinned ha-mcp's `ha_call_service` input schema.
+
 ## Executors that answer as MCP tools
 
 `tool_results.py` renders an outcome per executor kind: an MCP group's stored `CallToolResult` as
@@ -32,6 +41,16 @@ An agent that would rather not spend the operator's attention has no way to ask 
 to run an Action only if a policy decides it, and to be told the refusal instead of queuing it for
 a human. `ActionService.submit_decided` already refuses that way for direct tools, before anything
 is persisted.
+
+## Refuse an Action the caller's own permissions already cover
+
+Haku Console had an auto-approval policy that auto-denied a Kubernetes passthrough call when the
+caller's own Kubernetes SubjectAccessReview identity already allowed it, with a message to use the
+direct path instead of the operator's broader credential; a call it could not map, or whose
+evaluation failed, went to manual review (`haku/console/auto_approval/kubernetes.py` and
+`haku/console/grants/kubernetes/kubectl_passthrough_policy.py`, removed in #8877). Action Service
+holds such a call for a human even when the calling ServiceAccount could do the same thing itself.
+Consider a policy of that kind for Actions that run with the operator's credential.
 
 ## Direct tools per Connection
 

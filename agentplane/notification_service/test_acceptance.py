@@ -187,7 +187,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         "destination_ref": {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX, "uid": SANDBOX_UID},
                         "session_id": "notifications",
                         "request_id": request["id"],
-                        "client_key": "listen",
+                        "idempotency_key": "listen",
                     }
                     assert (
                         await agent.post("/v1/subscriptions", json=body | {"owner": owner.model_dump()})
@@ -215,6 +215,8 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     response = await agent.post("/v1/subscriptions", json=body)
                     response.raise_for_status()
                     subscription = response.json()
+                    assert subscription["idempotency_key"] == "listen"
+                    assert "client_key" not in subscription
                     assert (await agent.post("/v1/subscriptions", json=body)).json() == subscription
                     initial = None
                     if busy:

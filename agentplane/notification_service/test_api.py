@@ -8,7 +8,7 @@ import httpx
 import pytest_bazel
 
 from agentplane.notification_service.api import authenticated_caller, create_app, notification_service
-from agentplane.notification_service.models import Subscribe
+from agentplane.notification_service.models import DestinationRef, Subscribe
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.store import ConflictError, QuotaError, Store
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
@@ -36,7 +36,7 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
     body = {
         "destination_ref": {"namespace": "test", "name": "sandbox", "uid": "sandbox-uid"},
         "session_id": "session",
-        "client_key": "listen",
+        "idempotency_key": "listen",
         "request_id": str(uuid4()),
     }
     async with (
@@ -67,9 +67,18 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
         assert response.json() == {"detail": "inbox limit"}
         resolver.resolve_workload.assert_awaited_once_with("test-workload")
         service.subscribe.assert_awaited_once_with(PRINCIPAL, Subscribe.model_validate(body))
+        legacy = body.copy()
+        legacy["client_key"] = legacy.pop("idempotency_key")
+        assert (await client.post("/v1/subscriptions", json=legacy)).status_code == 422
+        # The old name is not accepted alongside the new one either.
+        response = await client.post("/v1/subscriptions", json=body | {"client_key": "different"})
+        assert response.status_code == 422
         app.dependency_overrides.clear()
         assert (await client.post("/v1/subscriptions", json=body)).status_code == 401
     schema = app.openapi()
+    for model in ["Subscribe", "SubscriptionView"]:
+        assert "idempotency_key" in schema["components"]["schemas"][model]["properties"]
+        assert "client_key" not in schema["components"]["schemas"][model]["properties"]
     discovery_operation = schema["paths"]["/v1/providers"]["get"]
     provider_response = discovery_operation["responses"]["200"]["content"]["application/json"]["schema"]
     assert provider_response["additionalProperties"] == {"$ref": "#/components/schemas/ProviderView"}
@@ -78,6 +87,40 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
     assert operation["requestBody"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/Subscribe"
     }
+
+
+async def test_subscription_patch_renews_without_pause(store: Store) -> None:
+    service = create_autospec(Service, instance=True)
+    service.store = store
+    resolver = create_autospec(WorkloadPrincipalResolver, instance=True)
+    app = create_app(service, resolver)
+    app.dependency_overrides[authenticated_caller] = lambda: PRINCIPAL
+    subscription = await store.subscribe(
+        PRINCIPAL,
+        Subscribe(
+            destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
+            session_id="session",
+            idempotency_key="renew",
+            request_id=uuid4(),
+        ),
+    )
+    path = f"/v1/subscriptions/{subscription.id}"
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://notifications.test"
+    ) as client:
+        for paused in [True, False]:
+            response = await client.patch(path, json={"version": 1, "paused": paused})
+            assert response.status_code == 422
+        response = await client.patch(path, json={"version": 1, "lifetime_days": 30})
+        assert response.status_code == 200
+        assert response.json()["version"] == 2
+        assert "paused" not in response.json()
+        assert (await client.get(path)).json() == response.json()
+        assert (await client.patch(path, json={"version": 1})).status_code == 409
+        assert (await client.delete(path)).json()["cancelled"]
+        assert (await client.patch(path, json={"version": 3})).status_code == 409
+    for model in ["Subscribe", "SubscriptionUpdate", "SubscriptionView"]:
+        assert "paused" not in app.openapi()["components"]["schemas"][model]["properties"]
 
 
 async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(store: Store) -> None:

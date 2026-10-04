@@ -104,9 +104,7 @@ Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
 
 The former in-process `sandbox` server provisioned claims and ran bounded commands in a
 Haku-specific warm pool. It is absent from the deployed catalog, and its Haku-specific
-template, pool, janitor, and Console Role/RoleBinding are no longer active. The implementation
-and old deployment resources are retained as reference under
-<../x/sandbox_mcp/README.md>; do not treat that archive as current access policy. The generic
+template, pool, janitor, and Console Role/RoleBinding are no longer active. The generic
 Agent Sandbox constructs remain active for other workspace users.
 
 ### Agent-facing `withdraw_tool_call` (`/mcp`)

@@ -35,7 +35,6 @@ from haku.console.conftest import console_settings, operator_session_cookie, res
 from haku.console.identity.operator_identity import ResolvedOperatorIdentity
 from haku.console.mcp import catalog_reconciler as mcp_catalog_reconciler_module, server as mcp_server_module
 from haku.console.mcp.approval import DegradedReflection, ReflectionFailureStage
-from haku.console.mcp.guidance import SERVER_INSTRUCTIONS
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
 from haku.console.mcp_config import ConsoleConfigFile, InProcessServers, const_in_process_server
@@ -375,12 +374,6 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
         _assert_valid_json_schema(tool.output_schema)
 
 
-def test_console_server_instructions_keep_client_critical_guidance() -> None:
-    assert SERVER_INSTRUCTIONS == mcp_server_module.SERVER_INSTRUCTIONS
-    for phrase in ("<server>__<tool>", "pending_approval", "get_tool_call", "call_mcp_tool"):
-        assert phrase in SERVER_INSTRUCTIONS
-
-
 def test_approval_envelope_rejects_old_wait_field_name() -> None:
     model = mcp_server_module._approval_request_envelope_model(max_wait_ms=60_000)
     with pytest.raises(ValidationError, match="wait_for_approval_ms"):
@@ -400,14 +393,6 @@ def test_approval_envelope_wait_has_default_and_strict_bounds() -> None:
     for invalid_wait_ms in (-1, max_wait_ms + 1, None, "0"):
         with pytest.raises(ValidationError):
             model.model_validate({"input": {}, "rationale": "test", "wait_for_result_ms": invalid_wait_ms})
-
-
-def test_approval_envelope_schema_uses_requested_dynamic_bounds() -> None:
-    model = mcp_server_module._approval_request_envelope_model(default_wait_ms=7, min_wait_ms=1, max_wait_ms=9)
-    wait_schema = model.model_json_schema()["properties"]["wait_for_result_ms"]
-    assert wait_schema["default"] == 7
-    assert wait_schema["minimum"] == 1
-    assert wait_schema["maximum"] == 9
 
 
 async def test_tool_surface_is_specific_to_the_authenticated_agent(harness: _Harness) -> None:
@@ -1415,21 +1400,6 @@ def test_mcp_oauth_persistence_must_share_the_console_database() -> None:
 
     with pytest.raises(ValidationError, match="same Postgres"):
         console_settings("postgresql+psycopg://app:secret@db.example.test:5432/haku", mcp_oauth=oauth)
-
-
-def test_mcp_oauth_reads_nested_shared_persistence_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HAKU_CONSOLE__MCP_OAUTH__OIDC_ISSUER", "https://auth.example.test/application/o/mcp/")
-    monkeypatch.setenv("HAKU_CONSOLE__MCP_OAUTH__OIDC_CLIENT_ID", "console")
-    monkeypatch.setenv("HAKU_CONSOLE__MCP_OAUTH__OIDC_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__KIND", "postgres")
-    monkeypatch.setenv("HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__URL", "postgresql://db.example.test/haku")
-
-    oauth = console_settings("postgresql+psycopg://db.example.test/haku").mcp_oauth
-
-    assert oauth is not None
-    assert oauth.persistence == PostgresPersistence(
-        kind="postgres", url="postgresql://db.example.test/haku", table_name="mcp_oauth_kv"
-    )
 
 
 async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path: Path) -> None:

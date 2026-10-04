@@ -19,6 +19,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
     COINBASE_POLICY,
+    DUCKTAPE_PR_INSTRUCTIONS,
     FORGEJO_FINANCE_AGENT_POLICY,
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -36,8 +37,11 @@ from cluster.cdk8s.model_rosters import ApiShape, Provider, codex_responses_name
 
 _NAMESPACE = "agentplane-staging"
 _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
-_FINANCE_AGENT_INSTRUCTIONS = (
-    Path(__file__).with_name("finance_agent_instructions.md").read_text(encoding="utf-8").strip()
+_FINANCE_AGENT_INSTRUCTIONS = "\n\n".join(
+    [
+        Path(__file__).with_name("finance_agent_instructions.md").read_text(encoding="utf-8").strip(),
+        DUCKTAPE_PR_INSTRUCTIONS,
+    ]
 )
 _FINANCE_AGENT_THREAD_SETUP = Path(__file__).with_name("finance_agent_thread_setup.sh").read_text(encoding="utf-8")
 # The ActionPolicySet objects actions_staging_policies creates for the public-coder

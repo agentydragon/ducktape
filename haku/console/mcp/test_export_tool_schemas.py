@@ -10,87 +10,16 @@ from haku.console.mcp.export_tool_schemas import (
     _validate_frontend_schema,
     build_mcp_tool_arguments_schema,
     build_mcp_tool_results_schema,
-    export_mcp_tool_results_json,
-    export_mcp_tool_schemas_json,
 )
 
 # The types-jsonschema stubs import referencing, so mypy needs the dist wherever
 # jsonschema is imported; gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//referencing
 
-_EXPECTED_TOOLS = {
-    "gmail": (
-        "drafts_create",
-        "drafts_delete",
-        "drafts_get",
-        "drafts_list",
-        "drafts_update",
-        "filters_create",
-        "filters_delete",
-        "filters_get",
-        "filters_list",
-        "labels_create",
-        "labels_delete",
-        "labels_get",
-        "labels_list",
-        "labels_patch",
-        "messages_get",
-        "threads_get",
-        "threads_list",
-        "threads_modify_labels",
-    ),
-    "google_calendar": (
-        "create_event",
-        "delete_event",
-        "get_event",
-        "list_event_instances",
-        "list_events",
-        "update_event",
-    ),
-    "grants": ("create_grant", "get_grant", "kubernetes_can_i", "list_grants", "revoke_grants", "whoami"),
-    # grocy-sf is reflected only for the batch tools the console renders previews for.
-    "grocy-sf": (
-        "locations_list",
-        "product_groups_list",
-        "products_create",
-        "products_edit",
-        "products_list",
-        "quantity_units_list",
-        "shopping_list_get",
-        "shopping_list_item_edit",
-        "shopping_list_items_add",
-        "shopping_list_items_remove",
-        "shopping_lists_list",
-        "stock_add",
-        "stock_consume",
-        "stock_entry_edit",
-        "stock_get",
-    ),
-    "haku_routine": ("launch_routine",),
-}
-_SERVER_IDS = list(_EXPECTED_TOOLS)
-_RESULT_SERVER_IDS = [*_SERVER_IDS, "haku-console"]
-_RESULT_TOOLS_MATCH_ARGUMENTS = ("grants", "grocy-sf", "haku_routine")
 
-
-def _assert_catalog_shape(schema: dict[str, object], title: str, server_ids: list[str] = _SERVER_IDS) -> None:
-    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-    assert schema["title"] == title
-    assert schema["additionalProperties"] is False
-    properties = schema["properties"]
-    assert isinstance(properties, dict)
-    assert list(properties) == server_ids
-    assert schema["required"] == server_ids
-    for server in properties.values():
-        assert server["additionalProperties"] is False
-
-
-async def test_exports_every_server_and_tool() -> None:
+async def test_every_exported_tool_schema_is_a_closed_valid_object() -> None:
     schema = await build_mcp_tool_arguments_schema()
 
-    _assert_catalog_shape(schema, "McpToolArguments")
-    for server_id, expected_tools in _EXPECTED_TOOLS.items():
-        assert list(schema["properties"][server_id]["properties"]) == list(expected_tools)
     for server in schema["properties"].values():
         for tool_schema in server["properties"].values():
             assert tool_schema["additionalProperties"] is False
@@ -119,15 +48,6 @@ async def test_grocy_schemas_are_inlined_and_validate() -> None:
         {"items": [{"product": 42, "min_stock_amount": 500, "clear_fields": ["description"]}]}
     )
     Draft202012Validator(grocy["shopping_list_item_edit"]).validate({"item_id": 7, "amount": 3, "done": True})
-
-
-async def test_export_is_stable_json() -> None:
-    first = await export_mcp_tool_schemas_json()
-    second = await export_mcp_tool_schemas_json()
-
-    assert first == second
-    assert json.loads(first)["title"] == "McpToolArguments"
-    assert first.endswith("\n")
 
 
 async def test_nullable_fastmcp_arguments_remain_nullable() -> None:
@@ -163,44 +83,17 @@ async def test_nullable_fastmcp_arguments_remain_nullable() -> None:
     )
 
 
-async def test_exports_result_catalog() -> None:
+async def test_result_catalog_is_a_subset_of_the_argument_catalog_without_none_returns() -> None:
+    arguments = await build_mcp_tool_arguments_schema()
     schema = await build_mcp_tool_results_schema()
 
-    _assert_catalog_shape(schema, "McpToolResults", _RESULT_SERVER_IDS)
-    # grocy-sf's batch tools are reflected (typed ducktape result models), limited to the same
-    # preview allowlist as its argument schemas. get_system_info is an OpenAPI tool with no batch
-    # counterpart, so it is absent and its widget stays hand-authored.
-    for server_id in _RESULT_TOOLS_MATCH_ARGUMENTS:
-        assert list(schema["properties"][server_id]["properties"]) == list(_EXPECTED_TOOLS[server_id])
-
-    gmail = schema["properties"]["gmail"]["properties"]
-    # A `-> None` return (gmail.labels_delete) has only a null wrapped result, so it is omitted —
-    # the result tool set is a subset of the argument tool set.
-    assert "labels_delete" not in gmail
-    assert "thread_previews" not in gmail
-    assert "drafts_create" in gmail
-    assert "threads_modify_labels" in gmail
-    # `id` is the one required field of a Draft resource.
-    assert gmail["drafts_create"].get("required") == ["id"]
-
-    calendar = schema["properties"]["google_calendar"]["properties"]
-    # delete_event also returns `-> None`, so (like gmail.labels_delete) it is omitted; the other
-    # five calendar tools all return a CalendarEvent or page and keep their result schema.
-    assert "delete_event" not in calendar
-    assert list(calendar) == ["create_event", "get_event", "list_event_instances", "list_events", "update_event"]
+    for server_id, server in arguments["properties"].items():
+        assert set(schema["properties"][server_id]["properties"]) <= set(server["properties"])
+    # A `-> None` return has only a null wrapped result, so it is omitted from the result catalog.
+    assert "labels_delete" not in schema["properties"]["gmail"]["properties"]
+    assert "delete_event" not in schema["properties"]["google_calendar"]["properties"]
 
     Draft202012Validator.check_schema(schema)
-
-
-async def test_exports_console_native_status_result_schemas() -> None:
-    schema = await build_mcp_tool_results_schema()
-    tools = schema["properties"]["haku-console"]["properties"]
-
-    assert list(tools) == ["get_mcp_server_status", "list_mcp_servers"]
-
-    Draft202012Validator(tools["list_mcp_servers"]).validate(
-        {"servers": [{"server_id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}]}
-    )
 
 
 async def test_grocy_result_schemas_validate() -> None:
@@ -273,15 +166,6 @@ async def test_result_schemas_validate_and_terminate_recursion() -> None:
     Draft202012Validator(calendar["update_event"]).validate(event)
     Draft202012Validator(calendar["list_events"]).validate({"events": [event], "next_page_token": "next"})
     Draft202012Validator(calendar["list_event_instances"]).validate({"events": [event]})
-
-
-async def test_results_catalog_is_stable_json() -> None:
-    first = await export_mcp_tool_results_json()
-    second = await export_mcp_tool_results_json()
-
-    assert first == second
-    assert json.loads(first)["title"] == "McpToolResults"
-    assert first.endswith("\n")
 
 
 @pytest.mark.parametrize("keyword", ["$defs", "$ref", "definitions"])

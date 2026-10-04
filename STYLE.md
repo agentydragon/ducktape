@@ -260,6 +260,12 @@ py_binary(
   `testing/`. `testing/test_x.py` exists only to test the utility `testing/x.py`.
 - **`test_*.py` / `*_test.py` filenames are reserved for `py_test` targets.** Do
   not use test-glob-named files for shared support code.
+- **Hand-run demos and probes are named `demo_<what>`** (any language): a script that
+  shows, probes or measures something by hand, such as against a live service or local
+  model, and is neither production code nor a test target. It is never `test_`-named,
+  sits beside what it demonstrates or under `x/`, and is wired into no test target. A
+  demo that earns CI becomes a real test; one worth keeping as a tool becomes production
+  code.
 - **`conftest.py` never appears in `py_test.srcs`**: the plugin generates a
   per-package `:conftest` library and deps each test on the whole ancestor conftest
   chain (including `//:conftest`).

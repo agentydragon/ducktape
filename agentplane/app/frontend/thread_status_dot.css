@@ -1,36 +1,5 @@
 .agentplane-thread-status-dot {
-  display: inline-block;
+  display: inline-flex;
   flex: 0 0 auto;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
   outline-offset: 2px;
-}
-
-.agentplane-thread-status-dot-small {
-  width: 0.375rem;
-  height: 0.375rem;
-}
-
-.agentplane-thread-status-dot-pulsing {
-  animation: agentplane-thread-status-breathe 1.2s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .agentplane-thread-status-dot-pulsing {
-    animation: none;
-  }
-}
-
-@keyframes agentplane-thread-status-breathe {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: scale(0.8);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scale(1.15);
-  }
 }

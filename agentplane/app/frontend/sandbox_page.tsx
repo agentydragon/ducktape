@@ -50,6 +50,7 @@ import {
   sandboxSummary,
   type RawCondition,
 } from "./sandbox_status";
+import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
 import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../runner/protocol_pb";
@@ -460,7 +461,7 @@ export function SandboxPage({
             {name}
           </Title>
           {sandbox && (
-            <Badge color={sandboxSummary(sandbox).color} style={{ flexShrink: 0 }}>
+            <Badge color={SANDBOX_STATUS_MARKS[sandboxSummary(sandbox).kind].color} style={{ flexShrink: 0 }}>
               {sandboxSummary(sandbox).label}
             </Badge>
           )}

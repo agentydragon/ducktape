@@ -3,7 +3,7 @@
 ## Goals
 
 1. **Bazel builds every registered JS frontend** (see `pnpm-workspace.yaml`)
-2. **Tests work under Bazel**, including visual regression tests that generate PNG snapshots
+2. **Tests work under Bazel**, including visual tests that render PNG screenshots for PR review
 3. **Minimal duplication** - single source of truth for package versions
 4. **Frontends may share code in future** - don't bake in independence assumption
 5. **Linting/formatting via Bazel aspects** - consistent with how we do ruff/mypy for Python

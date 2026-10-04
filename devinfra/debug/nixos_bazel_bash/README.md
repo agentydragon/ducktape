@@ -201,8 +201,8 @@ envfs (mounts `/usr/bin` and `/bin` only — it resolves _executable_ paths, nev
 interpreter, verified live on wyrm2).
 
 **Outcome**: with the filesystem defaults in place, the Nix-built Haku sandbox image runs
-`bazel test //...` at 25/26 — only the known no-Docker-socket e2e test fails. Full write-up:
-[the parked Haku sandbox image notes](../../../haku/x/sandbox_mcp/image/README.md).
+`bazel test //...` at 25/26 — only the known no-Docker-socket e2e test fails. The image is deleted;
+its source (`haku/x/sandbox_mcp/image/`) is in git history at `ca7333002`.
 
 ## Status
 
