@@ -953,7 +953,12 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 812, height: 900 },
     outputName: "session-streaming-interleaved",
     streamingInterleaved: true,
-    readySelectors: ['.agentplane-streaming-cursor[aria-label="Streaming"]'],
+    // The history's "Jump to latest" control follows an IntersectionObserver that reports a frame or
+    // two after the layout moves; capture once the history says its layout has come to rest.
+    readySelectors: [
+      '.agentplane-streaming-cursor[aria-label="Streaming"]',
+      '[aria-label="Thread history"][data-layout-settled="true"]',
+    ],
   },
   session_resume: {
     element: "#app",
