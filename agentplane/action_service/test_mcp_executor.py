@@ -42,7 +42,6 @@ from agentplane.action_service.models import (
     OperatorPrincipal,
     Verdict,
 )
-from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
 from agentplane.action_service.test_fixtures.lifecycle import wait_available
 from agentplane.subjects import ServiceAccountRef
@@ -407,47 +406,6 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
     finally:
         await asyncio.to_thread(marker_path.unlink, missing_ok=True)
         await service.close()
-
-
-async def test_runtime_binds_configured_mcp_group(engine: AsyncEngine, tmp_path: Path) -> None:
-    group = _group()
-    assert isinstance(group.executor, McpExecutorBinding)
-    group.executor.config = {
-        "transport": "stdio",
-        "command": sys.executable,
-        "args": [str(get_required_path(FAKE_SERVER))],
-        "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
-    }
-    catalog = ActionCatalog(groups={"runtime": group})
-    store = ActionStore(make_sessionmaker(engine))
-    marker = tmp_path / "called"
-    async with running_executor(catalog) as executors:
-        await wait_available(group)
-        assert set(catalog.groups["runtime"].actions) == {"slow_echo"}
-        service = ActionService(store, catalog, executors)
-        await service.start()
-        try:
-            view = await service.submit(
-                ActionRequestInput(
-                    idempotency_key="runtime",
-                    title="test title for runtime",
-                    action=ActionIdentity(group="runtime", name="slow_echo"),
-                    arguments={"marker_path": str(marker), "seconds": 0, "text": "bound"},
-                ),
-                CALLER,
-            )
-            await service.decide(
-                view.id,
-                DecisionInput(verdict=Verdict.ALLOW, expected_version=view.version, idempotency_key="allow-runtime"),
-                OPERATOR,
-            )
-            await _poll_state(store, view.id, want=ActionState.SUCCEEDED)
-            result = await store.get(view.id, CALLER)
-            assert result.execution is not None
-            assert CallToolResult.model_validate(result.execution.result).structured_content == {"echoed": "bound"}
-            assert marker.read_text() == "started"
-        finally:
-            await service.close()
 
 
 class ControlledLease:

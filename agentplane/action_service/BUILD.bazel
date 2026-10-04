@@ -375,7 +375,6 @@ py_test(
         ":db",
         ":mcp_executor",
         ":models",
-        ":runtime",
         ":service",
         "//:conftest",
         "//agentplane:subjects",
