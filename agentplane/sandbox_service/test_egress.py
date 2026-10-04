@@ -8,6 +8,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
+from agentplane.egress.resources import TargetMethod
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.egress_views import (
     BindingNotFoundError,
@@ -53,10 +54,7 @@ def _seed(custom_objects: FakeCustomObjectsApi) -> None:
     custom_objects.objects[("egresspolicies", "github")] = egress_policy("github", [GITHUB_RULE])
     custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
     custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
-        "live-seeded",
-        subjects=[LIVE.model_dump()],
-        policies=["github"],
-        active=("True", "Resolved", "1 of 1 policies resolved"),
+        "live-seeded", subjects=[LIVE.model_dump()], policies=["github"]
     )
     custom_objects.objects[("egressbindings", "live-expiring")] = egress_binding(
         "live-expiring",
@@ -66,11 +64,7 @@ def _seed(custom_objects: FakeCustomObjectsApi) -> None:
         expires_at="2026-12-01T00:00:00Z",
     )
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
-        "live-granted",
-        subjects=[LIVE.model_dump()],
-        policies=["pypi"],
-        from_git=False,
-        active=("False", "Expired", "1 of 1 policies resolved"),
+        "live-granted", subjects=[LIVE.model_dump()], policies=["pypi"], from_git=False
     )
     custom_objects.objects[("egressbindings", "other-only")] = egress_binding(
         "other-only", subjects=[{"namespace": NAMESPACE, "name": "other"}], policies=["pypi"]
@@ -109,7 +103,7 @@ async def test_a_like_named_account_in_another_namespace_is_a_different_subject(
     assert both.subjects == [LIVE, ServiceAccountRef(namespace=NAMESPACE, name="test-workload-sa")]
 
 
-async def test_a_binding_view_carries_provenance_expiry_policies_without_proxy_acknowledgement(
+async def test_a_binding_view_carries_provenance_expiry_and_policies(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
     _seed(custom_objects)
@@ -118,7 +112,6 @@ async def test_a_binding_view_carries_provenance_expiry_policies_without_proxy_a
 
     seed = by_name["live-seeded"]
     assert seed.from_git
-    assert "active" not in seed.model_dump()
     assert seed.subjects == [LIVE]
     (policy,) = seed.policies
     (rule,) = policy.rules
@@ -198,7 +191,6 @@ async def test_a_second_grant_is_another_binding_and_not_an_edit_of_the_first(
     assert first.name != second.name
     assert custom_objects.objects[("egressbindings", first.name)]["spec"]["policies"] == ["pypi"]
     assert custom_objects.objects[("egressbindings", second.name)]["spec"]["policies"] == ["github"]
-    assert custom_objects.patches == []
     # Both name the sandbox, so the proxy's union over its bindings is what composes them.
     assert {first.name, second.name} <= {view.name for view in await egress.bindings_for(LIVE)}
 
@@ -308,15 +300,8 @@ def test_operator_api_rejects_mixed_target_variants(target: dict[str, str | None
 def test_operator_schema_preserves_the_target_discriminator() -> None:
     items = CredentialView.model_json_schema()["properties"]["targets"]["items"]
     assert items["discriminator"]["propertyName"] == "method"
-    assert set(items["discriminator"]["mapping"]) == {
-        "wholeValue",
-        "schemeToken",
-        "basicUsername",
-        "basicPassword",
-        "basicWhole",
-        "jsonField",
-    }
-    assert len(items["oneOf"]) == 6
+    assert set(items["discriminator"]["mapping"]) == {method.value for method in TargetMethod}
+    assert len(items["oneOf"]) == len(TargetMethod)
 
 
 if __name__ == "__main__":

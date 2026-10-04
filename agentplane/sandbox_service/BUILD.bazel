@@ -284,6 +284,7 @@ py_test(
         ":egress_views",
         "//:conftest",
         "//agentplane:subjects",
+        "//agentplane/egress:resources",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "@pypi//protobuf",
