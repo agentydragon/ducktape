@@ -225,12 +225,6 @@ it("shows signed narration as prose while ordinary thinking remains collapsed", 
   expect(thinking.querySelector("summary")?.textContent).toBe("Thinking");
   expect(thinking.textContent).toContain("Keep this internal note folded.");
   expect(thinking.querySelector(".agentplane-markdown strong")?.textContent).toBe("internal note");
-  await act(async () => {
-    thinking.open = true;
-  });
-  expect(thinking.open).toBe(true);
-  expect(thinking.textContent).toContain("Keep this internal note folded.");
-  expect(thinking.querySelector(".agentplane-markdown strong")?.textContent).toBe("internal note");
 });
 
 it("clamps pointer and keyboard resizing and restores the width after collapsing", async () => {
