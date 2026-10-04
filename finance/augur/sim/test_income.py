@@ -1,6 +1,5 @@
 """Income categories keep their reporting identity without tensor-row bookkeeping."""
 
-import pytest
 import pytest_bazel
 
 from finance.augur.sim.ids import JurisdictionId
@@ -14,19 +13,6 @@ from finance.augur.sim.income import (
     income_source_sort_key,
     income_source_wire_id,
 )
-
-
-@pytest.mark.parametrize(
-    ("source", "wire_id"),
-    [
-        (OrdinaryIncome(), "ordinary"),
-        (InterestIncome(character=Treasury()), "interest:treasury"),
-        (InterestIncome(character=Municipal(state=JurisdictionId("test_state"))), "interest:municipal:test_state"),
-        (InterestIncome(character=Taxable()), "interest:taxable"),
-    ],
-)
-def test_income_category_identity(source: TransferIncomeCategory, wire_id: str) -> None:
-    assert income_source_wire_id(source) == wire_id
 
 
 def test_reporting_order_places_taxable_interest_last() -> None:

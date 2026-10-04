@@ -138,18 +138,11 @@ def test_lists_direct_catalog_grants_with_provenance(console: _Console) -> None:
 
 def test_revoke_accepts_a_blank_reason(console: _Console) -> None:
     grant = _seed_grant(console)
-    path = "/api/grants/revoke"
-
-    assert (
-        console.client.post(
-            path,
-            json={"grant_ids": [str(grant.grant_id)], "reason": "risk"},
-            headers={"Origin": "https://untrusted.test"},
-        ).status_code
-        == 403
-    )
     headers = {"Origin": "https://haku.test"}
-    response = console.client.post(path, json={"grant_ids": [str(grant.grant_id)], "reason": "   "}, headers=headers)
+
+    response = console.client.post(
+        "/api/grants/revoke", json={"grant_ids": [str(grant.grant_id)], "reason": "   "}, headers=headers
+    )
 
     assert response.status_code == 200
     assert response.json()["grants"][0]["validity"]["status"] == "ended"

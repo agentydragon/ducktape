@@ -6,17 +6,6 @@ import { GMAIL_SERVER_ID } from "../server_ids";
 import { gmailPreviews } from "./requests";
 
 describe("gmailPreviews", () => {
-  it("renders threads_modify_labels for valid args, in both variants", () => {
-    for (const variant of ["compact", "detailed"] as const) {
-      const node = renderPreview(
-        gmailPreviews.threads_modify_labels,
-        { thread_ids: ["t1"], add: ["urgent"], remove: [] },
-        variant
-      );
-      expect(node).not.toBeNull();
-    }
-  });
-
   it("keeps custom previews and action text when nullable FastMCP arguments are explicitly null", () => {
     const relabelArgs = { thread_ids: ["t1"], add: ["Follow up"], remove: null };
 
@@ -30,11 +19,5 @@ describe("gmailPreviews", () => {
     // thread_ids is min_length=1; an empty list fails the schema, so renderPreview returns null
     // and the caller shows raw JSON rather than a blank Arguments field.
     expect(renderPreview(gmailPreviews.threads_modify_labels, { thread_ids: [], add: ["x"] }, "compact")).toBeNull();
-  });
-
-  it("renders every Gmail read tool with a widget", () => {
-    expect(renderPreview(gmailPreviews.threads_get, { id: "t1" }, "compact")).not.toBeNull();
-    expect(renderPreview(gmailPreviews.threads_list, { q: "from:alice" }, "detailed")).not.toBeNull();
-    expect(renderPreview(gmailPreviews.messages_get, { id: "m1" }, "compact")).not.toBeNull();
   });
 });

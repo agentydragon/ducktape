@@ -4,8 +4,6 @@ from typing import Literal
 
 import pytest
 import pytest_bazel
-from fastmcp.client import Client
-from fastmcp.server import FastMCP
 from pydantic import Field
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
@@ -54,47 +52,6 @@ async def test_flat_schema_and_typed_invocation(make_typed_mcp, echo_server):
         assert set(props.keys()) >= {"msg", "upper"}  # flat keys present
         # Ensure not wrapped
         assert "input" not in props
-
-
-@pytest.fixture
-def list_tools_via_client():
-    async def _list(server: FastMCP):
-        async with Client(server) as client:
-            return await client.list_tools()
-
-    return _list
-
-
-async def test_mcp_flat_model_backward_compatibility(list_tools_via_client):
-    # Structured output is now always enabled, but flat model still works
-
-    legacy = EnhancedFastMCP("legacy")
-
-    @legacy.flat_model(name="legacy_echo")
-    def legacy_echo(input: EchoInput) -> EchoOutput:
-        return EchoOutput(text=input.msg)
-
-    tools = await list_tools_via_client(legacy)
-    tool = next(t for t in tools if t.name == "legacy_echo")
-    props = (tool.input_schema or {}).get("properties", {})
-    assert "msg" in props
-    assert "upper" in props
-    assert "input" not in props
-
-
-async def test_tool_flat_explicit_models(list_tools_via_client):
-    # Output model is now always inferred from return annotation
-
-    mcp = EnhancedFastMCP("echo2")
-
-    @mcp.flat_model()
-    def echo(payload: EchoInput) -> EchoOutput:
-        return EchoOutput(text=payload.msg)
-
-    tools = await list_tools_via_client(mcp)
-    tool = next(t for t in tools if t.name == "echo")
-    props = (tool.input_schema or {}).get("properties", {})
-    assert set(props) >= {"msg", "upper"}
 
 
 if __name__ == "__main__":

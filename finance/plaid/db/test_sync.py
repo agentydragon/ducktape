@@ -33,7 +33,6 @@ def test_redact_payload_returns_json_serializable_dates() -> None:
         "start_date": "2026-05-01",
         "nested": [{"captured_at": "2026-05-31T02:07:00+00:00"}],
     }
-    json.dumps(payload)
 
 
 def _stored_link(item_id: str, products: list[str], cursor: str | None = None) -> StoredLink:

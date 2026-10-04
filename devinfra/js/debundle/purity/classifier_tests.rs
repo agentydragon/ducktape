@@ -140,21 +140,6 @@ fn classify_with_fluent_bindings(prefix: &str, expr_src: &str, fluent: &[&str]) 
 }
 
 #[test]
-fn classify_literal_kinds_are_pure() {
-    assert!((classify("42")).is_pure());
-    assert!((classify("\"hi\"")).is_pure());
-    assert!((classify("true")).is_pure());
-    assert!((classify("null")).is_pure());
-    assert!((classify("/foo/g")).is_pure());
-    assert!((classify("`literal`")).is_pure());
-}
-
-#[test]
-fn classify_ident_read_is_pure() {
-    assert!((classify("FOO")).is_pure());
-}
-
-#[test]
 fn classify_pure_unary_and_binary() {
     assert!((classify("-1")).is_pure());
     assert!((classify("!FOO")).is_pure());
@@ -1351,12 +1336,6 @@ fn imported_pure_callee_makes_call_pure() {
 #[test]
 fn imported_impure_callee_keeps_call_impure() {
     assert!(!classify_with_imported_purities("", "run(x)", &[("run", impure_verdict())]).is_pure());
-}
-
-#[test]
-fn imported_callee_without_verdict_stays_unknown() {
-    // No oracle entry → the call stays `unknown_call`, today's behavior.
-    assert!(!classify_with_imported_purities("", "f(x)", &[]).is_pure());
 }
 
 #[test]

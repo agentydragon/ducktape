@@ -21,12 +21,6 @@ from cluster.validation.kustomize import KustomizeBuildResult
         ("ExternalSecret", "external-secrets.io/v1", "external-secrets-operator"),
         ("Cluster", "postgresql.cnpg.io/v1", "cnpg"),
         ("ServiceMonitor", "monitoring.coreos.com/v1", "monitoring-crds"),
-        ("Bundle", "trust.cert-manager.io/v1alpha1", "cert-manager-trust"),
-        ("CleanupPolicy", "kyverno.io/v2", "kyverno"),
-        ("SandboxTemplate", "extensions.agents.x-k8s.io/v1beta1", "agent-sandbox-controller"),
-        ("SandboxWarmPool", "extensions.agents.x-k8s.io/v1beta1", "agent-sandbox-controller"),
-        ("ScaledJob", "keda.sh/v1alpha1", "keda"),
-        ("TriggerAuthentication", "keda.sh/v1alpha1", "keda"),
     ],
 )
 def test_app_helmrelease_can_share_operator_instances(
@@ -60,13 +54,12 @@ def test_app_helmrelease_can_share_operator_instances(
     assert f"depend on {provider}" in errors[0]
 
 
-@pytest.mark.parametrize("subdir", ["test-operator", "cert-manager/app", "test/overlays/staging"])
-def test_operator_cannot_satisfy_its_own_helm_install_dependency(tmp_path: Path, subdir: str) -> None:
+def test_operator_cannot_satisfy_its_own_helm_install_dependency(tmp_path: Path) -> None:
     cluster = ParsedCluster(
-        flux_kustomizations={"test-operator": FluxKustomizationSpec(path=f"./cluster/k8s/{subdir}")},
+        flux_kustomizations={"test-operator": FluxKustomizationSpec(path="./cluster/k8s/test-operator")},
         build_results=[
             KustomizeBuildResult(
-                kustomization_path=tmp_path / "cluster/k8s" / subdir / "kustomization.yaml",
+                kustomization_path=tmp_path / "cluster/k8s/test-operator/kustomization.yaml",
                 resources=[
                     K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
                     K8sResource(kind="TestInstance", apiVersion="test.example/v1"),

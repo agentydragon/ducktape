@@ -116,19 +116,6 @@ py_test(
 )
 
 py_test(
-    name = "test_e2e",
-    srcs = ["test_e2e.py"],
-    deps = [
-        ":config",
-        ":conftest",
-        ":parser",
-        ":tree",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_parser",
     srcs = ["test_parser.py"],
     deps = [

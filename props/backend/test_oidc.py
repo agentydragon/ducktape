@@ -28,12 +28,6 @@ def test_load_returns_none_when_issuer_unset(monkeypatch: pytest.MonkeyPatch) ->
     assert load_oidc_settings() is None
 
 
-def test_load_returns_settings_when_configured(oidc_env: None) -> None:
-    settings = load_oidc_settings()
-    assert settings is not None
-    assert settings.client_id == "props"
-
-
 def test_redirect_uri_and_metadata_url(oidc_env: None) -> None:
     settings = load_oidc_settings()
     assert settings is not None

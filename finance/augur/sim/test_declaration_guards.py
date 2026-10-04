@@ -1,10 +1,10 @@
 """A world refuses a fact it cannot execute where that fact is declared, before it holds anything.
 
 Every rejection here is the declaration's own: the path admits only dense series it can read, a
-pool admits only a quote that is a price, a lot needs the pool it sits in, a bond is bought at
-par, a distribution pays whoever holds the security once, a purchase names a location and a
-funded price and its lifecycle follows it, a cashflow or bill falls inside the horizon on an index
-the path carries, and an issuer's protocol path stays in range.
+pool admits only a quote that is a price and is declared once, a lot needs the pool it sits in, a
+bond is bought at par, a distribution pays whoever holds the security once, a purchase names a
+location and a funded price and its lifecycle follows it, a cashflow or bill falls inside the
+horizon on an index the path carries, and an issuer's protocol path stays in range.
 """
 
 from collections.abc import Callable, Mapping
@@ -138,6 +138,13 @@ def test_a_pool_admits_no_quote_that_is_not_a_price_and_holds_nothing_when_it_re
 def test_a_public_pool_needs_its_price_series_on_the_path() -> None:
     with pytest.raises(ValueError, match="missing public security series"):
         pool(composed())
+
+
+def test_a_pool_is_declared_once() -> None:
+    world = composed(prices(100, 100, 100))
+    pool(world)
+    with pytest.raises(ValueError, match="duplicate holding pool declaration"):
+        pool(world)
 
 
 def test_a_path_admits_only_dense_series_named_once() -> None:

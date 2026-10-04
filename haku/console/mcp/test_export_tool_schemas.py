@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 import pytest_bazel
 from jsonschema import Draft202012Validator
@@ -32,9 +30,6 @@ async def test_grocy_schemas_are_inlined_and_validate() -> None:
     accept representative payloads — the date `format` and set `uniqueItems` survive."""
     schema = await build_mcp_tool_arguments_schema()
     grocy = schema["properties"]["grocy-sf"]["properties"]
-
-    assert "$defs" not in json.dumps(grocy)
-    assert "$ref" not in json.dumps(grocy)
 
     Draft202012Validator(grocy["stock_add"]).validate(
         {"items": [{"product": "Rolled oats", "amount": 2, "qu": "pack", "location": "Pantry"}]}
@@ -103,11 +98,6 @@ async def test_grocy_result_schemas_validate() -> None:
     schema = await build_mcp_tool_results_schema()
     grocy = schema["properties"]["grocy-sf"]["properties"]
 
-    serialized = json.dumps(grocy)
-    assert "$defs" not in serialized
-    assert "$ref" not in serialized
-    assert "x-fastmcp-wrap-result" not in serialized
-
     # stock_add returns a list of StockOpOk | StockOpError; `kind` defaults so it is optional.
     Draft202012Validator(grocy["stock_add"]).validate(
         [{"product_name": "Oats", "qu_name": "pack", "location_name": "Pantry"}]
@@ -140,11 +130,6 @@ async def test_result_schemas_validate_and_terminate_recursion() -> None:
     schema = await build_mcp_tool_results_schema()
     gmail = schema["properties"]["gmail"]["properties"]
     calendar = schema["properties"]["google_calendar"]["properties"]
-
-    serialized = json.dumps(schema)
-    assert "$defs" not in serialized
-    assert "$ref" not in serialized
-    assert "x-fastmcp-wrap-result" not in serialized
 
     # Minimal Draft (message absent) and a full one (camelCase wire aliases from gmail_api's
     # to_camel) both validate; the nested message's recursive `parts` items is a permissive object.

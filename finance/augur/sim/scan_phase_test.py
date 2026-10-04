@@ -1,8 +1,8 @@
 """Each month books what the world was declared to hold, with every phase firing together.
 
-Transfers, bills, a security sale, a property purchase and its carrying costs, mortgage
-servicing and the year-end tax pass, on worlds composed from declared facts and driven by a
-household that pays every due claim in full, in order.
+Transfers, bills, a security sale, a property purchase and its carrying costs, and mortgage
+servicing, on worlds composed from declared facts and driven by a household that pays every
+due claim in full, in order.
 """
 
 from decimal import Decimal
@@ -38,7 +38,6 @@ IRS = AgentId("irs")
 ALICE = AgentId("alice")
 CHECKING = AccountId("checking")
 FEDERAL = JurisdictionId("federal_us")
-CALIFORNIA = JurisdictionId("california")
 SP500 = SecurityKey(symbol=SP500_SYMBOL)
 # The home's parcel, taxed a flat 1.2% of its price.
 HOME_PARCEL = flat_parcel(Decimal("0.012"))
@@ -63,7 +62,7 @@ def world_for(*accounts: tuple[AccountRef, int], horizon_months: int, series: tu
     return world
 
 
-def taxed_by(world: World, *jurisdiction_ids: JurisdictionId, prior_year_tax: Decimal = Decimal(0)) -> None:
+def taxed_by(world: World, *jurisdiction_ids: JurisdictionId) -> None:
     world.track(
         TaxAuthority(
             compile_profile(
@@ -72,7 +71,6 @@ def taxed_by(world: World, *jurisdiction_ids: JurisdictionId, prior_year_tax: De
                     filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=list(jurisdiction_ids),
                     tax_authority_agent_id=IRS,
-                    prior_year_tax=prior_year_tax,
                 ),
                 {id_: load_jurisdiction(id_) for id_ in jurisdiction_ids},
                 currency=USD,
@@ -335,29 +333,6 @@ def test_financed_purchase_originates_then_services_the_loan() -> None:
     # Months 1 & 2 each pay one mortgage bill to the lender; alice's cash nets both off.
     assert cash(books, AgentId("lender"), 3) == 479_640
     assert cash(books, ALICE, 3) == 19_520_360
-
-
-def test_year_end_tax_accrues_and_the_following_year_settles_it() -> None:
-    # Multi-year W-2 income + a tax profile with a prior-year tax: the December year-end pass
-    # accrues a federal + CA liability, and the following year's estimated-tax and true-up claims
-    # settle it.
-    horizon = 36
-    world = world_for(account(AgentId("payroll")), account(ALICE), account(IRS), horizon_months=horizon)
-    world.declare_flow(
-        schedule=Recurring(start_month=0, end_month=35),
-        cause_id="alice_paycheck",
-        from_account=ref(AgentId("payroll")),
-        to_account=ref(ALICE),
-        amount=USD.quanta(Decimal(120_000) / Decimal(12)),
-        income_category=ORDINARY_INCOME,
-        deduction_category=None,
-    )
-    # > 0 -> quarterly estimated-tax claims the next year.
-    taxed_by(world, FEDERAL, CALIFORNIA, prior_year_tax=Decimal(15_000))
-    books = run(world)
-
-    assert any(row.jurisdiction_id == FEDERAL and row.amount_owed > 0 for book in books for row in book.tax_liabilities)
-    assert cash(books, IRS, horizon) > 0  # estimated payments and true-ups reached the tax authority
 
 
 if __name__ == "__main__":

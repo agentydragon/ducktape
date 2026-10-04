@@ -104,7 +104,7 @@ ts_library(
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:tab_metadata",
         "//agentplane/app/frontend:thread_status",
-        "//agentplane/app/frontend:thread_status_dot",
+        "//agentplane/app/frontend:thread_status_indicator",
         "//agentplane/app/frontend:thread_tab",
         "//agentplane/app/frontend:topbar",
         "//agentplane/protocol:command_pb",

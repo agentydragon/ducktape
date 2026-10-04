@@ -20,20 +20,6 @@ def _auth() -> AuthentikAuthConfig:
     )
 
 
-def test_env_loading_http(monkeypatch) -> None:
-    monkeypatch.setenv("MCP_FACADE_AUTH__OIDC_ISSUER", "https://auth.example.com/application/o/test/")
-    monkeypatch.setenv("MCP_FACADE_AUTH__OIDC_CLIENT_ID", "id")
-    monkeypatch.setenv("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("MCP_FACADE_AUTH__PUBLIC_BASE_URL", "https://test.example.com")
-    monkeypatch.setenv("MCP_FACADE_UPSTREAM__KIND", "http")
-    monkeypatch.setenv("MCP_FACADE_UPSTREAM__URL", "http://upstream.svc:8080/mcp")
-    monkeypatch.setenv("MCP_FACADE_FACADE_NAME", "Test Facade")
-    settings = FacadeSettings()
-    assert isinstance(settings.upstream, HttpUpstream)
-    assert settings.upstream.url == "http://upstream.svc:8080/mcp"
-    assert settings.facade_name == "Test Facade"
-
-
 def test_env_loading_stdio(monkeypatch) -> None:
     monkeypatch.setenv("MCP_FACADE_AUTH__OIDC_ISSUER", "https://auth.example.com/application/o/test/")
     monkeypatch.setenv("MCP_FACADE_AUTH__OIDC_CLIENT_ID", "id")

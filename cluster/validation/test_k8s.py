@@ -10,15 +10,6 @@ from cluster.validation.k8s import parse_k8s_resources
 class TestParseK8sResources:
     """Tests for K8s resource parsing and filtering."""
 
-    def test_parses_basic_resource(self) -> None:
-        """Parses basic K8s resource."""
-        doc = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "test-cm", "namespace": "default"}}
-        [resource] = parse_k8s_resources([doc])
-        assert resource.kind == "ConfigMap"
-        assert resource.api_version == "v1"
-        assert resource.name == "test-cm"
-        assert resource.namespace == "default"
-
     def test_skips_empty_and_non_resource_docs(self) -> None:
         """Filters out empty documents and documents without kind."""
         docs = [

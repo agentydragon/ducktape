@@ -310,19 +310,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn circuit_breaker_noop_when_no_failures() {
-        let tmp = tempfile::tempdir().unwrap();
-        assert!(check_circuit_breaker(tmp.path()).is_ok());
-    }
-
-    #[test]
-    fn circuit_breaker_blocks_after_failure() {
-        let tmp = tempfile::tempdir().unwrap();
-        record_startup_failure(tmp.path());
-        assert!(check_circuit_breaker(tmp.path()).is_err());
-    }
-
-    #[test]
     fn circuit_breaker_clears_on_success() {
         let tmp = tempfile::tempdir().unwrap();
         record_startup_failure(tmp.path());

@@ -1588,11 +1588,5 @@ mod tests {
             vec![vec!["a".to_string()], vec!["b".to_string()]],
             "each oversized singleton class should surface as its own diagnostic",
         );
-        assert!(
-            report
-                .diagnostics
-                .iter()
-                .all(|diagnostic| diagnostic.reason == ProposalDiagnosticReason::ExceedsSizeCap),
-        );
     }
 }

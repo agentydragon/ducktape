@@ -1,4 +1,4 @@
-"""The only V1 provider: canonical Action events, through the ordinary read APIs."""
+"""Notification source: canonical Action events, through the ordinary read APIs."""
 
 import asyncio
 from pathlib import Path

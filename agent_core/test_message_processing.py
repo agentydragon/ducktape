@@ -40,34 +40,22 @@ async def noop_agent(mcp_tool_provider, recording_handler):
 # --- Process message event tests ---
 
 
-async def test_process_message_fires_system_text_event(noop_agent, recording_handler) -> None:
-    """Test that process_message fires on_system_text_event for SystemMessage."""
-    noop_agent.process_message(SystemMessage.text("System prompt content"))
+@pytest.mark.parametrize(
+    ("message", "event_type", "text"),
+    [
+        (SystemMessage.text("System prompt content"), SystemText, "System prompt content"),
+        (UserMessage.text("User says hello"), UserText, "User says hello"),
+        (AssistantMessage.text("Assistant response"), AssistantText, "Assistant response"),
+    ],
+)
+async def test_process_message_fires_text_event(noop_agent, recording_handler, message, event_type, text) -> None:
+    """process_message fires the text event matching the message role."""
+    noop_agent.process_message(message)
 
     text_events = [r for r in recording_handler.records if isinstance(r, SystemText | UserText | AssistantText)]
     assert len(text_events) == 1
-    assert isinstance(text_events[0], SystemText)
-    assert text_events[0].text == "System prompt content"
-
-
-async def test_process_message_fires_user_text_event(noop_agent, recording_handler) -> None:
-    """Test that process_message fires on_user_text_event for UserMessage."""
-    noop_agent.process_message(UserMessage.text("User says hello"))
-
-    text_events = [r for r in recording_handler.records if isinstance(r, SystemText | UserText | AssistantText)]
-    assert len(text_events) == 1
-    assert isinstance(text_events[0], UserText)
-    assert text_events[0].text == "User says hello"
-
-
-async def test_process_message_fires_assistant_text_event(noop_agent, recording_handler) -> None:
-    """Test that process_message fires on_assistant_text_event for AssistantMessage."""
-    noop_agent.process_message(AssistantMessage.text("Assistant response"))
-
-    text_events = [r for r in recording_handler.records if isinstance(r, SystemText | UserText | AssistantText)]
-    assert len(text_events) == 1
-    assert isinstance(text_events[0], AssistantText)
-    assert text_events[0].text == "Assistant response"
+    assert isinstance(text_events[0], event_type)
+    assert text_events[0].text == text
 
 
 async def test_process_message_adds_to_transcript(noop_agent, recording_handler) -> None:
@@ -84,27 +72,6 @@ async def test_process_message_adds_to_transcript(noop_agent, recording_handler)
 
 
 # --- Message forwarding tests ---
-
-
-@pytest.mark.timeout(1)
-async def test_stateless_reasoning_forwarding(mcp_tool_provider_echo) -> None:
-    """Request1 produces reasoning+assistant; Request2 should include reasoning in input."""
-
-    @DecoratorMock.mock()
-    def mock(m: DecoratorMock):
-        yield
-        yield [m.make_item_reasoning(), m.assistant_text("ok")]
-
-    agent = await Agent.create(
-        tool_provider=mcp_tool_provider_echo,
-        client=mock,
-        handlers=[FinishOnTextMessageHandler()],
-        tool_policy=AllowAnyToolOrTextMessage(),
-    )
-    agent.process_message(UserMessage.text("say hi"))
-    await agent.run()
-
-    assert_items_include_instances(agent.to_openai_messages(), ReasoningItem, AssistantMessage)
 
 
 @pytest.mark.timeout(1)

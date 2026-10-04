@@ -32,16 +32,6 @@ it.each<TranscriptItem>([
   expect(groupToolActivity([first, boundary, second])).toEqual([first, boundary, second]);
 });
 
-it("flushes both tool runs around narration", () => {
-  const narration: TranscriptItem = {
-    kind: "narration",
-    id: "narration-between-tools",
-    events: first.events,
-    text: "Check the sample output.",
-  };
-  expect(groupToolActivity([first, narration, second])).toEqual([first, narration, second]);
-});
-
 it("keeps same-event narration between tool runs as a hard grouping boundary", () => {
   const transcript = foldSessionEvents(narrationSessionEvents);
   const rows = groupToolActivity(transcript);

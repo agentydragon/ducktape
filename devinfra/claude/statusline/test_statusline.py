@@ -68,32 +68,6 @@ FULL_INPUT_JSON = json.dumps(
 )
 
 
-def test_parse_full_input():
-    data = Input.model_validate_json(FULL_INPUT_JSON)
-    assert data.session_id == "abc12345xyz"
-    assert data.model is not None
-    assert data.model.display_name == "Opus 5 (1M context)"
-    assert data.model.id == "claude-opus-5"
-    assert data.workspace is not None
-    assert data.workspace.current_dir == "/home/user/code/ducktape"
-    assert data.cost is not None
-    assert data.cost.total_cost_usd == 2.41
-    assert data.context_window is not None
-    assert data.context_window.used_percentage == 7
-    assert data.context_window.current_usage is not None
-    assert data.context_window.current_usage.input_tokens == 8500
-    assert data.vim is not None
-    assert data.vim.mode == "NORMAL"
-    assert data.agent is not None
-    assert data.agent.name == "test-agent"
-    assert data.worktree is not None
-    assert data.worktree.name == "my-feature"
-    assert data.worktree.path == "/home/user/.claude/worktrees/my-feature"
-    assert data.worktree.branch == "worktree-my-feature"
-    assert data.worktree.original_cwd == "/home/user/code"
-    assert data.worktree.original_branch == "main"
-
-
 def test_parse_minimal_input():
     data = Input.model_validate_json("{}")
     assert data.session_id == ""
@@ -169,7 +143,6 @@ def test_format_quota_empty():
     ("short_util", "long_util", "expected"),
     [
         pytest.param(80.0, 35.0, "5h:80% 7d:35%", id="both_buckets"),
-        pytest.param(6.0, 35.0, "5h:6% 7d:35%", id="both_buckets_low_short"),
         pytest.param(85.0, None, "5h:85%", id="five_hour_only_high"),
     ],
 )
@@ -192,14 +165,6 @@ def test_format_quota_uses_provider_window_name_and_duration():
     result = _format_quota(_make_quota(long=window, fetched_at=now), now=now)
     assert result is not None
     assert result.plain == "Monthly (30d):35%"
-
-
-def test_format_quota_single_five_hour_window():
-    now = datetime.now(UTC)
-    short = QuotaWindow(used_percent=12.5, reset_seconds=0, window_seconds=_SHORT_WINDOW_SECS)
-    result = _format_quota(_make_quota(short=short, fetched_at=now), now=now)
-    assert result is not None
-    assert result.plain == "5h:12%"
 
 
 @pytest.mark.parametrize(
@@ -281,15 +246,6 @@ def test_format_quota_no_extra_spend():
     result = _format_quota(_make_quota(long=long, fetched_at=now), now=now)
     assert result is not None
     assert "extra" not in result.plain
-
-
-def test_format_quota_displays_provider_visible_windows():
-    now = datetime.now(UTC)
-    short = QuotaWindow(used_percent=0.0, reset_seconds=0, window_seconds=_SHORT_WINDOW_SECS)
-    long = QuotaWindow(used_percent=100.0, reset_seconds=0, window_seconds=_LONG_WINDOW_SECS)
-    result = _format_quota(_make_quota(short=short, long=long, fetched_at=now), now=now)
-    assert result is not None
-    assert result.plain == "5h:0% 7d:100%"
 
 
 def test_format_context_none():

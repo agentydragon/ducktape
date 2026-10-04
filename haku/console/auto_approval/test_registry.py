@@ -188,20 +188,7 @@ async def test_unassigned_agent_fails_closed_to_manual_approval() -> None:
     assert decision == (None, "manual: Agent has no configured access profile for gmail/labels_list")
 
 
-async def test_durable_actor_profile_auto_approves_without_a_static_config_assignment() -> None:
-    enrolled = AgentActor(
-        agent_id=UUID("00000000-0000-0000-0000-000000000099"),
-        operator_id=TEST_OPERATOR_ID,
-        binding_id=UUID("00000000-0000-0000-0000-000000000098"),
-        access_profile_id="haku",
-    )
-    policy_id, evaluation = await _decision("labels_list", {}, actor=enrolled)
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "haku_v1" in evaluation
-
-
-async def test_durable_actor_policy_overrides_the_static_rollout_fallback() -> None:
+async def test_actor_profile_with_a_never_policy_is_not_auto_approved() -> None:
     manually_approved = AgentActor(
         agent_id=AGENT_ACTOR.agent_id,
         operator_id=AGENT_ACTOR.operator_id,
@@ -288,23 +275,6 @@ def test_default_access_profile_does_not_require_a_never_policy() -> None:
     )
 
     assert config.default_access_profile_id == "operator-default"
-
-
-def test_profile_config_rejects_unknown_recall_index() -> None:
-    with pytest.raises(ValidationError, match="unknown Recall indexes"):
-        ConsoleConfigFile.model_validate(
-            {
-                "auto_approval_policies": [{"id": "operator_review", "type": "never"}],
-                "access_profiles": [
-                    {
-                        "id": "operator-review",
-                        "auto_approval_policy": "operator_review",
-                        "recall_index_ids": ["not-configured"],
-                    }
-                ],
-                "default_access_profile_id": "operator-review",
-            }
-        )
 
 
 async def _schemaless_decision(

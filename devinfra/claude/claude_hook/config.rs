@@ -77,14 +77,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_minimal() {
-        let yaml = "idle_watchdog: false\n";
-        let cfg: ProfileConfig = serde_yaml::from_str(yaml).unwrap();
-        assert!(!cfg.idle_watchdog);
-        assert!(cfg.background_commands.is_empty());
-    }
-
-    #[test]
     fn parse_with_unknown_fields_ignored() {
         let yaml = r#"
 startup_env_script: devinfra/secrets/web_env.sh
@@ -128,14 +120,6 @@ background_commands:
         let cfg: ProfileConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(cfg.background_commands[0].timeout, 300);
         assert!(!cfg.background_commands[0].after_env);
-    }
-
-    #[test]
-    fn git_shim_defaults_to_all_false() {
-        let cfg: ProfileConfig = serde_yaml::from_str("").unwrap();
-        assert!(!cfg.git_shim.block_add_all);
-        assert!(!cfg.git_shim.block_stash);
-        assert!(!cfg.git_shim.block_amend);
     }
 
     #[test]

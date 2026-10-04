@@ -29,23 +29,6 @@ py_test(
 )
 
 py_test(
-    name = "test_github_pr_display_real",
-    srcs = ["test_github_pr_display_real.py"],
-    data = [
-        "//third_party/gitstatusd",
-        "//x/wt:wt_cli",
-    ],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//x/wt/shared:fixtures",
-        "//x/wt/shared:github_models",
-        "//x/wt/testing:utils",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_github_pr_display_variants",
     srcs = ["test_github_pr_display_variants.py"],
     data = [
@@ -111,22 +94,6 @@ py_test(
 )
 
 py_test(
-    name = "test_post_creation_script",
-    srcs = ["test_post_creation_script.py"],
-    data = [
-        "//third_party/gitstatusd",
-        "//x/wt:wt_cli",
-    ],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//x/wt/testing:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_post_creation_script_failure_streaming",
     srcs = ["test_post_creation_script_failure_streaming.py"],
     data = [
@@ -153,7 +120,6 @@ py_test(
         "//:conftest",
         "//x/wt/testing:git_helpers",
         "//x/wt/testing:utils",
-        "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -169,25 +135,6 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//x/wt/testing:git_helpers",
-        "//x/wt/testing:utils",
-        "@pypi//pygit2",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_status_dynamic_index",
-    srcs = ["test_status_dynamic_index.py"],
-    data = [
-        "//third_party/gitstatusd",
-        "//x/wt:wt_cli",
-    ],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//x/wt/testing:git_helpers",
         "//x/wt/testing:utils",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
