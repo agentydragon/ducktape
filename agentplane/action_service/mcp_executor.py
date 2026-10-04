@@ -212,10 +212,6 @@ class McpActionGroupExecutor(Executor):
         self._linkage_changed: asyncio.Event | None = None
         self._requires_linkage = False
 
-    @property
-    def requires_linkage(self) -> bool:
-        return self._requires_linkage
-
     @classmethod
     def from_group(
         cls,
