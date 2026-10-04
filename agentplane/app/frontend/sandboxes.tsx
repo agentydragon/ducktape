@@ -36,6 +36,7 @@ import type { ActionPolicySetView } from "./actions/client";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
+import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { StaleNotice } from "./stream_status";
 
 const EMPTY_FORM: NewSandbox = {
@@ -64,7 +65,7 @@ function StateBadge({ row }: { row: SandboxView }): JSX.Element {
   const summary = sandboxSummary(row);
   return (
     <Tooltip label={sandboxStatusDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
-      <Badge color={summary.color}>{summary.label}</Badge>
+      <Badge color={SANDBOX_STATUS_MARKS[summary.kind].color}>{summary.label}</Badge>
     </Tooltip>
   );
 }

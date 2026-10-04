@@ -31,8 +31,8 @@ ts_library(
 )
 
 ts_library(
-    name = "thread_status_palette",
-    srcs = ["thread_status_palette.ts"],
+    name = "status_mark",
+    srcs = ["status_mark.ts"],
     tsconfig = TSCONFIG,
 )
 
@@ -40,7 +40,7 @@ ts_library(
     name = "tab_metadata",
     srcs = ["tab_metadata.ts"],
     tsconfig = TSCONFIG,
-    deps = [":thread_status_palette"],
+    deps = [":status_mark"],
 )
 
 ts_library(
@@ -59,8 +59,8 @@ ts_library(
     srcs = ["thread_favicon.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":status_mark",
         ":tab_metadata",
-        ":thread_status_palette",
     ],
 )
 
@@ -634,7 +634,10 @@ ts_library(
     name = "sandbox_status",
     srcs = ["sandbox_status.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":status_mark",
+    ],
 )
 
 ts_library(
@@ -654,6 +657,7 @@ ts_library(
         ":lifecycle",
         ":live",
         ":sandbox_status",
+        ":status_mark",
         ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -702,12 +706,39 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":mark_glyph",
+        ":status_mark",
         ":thread_status_dot_css",
-        ":thread_status_palette",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
+)
+
+# Draws any StatusMark in the page; the thread dot and the sidebar's Sandbox icon both use it.
+ts_library(
+    name = "mark_glyph",
+    srcs = [
+        "css.d.ts",
+        "mark_glyph.tsx",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":mark_glyph_css",
+        ":status_mark",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "mark_glyph_css",
+    srcs = ["mark_glyph.css"],
 )
 
 js_library(
@@ -742,8 +773,10 @@ ts_library(
     deps = [
         ":client",
         ":live",
+        ":mark_glyph",
         ":sandbox_status",
         ":sidebar_css",
+        ":status_mark",
         ":stream_status",
         ":thread_groups",
         ":thread_status",
@@ -841,6 +874,7 @@ ts_library(
         ":live",
         ":raw_switch",
         ":sandbox_status",
+        ":status_mark",
         ":stream_status",
         ":topbar",
         "//:node_modules/@bufbuild/protobuf",
