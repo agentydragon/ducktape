@@ -16,7 +16,6 @@ from cluster.rotators.authentik_jwt_rotation.config import Config, K8sSecretOutp
 from cluster.rotators.authentik_jwt_rotation.rotate import (
     build_secret_manifest,
     encrypt_sops_file,
-    jwt_payload,
     mint_jwt,
     probe_rejects_token,
     remaining_hours,
@@ -96,11 +95,6 @@ def test_write_k8s_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
     rotate.write_k8s_secret(out, token="the-jwt", exp_epoch=1_800_000_000)
 
     assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(out.path)]), ("format", out.path)]
-
-
-def test_jwt_payload_decodes_unpadded_base64url():
-    claims = {"iss": "https://auth.allegedly.works/application/o/x/", "groups": ["some-group"], "exp": 123}
-    assert jwt_payload(_make_jwt(claims)) == claims
 
 
 def test_remaining_hours_missing_file_is_none(tmp_path: Path):

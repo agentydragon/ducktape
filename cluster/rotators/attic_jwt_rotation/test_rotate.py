@@ -20,7 +20,6 @@ from cluster.rotators.attic_jwt_rotation.rotate import (
     clone_repo,
     commit_and_push,
     ensure_cache,
-    jwt_payload,
     mint_admin_jwt,
     mint_attic_token,
     remaining_hours,
@@ -51,11 +50,6 @@ class _FakeRun:
         if "atticadm" in args:
             return _Completed(stdout=self._jwt + "\n")
         return _Completed()
-
-
-def test_jwt_payload_decodes_unpadded_base64url():
-    claims = {"sub": "wyrm2", "exp": 1_800_000_000}
-    assert jwt_payload(_make_jwt(claims)) == claims
 
 
 def test_remaining_hours_missing_file_is_none(tmp_path: Path):
@@ -192,8 +186,7 @@ def test_rotate_one_rotates_when_scope_stamp_missing(monkeypatch, tmp_path: Path
 
 def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
     sops_file = tmp_path / "sub" / "t.yaml"
-    exp = int((datetime.now(UTC) + timedelta(days=365)).timestamp())
-    jwt = _make_jwt({"sub": "x", "exp": exp})
+    jwt = _make_jwt({"sub": "x", "exp": 1_800_000_000})
     token = Token(name="x", sops_file=sops_file, sub="x", validity="1 year", pull=["main"], push=[])
     fake = _FakeRun(jwt=jwt)
     formatted: list[Path] = []
@@ -205,7 +198,7 @@ def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
     assert formatted == [sops_file]
     written = yaml.safe_load(sops_file.read_text())
     assert written["attic_token"] == jwt
-    assert "expires_unencrypted" in written
+    assert written["expires_unencrypted"] == "2027-01-15T08:00:00Z"
     assert written["pull_unencrypted"] == ["main"]
     assert written["push_unencrypted"] == []
 
