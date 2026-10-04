@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -32,20 +31,18 @@ def app_without_grader() -> FastAPI:
 
 
 async def test_startup_calls_spawn_existing(app_with_grader: FastAPI) -> None:
-    """When grader_supervisor is on app.state, startup creates a spawn task."""
+    """When grader_supervisor is on app.state, startup spawns graders for existing snapshots."""
+    spawned = asyncio.Event()
+    app_with_grader.state.grader_supervisor.spawn_existing.side_effect = spawned.set
     config = uvicorn.Config(app_with_grader, host="127.0.0.1", port=0)
     server = _GraderSpawningServer(config, app=app_with_grader)
 
     with patch.object(uvicorn.Server, "startup", new_callable=AsyncMock):
         await server.startup()
 
-    # spawn_existing should have been scheduled as a task
-    app_with_grader.state.grader_supervisor.spawn_existing.assert_called_once()
-    # Clean up the background task
-    if hasattr(server, "_spawn_task"):
-        server._spawn_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await server._spawn_task
+    async with asyncio.timeout(5):
+        await spawned.wait()
+    app_with_grader.state.grader_supervisor.spawn_existing.assert_awaited_once()
 
 
 async def test_startup_skips_when_no_grader(app_without_grader: FastAPI) -> None:
@@ -55,8 +52,6 @@ async def test_startup_skips_when_no_grader(app_without_grader: FastAPI) -> None
 
     with patch.object(uvicorn.Server, "startup", new_callable=AsyncMock):
         await server.startup()
-
-    assert not hasattr(server, "_spawn_task")
 
 
 if __name__ == "__main__":
