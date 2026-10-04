@@ -1,54 +1,18 @@
 from __future__ import annotations
 
-import re
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import UTC, datetime
 
 import pytest
-import pytest_asyncio
 import pytest_bazel
-from sqlalchemy import text
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from testcontainers.postgres import PostgresContainer
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.plaid.db.link_store import PlaidLinkStorage
 from finance.plaid.db.read_model import read_current_cash_balances, read_current_holdings
 from finance.plaid.db.schema import async_session_factory
-from util.testing.postgres import force_drop_database
-from util.testing.postgres_fixtures import postgres_container  # noqa: F401
 
 
-@pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:  # noqa: F811
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    return f"postgresql+asyncpg://postgres:postgres@{host}:{port}/postgres"
-
-
-@pytest_asyncio.fixture
-async def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> AsyncGenerator[str]:
-    db_name = re.sub(r"[^a-z0-9]", "_", request.node.name.lower())[:45].rstrip("_") or "plaid_test"
-    admin_engine = create_async_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
-    async with admin_engine.connect() as conn:
-        await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    await admin_engine.dispose()
-    try:
-        yield make_url(postgres_admin_url).set(database=db_name).render_as_string(hide_password=False)
-    finally:
-        await force_drop_database(postgres_admin_url, db_name)
-
-
-@pytest_asyncio.fixture
-async def storage(db_url: str) -> AsyncGenerator[PlaidLinkStorage]:
-    store = await PlaidLinkStorage.initialize(db_url)
-    try:
-        yield store
-    finally:
-        await store.close()
-
-
-@pytest_asyncio.fixture
+@pytest.fixture
 async def session_factory(db_url: str) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
     engine, factory = async_session_factory(db_url)
     try:
@@ -57,21 +21,12 @@ async def session_factory(db_url: str) -> AsyncGenerator[async_sessionmaker[Asyn
         await engine.dispose()
 
 
-async def _add_link(storage: PlaidLinkStorage, *, item_id: str = "item-investments") -> None:
-    await storage.upsert_link(
-        item_id=item_id,
-        access_token_secret=f"{item_id}-token",
-        products_requested=["investments"],
-        institution_id="ins_investments",
-        institution_name="Investment Test",
-        label=None,
-    )
-
-
 async def test_read_current_cash_balances_returns_latest_selected_usd_snapshot(
-    storage: PlaidLinkStorage, session_factory: async_sessionmaker[AsyncSession]
+    storage: PlaidLinkStorage,
+    add_link: Callable[[str], Awaitable[None]],
+    session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    await _add_link(storage, item_id="item-cash")
+    await add_link("item-cash")
     await storage.apply_accounts(
         item_id="item-cash",
         accounts=[
@@ -114,9 +69,11 @@ async def test_read_current_cash_balances_returns_latest_selected_usd_snapshot(
 
 
 async def test_read_current_holdings_returns_latest_selected_usd_holdings(
-    storage: PlaidLinkStorage, session_factory: async_sessionmaker[AsyncSession]
+    storage: PlaidLinkStorage,
+    add_link: Callable[[str], Awaitable[None]],
+    session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    await _add_link(storage, item_id="item-investments")
+    await add_link("item-investments")
     await storage.apply_accounts(
         item_id="item-investments",
         accounts=[
