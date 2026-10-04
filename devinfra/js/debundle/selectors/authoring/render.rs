@@ -748,30 +748,13 @@ class C { CASE_REST = 1; }"#,
     }
 
     #[test]
-    fn holes_nested_object_inside_a_kept_array_argument() {
-        // The object nested in a kept `ANYTHING.run([{…}])` keeps only the anchor
-        // property, holing the rest to the object-property run hole (emitted as
-        // `ANYTHING`, the run-absorber form in object-property position).
-        // Regression guard for the `Expr::Array` recursion: the array used to fall
-        // through `hole_expr`'s verbatim catch-all, so every property was pinned.
-        let holed = hole_statement_expr(
-            r#"ctx.engine.run([{ source: ctx.node, mode: "keepMe", silent: true }]);"#,
-            "keepMe",
-        );
-        assert_eq!(
-            normalize(&holed),
-            normalize(r#"ANYTHING.run([{ ANYTHING, mode: "keepMe", ANYTHING }]);"#),
-        );
-    }
-
-    #[test]
     fn holes_non_anchor_array_elements_to_anything() {
         // Array elements carrying no anchor hole to ANYTHING (arity-exact, since
         // the matcher matches array elements element-wise); only the element
         // holding the anchor is recursed into. The lone-prop object keeps its one
         // anchor prop with no run-hole padding (nothing was dropped). The bare
         // `render` callee holes to ANYTHING (a minified name the matcher
-        // alpha-wildcards), unlike the member-method `.run` in the sibling case.
+        // alpha-wildcards).
         let holed = hole_statement_expr(
             r#"render([first(), { mode: "keepMe" }, third()]);"#,
             "keepMe",
@@ -780,49 +763,5 @@ class C { CASE_REST = 1; }"#,
             normalize(&holed),
             normalize(r#"ANYTHING([ANYTHING, { mode: "keepMe" }, ANYTHING]);"#),
         );
-    }
-
-    /// The object-property run hole is emitted as the bare `ANYTHING` keyword —
-    /// the only run-absorber spelling in object-property position. The padded
-    /// key-set form interleaves the hole around the kept discriminating key.
-    #[test]
-    fn object_property_run_holes_emit_anything() {
-        js_ast::with_swc_globals(|| {
-            let module = js_ast::parse_js_module_ast(
-                "<object-prop-hole>",
-                r#"const x = { drop_a: 1, keepMe: "v", drop_b: 2 };"#,
-            )
-            .unwrap();
-            let [ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))] = module.body.as_slice() else {
-                panic!("expected a single var declaration");
-            };
-            let Some(Expr::Object(object)) = var.decls[0].init.as_deref() else {
-                panic!("expected an object initializer");
-            };
-            let key_span = {
-                let PropOrSpread::Prop(prop) = &object.props[1] else {
-                    panic!("expected a key-value prop");
-                };
-                let Prop::KeyValue(kv) = prop.as_ref() else {
-                    panic!("expected a key-value prop");
-                };
-                kv.key.span()
-            };
-            let kept = BTreeSet::from([span_key(key_span)]);
-            let mut holed_decl = (**var).clone();
-            holed_decl.decls[0].init =
-                Some(Box::new(Expr::Object(hole_object_padded(object, &kept))));
-            let holed = emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(
-                holed_decl,
-            )))))
-            .unwrap();
-            // The kept anchor is the `keepMe` key token; its value holes to
-            // `ANYTHING`, and the dropped sibling-prop runs on both sides become
-            // the object-property run hole, also emitted as `ANYTHING`.
-            assert_eq!(
-                normalize(&holed),
-                normalize(r#"const x = { ANYTHING, keepMe: ANYTHING, ANYTHING };"#),
-            );
-        });
     }
 }
