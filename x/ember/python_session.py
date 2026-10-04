@@ -34,12 +34,6 @@ def ensure_kernel() -> Path | None:
     return _launch_kernel()
 
 
-def connection_file() -> Path | None:
-    if CONNECTION_FILE.exists() and _kernel_alive():
-        return CONNECTION_FILE
-    return None
-
-
 def stop_kernel(timeout: float = 5.0) -> bool:
     pid = _kernel_pid()
     if pid is None:

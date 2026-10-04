@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict
 
 from agent_core.events import AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
@@ -25,9 +25,6 @@ class EmberHistoryRecord(BaseModel):
     event: EventType
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-
-
-_RECORD_ADAPTER: TypeAdapter[EmberHistoryRecord] = TypeAdapter(EmberHistoryRecord)
 
 
 class EmberSleepHandler(BaseHandler):
