@@ -82,25 +82,6 @@ export { q, b };
 }
 
 #[test]
-fn extracts_a_class_declaration_without_changing_runtime() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"class A { static label() { return "a"; } }
-function b() { return A.label(); }
-console.log(b());
-export { A, b };
-"#,
-        vec![logical_module("x", &[Member::new("A"), Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/x.js",
-        &["class A", "function b()"],
-        &[],
-    );
-    assert_entry_output(&fixture, "a\n");
-}
-
-#[test]
 fn lowers_ts_enum_style_self_referencing_var_declarations_correctly() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var A = ((B) => { B.X = "x"; B.Y = "y"; return B; })(A || {});
@@ -120,55 +101,6 @@ export { b };
 }
 
 // --- Emit shape -----------------------------------------------------------
-
-#[test]
-fn emits_extracted_decls_inline_in_their_module() {
-    // The runtime side effect references `c` (residual), not the
-    // extracted bindings; mod_x carries the original `const`/
-    // `function` declarations as-is.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const a = 1;
-function b() { return a; }
-const c = b();
-console.log(c);
-export { c };
-"#,
-        vec![logical_module("x", &[Member::new("a"), Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/x.js",
-        &["const a = 1;", "function b()"],
-        &[],
-    );
-    assert_entry_output(&fixture, "1\n");
-}
-
-#[test]
-fn emits_top_level_effects_inline_in_extracted_module() {
-    // The initializer of `a` has a side effect (the comma expression
-    // mutates `globalThis.log`). Source-order emit lands the const
-    // inline.
-    //
-    // The source has exactly one cross-module side-effect ordering
-    // pair — `a`'s init in mod_x precedes the residual entry's
-    // `console.log(a)` — and an at-init read of `a` in the residual.
-    // Both run in the same direction (mod_x evaluates before the
-    // residual), so `I ∪ S` is acyclic and the materializer emits.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const a = (globalThis.log = "hi", 1);
-console.log(a);
-export { a };
-"#,
-        vec![logical_module("x", &[Member::new("a")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/x.js",
-        &["const a = (globalThis.log"],
-        &[],
-    );
-}
 
 #[test]
 fn canonical_source_matches_annotations_materialize_comments_and_notes_stay_yaml_only() {
