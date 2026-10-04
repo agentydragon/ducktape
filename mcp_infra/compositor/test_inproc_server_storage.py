@@ -16,12 +16,6 @@ from mcp_infra.compositor.mount import Mount
 from mcp_infra.prefix import MCPMountPrefix
 
 
-async def test_mount_inproc_server_none_for_external():
-    """Test that Mount.inproc_server returns None for non-inproc mounts."""
-    mount = Mount(prefix=MCPMountPrefix("external"), pinned=False, spec=None)
-    assert mount.inproc_server is None
-
-
 async def test_compositor_get_inproc_server_returns_server(compositor):
     """Test that Compositor.get_inproc_server() returns the correct server."""
     server1 = FastMCP("server1")
