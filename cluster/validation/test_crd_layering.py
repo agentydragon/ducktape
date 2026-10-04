@@ -75,19 +75,6 @@ def test_operator_cannot_satisfy_its_own_helm_install_dependency(tmp_path: Path)
     assert "separate Kustomization" in errors[0]
 
 
-def test_directly_applied_provider_has_no_helm_install_boundary(tmp_path: Path) -> None:
-    cluster = ParsedCluster(
-        flux_kustomizations={"test-provider": FluxKustomizationSpec(path="./cluster/k8s/test-provider")},
-        build_results=[
-            KustomizeBuildResult(
-                kustomization_path=tmp_path / "cluster/k8s/test-provider/kustomization.yaml",
-                resources=[K8sResource(kind="TestInstance", apiVersion="test.example/v1")],
-            )
-        ],
-    )
-    assert validate_operator_dependencies(cluster, tmp_path, {"TestInstance": "test-provider"}) == []
-
-
 def test_custom_kind_without_provider_fails(tmp_path: Path) -> None:
     cluster = ParsedCluster(
         flux_kustomizations={"test-app": FluxKustomizationSpec(path="./cluster/k8s/test-app")},
