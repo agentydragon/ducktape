@@ -1331,6 +1331,35 @@ def tool_call_in(run: Locator, name: str) -> tuple[Locator, Locator]:
     return call, card
 
 
+async def test_the_history_is_not_settled_while_a_row_is_still_loading_its_text(thread_browser: ThreadBrowser) -> None:
+    """A row is in before its text and grows when the text arrives, so a history that said it had
+    settled in between would move its rows after saying they were at rest."""
+    page = thread_browser.page
+    await page.set_viewport_size({"width": 412, "height": 915})
+    release = asyncio.Event()
+
+    async def hold_text(route: Route) -> None:
+        await release.wait()
+        await route.continue_()
+
+    await page.route("**/sync/chunks/**", hold_text)
+    try:
+        thread_browser.opened.replay.set()
+        history = page.get_by_role("region", name="Thread history", exact=True)
+        loading = history.get_by_text("Loading complete revision…")
+        await expect(loading.first).to_be_visible(timeout=30_000)
+        # Many times the frames a layout that waits for nothing needs to settle.
+        for _ in range(15):
+            await frames(page)
+        await expect(history).to_have_attribute("data-layout-settled", "false")
+        release.set()
+        await expect(history).to_have_attribute("data-layout-settled", "true", timeout=30_000)
+        await expect(loading).to_have_count(0)
+    finally:
+        release.set()
+        await page.unroute("**/sync/chunks/**", hold_text)
+
+
 @pytest.mark.parametrize("following", [False, True], ids=["mid-thread", "following"])
 @pytest.mark.parametrize("phone", [False, True], ids=["desktop", "phone"])
 async def test_opening_a_call_and_its_output_leaves_the_clicked_line_where_it_was(
