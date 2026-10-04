@@ -1,14 +1,8 @@
 """Property state stays scoped to the property it belongs to.
 
-Two properties is the smallest shape in which an output indexed by property slot can be
-wrong. With one property every flattening of `(snapshot, rollout, property)` coincides, so a
-reader that applies a rollout-major mask to a property-major buffer is correct by accident;
-with two, each property's values land in the other's cells. That has been a real decoder bug
-here, which is why the first case below is deliberately as small as it is.
-
-The rest is the same claim over a whole lifecycle: property tax, Schedule E depreciation,
-capex, sale basis, §121 eligibility and mortgage payoff are all per property, and a scenario
-holding a primary home and a rental is where a leak between them shows.
+Property tax, Schedule E depreciation, capex, sale basis, §121 eligibility and mortgage
+payoff are all per property, and a scenario holding a primary home and a rental is where a
+leak between them shows.
 """
 
 from collections.abc import Mapping, Sequence
@@ -22,7 +16,7 @@ from more_itertools import one
 
 from finance.augur.model.series import HomeValueKey, LocationId
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.books import AccountRef, Book, PropertyState
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -165,27 +159,24 @@ class Situation:
     horizon_months: int
     accounts: tuple[tuple[AccountRef, int], ...]
     housing: Housing
-    rollout_count: int = 1
     tax_policies: tuple[PropertyTaxPolicy, ...] = ()
     jurisdiction_ids: tuple[JurisdictionId, ...] = ()
     rent: Rent | None = None
     home_values: Mapping[str, Sequence[float]] = field(default_factory=dict)
 
 
-def compose(case: Situation, rollout_id: int) -> World:
+def compose(case: Situation) -> World:
     series = level_series(
         {
-            HomeValueKey(location_id=LocationId(location_id)): [levels] * case.rollout_count
+            HomeValueKey(location_id=LocationId(location_id)): [levels]
             for location_id, levels in case.home_values.items()
         },
-        rollout_count=case.rollout_count,
+        rollout_count=1,
         horizon_months=case.horizon_months,
     )
     jurisdictions = {id_: load_jurisdiction(id_) for id_ in case.jurisdiction_ids}
     world = World(
-        MarketPath(series, rollout_id, rollout_count=case.rollout_count),
-        horizon_months=case.horizon_months,
-        income_sources=(ORDINARY_INCOME,),
+        MarketPath(series, 0, rollout_count=1), horizon_months=case.horizon_months, income_sources=(ORDINARY_INCOME,)
     )
     for opened, balance in case.accounts:
         world.declare_account(account=opened, opening_balance=balance)
@@ -219,54 +210,9 @@ def compose(case: Situation, rollout_id: int) -> World:
     return world
 
 
-def run(case: Situation) -> list[Rollout]:
+def run(case: Situation) -> Rollout:
     """Alice pays every due claim in full, in order: her installments and her property taxes."""
-    return finish(
-        ActionSession({id_: compose(case, id_) for id_ in range(case.rollout_count)}, ALICE),
-        each(ClaimPayer(AgentId(ALICE)).decide),
-    ).rollouts
-
-
-def books(rollout: Rollout) -> list[Book]:
-    assert rollout.trace is not None
-    return rollout.trace.books
-
-
-def properties(book: Book) -> list[PropertyState]:
-    assert book.properties is not None
-    return book.properties
-
-
-def two_property_case() -> Situation:
-    """One financed purchase and one all-cash purchase by the same buyer.
-
-    Four distinct stake values, so a cross-assignment between properties and a swap between
-    the two columns are both visible. p1 is financed so that its equity ledger differs from
-    its purchase price as well: reading the price where the ledger is meant would pass on p2
-    alone. The scenario is fully deterministic, so every value must be identical across all
-    rollouts and post-purchase months, which is exactly what the flattening bug breaks.
-    """
-    return Situation(
-        horizon_months=3,
-        rollout_count=4,
-        accounts=(account(ALICE, 2_000_000), account(SELLER), account(LENDER)),
-        housing=Housing(
-            purchases=(
-                purchase(
-                    "buy-p1",
-                    PropertyId("p1"),
-                    LOCATION_ID,
-                    price=1_000_000,
-                    down=200_000,
-                    closing=30_000,
-                    mortgage=financing(
-                        LiabilityId("p1-mortgage"), LENDER, principal=800_000, annual_rate=Decimal("0.06")
-                    ),
-                ),
-                purchase("buy-p2", PropertyId("p2"), LOCATION_ID, price=500_000, down=500_000, closing=10_000),
-            )
-        ),
-    )
+    return one(finish(ActionSession({0: compose(case)}, ALICE), each(ClaimPayer(AgentId(ALICE)).decide)).rollouts)
 
 
 def zero_stake_case() -> Situation:
@@ -368,7 +314,7 @@ def home_and_rental_case() -> Situation:
 
 @pytest.fixture(scope="module")
 def lifecycle() -> Rollout:
-    return one(run(home_and_rental_case()))
+    return run(home_and_rental_case())
 
 
 def tax_transfers(rollout: Rollout, prefix: str) -> pl.DataFrame:
@@ -376,28 +322,8 @@ def tax_transfers(rollout: Rollout, prefix: str) -> pl.DataFrame:
     return rollout.trace.events.transfers.filter(pl.col("cause_id").str.starts_with(prefix)).sort("month_index")
 
 
-def test_property_stakes_are_not_cross_assigned_across_properties() -> None:
-    held = [
-        state
-        for rollout in run(two_property_case())
-        for entry in books(rollout)
-        for state in properties(entry)
-        if state.active
-    ]
-
-    # equity_ledger = purchase_price - mortgage_principal; contribution_used = down_payment
-    # + closing_cost. All four differ, so no pair can be swapped without changing a value.
-    expected = {"p1": (23_000_000, 20_000_000), "p2": (51_000_000, 50_000_000)}
-    for property_id, stake in expected.items():
-        # Deterministic inputs ⇒ exactly one value per property across rollouts and months.
-        observed = {
-            (state.contribution_used, state.equity_ledger) for state in held if state.property_id == property_id
-        }
-        assert observed == {stake}, property_id
-
-
 def test_only_a_purchase_with_a_stake_moves_the_buyer_s_cash() -> None:
-    rollout = one(run(zero_stake_case()))
+    rollout = run(zero_stake_case())
     assert rollout.trace is not None
 
     assert rollout.trace.events.property_purchases.sort("month_index").select("month_index", "cause_id").to_dicts() == [

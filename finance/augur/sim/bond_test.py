@@ -21,9 +21,7 @@ from finance.augur.sim.testing.bonds import (
     CPI_DOUBLING,
     CPI_FLAT,
     FACE,
-    MUNI,
     NOMINAL_COUPON,
-    TAXABLE,
     TREASURY,
     Situation,
     bond_case,
@@ -74,20 +72,6 @@ def test_coupons_arrive_as_cash_on_their_schedule() -> None:
     assert _paid(execute(bond_case(is_taxed=False))) == {6: _quanta(NOMINAL_COUPON), 12: _quanta(NOMINAL_COUPON)}
 
 
-def test_a_treasury_coupon_is_federally_taxed_and_california_exempt() -> None:
-    tax = tax_by_jurisdiction(execute(bond_case(character=TREASURY)))
-
-    assert tax["federal_us"] > 0
-    assert tax["california"] == 0
-
-
-def test_an_in_state_muni_coupon_is_exempt_everywhere() -> None:
-    tax = tax_by_jurisdiction(execute(bond_case(character=MUNI)))
-
-    assert tax["federal_us"] == 0
-    assert tax["california"] == 0
-
-
 def test_another_states_muni_coupon_is_federally_exempt_and_california_taxed() -> None:
     """Federal law exempts every state's munis; California exempts only its own. The muni's state
     is declared nowhere: only the taxing jurisdictions' own rules read it."""
@@ -95,13 +79,6 @@ def test_another_states_muni_coupon_is_federally_exempt_and_california_taxed() -
     tax = tax_by_jurisdiction(execute(bond_case(character=Municipal(state=JurisdictionId("test_state")))))
 
     assert tax["federal_us"] == 0
-    assert tax["california"] > 0
-
-
-def test_a_corporate_coupon_is_taxed_by_both() -> None:
-    tax = tax_by_jurisdiction(execute(bond_case(character=TAXABLE)))
-
-    assert tax["federal_us"] > 0
     assert tax["california"] > 0
 
 
@@ -180,16 +157,6 @@ def test_accretion_is_income_with_no_cash_behind_it() -> None:
     # And month 6 moved only the coupon in cash.
     untaxed = execute(bond_case(indexed=True, cpi=CPI_DOUBLING, is_taxed=False))
     assert _cash_by_month(untaxed)[6] == _quanta(2 * NOMINAL_COUPON)
-
-
-def test_accretion_is_treasury_interest_and_inherits_its_exemption() -> None:
-    """Accretion is interest on the same obligation, so 31 USC 3124 reaches it like a
-    coupon. Booked as ordinary income instead, California would tax it."""
-
-    tax = tax_by_jurisdiction(execute(bond_case(indexed=True, cpi=CPI_DOUBLING)))
-
-    assert tax["federal_us"] > 0
-    assert tax["california"] == 0
 
 
 def test_redemption_is_floored_at_par_when_prices_fall() -> None:

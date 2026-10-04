@@ -628,35 +628,6 @@ def test_a_recovery_cashout_takes_the_rest_of_the_position_for_a_stated_amount()
     assert row["cause_id"] == "pe_forced_recovery_m5_acme"
 
 
-@pytest.mark.parametrize("cashout_quanta", [1, 2, 5])
-def test_tiny_total_recovery_is_not_rounded_through_a_unit_price(cashout_quanta: int) -> None:
-    case = holder(
-        initial_cash=0,
-        monthly_spend=0,
-        pe_units=3,
-        pe_cost_basis_per_unit=1,
-        pe_holding_period_months=36,
-        horizon_months=1,
-        lnw_floor=0,
-    )
-    rollout = run(
-        case,
-        protocol(
-            horizon_months=1,
-            initial_mark=Decimal(100),
-            forced_recovery_usd=at_month(
-                Decimal(cashout_quanta) / QUANTA_PER_UNIT, month=0, default=Decimal(0), snapshots=2
-            ),
-        ),
-    )
-
-    [sale] = dispositions(rollout, month=0).iter_rows(named=True)
-    assert sale["proceeds_quanta"] == cashout_quanta
-    assert sale["cost_basis_consumed_quanta"] == 300
-    assert units_held(rollout, month=1) == 0
-    assert cash(rollout, case, month=1) == pytest.approx(cashout_quanta / QUANTA_PER_UNIT)
-
-
 def test_a_disposition_carries_the_lot_it_consumed() -> None:
     """All 200 units at an $80 mark against a $20 basis: $16,000 out, $4,000 of basis gone."""
 

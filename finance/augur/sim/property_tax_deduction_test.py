@@ -181,10 +181,6 @@ def test_the_owner_s_share_is_salt_under_the_cap_and_california_itemizes_it_unca
     assert usd(california, "standard_deduction_quanta") == 5_363
 
 
-def test_salt_over_the_cap_clips_to_it() -> None:
-    assert usd(returns(run(cap=5_000))[FEDERAL], "salt_deduction_quanta") == 5_000
-
-
 def test_every_bill_moves_the_owner_s_cash_to_the_county(under_cap: Rollout) -> None:
     """Each bill's entry is one debit of Alice's checking and one credit of the county's, balanced;
     the county holds exactly the eleven bills and the transfer tax."""

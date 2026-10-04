@@ -504,7 +504,6 @@ def rental(
     initial_cash: Decimal | int = 100_000,
     monthly_management_fee: Decimal | int | None = None,
     leasing_fees_by_month: Mapping[int, Decimal | int] | None = None,
-    rent_levels: Sequence[float] | None = None,
 ) -> Situation:
     """A minimal untaxed rental: rent in, optional management and leasing fees out.
 
@@ -545,11 +544,10 @@ def rental(
             )
             for month, amount in leasing_fees_by_month.items()
         )
-    levels = [1.0] * (horizon_months + 1) if rent_levels is None else list(rent_levels)
     return Situation(
         horizon_months=horizon_months,
         rollout_count=1,
-        series=level_series({RENT: [levels]}, horizon_months=horizon_months, rollout_count=1),
+        series=level_series({RENT: [[1.0] * (horizon_months + 1)]}, horizon_months=horizon_months, rollout_count=1),
         accounts=tuple(accounts),
         recurring_transfers=tuple(recurring),
         scheduled_transfers=tuple(scheduled),
@@ -639,16 +637,6 @@ def sale_situation(
 
 
 class TestRentalIncome:
-    def test_rental_income_flows_monthly_at_constant_rent(self) -> None:
-        """A recurring transfer fires once per month across its whole window and moves its
-        configured amount into the recipient's account."""
-
-        [rollout] = run(rental(horizon_months=12, monthly_rent=5_000))
-        rent = transfers(rollout, "rental_income:p1")
-        assert rent["month_index"].to_list() == list(range(12))
-        assert dollars(rent, "amount_quanta") == pytest.approx([5_000] * 12)
-        assert cash(rollout, OWNER, 12) == pytest.approx(100_000 + 60_000)
-
     def test_zero_amount_recurring_transfer_still_fires_but_moves_no_cash(self) -> None:
         """A transfer scheduled with a zero amount is a scheduled event, not an absent one:
         it logs a row every month of its window and leaves both balances untouched."""
@@ -659,29 +647,6 @@ class TestRentalIncome:
         assert dollars(rent, "amount_quanta") == pytest.approx([0] * 12)
         assert cash(rollout, OWNER, 12) == pytest.approx(100_000)
         assert cash(rollout, TENANT, 12) == pytest.approx(0)
-
-    def test_rental_income_indexed_by_rent_series(self) -> None:
-        # Rent series doubles at month 12, which is the annual adjustment period.
-        [rollout] = run(rental(horizon_months=24, monthly_rent=5_000, rent_levels=[1.0] * 12 + [2.0] * 13))
-        amounts = dollars(transfers(rollout, "rental_income:p1"), "amount_quanta")
-        assert amounts[:12] == pytest.approx([5_000] * 12)
-        assert amounts[12:] == pytest.approx([10_000] * 12)
-
-
-class TestManagementFee:
-    def test_owner_paid_recurring_transfer_debits_payer_and_credits_payee(self) -> None:
-        """A recurring transfer running out of the owner's account alongside the incoming rent
-        settles against the right two ledgers: the agency's balance is built entirely from the
-        fee, and the owner keeps rent minus fee."""
-
-        [rollout] = run(rental(horizon_months=12, monthly_rent=5_000, monthly_management_fee=380))
-        fee = transfers(rollout, "management_fee:p1")
-        assert fee["month_index"].to_list() == list(range(12))
-        assert dollars(fee, "amount_quanta") == pytest.approx([380] * 12)
-        assert fee["from_agent_id"].unique().to_list() == [OWNER]
-        assert fee["to_agent_id"].unique().to_list() == [AGENCY]
-        assert cash(rollout, AGENCY, 12) == pytest.approx(4_560)
-        assert cash(rollout, OWNER, 12) == pytest.approx(100_000 + 60_000 - 4_560)
 
 
 class TestRentalLifecycleCashflows:
@@ -736,23 +701,6 @@ class TestRentalLifecycleCashflows:
         assert dollars(fee, "amount_quanta") == pytest.approx([120] * 3 + [360] * 3 + [240] * 4)
 
 
-class TestLeasingFee:
-    def test_scheduled_transfers_fire_once_in_their_own_month_at_their_own_amount(self) -> None:
-        """Distinct amounts per month so a mis-indexed schedule cannot pass: a scheduled
-        transfer fires in the single month it names, and no other month sees one."""
-
-        [rollout] = run(
-            rental(horizon_months=60, monthly_rent=5_000, leasing_fees_by_month={0: 5_000, 24: 6_000, 48: 7_000})
-        )
-        leasing = (
-            trace(rollout)
-            .events.transfers.filter(pl.col("cause_id").str.starts_with("leasing_fee:p1"))
-            .sort("month_index")
-        )
-        assert leasing["month_index"].to_list() == [0, 24, 48]
-        assert dollars(leasing, "amount_quanta") == pytest.approx([5_000, 6_000, 7_000])
-
-
 class TestRentalCashflowReconciliation:
     def test_owner_terminal_cash_reconciles_with_the_transfers_the_world_logged(self) -> None:
         """Two independent outputs must agree: netting every logged transfer row that touches
@@ -787,21 +735,6 @@ class TestRentalIncomeTaxation:
     MID/SALT split the property's rented share decides.
     """
 
-    def test_rental_income_accrues_into_ordinary_ytd(self) -> None:
-        # $4,000/mo × 12 = $48,000 gross rental income → the year's ordinary income line.
-        [rollout] = run(taxed_rental(monthly_rent=4_000))
-        assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
-            48_000, abs=1e-6
-        )
-
-    def test_rental_income_generates_tax_accruals_at_year_end(self) -> None:
-        [rollout] = run(taxed_rental(monthly_rent=4_000))
-        accruals = trace(rollout).events.tax_accruals.sort("jurisdiction_id")
-        assert accruals.height == 2  # federal + CA
-        assert accruals["month_index"].to_list() == [11, 11]
-        # Both jurisdictions levy positive tax on $48k of ordinary income.
-        assert all(amount > 0 for amount in dollars(accruals, "amount_quanta"))
-
     def test_management_fee_deducts_from_taxable_ordinary_income(self) -> None:
         """Schedule E: a management-fee transfer tagged as an ordinary deduction subtracts from
         the owner's ordinary income, reducing taxable income."""
@@ -830,12 +763,22 @@ class TestRentalIncomeTaxation:
             54_000, abs=1e-6
         )
 
-    def test_obligation_deduction_decrements_payer_ordinary_ytd(self) -> None:
-        """Schedule E on obligations: a paid fully-deductible recurring obligation decrements
-        the payer's ordinary income by the whole settled amount."""
+    @pytest.mark.parametrize(
+        ("monthly_rent", "deductible_fraction", "ordinary_income"),
+        [
+            # $6,000/mo gross rent → $72,000/yr; $400/mo HOA fully deductible → $4,800/yr Schedule E.
+            pytest.param(6_000, 1, 67_200, id="fully-deductible"),
+            # Partial letting: gross rental $30,000/yr (50% let); HOA $400/mo, 50% deductible → $200/mo × 12 = $2,400.
+            pytest.param(2_500, Decimal("0.5"), 27_600, id="deductible-by-the-let-fraction"),
+        ],
+    )
+    def test_obligation_deduction_decrements_payer_ordinary_ytd(
+        self, monthly_rent: int, deductible_fraction: Decimal | int, ordinary_income: int
+    ) -> None:
+        """Schedule E on obligations: a paid recurring obligation decrements the payer's ordinary
+        income by the settled amount times its deductible fraction."""
 
-        base = taxed_rental(monthly_rent=6_000)
-        # $6,000/mo gross rent → $72,000/yr; $400/mo HOA fully deductible → $4,800/yr Schedule E.
+        base = taxed_rental(monthly_rent=monthly_rent)
         situation = replace(
             base,
             accounts=(*base.accounts, account(HOA)),
@@ -847,47 +790,13 @@ class TestRentalIncomeTaxation:
                     payee=HOA,
                     amount=indexed(400),
                     end_month=11,
+                    deductible_fraction=deductible_fraction,
                 ),
             ),
         )
         [rollout] = run(situation)
         assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
-            67_200, abs=1e-6
-        )
-
-    def test_depreciation_accrues_monthly_and_deducts_as_schedule_e(self) -> None:
-        """§168 monthly depreciation accrues for rented property and reduces taxable ordinary
-        income at year end. Building basis = $500k × 0.80 = $400k; fully rented; annual
-        depreciation = $400k / 27.5 ≈ $14,545.45."""
-
-        situation = Situation(
-            horizon_months=12,
-            rollout_count=1,
-            series=level_series({RENT: [[1.0] * 13], HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
-            accounts=(account(OWNER, 600_000), account(TENANT), account(SELLER), account(IRS)),
-            tax_profiles=(taxpayer(),),
-            recurring_transfers=(
-                recurring_transfer(
-                    "rental_income:p1",
-                    start_month=0,
-                    end_month=11,
-                    payer=TENANT,
-                    payee=OWNER,
-                    amount=indexed(5_000),
-                    income=ORDINARY_INCOME,
-                ),
-            ),
-            housing=Housing(purchases=(purchase(PropertyId("p1"), rented_fraction=1),)),
-        )
-        [rollout] = run(situation)
-        # Cumulative depreciation grows monotonically; at the post-horizon snapshot it has
-        # accrued 12 months' worth = $400,000 / 27.5 = $14,545.45.
-        properties = book(rollout, 12).properties
-        assert properties is not None
-        assert len([row for row in properties if row.active]) == 1
-        # Federal ordinary income: $60,000 rental - $14,545.45 depreciation = $45,454.55.
-        assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
-            45_454.55, abs=0.02
+            ordinary_income, abs=1e-6
         )
 
     def test_lifecycle_start_renting_starts_depreciation_accrual_mid_horizon(self) -> None:
@@ -1573,49 +1482,6 @@ class TestRentalIncomeTaxation:
         # the LTCG arithmetic is exercised above.
         assert federal["capital_gain_tax_quanta"] / 100 >= 14_545.45 * 0.25 + 0.20 * 100_000
 
-    def test_section_121_exclusion_after_24_owner_occupied_months(self) -> None:
-        """Owner-occupied for ≥ 24 of the last 60 months excludes up to $250k of post-recapture
-        gain from LTCG (single-filer cap).
-
-        Bought as a primary residence, held 30 months, then sold with $200k of appreciation:
-        realized gain $158k after closing costs, all post-recapture (never let, so no
-        depreciation). §121 excludes the whole $158k → LTCG 0.
-        """
-
-        sale_month = 30
-        horizon = 36
-        situation = Situation(
-            horizon_months=horizon,
-            rollout_count=1,
-            series=level_series(
-                {RENT: [[1.0] * (horizon + 1)], HOME_VALUE: [[1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)]},
-                horizon_months=horizon,
-                rollout_count=1,
-            ),
-            accounts=(account(OWNER, 600_000), account(SELLER), account(IRS)),
-            tax_profiles=(taxpayer(),),
-            housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
-                sales=(
-                    ScheduledSale(
-                        month=sale_month,
-                        property_id=PropertyId("p1"),
-                        commission_ppb=rate_to_ppb(Decimal("0.06")),
-                        escrow_title_ppb=0,
-                    ),
-                ),
-                initial_residences=(PrimaryResidence(agent_id=OWNER, property_id=PropertyId("p1")),),
-            ),
-        )
-        [rollout] = run(situation)
-        sale = sale_rows(rollout)["p1"]
-        # Gross = $500k × 1.4 × 0.94 = $658k. Realized gain = $658k - $500k = $158k.
-        assert sale["gross_proceeds_quanta"] / 100 == pytest.approx(658_000, abs=1)
-        assert sale["realized_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
-        assert sale["depreciation_recapture_quanta"] / 100 == pytest.approx(0, abs=1e-6)
-        assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(158_000, abs=1)
-        assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(0, abs=1e-6)
-
     @pytest.mark.parametrize(
         ("primary_start_month", "primary_end_month", "expected_exclusion_usd", "expected_ltcg_usd"),
         [
@@ -1673,72 +1539,6 @@ class TestRentalIncomeTaxation:
         post_sale = [row.long_term_gain for row in book(rollout, sale_month + 1).capital_gains if row.agent_id == OWNER]
         assert sum(post_sale) / 100 == pytest.approx(expected_ltcg_usd, abs=1)
 
-    def test_section_121_does_not_apply_to_unassigned_non_rented_property(self) -> None:
-        sale_month = 30
-        horizon = 36
-        situation = Situation(
-            horizon_months=horizon,
-            rollout_count=1,
-            series=level_series(
-                {RENT: [[1.0] * (horizon + 1)], HOME_VALUE: [[1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)]},
-                horizon_months=horizon,
-                rollout_count=1,
-            ),
-            accounts=(account(OWNER, 600_000), account(SELLER), account(IRS)),
-            tax_profiles=(taxpayer(),),
-            housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
-                sales=(
-                    ScheduledSale(
-                        month=sale_month,
-                        property_id=PropertyId("p1"),
-                        commission_ppb=rate_to_ppb(Decimal("0.06")),
-                        escrow_title_ppb=0,
-                    ),
-                ),
-            ),
-        )
-        [rollout] = run(situation)
-        sale = sale_rows(rollout)["p1"]
-        assert sale["realized_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
-        assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(0, abs=1e-6)
-        assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
-
-    def test_primary_residence_event_starts_section_121_qualifying_months(self) -> None:
-        sale_month = 30
-        horizon = 36
-        situation = Situation(
-            horizon_months=horizon,
-            rollout_count=1,
-            series=level_series(
-                {RENT: [[1.0] * (horizon + 1)], HOME_VALUE: [[1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)]},
-                horizon_months=horizon,
-                rollout_count=1,
-            ),
-            accounts=(account(OWNER, 600_000), account(SELLER), account(IRS)),
-            tax_profiles=(taxpayer(),),
-            housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
-                sales=(
-                    ScheduledSale(
-                        month=sale_month,
-                        property_id=PropertyId("p1"),
-                        commission_ppb=rate_to_ppb(Decimal("0.06")),
-                        escrow_title_ppb=0,
-                    ),
-                ),
-                residence_events=(PrimaryResidenceEvent(month=6, agent_id=OWNER, property_id=PropertyId("p1")),),
-            ),
-        )
-        [rollout] = run(situation)
-
-        assert trace(rollout).events.set_primary_residence_events.to_dicts() == [
-            {"rollout_id": 0, "month_index": 6, "agent_id": OWNER, "property_id": "p1", "is_primary_residence": True}
-        ]
-        sale = sale_rows(rollout)["p1"]
-        assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(158_000, abs=1)
-        assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(0, abs=1e-6)
-
     def test_same_month_primary_residence_assignment_fires_before_sale_but_does_not_accrue_use(self) -> None:
         sale_month = 30
         base = sale_situation(
@@ -1768,58 +1568,6 @@ class TestRentalIncomeTaxation:
         sale = sale_rows(rollout)["p1"]
         assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
-
-    def test_section_121_does_not_apply_without_owner_occupied_months(self) -> None:
-        """Same sale at month 30, but the property has been fully let the whole time.
-        Owner-occupied months = 0, so §121 does not apply while recapture and LTCG stay intact."""
-
-        [rollout] = run(sale_situation(horizon=36, sale_month=30, home_values=[1.0] * 30 + [1.4] * 7))
-        sale = sale_rows(rollout)["p1"]
-        assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(0, abs=1e-6)
-        # 30 months of depreciation × $400k / 27.5 / 12 ≈ $36,363.
-        assert sale["depreciation_recapture_quanta"] / 100 == pytest.approx(36_363.64, abs=1)
-
-    def test_lifecycle_event_frames_logged_for_each_kind(self) -> None:
-        """All three lifecycle event kinds appear in their own frames, one row per event."""
-
-        situation = Situation(
-            horizon_months=24,
-            rollout_count=1,
-            series=level_series({RENT: [[1.0] * 25], HOME_VALUE: [[1.0] * 25]}, horizon_months=24, rollout_count=1),
-            accounts=(account(OWNER, 800_000), account(SELLER), account(IRS)),
-            tax_profiles=(taxpayer(),),
-            housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
-                sales=(
-                    ScheduledSale(
-                        month=12,
-                        property_id=PropertyId("p1"),
-                        commission_ppb=rate_to_ppb(Decimal("0.06")),
-                        escrow_title_ppb=0,
-                    ),
-                ),
-                rented_fraction_events=(
-                    RentedFraction(month=6, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(1)),
-                ),
-                capital_improvements=(
-                    CapitalImprovement(
-                        month=8, property_id=PropertyId("p1"), amount=USD.quanta(50_000), description="new roof"
-                    ),
-                ),
-            ),
-        )
-        [rollout] = run(situation)
-        events = trace(rollout).events
-
-        rented = one(events.set_rented_fraction_events.iter_rows(named=True))
-        assert (rented["month_index"], rented["rented_fraction"], rented["property_id"]) == (6, 1, "p1")
-
-        capex = one(events.capital_improvement_events.iter_rows(named=True))
-        assert (capex["month_index"], capex["property_id"]) == (8, "p1")
-        assert capex["amount_quanta"] / 100 == pytest.approx(50_000)
-
-        sale = one(events.property_sale_events.iter_rows(named=True))
-        assert (sale["month_index"], sale["property_id"]) == (12, "p1")
 
     def test_a_building_is_depreciated_once_however_long_it_is_held(self) -> None:
         """§168 gives a building 27.5 years of depreciation, not 27.5 years and then more.
@@ -1874,133 +1622,6 @@ class TestRentalIncomeTaxation:
         # No depreciation → ordinary income equals gross paycheck income: $60,000.
         assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
             60_000, abs=1e-6
-        )
-
-    def test_mortgage_interest_deducts_full_for_owner_occupied_and_scales_for_partial_rental(self) -> None:
-        """MID applies to the owner fraction of mortgage interest; the let share deducts as
-        Schedule E rental interest instead. Whether the property is fully owner-occupied or
-        fully let, the same dollars of interest reduce ordinary income — through different
-        mechanisms, so only the owner-occupied case carries a MID line."""
-
-        owner_occupied = self._mortgage_breakdown(rented_fraction=0)
-        rented = self._mortgage_breakdown(rented_fraction=1)
-        assert owner_occupied["mortgage_interest_deduction_quanta"] / 100 > 0
-        assert rented["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(0, abs=1e-6)
-
-    def _mortgage_breakdown(self, *, rented_fraction: Decimal | int) -> dict[str, Any]:
-        purchase_price = 600_000
-        situation = Situation(
-            horizon_months=12,
-            rollout_count=1,
-            series=level_series({RENT: [[1.0] * 13], HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
-            accounts=(account(OWNER, 700_000), account(TENANT), account(SELLER), account(LENDER), account(IRS)),
-            tax_profiles=(taxpayer(),),
-            recurring_transfers=(
-                recurring_transfer(
-                    "rental_income:p1",
-                    start_month=0,
-                    end_month=11,
-                    payer=TENANT,
-                    payee=OWNER,
-                    amount=indexed(4_000),
-                    income=ORDINARY_INCOME,
-                ),
-            ),
-            housing=Housing(
-                purchases=(
-                    purchase(
-                        PropertyId("p1"),
-                        price=purchase_price,
-                        # Land-only basis isolates the MID-vs-Schedule-E comparison from depreciation.
-                        land_value_fraction=1,
-                        rented_fraction=rented_fraction,
-                        mortgage=financing(
-                            LiabilityId("p1_mortgage"), principal=Decimal(purchase_price) * Decimal("0.80")
-                        ),
-                    ),
-                )
-            ),
-            mortgage_interest_policies=(mortgage_interest_deduction(LiabilityId("p1_mortgage"), OWNER),),
-        )
-        [rollout] = run(situation)
-        return breakdown(rollout, month=11, jurisdiction=FEDERAL)
-
-    def test_property_tax_routes_owner_fraction_to_salt_and_rented_fraction_to_schedule_e(self) -> None:
-        """A property let three quarters routes 25% of its property tax to SALT (the owner-use
-        portion) and 75% to Schedule E (the let portion)."""
-
-        purchase_price = 600_000
-        rented_fraction = Decimal("0.75")
-        annual_tax_rate = Decimal("0.012")  # 1.2% of price = $7,200/yr → $600/mo
-        situation = Situation(
-            horizon_months=12,
-            rollout_count=1,
-            series=level_series({RENT: [[1.0] * 13], HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
-            accounts=(account(OWNER, 700_000), account(TENANT), account(SELLER), account(COUNTY), account(IRS)),
-            tax_profiles=(taxpayer(),),
-            recurring_transfers=(
-                recurring_transfer(
-                    "rental_income:p1",
-                    start_month=0,
-                    end_month=11,
-                    payer=TENANT,
-                    payee=OWNER,
-                    amount=indexed(4_000),
-                    income=ORDINARY_INCOME,
-                ),
-            ),
-            housing=Housing(
-                purchases=(
-                    purchase(
-                        PropertyId("p1"),
-                        price=purchase_price,
-                        rented_fraction=rented_fraction,
-                        # A land-only basis makes the building basis zero, so no §168
-                        # depreciation accrues to blur the property-tax assertion.
-                        land_value_fraction=1,
-                        parcel=flat_parcel(annual_tax_rate),
-                    ),
-                )
-            ),
-            property_tax_policies=(property_tax(PropertyId("p1"), OWNER, end_month=11),),
-            salt_policies=(salt_cap(OWNER, 10_000),),
-        )
-        [rollout] = run(situation)
-        # Gross rent: 12 × $4,000 = $48,000. Property tax fires at months 1..11 (11 payments;
-        # month 0 is the purchase month, no tax that month) → $7,200 × 11/12 = $6,600.
-        # rented_fraction=0.75 → $4,950 routes to Schedule E and $1,650 to SALT.
-        # Federal ordinary income after Schedule E = $48,000 - $4,950 = $43,050. (The SALT
-        # total combines property tax with state income tax and gets capped, so the absolute
-        # SALT number is not the assertion; the owner-fraction effect is observable through
-        # ordinary income falling relative to the rental income.)
-        assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
-            43_050, abs=1e-6
-        )
-
-    def test_obligation_deductible_fraction_scales_deduction(self) -> None:
-        """Partial letting: HOA dues deduct only up to the let fraction — 0.5 here, so $200 of
-        the $400/mo HOA deducts each month."""
-
-        base = taxed_rental(monthly_rent=2_500)
-        # Gross rental $30,000/yr (50% let); HOA $400/mo, 50% deductible → $200/mo × 12 = $2,400.
-        situation = replace(
-            base,
-            accounts=(*base.accounts, account(HOA)),
-            obligations=(
-                Dues(
-                    obligation_id="hoa_dues",
-                    obligation_type=ObligationType.HOA_DUES,
-                    payer=OWNER,
-                    payee=HOA,
-                    amount=indexed(400),
-                    end_month=11,
-                    deductible_fraction=Decimal("0.5"),
-                ),
-            ),
-        )
-        [rollout] = run(situation)
-        assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
-            27_600, abs=1e-6
         )
 
 

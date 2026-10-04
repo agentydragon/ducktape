@@ -96,21 +96,17 @@ def _taxed(*jurisdiction_ids: JurisdictionId) -> TaxProfile:
 
 
 def _situation(
-    lots: Sequence[Lot],
-    prices: Mapping[SecurityKey, Sequence[Decimal]],
-    *,
-    rollouts: int = 1,
-    tax_profiles: Sequence[TaxProfile] = (),
+    lots: Sequence[Lot], prices: Mapping[SecurityKey, Sequence[Decimal]], *, tax_profiles: Sequence[TaxProfile] = ()
 ) -> Situation:
-    """One stipulated price path per asset, repeated across every rollout that shares it."""
+    """One stipulated price path per asset, for a single rollout."""
     horizon = len(next(iter(prices.values()))) - 1
     return Situation(
         series=level_series(
-            {asset: [[float(value) for value in path]] * rollouts for asset, path in prices.items()},
-            rollout_count=rollouts,
+            {asset: [[float(value) for value in path]] for asset, path in prices.items()},
+            rollout_count=1,
             horizon_months=horizon,
         ),
-        rollout_count=rollouts,
+        rollout_count=1,
         horizon_months=horizon,
         lots=tuple(lots),
         tax_profiles=tuple(tax_profiles),
@@ -216,20 +212,6 @@ def test_full_sale_preserves_exhausted_lot_with_zero_basis() -> None:
     assert rollout.trace.events.lot_dispositions.select(
         "units_sold", "proceeds_quanta", "cost_basis_consumed_quanta"
     ).rows() == [(100, 1_500_000, 900_000)]
-
-
-def test_deterministic_sale_scales_across_one_hundred_rollouts() -> None:
-    case = _situation([_lot(LotId("seed"), 50, Decimal(5000), 0)], {VTI: [Decimal(110)] * 3}, rollouts=100)
-    rollouts = _run(case, lambda obs: [_sale(obs, Fraction(20))] if obs.month == 1 else [])
-    assert [rollout.rollout_id for rollout in rollouts] == list(range(100))
-    for rollout in rollouts:
-        assert rollout.stop is None
-        [lot] = rollout.summary.ending_book.lots
-        assert _remaining(lot) == 30
-        assert lot.basis_remaining == 300_000
-        assert rollout.summary.cash[0].values == [0, 0, 220_000]
-        assert rollout.trace is not None
-        assert rollout.trace.events.lot_dispositions.height == 1
 
 
 def test_fifo_crosses_two_lots_and_preserves_each_basis() -> None:

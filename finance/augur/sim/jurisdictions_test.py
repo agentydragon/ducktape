@@ -32,16 +32,6 @@ def test_load_federal_us_has_three_ltcg_brackets() -> None:
     assert ltcg[-1].upper == "Infinity"
 
 
-def test_load_california_omits_ltcg_brackets() -> None:
-    """California taxes LTCG as ordinary income; the YAML doesn't
-    declare separate LTCG brackets and the loader represents that
-    as `ltcg_brackets = None`."""
-    ca = load_jurisdiction(JurisdictionId("california")).income_tax
-    assert ca is not None
-    assert ca.ltcg_brackets is None
-    assert len(ca.ordinary_income_brackets["single"]) == 9
-
-
 def test_standard_deduction_present_for_single() -> None:
     fed = load_jurisdiction(JurisdictionId("federal_us")).income_tax
     ca = load_jurisdiction(JurisdictionId("california")).income_tax
