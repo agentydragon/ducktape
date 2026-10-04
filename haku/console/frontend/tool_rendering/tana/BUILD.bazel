@@ -1,12 +1,11 @@
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_test")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+load("//haku/console/frontend:vitest.bzl", "haku_vitest_test")
 load("//haku/console/frontend/tool_rendering/screenshot:screenshot_test.bzl", "preview_screenshots")
 
 package(default_visibility = ["//visibility:public"])
 
 TSCONFIG = "//haku/console/frontend:tsconfig"
-
-VITEST_CONFIG = "//haku/console/frontend:vitest_config"
 
 # The `tana` server's tool-call rendering widgets (request-only; see ../BUILD.bazel for
 # the tree's shape).
@@ -57,12 +56,10 @@ filegroup(
     srcs = glob(["*.tsx"]),
 )
 
-vitest_test(
+haku_vitest_test(
     name = "requests_test",
     srcs = ["requests.test.ts"],
-    config = VITEST_CONFIG,
     isolated_typecheck = True,
-    tsconfig = TSCONFIG,
     deps = [
         ":requests",
         "//:node_modules/vitest",
