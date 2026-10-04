@@ -247,6 +247,9 @@ function VirtualizedHistory({
   // A return to the bottom lands on whichever one was current when it ran; a card can grow in
   // that task or an earlier one before the browser dispatches the scroll event.
   const recentBottoms = useRef<number[]>([]);
+  // Where a click on a disclosure left the reader, until they next scroll: standing there, at
+  // whatever bottom the history has recorded, is their place and not a return to the bottom.
+  const clickedAt = useRef<number | null>(null);
   const pointerScrolling = useRef(false);
   const captureNextScroll = useRef(false);
   const scrolledSinceInput = useRef(false);
@@ -293,7 +296,7 @@ function VirtualizedHistory({
     // A programmatic return to the old bottom can be delivered after a card grows. Preserve
     // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll,
     // as does a restoration still settling.
-    if (captureNextScroll.current || restoringScroll()) return false;
+    if (captureNextScroll.current || restoringScroll() || element.scrollTop === clickedAt.current) return false;
     if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
     atBottom.current = true;
     cancelRestoration();
@@ -559,8 +562,18 @@ function VirtualizedHistory({
         touchY.current = null;
         if (!scrolledSinceInput.current) captureNextScroll.current = false;
       }}
+      onClickCapture={(event) => {
+        // Opening or closing a row resizes it under the line the reader clicked. Following the tail
+        // would pin the bottom instead, carrying that line away; so a click on a disclosure stops
+        // following, and adopts the place as it stands before the row moves.
+        if (!(event.target instanceof Element) || !event.target.closest("summary, [aria-expanded]")) return;
+        atBottom.current = false;
+        clickedAt.current = event.currentTarget.scrollTop;
+        captureReadingAnchor(event.currentTarget);
+      }}
       onScroll={(event) => {
         const element = event.currentTarget;
+        if (element.scrollTop !== clickedAt.current) clickedAt.current = null;
         const followed = followPreviousBottom(element);
         recentBottoms.current = [element.scrollHeight - element.clientHeight];
         scrollDebug(

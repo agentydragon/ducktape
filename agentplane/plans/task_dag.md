@@ -22,9 +22,8 @@ Proposed execution order for the Thread correctness/UI track:
 - **P0:** close deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`), including
   the current model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one
   runner-owned command queue; no app outbox or combined-start expansion in this batch.
-- **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Compact activity
-  work (`THREAD_ACTIVITY_DENSITY`) and native resume/recovery remain on the board but are excluded
-  from this dispatch batch.
+- **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Native
+  resume/recovery remains on the board but is excluded from this dispatch batch.
 - **P0, hosted Haku blocker, pending deployment acceptance:** verify per-Thread setup and
   working directories for Haku and Finance (`THREAD_WORKSPACE_BOOTSTRAP`,
   [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
@@ -109,7 +108,6 @@ flowchart TB
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
     EGRESS_IDENTITY_AVAILABILITY["P0 observed availability failure<br/>egress authentication ApiException / 502<br/>trace Kubernetes, ingress, LiteLLM hops"]:::active
     LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
-    THREAD_ACTIVITY_DENSITY["Remaining compact-activity work<br/>scroll stability of rows that grow"]:::future
     THREAD_WORKSPACE_BOOTSTRAP["P0 deployment acceptance<br/>per-Thread setup in cwd<br/>Haku and Finance repos; #8695"]:::active
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
@@ -433,15 +431,6 @@ Finish native-backed verification of these failures through the app archive and 
 views, including reload and a later successful input; controlled-source browser coverage is
 not native harness evidence. Any future retry control must explicitly distinguish same-command
 delivery retry from requesting a new model turn; do not silently resend the original input.
-
-### `THREAD_ACTIVITY_DENSITY` — finish the compact activity design
-
-Tool calls and reasoning steps are one line each, opening to their content, with failure and
-in-progress shown on the title and the shell tools drawn as commands. One thing remains.
-
-**Scroll stability of rows that grow.** Expanding a call, or its output's clamp, while Events
-arrive must leave the reader's place alone. The history's anchoring is covered for rows
-generally; add browser coverage for a row that resizes on its own click.
 
 ### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
 

@@ -9,7 +9,14 @@ from urllib.parse import parse_qs, urlsplit
 import pytest_bazel
 from playwright.async_api import Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
 
-from agentplane.app.test_thread_browser import ThreadBrowser, capture_reading_anchor, db_url, expect_reading_anchor
+from agentplane.app.test_thread_browser import (
+    ThreadBrowser,
+    append_items,
+    capture_reading_anchor,
+    db_url,
+    expect_reading_anchor,
+    frames,
+)
 from agentplane.protocol import event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -19,30 +26,9 @@ pytest_plugins = ("agentplane.app.test_thread_browser",)
 __all__ = ["db_url"]
 
 
-def _append_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:
-    latest = None
-    for number in numbers:
-        item_id = f"{prefix}-{number:03d}"
-        thread_browser.source.append(
-            event_pb2.Event(
-                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-            )
-        )
-        latest = thread_browser.source.append(
-            event_pb2.Event(
-                item_completed=event_pb2.ItemCompleted(
-                    item_id=item_id,
-                    text=f"Window message {number:03d}: " + "measured variable-height text " * (number % 4 + 1),
-                )
-            )
-        )
-    assert latest is not None
-    return latest
-
-
 def _append_uneven_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:
     """Alternates a one-line message with one many times taller, so a page of them diverges wildly
-    from VirtualizedHistory's fixed 180px `estimateSize` -- unlike _append_items's mild 1x-4x
+    from VirtualizedHistory's fixed 180px `estimateSize` -- unlike append_items's mild 1x-4x
     variance, this maximizes the gap scrollToIndex's estimate has to correct for an unmounted row."""
     latest = None
     for number in numbers:
@@ -116,18 +102,13 @@ async def _holding_older_pages(page: Page) -> AsyncIterator[_HeldPages]:
         await page.unroute("**/sync/entities?*", hold)
 
 
-async def _frames(page: Page) -> None:
-    """Waits for the paint after the next layout, and any effect or observer it runs."""
-    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-
-
 async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place(
     thread_browser: ThreadBrowser,
 ) -> None:
     page = thread_browser.page
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    latest = _append_items(thread_browser, "window-item", range(130))
+    latest = append_items(thread_browser, "window-item", range(130))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
 
     # Opened now, the thread is longer than its eager initial load: older rows are still a page away.
@@ -142,7 +123,7 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     assert await page.locator("[data-thread-anchor]").count() < 40
     # Opening eagerly loads a couple of screens' worth up front -- itself some of these
     # same-shaped requests -- but settles there; nothing more loads before the reader scrolls up.
-    await _frames(page)
+    await frames(page)
     eager = len([request for request in requests if _older_page(request)])
     assert eager > 0
 
@@ -170,7 +151,7 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
 
     # The tail grows by more than a page while the reader stays back in the thread: its rows
     # arrive on the same shape, and the row the reader is at does not move.
-    latest = _append_items(thread_browser, "window-item", range(130, 165))
+    latest = append_items(thread_browser, "window-item", range(130, 165))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     restored = page.locator(f'[data-thread-anchor="{anchor["cursor"]}"]')
     await expect(restored).to_have_count(1)
@@ -198,7 +179,7 @@ async def test_an_older_page_landing_mid_gesture_does_not_move_the_reader(thread
     page = thread_browser.page
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    latest = _append_items(thread_browser, "window-item", range(130))
+    latest = append_items(thread_browser, "window-item", range(130))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     await page.reload()
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
@@ -221,7 +202,7 @@ async def test_an_older_page_landing_mid_gesture_does_not_move_the_reader(thread
         async with asyncio.timeout(30):
             await gesture.evaluate("gesture => gesture.ended")
         await gesture.dispose()
-        await _frames(page)
+        await frames(page)
         await expect_reading_anchor(page, anchor)
         await page.screenshot(path=undeclared_outputs_dir() / "thread-window-mid-gesture-prepend.png")
 
@@ -243,7 +224,7 @@ async def test_an_older_page_landing_mid_gesture_does_not_restore_an_earlier_set
     page = thread_browser.page
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    latest = _append_items(thread_browser, "window-item", range(90))
+    latest = append_items(thread_browser, "window-item", range(90))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     await page.reload()
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
@@ -274,8 +255,8 @@ async def test_an_older_page_landing_mid_gesture_does_not_restore_an_earlier_set
         second_anchor = await capture_reading_anchor(history)
         assert second_anchor["cursor"] != first_anchor["cursor"]
         held.release.set()
-        await _frames(page)
-        await _frames(page)
+        await frames(page)
+        await frames(page)
         # The reader stays where the second gesture left them, not pulled back to the first.
         await expect_reading_anchor(page, second_anchor)
         await page.screenshot(path=undeclared_outputs_dir() / "thread-window-stale-anchor.png")
@@ -291,7 +272,7 @@ async def test_scrolling_up_continuously_through_a_landing_older_page_does_not_j
     page = thread_browser.page
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    latest = _append_items(thread_browser, "window-item", range(130))
+    latest = append_items(thread_browser, "window-item", range(130))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     await page.reload()
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
@@ -307,9 +288,9 @@ async def test_scrolling_up_continuously_through_a_landing_older_page_does_not_j
         held.release.set()
         for _ in range(20):
             await page.mouse.wheel(0, -150)
-    await _frames(page)
-    await _frames(page)
-    await _frames(page)
+    await frames(page)
+    await frames(page)
+    await frames(page)
     geometry = await history.evaluate(
         "area => ({top: area.scrollTop, bottom: area.scrollHeight - area.clientHeight - area.scrollTop})"
     )
@@ -325,7 +306,7 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
     estimateSize is a flat 180px; a page of rows nowhere near that (a one-liner next to a message
     twenty paragraphs long) makes virtualizer.scrollToIndex's estimate-based jump, and the two
     frames of correctFromDom afterwards, wrong by a large and inconsistent margin each cycle --
-    unlike _append_items's mild variance, which every existing pagination test here uses. Runs
+    unlike append_items's mild variance, which every existing pagination test here uses. Runs
     several scroll-to-top cycles deep into that unevenness, each one fully settled before the
     next, to isolate accumulated estimate error from any gesture-timing race."""
     page = thread_browser.page
@@ -361,8 +342,8 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
         await gesture.dispose()
         anchor = await capture_reading_anchor(history)
         await expect(loading).to_have_count(0, timeout=30_000)
-        await _frames(page)
-        await _frames(page)
+        await frames(page)
+        await frames(page)
         try:
             await expect_reading_anchor(page, anchor)
         except PlaywrightTimeoutError:
@@ -378,7 +359,7 @@ async def test_a_thread_shorter_than_the_eager_load_shows_in_full_without_a_scro
     page = thread_browser.page
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    latest = _append_items(thread_browser, "short-item", range(32))
+    latest = append_items(thread_browser, "short-item", range(32))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
 
     # Opened again in a view taller than the whole (short) thread: there is no scrollbar, and
@@ -398,8 +379,8 @@ async def test_a_thread_shorter_than_the_eager_load_shows_in_full_without_a_scro
     requests = _recording_requests(page)
     await history.hover()
     await page.mouse.wheel(0, -10_000)
-    await _frames(page)
-    await _frames(page)
+    await frames(page)
+    await frames(page)
     # The whole thread already loaded eagerly; scrolling up asks for nothing more.
     assert not [request for request in requests if _older_page(request)]
 
@@ -424,7 +405,7 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
         # Offline fails only new requests; the live SSE response ends with its connection.
         async with page.expect_event("requestfailed", predicate=lambda request: "/sync/entities?" in request.url):
             await thread_browser.ingress.drop_connections()
-        latest = _append_items(thread_browser, "offline-item", range(70))
+        latest = append_items(thread_browser, "offline-item", range(70))
         async with asyncio.timeout(15):
             while True:
                 scope = await thread_browser.content.current_scope(thread.id)
