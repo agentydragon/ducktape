@@ -713,6 +713,7 @@ export function CollapsibleCard({
 }): JSX.Element {
   return (
     <Paper
+      data-open={open}
       // A folded step line is one line, so it needs little more than the line.
       p={open ? "sm" : stableInlineSize ? 2 : "xs"}
       withBorder={open && !stableInlineSize}

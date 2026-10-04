@@ -57,6 +57,12 @@
   line-height: 1.4;
 }
 
+/* A run packs its one-line steps together, but an opened one is a card, and keeps the room between
+   cards when another step follows it. Below the card, so opening it does not move its top edge. */
+.agentplane-run-steps > [data-open="true"]:not(:last-child) {
+  margin-block-end: var(--mantine-spacing-xs);
+}
+
 .agentplane-step-details,
 .agentplane-step-static {
   min-width: 0;
