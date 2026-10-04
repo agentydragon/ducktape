@@ -22,15 +22,13 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::{ChunkId, ChunkTable, list_chunk_file_paths};
 use binding_targets::declaration_ids;
-#[cfg(test)]
-use binding_targets::module_export_name;
 pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};
 use export_surface::collect_local_idents_by_export_name;
 pub use import_rewrites::{
     DeferredImport, IdentRewriteTarget, PartialSwapIdentRewriter, VendorImportRewrites,
 };
 #[cfg(test)]
-use js_ast::{emit_js_module, parse_js_module, str_value};
+use js_ast::{emit_js_module, parse_js_module};
 use js_ast::{module_export_name_node, named_export_module_item, named_export_specifier};
 pub use manifests::*;
 pub use output_imports::{
@@ -445,100 +443,7 @@ fn check_partial_swap_consumer_decl(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use artifact::ArtifactIndexes;
-    use artifact::{
-        ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
-        JsChunk, JsFile,
-    };
-    use spec::{VendorLevel, VendorMark, VendorRole};
-    use std::collections::HashMap;
     use swc_ecma_visit::VisitMutWith;
-
-    #[test]
-    fn passthrough_rewrites_boundary_renames_for_multiple_vendor_targets_in_one_pass() {
-        js_ast::with_swc_globals(|| {
-            let mut artifact = ChunkBundle {
-                chunks: Vec::new(),
-                chunk_table: ChunkTable::default(),
-            };
-            insert_chunk(
-                &mut artifact,
-                "app",
-                r#"import { a } from "../vendor-a/entry.js";
-import { b as localB } from "../vendor-b/entry.js";
-console.log(a, localB);
-"#,
-            );
-            insert_chunk(
-                &mut artifact,
-                "vendor-a",
-                r#"import { b } from "../vendor-b/entry.js";
-const a = 1;
-export { a as alpha };
-console.log(b);
-"#,
-            );
-            insert_chunk(
-                &mut artifact,
-                "vendor-b",
-                r#"const b = 2;
-export { b as beta };
-"#,
-            );
-
-            let vendor = BTreeMap::from([
-                (
-                    "vendor-a.js".to_string(),
-                    VendorMark {
-                        identity: "a".to_string(),
-                        role: VendorRole::Module,
-                        level: VendorLevel::BoundaryRename,
-                    },
-                ),
-                (
-                    "vendor-b.js".to_string(),
-                    VendorMark {
-                        identity: "b".to_string(),
-                        role: VendorRole::Module,
-                        level: VendorLevel::BoundaryRename,
-                    },
-                ),
-            ]);
-
-            let references = ArtifactIndexes::build(&artifact).unwrap();
-            let plan = build_vendor_resolution_plan(
-                &artifact,
-                &references,
-                &vendor,
-                &VendorPlanOptions {
-                    package_roots: &HashMap::new(),
-                    packages_root: &None,
-                    output_manifest_path: None,
-                    output_wrapper_dir: None,
-                },
-            )
-            .unwrap();
-            let references_by_symbol =
-                apply_emission_rewrites_in_place(&mut artifact, &plan, &references).unwrap();
-            assert!(
-                references_by_symbol.is_empty(),
-                "boundary renames are not partial-swap reference rewrites"
-            );
-
-            assert_eq!(
-                named_imports(&artifact, "app", "entry.js", "../vendor-a/entry.js"),
-                vec![("alpha".to_string(), "a".to_string())]
-            );
-            assert_eq!(
-                named_imports(&artifact, "app", "entry.js", "../vendor-b/entry.js"),
-                vec![("beta".to_string(), "localB".to_string())]
-            );
-            assert_eq!(
-                named_imports(&artifact, "vendor-a", "entry.js", "../vendor-b/entry.js"),
-                vec![("beta".to_string(), "b".to_string())]
-            );
-        });
-    }
 
     #[test]
     fn worker_url_rewrite_uses_import_meta_url_as_base() {
@@ -601,93 +506,5 @@ export { b as beta };
                 "ordinary references should still be rewritten:\n{emitted}",
             );
         });
-    }
-
-    fn insert_chunk(artifact: &mut ChunkBundle, chunk_id: &str, source: &str) {
-        let chunk_id_interned = artifact.chunk_table.intern(chunk_id.to_string());
-        let entry_file = "entry.js".to_string();
-        artifact.chunks.push(ChunkArtifact {
-            chunk_id: chunk_id_interned,
-            js: JsChunk {
-                entry_file: entry_file.clone(),
-                files: vec![JsFile {
-                    path: entry_file.clone(),
-                    body: artifact::JsFileBody::Ast(
-                        parse_js_module(&format!("{chunk_id}/{entry_file}"), source).unwrap(),
-                    ),
-                    header_lines: Vec::new(),
-                    binding_comments: std::collections::BTreeMap::new(),
-                    leading_item_comments: std::collections::BTreeMap::new(),
-                    metadata: FileMetadata {
-                        chunk_id: chunk_id.to_string(),
-                        chunk_file: entry_file.clone(),
-                        role: FileRole::Entry,
-                        source_path: format!("{chunk_id}.js"),
-                    },
-                }],
-                metadata: ChunkMetadata {
-                    source_path: format!("{chunk_id}.js"),
-                },
-            },
-            analysis: ChunkAnalysisReport {
-                chunk_id: chunk_id.to_string(),
-                source_path: format!("{chunk_id}.js"),
-                entry_file,
-                counts: Default::default(),
-                files: Vec::new(),
-                imports: Vec::new(),
-                export_aliases: Vec::new(),
-                unresolved_exports: Vec::new(),
-                kept_top_level_declarations: Vec::new(),
-            },
-        });
-    }
-
-    fn named_imports(
-        artifact: &ChunkBundle,
-        chunk_id: &str,
-        file: &str,
-        source: &str,
-    ) -> Vec<(String, String)> {
-        let chunk_id_interned = artifact
-            .chunk_table
-            .get(chunk_id)
-            .expect("chunk should exist");
-        let module = &artifact
-            .js_chunk(chunk_id_interned)
-            .unwrap()
-            .get_file(file)
-            .unwrap()
-            .ast()
-            .unwrap()
-            .module;
-        module
-            .body
-            .iter()
-            .find_map(|item| {
-                let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-                    return None;
-                };
-                (str_value(&import.src) == source).then(|| {
-                    import
-                        .specifiers
-                        .iter()
-                        .filter_map(|specifier| {
-                            let ImportSpecifier::Named(named) = specifier else {
-                                return None;
-                            };
-                            Some((
-                                named
-                                    .imported
-                                    .as_ref()
-                                    .map(module_export_name)
-                                    .unwrap_or_else(|| named.local.sym.to_string()),
-                                named.local.sym.to_string(),
-                            ))
-                        })
-                        .collect()
-                })
-            })
-            .unwrap_or_default()
     }
 }

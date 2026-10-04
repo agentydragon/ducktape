@@ -3,7 +3,8 @@
 //! asserts the generated wrapper.
 
 use debundle_e2e_support::{
-    CommandResult, assert_node_output, run_debundler, write_text_file, write_yaml_file,
+    CommandResult, assert_module_source, assert_node_output, run_debundler, write_text_file,
+    write_yaml_file,
 };
 use serde_json::{Value, json};
 use spec::{
@@ -2004,6 +2005,61 @@ fn boundary_rename_rewrites_caller_imports_end_to_end() {
         "await import(\"./app/static/app/entry.js\");\n",
     );
     assert_node_output(&probe_path, "1\n", "");
+}
+
+#[test]
+fn boundary_rename_rewrites_every_vendor_and_vendor_to_vendor_imports_in_one_run() {
+    // `app` imports both vendors and `vendor-a` imports `vendor-b`: a rewrite
+    // that stops at the first vendor, or skips vendor chunks as callers, leaves
+    // an import of a name its target no longer exports.
+    let ws = VendorTestWorkspace::new("vendor-boundary-rename-multi-");
+    ws.write_chunk(
+        "static/app.js",
+        "import { a } from \"../vendor-a/entry.js\";\nimport { b as localB } from \"../vendor-b/entry.js\";\nconsole.log(a, localB);\n",
+    );
+    ws.write_chunk(
+        "static/vendor-a.js",
+        "import { b } from \"../vendor-b/entry.js\";\nconst a = 1;\nexport { a as alpha };\nconsole.log(b);\n",
+    );
+    ws.write_chunk(
+        "static/vendor-b.js",
+        "const b = 2;\nexport { b as beta };\n",
+    );
+    ws.write_js_list("static/app.js\nstatic/vendor-a.js\nstatic/vendor-b.js\n");
+
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            "static/vendor-a.js": { "level": "boundary_rename", "identity": "boundary rename vendor a" },
+            "static/vendor-b.js": { "level": "boundary_rename", "identity": "boundary rename vendor b" },
+        },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "write_js_tree": { "out_dir": &ws.out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+    assert_success(&run_debundler(&spec_path, &[]));
+
+    assert_module_source(
+        &ws.out_root,
+        "app/static/app/entry.js",
+        &[
+            "import { alpha as a } from \"../vendor-a/entry.js\"",
+            "import { beta as localB } from \"../vendor-b/entry.js\"",
+        ],
+        &[],
+    );
+    assert_module_source(
+        &ws.out_root,
+        "app/static/vendor-a/entry.js",
+        &["import { beta as b } from \"../vendor-b/entry.js\""],
+        &[],
+    );
+    let probe_path = ws.out_root.join("__run_boundary_rename_multi.mjs");
+    write_text_file(
+        &probe_path,
+        "await import(\"./app/static/app/entry.js\");\n",
+    );
+    assert_node_output(&probe_path, "2\n1 2\n", "");
 }
 
 #[test]
