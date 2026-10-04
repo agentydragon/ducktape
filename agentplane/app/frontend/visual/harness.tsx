@@ -454,6 +454,8 @@ const THREADS: ThreadView[] = [
     last_cursor: 31,
     last_event_at: ago(90 * 60_000),
     harness_state: "HARNESS_STATE_STOPPED",
+    // The state a shutdown leaves: the runner feed still attached, the harness down.
+    feed_status: "active",
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000002",
