@@ -178,6 +178,9 @@ class FakeSync {
   liveUnanswered = false;
   /** How many live reads are waiting for an answer. */
   waiting = 0;
+  /** How many reads of bodies have reached the proxy, and what each waits for before it is answered. */
+  bodyReads = 0;
+  beforeBodyRead: ((read: number) => Promise<void>) | null = null;
   readonly requests: { thread: string; method: string; path: string; query: URLSearchParams; subset: Subset | null }[] =
     [];
   readonly #live = new Map<string, Connection>();
@@ -206,6 +209,7 @@ class FakeSync {
     const instead = subset?.where === "entity_index < $1" ? await this.olderPage?.() : undefined;
     if (instead !== undefined) return instead;
     if (subset !== null) {
+      if (relation === "thread_payload_chunk") await this.beforeBodyRead?.(++this.bodyReads);
       const rows = relation === "thread_entity" ? this.#entitySubset(subset) : this.#bodySubset(subset);
       return new Response(
         JSON.stringify({
@@ -972,4 +976,83 @@ it("retains the windows of the last few threads the reader left, not every one",
   mark = sync.requests.length;
   await visit("other-9");
   expect(since(sync, mark, "other-9").filter((request) => request.method === "POST")).toEqual([]);
+});
+
+/** The owners of the bodies the thread's reads named, in the order they were read. */
+function ownersRead(sync: FakeSync): string[] {
+  return sync
+    .posted("chunks/text")
+    .flatMap((read) => Object.entries(read.params ?? {}).filter(([index]) => Number(index) % 2 === 1))
+    .map(([, owner]) => owner);
+}
+
+function threadWithBodies(sync: FakeSync, owners: readonly string[]): void {
+  sync.through = String(owners.length);
+  sync.entities = [
+    viewState(sync.through),
+    ...owners.map((owner, index) => item(index + 1, "epoch-1", { text_ref: textRef(owner, 1) })),
+  ];
+  sync.chunks = owners.map((owner) => chunk(owner, 0, `text of ${owner}`));
+}
+
+it("reads the bodies of every row it holds, not only the ones in view, and has them when a reader shows one", async () => {
+  const sync = stubSync();
+  threadWithBodies(sync, ["a", "b", "c"]);
+  const threads = createElectricThreadSync();
+  // Nothing in this view shows a body.
+  await renderThread(itemsView, threads);
+  await vi.waitFor(() => expect([...ownersRead(sync)].sort()).toEqual(["a", "b", "c"]));
+
+  await switchThread(threads, "thread", bodiesView);
+  await vi.waitFor(() => expect(bodyText(document.body)).toBe("text of a"));
+  expect(sync.posted("chunks/text")).toHaveLength(1);
+});
+
+it("reads the bodies of the rows a page adds, as it reads those of the tail", async () => {
+  const sync = stubSync();
+  threadWithBodies(
+    sync,
+    Array.from({ length: 130 }, (_, index) => `body-${index}`)
+  );
+  const container = await renderThread(itemsView);
+  await vi.waitFor(() => expect(ownersRead(sync)).toHaveLength(90));
+
+  await act(async () => container.querySelector("button")!.click());
+
+  await vi.waitFor(() => expect(ownersRead(sync)).toHaveLength(120));
+  expect(new Set(ownersRead(sync)).size).toBe(120);
+});
+
+it("reads a body a reader shows ahead of the ones waiting to be read ahead, which go one batch at a time", async () => {
+  const sync = stubSync();
+  const owners = Array.from({ length: 45 }, (_, index) => `body-${index}`);
+  threadWithBodies(sync, owners);
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  // The second read ahead is under way for as long as the test holds it.
+  sync.beforeBodyRead = async (read) => {
+    if (read === 2) await held;
+  };
+  const threads = createElectricThreadSync();
+  await renderThread(itemsView, threads);
+  await vi.waitFor(() => expect(sync.posted("chunks/text")).toHaveLength(2));
+
+  // The oldest row is among the last the reads ahead would reach.
+  await switchThread(
+    threads,
+    "thread",
+    <Shown>
+      {(rows) => {
+        const oldest = rows.find((row) => row.entityId === "item-1")!;
+        return <Body id={oldest.entityId} reference={oldest.textRef!} />;
+      }}
+    </Shown>
+  );
+
+  await vi.waitFor(() => expect(bodyText(document.body)).toBe("text of body-0"));
+  // Its own read, and no further one ahead while the second is held.
+  expect(sync.posted("chunks/text")).toHaveLength(3);
+  release();
+  await vi.waitFor(() => expect(ownersRead(sync)).toHaveLength(45));
+  expect(new Set(ownersRead(sync))).toEqual(new Set(owners));
 });

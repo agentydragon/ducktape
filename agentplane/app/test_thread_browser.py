@@ -305,6 +305,15 @@ def _entity_handles(requests: list[Request]) -> set[str]:
     }
 
 
+def _bodies_read(requests: list[Request]) -> int:
+    """How many bodies the requests' reads of payload chunks named."""
+    return sum(
+        len(json.loads(request.post_data or "{}")["params"]) // 2
+        for request in requests
+        if request.method == "POST" and "/sync/chunks/" in request.url
+    )
+
+
 async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away(
     page: Page,
     db_url: str,
@@ -323,23 +332,35 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
         http2_proxy(app.url, certificate) as ingress,
     ):
         requests: list[Request] = []
+        chunks_read = asyncio.Event()
+
+        def of(thread: UUID, since: int = 0) -> list[Request]:
+            return [request for request in requests[since:] if f"/threads/{thread}/sync/" in request.url]
 
         # Playwright cannot register a builtin method such as `list.append` as a handler.
         def record(request: Request) -> None:
             requests.append(request)
+            if "/sync/chunks/" in request.url:
+                chunks_read.set()
 
         page.on("request", record)
-
-        def of(thread: UUID, since: int = 0) -> list[Request]:
-            return [request for request in requests[since:] if f"/threads/{thread}/sync/" in request.url]
 
         async def open_thread(number: int) -> None:
             async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
                 await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
 
         history = page.get_by_role("region", name="Thread history", exact=True)
+        # A short viewport mounts few of the window's rows, whose bodies a reader's view reads on mounting.
+        await page.set_viewport_size({"width": 1280, "height": 300})
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
         await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
+        # Before the reader scrolls: the window reads the bodies of every row it holds (its 90 rows hold 89
+        # messages), not only those the view mounted.
+        async with asyncio.timeout(30):
+            while _bodies_read(of(threads[0])) < 60:
+                await chunks_read.wait()
+                chunks_read.clear()
+        await page.set_viewport_size({"width": 1280, "height": 900})
         await history.hover()
         async with page.expect_request(lambda request: _older_page_bound(request) is not None):
             await page.mouse.wheel(0, -10_000)
@@ -382,12 +403,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
         query = parse_qs(urlsplit(read.url).query)
         assert (query["handle"], query["offset"][0] not in {"now", "-1"}) == ([handle], True)
         # Nor is a body already held: the one read is the message that arrived.
-        bodies = [
-            len(json.loads(request.post_data or "{}")["params"]) // 2
-            for request in returned
-            if request.method == "POST" and "/sync/chunks/" in request.url
-        ]
-        assert sum(bodies) <= 1
+        assert _bodies_read(returned) <= 1
 
         # The pages loaded before the reader left are still held: the next one is the page before them.
         await history.hover()

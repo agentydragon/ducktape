@@ -10,6 +10,10 @@
  * A reader who leaves a thread keeps its window, suspended: the shapes' streams close, and the rows
  * and bodies stay with the position in each log they were read through. Coming back opens streams
  * at those positions, so only what changed meanwhile is read.
+ *
+ * A window also reads the bodies of every row it holds, not only the ones a reader has shown, so
+ * scrolling back or opening a disclosure finds them there. Those reads go one batch at a time and
+ * after any read a reader is waiting on.
  */
 import {
   FetchError,
@@ -113,6 +117,9 @@ const INITIAL_ROWS = PAGE * 3;
 // The proxy's bounds on one subset read.
 const SUBSET_ROWS = 200;
 const SUBSET_BODIES = 100;
+// Bodies read ahead of the reader go in reads this size: a body has no size a reader can see before
+// reading it, so a read that is not the reader's own stays short.
+const AHEAD_BODIES = 20;
 // Every entity subset reads positions newest first; Electric requires an order wherever there is a limit.
 const NEWEST_FIRST = "entity_index DESC";
 // The subset forms the proxy admits, besides the pages and the bodies.
@@ -143,11 +150,16 @@ function commandsById(ids: readonly string[]): SubsetParams {
   };
 }
 
+interface BodyId {
+  ownerId: string;
+  generation: string;
+}
+
 function bodyKey(ownerId: string, generation: string): string {
   return `${ownerId}\u0000${generation}`;
 }
 
-function bodySubset(references: readonly { ownerId: string; generation: string }[]): SubsetParams {
+function bodySubset(references: readonly BodyId[]): SubsetParams {
   return {
     where: references
       .map((_, index) => `(owner_id = $${2 * index + 1} AND generation = $${2 * index + 2})`)
@@ -329,14 +341,18 @@ class PayloadShape extends Listeners {
   #shape: Shape | null = null;
   // Chunk text by index, per body: an owner at one generation.
   readonly #chunks = new Map<string, Map<number, string>>();
-  readonly #requested = new Map<string, { ownerId: string; generation: string }>();
-  #queued: { ownerId: string; generation: string }[] = [];
+  readonly #requested = new Map<string, BodyId>();
+  #queued: BodyId[] = [];
   #version = 0;
   #error: string | null = null;
   #closed = false;
   #suspended = false;
   // Where the shape was read through when it was suspended, until it is opened there.
   #position: ShapePosition | null = null;
+  // Bodies no reader has asked for, to read while no read a reader waits on is under way.
+  readonly #ahead = new Map<string, BodyId>();
+  #reading = 0;
+  #draining = false;
 
   constructor(url: string, onGone: () => void, onAttempt: (failure: string | null) => void) {
     super();
@@ -354,9 +370,25 @@ class PayloadShape extends Listeners {
   want(reference: PayloadRef): void {
     const key = bodyKey(reference.owner_id, reference.generation);
     if (this.#requested.has(key)) return;
+    this.#ahead.delete(key);
     const body = { ownerId: reference.owner_id, generation: reference.generation };
     this.#requested.set(key, body);
     this.#queue([body]);
+  }
+
+  /** Reads the body once nothing a reader waits on is being read, unless a reader asks for it first. */
+  readAhead(reference: PayloadRef): void {
+    const key = bodyKey(reference.owner_id, reference.generation);
+    if (Number(reference.chunk_count) === 0 || this.#requested.has(key) || this.#ahead.has(key)) return;
+    this.#ahead.set(key, { ownerId: reference.owner_id, generation: reference.generation });
+    // Bodies of rows that arrive together share a read.
+    if (!this.#draining) {
+      this.#draining = true;
+      queueMicrotask(() => {
+        this.#draining = false;
+        this.#drain();
+      });
+    }
   }
 
   /** The body as far as the reference spans it. Every prefix of a body's chunks is one of its
@@ -400,6 +432,7 @@ class PayloadShape extends Listeners {
       this.#position = null;
     }
     if (this.#queued.length > 0) this.#flush();
+    this.#drain();
   }
 
   close(): void {
@@ -417,7 +450,7 @@ class PayloadShape extends Listeners {
     );
   }
 
-  #queue(references: { ownerId: string; generation: string }[]): void {
+  #queue(references: BodyId[]): void {
     // Bodies mounted in one render share a read.
     if (this.#queued.length === 0) queueMicrotask(() => this.#flush());
     this.#queued.push(...references);
@@ -425,11 +458,32 @@ class PayloadShape extends Listeners {
 
   #flush(): void {
     if (this.#closed || this.#suspended) return;
+    for (const batch of batches(this.#queued.splice(0), SUBSET_BODIES)) this.#read(batch);
+  }
+
+  #read(bodies: BodyId[]): void {
     const shape = (this.#shape ??= this.#open(null));
-    for (const batch of batches(this.#queued.splice(0), SUBSET_BODIES))
-      shape.subset(bodySubset(batch)).catch((error: unknown) => {
+    this.#reading++;
+    shape
+      .subset(bodySubset(bodies))
+      .catch((error: unknown) => {
         if (!shape.closed) this.#fail(error);
+      })
+      .finally(() => {
+        this.#reading--;
+        this.#drain();
       });
+  }
+
+  /** The next batch of bodies read ahead, once no other read is queued or under way. */
+  #drain(): void {
+    if (this.#closed || this.#suspended || this.#reading > 0 || this.#queued.length > 0) return;
+    const batch = [...this.#ahead].slice(0, AHEAD_BODIES);
+    for (const [key, body] of batch) {
+      this.#ahead.delete(key);
+      this.#requested.set(key, body);
+    }
+    if (batch.length > 0) this.#read(batch.map(([, body]) => body));
   }
 
   #apply(messages: Message<Row>[]): void {
@@ -748,6 +802,10 @@ class EpochWindow extends Listeners {
 
   #publish(error: string | null = this.#state.error): void {
     const rows = [...this.#rows.values()];
+    if (!this.#suspended)
+      for (const row of rows)
+        for (const reference of [row.textRef, row.argumentsRef, row.outputRef, row.inputRef])
+          if (reference !== null) this.bodies(reference.field).readAhead(reference);
     const view = rows.find((row) => row.entityKind === "view_state");
     this.#state = {
       rows,
