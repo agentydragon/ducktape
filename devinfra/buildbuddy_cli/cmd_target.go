@@ -274,6 +274,7 @@ func targetFlakesSubCmd() *cobra.Command {
 
 func targetLogSubCmd() *cobra.Command {
 	var artifactName string
+	var all bool
 	cmd := &cobra.Command{
 		Use:   "log <invocation-id> <target-label-or-substring>",
 		Short: "Print test.log for a target (downloads from BES artifacts)",
@@ -283,10 +284,18 @@ Uses the BES (Build Event Stream) artifacts to find and download the test.log
 for the given target. The second argument is matched as a substring against
 "label/name" (e.g., "test_lifecycle" matches "//mcp_infra/compositor:test_lifecycle/test.log").
 
+A target that is sharded, runs more than once or is retried has one log per shard, run and
+attempt, so several can match. When they do, the logs of the results that did not pass are
+printed, each under a header naming its shard and status; if none failed, the first is. Which
+others exist, and how to read them, is listed on stderr. Pick results yourself with --shard
+(numbered from 1, as in shard_N_of_M) and --failed, or print every match with --all.
+
 Examples:
   bbapi target log <invocation-id> test_lifecycle
   bbapi target log <invocation-id> //mcp_infra/compositor:test_lifecycle
-  bbapi target log <invocation-id> test_lifecycle --artifact test.xml`,
+  bbapi target log <invocation-id> test_lifecycle --artifact test.xml
+  bbapi target log <invocation-id> visual --shard 4     # one shard of a sharded test
+  bbapi target log <invocation-id> visual --all         # every shard, with headers`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			c, err := newClient()
@@ -312,7 +321,11 @@ Examples:
 			}
 			if len(matches) == 0 {
 				// Provide helpful suggestions
-				fmt.Fprintf(os.Stderr, "No artifacts matching target %q with artifact %q\n\n", args[1], artifactName)
+				fmt.Fprintf(os.Stderr, "No artifacts matching target %q with artifact %q\n", args[1], artifactName)
+				if artifactShard != 0 || artifactFailed {
+					fmt.Fprintf(os.Stderr, "(narrowed by --shard=%d --failed=%t)\n", artifactShard, artifactFailed)
+				}
+				fmt.Fprintln(os.Stderr)
 				var targetMatches []artifact
 				for _, a := range artifacts {
 					if strings.Contains(a.Label+"/"+a.Name, args[1]) {
@@ -343,17 +356,52 @@ Examples:
 				}
 				return fmt.Errorf("no matching artifacts found")
 			}
+			chosen := matches
 			if len(matches) > 1 {
-				fmt.Fprintf(os.Stderr, "Multiple matches, using first:\n")
+				fmt.Fprintf(os.Stderr, "%d logs match:\n", len(matches))
 				for _, a := range matches {
-					fmt.Fprintf(os.Stderr, "  %s  %s\n", a.Label, a.Name)
+					fmt.Fprintf(os.Stderr, "  %s\n", a.describe())
+				}
+				if !all {
+					var why string
+					chosen, why = chooseLogs(matches)
+					fmt.Fprintf(os.Stderr, "%s (--shard N, --failed or --all picks others)\n", why)
 				}
 			}
-			return catArtifact(c, matches[:1], matches[0].Label+"/"+matches[0].Name)
+			for i, a := range chosen {
+				if len(chosen) > 1 {
+					if i > 0 {
+						fmt.Println()
+					}
+					fmt.Printf("==> %s <==\n", a.describe())
+				}
+				if err := printArtifact(c, a); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&artifactName, "artifact", "test.log", "Artifact name to download (default: test.log)")
+	cmd.Flags().BoolVar(&all, "all", false, "print every matching log, each under a header, instead of the failing ones")
+	addResultFlags(cmd)
 	return cmd
+}
+
+// chooseLogs picks which of several matching logs to print when the caller named none: those of results that
+// did not pass, since a log is mostly read to see why something failed, and otherwise the first. It says
+// which it did, and why.
+func chooseLogs(matches []artifact) ([]artifact, string) {
+	var failing []artifact
+	for _, a := range matches {
+		if a.failed() {
+			failing = append(failing, a)
+		}
+	}
+	if len(failing) > 0 {
+		return failing, fmt.Sprintf("Printing the %d of %d that did not pass", len(failing), len(matches))
+	}
+	return matches[:1], "None failed; printing the first"
 }
 
 // parseSince parses a --since value as a Go duration (e.g., "168h") or date (YYYY-MM-DD).

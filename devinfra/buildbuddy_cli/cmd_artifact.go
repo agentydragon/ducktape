@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -51,9 +52,24 @@ const (
 	kindBuild = "build"
 )
 
-// artifactKind is the --kind filter; empty means both. Package-level to match
-// jsonOutput, so every artifact subcommand honours it.
-var artifactKind string
+// artifactKind, artifactShard and artifactFailed are the --kind, --shard and --failed filters. Package-level
+// to match jsonOutput, so every artifact subcommand and `target log` honour them. A kind of "" means both,
+// and a shard of 0 any.
+var (
+	artifactKind   string
+	artifactShard  int
+	artifactFailed bool
+)
+
+// addResultFlags registers --shard and --failed on cmd and its subcommands, which narrow test artifacts to
+// particular results of their target.
+func addResultFlags(cmd *cobra.Command) {
+	flags := cmd.PersistentFlags()
+	flags.IntVar(&artifactShard, "shard", 0,
+		"only test artifacts of this shard, numbered from 1 as in bazel-testlogs/.../shard_N_of_M (default: any)")
+	flags.BoolVar(&artifactFailed, "failed", false,
+		"only test artifacts of results that did not pass: the failing shard, run or attempt")
+}
 
 type artifact struct {
 	Label string `json:"label"`
@@ -76,6 +92,60 @@ type artifact struct {
 	// registry or release tag without fetching the bytes at all.
 	Digest string `json:"digest,omitempty"`
 	Size   int64  `json:"size,omitempty"`
+	// Which result of its target a test artifact came from. A sharded test, or one that runs more than once
+	// or is retried, reports one result per shard, run and attempt, each with a test.log of the same name,
+	// so Label and Name cannot tell them apart. Shard, Run and Attempt count from 1, as Bazel's
+	// shard_N_of_M directories do; ShardCount and RunCount come from the target's summary.
+	Shard      int `json:"shard,omitempty"`
+	ShardCount int `json:"shardCount,omitempty"`
+	Run        int `json:"run,omitempty"`
+	RunCount   int `json:"runCount,omitempty"`
+	Attempt    int `json:"attempt,omitempty"`
+	// This result's own status ("PASSED", "FAILED", "TIMEOUT", ...), not the target's overall one: the
+	// failing shard among passing ones is the result a reader is after.
+	Status string `json:"status,omitempty"`
+}
+
+// notFailing are the statuses of a result that went as hoped; any other status, from a failure to a
+// timeout to a run that never finished, is one worth reading.
+var notFailing = map[string]bool{"": true, "NO_STATUS": true, "PASSED": true, "FLAKY": true}
+
+// failed reports whether a test artifact came from a result that did not pass.
+func (a artifact) failed() bool {
+	return a.Kind == kindTest && !notFailing[a.Status]
+}
+
+// result names which result of its target a test artifact came from ("shard 4/6", "run 2/3 attempt 2"), and
+// is empty for a build artifact and for a target that ran once.
+func (a artifact) result() string {
+	var parts []string
+	if a.ShardCount > 1 {
+		parts = append(parts, fmt.Sprintf("shard %d/%d", a.Shard, a.ShardCount))
+	}
+	if a.RunCount > 1 {
+		parts = append(parts, fmt.Sprintf("run %d/%d", a.Run, a.RunCount))
+	}
+	if a.Attempt > 1 {
+		parts = append(parts, fmt.Sprintf("attempt %d", a.Attempt))
+	}
+	return strings.Join(parts, " ")
+}
+
+// describe is the artifact as a reader tells it from its siblings: its label, which result of it and how that
+// went, and its name.
+func (a artifact) describe() string {
+	var tags []string
+	if r := a.result(); r != "" {
+		tags = append(tags, r)
+	}
+	if a.Status != "" && a.Kind == kindTest {
+		tags = append(tags, a.Status)
+	}
+	s := a.Label
+	if len(tags) > 0 {
+		s += " (" + strings.Join(tags, ", ") + ")"
+	}
+	return s + "  " + a.Name
 }
 
 func artifactCmd() *cobra.Command {
@@ -109,6 +179,7 @@ Prefer the explicit subcommands:
 	}
 	cmd.PersistentFlags().StringVar(&artifactKind, "kind", "",
 		fmt.Sprintf("only %q or %q artifacts (default: both)", kindTest, kindBuild))
+	addResultFlags(cmd)
 	cmd.AddCommand(artifactListCmd())
 	cmd.AddCommand(artifactCatCmd())
 	cmd.AddCommand(artifactDownloadCmd())
@@ -214,9 +285,9 @@ func printArtifacts(artifacts []artifact) error {
 		return nil
 	}
 	t := newTable()
-	t.header("KIND", "GROUP", "LABEL", "NAME")
+	t.header("KIND", "GROUP", "LABEL", "RESULT", "STATUS", "NAME")
 	for _, a := range artifacts {
-		t.row(a.Kind, a.OutputGroup, a.Label, a.Name)
+		t.row(a.Kind, a.OutputGroup, a.Label, a.result(), a.Status, a.Name)
 	}
 	t.flush()
 	return nil
@@ -239,6 +310,21 @@ func filterKind(artifacts []artifact, kind string) ([]artifact, error) {
 		}
 	}
 	return kept, nil
+}
+
+// filterResults narrows to test artifacts of the shard and of the results that did not pass, as asked. With
+// neither, everything stays, build artifacts too.
+func filterResults(artifacts []artifact, shard int, failedOnly bool) []artifact {
+	if shard == 0 && !failedOnly {
+		return artifacts
+	}
+	var kept []artifact
+	for _, a := range artifacts {
+		if a.Kind == kindTest && (shard == 0 || a.Shard == shard) && (!failedOnly || a.failed()) {
+			kept = append(kept, a)
+		}
+	}
+	return kept
 }
 
 // matchKey returns the string matched against: "label/name".
@@ -277,17 +363,46 @@ func resolveArtifact(artifacts []artifact, pattern string) (artifact, error) {
 				}
 			}
 			fmt.Fprintf(os.Stderr, "\nHint: match is against \"label/name\" (e.g., \"test_handlers/test.log\")\n")
+			if near := nearArtifacts(artifacts, pattern, 5); len(near) > 0 {
+				fmt.Fprintf(os.Stderr, "Did you mean (treating '-' and '_' alike):\n")
+				for _, a := range near {
+					fmt.Fprintf(os.Stderr, "  %s\n", a.matchKey())
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "Hint: `bbapi artifact list <invocation-id>` shows the exact names\n")
+			}
 		}
 		return artifact{}, fmt.Errorf("no artifacts matching %q", pattern)
 	}
 	if len(matches) > 1 {
 		fmt.Fprintf(os.Stderr, "Multiple matches for %q:\n", pattern)
 		for _, a := range matches {
-			fmt.Fprintf(os.Stderr, "  %s  %s\n", a.Label, a.Name)
+			fmt.Fprintf(os.Stderr, "  %s\n", a.describe())
 		}
-		fmt.Fprintf(os.Stderr, "Using first match: %s %s\n", matches[0].Label, matches[0].Name)
+		fmt.Fprintf(os.Stderr, "Using first match: %s\n(--shard N, --failed or a more specific pattern picks another)\n",
+			matches[0].describe())
 	}
 	return matches[0], nil
+}
+
+// nearArtifacts returns up to limit artifacts that pattern would match if '-' and '_' were the same
+// character: the spelling of a name guessed from a scenario or a target, where its output uses the other.
+func nearArtifacts(artifacts []artifact, pattern string, limit int) []artifact {
+	if strings.Contains(pattern, "*") {
+		return nil
+	}
+	alike := strings.NewReplacer("-", "_")
+	want := alike.Replace(pattern)
+	var near []artifact
+	for _, a := range artifacts {
+		if strings.Contains(alike.Replace(a.matchKey()), want) {
+			near = append(near, a)
+			if len(near) == limit {
+				break
+			}
+		}
+	}
+	return near
 }
 
 // filterArtifacts returns all artifacts matching pattern (glob if it contains
@@ -315,6 +430,11 @@ func catArtifact(c *client, artifacts []artifact, substr string) error {
 	if err != nil {
 		return err
 	}
+	return printArtifact(c, match)
+}
+
+// printArtifact streams one artifact's content to stdout.
+func printArtifact(c *client, match artifact) error {
 	downloadURL := fmt.Sprintf("%s/file/download?bytestream_url=%s",
 		c.baseURL, url.QueryEscape(match.URI))
 	data, err := c.fetchURL(downloadURL)
@@ -343,13 +463,51 @@ func downloadAllArtifacts(c *client, artifacts []artifact, dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
-	for _, a := range artifacts {
-		dest := filepath.Join(dir, filepath.Base(a.Name))
+	names := downloadNames(artifacts)
+	for i, a := range artifacts {
+		dest := filepath.Join(dir, names[i])
 		if err := saveArtifact(c, a, dest); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to download %s: %v\n", a.Name, err)
 		}
 	}
 	return nil
+}
+
+// downloadNames gives each artifact the file name it is saved under when they all go to one directory. An
+// artifact keeps its base name unless another shares it, as the test.log of every shard of a target does, and
+// then it is named for where it came from, so that none overwrites another.
+func downloadNames(artifacts []artifact) []string {
+	counts := map[string]int{}
+	for _, a := range artifacts {
+		counts[filepath.Base(a.Name)]++
+	}
+	unsafe := regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+	names := make([]string, len(artifacts))
+	used := map[string]bool{}
+	for i, a := range artifacts {
+		name := filepath.Base(a.Name)
+		if counts[name] > 1 {
+			origin := []string{strings.Trim(unsafe.ReplaceAllString(a.Label, "_"), "_")}
+			if a.ShardCount > 1 {
+				origin = append(origin, fmt.Sprintf("shard_%d_of_%d", a.Shard, a.ShardCount))
+			}
+			if a.RunCount > 1 {
+				origin = append(origin, fmt.Sprintf("run_%d_of_%d", a.Run, a.RunCount))
+			}
+			if a.Attempt > 1 {
+				origin = append(origin, fmt.Sprintf("attempt_%d", a.Attempt))
+			}
+			name = strings.Join(origin, "__") + "__" + name
+		}
+		// Whatever else still shares a name, such as one target's outputs of two configurations.
+		unique := name
+		for n := 2; used[unique]; n++ {
+			unique = fmt.Sprintf("%s.%d", name, n)
+		}
+		used[unique] = true
+		names[i] = unique
+	}
+	return names
 }
 
 func saveArtifact(c *client, a artifact, dest string) error {
@@ -380,7 +538,11 @@ func listArtifactsResolved(c *client, invocationID string) ([]artifact, error) {
 		}
 		all = append(all, arts...)
 	}
-	return filterKind(all, artifactKind)
+	kept, err := filterKind(all, artifactKind)
+	if err != nil {
+		return nil, err
+	}
+	return filterResults(kept, artifactShard, artifactFailed), nil
 }
 
 func listArtifacts(c *client, invocationID string) ([]artifact, error) {
@@ -407,6 +569,9 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 	}
 	events := make([]*bespb.BuildEvent, 0, len(rawEvents))
 	fileSets := map[string]*bespb.NamedSetOfFiles{}
+	// How many shards and runs each test had, which only its summary, last in the stream, says.
+	type shape struct{ shards, runs int }
+	shapes := map[string]shape{}
 	for _, raw := range rawEvents {
 		var ev bespb.BuildEvent
 		if err := unmarshalJSON(raw, &ev); err != nil {
@@ -415,6 +580,9 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 		events = append(events, &ev)
 		if ns := ev.GetNamedSetOfFiles(); ns != nil {
 			fileSets[ev.GetId().GetNamedSet().GetId()] = ns
+		}
+		if ts := ev.GetTestSummary(); ts != nil {
+			shapes[ev.GetId().GetTestSummary().GetLabel()] = shape{int(ts.GetShardCount()), int(ts.GetRunCount())}
 		}
 	}
 
@@ -428,7 +596,8 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 	}
 	for _, ev := range events {
 		if tr := ev.GetTestResult(); tr != nil {
-			label := ev.GetId().GetTestResult().GetLabel()
+			id := ev.GetId().GetTestResult()
+			label := id.GetLabel()
 			for _, f := range tr.GetTestActionOutput() {
 				add(artifact{
 					Label:      label,
@@ -438,6 +607,12 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 					PathPrefix: strings.Join(f.GetPathPrefix(), "/"),
 					Digest:     f.GetDigest(),
 					Size:       f.GetLength(),
+					Shard:      int(id.GetShard()),
+					ShardCount: shapes[label].shards,
+					Run:        int(id.GetRun()),
+					RunCount:   shapes[label].runs,
+					Attempt:    int(id.GetAttempt()),
+					Status:     tr.GetStatus().String(),
 				})
 			}
 			continue

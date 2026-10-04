@@ -39,8 +39,11 @@ bbapi invocation <invocation-id>
 # List recent invocations (auto-detects repo from git remote)
 bbapi invocation list [--repo URL] [--count N]
 
-# Download test.log for a specific target (most common for debugging failures)
+# Download test.log for a specific target (most common for debugging failures).
+# A sharded target has one log per shard: the failing ones are printed, each under a header
 bbapi target log <invocation-id> <target-label-or-substring>
+bbapi target log <invocation-id> <target> --shard 4    # one shard (numbered from 1)
+bbapi target log <invocation-id> <target> --all        # every shard, each under a header
 
 # List targets in an invocation (auto-resolves workflow/runner IDs to child)
 bbapi target <invocation-id> [--filter SUBSTR] [--label LABEL]
@@ -54,7 +57,8 @@ bbapi target stats [--repo URL]
 # Show flake samples for a specific target
 bbapi target flakes <target-label> [--repo URL]
 
-# List artifacts for an invocation (test outputs and build outputs)
+# List artifacts for an invocation (test outputs and build outputs). RESULT and STATUS
+# tell the shards, runs and attempts of one test apart
 bbapi artifact list <invocation-id>
 
 # Narrow to one kind: "build" is a completed target's output files, "test" is
@@ -158,7 +162,35 @@ invocation contains the actual `bazel test` results, targets, and artifacts.
 - `"test_lifecycle/test.xml"` matches the XML output specifically
 - `"compositor/test_lifecycle"` matches `//mcp_infra/compositor:test_lifecycle/test.log`
 
-When no match is found, the CLI prints available labels as hints.
+When no match is found, the CLI prints available labels as hints, and the names that would
+match if `-` and `_` were alike. Names are what the test wrote, not what you would derive from
+a target or a scenario (a visual scenario's PNG is `test.outputs/<outputName>-actual.png`, where
+the outputName is hyphenated for some scenarios and not for others), so `bbapi artifact list`
+first beats guessing.
+
+### Sharded, repeated and retried tests
+
+A test with `shard_count`, `--runs_per_test` or `--flaky_test_attempts` reports one result per
+shard, run and attempt, and each has its own `test.log`, `test.xml` and outputs under the same
+names. `bbapi artifact list` gives each its `RESULT` (`shard 4/6`, `run 2/3`, `attempt 2`) and
+its own `STATUS` (`PASSED`, `FAILED`, `TIMEOUT`, ...); `--json` adds `shard`, `shardCount`,
+`run`, `runCount`, `attempt` and `status`. Numbers count from 1, as in
+`bazel-testlogs/.../shard_4_of_6/`.
+
+Narrow with flags on `artifact {list,cat,download}` and `target log`:
+
+```bash
+bbapi artifact list <id> --failed                    # only results that did not pass
+bbapi artifact download <id> test.log --shard 4      # one shard's log
+bbapi artifact download <id> test.log --all -o logs/ # every shard's log, none overwriting another
+bbapi target log <id> visual --failed                # the failing shards' logs, each with a header
+bbapi target log <id> visual --all                   # every shard's log
+```
+
+Several matches never mean "pick one silently": `target log` lists every match with its shard and
+status on stderr, then prints the results that failed, or the first if none did. `artifact cat`
+and `download` without `--all` still take the first match, and say which. With `--all`, files of
+one name are saved as `<label>__shard_4_of_6__test.log`; a name nothing else shares keeps its own.
 
 ### Three kinds of file, three commands
 

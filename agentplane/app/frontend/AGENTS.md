@@ -12,8 +12,10 @@ the real pixels, not a specific mechanism for getting there:
 - **Or run the scenario locally** — `bbr test //agentplane/app/frontend:visual
 --test_filter=<scenario> --noremote_accept_cached --nocache_test_results` — and download the PNG it
   writes to the test's
-  undeclared outputs (`buildbuddy_api` skill: `bbapi artifact download <invocation-id>
-"<scenario>-actual.png"`), then view it.
+  undeclared outputs (`buildbuddy_api` skill: `bbapi artifact list <invocation-id>` for the exact
+  name, which is the scenario's `outputName` or its key, then `bbapi artifact download <invocation-id>
+"<name>-actual.png"`), then view it. A failure in another shard: `bbapi target log <invocation-id>
+visual --failed`.
 
 A local interactive browser session (running the app, clicking through it by hand) is neither
 required nor the goal here — it's extra machinery for the same answer a screenshot already gives.

@@ -49,6 +49,7 @@ go_test(
     name = "bbapi_test",
     srcs = [
         "cmd_artifact_test.go",
+        "cmd_target_test.go",
         "helpers_test.go",
     ],
     embed = [":bbapi_lib"],
