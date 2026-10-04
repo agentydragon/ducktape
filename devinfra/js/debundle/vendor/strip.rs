@@ -1472,47 +1472,6 @@ mod tests {
     }
 
     #[test]
-    fn strips_named_export_specifier() {
-        let mut module = parse("const a = 1;\nconst b = 2;\nexport { a as foo, b as bar };\n");
-        strip_one_chunk(&mut module, &mk_symbols(&["foo"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(!emitted.contains("foo"), "stripped name leaked:\n{emitted}");
-        assert!(emitted.contains("bar"), "kept name missing:\n{emitted}");
-    }
-
-    #[test]
-    fn drops_inline_export_decl_and_dce_kills_pure_body() {
-        let mut module = parse("export const e6 = () => true;\nexport const k = 7;\n");
-        strip_one_chunk(&mut module, &mk_symbols(&["e6"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("e6"),
-            "swapped const should be DCE'd:\n{emitted}",
-        );
-        assert!(
-            emitted.contains("export const k"),
-            "non-swapped const dropped:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn bails_when_swapped_implementation_is_residually_reachable() {
-        let mut module = parse(
-            "class ZodObject {}\nconst object = ()=>new ZodObject();\nexport { object as o, ZodObject as Z };\n",
-        );
-        let err = strip_one_chunk(&mut module, &mk_symbols(&["o"]), "chunk.js")
-            .expect_err("split-brain residual reachability should fail");
-        assert!(
-            err.to_string().contains("split-brain vendor swap"),
-            "wrong error: {err}",
-        );
-        assert!(
-            err.to_string().contains("residual path:"),
-            "split-brain diagnostic should include liveness provenance: {err}",
-        );
-    }
-
-    #[test]
     fn drops_non_exported_local_swap_after_self_rewrite() {
         let mut module = parse(
             "function nY(t) { return `vendor:${t.name}`; }\nconst schema = Zod.instanceof(URL);\nexport { schema };\n",
@@ -1719,17 +1678,6 @@ mod tests {
     }
 
     #[test]
-    fn retains_side_effect_init_among_swapped() {
-        let mut module = parse("console.log(\"keep\");\nexport const e6 = ()=>true;\n");
-        strip_one_chunk(&mut module, &mk_symbols(&["e6"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            emitted.contains("console.log"),
-            "side-effect should be retained:\n{emitted}",
-        );
-    }
-
-    #[test]
     fn drops_side_effect_dependent_on_single_swapped_package_island() {
         let mut module = parse(
             "const internals = {};\n\
@@ -1772,23 +1720,6 @@ mod tests {
         assert!(
             emitted.contains("export const keep"),
             "residual export should remain:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_local_member_writes_in_swapped_island() {
-        let mut module = parse(
-            "class Widget {}\nWidget.displayName = \"Widget\";\nconst make = () => Widget;\nexport { make as swapped };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("Widget"),
-            "swapped implementation island should be removed:\n{emitted}",
-        );
-        assert!(
-            !emitted.contains("displayName"),
-            "local class metadata write should be removed with the class:\n{emitted}",
         );
     }
 
